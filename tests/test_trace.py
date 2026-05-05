@@ -132,6 +132,22 @@ class TestTraceHelpers:
             mock_span.end.assert_awaited_once()
 
     @patch("zaxy.trace.AsyncPathlight")
+    async def test_trace_append_with_error(self, mock_cls: MagicMock) -> None:
+        """trace_append should record error when provided."""
+        with patch("zaxy.trace._HAS_PATHLIGHT", True):
+            t = MemoryTracer()
+            mock_trace = MagicMock()
+            mock_trace.end = AsyncMock()
+            mock_span = AsyncMock()
+            mock_trace.span.return_value = mock_span
+            mock_cls.return_value.trace.return_value = mock_trace
+            await t.connect()
+
+            await t.trace_append("goal.created", "user", seq=5, success=False, error="connection refused")
+            args = mock_span.end.await_args.kwargs
+            assert args["error"] == "connection refused"
+
+    @patch("zaxy.trace.AsyncPathlight")
     async def test_trace_query(self, mock_cls: MagicMock) -> None:
         """trace_query should emit a span with query metadata."""
         with patch("zaxy.trace._HAS_PATHLIGHT", True):

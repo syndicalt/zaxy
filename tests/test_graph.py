@@ -231,6 +231,32 @@ class TestRetrieval:
         assert results[0].score == 1.23
         assert results[0].source == "keyword"
 
+    async def test_search_keyword_with_temporal_filter(self, store: GraphStore) -> None:
+        """Keyword search should optionally filter by temporal point."""
+        store._driver.execute_query.return_value = ([], None, None)
+        await store.search_keyword("ship", temporal_point="2024-03-01T00:00:00Z")
+        call = store._driver.execute_query.await_args
+        assert "datetime($t)" in call.args[0]
+
+    async def test_search_traversal_with_relation_type(self, store: GraphStore) -> None:
+        """Traversal should optionally filter by relation_type."""
+        node = _make_node(name="Bob", entity_type="user", valid_from="2024-01-01T00:00:00Z")
+        store._driver.execute_query.return_value = ([{"neighbor": node}], None, None)
+
+        results = await store.search_traversal("Alice", relation_type="created_goal")
+        call = store._driver.execute_query.await_args
+        assert "relation_type: $relation_type" in call.args[0]
+        assert call.kwargs["relation_type"] == "created_goal"
+        assert len(results) == 1
+        assert results[0].name == "Bob"
+
+    async def test_search_traversal_with_temporal_filter(self, store: GraphStore) -> None:
+        """Traversal should optionally filter by temporal point."""
+        store._driver.execute_query.return_value = ([], None, None)
+        await store.search_traversal("Alice", temporal_point="2024-03-01T00:00:00Z")
+        call = store._driver.execute_query.await_args
+        assert "datetime($t)" in call.args[0]
+
 
 # ------------------------------------------------------------------
 # Helper tests

@@ -6,7 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from zaxy.mcp_server import TOOLS, ZaxyMCPServer
+import zaxy.mcp_server
+from zaxy.mcp_server import TOOLS, ZaxyMCPServer, main
 
 # ------------------------------------------------------------------
 # Fixtures
@@ -200,6 +201,80 @@ class TestMemoryInvalidate:
             "OldFact", "fact", "2024-06-01T00:00:00Z"
         )
         assert "invalidated" in result[0].text
+
+
+# ------------------------------------------------------------------
+# Entrypoint tests
+# ------------------------------------------------------------------
+
+class TestEntrypoint:
+    """Tests for the MCP stdio server main() function."""
+
+    @patch("zaxy.mcp_server.stdio_server")
+    @patch("zaxy.mcp_server.GraphStore")
+    @patch("zaxy.mcp_server.MemoryTracer")
+    async def test_main_setup_and_teardown(
+        self,
+        mock_tracer_cls: MagicMock,
+        mock_graph_cls: MagicMock,
+        mock_stdio: MagicMock,
+    ) -> None:
+        """main() should setup server, register handlers, and teardown on exit."""
+        mock_graph = AsyncMock()
+        mock_graph_cls.return_value = mock_graph
+        mock_tracer = AsyncMock()
+        mock_tracer_cls.return_value = mock_tracer
+
+        mock_read = AsyncMock()
+        mock_write = AsyncMock()
+        mock_stdio.return_value.__aenter__ = AsyncMock(return_value=(mock_read, mock_write))
+        mock_stdio.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("zaxy.mcp_server.app.run", new_callable=AsyncMock) as mock_run:
+            await main()
+
+        mock_graph.connect.assert_awaited_once()
+        mock_graph.init_schema.assert_awaited_once()
+        mock_tracer.connect.assert_awaited_once()
+        mock_run.assert_awaited_once()
+        mock_graph.close.assert_awaited_once()
+        mock_tracer.close.assert_awaited_once()
+
+    @patch("zaxy.mcp_server.ZaxyMCPServer")
+    @patch("zaxy.mcp_server.stdio_server")
+    async def test_unknown_tool_raises_value_error(
+        self,
+        mock_stdio: MagicMock,
+        mock_server_cls: MagicMock,
+    ) -> None:
+        """Calling an unknown tool should raise ValueError."""
+        mock_server = AsyncMock()
+        mock_server_cls.return_value = mock_server
+
+        mock_read = AsyncMock()
+        mock_write = AsyncMock()
+        mock_stdio.return_value.__aenter__ = AsyncMock(return_value=(mock_read, mock_write))
+        mock_stdio.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        captured_handlers: dict[str, Any] = {}
+
+        def make_capture_decorator(name: str) -> Any:
+            def decorator(fn: Any) -> Any:
+                captured_handlers[name] = fn
+                return fn
+            return decorator
+
+        with patch("zaxy.mcp_server.app.run", new_callable=AsyncMock) as mock_run:
+            with patch.object(
+                zaxy.mcp_server.app, "list_tools", return_value=make_capture_decorator("list_tools")
+            ), patch.object(
+                zaxy.mcp_server.app, "call_tool", return_value=make_capture_decorator("call_tool")
+            ):
+                await main()
+
+        assert "call_tool" in captured_handlers
+        with pytest.raises(ValueError, match="Unknown tool"):
+            await captured_handlers["call_tool"]("unknown_tool", {})
 
 
 # ------------------------------------------------------------------
