@@ -205,23 +205,25 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Structured logging (console + JSON)
 - [x] Graceful shutdown (SIGTERM/SIGINT handling)
 - [ ] Production secrets management (Docker secrets / vault)
-- [ ] TLS for Neo4j
-- [ ] Multi-agent session sharding
+- [~] TLS for Neo4j (config + cert script done, E2E test pending)
+- [~] Multi-agent session sharding (library done, MemoryFabric/MCP wiring pending)
+- [x] Prometheus metrics
+- [x] Vector similarity search in query router
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Unit tests | 124 passed |
-| Coverage | 96.26% |
+| Unit tests | 153 passed |
+| Coverage | 94.48% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
 
 ## Next Steps
 
-1. Integration test the full pipeline with Docker Compose.
-2. Write operational runbooks (backup, restore, scaling).
-3. Add performance benchmarks (pytest-benchmark).
-4. Production hardening (config management, secrets, TLS).
-5. Multi-agent session sharding for Eventloom.
+1. Wire `SessionManager` into `MemoryFabric` and MCP tools (multi-agent session sharding).
+2. Create Neo4j vector index (`entity_vector`) for similarity search.
+3. End-to-end TLS test with generated certificates.
+4. Add SSE transport to MCP server for daemon mode.
+5. Production secrets management (Docker secrets / vault integration).

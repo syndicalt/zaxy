@@ -15,17 +15,28 @@ from zaxy.mcp_server import TOOLS, ZaxyMCPServer, main
 
 @pytest.fixture
 def server() -> ZaxyMCPServer:
-    """Return a server with mocked graph and tracer."""
-    with patch("zaxy.mcp_server.GraphStore") as mock_graph_cls, \
-         patch("zaxy.mcp_server.MemoryTracer") as mock_tracer_cls:
+    """Return a server with mocked graph, tracer, and session manager."""
+    with (
+        patch("zaxy.mcp_server.GraphStore") as mock_graph_cls,
+        patch("zaxy.mcp_server.MemoryTracer") as mock_tracer_cls,
+        patch("zaxy.mcp_server.SessionManager") as mock_session_cls,
+    ):
         mock_graph = AsyncMock()
         mock_graph_cls.return_value = mock_graph
         mock_tracer = AsyncMock()
         mock_tracer_cls.return_value = mock_tracer
 
+        mock_log = MagicMock()
+        mock_event = MagicMock(seq=1, hash="a" * 64)
+        mock_log.append.return_value = mock_event
+        mock_session_mgr = MagicMock()
+        mock_session_mgr.get.return_value.eventlog = mock_log
+        mock_session_cls.return_value = mock_session_mgr
+
         srv = ZaxyMCPServer()
         srv.graph = mock_graph
         srv.tracer = mock_tracer
+        srv.session_manager = mock_session_mgr
         yield srv
 
 
@@ -66,45 +77,41 @@ class TestMemoryAppend:
 
     async def test_appends_event_and_projects(self, server: ZaxyMCPServer) -> None:
         """Should append to Eventloom, extract, upsert to graph, and trace."""
-        with patch("zaxy.mcp_server.EventLog") as mock_log_cls:
-            mock_event = MagicMock()
-            mock_event.seq = 1
-            mock_event.hash = "a" * 64
-            mock_log = MagicMock()
-            mock_log.append.return_value = mock_event
-            mock_log_cls.return_value = mock_log
+        result = await server.handle_memory_append({
+            "event_type": "goal.created",
+            "actor": "user",
+            "payload": {"title": "Ship it"},
+            "session_id": "session-1",
+        })
 
-            result = await server.handle_memory_append({
-                "event_type": "goal.created",
-                "actor": "user",
-                "payload": {"title": "Ship it"},
-                "thread": "session-1",
-            })
+        server.session_manager.get.assert_called_once_with("session-1")
+        log = server.session_manager.get.return_value.eventlog
+        log.append.assert_called_once()
+        server.graph.upsert_extraction.assert_awaited_once()
+        server.tracer.trace_append.assert_awaited_once()
+        assert len(result) == 1
+        assert "1" in result[0].text
 
-            mock_log.append.assert_called_once()
-            server.graph.upsert_extraction.assert_awaited_once()
-            server.tracer.trace_append.assert_awaited_once()
-            assert len(result) == 1
-            assert "1" in result[0].text
+    async def test_uses_default_session(self, server: ZaxyMCPServer) -> None:
+        """Missing session_id should default to 'default'."""
+        await server.handle_memory_append({
+            "event_type": "x",
+            "actor": "y",
+            "payload": {},
+        })
 
-    async def test_uses_default_thread(self, server: ZaxyMCPServer) -> None:
-        """Missing thread should default to 'default'."""
-        with patch("zaxy.mcp_server.EventLog") as mock_log_cls:
-            mock_event = MagicMock()
-            mock_event.seq = 1
-            mock_event.hash = "a" * 64
-            mock_log = MagicMock()
-            mock_log.append.return_value = mock_event
-            mock_log_cls.return_value = mock_log
+        server.session_manager.get.assert_called_once_with("default")
 
-            await server.handle_memory_append({
-                "event_type": "x",
-                "actor": "y",
-                "payload": {},
-            })
+    async def test_falls_back_to_thread(self, server: ZaxyMCPServer) -> None:
+        """thread should be used as fallback when session_id is missing."""
+        await server.handle_memory_append({
+            "event_type": "x",
+            "actor": "y",
+            "payload": {},
+            "thread": "legacy-thread",
+        })
 
-            call = mock_log.append.call_args
-            assert call.kwargs["thread"] == "default"
+        server.session_manager.get.assert_called_once_with("legacy-thread")
 
 
 class TestMemoryQuery:
@@ -156,34 +163,28 @@ class TestMemoryReplay:
 
     async def test_replays_from_seq(self, server: ZaxyMCPServer) -> None:
         """Should replay events from the given sequence."""
-        with patch("zaxy.mcp_server.EventLog") as mock_log_cls:
-            mock_replay = MagicMock()
-            mock_replay.integrity.model_dump.return_value = {"ok": True, "total_events": 2}
-            mock_replay.events = []
-            mock_log = MagicMock()
-            mock_log.replay.return_value = mock_replay
-            mock_log_cls.return_value = mock_log
+        mock_replay = MagicMock()
+        mock_replay.integrity.model_dump.return_value = {"ok": True, "total_events": 2}
+        mock_replay.events = []
+        server.session_manager.replay.return_value = mock_replay
 
-            result = await server.handle_memory_replay({
-                "session_id": "session-1",
-                "from_seq": 5,
-            })
+        result = await server.handle_memory_replay({
+            "session_id": "session-1",
+            "from_seq": 5,
+        })
 
-            mock_log.replay.assert_called_once_with(from_seq=5)
-            assert "ok" in result[0].text
+        server.session_manager.replay.assert_called_once_with("session-1", from_seq=5)
+        assert "ok" in result[0].text
 
     async def test_default_from_seq(self, server: ZaxyMCPServer) -> None:
         """Missing from_seq should default to 1."""
-        with patch("zaxy.mcp_server.EventLog") as mock_log_cls:
-            mock_replay = MagicMock()
-            mock_replay.integrity.model_dump.return_value = {"ok": True, "total_events": 0}
-            mock_replay.events = []
-            mock_log = MagicMock()
-            mock_log.replay.return_value = mock_replay
-            mock_log_cls.return_value = mock_log
+        mock_replay = MagicMock()
+        mock_replay.integrity.model_dump.return_value = {"ok": True, "total_events": 0}
+        mock_replay.events = []
+        server.session_manager.replay.return_value = mock_replay
 
-            await server.handle_memory_replay({"session_id": "s1"})
-            mock_log.replay.assert_called_once_with(from_seq=1)
+        await server.handle_memory_replay({"session_id": "s1"})
+        server.session_manager.replay.assert_called_once_with("s1", from_seq=1)
 
 
 class TestMemoryInvalidate:
@@ -286,7 +287,13 @@ class TestLifecycle:
 
     @patch("zaxy.mcp_server.GraphStore")
     @patch("zaxy.mcp_server.MemoryTracer")
-    async def test_setup_connects_all(self, mock_tracer_cls: MagicMock, mock_graph_cls: MagicMock) -> None:
+    @patch("zaxy.mcp_server.SessionManager")
+    async def test_setup_connects_all(
+        self,
+        mock_session_cls: MagicMock,
+        mock_tracer_cls: MagicMock,
+        mock_graph_cls: MagicMock,
+    ) -> None:
         """setup() should connect graph and tracer."""
         mock_graph = AsyncMock()
         mock_graph_cls.return_value = mock_graph
@@ -301,7 +308,13 @@ class TestLifecycle:
 
     @patch("zaxy.mcp_server.GraphStore")
     @patch("zaxy.mcp_server.MemoryTracer")
-    async def test_teardown_closes_all(self, mock_tracer_cls: MagicMock, mock_graph_cls: MagicMock) -> None:
+    @patch("zaxy.mcp_server.SessionManager")
+    async def test_teardown_closes_all(
+        self,
+        mock_session_cls: MagicMock,
+        mock_tracer_cls: MagicMock,
+        mock_graph_cls: MagicMock,
+    ) -> None:
         """teardown() should close graph and tracer."""
         mock_graph = AsyncMock()
         mock_graph_cls.return_value = mock_graph
@@ -311,5 +324,44 @@ class TestLifecycle:
         srv = ZaxyMCPServer()
         await srv.setup()
         await srv.teardown()
+        mock_graph.close.assert_awaited_once()
+        mock_tracer.close.assert_awaited_once()
+
+
+# ------------------------------------------------------------------
+# SSE transport tests
+# ------------------------------------------------------------------
+
+class TestSSEEntrypoint:
+    """Tests for the MCP SSE server main_sse() function."""
+
+    @patch("uvicorn.Server")
+    @patch("zaxy.mcp_server.GraphStore")
+    @patch("zaxy.mcp_server.MemoryTracer")
+    @patch("zaxy.mcp_server.SessionManager")
+    async def test_main_sse_setup_and_teardown(
+        self,
+        mock_session_cls: MagicMock,
+        mock_tracer_cls: MagicMock,
+        mock_graph_cls: MagicMock,
+        mock_uvicorn_cls: MagicMock,
+    ) -> None:
+        """main_sse() should setup server, run uvicorn, and teardown."""
+        mock_graph = AsyncMock()
+        mock_graph_cls.return_value = mock_graph
+        mock_tracer = AsyncMock()
+        mock_tracer_cls.return_value = mock_tracer
+
+        mock_uvicorn_server = AsyncMock()
+        mock_uvicorn_cls.return_value = mock_uvicorn_server
+
+        from zaxy.mcp_server import main_sse
+
+        await main_sse(port=9999)
+
+        mock_graph.connect.assert_awaited_once()
+        mock_graph.init_schema.assert_awaited_once()
+        mock_tracer.connect.assert_awaited_once()
+        mock_uvicorn_server.serve.assert_awaited_once()
         mock_graph.close.assert_awaited_once()
         mock_tracer.close.assert_awaited_once()

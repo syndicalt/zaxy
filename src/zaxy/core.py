@@ -27,6 +27,7 @@ from zaxy.extract import extract
 from zaxy.graph import GraphStore
 from zaxy.metrics import get_metrics
 from zaxy.query import QueryRouter
+from zaxy.session import SessionManager
 from zaxy.trace import MemoryTracer
 
 
@@ -66,7 +67,8 @@ class MemoryFabric:
         """
         settings = get_settings()
 
-        self.eventloom = EventLog(eventloom_path or settings.eventloom_log())
+        self.session_manager = SessionManager(base_path=eventloom_path or settings.eventloom_path)
+        self.eventloom = self.session_manager.get("default").eventlog
         self.graph = GraphStore(
             neo4j_uri or settings.neo4j_uri,
             neo4j_user or settings.neo4j_user,
@@ -105,6 +107,7 @@ class MemoryFabric:
         actor: str,
         payload: dict[str, Any] | None = None,
         thread: str = "default",
+        session_id: str | None = None,
     ) -> None:
         """Append a typed event to the immutable log and project to the graph.
 
@@ -113,15 +116,22 @@ class MemoryFabric:
         2. Extracts entities/edges via hybrid extraction (rule-based + fallback).
         3. Upserts into the bi-temporal Neo4j graph.
         4. Emits a Pathlight trace span.
+
+        Args:
+            session_id: Optional session ID. Defaults to ``thread`` for
+                backward compatibility.
         """
         if not self._connected:
             await self.connect()
 
-        event = self.eventloom.append(
+        sid = session_id or thread
+        eventlog = self.session_manager.get(sid).eventlog
+
+        event = eventlog.append(
             event_type,
             actor=actor,
             payload=payload or {},
-            thread=thread,
+            thread=sid,
         )
 
         extraction = extract(event)
@@ -176,12 +186,12 @@ class MemoryFabric:
             for c in chunks
         ]
 
-    async def replay(self, from_seq: int = 1) -> ReplayResult:
+    async def replay(self, from_seq: int = 1, session_id: str = "default") -> ReplayResult:
         """Replay events from the log starting at a sequence number.
 
         Returns the full replay result including integrity verification.
         """
-        return self.eventloom.replay(from_seq=from_seq)
+        return self.session_manager.replay(session_id, from_seq=from_seq)
 
     async def invalidate(self, entity_name: str, entity_type: str, invalid_at: str) -> None:
         """Mark a fact as invalid at a given time (bi-temporal update).
@@ -193,9 +203,9 @@ class MemoryFabric:
             await self.connect()
         await self.graph.invalidate_entity(entity_name, entity_type, invalid_at)
 
-    async def handoff_summary(self) -> dict[str, Any]:
+    async def handoff_summary(self, session_id: str = "default") -> dict[str, Any]:
         """Generate a concise handoff summary from the event log.
 
         Suitable for resuming an agent session across restarts.
         """
-        return self.eventloom.handoff_summary()
+        return self.session_manager.handoff_summary(session_id)

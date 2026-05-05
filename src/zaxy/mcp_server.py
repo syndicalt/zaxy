@@ -18,6 +18,7 @@ import sys
 from typing import Any
 
 from mcp.server import Server
+from mcp.server.sse import SseServerTransport
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
@@ -27,6 +28,7 @@ from zaxy.extract import extract
 from zaxy.graph import GraphStore
 from zaxy.log import get_logger, setup_logging
 from zaxy.query import QueryRouter
+from zaxy.session import SessionManager
 from zaxy.trace import MemoryTracer
 
 app = Server("zaxy-memory")
@@ -47,7 +49,8 @@ TOOLS = [
                 "event_type": {"type": "string", "description": "Event type, e.g. 'goal.created'"},
                 "actor": {"type": "string", "description": "Actor that emitted the event"},
                 "payload": {"type": "object", "description": "Structured payload"},
-                "thread": {"type": "string", "description": "Logical thread / session ID"},
+                "thread": {"type": "string", "description": "Logical thread / session ID (legacy, use session_id)"},
+                "session_id": {"type": "string", "description": "Session ID for multi-agent sharding"},
             },
         },
     ),
@@ -114,7 +117,7 @@ class ZaxyMCPServer:
         neo4j_password: str | None = None,
     ) -> None:
         settings = get_settings()
-        self.eventloom_path = eventloom_path or settings.eventloom_path
+        self.session_manager = SessionManager(base_path=eventloom_path or settings.eventloom_path)
         self.graph = GraphStore(
             neo4j_uri or settings.neo4j_uri,
             neo4j_user or settings.neo4j_user,
@@ -147,11 +150,10 @@ class ZaxyMCPServer:
         event_type = arguments["event_type"]
         actor = arguments["actor"]
         payload = arguments.get("payload", {})
-        thread = arguments.get("thread", "default")
+        session_id = arguments.get("session_id") or arguments.get("thread", "default")
 
-        log_path = f"{self.eventloom_path}/{thread}.jsonl"
-        log = EventLog(log_path)
-        event = log.append(event_type, actor=actor, payload=payload, thread=thread)
+        eventlog = self.session_manager.get(session_id).eventlog
+        event = eventlog.append(event_type, actor=actor, payload=payload, thread=session_id)
 
         # Project to graph
         extraction = extract(event)
@@ -187,9 +189,7 @@ class ZaxyMCPServer:
         session_id = arguments["session_id"]
         from_seq = arguments.get("from_seq", 1)
 
-        log_path = f"{self.eventloom_path}/{session_id}.jsonl"
-        log = EventLog(log_path)
-        replay = log.replay(from_seq=from_seq)
+        replay = self.session_manager.replay(session_id, from_seq=from_seq)
 
         output = {
             "integrity": replay.integrity.model_dump(),
@@ -270,6 +270,80 @@ async def main() -> None:
         logger.info("zaxy_mcp_server_shutting_down")
         await server.teardown()
         logger.info("zaxy_mcp_server_stopped")
+
+
+async def main_sse(port: int = 8080) -> None:
+    """Run the MCP server with SSE transport over HTTP.
+
+    This allows the server to run as a background daemon, accessible
+    via HTTP/SSE endpoints for MCP clients that support remote servers.
+    """
+    setup_logging()
+    logger = get_logger("mcp_server")
+
+    server: ZaxyMCPServer
+    if hasattr(sys.modules[__name__], "server"):
+        server = sys.modules[__name__].server  # type: ignore[attr-defined]
+    else:
+        server = ZaxyMCPServer()
+
+    await server.setup()
+    logger.info("zaxy_mcp_server_ready transport=sse port=%s", port)
+
+    import signal
+
+    shutdown_event: asyncio.Event = asyncio.Event()
+
+    def _on_signal(signum: int, _frame: Any) -> None:
+        sig_name = signal.Signals(signum).name
+        logger.info("zaxy_mcp_server_signal_received signal=%s", sig_name)
+        shutdown_event.set()
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(sig, _on_signal)
+
+    # SSE transport setup
+    from starlette.applications import Starlette
+    from starlette.routing import Mount, Route
+
+    sse_transport = SseServerTransport("/messages/")
+
+    async def _sse_handler(request: Any) -> Any:
+        async with sse_transport.connect_sse(
+            request.scope, request.receive, request._send
+        ) as (read_stream, write_stream):
+            await app.run(read_stream, write_stream, app.create_initialization_options())
+
+    async def _messages_handler(request: Any) -> Any:
+        return await sse_transport.handle_post_message(
+            request.scope, request.receive, request._send
+        )
+
+    starlette_app = Starlette(
+        debug=False,
+        routes=[
+            Route("/sse", _sse_handler),
+            Mount("/messages", _messages_handler),
+        ],
+    )
+
+    import uvicorn
+
+    config = uvicorn.Config(starlette_app, host="0.0.0.0", port=port, log_level="warning")
+    uvicorn_server = uvicorn.Server(config)
+
+    serve_task = asyncio.create_task(uvicorn_server.serve())
+    shutdown_task = asyncio.create_task(shutdown_event.wait())
+
+    done, pending = await asyncio.wait(
+        [serve_task, shutdown_task], return_when=asyncio.FIRST_COMPLETED
+    )
+    for task in pending:
+        task.cancel()
+
+    logger.info("zaxy_mcp_server_shutting_down")
+    await server.teardown()
+    logger.info("zaxy_mcp_server_stopped")
 
 
 if __name__ == "__main__":

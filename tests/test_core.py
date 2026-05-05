@@ -25,10 +25,15 @@ def fabric() -> MemoryFabric:
         patch("zaxy.core.GraphStore") as mock_graph_cls,
         patch("zaxy.core.QueryRouter") as mock_router_cls,
         patch("zaxy.core.MemoryTracer") as mock_tracer_cls,
+        patch("zaxy.core.SessionManager") as mock_session_cls,
     ):
         log = MagicMock()
         log.append.return_value = MagicMock(seq=1, hash="a" * 64, type="x", actor="y", timestamp="2024-01-01T00:00:00Z")
         mock_log_cls.return_value = log
+
+        session_mgr = MagicMock()
+        session_mgr.get.return_value.eventlog = log
+        mock_session_cls.return_value = session_mgr
 
         graph = AsyncMock()
         mock_graph_cls.return_value = graph
@@ -40,6 +45,7 @@ def fabric() -> MemoryFabric:
         mock_tracer_cls.return_value = tracer
 
         f = MemoryFabric()
+        f.session_manager = session_mgr
         f.eventloom = log
         f.graph = graph
         f.query_router = router
@@ -87,8 +93,19 @@ class TestAppend:
     async def test_appends_event(self, fabric: MemoryFabric) -> None:
         """append() should write to Eventloom."""
         await fabric.append("goal.created", actor="user", payload={"title": "T"})
-        fabric.eventloom.append.assert_called_once_with(
+        fabric.session_manager.get.assert_any_call("default")
+        log = fabric.session_manager.get.return_value.eventlog
+        log.append.assert_called_once_with(
             "goal.created", actor="user", payload={"title": "T"}, thread="default"
+        )
+
+    async def test_appends_with_session_id(self, fabric: MemoryFabric) -> None:
+        """append() should route to the correct session."""
+        await fabric.append("goal.created", actor="user", payload={"title": "T"}, session_id="agent-1")
+        fabric.session_manager.get.assert_any_call("agent-1")
+        log = fabric.session_manager.get.return_value.eventlog
+        log.append.assert_called_once_with(
+            "goal.created", actor="user", payload={"title": "T"}, thread="agent-1"
         )
 
     async def test_extracts_and_upserts(self, fabric: MemoryFabric) -> None:
@@ -161,12 +178,20 @@ class TestQuery:
 class TestReplay:
     """Tests for event replay."""
 
-    async def test_replay_delegates_to_eventlog(self, fabric: MemoryFabric) -> None:
-        """replay() should delegate to EventLog.replay()."""
+    async def test_replay_delegates_to_session_manager(self, fabric: MemoryFabric) -> None:
+        """replay() should delegate to SessionManager.replay()."""
         mock_result = MagicMock(spec=ReplayResult)
-        fabric.eventloom.replay.return_value = mock_result
+        fabric.session_manager.replay.return_value = mock_result
         result = await fabric.replay(from_seq=5)
-        fabric.eventloom.replay.assert_called_once_with(from_seq=5)
+        fabric.session_manager.replay.assert_called_once_with("default", from_seq=5)
+        assert result is mock_result
+
+    async def test_replay_with_session_id(self, fabric: MemoryFabric) -> None:
+        """replay() should forward session_id to SessionManager."""
+        mock_result = MagicMock(spec=ReplayResult)
+        fabric.session_manager.replay.return_value = mock_result
+        result = await fabric.replay(from_seq=1, session_id="agent-1")
+        fabric.session_manager.replay.assert_called_once_with("agent-1", from_seq=1)
         assert result is mock_result
 
 
@@ -197,9 +222,16 @@ class TestInvalidate:
 class TestHandoff:
     """Tests for handoff summary generation."""
 
-    async def test_handoff_delegates_to_eventlog(self, fabric: MemoryFabric) -> None:
-        """handoff_summary() should delegate to EventLog.handoff_summary()."""
-        fabric.eventloom.handoff_summary.return_value = {"event_count": 42}
+    async def test_handoff_delegates_to_session_manager(self, fabric: MemoryFabric) -> None:
+        """handoff_summary() should delegate to SessionManager.handoff_summary()."""
+        fabric.session_manager.handoff_summary.return_value = {"event_count": 42}
         summary = await fabric.handoff_summary()
-        fabric.eventloom.handoff_summary.assert_called_once()
+        fabric.session_manager.handoff_summary.assert_called_once_with("default")
         assert summary["event_count"] == 42
+
+    async def test_handoff_with_session_id(self, fabric: MemoryFabric) -> None:
+        """handoff_summary() should forward session_id to SessionManager."""
+        fabric.session_manager.handoff_summary.return_value = {"event_count": 7}
+        summary = await fabric.handoff_summary(session_id="agent-2")
+        fabric.session_manager.handoff_summary.assert_called_once_with("agent-2")
+        assert summary["event_count"] == 7

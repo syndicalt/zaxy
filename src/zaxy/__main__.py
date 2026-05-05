@@ -33,8 +33,10 @@ def serve(
     neo4j_uri: str | None = typer.Option(None, help="Neo4j Bolt URI"),
     neo4j_user: str | None = typer.Option(None, help="Neo4j username"),
     neo4j_password: str | None = typer.Option(None, help="Neo4j password"),
+    transport: str = typer.Option("stdio", help="Transport: stdio or sse"),
+    port: int = typer.Option(8080, help="Port for SSE transport"),
 ) -> None:
-    """Start the MCP stdio server."""
+    """Start the MCP server (stdio or sse)."""
     import asyncio
 
     from zaxy import mcp_server
@@ -47,7 +49,10 @@ def serve(
         neo4j_password=neo4j_password,
     )
 
-    asyncio.run(mcp_main())
+    if transport == "sse":
+        asyncio.run(mcp_server.main_sse(port=port))
+    else:
+        asyncio.run(mcp_main())
 
 
 @app.command()
