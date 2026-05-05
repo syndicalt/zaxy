@@ -8,17 +8,18 @@ bi-temporal memory system built on Eventloom, Neo4j, and Pathlight.
 ## Quick Start
 
 ```bash
-# 1. Start infrastructure
-docker compose up -d neo4j
+# 1. Setup (generates .env and directories)
+./scripts/setup.sh
 
-# 2. Install
-pip install -e ".[dev]"
+# 2. Start everything (Neo4j + Zaxy MCP server)
+docker compose up -d
 
-# 3. Run tests
-pytest
+# 3. Verify
+zaxy status
+pytest -m integration
 
-# 4. Start MCP server
-python -m zaxy serve
+# 4. Test drive (no agent needed)
+python scripts/test_drive.py
 ```
 
 ## Architecture

@@ -200,13 +200,20 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] LangGraph adapter example
 - [x] CI/CD (GitHub Actions)
 - [x] Operational runbooks
+- [x] Configuration management (pydantic-settings, env vars)
+- [x] Docker containerization (Dockerfile + compose)
+- [x] Structured logging (console + JSON)
+- [x] Graceful shutdown (SIGTERM/SIGINT handling)
+- [ ] Production secrets management (Docker secrets / vault)
+- [ ] TLS for Neo4j
+- [ ] Multi-agent session sharding
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Unit tests | 123 passed |
-| Coverage | 97.85% |
+| Unit tests | 124 passed |
+| Coverage | 96.26% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
