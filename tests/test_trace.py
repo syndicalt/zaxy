@@ -161,6 +161,9 @@ class TestTraceHelpers:
 
             await t.trace_query("What is X?", result_count=3, duration_ms=42.0)
             mock_span.end.assert_awaited_once()
+            metadata = mock_trace.span.call_args.kwargs["input"]
+            assert metadata["query_hash"]
+            assert "What is X?" not in str(metadata)
             output = mock_span.end.await_args.kwargs["output"]
             assert output["result_count"] == 3
 

@@ -6,12 +6,13 @@ In Docker, values are injected via compose environment or Docker secrets.
 
 from __future__ import annotations
 
-import secrets
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from zaxy.security import eventlog_path
 
 
 class Settings(BaseSettings):
@@ -84,6 +85,10 @@ class Settings(BaseSettings):
         default=None,
         description="Pathlight project identifier",
     )
+    trace_raw_queries: bool = Field(
+        default=False,
+        description="Emit raw query text to Pathlight traces (off by default)",
+    )
 
     # ------------------------------------------------------------------
     # Server
@@ -91,6 +96,14 @@ class Settings(BaseSettings):
     server_name: str = Field(
         default="zaxy-memory",
         description="MCP server name",
+    )
+    zaxy_env: str = Field(
+        default="development",
+        description="Runtime environment: development, test, or production",
+    )
+    mcp_admin_token: str | None = Field(
+        default=None,
+        description="Optional admin token required for replay/invalidate tools",
     )
 
     # ------------------------------------------------------------------
@@ -113,6 +126,16 @@ class Settings(BaseSettings):
         description="Default result limit for queries",
     )
 
+    @model_validator(mode="after")
+    def _validate_production_security(self) -> "Settings":
+        """Reject known-insecure production defaults."""
+        if self.zaxy_env.lower() == "production":
+            if self.neo4j_password == "testpassword":
+                raise ValueError("NEO4J_PASSWORD must be overridden in production")
+            if self.neo4j_uri.startswith("bolt://"):
+                raise ValueError("NEO4J_URI must use TLS in production")
+        return self
+
     # ------------------------------------------------------------------
     # Derived paths
     # ------------------------------------------------------------------
@@ -124,7 +147,7 @@ class Settings(BaseSettings):
     def eventloom_log(self, thread: str | None = None) -> Path:
         """Return the JSONL path for a given thread."""
         name = thread or self.eventloom_thread
-        return self.eventloom_dir / f"{name}.jsonl"
+        return eventlog_path(self.eventloom_dir, name)
 
 
 @lru_cache

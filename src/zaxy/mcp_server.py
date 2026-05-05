@@ -28,6 +28,14 @@ from zaxy.extract import extract
 from zaxy.graph import GraphStore
 from zaxy.log import get_logger, setup_logging
 from zaxy.query import QueryRouter
+from zaxy.security import (
+    MAX_REPLAY_EVENTS,
+    validate_from_seq,
+    validate_limit,
+    validate_payload,
+    validate_query,
+    validate_session_id,
+)
 from zaxy.session import SessionManager
 from zaxy.trace import MemoryTracer
 
@@ -52,6 +60,7 @@ TOOLS = [
                 "thread": {"type": "string", "description": "Logical thread / session ID (legacy, use session_id)"},
                 "session_id": {"type": "string", "description": "Session ID for multi-agent sharding"},
             },
+            "additionalProperties": False,
         },
     ),
     Tool(
@@ -65,6 +74,7 @@ TOOLS = [
                 "temporal_filter": {"type": "string", "description": "ISO-8601 point-in-time filter"},
                 "limit": {"type": "integer", "description": "Max results", "default": 10},
             },
+            "additionalProperties": False,
         },
     ),
     Tool(
@@ -76,7 +86,9 @@ TOOLS = [
             "properties": {
                 "session_id": {"type": "string", "description": "Session / thread ID"},
                 "from_seq": {"type": "integer", "description": "Start sequence", "default": 1},
+                "admin_token": {"type": "string", "description": "Admin token if configured"},
             },
+            "additionalProperties": False,
         },
     ),
     Tool(
@@ -89,7 +101,9 @@ TOOLS = [
                 "entity_name": {"type": "string"},
                 "entity_type": {"type": "string"},
                 "invalid_at": {"type": "string", "description": "ISO-8601 timestamp"},
+                "admin_token": {"type": "string", "description": "Admin token if configured"},
             },
+            "additionalProperties": False,
         },
     ),
 ]
@@ -117,6 +131,7 @@ class ZaxyMCPServer:
         neo4j_password: str | None = None,
     ) -> None:
         settings = get_settings()
+        self._admin_token = settings.mcp_admin_token
         self.session_manager = SessionManager(base_path=eventloom_path or settings.eventloom_path)
         self.graph = GraphStore(
             neo4j_uri or settings.neo4j_uri,
@@ -149,8 +164,10 @@ class ZaxyMCPServer:
         """Handle memory_append tool call."""
         event_type = arguments["event_type"]
         actor = arguments["actor"]
-        payload = arguments.get("payload", {})
-        session_id = arguments.get("session_id") or arguments.get("thread", "default")
+        payload = validate_payload(arguments.get("payload", {}))
+        session_id = validate_session_id(
+            arguments.get("session_id") or arguments.get("thread", "default")
+        )
 
         eventlog = self.session_manager.get(session_id).eventlog
         event = eventlog.append(event_type, actor=actor, payload=payload, thread=session_id)
@@ -164,9 +181,9 @@ class ZaxyMCPServer:
 
     async def handle_memory_query(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle memory_query tool call."""
-        query = arguments["query"]
+        query = validate_query(arguments["query"])
         temporal = arguments.get("temporal_filter")
-        limit = arguments.get("limit", 10)
+        limit = validate_limit(arguments.get("limit"), default=10)
 
         router = QueryRouter(self.graph)
         results = await router.query(query, temporal_point=temporal, limit=limit)
@@ -186,25 +203,34 @@ class ZaxyMCPServer:
 
     async def handle_memory_replay(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle memory_replay tool call."""
-        session_id = arguments["session_id"]
-        from_seq = arguments.get("from_seq", 1)
+        self._require_admin(arguments)
+        session_id = validate_session_id(arguments["session_id"])
+        from_seq = validate_from_seq(arguments.get("from_seq"))
 
         replay = self.session_manager.replay(session_id, from_seq=from_seq)
+        events = replay.events[:MAX_REPLAY_EVENTS]
 
         output = {
             "integrity": replay.integrity.model_dump(),
-            "events": [e.model_dump() for e in replay.events],
+            "events": [e.model_dump() for e in events],
+            "truncated": len(replay.events) > len(events),
         }
         return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
     async def handle_memory_invalidate(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle memory_invalidate tool call."""
+        self._require_admin(arguments)
         name = arguments["entity_name"]
         entity_type = arguments["entity_type"]
         invalid_at = arguments["invalid_at"]
 
         await self.graph.invalidate_entity(name, entity_type, invalid_at)
         return [TextContent(type="text", text=json.dumps({"status": "invalidated"}))]
+
+    def _require_admin(self, arguments: dict[str, Any]) -> None:
+        """Require an admin token for destructive or bulk-read tools when configured."""
+        if self._admin_token and arguments.get("admin_token") != self._admin_token:
+            raise PermissionError("admin_token is required for this tool")
 
 
 # ------------------------------------------------------------------

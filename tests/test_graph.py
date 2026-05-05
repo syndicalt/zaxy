@@ -67,6 +67,26 @@ class TestConnection:
         await gs.connect()
         mock_factory.assert_called_once_with("bolt://x", auth=("u", "p"))
 
+    @patch("zaxy.graph.AsyncGraphDatabase.driver")
+    async def test_connect_uses_trust_all_object(self, mock_factory: MagicMock) -> None:
+        """trust_all should pass Neo4j's trust object, not a bare bool."""
+        from neo4j import TrustAll
+
+        gs = GraphStore("bolt+s://x", "u", "p", trust_all=True)
+        await gs.connect()
+        certs = mock_factory.call_args.kwargs["trusted_certificates"]
+        assert isinstance(certs, TrustAll)
+
+    @patch("zaxy.graph.AsyncGraphDatabase.driver")
+    async def test_connect_uses_custom_ca_object(self, mock_factory: MagicMock) -> None:
+        """ca_cert should pass Neo4j's custom CA trust object."""
+        from neo4j import TrustCustomCAs
+
+        gs = GraphStore("bolt+s://x", "u", "p", ca_cert="/tmp/ca.pem")
+        await gs.connect()
+        certs = mock_factory.call_args.kwargs["trusted_certificates"]
+        assert isinstance(certs, TrustCustomCAs)
+
     async def test_close_closes_driver(self, mock_driver: AsyncMock) -> None:
         """close() should close the driver and clear the reference."""
         gs = GraphStore("bolt://x", "u", "p")
@@ -256,6 +276,11 @@ class TestRetrieval:
         await store.search_traversal("Alice", temporal_point="2024-03-01T00:00:00Z")
         call = store._driver.execute_query.await_args
         assert "datetime($t)" in call.args[0]
+
+    async def test_search_traversal_rejects_invalid_depth(self, store: GraphStore) -> None:
+        """Traversal depth must be bounded before being interpolated into Cypher."""
+        with pytest.raises(ValueError, match="depth"):
+            await store.search_traversal("Alice", depth=1000)
 
 
 # ------------------------------------------------------------------

@@ -113,6 +113,17 @@ class TestMemoryAppend:
 
         server.session_manager.get.assert_called_once_with("legacy-thread")
 
+    async def test_rejects_large_payload(self, server: ZaxyMCPServer) -> None:
+        """Oversized payloads should be rejected before writing to Eventloom."""
+        with pytest.raises(ValueError, match="payload"):
+            await server.handle_memory_append({
+                "event_type": "x",
+                "actor": "y",
+                "payload": {"blob": "x" * (1024 * 1024 + 1)},
+            })
+
+        server.session_manager.get.assert_not_called()
+
 
 class TestMemoryQuery:
     """Tests for memory_query handler."""
@@ -157,6 +168,16 @@ class TestMemoryQuery:
             call = mock_router.query.await_args
             assert call.kwargs["temporal_point"] == "2024-03-01T00:00:00Z"
 
+    async def test_rejects_invalid_limit(self, server: ZaxyMCPServer) -> None:
+        """Query limits should be bounded to prevent expensive fan-out."""
+        with pytest.raises(ValueError, match="limit"):
+            await server.handle_memory_query({"query": "x", "limit": 100000})
+
+    async def test_rejects_long_query(self, server: ZaxyMCPServer) -> None:
+        """Very large queries should be rejected before database work."""
+        with pytest.raises(ValueError, match="query"):
+            await server.handle_memory_query({"query": "x" * 4097})
+
 
 class TestMemoryReplay:
     """Tests for memory_replay handler."""
@@ -185,6 +206,13 @@ class TestMemoryReplay:
 
         await server.handle_memory_replay({"session_id": "s1"})
         server.session_manager.replay.assert_called_once_with("s1", from_seq=1)
+
+    async def test_rejects_invalid_from_seq(self, server: ZaxyMCPServer) -> None:
+        """Replay from_seq should be positive."""
+        with pytest.raises(ValueError, match="from_seq"):
+            await server.handle_memory_replay({"session_id": "s1", "from_seq": 0})
+
+        server.session_manager.replay.assert_not_called()
 
 
 class TestMemoryInvalidate:

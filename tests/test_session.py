@@ -77,6 +77,13 @@ class TestSessionManagerGet:
         expected = Path(tmp_base) / "my-session.jsonl"
         assert Path(session.eventlog.path) == expected
 
+    @pytest.mark.parametrize("session_id", ["../escape", "nested/path", "", "x" * 129])
+    def test_rejects_unsafe_session_ids(self, tmp_base: str, session_id: str) -> None:
+        """Session IDs must not escape the configured Eventloom base path."""
+        mgr = SessionManager(base_path=tmp_base)
+        with pytest.raises(ValueError, match="Invalid session_id"):
+            mgr.get(session_id)
+
 
 class TestSessionManagerListSessions:
     def test_empty_initially(self, tmp_base: str) -> None:

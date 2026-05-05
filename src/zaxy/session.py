@@ -12,6 +12,7 @@ from typing import Any
 
 from zaxy.config import get_settings
 from zaxy.event import EventLog
+from zaxy.security import eventlog_path, validate_session_id
 
 
 @dataclass(frozen=True)
@@ -43,13 +44,14 @@ class SessionManager:
 
     def get(self, session_id: str) -> Session:
         """Get or create a session by ID."""
-        if session_id not in self._sessions:
-            log_path = self._base / f"{session_id}.jsonl"
+        safe_id = validate_session_id(session_id)
+        if safe_id not in self._sessions:
+            log_path = eventlog_path(self._base, safe_id)
             self._sessions[session_id] = Session(
-                session_id=session_id,
+                session_id=safe_id,
                 eventlog=EventLog(str(log_path)),
             )
-        return self._sessions[session_id]
+        return self._sessions[safe_id]
 
     def list_sessions(self) -> list[str]:
         """Return all active session IDs."""
