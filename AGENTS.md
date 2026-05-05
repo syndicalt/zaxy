@@ -199,14 +199,14 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] CLI entrypoint (`zaxy serve`, `zaxy replay`, `zaxy compact`)
 - [x] LangGraph adapter example
 - [x] CI/CD (GitHub Actions)
-- [ ] Operational runbooks
+- [x] Operational runbooks
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Unit tests | 115 passed |
-| Coverage | 94% |
+| Unit tests | 123 passed |
+| Coverage | 97.85% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
