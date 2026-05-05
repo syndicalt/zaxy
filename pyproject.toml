@@ -20,6 +20,7 @@ dependencies = [
     "graphiti-core>=0.1.0",
     "neo4j>=5.20.0",
     "pydantic>=2.7.0",
+    "pydantic-settings>=2.0.0",
     "mcp>=1.0.0",
     "pathlight>=0.1.0",
     "typer>=0.12.0",

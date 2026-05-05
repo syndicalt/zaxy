@@ -23,30 +23,29 @@ import typer
 from zaxy.event import EventLog
 from zaxy.graph import GraphStore
 from zaxy.mcp_server import main as mcp_main
-from zaxy.trace import MemoryTracer
 
 app = typer.Typer(help="Zaxy: Event-sourced temporal knowledge graph fabric")
 
 
 @app.command()
 def serve(
-    eventloom_path: str = typer.Option(".eventloom", help="Directory for event logs"),
-    neo4j_uri: str = typer.Option("bolt://localhost:7687", help="Neo4j Bolt URI"),
-    neo4j_user: str = typer.Option("neo4j", help="Neo4j username"),
-    neo4j_password: str = typer.Option("testpassword", help="Neo4j password"),
+    eventloom_path: str | None = typer.Option(None, help="Directory for event logs"),
+    neo4j_uri: str | None = typer.Option(None, help="Neo4j Bolt URI"),
+    neo4j_user: str | None = typer.Option(None, help="Neo4j username"),
+    neo4j_password: str | None = typer.Option(None, help="Neo4j password"),
 ) -> None:
     """Start the MCP stdio server."""
     import asyncio
 
-    # Patch server config before starting
     from zaxy import mcp_server
 
-    mcp_server.ZaxyMCPServer.__init__ = lambda self: None  # type: ignore[method-assign, assignment, misc]
-    obj = mcp_server.ZaxyMCPServer.__new__(mcp_server.ZaxyMCPServer)
-    obj.eventloom_path = eventloom_path
-    obj.graph = GraphStore(neo4j_uri, neo4j_user, neo4j_password)
-    obj.tracer = MemoryTracer()
-    mcp_server.server = obj  # type: ignore[attr-defined]
+    # Configure the module-level server instance from CLI overrides
+    mcp_server.server = mcp_server.ZaxyMCPServer(
+        eventloom_path=eventloom_path,
+        neo4j_uri=neo4j_uri,
+        neo4j_user=neo4j_user,
+        neo4j_password=neo4j_password,
+    )
 
     asyncio.run(mcp_main())
 
@@ -117,25 +116,33 @@ def compact(
 
 @app.command()
 def status(
-    neo4j_uri: str = typer.Option("bolt://localhost:7687", help="Neo4j Bolt URI"),
-    neo4j_user: str = typer.Option("neo4j", help="Neo4j username"),
-    neo4j_password: str = typer.Option("testpassword", help="Neo4j password"),
-    pathlight_url: str = typer.Option("http://localhost:4100", help="Pathlight collector URL"),
+    neo4j_uri: str | None = typer.Option(None, help="Neo4j Bolt URI"),
+    neo4j_user: str | None = typer.Option(None, help="Neo4j username"),
+    neo4j_password: str | None = typer.Option(None, help="Neo4j password"),
+    pathlight_url: str | None = typer.Option(None, help="Pathlight collector URL"),
 ) -> None:
     """Check connectivity to external services."""
     import asyncio
 
+    from zaxy.config import get_settings
+
+    settings = get_settings()
+
     async def _check() -> None:
         ok = True
+        _uri = neo4j_uri or settings.neo4j_uri
+        _user = neo4j_user or settings.neo4j_user
+        _password = neo4j_password or settings.neo4j_password
+        _pathlight = pathlight_url or settings.pathlight_url
 
         # Neo4j
         try:
-            gs = GraphStore(neo4j_uri, neo4j_user, neo4j_password)
+            gs = GraphStore(_uri, _user, _password)
             await gs.connect()
             assert gs._driver is not None
             await gs._driver.execute_query("RETURN 1 AS n")
             await gs.close()
-            typer.echo(f"Neo4j:     OK ({neo4j_uri})")
+            typer.echo(f"Neo4j:     OK ({_uri})")
         except Exception as exc:
             typer.echo(f"Neo4j:     FAIL ({exc})")
             ok = False
@@ -145,9 +152,9 @@ def status(
             import httpx
 
             async with httpx.AsyncClient() as client:
-                resp = await client.get(f"{pathlight_url}/health")
+                resp = await client.get(f"{_pathlight}/health")
                 if resp.status_code == 200:
-                    typer.echo(f"Pathlight: OK ({pathlight_url})")
+                    typer.echo(f"Pathlight: OK ({_pathlight})")
                 else:
                     typer.echo(f"Pathlight: FAIL (HTTP {resp.status_code})")
                     ok = False

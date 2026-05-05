@@ -12,16 +12,20 @@ Tools exposed:
 
 from __future__ import annotations
 
+import asyncio
 import json
+import sys
 from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
+from zaxy.config import get_settings
 from zaxy.event import EventLog
 from zaxy.extract import extract
 from zaxy.graph import GraphStore
+from zaxy.log import get_logger, setup_logging
 from zaxy.query import QueryRouter
 from zaxy.trace import MemoryTracer
 
@@ -104,14 +108,22 @@ class ZaxyMCPServer:
 
     def __init__(
         self,
-        eventloom_path: str = ".eventloom",
-        neo4j_uri: str = "bolt://localhost:7687",
-        neo4j_user: str = "neo4j",
-        neo4j_password: str = "testpassword",
+        eventloom_path: str | None = None,
+        neo4j_uri: str | None = None,
+        neo4j_user: str | None = None,
+        neo4j_password: str | None = None,
     ) -> None:
-        self.eventloom_path = eventloom_path
-        self.graph = GraphStore(neo4j_uri, neo4j_user, neo4j_password)
-        self.tracer = MemoryTracer()
+        settings = get_settings()
+        self.eventloom_path = eventloom_path or settings.eventloom_path
+        self.graph = GraphStore(
+            neo4j_uri or settings.neo4j_uri,
+            neo4j_user or settings.neo4j_user,
+            neo4j_password or settings.neo4j_password,
+        )
+        self.tracer = MemoryTracer(
+            base_url=settings.pathlight_url,
+            project_id=settings.pathlight_project_id,
+        )
 
     async def setup(self) -> None:
         """Connect to Neo4j and initialize schema."""
@@ -198,9 +210,32 @@ class ZaxyMCPServer:
 # ------------------------------------------------------------------
 
 async def main() -> None:
-    """Run the MCP stdio server."""
-    server = ZaxyMCPServer()
+    """Run the MCP stdio server with graceful shutdown."""
+    setup_logging()
+    logger = get_logger("mcp_server")
+
+    # Allow external configuration (e.g. from CLI) via module-level override
+    server: ZaxyMCPServer
+    if hasattr(sys.modules[__name__], "server"):
+        server = sys.modules[__name__].server  # type: ignore[attr-defined]
+    else:
+        server = ZaxyMCPServer()
+
     await server.setup()
+    logger.info("zaxy_mcp_server_ready server=%s", get_settings().server_name)
+
+    # Graceful shutdown on SIGTERM/SIGINT
+    import signal
+
+    shutdown_event: asyncio.Event = asyncio.Event()
+
+    def _on_signal(signum: int, _frame: Any) -> None:
+        sig_name = signal.Signals(signum).name
+        logger.info("zaxy_mcp_server_signal_received signal=%s", sig_name)
+        shutdown_event.set()
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(sig, _on_signal)
 
     @app.list_tools()  # type: ignore[untyped-decorator, no-untyped-call]
     async def list_tools() -> list[Tool]:
@@ -220,9 +255,19 @@ async def main() -> None:
 
     try:
         async with stdio_server() as (read_stream, write_stream):
-            await app.run(read_stream, write_stream, app.create_initialization_options())
+            run_task = asyncio.create_task(
+                app.run(read_stream, write_stream, app.create_initialization_options())
+            )
+            shutdown_task = asyncio.create_task(shutdown_event.wait())
+            done, pending = await asyncio.wait(
+                [run_task, shutdown_task], return_when=asyncio.FIRST_COMPLETED
+            )
+            for task in pending:
+                task.cancel()
     finally:
+        logger.info("zaxy_mcp_server_shutting_down")
         await server.teardown()
+        logger.info("zaxy_mcp_server_stopped")
 
 
 if __name__ == "__main__":

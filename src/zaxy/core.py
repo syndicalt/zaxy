@@ -21,6 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from zaxy.config import get_settings
 from zaxy.event import EventLog, ReplayResult
 from zaxy.extract import extract
 from zaxy.graph import GraphStore
@@ -49,31 +50,33 @@ class MemoryFabric:
 
     def __init__(
         self,
-        eventloom_path: str = ".eventloom/memory.jsonl",
-        neo4j_uri: str = "bolt://localhost:7687",
-        neo4j_user: str = "neo4j",
-        neo4j_password: str = "testpassword",
+        eventloom_path: str | None = None,
+        neo4j_uri: str | None = None,
+        neo4j_user: str | None = None,
+        neo4j_password: str | None = None,
         pathlight_url: str | None = None,
         pathlight_project_id: str | None = None,
         tracer_disabled: bool = False,
     ) -> None:
         """Initialize fabric with configuration.
 
-        Args:
-            eventloom_path: Path to the Eventloom JSONL file.
-            neo4j_uri: Neo4j Bolt URI.
-            neo4j_user: Neo4j username.
-            neo4j_password: Neo4j password.
-            pathlight_url: Pathlight collector URL (default: env or localhost).
-            pathlight_project_id: Optional project ID for Pathlight.
-            tracer_disabled: If True, disable Pathlight tracing entirely.
+        All arguments default to environment variables (via Settings).
+        Explicit values override env vars for framework integrations.
         """
-        self.eventloom = EventLog(eventloom_path)
-        self.graph = GraphStore(neo4j_uri, neo4j_user, neo4j_password)
-        self.query_router = QueryRouter(self.graph)
+        settings = get_settings()
+
+        self.eventloom = EventLog(eventloom_path or settings.eventloom_log())
+        self.graph = GraphStore(
+            neo4j_uri or settings.neo4j_uri,
+            neo4j_user or settings.neo4j_user,
+            neo4j_password or settings.neo4j_password,
+        )
+        self.query_router = QueryRouter(
+            self.graph, default_limit=settings.query_default_limit
+        )
         self.tracer = MemoryTracer(
-            base_url=pathlight_url,
-            project_id=pathlight_project_id,
+            base_url=pathlight_url or settings.pathlight_url,
+            project_id=pathlight_project_id or settings.pathlight_project_id,
             disabled=tracer_disabled,
         )
         self._connected = False
