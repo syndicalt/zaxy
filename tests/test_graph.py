@@ -344,3 +344,53 @@ class TestIntegration:
         # After invalidation: should not find
         found_after = await real_store.search_exact("OldFact", temporal_point="2024-07-01T00:00:00Z")
         assert len(found_after) == 0
+
+    async def test_full_pipeline_event_to_query(self, real_store: GraphStore) -> None:
+        """End-to-end: event -> extract -> upsert -> query -> context chunk."""
+        from zaxy.query import QueryRouter
+
+        # 1. Simulate an agent session with multiple events
+        events = [
+            {
+                "event_type": "goal.created",
+                "actor": "user",
+                "payload": {"title": "Ship MVP", "description": "Get product to market"},
+            },
+            {
+                "event_type": "task.proposed",
+                "actor": "agent",
+                "payload": {"task_id": "t1", "summary": "Design landing page"},
+            },
+            {
+                "event_type": "task.claimed",
+                "actor": "user",
+                "payload": {"task_id": "t1"},
+            },
+        ]
+
+        # 2. Extract and upsert each event
+        from datetime import datetime, timezone
+        from zaxy.event import EventLog
+        from zaxy.extract import extract
+        log = EventLog("/tmp/zaxy_pipeline_test.jsonl")
+        ts = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        for ev in events:
+            event = log.append(
+                ev["event_type"], ev["actor"], ev["payload"],
+                timestamp=ts,
+            )
+            result = extract(event)
+            await real_store.upsert_extraction(result)
+
+        # 3. Query the graph via the router
+        router = QueryRouter(store=real_store, default_limit=10)
+        chunks = await router.query("Ship MVP")
+
+        # 4. Verify context chunks contain the goal
+        assert len(chunks) > 0
+        assert any("Ship MVP" in c.content for c in chunks)
+
+        # 5. Verify temporal filtering works end-to-end
+        future_chunks = await router.query("Ship MVP", temporal_point="2025-01-01T00:00:00Z")
+        # Should still find it (not invalidated, and 2025 > 2024)
+        assert len(future_chunks) > 0

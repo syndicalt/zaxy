@@ -228,21 +228,19 @@ class GraphStore:
         assert self._driver is not None
 
         rel_filter = "{relation_type: $relation_type}" if relation_type else ""
-        params: dict[str, Any] = {"start_name": start_name, "depth": depth}
+        params: dict[str, Any] = {"start_name": start_name}
 
         if relation_type:
             params["relation_type"] = relation_type
 
-        temporal_clause = ""
+        temporal_checks = ""
         if temporal_point:
-            temporal_clause = (
-                "AND (r.valid_from <= datetime($t) AND (r.valid_to IS NULL OR r.valid_to > datetime($t)))"
-            )
+            temporal_checks = " AND rel.valid_from <= datetime($t) AND (rel.valid_to IS NULL OR rel.valid_to > datetime($t))"
             params["t"] = temporal_point
 
         cypher = f"""
-        MATCH path = (start:Entity {{name: $start_name}})-[r:RELATES{rel_filter}*1..$depth]->(neighbor:Entity)
-        WHERE ALL(rel IN relationships(path) WHERE rel.valid_to IS NULL {temporal_clause.replace('AND ', '')})
+        MATCH path = (start:Entity {{name: $start_name}})-[r:RELATES{rel_filter}*1..{depth}]->(neighbor:Entity)
+        WHERE ALL(rel IN relationships(path) WHERE rel.valid_to IS NULL{temporal_checks})
         RETURN DISTINCT neighbor
         """
 
