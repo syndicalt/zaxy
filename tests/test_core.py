@@ -126,7 +126,7 @@ class TestQuery:
             )
         ]
         results = await fabric.query("Alice")
-        fabric.query_router.query.assert_awaited_once_with("Alice", temporal_point=None, limit=10)
+        fabric.query_router.query.assert_awaited_once_with("Alice", temporal_point=None, limit=10, embedding=None)
         assert len(results) == 1
         assert isinstance(results[0], Context)
 
@@ -135,7 +135,7 @@ class TestQuery:
         fabric.query_router.query.return_value = []
         await fabric.query("x", temporal_point="2024-03-01T00:00:00Z", limit=5)
         fabric.query_router.query.assert_awaited_once_with(
-            "x", temporal_point="2024-03-01T00:00:00Z", limit=5
+            "x", temporal_point="2024-03-01T00:00:00Z", limit=5, embedding=None
         )
 
     async def test_traces_query(self, fabric: MemoryFabric) -> None:

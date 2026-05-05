@@ -42,6 +42,7 @@ class QueryRouter:
         self.default_limit = default_limit
         self.fusion_weights = fusion_weights or {
             "exact": 1.0,
+            "vector": 0.95,
             "traversal": 0.9,
             "keyword": 0.8,
         }
@@ -51,14 +52,16 @@ class QueryRouter:
         query: str,
         temporal_point: str | None = None,
         limit: int | None = None,
+        embedding: list[float] | None = None,
     ) -> list[ContextChunk]:
         """Run a hybrid query and return ranked context chunks.
 
         Strategy:
         1. Exact match (if the query looks like an entity name).
-        2. Keyword/BM25 search.
-        3. Graph traversal from top keyword hits.
-        4. Fuse, deduplicate, sort by score, truncate to limit.
+        2. Vector similarity search (if embedding provided).
+        3. Keyword/BM25 search.
+        4. Graph traversal from top keyword hits.
+        5. Fuse, deduplicate, sort by score, truncate to limit.
         """
         lim = limit or self.default_limit
         results: list[SearchResult] = []
@@ -74,12 +77,25 @@ class QueryRouter:
                 )
             )
 
-        # 2. Keyword search
+        # 2. Vector search (if embedding provided)
+        vector_hits: list[SearchResult] = []
+        if embedding:
+            vector_hits = await self.store.search_vector(
+                embedding, limit=lim, temporal_point=temporal_point
+            )
+            for hit in vector_hits:
+                hit = SearchResult(
+                    entity=hit.entity,
+                    score=hit.score * self.fusion_weights["vector"],
+                    source="vector",
+                )
+                results.append(hit)
+
+        # 3. Keyword search
         keyword_hits = await self.store.search_keyword(
             query, limit=lim, temporal_point=temporal_point
         )
         for hit in keyword_hits:
-            # Re-weight
             hit = SearchResult(
                 entity=hit.entity,
                 score=hit.score * self.fusion_weights["keyword"],
@@ -87,9 +103,10 @@ class QueryRouter:
             )
             results.append(hit)
 
-        # 3. Traversal from top keyword hits (breadth expansion)
+        # 4. Traversal from top keyword + vector hits (breadth expansion)
         seen = {r.entity.name for r in results}
-        for hit in keyword_hits[:3]:
+        traversal_seeds = (vector_hits + keyword_hits)[:3]
+        for hit in traversal_seeds:
             neighbors = await self.store.search_traversal(
                 hit.entity.name,
                 depth=2,
@@ -107,14 +124,14 @@ class QueryRouter:
                 )
                 seen.add(neighbor.name)
 
-        # 4. Deduplicate by (name, type), keep highest score
+        # 5. Deduplicate by (name, type), keep highest score
         best: dict[tuple[str, str], SearchResult] = {}
         for r in results:
             key = (r.entity.name, r.entity.entity_type)
             if key not in best or r.score > best[key].score:
                 best[key] = r
 
-        # 5. Sort and truncate
+        # 6. Sort and truncate
         ranked = sorted(best.values(), key=lambda x: x.score, reverse=True)[:lim]
 
         return [_to_chunk(r) for r in ranked]

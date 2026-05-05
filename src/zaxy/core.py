@@ -25,6 +25,7 @@ from zaxy.config import get_settings
 from zaxy.event import EventLog, ReplayResult
 from zaxy.extract import extract
 from zaxy.graph import GraphStore
+from zaxy.metrics import get_metrics
 from zaxy.query import QueryRouter
 from zaxy.trace import MemoryTracer
 
@@ -70,6 +71,8 @@ class MemoryFabric:
             neo4j_uri or settings.neo4j_uri,
             neo4j_user or settings.neo4j_user,
             neo4j_password or settings.neo4j_password,
+            ca_cert=settings.neo4j_ca_cert,
+            trust_all=settings.neo4j_trust_all,
         )
         self.query_router = QueryRouter(
             self.graph, default_limit=settings.query_default_limit
@@ -125,16 +128,23 @@ class MemoryFabric:
         await self.graph.upsert_extraction(extraction)
         await self.tracer.trace_append(event_type, actor, event.seq)
 
+        # Metrics
+        metrics = get_metrics()
+        metrics.record_event_append(event_type)
+        for ent in extraction.entities:
+            metrics.record_upsert(ent.entity_type)
+
     async def query(
         self,
         query: str,
         temporal_point: str | None = None,
         limit: int = 10,
+        embedding: list[float] | None = None,
     ) -> list[Context]:
         """Query the temporal knowledge graph for relevant context.
 
         This is the primary read path. It runs hybrid retrieval
-        (exact + keyword + traversal) and returns ranked context chunks.
+        (exact + vector + keyword + traversal) and returns ranked context chunks.
         """
         if not self._connected:
             await self.connect()
@@ -146,10 +156,14 @@ class MemoryFabric:
             query,
             temporal_point=temporal_point,
             limit=limit,
+            embedding=embedding,
         )
         duration_ms = (time.perf_counter() - start) * 1000
 
         await self.tracer.trace_query(query, len(chunks), duration_ms, temporal_point)
+
+        # Metrics
+        get_metrics().record_query(duration_ms / 1000.0)
 
         return [
             Context(

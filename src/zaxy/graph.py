@@ -59,14 +59,30 @@ class GraphStore:
         password: Neo4j password.
     """
 
-    def __init__(self, uri: str, user: str, password: str) -> None:
+    def __init__(
+        self,
+        uri: str,
+        user: str,
+        password: str,
+        ca_cert: str | None = None,
+        trust_all: bool = False,
+    ) -> None:
         self._uri = uri
         self._auth = (user, password)
+        self._ca_cert = ca_cert
+        self._trust_all = trust_all
         self._driver: AsyncDriver | None = None
 
     async def connect(self) -> None:
-        """Initialize the async driver."""
-        self._driver = AsyncGraphDatabase.driver(self._uri, auth=self._auth)
+        """Initialize the async driver with optional TLS."""
+        import ssl
+
+        kwargs: dict[str, Any] = {"auth": self._auth}
+        if self._trust_all:
+            kwargs["trusted_certificates"] = False
+        elif self._ca_cert:
+            kwargs["trusted_certificates"] = self._ca_cert
+        self._driver = AsyncGraphDatabase.driver(self._uri, **kwargs)
 
     async def close(self) -> None:
         """Close the driver."""
@@ -270,6 +286,35 @@ class GraphStore:
         records, _, _ = await self._driver.execute_query(cypher, **params)
         return [
             SearchResult(entity=_record_to_entity(r["node"]), score=r["score"], source="keyword")
+            for r in records
+        ]
+
+    async def search_vector(
+        self,
+        embedding: list[float],
+        limit: int = 10,
+        temporal_point: str | None = None,
+    ) -> list[SearchResult]:
+        """Vector similarity search over entity embeddings."""
+        assert self._driver is not None
+
+        cypher = """
+        CALL db.index.vector.queryNodes('entity_vector', $limit, $embedding)
+        YIELD node, score
+        """
+        params: dict[str, Any] = {"embedding": embedding, "limit": limit}
+
+        if temporal_point:
+            cypher += (
+                " WHERE (node.valid_from <= datetime($t) AND (node.valid_to IS NULL OR node.valid_to > datetime($t)))"
+            )
+            params["t"] = temporal_point
+
+        cypher += " RETURN node, score"
+
+        records, _, _ = await self._driver.execute_query(cypher, **params)
+        return [
+            SearchResult(entity=_record_to_entity(r["node"]), score=r["score"], source="vector")
             for r in records
         ]
 

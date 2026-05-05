@@ -62,6 +62,18 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
+    # TLS / Security
+    # ------------------------------------------------------------------
+    neo4j_ca_cert: str | None = Field(
+        default=None,
+        description="Path to CA certificate for Neo4j TLS (bolt+s://)",
+    )
+    neo4j_trust_all: bool = Field(
+        default=False,
+        description="Trust all certificates (dev only, insecure)",
+    )
+
+    # ------------------------------------------------------------------
     # Pathlight
     # ------------------------------------------------------------------
     pathlight_url: str = Field(

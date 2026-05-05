@@ -119,6 +119,8 @@ class ZaxyMCPServer:
             neo4j_uri or settings.neo4j_uri,
             neo4j_user or settings.neo4j_user,
             neo4j_password or settings.neo4j_password,
+            ca_cert=settings.neo4j_ca_cert,
+            trust_all=settings.neo4j_trust_all,
         )
         self.tracer = MemoryTracer(
             base_url=settings.pathlight_url,
