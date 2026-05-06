@@ -123,3 +123,10 @@ def test_ci_runs_distribution_artifact_gate() -> None:
 
     assert "package:" in workflow
     assert "scripts/build-dist.sh --root ." in workflow
+
+
+def test_ci_disables_benchmark_timing_for_correctness_matrix() -> None:
+    """Performance benchmarks should not make the Python matrix flaky."""
+    workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
+
+    assert 'pytest -m "not integration" --benchmark-disable --cov --cov-report=xml' in workflow

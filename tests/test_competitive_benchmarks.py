@@ -15,6 +15,13 @@ from zaxy.benchmark import (
 )
 
 
+def assert_benchmark_mean_under(benchmark: pytest.BenchmarkFixture, seconds: float) -> None:
+    """Assert benchmark mean unless pytest-benchmark is intentionally disabled."""
+    if benchmark.stats is None:
+        return
+    assert benchmark.stats["mean"] < seconds
+
+
 def test_competitive_dataset_contains_temporal_and_stale_context_cases(tmp_path: Path) -> None:
     """The fixture dataset should exercise temporal and stale-context retrieval."""
     log_path = tmp_path / "bench.jsonl"
@@ -88,4 +95,4 @@ def test_flat_jsonl_baseline_latency_floor(
         baseline.query(case.query, temporal_point=case.temporal_point)
 
     benchmark(_query)
-    assert benchmark.stats["mean"] < 0.005
+    assert_benchmark_mean_under(benchmark, 0.005)

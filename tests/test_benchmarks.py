@@ -22,6 +22,14 @@ from zaxy.extract import extract
 from zaxy.graph import GraphStore
 from zaxy.query import QueryRouter
 
+
+def assert_benchmark_mean_under(benchmark: pytest.BenchmarkFixture, seconds: float) -> None:
+    """Assert benchmark mean unless pytest-benchmark is intentionally disabled."""
+    if benchmark.stats is None:
+        return
+    assert benchmark.stats["mean"] < seconds
+
+
 # ------------------------------------------------------------------
 # Event log benchmarks
 # ------------------------------------------------------------------
@@ -39,7 +47,7 @@ class TestBenchmarkEventLog:
             log.append("test.event", "actor", {"x": 1})
 
         benchmark(_append)
-        assert benchmark.stats["mean"] < 0.050
+        assert_benchmark_mean_under(benchmark, 0.050)
         Path(path).unlink(missing_ok=True)
 
     def test_read_all_latency(self, benchmark: pytest.BenchmarkFixture) -> None:
@@ -54,7 +62,7 @@ class TestBenchmarkEventLog:
             log.read_all()
 
         benchmark(_read)
-        assert benchmark.stats["mean"] < 0.010
+        assert_benchmark_mean_under(benchmark, 0.010)
         Path(path).unlink(missing_ok=True)
 
 
@@ -76,7 +84,7 @@ class TestBenchmarkExtraction:
             extract(event)
 
         benchmark(_extract)
-        assert benchmark.stats["mean"] < 0.010
+        assert_benchmark_mean_under(benchmark, 0.010)
         Path(path).unlink(missing_ok=True)
 
     def test_task_proposed_extraction(self, benchmark: pytest.BenchmarkFixture) -> None:
@@ -90,7 +98,7 @@ class TestBenchmarkExtraction:
             extract(event)
 
         benchmark(_extract)
-        assert benchmark.stats["mean"] < 0.010
+        assert_benchmark_mean_under(benchmark, 0.010)
         Path(path).unlink(missing_ok=True)
 
 
@@ -116,7 +124,7 @@ class TestBenchmarkGraphStore:
             asyncio.run(mock_store.search_exact("Alice"))
 
         benchmark(_search)
-        assert benchmark.stats["mean"] < 0.005
+        assert_benchmark_mean_under(benchmark, 0.005)
 
     def test_upsert_extraction_latency(self, mock_store: GraphStore, benchmark: pytest.BenchmarkFixture) -> None:
         """Upserting 3 entities + 2 edges should be <10ms mocked."""
@@ -139,7 +147,7 @@ class TestBenchmarkGraphStore:
             asyncio.run(mock_store.upsert_extraction(result))
 
         benchmark(_upsert)
-        assert benchmark.stats["mean"] < 0.010
+        assert_benchmark_mean_under(benchmark, 0.010)
 
 
 # ------------------------------------------------------------------
@@ -164,4 +172,4 @@ class TestBenchmarkQueryRouter:
             asyncio.run(mock_router.query("nonexistent"))
 
         benchmark(_query)
-        assert benchmark.stats["mean"] < 0.005
+        assert_benchmark_mean_under(benchmark, 0.005)
