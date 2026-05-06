@@ -136,3 +136,15 @@ def test_release_gate_runs_docs_validation() -> None:
 
     assert 'DOCS_CMD="scripts/validate-docs.sh"' in script
     assert '"${DOCS_CMD}" --root "${ROOT}"' in script
+
+
+def test_github_pages_workflow_publishes_site_directory() -> None:
+    """GitHub Pages should deploy the static public site from `site/`."""
+    workflow = Path(".github/workflows/pages.yml").read_text(encoding="utf-8")
+
+    assert "branches: [master]" in workflow
+    assert "pages: write" in workflow
+    assert "id-token: write" in workflow
+    assert "actions/upload-pages-artifact@v3" in workflow
+    assert "path: site" in workflow
+    assert "actions/deploy-pages@v4" in workflow
