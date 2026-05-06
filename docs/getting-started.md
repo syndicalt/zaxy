@@ -9,6 +9,13 @@ typed events, and query them back.
 Start from the repository root:
 
 ```bash
+pip install zaxy-memory
+zaxy status
+```
+
+For local development from a checkout:
+
+```bash
 pip install -e ".[dev]"
 ./scripts/setup.sh
 docker compose up -d

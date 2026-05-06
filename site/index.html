@@ -145,11 +145,12 @@
         <h2>Run Zaxy locally, then expose memory through MCP.</h2>
       </div>
       <div class="install-grid">
-        <pre><code>pip install -e ".[dev]"
+        <pre><code>pip install zaxy-memory
 ./scripts/setup.sh
 docker compose up -d
 zaxy status</code></pre>
-        <pre><code>zaxy serve
+        <pre><code>pip install -e ".[dev]"
+zaxy serve
 zaxy serve --transport sse --port 8080
 scripts/release-check.sh --root .</code></pre>
       </div>

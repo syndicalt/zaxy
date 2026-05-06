@@ -32,6 +32,11 @@ scripts/release-check.sh --root .
 That gate runs ruff, mypy, pytest with coverage, package artifact validation,
 documentation validation, and deployment validation.
 
+PyPI publishing is handled by the `Publish Python Package` GitHub Actions
+workflow. Publish a GitHub release after the release gate passes; the workflow
+builds artifacts, checks them with Twine, and uploads the `zaxy-memory`
+distribution using the `PYPI_API_TOKEN` repository secret.
+
 Metrics are exposed through the Prometheus collector when enabled. Track append
 counts, query counts, query latency, graph upserts, and invalidations. Sudden
 changes in query latency often mean index health, vector settings, or traversal

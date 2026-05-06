@@ -11,6 +11,13 @@ def test_pyproject_declares_typed_package_and_release_tools() -> None:
     """The wheel should advertise typing and include build/check tooling."""
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
 
+    assert pyproject["project"]["name"] == "zaxy-memory"
+    assert pyproject["project"]["urls"] == {
+        "Homepage": "https://syndicalt.github.io/zaxy/",
+        "Documentation": "https://syndicalt.github.io/zaxy/docs/getting-started.md",
+        "Repository": "https://github.com/syndicalt/zaxy",
+        "Issues": "https://github.com/syndicalt/zaxy/issues",
+    }
     dev_deps = pyproject["project"]["optional-dependencies"]["dev"]
     assert "build>=1.2.0" in dev_deps
     assert "twine>=5.0.0" in dev_deps
@@ -130,3 +137,17 @@ def test_ci_disables_benchmark_timing_for_correctness_matrix() -> None:
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
 
     assert 'pytest -m "not integration" --benchmark-disable --cov --cov-report=xml' in workflow
+
+
+def test_publish_workflow_publishes_release_artifacts_to_pypi() -> None:
+    """Published releases should build artifacts and upload them to PyPI."""
+    workflow = Path(".github/workflows/publish.yml").read_text(encoding="utf-8")
+
+    assert "release:" in workflow
+    assert "types: [published]" in workflow
+    assert "workflow_dispatch:" in workflow
+    assert "python -m build --sdist --wheel" in workflow
+    assert "python -m twine check dist/*" in workflow
+    assert "pypa/gh-action-pypi-publish@release/v1" in workflow
+    assert "password: ${{ secrets.PYPI_API_TOKEN }}" in workflow
+    assert "https://pypi.org/project/zaxy-memory/" in workflow

@@ -1,5 +1,5 @@
 [project]
-name = "zaxy"
+name = "zaxy-memory"
 version = "0.1.0"
 description = "Event-sourced temporal knowledge graph fabric for AI agent memory"
 readme = "README.md"
@@ -15,6 +15,14 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+]
+keywords = [
+    "agent-memory",
+    "event-sourcing",
+    "knowledge-graph",
+    "mcp",
+    "neo4j",
+    "temporal-graph",
 ]
 dependencies = [
     "graphiti-core>=0.1.0",
@@ -45,6 +53,12 @@ dev = [
 
 [project.scripts]
 zaxy = "zaxy.__main__:main"
+
+[project.urls]
+Homepage = "https://syndicalt.github.io/zaxy/"
+Documentation = "https://syndicalt.github.io/zaxy/docs/getting-started.md"
+Repository = "https://github.com/syndicalt/zaxy"
+Issues = "https://github.com/syndicalt/zaxy/issues"
 
 [build-system]
 requires = ["hatchling"]

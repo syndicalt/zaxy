@@ -9,6 +9,10 @@ Pathlight tracing.
 ## Quick Start
 
 ```bash
+# Install the public package. The distribution is zaxy-memory; the import and
+# CLI remain zaxy.
+pip install zaxy-memory
+
 # 1. Setup (generates .env and directories)
 ./scripts/setup.sh
 
@@ -141,6 +145,13 @@ scripts/release-check.sh --root .
 ```
 
 The full suite must stay at or above 90% coverage before a sprint is complete.
+
+## Release Publishing
+
+The PyPI distribution name is `zaxy-memory` because `zaxy` is already occupied
+on PyPI. Published releases build from GitHub Actions and upload to
+<https://pypi.org/project/zaxy-memory/> using the `PYPI_API_TOKEN` repository
+secret. The import package and console command remain `zaxy`.
 
 ## License
 
