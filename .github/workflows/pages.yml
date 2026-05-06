@@ -5,6 +5,8 @@ on:
     branches: [master]
     paths:
       - "site/**"
+      - "docs/**"
+      - "README.md"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -26,8 +28,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      - name: Stage static site
+        run: |
+          rm -rf _site
+          mkdir -p _site
+          cp -R site/. _site/
+          cp -R docs _site/docs
+          cp README.md _site/README.md
+          cp -R site _site/site
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: site
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v4

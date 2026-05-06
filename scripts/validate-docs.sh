@@ -68,6 +68,8 @@ def local_target(source: Path, link: str) -> tuple[Path, str]:
     path_part = unquote(path_part)
     if not path_part:
         return source, anchor
+    if source == site_index and (path_part.startswith("docs/") or path_part == "README.md"):
+        return (root / path_part).resolve(), anchor
     return (source.parent / path_part).resolve(), anchor
 
 
@@ -104,6 +106,10 @@ def check_link(source: Path, link: str) -> None:
 site_index = root / "site" / "index.html"
 if not site_index.exists():
     failures.append("Missing site/index.html")
+else:
+    site_html = site_index.read_text(encoding="utf-8")
+    if "../docs/" in site_html or "../README.md" in site_html:
+        failures.append("site/index.html uses parent-relative links that break under GitHub Pages project URLs")
 
 for path in sorted([*root.glob("docs/**/*.md"), *root.glob("site/**/*.html")]):
     text = path.read_text(encoding="utf-8")

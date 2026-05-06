@@ -73,7 +73,8 @@ def test_public_site_links_to_all_core_docs() -> None:
     parser.feed(html)
 
     for doc in REQUIRED_DOCS:
-        assert f"../{doc}" in parser.links
+        assert doc in parser.links
+    assert "../docs/architecture.md" not in parser.links
 
 
 def test_site_local_links_resolve() -> None:
@@ -89,7 +90,10 @@ def test_site_local_links_resolve() -> None:
             continue
         path_part, _, anchor = href.partition("#")
         if path_part:
-            target = (site_path.parent / path_part).resolve()
+            if path_part.startswith(("docs/", "README.md")):
+                target = Path(path_part).resolve()
+            else:
+                target = (site_path.parent / path_part).resolve()
             assert target.exists(), href
         if anchor:
             assert anchor in anchors or path_part, href
@@ -139,12 +143,15 @@ def test_release_gate_runs_docs_validation() -> None:
 
 
 def test_github_pages_workflow_publishes_site_directory() -> None:
-    """GitHub Pages should deploy the static public site from `site/`."""
+    """GitHub Pages should deploy the static site and docs under the project URL."""
     workflow = Path(".github/workflows/pages.yml").read_text(encoding="utf-8")
 
     assert "branches: [master]" in workflow
     assert "pages: write" in workflow
     assert "id-token: write" in workflow
+    assert "cp -R site/. _site/" in workflow
+    assert "cp -R docs _site/docs" in workflow
+    assert "cp README.md _site/README.md" in workflow
     assert "actions/upload-pages-artifact@v3" in workflow
-    assert "path: site" in workflow
+    assert "path: _site" in workflow
     assert "actions/deploy-pages@v4" in workflow
