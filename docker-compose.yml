@@ -5,8 +5,8 @@ services:
   neo4j:
     image: neo4j:5.26-community
     ports:
-      - "7474:7474"
-      - "7687:7687"
+      - "127.0.0.1:7474:7474"
+      - "127.0.0.1:7687:7687"
     environment:
       NEO4J_AUTH: "${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-testpassword}"
       NEO4J_PLUGINS: '["apoc", "graph-data-science"]'
@@ -26,9 +26,34 @@ services:
   neo4j-test:
     image: neo4j:5.26-community
     ports:
-      - "7688:7687"
+      - "127.0.0.1:7688:7687"
     environment:
       NEO4J_AUTH: "${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-testpassword}"
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:7474"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # ------------------------------------------------------------------
+  # TLS Neo4j (ephemeral, for TLS integration tests)
+  # ------------------------------------------------------------------
+  neo4j-tls:
+    image: neo4j:5.26-community
+    ports:
+      - "127.0.0.1:7689:7687"
+      - "127.0.0.1:7475:7474"
+    environment:
+      NEO4J_AUTH: "${NEO4J_USER:-neo4j}/${NEO4J_PASSWORD:-testpassword}"
+      NEO4J_server_bolt_tls__level: REQUIRED
+      NEO4J_dbms_ssl_policy_bolt_enabled: "true"
+      NEO4J_dbms_ssl_policy_bolt_base__directory: /ssl/bolt
+      NEO4J_dbms_ssl_policy_bolt_client__auth: NONE
+    volumes:
+      - ./.certs/neo4j:/ssl/bolt:ro
     tmpfs:
       - /data
     healthcheck:
@@ -53,10 +78,19 @@ services:
       EVENTLOOM_PATH: /app/.eventloom
       EVENTLOOM_THREAD: "${EVENTLOOM_THREAD:-default}"
       PATHLIGHT_URL: "${PATHLIGHT_URL:-http://pathlight-collector:4100}"
+      PATHLIGHT_ENABLED: "${PATHLIGHT_ENABLED:-false}"
       SERVER_NAME: "${SERVER_NAME:-zaxy-memory}"
+      MCP_REMOTE_AUTH_TOKEN: "${MCP_REMOTE_AUTH_TOKEN:-}"
+      MCP_REMOTE_SESSION_HEADER: "${MCP_REMOTE_SESSION_HEADER:-x-zaxy-session-id}"
       LOG_LEVEL: "${LOG_LEVEL:-INFO}"
       LOG_FORMAT: "${LOG_FORMAT:-console}"
       QUERY_DEFAULT_LIMIT: "${QUERY_DEFAULT_LIMIT:-10}"
+      EMBEDDING_ENABLED: "${EMBEDDING_ENABLED:-true}"
+      EMBEDDING_PROVIDER: "${EMBEDDING_PROVIDER:-hash}"
+      EMBEDDING_DIMENSION: "${EMBEDDING_DIMENSION:-1536}"
+      OPENAI_EMBEDDING_MODEL: "${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}"
+      OPENAI_BASE_URL: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
+      OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
     volumes:
       - eventloom_data:/app/.eventloom
     depends_on:

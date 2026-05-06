@@ -40,12 +40,13 @@ openssl x509 -req -in "${OUTPUT_DIR}/server.csr" -CA "${OUTPUT_DIR}/ca.crt" \
     -days 365 -sha256 -extfile "${OUTPUT_DIR}/server.ext" \
     2>/dev/null
 
-# Combine for Neo4j
-mkdir -p "${OUTPUT_DIR}/neo4j"
-cp "${OUTPUT_DIR}/server.crt" "${OUTPUT_DIR}/neo4j/neo4j.cert"
-cp "${OUTPUT_DIR}/server.key" "${OUTPUT_DIR}/neo4j/neo4j.key"
-cp "${OUTPUT_DIR}/ca.crt" "${OUTPUT_DIR}/neo4j/ca.crt"
-chmod 600 "${OUTPUT_DIR}/neo4j/"*
+# Combine for Neo4j Bolt SSL policy.
+# Neo4j expects private.key, public.crt, trusted/, and revoked/ under the policy base directory.
+mkdir -p "${OUTPUT_DIR}/neo4j/trusted" "${OUTPUT_DIR}/neo4j/revoked"
+cp "${OUTPUT_DIR}/server.key" "${OUTPUT_DIR}/neo4j/private.key"
+cp "${OUTPUT_DIR}/server.crt" "${OUTPUT_DIR}/neo4j/public.crt"
+cp "${OUTPUT_DIR}/ca.crt" "${OUTPUT_DIR}/neo4j/trusted/public.crt"
+chmod 644 "${OUTPUT_DIR}/neo4j/private.key" "${OUTPUT_DIR}/neo4j/public.crt" "${OUTPUT_DIR}/neo4j/trusted/public.crt"
 
 # Cleanup intermediates
 rm -f "${OUTPUT_DIR}/server.csr" "${OUTPUT_DIR}/server.ext" "${OUTPUT_DIR}/ca.srl"

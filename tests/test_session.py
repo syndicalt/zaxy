@@ -13,7 +13,6 @@ import pytest
 from zaxy.event import EventLog
 from zaxy.session import Session, SessionManager
 
-
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------

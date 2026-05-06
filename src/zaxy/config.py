@@ -6,8 +6,10 @@ In Docker, values are injected via compose environment or Docker secrets.
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Any
 
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -57,6 +59,10 @@ class Settings(BaseSettings):
         default="testpassword",
         description="Neo4j password (override in production)",
     )
+    neo4j_password_file: str | None = Field(
+        default=None,
+        description="Path to a file containing the Neo4j password",
+    )
     neo4j_database: str = Field(
         default="neo4j",
         description="Neo4j database name",
@@ -81,9 +87,21 @@ class Settings(BaseSettings):
         default="http://localhost:4100",
         description="Pathlight collector URL",
     )
+    pathlight_enabled: bool = Field(
+        default=False,
+        description="Enable Pathlight trace emission and health checks",
+    )
     pathlight_project_id: str | None = Field(
         default=None,
         description="Pathlight project identifier",
+    )
+    pathlight_access_token: str | None = Field(
+        default=None,
+        description="Optional Pathlight access token",
+    )
+    pathlight_access_token_file: str | None = Field(
+        default=None,
+        description="Path to a file containing the Pathlight access token",
     )
     trace_raw_queries: bool = Field(
         default=False,
@@ -104,6 +122,22 @@ class Settings(BaseSettings):
     mcp_admin_token: str | None = Field(
         default=None,
         description="Optional admin token required for replay/invalidate tools",
+    )
+    mcp_admin_token_file: str | None = Field(
+        default=None,
+        description="Path to a file containing the MCP admin token",
+    )
+    mcp_remote_auth_token: str | None = Field(
+        default=None,
+        description="Bearer token required for remote MCP/SSE transport",
+    )
+    mcp_remote_auth_token_file: str | None = Field(
+        default=None,
+        description="Path to a file containing the remote MCP/SSE bearer token",
+    )
+    mcp_remote_session_header: str = Field(
+        default="x-zaxy-session-id",
+        description="HTTP header that scopes remote MCP/SSE clients to a session",
     )
 
     # ------------------------------------------------------------------
@@ -126,14 +160,78 @@ class Settings(BaseSettings):
         description="Default result limit for queries",
     )
 
+    # ------------------------------------------------------------------
+    # Embeddings
+    # ------------------------------------------------------------------
+    embedding_enabled: bool = Field(
+        default=True,
+        description="Generate embeddings for vector search",
+    )
+    embedding_provider: str = Field(
+        default="hash",
+        description="Embedding provider: hash or openai",
+    )
+    embedding_dimension: int = Field(
+        default=1536,
+        description="Embedding vector dimension; must match the Neo4j vector index",
+    )
+    openai_api_key: str | None = Field(
+        default=None,
+        description="OpenAI API key for hosted embeddings",
+    )
+    openai_api_key_file: str | None = Field(
+        default=None,
+        description="Path to a file containing the OpenAI API key",
+    )
+    openai_embedding_model: str = Field(
+        default="text-embedding-3-small",
+        description="OpenAI embedding model",
+    )
+    openai_base_url: str = Field(
+        default="https://api.openai.com/v1",
+        description="OpenAI-compatible API base URL",
+    )
+
+    def model_post_init(self, __context: Any) -> None:
+        """Load Docker/Kubernetes-style secret files after env parsing."""
+        self._load_secret_file("NEO4J_PASSWORD", "neo4j_password", "neo4j_password_file")
+        self._load_secret_file("MCP_ADMIN_TOKEN", "mcp_admin_token", "mcp_admin_token_file")
+        self._load_secret_file(
+            "MCP_REMOTE_AUTH_TOKEN",
+            "mcp_remote_auth_token",
+            "mcp_remote_auth_token_file",
+        )
+        self._load_secret_file("OPENAI_API_KEY", "openai_api_key", "openai_api_key_file")
+        self._load_secret_file(
+            "PATHLIGHT_ACCESS_TOKEN",
+            "pathlight_access_token",
+            "pathlight_access_token_file",
+        )
+
+    def _load_secret_file(self, env_name: str, field_name: str, file_field_name: str) -> None:
+        """Populate a sensitive field from ENV_NAME_FILE when direct env is absent."""
+        file_env = f"{env_name}_FILE"
+        file_path = os.getenv(file_env) or getattr(self, file_field_name)
+        if not file_path:
+            return
+        current_value = getattr(self, field_name)
+        default_value = type(self).model_fields[field_name].default
+        if os.getenv(env_name) is not None or current_value not in (None, default_value):
+            return
+        try:
+            value = Path(file_path).read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise ValueError(f"{file_env} could not be read: {file_path}") from exc
+        object.__setattr__(self, field_name, value)
+
     @model_validator(mode="after")
-    def _validate_production_security(self) -> "Settings":
+    def _validate_production_security(self) -> Settings:
         """Reject known-insecure production defaults."""
         if self.zaxy_env.lower() == "production":
             if self.neo4j_password == "testpassword":
                 raise ValueError("NEO4J_PASSWORD must be overridden in production")
-            if self.neo4j_uri.startswith("bolt://"):
-                raise ValueError("NEO4J_URI must use TLS in production")
+            if self.neo4j_uri.startswith("bolt://") and not self.neo4j_ca_cert:
+                raise ValueError("NEO4J_URI must use TLS or NEO4J_CA_CERT in production")
         return self
 
     # ------------------------------------------------------------------

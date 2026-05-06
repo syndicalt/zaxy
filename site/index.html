@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zaxy - temporal memory for AI agents</title>
+  <meta name="description" content="Zaxy is an event-sourced temporal knowledge graph fabric for AI agent memory: Eventloom audit logs, Neo4j graph reasoning, hybrid retrieval, MCP tools, and Pathlight observability." />
+  <meta property="og:title" content="Zaxy - temporal memory for AI agents" />
+  <meta property="og:description" content="Replayable, auditable, graph-native memory for agent systems." />
+  <meta property="og:type" content="website" />
+  <meta property="og:image" content="https://syndicalt.github.io/zaxy/assets/graph.png" />
+  <meta property="og:image:width" content="1991" />
+  <meta property="og:image:height" content="930" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:image" content="https://syndicalt.github.io/zaxy/assets/graph.png" />
+  <link rel="canonical" href="https://syndicalt.github.io/zaxy/" />
+  <link rel="preload" as="image" href="assets/graph.png" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <nav class="nav" aria-label="Primary">
+    <a class="brand" href="#top"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="#why">Why</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#mcp">MCP</a>
+      <a href="#docs">Docs</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+
+  <main>
+    <section class="hero" id="top">
+      <div class="hero-copy">
+        <p class="eyebrow">Event-sourced temporal knowledge graph fabric</p>
+        <h1>Temporal memory for AI agents.</h1>
+        <p class="tagline">
+          Zaxy turns agent work into durable memory: an Eventloom log for audit,
+          hybrid extraction for structure, a Neo4j temporal graph for reasoning,
+          and MCP tools for retrieval, replay, and invalidation.
+        </p>
+        <div class="cta-row">
+          <a href="#install" class="btn btn-primary">Install locally</a>
+          <a href="#docs" class="btn btn-secondary">Read the docs</a>
+          <a href="https://syndicalt.github.io/pathlight" class="btn btn-secondary">Pathlight integration</a>
+        </div>
+      </div>
+      <div class="system-visual" aria-label="Zaxy architecture preview">
+        <div class="visual-title">agent-memory-run</div>
+        <div class="visual-row"><span>01</span><strong>Eventloom log</strong><em>append-only JSONL + hash chain</em></div>
+        <div class="visual-row"><span>02</span><strong>Hybrid extraction</strong><em>typed rules + fallback extractors</em></div>
+        <div class="visual-row"><span>03</span><strong>Neo4j temporal graph</strong><em>valid_from / valid_to fact versions</em></div>
+        <div class="visual-row"><span>04</span><strong>Hybrid retrieval</strong><em>exact + BM25 + vector + traversal</em></div>
+        <div class="visual-row"><span>05</span><strong>MCP response</strong><em>query, replay, invalidate, append</em></div>
+        <img class="graph-preview" src="assets/graph.png" alt="Zaxy temporal knowledge graph showing connected agent memory entities and relationships" />
+      </div>
+    </section>
+
+    <section class="proof-strip" aria-label="Project status">
+      <span>235 tests</span>
+      <span>93.95% coverage</span>
+      <span>ruff clean</span>
+      <span>mypy clean</span>
+      <span>release gate ready</span>
+    </section>
+
+    <section id="why" class="section">
+      <div class="section-heading">
+        <p class="eyebrow">Why Zaxy</p>
+        <h2>Vector memory is useful, but it is not a source of truth.</h2>
+        <p>
+          Markdown files and chunk RAG flatten history. They can retrieve similar text,
+          but they do not preserve causal chains, fact lifetimes, invalidations, or the
+          evidence that led an agent to a decision. Zaxy keeps the raw event stream and
+          projects it into a graph built for multi-hop and temporal reasoning.
+        </p>
+      </div>
+      <div class="value-grid">
+        <article><h3>Relational</h3><p>Entities and edges preserve actor, task, dependency, and provenance relationships.</p></article>
+        <article><h3>Temporal</h3><p>Facts are versioned, so retrieval can ask what was true now or at a previous point.</p></article>
+        <article><h3>Replayable</h3><p>The Eventloom log remains the immutable record behind every graph projection.</p></article>
+      </div>
+    </section>
+
+    <section id="architecture" class="section band">
+      <div class="section-heading">
+        <p class="eyebrow">Architecture</p>
+        <h2>One memory fabric, four layers.</h2>
+      </div>
+      <div class="flow">
+        <div><strong>Eventloom</strong><span>append, verify, replay</span></div>
+        <div><strong>Extract</strong><span>entities, edges, embeddings</span></div>
+        <div><strong>Neo4j</strong><span>bi-temporal knowledge graph</span></div>
+        <div><strong>MCP</strong><span>agent-native tools</span></div>
+      </div>
+      <p>
+        Pathlight traces memory operations without becoming the storage layer. Neo4j
+        answers graph questions. Eventloom remains the audit trail. MCP gives agent
+        frameworks a stable interface over stdio or SSE.
+      </p>
+    </section>
+
+    <section id="mcp" class="section">
+      <div class="section-heading">
+        <p class="eyebrow">MCP tools</p>
+        <h2>Memory operations agents can call directly.</h2>
+      </div>
+      <div class="tool-grid">
+        <article><code>memory_append</code><p>Append typed events, extract graph facts, and trace the operation.</p></article>
+        <article><code>memory_query</code><p>Fuse exact lookup, keyword search, vector similarity, and traversal.</p></article>
+        <article><code>memory_replay</code><p>Rebuild session history from Eventloom, optionally from a sequence number.</p></article>
+        <article><code>memory_invalidate</code><p>Close graph fact validity windows without deleting historical evidence.</p></article>
+      </div>
+    </section>
+
+    <section id="retrieval" class="section band">
+      <div class="section-heading">
+        <p class="eyebrow">Retrieval</p>
+        <h2>Hybrid search for agent context.</h2>
+      </div>
+      <p>
+        Zaxy routes queries through exact entity lookup, Neo4j full-text search,
+        vector similarity, and graph traversal. Results are fused into compact
+        context chunks so agents receive connected facts instead of raw transcript
+        piles. Temporal filters let callers retrieve only facts valid at a point in
+        time.
+      </p>
+    </section>
+
+    <section id="security" class="section">
+      <div class="section-heading">
+        <p class="eyebrow">Production posture</p>
+        <h2>Built for auditable local-first deployments.</h2>
+      </div>
+      <div class="value-grid">
+        <article><h3>Secret files</h3><p>Docker/Kubernetes-style <code>*_FILE</code> config keeps production secrets out of plaintext env files.</p></article>
+        <article><h3>Remote MCP auth</h3><p>SSE requests require bearer auth and are scoped by per-client session headers.</p></article>
+        <article><h3>TLS-ready Neo4j</h3><p>Production compose and certificate scripts support encrypted Bolt connections.</p></article>
+      </div>
+    </section>
+
+    <section id="install" class="section install">
+      <div class="section-heading">
+        <p class="eyebrow">Install</p>
+        <h2>Run Zaxy locally, then expose memory through MCP.</h2>
+      </div>
+      <div class="install-grid">
+        <pre><code>pip install -e ".[dev]"
+./scripts/setup.sh
+docker compose up -d
+zaxy status</code></pre>
+        <pre><code>zaxy serve
+zaxy serve --transport sse --port 8080
+scripts/release-check.sh --root .</code></pre>
+      </div>
+    </section>
+
+    <section id="docs" class="section docs">
+      <div class="section-heading">
+        <p class="eyebrow">Documentation</p>
+        <h2>Full operator and integrator documentation.</h2>
+      </div>
+      <div class="docs-grid">
+        <a href="../docs/getting-started.md">Getting started</a>
+        <a href="../docs/architecture.md">Architecture</a>
+        <a href="../docs/configuration.md">Configuration</a>
+        <a href="../docs/mcp.md">MCP interface</a>
+        <a href="../docs/eventloom.md">Eventloom contract</a>
+        <a href="../docs/graph-schema.md">Graph schema</a>
+        <a href="../docs/retrieval.md">Retrieval</a>
+        <a href="../docs/embeddings.md">Embeddings</a>
+        <a href="../docs/security.md">Security</a>
+        <a href="../docs/operations.md">Operations</a>
+        <a href="../docs/deployment.md">Deployment</a>
+        <a href="../docs/testing.md">Testing</a>
+        <a href="../docs/api.md">Python API</a>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>Zaxy v0.1.0 - MIT</span>
+    <span><a href="../README.md">README</a> <a href="../docs/runbook.md">Runbook</a></span>
+  </footer>
+</body>
+</html>

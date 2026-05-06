@@ -11,7 +11,6 @@ import pytest
 
 from zaxy.metrics import MetricsCollector, get_metrics
 
-
 # ------------------------------------------------------------------
 # MetricsCollector — with prometheus_client mocked
 # ------------------------------------------------------------------

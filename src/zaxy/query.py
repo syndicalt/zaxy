@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from zaxy.graph import GraphStore, SearchResult
+from zaxy.security import validate_limit, validate_query
 
 
 @dataclass(frozen=True)
@@ -63,7 +64,8 @@ class QueryRouter:
         4. Graph traversal from top keyword hits.
         5. Fuse, deduplicate, sort by score, truncate to limit.
         """
-        lim = limit or self.default_limit
+        validate_query(query)
+        lim = validate_limit(limit, default=self.default_limit)
         results: list[SearchResult] = []
 
         # 1. Exact match attempt

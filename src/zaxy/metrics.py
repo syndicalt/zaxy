@@ -6,9 +6,6 @@ Useful for SLO monitoring and alerting.
 
 from __future__ import annotations
 
-import time
-from typing import Any
-
 # Lazy import so Prometheus is optional
 try:
     from prometheus_client import Counter, Histogram, start_http_server

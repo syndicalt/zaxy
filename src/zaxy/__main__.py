@@ -1,7 +1,7 @@
 """CLI entrypoint for Zaxy.
 
 Commands:
-    serve       Start the MCP stdio server.
+    serve       Start the MCP server over stdio or SSE.
     replay      Replay an Eventloom log and print integrity report.
     compact     Compact an Eventloom log (create snapshot).
     status      Check connectivity to Neo4j and Pathlight.
@@ -152,20 +152,23 @@ def status(
             typer.echo(f"Neo4j:     FAIL ({exc})")
             ok = False
 
-        # Pathlight
-        try:
-            import httpx
+        # Pathlight is optional. Only fail health checks when explicitly enabled.
+        if settings.pathlight_enabled:
+            try:
+                import httpx
 
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(f"{_pathlight}/health")
-                if resp.status_code == 200:
-                    typer.echo(f"Pathlight: OK ({_pathlight})")
-                else:
-                    typer.echo(f"Pathlight: FAIL (HTTP {resp.status_code})")
-                    ok = False
-        except Exception as exc:
-            typer.echo(f"Pathlight: FAIL ({exc})")
-            ok = False
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(f"{_pathlight}/health")
+                    if resp.status_code == 200:
+                        typer.echo(f"Pathlight: OK ({_pathlight})")
+                    else:
+                        typer.echo(f"Pathlight: FAIL (HTTP {resp.status_code})")
+                        ok = False
+            except Exception as exc:
+                typer.echo(f"Pathlight: FAIL ({exc})")
+                ok = False
+        else:
+            typer.echo("Pathlight: SKIP (disabled)")
 
         raise typer.Exit(0 if ok else 1)
 

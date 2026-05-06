@@ -61,7 +61,7 @@ Markdown files + vector DBs are the dominant approach for agent persistent conte
 
 ### ADR-5: Pathlight for Observability (Not Storage)
 
-**Decision**: Pathlight traces every memory operation but does not store context itself.
+**Decision**: Pathlight can trace every memory operation when enabled, but does not store context itself.
 
 **Rationale**:
 - Eventloom = durable history.
@@ -204,26 +204,34 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Docker containerization (Dockerfile + compose)
 - [x] Structured logging (console + JSON)
 - [x] Graceful shutdown (SIGTERM/SIGINT handling)
-- [ ] Production secrets management (Docker secrets / vault)
-- [~] TLS for Neo4j (config + cert script done, E2E test pending)
-- [~] Multi-agent session sharding (library done, MemoryFabric/MCP wiring pending)
+- [x] Production secrets management (Docker secrets + `*_FILE` config)
+- [x] TLS for Neo4j (generated certs + TLS compose service + integration test)
+- [x] Multi-agent session sharding (SessionManager + MemoryFabric/MCP wiring)
 - [x] Prometheus metrics
-- [x] Vector similarity search in query router
+- [x] Vector index and vector similarity search in query router
+- [x] SSE transport for MCP daemon mode
+- [x] Embedding generation pipeline (deterministic local provider + entity/query vectors)
+- [x] True temporal versioning for reasserted facts and multi-version entity state
+- [x] Remote MCP security (SSE bearer auth + per-client session scopes)
+- [x] Operational backup/restore/log-rotation scripts backed by tests
+- [x] Competitive benchmark suite vs. flat JSONL context baseline
+- [x] Hosted embedding provider adapter with secret-managed credentials
+- [x] Remote deployment environment validation for MCP/SSE
+- [x] Go-live readiness checklist and release gate
+- [x] Release packaging and versioned distribution artifacts
+- [x] Public static site and expanded documentation set
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Unit tests | 153 passed |
-| Coverage | 94.48% |
+| Tests | 241 passed |
+| Coverage | 93.95% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
 
 ## Next Steps
 
-1. Wire `SessionManager` into `MemoryFabric` and MCP tools (multi-agent session sharding).
-2. Create Neo4j vector index (`entity_vector`) for similarity search.
-3. End-to-end TLS test with generated certificates.
-4. Add SSE transport to MCP server for daemon mode.
-5. Production secrets management (Docker secrets / vault integration).
+1. Competitive benchmarks vs. external memory/RAG systems.
+2. Competitive benchmark suite covering vector RAG, hybrid RAG, file memory, graph memory, and agent framework memory baselines.

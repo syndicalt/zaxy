@@ -23,6 +23,8 @@ class ExtractedEntity:
     name: str
     entity_type: str
     observed_at: str  # ISO-8601 timestamp from the event
+    summary: str | None = None
+    embedding: list[float] | None = None
 
 
 @dataclass(frozen=True)
@@ -84,6 +86,7 @@ def extract(event: Event) -> ExtractionResult:
         name=entity_name,
         entity_type="event",
         observed_at=event.timestamp,
+        summary=f"{event.actor} emitted {event.type}",
     )
     return ExtractionResult(
         entities=[entity],
@@ -104,6 +107,7 @@ def _extract_goal_created(event: Event) -> ExtractionResult:
         name=title,
         entity_type="goal",
         observed_at=event.timestamp,
+        summary=_optional_text(event.payload.get("description")),
     )
     actor = ExtractedEntity(
         name=event.actor,
@@ -131,6 +135,7 @@ def _extract_task_proposed(event: Event) -> ExtractionResult:
         name=tid,
         entity_type="task",
         observed_at=event.timestamp,
+        summary=_optional_text(event.payload.get("summary") or event.payload.get("title")),
     )
     actor = ExtractedEntity(
         name=event.actor,
@@ -208,6 +213,7 @@ def _extract_preference_changed(event: Event) -> ExtractionResult:
         name=f"{user_id}:{key}",
         entity_type="preference",
         observed_at=event.timestamp,
+        summary=_preference_summary(key, event.payload.get("value")),
     )
     edge = ExtractedEdge(
         source=user_id,
@@ -220,3 +226,20 @@ def _extract_preference_changed(event: Event) -> ExtractionResult:
         edges=[edge],
         source_event_seq=event.seq,
     )
+
+
+def _optional_text(value: object) -> str | None:
+    """Return non-empty text for extracted summaries."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _preference_summary(key: object, value: object) -> str | None:
+    """Return a compact preference summary."""
+    key_text = _optional_text(key) or "preference"
+    value_text = _optional_text(value)
+    if value_text is None:
+        return key_text
+    return f"{key_text}={value_text}"

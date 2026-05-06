@@ -22,7 +22,6 @@ from zaxy.extract import extract
 from zaxy.graph import GraphStore
 from zaxy.query import QueryRouter
 
-
 # ------------------------------------------------------------------
 # Event log benchmarks
 # ------------------------------------------------------------------

@@ -112,6 +112,8 @@ class TestAppend:
         """append() should extract entities and upsert to graph."""
         await fabric.append("goal.created", actor="user", payload={"title": "T"})
         fabric.graph.upsert_extraction.assert_awaited_once()
+        extraction = fabric.graph.upsert_extraction.await_args.args[0]
+        assert extraction.entities[0].embedding is not None
 
     async def test_traces_append(self, fabric: MemoryFabric) -> None:
         """append() should emit a Pathlight trace."""
@@ -143,7 +145,11 @@ class TestQuery:
             )
         ]
         results = await fabric.query("Alice")
-        fabric.query_router.query.assert_awaited_once_with("Alice", temporal_point=None, limit=10, embedding=None)
+        args = fabric.query_router.query.await_args
+        assert args.args == ("Alice",)
+        assert args.kwargs["temporal_point"] is None
+        assert args.kwargs["limit"] == 10
+        assert args.kwargs["embedding"] is not None
         assert len(results) == 1
         assert isinstance(results[0], Context)
 
@@ -151,9 +157,18 @@ class TestQuery:
         """query() should forward temporal_point to router."""
         fabric.query_router.query.return_value = []
         await fabric.query("x", temporal_point="2024-03-01T00:00:00Z", limit=5)
-        fabric.query_router.query.assert_awaited_once_with(
-            "x", temporal_point="2024-03-01T00:00:00Z", limit=5, embedding=None
-        )
+        args = fabric.query_router.query.await_args
+        assert args.args == ("x",)
+        assert args.kwargs["temporal_point"] == "2024-03-01T00:00:00Z"
+        assert args.kwargs["limit"] == 5
+        assert args.kwargs["embedding"] is not None
+
+    async def test_explicit_query_embedding_wins(self, fabric: MemoryFabric) -> None:
+        """query() should not overwrite a caller-provided embedding."""
+        explicit = [0.1, 0.2, 0.3]
+        fabric.query_router.query.return_value = []
+        await fabric.query("x", embedding=explicit)
+        assert fabric.query_router.query.await_args.kwargs["embedding"] is explicit
 
     async def test_traces_query(self, fabric: MemoryFabric) -> None:
         """query() should emit a Pathlight trace with result count."""

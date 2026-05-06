@@ -36,6 +36,8 @@ dev = [
     "pytest-benchmark>=4.0.0",
     "factory-boy>=3.3.0",
     "freezegun>=1.5.0",
+    "build>=1.2.0",
+    "twine>=5.0.0",
     "ruff>=0.4.0",
     "mypy>=1.10.0",
     "types-requests>=2.32.0",
@@ -50,6 +52,23 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/zaxy"]
+artifacts = ["src/zaxy/py.typed"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "AGENTS.md",
+    "README.md",
+    "docs",
+    "examples",
+    "site",
+    "scripts",
+    "src",
+    "tests",
+    "pyproject.toml",
+    "docker-compose.yml",
+    "docker-compose.prod.yml",
+    "Dockerfile",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

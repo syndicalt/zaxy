@@ -55,13 +55,34 @@ jobs:
           files: ./coverage.xml
           fail_ci_if_error: false
 
+  package:
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
+
+      - name: Build and check distribution artifacts
+        run: scripts/build-dist.sh --root .
+
   integration:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
+      - name: Generate TLS certificates
+        run: ./scripts/generate-certs.sh .certs
+
       - name: Start Neo4j
-        run: docker compose up -d neo4j-test
+        run: docker compose up -d neo4j-test neo4j-tls
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -80,4 +101,4 @@ jobs:
           done
 
       - name: Run integration tests
-        run: pytest -m integration --tb=short
+        run: pytest -m integration --tb=short --no-cov

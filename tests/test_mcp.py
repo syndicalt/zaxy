@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 import zaxy.mcp_server
-from zaxy.mcp_server import TOOLS, ZaxyMCPServer, main
+from zaxy.mcp_server import (
+    TOOLS,
+    MCPTransportAuth,
+    ZaxyMCPServer,
+    main,
+    remote_session_scope,
+)
 
 # ------------------------------------------------------------------
 # Fixtures
@@ -113,6 +120,36 @@ class TestMemoryAppend:
 
         server.session_manager.get.assert_called_once_with("legacy-thread")
 
+    async def test_remote_scope_supplies_default_session(self, server: ZaxyMCPServer) -> None:
+        """Remote SSE clients should default to their request session scope."""
+        token = remote_session_scope.set("client-session")
+        try:
+            await server.handle_memory_append({
+                "event_type": "x",
+                "actor": "y",
+                "payload": {},
+            })
+        finally:
+            remote_session_scope.reset(token)
+
+        server.session_manager.get.assert_called_once_with("client-session")
+
+    async def test_remote_scope_rejects_cross_session_append(self, server: ZaxyMCPServer) -> None:
+        """Remote SSE clients should not write outside their request session scope."""
+        token = remote_session_scope.set("client-session")
+        try:
+            with pytest.raises(PermissionError, match="session scope"):
+                await server.handle_memory_append({
+                    "event_type": "x",
+                    "actor": "y",
+                    "payload": {},
+                    "session_id": "other-session",
+                })
+        finally:
+            remote_session_scope.reset(token)
+
+        server.session_manager.get.assert_not_called()
+
     async def test_rejects_large_payload(self, server: ZaxyMCPServer) -> None:
         """Oversized payloads should be rejected before writing to Eventloom."""
         with pytest.raises(ValueError, match="payload"):
@@ -214,6 +251,69 @@ class TestMemoryReplay:
 
         server.session_manager.replay.assert_not_called()
 
+    async def test_remote_scope_rejects_cross_session_replay(self, server: ZaxyMCPServer) -> None:
+        """Remote SSE clients should not replay sessions outside their scope."""
+        mock_replay = MagicMock()
+        mock_replay.integrity.model_dump.return_value = {"ok": True, "total_events": 0}
+        mock_replay.events = []
+        server.session_manager.replay.return_value = mock_replay
+
+        token = remote_session_scope.set("client-session")
+        try:
+            with pytest.raises(PermissionError, match="session scope"):
+                await server.handle_memory_replay({"session_id": "other-session"})
+        finally:
+            remote_session_scope.reset(token)
+
+        server.session_manager.replay.assert_not_called()
+
+
+class TestTransportAuth:
+    """Tests for remote MCP/SSE request authentication."""
+
+    def test_dev_without_token_allows_request_and_validates_session(self) -> None:
+        """Development mode remains usable without configuring remote auth."""
+        auth = MCPTransportAuth(token=None)
+
+        session_id = auth.authorize({"x-zaxy-session-id": "agent-1"})
+
+        assert session_id == "agent-1"
+
+    def test_configured_token_rejects_missing_authorization(self) -> None:
+        """Configured remote auth should require an Authorization header."""
+        auth = MCPTransportAuth(token="secret")
+
+        with pytest.raises(PermissionError, match="Authorization"):
+            auth.authorize({"x-zaxy-session-id": "agent-1"})
+
+    def test_configured_token_rejects_wrong_bearer(self) -> None:
+        """Bearer token mismatch should reject the request."""
+        auth = MCPTransportAuth(token="secret")
+
+        with pytest.raises(PermissionError, match="Authorization"):
+            auth.authorize({
+                "authorization": "Bearer wrong",
+                "x-zaxy-session-id": "agent-1",
+            })
+
+    def test_configured_token_accepts_bearer_and_session(self) -> None:
+        """A valid bearer token should return the request session scope."""
+        auth = MCPTransportAuth(token="secret")
+
+        session_id = auth.authorize({
+            "authorization": "Bearer secret",
+            "x-zaxy-session-id": "agent-1",
+        })
+
+        assert session_id == "agent-1"
+
+    def test_rejects_invalid_session_header(self) -> None:
+        """Remote session scope should use the same session validation as tools."""
+        auth = MCPTransportAuth(token=None)
+
+        with pytest.raises(ValueError, match="session_id"):
+            auth.authorize({"x-zaxy-session-id": "../escape"})
+
 
 class TestMemoryInvalidate:
     """Tests for memory_invalidate handler."""
@@ -293,13 +393,20 @@ class TestEntrypoint:
                 return fn
             return decorator
 
-        with patch("zaxy.mcp_server.app.run", new_callable=AsyncMock) as mock_run:
-            with patch.object(
-                zaxy.mcp_server.app, "list_tools", return_value=make_capture_decorator("list_tools")
-            ), patch.object(
-                zaxy.mcp_server.app, "call_tool", return_value=make_capture_decorator("call_tool")
-            ):
-                await main()
+        with (
+            patch("zaxy.mcp_server.app.run", new_callable=AsyncMock),
+            patch.object(
+                zaxy.mcp_server.app,
+                "list_tools",
+                return_value=make_capture_decorator("list_tools"),
+            ),
+            patch.object(
+                zaxy.mcp_server.app,
+                "call_tool",
+                return_value=make_capture_decorator("call_tool"),
+            ),
+        ):
+            await main()
 
         assert "call_tool" in captured_handlers
         with pytest.raises(ValueError, match="Unknown tool"):

@@ -96,6 +96,17 @@ class TestGoalCreated:
         assert edge.target == "T"
         assert edge.relation_type == "created_goal"
 
+    def test_summary_uses_description(self) -> None:
+        """Goal summaries should preserve descriptive context for embeddings."""
+        ev = _make_event(
+            "goal.created",
+            {"title": "Ship MVP", "description": "Get product to market"},
+            actor="alice",
+        )
+        result = extract(ev)
+        goal = next(e for e in result.entities if e.entity_type == "goal")
+        assert goal.summary == "Get product to market"
+
 
 class TestTaskProposed:
     """Tests for task.proposed extractor."""
@@ -117,6 +128,16 @@ class TestTaskProposed:
         ev = _make_event("task.proposed", {"taskId": "t1"}, actor="bot")
         result = extract(ev)
         assert result.edges[0].relation_type == "proposed_task"
+
+    def test_summary_uses_task_summary(self) -> None:
+        ev = _make_event(
+            "task.proposed",
+            {"taskId": "t1", "summary": "Design landing page"},
+            actor="bot",
+        )
+        result = extract(ev)
+        task = next(e for e in result.entities if e.entity_type == "task")
+        assert task.summary == "Design landing page"
 
 
 class TestTaskClaimed:
@@ -171,6 +192,16 @@ class TestPreferenceChanged:
         assert edge.source == "u1"
         assert edge.target == "u1:theme"
         assert edge.relation_type == "has_theme"
+
+    def test_summary_includes_preference_value(self) -> None:
+        ev = _make_event(
+            "user.preference_changed",
+            {"userId": "u1", "key": "theme", "value": "dark"},
+            actor="u1",
+        )
+        result = extract(ev)
+        preference = next(e for e in result.entities if e.entity_type == "preference")
+        assert preference.summary == "theme=dark"
 
 
 # ------------------------------------------------------------------

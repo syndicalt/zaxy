@@ -1,6 +1,6 @@
 """MCP server exposing memory tools.
 
-Provides stdio (and future SSE) transport for agent frameworks to interact
+Provides stdio and SSE transport for agent frameworks to interact
 with Zaxy via the Model Context Protocol.
 
 Tools exposed:
@@ -13,8 +13,10 @@ Tools exposed:
 from __future__ import annotations
 
 import asyncio
+import contextvars
+import hmac
 import json
-import sys
+from collections.abc import Mapping
 from typing import Any
 
 from mcp.server import Server
@@ -23,7 +25,6 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 from zaxy.config import get_settings
-from zaxy.event import EventLog
 from zaxy.extract import extract
 from zaxy.graph import GraphStore
 from zaxy.log import get_logger, setup_logging
@@ -40,6 +41,10 @@ from zaxy.session import SessionManager
 from zaxy.trace import MemoryTracer
 
 app = Server("zaxy-memory")
+remote_session_scope: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "remote_session_scope",
+    default=None,
+)
 
 
 # ------------------------------------------------------------------
@@ -143,6 +148,7 @@ class ZaxyMCPServer:
         self.tracer = MemoryTracer(
             base_url=settings.pathlight_url,
             project_id=settings.pathlight_project_id,
+            disabled=not settings.pathlight_enabled,
         )
 
     async def setup(self) -> None:
@@ -165,8 +171,9 @@ class ZaxyMCPServer:
         event_type = arguments["event_type"]
         actor = arguments["actor"]
         payload = validate_payload(arguments.get("payload", {}))
-        session_id = validate_session_id(
-            arguments.get("session_id") or arguments.get("thread", "default")
+        session_id = self._session_id_from_arguments(
+            arguments,
+            default="default",
         )
 
         eventlog = self.session_manager.get(session_id).eventlog
@@ -184,6 +191,7 @@ class ZaxyMCPServer:
         query = validate_query(arguments["query"])
         temporal = arguments.get("temporal_filter")
         limit = validate_limit(arguments.get("limit"), default=10)
+        self._enforce_optional_session(arguments)
 
         router = QueryRouter(self.graph)
         results = await router.query(query, temporal_point=temporal, limit=limit)
@@ -204,7 +212,7 @@ class ZaxyMCPServer:
     async def handle_memory_replay(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle memory_replay tool call."""
         self._require_admin(arguments)
-        session_id = validate_session_id(arguments["session_id"])
+        session_id = self._session_id_from_arguments(arguments)
         from_seq = validate_from_seq(arguments.get("from_seq"))
 
         replay = self.session_manager.replay(session_id, from_seq=from_seq)
@@ -232,10 +240,69 @@ class ZaxyMCPServer:
         if self._admin_token and arguments.get("admin_token") != self._admin_token:
             raise PermissionError("admin_token is required for this tool")
 
+    def _session_id_from_arguments(
+        self,
+        arguments: dict[str, Any],
+        default: str | None = None,
+    ) -> str:
+        """Resolve and enforce a tool session ID.
+
+        Remote SSE requests run with a context-scoped session. They may omit a
+        session argument, but they cannot cross into another session.
+        """
+        explicit = arguments.get("session_id") or arguments.get("thread")
+        requested = explicit or default
+        scoped = remote_session_scope.get()
+        if scoped is not None:
+            if explicit is None:
+                return scoped
+            safe_requested = validate_session_id(explicit)
+            if safe_requested != scoped:
+                raise PermissionError("session scope does not permit this session_id")
+            return safe_requested
+        if requested is None:
+            raise ValueError("session_id is required")
+        return validate_session_id(requested)
+
+    def _enforce_optional_session(self, arguments: dict[str, Any]) -> None:
+        """Reject cross-session optional tool arguments under remote scope."""
+        if (
+            remote_session_scope.get() is not None
+            and ("session_id" in arguments or "thread" in arguments)
+        ):
+            self._session_id_from_arguments(arguments)
+
+
+class MCPTransportAuth:
+    """Authenticate and scope remote MCP/SSE HTTP requests."""
+
+    def __init__(
+        self,
+        token: str | None,
+        session_header: str = "x-zaxy-session-id",
+    ) -> None:
+        self._token = token
+        self._session_header = session_header.casefold()
+
+    def authorize(self, headers: Mapping[str, str]) -> str:
+        """Validate request headers and return the remote session scope."""
+        normalized = {key.casefold(): value for key, value in headers.items()}
+        if self._token is not None:
+            header = normalized.get("authorization")
+            if not header or not header.startswith("Bearer "):
+                raise PermissionError("Authorization bearer token is required")
+            supplied = header.removeprefix("Bearer ").strip()
+            if not hmac.compare_digest(supplied, self._token):
+                raise PermissionError("Authorization bearer token is invalid")
+        return validate_session_id(normalized.get(self._session_header, "default"))
+
 
 # ------------------------------------------------------------------
 # Entrypoint
 # ------------------------------------------------------------------
+
+server: ZaxyMCPServer | None = None
+
 
 async def main() -> None:
     """Run the MCP stdio server with graceful shutdown."""
@@ -243,13 +310,9 @@ async def main() -> None:
     logger = get_logger("mcp_server")
 
     # Allow external configuration (e.g. from CLI) via module-level override
-    server: ZaxyMCPServer
-    if hasattr(sys.modules[__name__], "server"):
-        server = sys.modules[__name__].server  # type: ignore[attr-defined]
-    else:
-        server = ZaxyMCPServer()
+    active_server = server or ZaxyMCPServer()
 
-    await server.setup()
+    await active_server.setup()
     logger.info("zaxy_mcp_server_ready server=%s", get_settings().server_name)
 
     # Graceful shutdown on SIGTERM/SIGINT
@@ -272,13 +335,13 @@ async def main() -> None:
     @app.call_tool()  # type: ignore[untyped-decorator]
     async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
         if name == "memory_append":
-            return await server.handle_memory_append(arguments)
+            return await active_server.handle_memory_append(arguments)
         if name == "memory_query":
-            return await server.handle_memory_query(arguments)
+            return await active_server.handle_memory_query(arguments)
         if name == "memory_replay":
-            return await server.handle_memory_replay(arguments)
+            return await active_server.handle_memory_replay(arguments)
         if name == "memory_invalidate":
-            return await server.handle_memory_invalidate(arguments)
+            return await active_server.handle_memory_invalidate(arguments)
         raise ValueError(f"Unknown tool: {name}")
 
     try:
@@ -294,7 +357,7 @@ async def main() -> None:
                 task.cancel()
     finally:
         logger.info("zaxy_mcp_server_shutting_down")
-        await server.teardown()
+        await active_server.teardown()
         logger.info("zaxy_mcp_server_stopped")
 
 
@@ -306,14 +369,11 @@ async def main_sse(port: int = 8080) -> None:
     """
     setup_logging()
     logger = get_logger("mcp_server")
+    settings = get_settings()
 
-    server: ZaxyMCPServer
-    if hasattr(sys.modules[__name__], "server"):
-        server = sys.modules[__name__].server  # type: ignore[attr-defined]
-    else:
-        server = ZaxyMCPServer()
+    active_server = server or ZaxyMCPServer()
 
-    await server.setup()
+    await active_server.setup()
     logger.info("zaxy_mcp_server_ready transport=sse port=%s", port)
 
     import signal
@@ -330,32 +390,56 @@ async def main_sse(port: int = 8080) -> None:
 
     # SSE transport setup
     from starlette.applications import Starlette
-    from starlette.routing import Mount, Route
+    from starlette.responses import PlainTextResponse
+    from starlette.routing import Route
 
     sse_transport = SseServerTransport("/messages/")
+    transport_auth = MCPTransportAuth(
+        token=settings.mcp_remote_auth_token,
+        session_header=settings.mcp_remote_session_header,
+    )
+
+    def _authorize_request(request: Any) -> str:
+        return transport_auth.authorize(request.headers)
 
     async def _sse_handler(request: Any) -> Any:
+        try:
+            session_id = _authorize_request(request)
+        except (PermissionError, ValueError) as exc:
+            return PlainTextResponse(str(exc), status_code=401)
+        token = remote_session_scope.set(session_id)
         async with sse_transport.connect_sse(
             request.scope, request.receive, request._send
         ) as (read_stream, write_stream):
-            await app.run(read_stream, write_stream, app.create_initialization_options())
+            try:
+                await app.run(read_stream, write_stream, app.create_initialization_options())
+            finally:
+                remote_session_scope.reset(token)
 
     async def _messages_handler(request: Any) -> Any:
-        return await sse_transport.handle_post_message(
-            request.scope, request.receive, request._send
-        )
+        try:
+            session_id = _authorize_request(request)
+        except (PermissionError, ValueError) as exc:
+            return PlainTextResponse(str(exc), status_code=401)
+        token = remote_session_scope.set(session_id)
+        try:
+            return await sse_transport.handle_post_message(
+                request.scope, request.receive, request._send
+            )
+        finally:
+            remote_session_scope.reset(token)
 
     starlette_app = Starlette(
         debug=False,
         routes=[
             Route("/sse", _sse_handler),
-            Mount("/messages", _messages_handler),
+            Route("/messages/", _messages_handler, methods=["POST"]),
         ],
     )
 
     import uvicorn
 
-    config = uvicorn.Config(starlette_app, host="0.0.0.0", port=port, log_level="warning")
+    config = uvicorn.Config(starlette_app, host="127.0.0.1", port=port, log_level="warning")
     uvicorn_server = uvicorn.Server(config)
 
     serve_task = asyncio.create_task(uvicorn_server.serve())
@@ -368,7 +452,7 @@ async def main_sse(port: int = 8080) -> None:
         task.cancel()
 
     logger.info("zaxy_mcp_server_shutting_down")
-    await server.teardown()
+    await active_server.teardown()
     logger.info("zaxy_mcp_server_stopped")
 
 

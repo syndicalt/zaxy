@@ -12,6 +12,9 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import Any
 
+from zaxy.config import get_settings
+from zaxy.security import query_hash
+
 try:
     from pathlight import AsyncPathlight
     _HAS_PATHLIGHT = True
@@ -34,9 +37,14 @@ class MemoryTracer:
         base_url: str | None = None,
         project_id: str | None = None,
         disabled: bool = False,
+        trace_raw_queries: bool | None = None,
     ) -> None:
         self.disabled = disabled or not _HAS_PATHLIGHT
         self._client: Any | None = None
+        settings = get_settings()
+        self.trace_raw_queries = (
+            settings.trace_raw_queries if trace_raw_queries is None else trace_raw_queries
+        )
         if not self.disabled:
             self.base_url = base_url or os.getenv("PATHLIGHT_URL", "http://localhost:4100")
             self.project_id = project_id
@@ -118,5 +126,8 @@ class MemoryTracer:
         """Fire-and-forget trace for a query operation."""
         if self.disabled:
             return
-        async with self.span("memory_query", metadata={"query": query, "temporal_filter": temporal_filter}) as result:
+        metadata = {"query_hash": query_hash(query), "temporal_filter": temporal_filter}
+        if self.trace_raw_queries:
+            metadata["query"] = query
+        async with self.span("memory_query", metadata=metadata) as result:
             result["output"] = {"result_count": result_count, "duration_ms": duration_ms}

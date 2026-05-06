@@ -7,7 +7,7 @@ It consists of three layers:
 
 1. **Eventloom** (bottom): Immutable append-only JSONL logs with SHA-256 hash chains.
 2. **Neo4j** (core): Bi-temporal knowledge graph with entity/relationship validity windows.
-3. **Pathlight** (top): Observability, tracing, and debugging dashboard.
+3. **Pathlight** (optional top layer): Observability, tracing, and debugging dashboard.
 
 ## Quick Start
 
@@ -22,10 +22,13 @@ pip install -e ".[dev]"
 python -m zaxy status
 
 # Run tests
-pytest -m "not integration"
+pytest
 
 # Start MCP server
 python -m zaxy serve
+
+# Start MCP over SSE for daemon mode
+python -m zaxy serve --transport sse --port 8080
 ```
 
 ## Daily Operations
@@ -38,6 +41,8 @@ python -m zaxy status
 
 # Or manually:
 curl http://localhost:7474  # Neo4j HTTP
+
+# Only when PATHLIGHT_ENABLED=true:
 curl http://localhost:4100/health  # Pathlight collector
 curl http://localhost:3100  # Pathlight dashboard
 ```
@@ -92,73 +97,33 @@ When the MCP server is running, any MCP client can:
 |------|----------|-----------------|
 | Eventloom logs | `.eventloom/*.jsonl` | **Critical** — immutable source of truth |
 | Neo4j database | Docker volume `neo4j_data` | High — can be rebuilt from Eventloom |
-| Pathlight traces | Docker volume `pathlight_data` | Medium — observability only |
+| Pathlight traces | Pathlight deployment volume, if enabled | Medium — observability only |
 
 ### Backup Procedures
 
 ```bash
-#!/bin/bash
-# backup.sh — Run daily via cron
-
-DATE=$(date +%Y%m%d)
-BACKUP_DIR=/backups/zaxy/$DATE
-mkdir -p $BACKUP_DIR
-
-# 1. Eventloom logs (most critical)
-cp -r .eventloom $BACKUP_DIR/eventloom
-
-# 2. Neo4j database
-docker compose exec neo4j neo4j-admin database dump neo4j --to-path=/tmp/neo4j-backup
-docker cp neo4j:/tmp/neo4j-backup $BACKUP_DIR/neo4j.dump
-
-# 3. Pathlight SQLite (if self-hosted)
-docker compose cp pathlight:/app/data $BACKUP_DIR/pathlight
-
-echo "Backup complete: $BACKUP_DIR"
+scripts/backup.sh \
+  --root . \
+  --output-dir /backups/zaxy \
+  --name "zaxy-$(date -u +%Y%m%dT%H%M%SZ)"
 ```
+
+This archives `.eventloom/` and non-secret operational docs/config templates,
+excludes `secrets/` and `.certs/`, and writes a `.sha256` manifest next to the
+archive. Neo4j can be rebuilt from Eventloom; take a separate Neo4j dump only
+when fast point-in-time restore matters more than minimizing backup surface.
 
 ### Recovery Procedures
 
 ```bash
-#!/bin/bash
-# restore.sh — Restore from backup
-
-BACKUP_DIR=$1
-
-# 1. Restore Eventloom logs
-cp -r $BACKUP_DIR/eventloom .eventloom
-
-# 2. Restore Neo4j
-docker compose down neo4j
-# Clear old data
-docker volume rm zaxy_neo4j_data
-docker compose up -d neo4j
-sleep 30  # Wait for Neo4j to start
-docker compose exec neo4j neo4j-admin database load neo4j --from-path=/tmp/restore
-docker cp $BACKUP_DIR/neo4j.dump neo4j:/tmp/restore
-
-# 3. Replay Eventloom to rebuild graph (if Neo4j backup is missing)
-python << 'PY'
-import asyncio
-from zaxy.core import MemoryFabric
-
-async def rebuild():
-    fabric = MemoryFabric()
-    await fabric.connect()
-    
-    # Replay all events and re-project
-    replay = await fabric.replay()
-    for event in replay.events:
-        from zaxy.extract import extract
-        from zaxy.graph import GraphStore
-        extraction = extract(event)
-        await fabric.graph.upsert_extraction(extraction)
-    
-    await fabric.close()
-
-asyncio.run(rebuild())
-PY
+scripts/restore.sh \
+  --archive /backups/zaxy/zaxy-20260506T120000Z.tar.gz \
+  --manifest /backups/zaxy/zaxy-20260506T120000Z.sha256 \
+  --target /srv/zaxy
 ```
+
+Restore validates the checksum before extraction and refuses to overwrite an
+existing target `.eventloom/` unless `--force` is provided.
 
 ## Monitoring & Alerting
 
@@ -199,25 +164,15 @@ MATCH (e:Entity) WHERE e.valid_to IS NULL RETURN count(e) AS active_entities;
 Eventloom logs grow indefinitely. Set up rotation:
 
 ```bash
-#!/bin/bash
-# rotate-eventloom.sh
-
-LOG_DIR=.eventloom
-MAX_SIZE=100000000  # 100MB
-MAX_AGE=30          # days
-
-for log in $LOG_DIR/*.jsonl; do
-    size=$(stat -f%z "$log" 2>/dev/null || stat -c%s "$log" 2>/dev/null)
-    if [ $size -gt $MAX_SIZE ]; then
-        # Compact and snapshot
-        python -m zaxy compact "$log" --snapshot-every 10000
-        mv "$log" "$log.$(date +%Y%m%d)"
-    fi
-done
-
-# Remove old rotated logs
-find $LOG_DIR -name "*.jsonl.*" -mtime +$MAX_AGE -delete
+scripts/rotate-logs.sh \
+  --log .eventloom/default.jsonl \
+  --archive-dir .eventloom/archive \
+  --name "default-$(date -u +%Y%m%dT%H%M%SZ)"
 ```
+
+Rotation copies the active JSONL file into an archive, writes a checksum
+manifest, then truncates the active file only after archive creation succeeds.
+Verify rotated logs with `zaxy replay .eventloom/archive/<name>.jsonl`.
 
 ## Troubleshooting
 
@@ -234,9 +189,7 @@ find $LOG_DIR -name "*.jsonl.*" -mtime +$MAX_AGE -delete
    RETURN e.valid_from, e.valid_to, e.entity_type
    ```
 
-3. **Check Redis cache** (if enabled): Force refresh by restarting cache.
-
-4. **Pathlight trace**: Inspect the exact context injected into the prompt.
+3. **Pathlight trace** (if enabled): Inspect the query/result metadata and operation timing.
 
 ### "Hash chain verification failed"
 
@@ -289,15 +242,14 @@ find $LOG_DIR -name "*.jsonl.*" -mtime +$MAX_AGE -delete
 
 ## Scaling Considerations
 
-### Single-Agent (Current)
+### Current
 
-- One Eventloom file per session
+- One Eventloom file per session/agent
 - Single Neo4j instance
-- Pathlight local SQLite
+- Optional Pathlight tracing
 
-### Multi-Agent (Future)
+### Future Scale-Out
 
-- Shard Eventloom by session ID (file per agent)
 - Neo4j Aura or causal clustering
 - Kafka/NATS for event log aggregation
 - Add Redis hot cache between Eventloom and Neo4j
@@ -319,19 +271,36 @@ GRANT ROLE reader TO agent_reader;
 
 ### Secrets Management
 
-Use environment variables or a secrets manager (Vault, AWS Secrets Manager):
+Use Docker secrets or `*_FILE` environment variables for sensitive settings.
+Direct environment variables take precedence over file-backed values.
 
 ```bash
-# .env (do not commit)
-NEO4J_PASSWORD=$(vault read -field=password secret/zaxy/neo4j)
-PATHLIGHT_ACCESS_TOKEN=$(vault read -field=token secret/zaxy/pathlight)
+# Local production scaffold
+./scripts/setup.sh --production
+
+# Starts Neo4j and Zaxy with Docker secrets from ./secrets/
+./scripts/generate-certs.sh .certs
+docker compose -f docker-compose.prod.yml up -d
+```
+
+Production mode rejects `NEO4J_PASSWORD=testpassword`. When using the generated
+custom CA, set `NEO4J_URI=bolt://...` with `NEO4J_CA_CERT` so the Neo4j driver
+enables encryption and trusts the mounted CA.
+
+For external secret managers such as Vault or AWS Secrets Manager, write values
+to mounted files and set:
+
+```bash
+NEO4J_PASSWORD_FILE=/run/secrets/neo4j_password
+MCP_ADMIN_TOKEN_FILE=/run/secrets/mcp_admin_token
+PATHLIGHT_ACCESS_TOKEN_FILE=/run/secrets/pathlight_access_token
 ```
 
 ## Maintenance Windows
 
 ### Weekly
 
-- Review Pathlight traces for anomalies
+- Review Pathlight traces for anomalies, if enabled
 - Check Eventloom log sizes
 - Verify backup integrity
 
@@ -344,9 +313,25 @@ PATHLIGHT_ACCESS_TOKEN=$(vault read -field=token secret/zaxy/pathlight)
 
 ### Quarterly
 
-- Performance benchmark regression test
+- Performance benchmark regression test:
+  `pytest tests/test_competitive_benchmarks.py --benchmark-only --no-cov`
 - Capacity planning review
 - Security audit (dependency updates, key rotation)
+
+## Go-Live Gate
+
+Before promoting a build, run:
+
+```bash
+scripts/release-check.sh --root .
+```
+
+The release gate runs `ruff`, `mypy`, the full coverage-gated pytest suite,
+Python artifact build/metadata validation, public site/documentation validation,
+and deployment validation. A release is not ready until all six gates pass, the
+production `.env` points at
+TLS-enabled Neo4j, remote MCP/SSE bearer auth is configured, and secret files
+are not world-readable.
 
 ## Incident Response
 
@@ -382,17 +367,46 @@ PATHLIGHT_ACCESS_TOKEN=$(vault read -field=token secret/zaxy/pathlight)
 | `NEO4J_URI` | `bolt://localhost:7687` | Neo4j Bolt URI |
 | `NEO4J_USER` | `neo4j` | Neo4j username |
 | `NEO4J_PASSWORD` | `testpassword` | Neo4j password |
+| `NEO4J_PASSWORD_FILE` | unset | File containing Neo4j password |
+| `NEO4J_CA_CERT` | unset | CA certificate path for encrypted custom-CA Bolt connections |
+| `NEO4J_TRUST_ALL` | `false` | Trust all Neo4j certs; development only |
 | `PATHLIGHT_URL` | `http://localhost:4100` | Pathlight collector |
+| `PATHLIGHT_ENABLED` | `false` | Enable Pathlight client and health check |
+| `PATHLIGHT_ACCESS_TOKEN` | unset | Optional Pathlight token |
+| `PATHLIGHT_ACCESS_TOKEN_FILE` | unset | File containing optional Pathlight token |
+| `TRACE_RAW_QUERIES` | `false` | Include raw query text in traces |
 | `EVENTLOOM_PATH` | `.eventloom` | Event log directory |
-| `ZAXY_TRACER_DISABLED` | `false` | Disable Pathlight tracing |
+| `EVENTLOOM_THREAD` | `default` | Default session/log name |
+| `ZAXY_ENV` | `development` | Runtime environment; production enables stricter config validation |
+| `MCP_ADMIN_TOKEN` | unset | Optional token for replay/invalidate tools |
+| `MCP_ADMIN_TOKEN_FILE` | unset | File containing optional admin token |
+| `MCP_REMOTE_AUTH_TOKEN` | unset | Bearer token required for remote MCP/SSE requests when configured |
+| `MCP_REMOTE_AUTH_TOKEN_FILE` | unset | File containing remote MCP/SSE bearer token |
+| `MCP_REMOTE_SESSION_HEADER` | `x-zaxy-session-id` | HTTP header that scopes remote MCP/SSE requests to a session |
+| `QUERY_DEFAULT_LIMIT` | `10` | Default query result limit |
+| `EMBEDDING_ENABLED` | `true` | Generate embeddings for vector search |
+| `EMBEDDING_PROVIDER` | `hash` | Embedding provider: `hash` or `openai` |
+| `EMBEDDING_DIMENSION` | `1536` | Vector dimension; must match the Neo4j vector index |
+| `OPENAI_API_KEY` | unset | OpenAI API key for hosted embeddings |
+| `OPENAI_API_KEY_FILE` | unset | File containing OpenAI API key |
+| `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | OpenAI embedding model |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API base URL |
 
 ### CLI Commands
 
 ```bash
-zaxy serve          # Start MCP server
+zaxy serve          # Start MCP stdio server
+zaxy serve --transport sse --port 8080  # Start MCP SSE server bound to localhost
 zaxy replay PATH    # Replay Eventloom log
 zaxy compact PATH   # Compact log + create snapshot
 zaxy status         # Check service health
+scripts/backup.sh --root . --output-dir backups
+scripts/restore.sh --archive backups/zaxy.tar.gz --manifest backups/zaxy.sha256 --target restored
+scripts/rotate-logs.sh --log .eventloom/default.jsonl
+scripts/validate-deployment.sh --root .
+scripts/build-dist.sh --root .
+scripts/validate-docs.sh --root .
+scripts/release-check.sh --root .
 ```
 
 ### MCP Tools
@@ -401,9 +415,9 @@ zaxy status         # Check service health
 |------|---------|
 | `memory_append` | Write event to log + graph |
 | `memory_query` | Hybrid retrieval from graph |
-| `memory_replay` | Replay session events |
-| `memory_invalidate` | Soft-delete (bi-temporal) |
+| `memory_replay` | Replay session events; requires `admin_token` if configured |
+| `memory_invalidate` | Soft-delete (bi-temporal); requires `admin_token` if configured |
 
 ---
 
-*Last updated: 2024-01-01*
+*Last updated: 2026-05-05*

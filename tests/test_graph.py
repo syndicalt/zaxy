@@ -5,6 +5,7 @@ instance via Docker (marked with `integration`)."""
 
 from __future__ import annotations
 
+from datetime import UTC
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -72,20 +73,22 @@ class TestConnection:
         """trust_all should pass Neo4j's trust object, not a bare bool."""
         from neo4j import TrustAll
 
-        gs = GraphStore("bolt+s://x", "u", "p", trust_all=True)
+        gs = GraphStore("bolt://x", "u", "p", trust_all=True)
         await gs.connect()
-        certs = mock_factory.call_args.kwargs["trusted_certificates"]
-        assert isinstance(certs, TrustAll)
+        kwargs = mock_factory.call_args.kwargs
+        assert kwargs["encrypted"] is True
+        assert isinstance(kwargs["trusted_certificates"], TrustAll)
 
     @patch("zaxy.graph.AsyncGraphDatabase.driver")
     async def test_connect_uses_custom_ca_object(self, mock_factory: MagicMock) -> None:
         """ca_cert should pass Neo4j's custom CA trust object."""
         from neo4j import TrustCustomCAs
 
-        gs = GraphStore("bolt+s://x", "u", "p", ca_cert="/tmp/ca.pem")
+        gs = GraphStore("bolt://x", "u", "p", ca_cert="/tmp/ca.pem")
         await gs.connect()
-        certs = mock_factory.call_args.kwargs["trusted_certificates"]
-        assert isinstance(certs, TrustCustomCAs)
+        kwargs = mock_factory.call_args.kwargs
+        assert kwargs["encrypted"] is True
+        assert isinstance(kwargs["trusted_certificates"], TrustCustomCAs)
 
     async def test_close_closes_driver(self, mock_driver: AsyncMock) -> None:
         """close() should close the driver and clear the reference."""
@@ -108,7 +111,12 @@ class TestSchema:
         await store.init_schema()
         calls = store._driver.execute_query.await_args_list
         cypher_statements = [call.args[0] for call in calls]
-        assert any("CREATE CONSTRAINT" in s for s in cypher_statements)
+        assert any("DROP CONSTRAINT entity_id IF EXISTS" in s for s in cypher_statements)
+        assert any(
+            "REQUIRE (e.name, e.entity_type, e.valid_from) IS UNIQUE" in s
+            for s in cypher_statements
+        )
+        assert any("CREATE INDEX entity_lookup" in s for s in cypher_statements)
         assert any("CREATE VECTOR INDEX" in s for s in cypher_statements)
         assert any("CREATE FULLTEXT INDEX" in s for s in cypher_statements)
 
@@ -129,7 +137,15 @@ class TestIngestion:
     async def test_upsert_entity(self, store: GraphStore) -> None:
         """Upserting an entity should MERGE it with temporal properties."""
         result = ExtractionResult(
-            entities=[ExtractedEntity(name="Alice", entity_type="user", observed_at="2024-01-01T00:00:00Z")],
+            entities=[
+                ExtractedEntity(
+                    name="Alice",
+                    entity_type="user",
+                    observed_at="2024-01-01T00:00:00Z",
+                    summary="Works on memory",
+                    embedding=[0.1, 0.2],
+                )
+            ],
             edges=[],
             source_event_seq=1,
         )
@@ -138,8 +154,30 @@ class TestIngestion:
         call = store._driver.execute_query.await_args_list[0]
         cypher, kwargs = call.args[0], call.kwargs
         assert "MERGE (e:Entity" in cypher
+        assert "valid_from: datetime($observed_at)" in cypher
+        assert "SET prev.valid_to = e.valid_from" in cypher
+        assert "SET e.valid_to = next_valid_from" in cypher
+        assert "e.summary = coalesce($summary, e.summary)" in cypher
+        assert "e.embedding = coalesce($embedding, e.embedding)" in cypher
         assert kwargs["name"] == "Alice"
         assert kwargs["entity_type"] == "user"
+        assert kwargs["summary"] == "Works on memory"
+        assert kwargs["embedding"] == [0.1, 0.2]
+
+    async def test_upsert_entity_versions_by_valid_from(self, store: GraphStore) -> None:
+        """Reassertions should create new versions instead of overwriting history."""
+        result = ExtractionResult(
+            entities=[ExtractedEntity(name="Alice", entity_type="user", observed_at="2024-01-01T00:00:00Z")],
+            edges=[],
+            source_event_seq=1,
+        )
+        await store.upsert_extraction(result)
+
+        cypher = store._driver.execute_query.await_args_list[0].args[0]
+        assert "MERGE (e:Entity" in cypher
+        assert "valid_from: datetime($observed_at)" in cypher
+        assert "ON MATCH SET e.updated_at = datetime($observed_at)" not in cypher
+        assert "SET prev.valid_to = e.valid_from" in cypher
 
     async def test_upsert_edge(self, store: GraphStore) -> None:
         """Upserting an edge should MATCH source/target then MERGE the rel."""
@@ -166,6 +204,8 @@ class TestIngestion:
         cypher, kwargs = call.args[0], call.kwargs
         assert "MATCH (s:Entity" in cypher
         assert "MATCH (t:Entity" in cypher
+        assert "s.valid_from <= datetime($valid_from)" in cypher
+        assert "t.valid_from <= datetime($valid_from)" in cypher
         assert "MERGE (s)-[r:RELATES" in cypher
         assert kwargs["source"] == "Alice"
         assert kwargs["target"] == "Goal1"
@@ -216,6 +256,8 @@ class TestRetrieval:
         results = await store.search_exact("Alice")
         assert len(results) == 1
         assert results[0].name == "Alice"
+        call = store._driver.execute_query.await_args
+        assert "e.valid_to IS NULL" in call.args[0]
 
     async def test_search_exact_with_type_filter(self, store: GraphStore) -> None:
         """Exact search should optionally filter by entity_type."""
@@ -276,6 +318,22 @@ class TestRetrieval:
         await store.search_traversal("Alice", temporal_point="2024-03-01T00:00:00Z")
         call = store._driver.execute_query.await_args
         assert "datetime($t)" in call.args[0]
+        assert "start.valid_from <= datetime($t)" in call.args[0]
+        assert "neighbor.valid_from <= datetime($t)" in call.args[0]
+
+    async def test_search_keyword_defaults_to_current_versions(self, store: GraphStore) -> None:
+        """Keyword search without a temporal point should hide historical versions."""
+        store._driver.execute_query.return_value = ([], None, None)
+        await store.search_keyword("ship")
+        call = store._driver.execute_query.await_args
+        assert "WHERE node.valid_to IS NULL" in call.args[0]
+
+    async def test_search_vector_defaults_to_current_versions(self, store: GraphStore) -> None:
+        """Vector search without a temporal point should hide historical versions."""
+        store._driver.execute_query.return_value = ([], None, None)
+        await store.search_vector([0.1, 0.2])
+        call = store._driver.execute_query.await_args
+        assert "WHERE node.valid_to IS NULL" in call.args[0]
 
     async def test_search_traversal_rejects_invalid_depth(self, store: GraphStore) -> None:
         """Traversal depth must be bounded before being interpolated into Cypher."""
@@ -370,6 +428,54 @@ class TestIntegration:
         found_after = await real_store.search_exact("OldFact", temporal_point="2024-07-01T00:00:00Z")
         assert len(found_after) == 0
 
+    async def test_reassertion_creates_temporal_versions(self, real_store: GraphStore) -> None:
+        """Reasserting an entity should preserve old and new versions."""
+        first = ExtractionResult(
+            entities=[
+                ExtractedEntity(
+                    name="Fact",
+                    entity_type="fact",
+                    observed_at="2024-01-01T00:00:00Z",
+                    summary="old",
+                )
+            ],
+            edges=[],
+            source_event_seq=1,
+        )
+        second = ExtractionResult(
+            entities=[
+                ExtractedEntity(
+                    name="Fact",
+                    entity_type="fact",
+                    observed_at="2024-06-01T00:00:00Z",
+                    summary="new",
+                )
+            ],
+            edges=[],
+            source_event_seq=2,
+        )
+
+        await real_store.upsert_extraction(first)
+        await real_store.upsert_extraction(second)
+
+        current = await real_store.search_exact("Fact")
+        before = await real_store.search_exact(
+            "Fact",
+            temporal_point="2024-03-01T00:00:00Z",
+        )
+        after = await real_store.search_exact(
+            "Fact",
+            temporal_point="2024-07-01T00:00:00Z",
+        )
+
+        assert len(current) == 1
+        assert current[0].properties["summary"] == "new"
+        assert len(before) == 1
+        assert before[0].properties["summary"] == "old"
+        assert before[0].valid_to is not None
+        assert len(after) == 1
+        assert after[0].properties["summary"] == "new"
+
     async def test_full_pipeline_event_to_query(self, real_store: GraphStore) -> None:
         """End-to-end: event -> extract -> upsert -> query -> context chunk."""
         from zaxy.query import QueryRouter
@@ -394,11 +500,12 @@ class TestIntegration:
         ]
 
         # 2. Extract and upsert each event
-        from datetime import datetime, timezone
+        from datetime import datetime
+
         from zaxy.event import EventLog
         from zaxy.extract import extract
         log = EventLog("/tmp/zaxy_pipeline_test.jsonl")
-        ts = datetime(2024, 1, 1, tzinfo=timezone.utc)
+        ts = datetime(2024, 1, 1, tzinfo=UTC)
         for ev in events:
             event = log.append(
                 ev["event_type"], ev["actor"], ev["payload"],
@@ -419,3 +526,22 @@ class TestIntegration:
         future_chunks = await router.query("Ship MVP", temporal_point="2025-01-01T00:00:00Z")
         # Should still find it (not invalidated, and 2025 > 2024)
         assert len(future_chunks) > 0
+
+
+@pytest.mark.integration
+class TestTLSIntegration:
+    """Integration tests against a TLS-enabled Neo4j instance."""
+
+    async def test_connects_with_custom_ca_over_bolt_s(self) -> None:
+        """GraphStore should connect to TLS Neo4j using the generated CA."""
+        gs = GraphStore(
+            "bolt://localhost:7689",
+            "neo4j",
+            "testpassword",
+            ca_cert=".certs/ca.crt",
+        )
+        await gs.connect()
+        assert gs._driver is not None
+        records, _, _ = await gs._driver.execute_query("RETURN 1 AS n")
+        assert records[0]["n"] == 1
+        await gs.close()

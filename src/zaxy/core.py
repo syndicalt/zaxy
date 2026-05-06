@@ -19,14 +19,16 @@ Example::
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 from zaxy.config import get_settings
-from zaxy.event import EventLog, ReplayResult
+from zaxy.embedding import build_embedding_provider, embed_extraction
+from zaxy.event import EventLog, ReplayResult  # noqa: F401 - compatibility for existing tests
 from zaxy.extract import extract
 from zaxy.graph import GraphStore
 from zaxy.metrics import get_metrics
 from zaxy.query import QueryRouter
+from zaxy.security import validate_payload, validate_query, validate_session_id
 from zaxy.session import SessionManager
 from zaxy.trace import MemoryTracer
 
@@ -79,10 +81,11 @@ class MemoryFabric:
         self.query_router = QueryRouter(
             self.graph, default_limit=settings.query_default_limit
         )
+        self.embedding_provider = build_embedding_provider(settings)
         self.tracer = MemoryTracer(
             base_url=pathlight_url or settings.pathlight_url,
             project_id=pathlight_project_id or settings.pathlight_project_id,
-            disabled=tracer_disabled,
+            disabled=tracer_disabled or not settings.pathlight_enabled,
         )
         self._connected = False
 
@@ -124,17 +127,20 @@ class MemoryFabric:
         if not self._connected:
             await self.connect()
 
-        sid = session_id or thread
+        sid = validate_session_id(session_id or thread)
+        safe_payload = validate_payload(payload or {})
         eventlog = self.session_manager.get(sid).eventlog
 
         event = eventlog.append(
             event_type,
             actor=actor,
-            payload=payload or {},
+            payload=safe_payload,
             thread=sid,
         )
 
         extraction = extract(event)
+        if self.embedding_provider is not None:
+            extraction = embed_extraction(extraction, self.embedding_provider)
         await self.graph.upsert_extraction(extraction)
         await self.tracer.trace_append(event_type, actor, event.seq)
 
@@ -161,12 +167,17 @@ class MemoryFabric:
 
         import time
 
+        validate_query(query)
         start = time.perf_counter()
+        query_embedding = embedding
+        if query_embedding is None and self.embedding_provider is not None:
+            query_embedding = self.embedding_provider.embed(query)
+
         chunks = await self.query_router.query(
             query,
             temporal_point=temporal_point,
             limit=limit,
-            embedding=embedding,
+            embedding=query_embedding,
         )
         duration_ms = (time.perf_counter() - start) * 1000
 
@@ -191,7 +202,7 @@ class MemoryFabric:
 
         Returns the full replay result including integrity verification.
         """
-        return self.session_manager.replay(session_id, from_seq=from_seq)
+        return cast(ReplayResult, self.session_manager.replay(session_id, from_seq=from_seq))
 
     async def invalidate(self, entity_name: str, entity_type: str, invalid_at: str) -> None:
         """Mark a fact as invalid at a given time (bi-temporal update).
