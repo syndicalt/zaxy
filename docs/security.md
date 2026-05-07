@@ -6,6 +6,14 @@ to persist, replay, and export. Store redacted summaries, references, and
 non-sensitive identifiers instead of credentials, API keys, bearer tokens, or
 private customer data.
 
+Eventloom appends apply a final safety net before an event is sealed. Payload
+keys such as `password`, `api_key`, `authorization`, `token`, `secret`, and
+`private_key` are replaced with `[REDACTED]`, and common secret-looking string
+values are redacted even when the field name is generic. The event records a
+`security` classification with `sensitivity` and `redacted_paths`, so replay
+can show where redaction occurred without exposing the original value. Treat
+this as defense in depth, not as permission to send raw credentials.
+
 Production configuration should use secret files. Supported file variables are
 `NEO4J_PASSWORD_FILE`, `MCP_ADMIN_TOKEN_FILE`,
 `MCP_REMOTE_AUTH_TOKEN_FILE`, `OPENAI_API_KEY_FILE`, and
@@ -36,8 +44,9 @@ localhost. Production compose enables Bolt TLS and mounts certificates generated
 by `scripts/generate-certs.sh` or supplied by your platform. The deployment
 validator rejects production plaintext Bolt usage without a CA certificate.
 
-Input validation lives in `src/zaxy/security.py`. It bounds payload size, query
-length, traversal depth, result limits, and session ID shape. These limits
+Input validation and payload sanitization live in `src/zaxy/security.py`. They
+bound payload size, query length, traversal depth, result limits, and session ID
+shape, then classify and redact payloads before durable writes. These limits
 protect the graph and filesystem from accidental or hostile inputs.
 
 Observability also needs care. Pathlight tracing should avoid raw query text

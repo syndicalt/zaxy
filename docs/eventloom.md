@@ -5,11 +5,11 @@ logs where each line is a validated event. The graph can be rebuilt from these
 logs, which means graph projection bugs are recoverable and memory history is
 auditable.
 
-An event has a type, actor, payload, sequence number, timestamp, hash, and
-previous hash. The exact Python model is in `src/zaxy/event.py`. The hash chain
-makes the log tamper-evident: replay can detect missing, reordered, or edited
-records. A corrupt projection should be fixed by replaying the log rather than
-patching Neo4j directly.
+An event has a type, actor, payload, sequence number, timestamp, hash, previous
+hash, and optional security classification metadata. The exact Python model is
+in `src/zaxy/event.py`. The hash chain makes the log tamper-evident: replay can
+detect missing, reordered, or edited records. A corrupt projection should be
+fixed by replaying the log rather than patching Neo4j directly.
 
 Typed event names matter. Zaxy's extractor uses deterministic handlers for
 known events such as `goal.created`, `task.proposed`, and related lifecycle
@@ -30,7 +30,9 @@ known point. This is why append performance and file locking are treated as core
 requirements.
 
 Do not store secrets in Eventloom payloads. Payloads are durable and may be
-exported to observability systems. Store references, summaries, or redacted
+exported to observability systems. Event appends redact common secret keys and
+secret-looking values before the hash is sealed, and record the affected payload
+paths under `security.redacted_paths`. Store references, summaries, or redacted
 metadata instead. See [security.md](security.md) for data-handling guidance.
 
 Related pages: [architecture.md](architecture.md), [graph-schema.md](graph-schema.md),

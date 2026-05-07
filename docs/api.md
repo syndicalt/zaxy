@@ -61,6 +61,9 @@ await fabric.close()
 `MemoryFabric` validates inputs before writing events or querying the graph.
 Session IDs are passed through the same safety rules used by MCP. Payload size,
 query length, traversal depth, and limits are bounded in `src/zaxy/security.py`.
+At the durable `EventLog.append` boundary, payloads are also classified and
+common secret fields or secret-looking values are redacted before the event hash
+is sealed.
 
 Lower-level modules are public enough for advanced integration but should be
 used carefully: `EventLog` for direct JSONL operations, `extract` for rule-based

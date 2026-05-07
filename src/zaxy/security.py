@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,27 @@ MAX_QUERY_LENGTH = 4096
 MAX_QUERY_LIMIT = 100
 MAX_REPLAY_EVENTS = 1000
 MAX_TRAVERSAL_DEPTH = 5
+REDACTED_VALUE = "[REDACTED]"
+SECRET_KEY_PATTERN = re.compile(
+    r"(api[_-]?key|authorization|bearer|cookie|credential|password|private[_-]?key|"
+    r"secret|token)",
+    re.IGNORECASE,
+)
+SECRET_VALUE_PATTERNS = (
+    re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b"),
+    re.compile(r"\bpypi-[A-Za-z0-9_-]{20,}\b"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(r"\b[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b"),
+)
+
+
+@dataclass(frozen=True)
+class SecuredPayload:
+    """Payload plus durable security classification metadata."""
+
+    payload: dict[str, Any]
+    sensitivity: str
+    redacted_paths: list[str]
 
 
 def validate_session_id(session_id: str) -> str:
@@ -46,6 +68,57 @@ def validate_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if len(encoded) > MAX_PAYLOAD_BYTES:
         raise ValueError(f"payload exceeds {MAX_PAYLOAD_BYTES} bytes")
     return payload
+
+
+def secure_payload(payload: dict[str, Any]) -> SecuredPayload:
+    """Return a redacted copy of a payload and its sensitivity classification."""
+    safe_payload, redacted_paths = _redact_value(payload, path="")
+    if not isinstance(safe_payload, dict):
+        safe_payload = {}
+    return SecuredPayload(
+        payload=safe_payload,
+        sensitivity="restricted" if redacted_paths else "public",
+        redacted_paths=redacted_paths,
+    )
+
+
+def _redact_value(value: Any, path: str) -> tuple[Any, list[str]]:
+    if isinstance(value, dict):
+        redacted: dict[str, Any] = {}
+        paths: list[str] = []
+        for key, child in value.items():
+            child_path = f"{path}.{key}" if path else str(key)
+            if _is_secret_key(str(key)):
+                redacted[key] = REDACTED_VALUE
+                paths.append(child_path)
+                continue
+            safe_child, child_paths = _redact_value(child, child_path)
+            redacted[key] = safe_child
+            paths.extend(child_paths)
+        return redacted, paths
+
+    if isinstance(value, list):
+        redacted_items: list[Any] = []
+        paths = []
+        for index, child in enumerate(value):
+            child_path = f"{path}[{index}]"
+            safe_child, child_paths = _redact_value(child, child_path)
+            redacted_items.append(safe_child)
+            paths.extend(child_paths)
+        return redacted_items, paths
+
+    if isinstance(value, str) and _looks_like_secret(value):
+        return REDACTED_VALUE, [path or "$"]
+
+    return value, []
+
+
+def _is_secret_key(key: str) -> bool:
+    return SECRET_KEY_PATTERN.search(key) is not None
+
+
+def _looks_like_secret(value: str) -> bool:
+    return any(pattern.search(value) for pattern in SECRET_VALUE_PATTERNS)
 
 
 def validate_query(query: str) -> str:

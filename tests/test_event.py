@@ -93,6 +93,23 @@ class TestEvent:
         ev = ev_tmp.model_copy(update={"hash": correct})
         assert ev.verify() is True
 
+    def test_legacy_event_without_security_metadata_still_verifies(self) -> None:
+        """Older logs without security metadata should remain replayable."""
+        ev_tmp = Event(
+            seq=1,
+            timestamp="2024-01-01T00:00:00Z",
+            type="goal.created",
+            actor="user",
+            payload={"title": "Legacy"},
+            hash="0" * 64,
+        )
+        import hashlib
+
+        legacy_hash = hashlib.sha256(ev_tmp.canonical()).hexdigest()
+        ev = ev_tmp.model_copy(update={"hash": legacy_hash})
+        assert ev.security is None
+        assert ev.verify() is True
+
     def test_verify_incorrect_hash(self) -> None:
         """An event with a wrong hash should fail verification."""
         ev = Event(
@@ -123,6 +140,34 @@ class TestEventLogIO:
         assert ev.type == "goal.created"
         assert ev.verify() is True
         assert ev.prev_hash is None
+
+    def test_append_redacts_secret_payload_values_before_sealing(
+        self, tmp_eventlog: EventLog
+    ) -> None:
+        """Secrets should never be persisted into the immutable Eventloom log."""
+        ev = tmp_eventlog.append(
+            "credential.observed",
+            actor="user",
+            payload={
+                "title": "Configure provider",
+                "api_key": "sk-secret-value",
+                "nested": {"authorization": "Bearer live-token"},
+            },
+        )
+
+        assert ev.payload == {
+            "title": "Configure provider",
+            "api_key": "[REDACTED]",
+            "nested": {"authorization": "[REDACTED]"},
+        }
+        assert ev.security.sensitivity == "restricted"
+        assert ev.security.redacted_paths == ["api_key", "nested.authorization"]
+        assert ev.verify() is True
+
+        loaded = tmp_eventlog.read_all()[0]
+        assert loaded.payload["api_key"] == "[REDACTED]"
+        assert loaded.security.sensitivity == "restricted"
+        assert loaded.verify() is True
 
     def test_append_increments_seq(self, tmp_eventlog: EventLog) -> None:
         """Multiple appends should produce monotonic seq numbers."""

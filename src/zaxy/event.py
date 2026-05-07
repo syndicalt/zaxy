@@ -28,6 +28,18 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from zaxy.security import secure_payload
+
+
+class EventSecurity(BaseModel):
+    """Security classification for a durable Eventloom payload."""
+
+    sensitivity: str = Field(default="public", description="Payload sensitivity tier.")
+    redacted_paths: list[str] = Field(
+        default_factory=list,
+        description="Payload paths redacted before the event was sealed.",
+    )
+
 
 class Event(BaseModel):
     """A single Eventloom event.
@@ -42,6 +54,10 @@ class Event(BaseModel):
     actor: str = Field(..., min_length=1, description="Actor that emitted the event.")
     thread: str = Field(default="default", description="Logical thread / session ID.")
     payload: dict[str, Any] = Field(default_factory=dict, description="Structured payload.")
+    security: EventSecurity | None = Field(
+        default=None,
+        description="Security classification metadata for the payload.",
+    )
     prev_hash: str | None = Field(default=None, description="Hash of previous event.")
     hash: str = Field(..., min_length=64, max_length=64, description="SHA-256 of this event.")
 
@@ -67,6 +83,8 @@ class Event(BaseModel):
             "payload": self.payload,
             "prev_hash": self.prev_hash,
         }
+        if self.security is not None:
+            obj["security"] = self.security.model_dump()
         return json.dumps(obj, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
     def verify(self) -> bool:
@@ -150,7 +168,7 @@ class EventLog:
         prev_hash = events[-1].hash if events else None
 
         ts = (timestamp or datetime.now(UTC)).isoformat().replace("+00:00", "Z")
-        payload = payload or {}
+        secured = secure_payload(payload or {})
 
         # Build event with dummy hash, compute real hash, then recreate
         raw = {
@@ -159,7 +177,11 @@ class EventLog:
             "type": event_type,
             "actor": actor,
             "thread": thread,
-            "payload": payload,
+            "payload": secured.payload,
+            "security": {
+                "sensitivity": secured.sensitivity,
+                "redacted_paths": secured.redacted_paths,
+            },
             "prev_hash": prev_hash,
             "hash": "0" * 64,  # placeholder
         }
