@@ -286,15 +286,19 @@ class QueryRouter:
 
         # 1. Exact match attempt against the full query and structured entity
         # names embedded in natural-language questions.
+        warnings: list[str] = []
         exact_entities = []
         for candidate in _exact_candidates(query):
-            exact_entities.extend(
-                await self.store.search_exact(
-                    candidate,
-                    temporal_point=temporal_point,
-                    session_id=scope,
+            try:
+                exact_entities.extend(
+                    await self.store.search_exact(
+                        candidate,
+                        temporal_point=temporal_point,
+                        session_id=scope,
+                    )
                 )
-            )
+            except Exception:
+                warnings.append("exact search unavailable")
         for ent in exact_entities:
             results.append(
                 SearchResult(
@@ -311,12 +315,16 @@ class QueryRouter:
         # 2. Vector search (if embedding provided)
         vector_hits: list[SearchResult] = []
         if embedding:
-            vector_hits = await self.store.search_vector(
-                embedding,
-                limit=lim,
-                temporal_point=temporal_point,
-                session_id=scope,
-            )
+            try:
+                vector_hits = await self.store.search_vector(
+                    embedding,
+                    limit=lim,
+                    temporal_point=temporal_point,
+                    session_id=scope,
+                )
+            except Exception:
+                warnings.append("vector search unavailable")
+                vector_hits = []
             for hit in vector_hits:
                 hit = SearchResult(
                     entity=hit.entity,
@@ -333,12 +341,16 @@ class QueryRouter:
         keyword_hits: list[SearchResult] = []
         for keyword_query in _expanded_queries(query):
             query_weight = 1.0 if keyword_query == query else self.scoring_profile.expansion_weight
-            query_hits = await self.store.search_keyword(
-                keyword_query,
-                limit=lim,
-                temporal_point=temporal_point,
-                session_id=scope,
-            )
+            try:
+                query_hits = await self.store.search_keyword(
+                    keyword_query,
+                    limit=lim,
+                    temporal_point=temporal_point,
+                    session_id=scope,
+                )
+            except Exception:
+                warnings.append("keyword search unavailable")
+                continue
             for hit in query_hits:
                 hit = SearchResult(
                     entity=hit.entity,
@@ -358,12 +370,16 @@ class QueryRouter:
         seen = {r.entity.name for r in results}
         traversal_seeds = results[:3] + (vector_hits + keyword_hits)[:3]
         for hit in traversal_seeds:
-            neighbors = await self.store.search_traversal(
-                hit.entity.name,
-                depth=2,
-                temporal_point=temporal_point,
-                session_id=scope,
-            )
+            try:
+                neighbors = await self.store.search_traversal(
+                    hit.entity.name,
+                    depth=2,
+                    temporal_point=temporal_point,
+                    session_id=scope,
+                )
+            except Exception:
+                warnings.append("traversal search unavailable")
+                continue
             for neighbor in neighbors:
                 if neighbor.name in seen:
                     continue
@@ -387,7 +403,7 @@ class QueryRouter:
                 best[key] = r
 
         # 6. Sort with either provider reranking or MMR diversity and truncate
-        ranked = await self._rank(query, list(best.values()), lim)
+        ranked = await self._rank(query, [_with_warnings(r, warnings) for r in best.values()], lim)
 
         return [_to_chunk(r) for r in ranked]
 
@@ -400,7 +416,10 @@ class QueryRouter:
         )
         if self.reranker is None:
             return candidates[:limit]
-        reranked = await self.reranker.rerank(query, candidates, limit=limit)
+        try:
+            reranked = await self.reranker.rerank(query, candidates, limit=limit)
+        except Exception:
+            return [_with_warnings(candidate, ["reranker unavailable"]) for candidate in candidates[:limit]]
         return reranked[:limit]
 
 
@@ -704,6 +723,20 @@ def _unique(values: list[str]) -> list[str]:
     return unique
 
 
+def _merge_warnings(existing: tuple[str, ...], warnings: list[str] | tuple[str, ...]) -> tuple[str, ...]:
+    merged = list(existing)
+    for warning in warnings:
+        if warning not in merged:
+            merged.append(warning)
+    return tuple(merged)
+
+
+def _with_warnings(result: SearchResult, warnings: list[str] | tuple[str, ...]) -> SearchResult:
+    if not warnings:
+        return result
+    return replace(result, warnings=_merge_warnings(result.warnings, warnings))
+
+
 def _score_explanation(result: SearchResult) -> dict[str, Any]:
     """Return compact score details for retrieval debugging."""
     return {
@@ -717,6 +750,7 @@ def _score_explanation(result: SearchResult) -> dict[str, Any]:
         **({"temporal_weight": round(result.temporal_weight, 4)} if result.temporal_weight is not None else {}),
         **({"reranker": result.reranker} if result.reranker is not None else {}),
         **({"rerank_score": round(result.rerank_score, 4)} if result.rerank_score is not None else {}),
+        **({"warnings": list(result.warnings)} if result.warnings else {}),
         "weighted_score": round(result.score, 4),
         "ranking_score": round(result.ranking_score if result.ranking_score is not None else result.score, 4),
     }

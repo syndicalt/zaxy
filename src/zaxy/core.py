@@ -18,6 +18,7 @@ Example::
 
 from __future__ import annotations
 
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -142,7 +143,10 @@ class MemoryFabric:
                 backward compatibility.
         """
         if not self._connected:
-            await self.connect()
+            try:
+                await self.connect()
+            except Exception:
+                self._connected = False
 
         sid = validate_session_id(session_id or thread)
         safe_payload = validate_payload(payload or {})
@@ -157,9 +161,12 @@ class MemoryFabric:
 
         extraction = extract(event)
         if self.embedding_provider is not None:
-            extraction = embed_extraction(extraction, self.embedding_provider)
-        await self.graph.upsert_extraction(extraction, session_id=sid)
-        await self.tracer.trace_append(event_type, actor, event.seq)
+            with suppress(Exception):
+                extraction = embed_extraction(extraction, self.embedding_provider)
+        with suppress(Exception):
+            await self.graph.upsert_extraction(extraction, session_id=sid)
+        with suppress(Exception):
+            await self.tracer.trace_append(event_type, actor, event.seq)
 
         # Metrics
         metrics = get_metrics()
@@ -218,34 +225,51 @@ class MemoryFabric:
         This is the primary read path. It runs hybrid retrieval
         (exact + vector + keyword + traversal) and returns ranked context chunks.
         """
-        if not self._connected:
-            await self.connect()
-
         import time
 
         validate_query(query)
         sid = validate_session_id(session_id)
         start = time.perf_counter()
+        if not self._connected:
+            try:
+                await self.connect()
+            except Exception:
+                chunks = self._query_eventlog_fallback(query, sid, limit, reason="graph unavailable")
+                duration_ms = (time.perf_counter() - start) * 1000
+                await self._trace_query_best_effort(query, len(chunks), duration_ms, temporal_point)
+                get_metrics().record_query(duration_ms / 1000.0)
+                return chunks
+
         query_embedding = embedding
         if query_embedding is None and self.embedding_provider is not None:
-            query_embedding = self.embedding_provider.embed(query)
+            try:
+                query_embedding = self.embedding_provider.embed(query)
+            except Exception:
+                query_embedding = None
 
-        chunks = await self.query_router.query(
-            query,
-            temporal_point=temporal_point,
-            limit=limit,
-            embedding=query_embedding,
-            session_id=sid,
-        )
+        try:
+            router_chunks = await self.query_router.query(
+                query,
+                temporal_point=temporal_point,
+                limit=limit,
+                embedding=query_embedding,
+                session_id=sid,
+            )
+        except Exception:
+            contexts = self._query_eventlog_fallback(query, sid, limit, reason="graph retrieval unavailable")
+            duration_ms = (time.perf_counter() - start) * 1000
+            await self._trace_query_best_effort(query, len(contexts), duration_ms, temporal_point)
+            get_metrics().record_query(duration_ms / 1000.0)
+            return contexts
         duration_ms = (time.perf_counter() - start) * 1000
 
-        await self.tracer.trace_query(query, len(chunks), duration_ms, temporal_point)
+        await self._trace_query_best_effort(query, len(router_chunks), duration_ms, temporal_point)
 
         # Metrics
         get_metrics().record_query(duration_ms / 1000.0)
 
         contexts = []
-        for c in chunks:
+        for c in router_chunks:
             metadata: dict[str, Any] = {}
             if c.citation:
                 metadata["citation"] = c.citation
@@ -262,6 +286,56 @@ class MemoryFabric:
                 )
             )
         return contexts
+
+    def _query_eventlog_fallback(
+        self,
+        query: str,
+        session_id: str,
+        limit: int,
+        *,
+        reason: str,
+    ) -> list[Context]:
+        """Return best-effort context from Eventloom when graph retrieval is down."""
+        replay = self.session_manager.replay(session_id, from_seq=1)
+        query_tokens = _tokens(query)
+        contexts: list[Context] = []
+        for event in replay.events:
+            content = _event_content(event)
+            if not content:
+                continue
+            event_tokens = _tokens(content)
+            if query_tokens:
+                score = len(query_tokens & event_tokens) / len(query_tokens)
+                if score == 0:
+                    continue
+            else:
+                score = 0.1
+            contexts.append(
+                Context(
+                    content=content,
+                    source="eventloom",
+                    score=round(score, 4),
+                    valid_from=getattr(event, "timestamp", None),
+                    valid_to=None,
+                    metadata={
+                        "degraded": True,
+                        "reason": reason,
+                        "event_seq": getattr(event, "seq", None),
+                        "event_type": getattr(event, "type", None),
+                    },
+                )
+            )
+        return sorted(contexts, key=lambda item: item.score, reverse=True)[:limit]
+
+    async def _trace_query_best_effort(
+        self,
+        query: str,
+        result_count: int,
+        duration_ms: float,
+        temporal_point: str | None,
+    ) -> None:
+        with suppress(Exception):
+            await self.tracer.trace_query(query, result_count, duration_ms, temporal_point)
 
     async def replay(self, from_seq: int = 1, session_id: str = "default") -> ReplayResult:
         """Replay events from the log starting at a sequence number.
@@ -329,3 +403,23 @@ class MemoryFabric:
         Suitable for resuming an agent session across restarts.
         """
         return self.session_manager.handoff_summary(session_id)
+
+
+def _event_content(event: Any) -> str:
+    payload = getattr(event, "payload", {})
+    if not isinstance(payload, dict):
+        return ""
+    parts = [
+        str(payload[key])
+        for key in ("title", "summary", "content", "text", "decision", "task")
+        if payload.get(key)
+    ]
+    if not parts:
+        parts = [f"{getattr(event, 'type', 'event')} by {getattr(event, 'actor', 'unknown')}"]
+    return " ".join(parts)
+
+
+def _tokens(value: str) -> set[str]:
+    import re
+
+    return {token for token in re.findall(r"[A-Za-z0-9]+", value.lower()) if len(token) > 1}

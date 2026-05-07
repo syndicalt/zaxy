@@ -228,13 +228,14 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Query expansion and temporal-aware retrieval scoring policies
 - [x] Configurable scoring profiles and local lexical reranker provider
 - [x] Hosted OpenAI-compatible and local HTTP reranker providers
+- [x] Graceful degradation for graph, embedding, vector, and reranker outages
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 298 passed |
-| Coverage | 92.32% |
+| Tests | 306 passed |
+| Coverage | 91.98% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
@@ -242,7 +243,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 ## Next Steps
 
 1. Add richer context lifecycle hooks: after-turn compaction, handoff bundles, and subagent cleanup.
-2. Add graceful degradation modes when Neo4j, embeddings, or rerankers are unavailable.
-3. Add OAuth/OIDC remote MCP authorization for public multi-tenant deployments.
-4. Add extractor authoring templates and schema migration tooling.
-5. Run OpenAI embedding benchmark with frozen corpus and compare against external graph-memory systems.
+2. Add OAuth/OIDC remote MCP authorization for public multi-tenant deployments.
+3. Add extractor authoring templates and schema migration tooling.
+4. Run OpenAI embedding benchmark with frozen corpus and compare against external graph-memory systems.
+5. Add degraded-mode metrics and alerting for fallback frequency.

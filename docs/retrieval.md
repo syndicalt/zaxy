@@ -42,6 +42,14 @@ Zaxy ships `HTTPReranker` for local/self-hosted rerank endpoints and
 return JSON candidate scores. `build_reranker(settings)` wires configured
 providers into `MemoryFabric`.
 
+Retrieval degrades by strategy instead of failing the whole query. If vector
+search is unavailable, exact, keyword, and traversal retrieval continue. If a
+reranker endpoint fails, Zaxy returns the built-in MMR order and records a
+`reranker unavailable` warning in score metadata. If Neo4j cannot be reached,
+`MemoryFabric.query()` falls back to the durable Eventloom log and marks
+returned contexts as degraded with the fallback reason. Embedding provider
+outages disable only vector participation for that call.
+
 Every graph-backed context chunk should cite its originating Eventloom event
 when provenance is available. Citations use the form
 `eventloom://<session>/events/<seq>#<hash-prefix>`. They let callers show why a
@@ -92,10 +100,10 @@ signal, not a universal benchmark against production-grade vector RAG or file
 memory systems.
 
 The next retrieval-quality work should close the practical ergonomics gap with
-QMD-style search sidecars: richer assembly lifecycle hooks, local embedding
-providers, and graceful degradation when Neo4j, embeddings, or rerankers are
-unavailable. These should augment Zaxy's temporal/provenance layer rather than
-replace it with generic chunk search.
+QMD-style search sidecars: richer assembly lifecycle hooks, stronger local
+embedding providers, and broader degraded-mode observability. These should
+augment Zaxy's temporal/provenance layer rather than replace it with generic
+chunk search.
 
 Related references: [graph-schema.md](graph-schema.md), [mcp.md](mcp.md),
 [configuration.md](configuration.md), [testing.md](testing.md), and

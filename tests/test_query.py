@@ -417,6 +417,70 @@ class TestQueryRouting:
         assert results[0].score_explanation["reranker"] == "lexical"
         assert results[0].score_explanation["rerank_score"] > 0
 
+    async def test_vector_failure_falls_back_to_keyword_results(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Vector outages should not prevent keyword/exact retrieval."""
+        mock_store.search_vector.side_effect = RuntimeError("vector index unavailable")
+        mock_store.search_keyword.return_value = [
+            SearchResult(
+                entity=GraphEntity(
+                    name="Auth decision",
+                    entity_type="decision",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={},
+                ),
+                score=1.0,
+                source="keyword",
+            )
+        ]
+
+        results = await router.query("auth decision", embedding=[0.1, 0.2])
+
+        assert results[0].content.startswith("Auth decision")
+        assert results[0].score_explanation is not None
+        assert "vector search unavailable" in results[0].score_explanation["warnings"]
+
+    async def test_reranker_failure_falls_back_to_mmr_order(
+        self,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Reranker outages should degrade to the built-in MMR ranking."""
+
+        class BrokenReranker:
+            async def rerank(
+                self,
+                query: str,
+                results: list[SearchResult],
+                *,
+                limit: int,
+            ) -> list[SearchResult]:
+                raise RuntimeError("reranker down")
+
+        router = QueryRouter(store=mock_store, default_limit=5, session_id="agent-1", reranker=BrokenReranker())
+        mock_store.search_keyword.return_value = [
+            SearchResult(
+                entity=GraphEntity(
+                    name="Auth decision",
+                    entity_type="decision",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={},
+                ),
+                score=1.0,
+                source="keyword",
+            )
+        ]
+
+        results = await router.query("auth decision")
+
+        assert results[0].content.startswith("Auth decision")
+        assert results[0].score_explanation is not None
+        assert "reranker unavailable" in results[0].score_explanation["warnings"]
+
 
 class TestModelRerankers:
     """Tests for hosted and local model reranker providers."""

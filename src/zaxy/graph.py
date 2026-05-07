@@ -60,6 +60,7 @@ class SearchResult:
     scoring_profile: str | None = None
     reranker: str | None = None
     rerank_score: float | None = None
+    warnings: tuple[str, ...] = ()
 
 
 class GraphStore:

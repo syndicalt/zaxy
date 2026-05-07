@@ -5,13 +5,20 @@ with all external dependencies mocked."""
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from zaxy.core import Context, MemoryFabric
-from zaxy.event import ReplayResult
 from zaxy.query import ContextChunk
+
+
+class BrokenEmbeddingProvider:
+    """Embedding provider test double that simulates provider outages."""
+
+    def embed(self, text: str) -> list[float]:
+        raise RuntimeError("embedding down")
 
 # ------------------------------------------------------------------
 # Fixtures
@@ -143,6 +150,36 @@ class TestAppend:
         extraction = fabric.graph.upsert_extraction.await_args.args[0]
         assert extraction.entities[0].embedding is not None
 
+    async def test_append_keeps_event_when_embedding_provider_fails(self, fabric: MemoryFabric) -> None:
+        """Embedding failures should not block the durable event append."""
+        fabric.embedding_provider = BrokenEmbeddingProvider()
+
+        await fabric.append("goal.created", actor="user", payload={"title": "T"})
+
+        log = fabric.session_manager.get.return_value.eventlog
+        log.append.assert_called_once()
+        fabric.graph.upsert_extraction.assert_awaited_once()
+        extraction = fabric.graph.upsert_extraction.await_args.args[0]
+        assert extraction.entities[0].embedding is None
+
+    async def test_append_keeps_event_when_graph_projection_fails(self, fabric: MemoryFabric) -> None:
+        """Graph projection failures should not roll back Eventloom writes."""
+        fabric.graph.upsert_extraction.side_effect = RuntimeError("graph down")
+
+        await fabric.append("goal.created", actor="user", payload={"title": "T"})
+
+        log = fabric.session_manager.get.return_value.eventlog
+        log.append.assert_called_once()
+
+    async def test_append_keeps_event_when_graph_connect_fails(self, fabric: MemoryFabric) -> None:
+        """Graph connection outages should not block durable Eventloom writes."""
+        fabric.graph.connect.side_effect = RuntimeError("graph down")
+
+        await fabric.append("goal.created", actor="user", payload={"title": "T"})
+
+        log = fabric.session_manager.get.return_value.eventlog
+        log.append.assert_called_once()
+
     async def test_traces_append(self, fabric: MemoryFabric) -> None:
         """append() should emit a Pathlight trace."""
         await fabric.append("goal.created", actor="user", payload={"title": "T"})
@@ -257,6 +294,55 @@ class TestQuery:
         await fabric.query("x", embedding=explicit)
         assert fabric.query_router.query.await_args.kwargs["embedding"] is explicit
 
+    async def test_query_continues_when_embedding_provider_fails(self, fabric: MemoryFabric) -> None:
+        """Embedding outages should degrade to non-vector retrieval."""
+        fabric.embedding_provider = BrokenEmbeddingProvider()
+        fabric.query_router.query.return_value = []
+
+        await fabric.query("x")
+
+        assert fabric.query_router.query.await_args.kwargs["embedding"] is None
+
+    async def test_query_falls_back_to_eventlog_when_graph_unavailable(self, fabric: MemoryFabric) -> None:
+        """Graph outages should still return matching durable Eventloom context."""
+        fabric.graph.connect.side_effect = RuntimeError("graph down")
+        event = MagicMock(
+            seq=7,
+            type="goal.created",
+            actor="user",
+            payload={"title": "Ship offline retrieval"},
+            timestamp="2024-01-01T00:00:00Z",
+        )
+        fabric.session_manager.replay.return_value = SimpleNamespace(
+            events=[event],
+        )
+
+        results = await fabric.query("offline retrieval")
+
+        assert results[0].source == "eventloom"
+        assert "Ship offline retrieval" in results[0].content
+        fabric.query_router.query.assert_not_awaited()
+
+    async def test_query_falls_back_to_eventlog_when_router_fails(self, fabric: MemoryFabric) -> None:
+        """Graph retrieval failures after connect should use durable Eventloom context."""
+        fabric.query_router.query.side_effect = RuntimeError("graph query down")
+        event = MagicMock(
+            seq=8,
+            type="task.proposed",
+            actor="assistant",
+            payload={"title": "Repair degraded retrieval"},
+            timestamp="2024-01-02T00:00:00Z",
+        )
+        fabric.session_manager.replay.return_value = SimpleNamespace(
+            events=[event],
+        )
+
+        results = await fabric.query("degraded retrieval")
+
+        assert results[0].source == "eventloom"
+        assert results[0].metadata is not None
+        assert results[0].metadata["reason"] == "graph retrieval unavailable"
+
     async def test_traces_query(self, fabric: MemoryFabric) -> None:
         """query() should emit a Pathlight trace with result count."""
         fabric.query_router.query.return_value = []
@@ -326,7 +412,7 @@ class TestReplay:
 
     async def test_replay_delegates_to_session_manager(self, fabric: MemoryFabric) -> None:
         """replay() should delegate to SessionManager.replay()."""
-        mock_result = MagicMock(spec=ReplayResult)
+        mock_result = MagicMock()
         fabric.session_manager.replay.return_value = mock_result
         result = await fabric.replay(from_seq=5)
         fabric.session_manager.replay.assert_called_once_with("default", from_seq=5)
@@ -334,7 +420,7 @@ class TestReplay:
 
     async def test_replay_with_session_id(self, fabric: MemoryFabric) -> None:
         """replay() should forward session_id to SessionManager."""
-        mock_result = MagicMock(spec=ReplayResult)
+        mock_result = MagicMock()
         fabric.session_manager.replay.return_value = mock_result
         result = await fabric.replay(from_seq=1, session_id="agent-1")
         fabric.session_manager.replay.assert_called_once_with("agent-1", from_seq=1)
