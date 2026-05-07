@@ -335,6 +335,35 @@ production `.env` points at
 TLS-enabled Neo4j, remote MCP/SSE bearer auth is configured, and secret files
 are not world-readable.
 
+## Prometheus Alerts
+
+```yaml
+groups:
+  - name: zaxy-degraded-mode
+    rules:
+      - alert: ZaxyGraphFallbacks
+        expr: increase(zaxy_degraded_operations_total{reason=~"graph_.*"}[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Zaxy graph degradation detected
+      - alert: ZaxyEmbeddingFallbacks
+        expr: increase(zaxy_degraded_operations_total{reason="embedding_provider_unavailable"}[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: Zaxy embedding provider unavailable
+      - alert: ZaxyRerankerFallbacks
+        expr: increase(zaxy_degraded_operations_total{reason="reranker_unavailable"}[10m]) > 0
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: Zaxy reranker degraded to MMR
+```
+
 ## Incident Response
 
 ### Severity Levels

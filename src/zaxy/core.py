@@ -159,6 +159,7 @@ class MemoryFabric:
             try:
                 await self.connect()
             except Exception:
+                get_metrics().record_degraded_operation("append", "graph_connect_unavailable")
                 self._connected = False
 
         sid = validate_session_id(session_id or thread)
@@ -174,10 +175,14 @@ class MemoryFabric:
 
         extraction = extract(event)
         if self.embedding_provider is not None:
-            with suppress(Exception):
+            try:
                 extraction = embed_extraction(extraction, self.embedding_provider)
-        with suppress(Exception):
+            except Exception:
+                get_metrics().record_degraded_operation("append", "embedding_provider_unavailable")
+        try:
             await self.graph.upsert_extraction(extraction, session_id=sid)
+        except Exception:
+            get_metrics().record_degraded_operation("append", "graph_projection_unavailable")
         with suppress(Exception):
             await self.tracer.trace_append(event_type, actor, event.seq)
 
@@ -247,10 +252,11 @@ class MemoryFabric:
             try:
                 await self.connect()
             except Exception:
+                get_metrics().record_degraded_operation("query", "graph_unavailable")
                 chunks = self._query_eventlog_fallback(query, sid, limit, reason="graph unavailable")
                 duration_ms = (time.perf_counter() - start) * 1000
                 await self._trace_query_best_effort(query, len(chunks), duration_ms, temporal_point)
-                get_metrics().record_query(duration_ms / 1000.0)
+                get_metrics().record_query(duration_ms / 1000.0, source="eventloom")
                 return chunks
 
         query_embedding = embedding
@@ -258,6 +264,7 @@ class MemoryFabric:
             try:
                 query_embedding = self.embedding_provider.embed(query)
             except Exception:
+                get_metrics().record_degraded_operation("query", "embedding_provider_unavailable")
                 query_embedding = None
 
         try:
@@ -269,10 +276,11 @@ class MemoryFabric:
                 session_id=sid,
             )
         except Exception:
+            get_metrics().record_degraded_operation("query", "graph_retrieval_unavailable")
             contexts = self._query_eventlog_fallback(query, sid, limit, reason="graph retrieval unavailable")
             duration_ms = (time.perf_counter() - start) * 1000
             await self._trace_query_best_effort(query, len(contexts), duration_ms, temporal_point)
-            get_metrics().record_query(duration_ms / 1000.0)
+            get_metrics().record_query(duration_ms / 1000.0, source="eventloom")
             return contexts
         duration_ms = (time.perf_counter() - start) * 1000
 

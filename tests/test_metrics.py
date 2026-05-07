@@ -42,6 +42,11 @@ class TestMetricsCollectorEnabled:
             "Total events appended to Eventloom",
             ["event_type"],
         )
+        mock_prometheus["Counter"].assert_any_call(
+            "zaxy_degraded_operations_total",
+            "Total degraded operations and fallback paths",
+            ["operation", "reason"],
+        )
         mock_prometheus["Histogram"].assert_any_call(
             "zaxy_query_duration_seconds",
             "Query execution time",
@@ -86,6 +91,16 @@ class TestMetricsCollectorEnabled:
         mc.record_invalidation()
         mc.invalidations.inc.assert_called_once()
 
+    def test_record_degraded_operation(self, mock_prometheus: MagicMock) -> None:
+        """record_degraded_operation should increment the fallback counter."""
+        mc = MetricsCollector(enabled=True)
+        mc.record_degraded_operation("query", "graph_unavailable")
+        mc.degraded_operations.labels.assert_called_once_with(
+            operation="query",
+            reason="graph_unavailable",
+        )
+        mc.degraded_operations.labels.return_value.inc.assert_called_once()
+
 
 # ------------------------------------------------------------------
 # MetricsCollector — disabled / no prometheus_client
@@ -102,6 +117,7 @@ class TestMetricsCollectorDisabled:
         mc.record_query(0.1)
         mc.record_upsert("x")
         mc.record_invalidation()
+        mc.record_degraded_operation("query", "graph_unavailable")
 
     @patch("zaxy.metrics._HAS_PROMETHEUS", False)
     def test_disabled_when_import_missing(self) -> None:
@@ -118,6 +134,7 @@ class TestMetricsCollectorDisabled:
         mc.record_query(0.1)
         mc.record_upsert("x")
         mc.record_invalidation()
+        mc.record_degraded_operation("query", "graph_unavailable")
 
 
 # ------------------------------------------------------------------

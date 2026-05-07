@@ -49,6 +49,11 @@ class MetricsCollector:
                 "zaxy_invalidations_total",
                 "Total entity invalidations",
             )
+            self.degraded_operations = Counter(
+                "zaxy_degraded_operations_total",
+                "Total degraded operations and fallback paths",
+                ["operation", "reason"],
+            )
 
     def start_server(self, port: int = 8080) -> None:
         """Start the Prometheus metrics HTTP server."""
@@ -76,6 +81,11 @@ class MetricsCollector:
         """Record an invalidation operation."""
         if self.enabled:
             self.invalidations.inc()
+
+    def record_degraded_operation(self, operation: str, reason: str) -> None:
+        """Record a graceful degradation or fallback path."""
+        if self.enabled:
+            self.degraded_operations.labels(operation=operation, reason=reason).inc()
 
 
 # Global singleton

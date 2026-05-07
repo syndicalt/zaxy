@@ -42,6 +42,14 @@ counts, query counts, query latency, graph upserts, and invalidations. Sudden
 changes in query latency often mean index health, vector settings, or traversal
 fanout changed.
 
+Graceful degradation is tracked separately through
+`zaxy_degraded_operations_total{operation,reason}`. Alert on sustained increases
+for `graph_unavailable`, `graph_retrieval_unavailable`,
+`graph_projection_unavailable`, `embedding_provider_unavailable`,
+`vector_search_unavailable`, and `reranker_unavailable`. Fallbacks keep agents
+working, but any nonzero production rate means an operator should verify graph
+health, embedding credentials, vector indexes, and reranker endpoints.
+
 Pathlight tracing is optional but recommended for production debugging. It gives
 span-level visibility into append, query, replay, and invalidate operations.
 Pathlight is not the storage layer; it is the inspection layer. If tracing is

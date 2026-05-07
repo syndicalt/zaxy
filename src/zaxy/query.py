@@ -16,6 +16,7 @@ from typing import Any, Protocol
 import httpx
 
 from zaxy.graph import GraphEntity, GraphStore, SearchResult
+from zaxy.metrics import get_metrics
 from zaxy.security import validate_limit, validate_query, validate_session_id
 
 QUERY_EXPANSIONS: dict[str, tuple[str, ...]] = {
@@ -298,6 +299,7 @@ class QueryRouter:
                     )
                 )
             except Exception:
+                get_metrics().record_degraded_operation("query", "exact_search_unavailable")
                 warnings.append("exact search unavailable")
         for ent in exact_entities:
             results.append(
@@ -323,6 +325,7 @@ class QueryRouter:
                     session_id=scope,
                 )
             except Exception:
+                get_metrics().record_degraded_operation("query", "vector_search_unavailable")
                 warnings.append("vector search unavailable")
                 vector_hits = []
             for hit in vector_hits:
@@ -349,6 +352,7 @@ class QueryRouter:
                     session_id=scope,
                 )
             except Exception:
+                get_metrics().record_degraded_operation("query", "keyword_search_unavailable")
                 warnings.append("keyword search unavailable")
                 continue
             for hit in query_hits:
@@ -378,6 +382,7 @@ class QueryRouter:
                     session_id=scope,
                 )
             except Exception:
+                get_metrics().record_degraded_operation("query", "traversal_search_unavailable")
                 warnings.append("traversal search unavailable")
                 continue
             for neighbor in neighbors:
@@ -419,6 +424,7 @@ class QueryRouter:
         try:
             reranked = await self.reranker.rerank(query, candidates, limit=limit)
         except Exception:
+            get_metrics().record_degraded_operation("query", "reranker_unavailable")
             return [_with_warnings(candidate, ["reranker unavailable"]) for candidate in candidates[:limit]]
         return reranked[:limit]
 

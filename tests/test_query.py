@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -424,6 +424,7 @@ class TestQueryRouting:
     ) -> None:
         """Vector outages should not prevent keyword/exact retrieval."""
         mock_store.search_vector.side_effect = RuntimeError("vector index unavailable")
+        metrics = MagicMock()
         mock_store.search_keyword.return_value = [
             SearchResult(
                 entity=GraphEntity(
@@ -438,11 +439,13 @@ class TestQueryRouting:
             )
         ]
 
-        results = await router.query("auth decision", embedding=[0.1, 0.2])
+        with patch("zaxy.query.get_metrics", return_value=metrics):
+            results = await router.query("auth decision", embedding=[0.1, 0.2])
 
         assert results[0].content.startswith("Auth decision")
         assert results[0].score_explanation is not None
         assert "vector search unavailable" in results[0].score_explanation["warnings"]
+        metrics.record_degraded_operation.assert_called_with("query", "vector_search_unavailable")
 
     async def test_reranker_failure_falls_back_to_mmr_order(
         self,
@@ -461,6 +464,7 @@ class TestQueryRouting:
                 raise RuntimeError("reranker down")
 
         router = QueryRouter(store=mock_store, default_limit=5, session_id="agent-1", reranker=BrokenReranker())
+        metrics = MagicMock()
         mock_store.search_keyword.return_value = [
             SearchResult(
                 entity=GraphEntity(
@@ -475,11 +479,13 @@ class TestQueryRouting:
             )
         ]
 
-        results = await router.query("auth decision")
+        with patch("zaxy.query.get_metrics", return_value=metrics):
+            results = await router.query("auth decision")
 
         assert results[0].content.startswith("Auth decision")
         assert results[0].score_explanation is not None
         assert "reranker unavailable" in results[0].score_explanation["warnings"]
+        metrics.record_degraded_operation.assert_called_with("query", "reranker_unavailable")
 
 
 class TestModelRerankers:
