@@ -50,10 +50,12 @@ Run SSE daemon mode:
 zaxy serve --transport sse --host 127.0.0.1 --port 8080
 ```
 
-Production SSE requires `MCP_REMOTE_AUTH_TOKEN` or
-`MCP_REMOTE_AUTH_TOKEN_FILE`. Clients send `Authorization: Bearer <token>` and a
-session header such as `x-zaxy-session-id: agent-1`. The header name is
-configurable through `MCP_REMOTE_SESSION_HEADER`. Production also requires
+Production SSE requires either static bearer auth or OIDC. Static bearer auth
+uses `MCP_REMOTE_AUTH_TOKEN` or `MCP_REMOTE_AUTH_TOKEN_FILE`; clients send
+`Authorization: Bearer <token>` and a session header such as
+`x-zaxy-session-id: agent-1`. OIDC uses `MCP_OIDC_ISSUER`,
+`MCP_OIDC_AUDIENCE`, and `MCP_OIDC_JWKS_URL`; clients send an access token and
+Zaxy scopes the request from `MCP_OIDC_SESSION_CLAIM`. Production also requires
 `MCP_ADMIN_TOKEN` or `MCP_ADMIN_TOKEN_FILE` for replay and invalidation.
 
 The MCP implementation lives in `src/zaxy/mcp_server.py`. Core orchestration

@@ -451,6 +451,95 @@ class TestTransportAuth:
         with pytest.raises(ValueError, match="session_id"):
             auth.authorize({"x-zaxy-session-id": "../escape"})
 
+    def test_oidc_accepts_valid_token_scope_and_session_claim(self) -> None:
+        """OIDC mode should validate JWT claims and scope the request from the token."""
+        captured: dict[str, Any] = {}
+
+        class FakeJwksClient:
+            def get_signing_key_from_jwt(self, token: str) -> Any:
+                captured["token"] = token
+                return MagicMock(key="public-key")
+
+        def fake_decode(token: str, key: Any, **kwargs: Any) -> dict[str, Any]:
+            captured["decode"] = {"token": token, "key": key, **kwargs}
+            return {
+                "iss": "https://idp.example",
+                "aud": "zaxy",
+                "scope": "profile zaxy:mcp",
+                "zaxy_session": "tenant-1",
+            }
+
+        auth = MCPTransportAuth(
+            token=None,
+            oidc_issuer="https://idp.example",
+            oidc_audience="zaxy",
+            oidc_jwks_url="https://idp.example/.well-known/jwks.json",
+            oidc_required_scope="zaxy:mcp",
+            jwt_client=FakeJwksClient(),
+            jwt_decoder=fake_decode,
+        )
+
+        session_id = auth.authorize({"authorization": "Bearer oidc-token"})
+
+        assert session_id == "tenant-1"
+        assert captured["token"] == "oidc-token"
+        assert captured["decode"]["audience"] == "zaxy"
+        assert captured["decode"]["issuer"] == "https://idp.example"
+
+    def test_oidc_rejects_missing_required_scope(self) -> None:
+        """OIDC mode should reject tokens that lack the configured MCP scope."""
+
+        class FakeJwksClient:
+            def get_signing_key_from_jwt(self, token: str) -> Any:
+                return MagicMock(key="public-key")
+
+        def fake_decode(token: str, key: Any, **kwargs: Any) -> dict[str, Any]:
+            return {
+                "iss": "https://idp.example",
+                "aud": "zaxy",
+                "scope": "profile",
+                "zaxy_session": "tenant-1",
+            }
+
+        auth = MCPTransportAuth(
+            token=None,
+            oidc_issuer="https://idp.example",
+            oidc_audience="zaxy",
+            oidc_jwks_url="https://idp.example/.well-known/jwks.json",
+            oidc_required_scope="zaxy:mcp",
+            jwt_client=FakeJwksClient(),
+            jwt_decoder=fake_decode,
+        )
+
+        with pytest.raises(PermissionError, match="scope"):
+            auth.authorize({"authorization": "Bearer oidc-token"})
+
+    def test_oidc_rejects_missing_session_claim(self) -> None:
+        """OIDC mode should require a tenant/session claim for scoping."""
+
+        class FakeJwksClient:
+            def get_signing_key_from_jwt(self, token: str) -> Any:
+                return MagicMock(key="public-key")
+
+        def fake_decode(token: str, key: Any, **kwargs: Any) -> dict[str, Any]:
+            return {
+                "iss": "https://idp.example",
+                "aud": "zaxy",
+                "scope": "zaxy:mcp",
+            }
+
+        auth = MCPTransportAuth(
+            token=None,
+            oidc_issuer="https://idp.example",
+            oidc_audience="zaxy",
+            oidc_jwks_url="https://idp.example/.well-known/jwks.json",
+            jwt_client=FakeJwksClient(),
+            jwt_decoder=fake_decode,
+        )
+
+        with pytest.raises(PermissionError, match="session claim"):
+            auth.authorize({"authorization": "Bearer oidc-token"})
+
 
 class TestMemoryInvalidate:
     """Tests for memory_invalidate handler."""

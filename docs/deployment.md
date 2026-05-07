@@ -20,13 +20,15 @@ Zaxy which certificate to trust. Do not set `NEO4J_TRUST_ALL=true` in
 production unless you are doing a temporary emergency recovery with a written
 risk acceptance.
 
-Remote MCP/SSE should only be exposed behind bearer auth. Configure
-`MCP_REMOTE_AUTH_TOKEN_FILE` and require clients to send the token. Configure
+Remote MCP/SSE should only be exposed behind authentication. For single-tenant
+or private deployments, configure `MCP_REMOTE_AUTH_TOKEN_FILE` and require
+clients to send the token. For public multi-tenant deployments, configure OIDC
+with `MCP_OIDC_ISSUER`, `MCP_OIDC_AUDIENCE`, and `MCP_OIDC_JWKS_URL`; Zaxy
+validates JWTs and scopes clients from the configured session claim. Configure
 `MCP_ADMIN_TOKEN_FILE` as well; production config rejects deployments that leave
-admin replay/invalidation unprotected. Require a session header such as
-`x-zaxy-session-id` for every remote client. Place the service behind your
-normal ingress controls and prefer private network exposure over direct public
-internet exposure.
+admin replay/invalidation unprotected. Place the service behind your normal
+ingress controls and prefer private network exposure over direct public internet
+exposure unless OIDC and rate limiting are both in place.
 
 The production container starts the SSE transport on `0.0.0.0:8080` so Docker
 and orchestration platforms can route traffic to it. Local development still

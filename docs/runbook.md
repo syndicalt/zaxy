@@ -385,6 +385,12 @@ are not world-readable.
 | `MCP_REMOTE_AUTH_TOKEN` | unset | Bearer token required for remote MCP/SSE requests when configured |
 | `MCP_REMOTE_AUTH_TOKEN_FILE` | unset | File containing remote MCP/SSE bearer token |
 | `MCP_REMOTE_SESSION_HEADER` | `x-zaxy-session-id` | HTTP header that scopes remote MCP/SSE requests to a session |
+| `MCP_OIDC_ISSUER` | unset | OIDC issuer for remote MCP/SSE JWT validation |
+| `MCP_OIDC_AUDIENCE` | unset | Expected JWT audience for remote MCP/SSE |
+| `MCP_OIDC_JWKS_URL` | unset | JWKS URL for remote MCP/SSE JWT signatures |
+| `MCP_OIDC_REQUIRED_SCOPE` | `zaxy:mcp` | Required OAuth scope for remote MCP/SSE |
+| `MCP_OIDC_SESSION_CLAIM` | `zaxy_session` | JWT claim containing the Zaxy session/tenant ID |
+| `MCP_OIDC_CLIENT_SECRET_FILE` | unset | Optional OIDC client secret file for future introspection flows |
 | `QUERY_DEFAULT_LIMIT` | `10` | Default query result limit |
 | `EMBEDDING_ENABLED` | `true` | Generate embeddings for vector search |
 | `EMBEDDING_PROVIDER` | `hash` | Embedding provider: `hash` or `openai` |

@@ -17,8 +17,9 @@ import contextvars
 import hmac
 import json
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Protocol
 
+import jwt
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
 from mcp.server.stdio import stdio_server
@@ -442,6 +443,16 @@ class ZaxyMCPServer:
             self._session_id_from_arguments(arguments)
 
 
+class JWTDecoder(Protocol):
+    def __call__(self, token: str, key: Any, **kwargs: Any) -> dict[str, Any]:
+        """Decode and validate a JWT."""
+
+
+class JWKSClient(Protocol):
+    def get_signing_key_from_jwt(self, token: str) -> Any:
+        """Return the signing key for a JWT."""
+
+
 class MCPTransportAuth:
     """Authenticate and scope remote MCP/SSE HTTP requests."""
 
@@ -449,13 +460,29 @@ class MCPTransportAuth:
         self,
         token: str | None,
         session_header: str = "x-zaxy-session-id",
+        oidc_issuer: str | None = None,
+        oidc_audience: str | None = None,
+        oidc_jwks_url: str | None = None,
+        oidc_required_scope: str = "zaxy:mcp",
+        oidc_session_claim: str = "zaxy_session",
+        jwt_client: JWKSClient | None = None,
+        jwt_decoder: JWTDecoder | None = None,
     ) -> None:
         self._token = token
         self._session_header = session_header.casefold()
+        self._oidc_issuer = oidc_issuer
+        self._oidc_audience = oidc_audience
+        self._oidc_jwks_url = oidc_jwks_url
+        self._oidc_required_scope = oidc_required_scope
+        self._oidc_session_claim = oidc_session_claim
+        self._jwt_client = jwt_client
+        self._jwt_decoder = jwt_decoder or jwt.decode
 
     def authorize(self, headers: Mapping[str, str]) -> str:
         """Validate request headers and return the remote session scope."""
         normalized = {key.casefold(): value for key, value in headers.items()}
+        if self._oidc_enabled:
+            return self._authorize_oidc(normalized)
         if self._token is not None:
             header = normalized.get("authorization")
             if not header or not header.startswith("Bearer "):
@@ -464,6 +491,40 @@ class MCPTransportAuth:
             if not hmac.compare_digest(supplied, self._token):
                 raise PermissionError("Authorization bearer token is invalid")
         return validate_session_id(normalized.get(self._session_header, "default"))
+
+    @property
+    def _oidc_enabled(self) -> bool:
+        return bool(self._oidc_issuer and self._oidc_audience and self._oidc_jwks_url)
+
+    def _authorize_oidc(self, headers: Mapping[str, str]) -> str:
+        header = headers.get("authorization")
+        if not header or not header.startswith("Bearer "):
+            raise PermissionError("Authorization bearer token is required")
+        token = header.removeprefix("Bearer ").strip()
+        if not token:
+            raise PermissionError("Authorization bearer token is required")
+        try:
+            jwks_client = self._jwt_client or jwt.PyJWKClient(str(self._oidc_jwks_url))
+            signing_key = jwks_client.get_signing_key_from_jwt(token)
+            claims = self._jwt_decoder(
+                token,
+                signing_key.key,
+                algorithms=["RS256", "ES256"],
+                audience=self._oidc_audience,
+                issuer=self._oidc_issuer,
+                options={"require": ["exp", "iat", "iss", "aud"]},
+            )
+        except Exception as exc:
+            raise PermissionError("Authorization bearer token is invalid") from exc
+
+        scopes = _claim_values(claims.get("scope")) | _claim_values(claims.get("scp"))
+        if self._oidc_required_scope and self._oidc_required_scope not in scopes:
+            raise PermissionError("Authorization bearer token missing required scope")
+
+        session_claim = claims.get(self._oidc_session_claim)
+        if not isinstance(session_claim, str) or not session_claim:
+            raise PermissionError("Authorization bearer token missing session claim")
+        return validate_session_id(session_claim)
 
 
 def _format_prompt(events: list[Any], results: list[Any]) -> str:
@@ -503,6 +564,14 @@ def _context_payload(result: Any) -> dict[str, Any]:
         "citation": result.citation,
         "score_explanation": result.score_explanation,
     }
+
+
+def _claim_values(value: Any) -> set[str]:
+    if isinstance(value, str):
+        return {part for part in value.split() if part}
+    if isinstance(value, list):
+        return {str(part) for part in value if part}
+    return set()
 
 
 # ------------------------------------------------------------------
@@ -611,6 +680,11 @@ async def main_sse(port: int = 8080, host: str = "127.0.0.1") -> None:
     transport_auth = MCPTransportAuth(
         token=settings.mcp_remote_auth_token,
         session_header=settings.mcp_remote_session_header,
+        oidc_issuer=settings.mcp_oidc_issuer,
+        oidc_audience=settings.mcp_oidc_audience,
+        oidc_jwks_url=settings.mcp_oidc_jwks_url,
+        oidc_required_scope=settings.mcp_oidc_required_scope,
+        oidc_session_claim=settings.mcp_oidc_session_claim,
     )
 
     def _authorize_request(request: Any) -> str:

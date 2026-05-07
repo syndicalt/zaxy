@@ -139,6 +139,34 @@ class Settings(BaseSettings):
         default="x-zaxy-session-id",
         description="HTTP header that scopes remote MCP/SSE clients to a session",
     )
+    mcp_oidc_issuer: str | None = Field(
+        default=None,
+        description="OIDC issuer URL for remote MCP/SSE JWT validation",
+    )
+    mcp_oidc_audience: str | None = Field(
+        default=None,
+        description="Expected OIDC audience for remote MCP/SSE JWT validation",
+    )
+    mcp_oidc_jwks_url: str | None = Field(
+        default=None,
+        description="JWKS URL for remote MCP/SSE JWT signature validation",
+    )
+    mcp_oidc_required_scope: str = Field(
+        default="zaxy:mcp",
+        description="Required OAuth scope for remote MCP/SSE access",
+    )
+    mcp_oidc_session_claim: str = Field(
+        default="zaxy_session",
+        description="JWT claim containing the Zaxy session/tenant scope",
+    )
+    mcp_oidc_client_secret: str | None = Field(
+        default=None,
+        description="Optional OIDC client secret for future token introspection flows",
+    )
+    mcp_oidc_client_secret_file: str | None = Field(
+        default=None,
+        description="Path to a file containing the OIDC client secret",
+    )
 
     # ------------------------------------------------------------------
     # Logging
@@ -229,6 +257,11 @@ class Settings(BaseSettings):
             "mcp_remote_auth_token",
             "mcp_remote_auth_token_file",
         )
+        self._load_secret_file(
+            "MCP_OIDC_CLIENT_SECRET",
+            "mcp_oidc_client_secret",
+            "mcp_oidc_client_secret_file",
+        )
         self._load_secret_file("OPENAI_API_KEY", "openai_api_key", "openai_api_key_file")
         self._load_secret_file("RERANKER_API_KEY", "reranker_api_key", "reranker_api_key_file")
         self._load_secret_file(
@@ -263,6 +296,15 @@ class Settings(BaseSettings):
                 raise ValueError("NEO4J_URI must use TLS or NEO4J_CA_CERT in production")
             if not self.mcp_admin_token:
                 raise ValueError("MCP_ADMIN_TOKEN must be configured in production")
+            has_static_remote_auth = bool(self.mcp_remote_auth_token)
+            has_oidc_remote_auth = all(
+                (self.mcp_oidc_issuer, self.mcp_oidc_audience, self.mcp_oidc_jwks_url)
+            )
+            if not has_static_remote_auth and not has_oidc_remote_auth:
+                raise ValueError(
+                    "MCP_REMOTE_AUTH_TOKEN or complete MCP_OIDC_ISSUER/"
+                    "MCP_OIDC_AUDIENCE/MCP_OIDC_JWKS_URL must be configured in production"
+                )
         return self
 
     # ------------------------------------------------------------------

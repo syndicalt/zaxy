@@ -16,17 +16,22 @@ this as defense in depth, not as permission to send raw credentials.
 
 Production configuration should use secret files. Supported file variables are
 `NEO4J_PASSWORD_FILE`, `MCP_ADMIN_TOKEN_FILE`,
-`MCP_REMOTE_AUTH_TOKEN_FILE`, `OPENAI_API_KEY_FILE`, and
-`PATHLIGHT_ACCESS_TOKEN_FILE`. The settings loader reads these paths from
-process environment or `.env`. Direct env variables take precedence. Secret
-files should be mode `600` and stored outside the repository when possible.
+`MCP_REMOTE_AUTH_TOKEN_FILE`, `MCP_OIDC_CLIENT_SECRET_FILE`,
+`OPENAI_API_KEY_FILE`, and `PATHLIGHT_ACCESS_TOKEN_FILE`. The settings loader
+reads these paths from process environment or `.env`. Direct env variables take
+precedence. Secret files should be mode `600` and stored outside the repository
+when possible.
 
 Remote MCP/SSE must be authenticated. Configure `MCP_REMOTE_AUTH_TOKEN` or
 `MCP_REMOTE_AUTH_TOKEN_FILE`; clients must send `Authorization: Bearer <token>`.
-Also configure `MCP_REMOTE_SESSION_HEADER`, defaulting to `x-zaxy-session-id`,
-so each remote client is scoped to a validated session ID. Remote clients should
-not be able to replay or query another session by choosing a different payload
-field.
+For public multi-tenant deployments, prefer OIDC by configuring
+`MCP_OIDC_ISSUER`, `MCP_OIDC_AUDIENCE`, and `MCP_OIDC_JWKS_URL`. OIDC mode
+validates JWT issuer, audience, signature through JWKS, required scope
+`MCP_OIDC_REQUIRED_SCOPE`, and the session claim named by
+`MCP_OIDC_SESSION_CLAIM` before setting the remote session scope. Static bearer
+mode uses `MCP_REMOTE_SESSION_HEADER`, defaulting to `x-zaxy-session-id`, for
+session scoping. Remote clients should not be able to replay or query another
+session by choosing a different payload field.
 
 Production also requires `MCP_ADMIN_TOKEN` or `MCP_ADMIN_TOKEN_FILE`.
 Replay and invalidation are bulk-read or state-changing operations, so they

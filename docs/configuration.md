@@ -22,6 +22,9 @@ MCP settings include `SERVER_NAME`, `MCP_ADMIN_TOKEN`,
 token protects SSE endpoints. The session header scopes remote clients so one
 client cannot query or replay another client's session by accident. Production
 mode requires an admin token so replay and invalidation cannot be left open.
+Public multi-tenant deployments should use OIDC instead by setting
+`MCP_OIDC_ISSUER`, `MCP_OIDC_AUDIENCE`, `MCP_OIDC_JWKS_URL`,
+`MCP_OIDC_REQUIRED_SCOPE`, and `MCP_OIDC_SESSION_CLAIM`.
 
 Embedding settings include `EMBEDDING_ENABLED`, `EMBEDDING_PROVIDER`,
 `EMBEDDING_DIMENSION`, `OPENAI_EMBEDDING_MODEL`, `OPENAI_BASE_URL`, and
@@ -37,10 +40,11 @@ candidates to a local/self-hosted endpoint. `RERANKER_PROVIDER=openai` uses an
 OpenAI-compatible chat-completions model and `OPENAI_API_KEY`.
 
 Supported secret-file variants are `NEO4J_PASSWORD_FILE`,
-`MCP_ADMIN_TOKEN_FILE`, `MCP_REMOTE_AUTH_TOKEN_FILE`, `OPENAI_API_KEY_FILE`,
-`RERANKER_API_KEY_FILE`, and `PATHLIGHT_ACCESS_TOKEN_FILE`. Production setup
-writes these references into `.env`; the settings loader resolves them during
-initialization. Secret files must not be world-readable.
+`MCP_ADMIN_TOKEN_FILE`, `MCP_REMOTE_AUTH_TOKEN_FILE`,
+`MCP_OIDC_CLIENT_SECRET_FILE`, `OPENAI_API_KEY_FILE`, `RERANKER_API_KEY_FILE`,
+and `PATHLIGHT_ACCESS_TOKEN_FILE`. Production setup writes these references
+into `.env`; the settings loader resolves them during initialization. Secret
+files must not be world-readable.
 
 Validation commands:
 

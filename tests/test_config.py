@@ -72,6 +72,19 @@ class TestSecretFiles:
         assert settings.reranker_api_key == "reranker-secret"
         assert settings.pathlight_access_token == "pathlight-secret"
 
+    def test_loads_oidc_client_secret_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """OIDC client secrets should support *_FILE loading."""
+        secret_file = tmp_path / "oidc_client_secret"
+        secret_file.write_text("oidc-secret\n", encoding="utf-8")
+        monkeypatch.delenv("MCP_OIDC_CLIENT_SECRET", raising=False)
+        monkeypatch.setenv("MCP_OIDC_CLIENT_SECRET_FILE", str(secret_file))
+
+        settings = Settings(_env_file=None)
+
+        assert settings.mcp_oidc_client_secret == "oidc-secret"
+
     def test_missing_secret_file_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A configured *_FILE path should fail loudly if it cannot be read."""
         monkeypatch.delenv("NEO4J_PASSWORD", raising=False)
@@ -154,6 +167,40 @@ class TestProductionValidation:
         with pytest.raises(ValidationError, match="MCP_ADMIN_TOKEN"):
             Settings(_env_file=None)
 
+    def test_production_requires_remote_static_or_oidc_auth(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Production SSE should require either static bearer auth or OIDC."""
+        monkeypatch.setenv("ZAXY_ENV", "production")
+        monkeypatch.setenv("NEO4J_URI", "bolt+s://neo4j:7687")
+        monkeypatch.setenv("NEO4J_PASSWORD", "secure-password")
+        monkeypatch.setenv("MCP_ADMIN_TOKEN", "admin-token")
+        monkeypatch.delenv("MCP_REMOTE_AUTH_TOKEN", raising=False)
+        monkeypatch.delenv("MCP_REMOTE_AUTH_TOKEN_FILE", raising=False)
+        monkeypatch.delenv("MCP_OIDC_ISSUER", raising=False)
+        monkeypatch.delenv("MCP_OIDC_AUDIENCE", raising=False)
+        monkeypatch.delenv("MCP_OIDC_JWKS_URL", raising=False)
+
+        with pytest.raises(ValidationError, match="MCP_REMOTE_AUTH_TOKEN"):
+            Settings(_env_file=None)
+
+    def test_production_allows_complete_oidc_auth(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Complete OIDC configuration should satisfy remote auth in production."""
+        monkeypatch.setenv("ZAXY_ENV", "production")
+        monkeypatch.setenv("NEO4J_URI", "bolt+s://neo4j:7687")
+        monkeypatch.setenv("NEO4J_PASSWORD", "secure-password")
+        monkeypatch.setenv("MCP_ADMIN_TOKEN", "admin-token")
+        monkeypatch.delenv("MCP_REMOTE_AUTH_TOKEN", raising=False)
+        monkeypatch.setenv("MCP_OIDC_ISSUER", "https://idp.example")
+        monkeypatch.setenv("MCP_OIDC_AUDIENCE", "zaxy")
+        monkeypatch.setenv("MCP_OIDC_JWKS_URL", "https://idp.example/.well-known/jwks.json")
+
+        settings = Settings(_env_file=None)
+
+        assert settings.mcp_oidc_issuer == "https://idp.example"
+
     def test_production_allows_bolt_uri_with_custom_ca(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -163,6 +210,7 @@ class TestProductionValidation:
         monkeypatch.setenv("NEO4J_PASSWORD", "secure-password")
         monkeypatch.setenv("NEO4J_CA_CERT", "/ssl/bolt/trusted/public.crt")
         monkeypatch.setenv("MCP_ADMIN_TOKEN", "admin-token")
+        monkeypatch.setenv("MCP_REMOTE_AUTH_TOKEN", "remote-token")
 
         settings = Settings(_env_file=None)
 

@@ -96,8 +96,13 @@ fi
 
 remote_token="${ENV[MCP_REMOTE_AUTH_TOKEN]:-}"
 remote_token_file="${ENV[MCP_REMOTE_AUTH_TOKEN_FILE]:-}"
+oidc_issuer="${ENV[MCP_OIDC_ISSUER]:-}"
+oidc_audience="${ENV[MCP_OIDC_AUDIENCE]:-}"
+oidc_jwks_url="${ENV[MCP_OIDC_JWKS_URL]:-}"
 if [[ -z "${remote_token}" && -z "${remote_token_file}" ]]; then
-    fail "MCP_REMOTE_AUTH_TOKEN or MCP_REMOTE_AUTH_TOKEN_FILE is required"
+    if [[ -z "${oidc_issuer}" || -z "${oidc_audience}" || -z "${oidc_jwks_url}" ]]; then
+        fail "MCP_REMOTE_AUTH_TOKEN/MCP_REMOTE_AUTH_TOKEN_FILE or complete MCP_OIDC_ISSUER/MCP_OIDC_AUDIENCE/MCP_OIDC_JWKS_URL is required"
+    fi
 fi
 
 admin_token="${ENV[MCP_ADMIN_TOKEN]:-}"
@@ -115,6 +120,7 @@ for secret_env in \
     NEO4J_PASSWORD_FILE \
     MCP_ADMIN_TOKEN_FILE \
     MCP_REMOTE_AUTH_TOKEN_FILE \
+    MCP_OIDC_CLIENT_SECRET_FILE \
     OPENAI_API_KEY_FILE \
     PATHLIGHT_ACCESS_TOKEN_FILE; do
     require_secret_file "${secret_env}"

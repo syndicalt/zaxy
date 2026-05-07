@@ -271,7 +271,7 @@ def test_validate_deployment_accepts_secure_production_fixture(tmp_path: Path) -
 
 
 def test_validate_deployment_requires_remote_auth_token(tmp_path: Path) -> None:
-    """Production SSE deployments should require remote bearer auth."""
+    """Production SSE deployments should require remote bearer auth or OIDC."""
     root = tmp_path / "project"
     root.mkdir()
     _write_deployment_fixture(root)
@@ -292,6 +292,33 @@ def test_validate_deployment_requires_remote_auth_token(tmp_path: Path) -> None:
 
     assert result.returncode != 0
     assert "MCP_REMOTE_AUTH_TOKEN" in result.stderr
+
+
+def test_validate_deployment_accepts_oidc_remote_auth(tmp_path: Path) -> None:
+    """Production SSE deployments may use OIDC instead of static bearer auth."""
+    root = tmp_path / "project"
+    root.mkdir()
+    _write_deployment_fixture(root)
+    (root / ".env").write_text(
+        "ZAXY_ENV=production\n"
+        "NEO4J_URI=bolt://neo4j:7687\n"
+        "NEO4J_CA_CERT=/ssl/bolt/trusted/public.crt\n"
+        "MCP_ADMIN_TOKEN_FILE=secrets/mcp_admin_token.txt\n"
+        "MCP_OIDC_ISSUER=https://idp.example\n"
+        "MCP_OIDC_AUDIENCE=zaxy\n"
+        "MCP_OIDC_JWKS_URL=https://idp.example/.well-known/jwks.json\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["bash", "scripts/validate-deployment.sh", "--root", str(root)],
+        cwd=Path.cwd(),
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+
+    assert "Deployment validation passed" in result.stdout
 
 
 def test_validate_deployment_requires_admin_token(tmp_path: Path) -> None:
