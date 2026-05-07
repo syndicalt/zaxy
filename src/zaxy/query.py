@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from zaxy.graph import GraphStore, SearchResult
+from zaxy.graph import GraphEntity, GraphStore, SearchResult
 from zaxy.security import validate_limit, validate_query, validate_session_id
 
 
@@ -23,6 +23,7 @@ class ContextChunk:
     score: float
     valid_from: str | None
     valid_to: str | None
+    citation: str | None = None
 
 
 class QueryRouter:
@@ -185,6 +186,7 @@ def _to_chunk(result: SearchResult) -> ContextChunk:
         score=round(result.score, 4),
         valid_from=ent.valid_from,
         valid_to=ent.valid_to,
+        citation=_citation(ent),
     )
 
 
@@ -207,3 +209,13 @@ def _exact_candidates(query: str) -> list[str]:
             unique.append(candidate)
             seen.add(candidate)
     return unique
+
+
+def _citation(entity: GraphEntity) -> str | None:
+    """Build a compact Eventloom citation for an entity result."""
+    properties = entity.properties
+    seq = properties.get("source_event_seq")
+    event_hash = properties.get("source_event_hash")
+    if seq is None or not event_hash:
+        return None
+    return f"eventloom://{entity.session_id}/events/{seq}#{str(event_hash)[:12]}"

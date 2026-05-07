@@ -143,6 +143,7 @@ class TestQuery:
                 score=1.0,
                 valid_from="2024-01-01T00:00:00Z",
                 valid_to=None,
+                citation="eventloom://default/events/1#aaaaaaaaaaaa",
             )
         ]
         results = await fabric.query("Alice")
@@ -153,6 +154,9 @@ class TestQuery:
         assert args.kwargs["embedding"] is not None
         assert len(results) == 1
         assert isinstance(results[0], Context)
+        assert results[0].metadata == {
+            "citation": "eventloom://default/events/1#aaaaaaaaaaaa"
+        }
 
     async def test_passes_temporal_filter(self, fabric: MemoryFabric) -> None:
         """query() should forward temporal_point to router."""

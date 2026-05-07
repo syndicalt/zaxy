@@ -11,6 +11,10 @@ and `valid_from`. Reasserting a fact creates a new temporal version instead of
 overwriting the existing one. The previous current version in the same session
 is closed by setting `valid_to`.
 
+Projected entities also carry Eventloom provenance: `source_event_seq`,
+`source_event_hash`, `source_event_type`, and `source_thread`. Query results use
+these fields to emit stable citations back to the immutable event log.
+
 Edges represent extracted relations between entities. They carry
 `session_id`, `relation_type`, event provenance, and validity windows. This
 lets query traversal answer multi-hop questions while keeping the timeline

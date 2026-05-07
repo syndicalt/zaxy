@@ -12,6 +12,12 @@ appropriate, expands from high-confidence hits through traversal, fuses scores,
 and returns `ContextChunk` objects. A context chunk contains the content an agent
 should see and metadata about source entities, scores, and provenance.
 
+Every graph-backed context chunk should cite its originating Eventloom event
+when provenance is available. Citations use the form
+`eventloom://<session>/events/<seq>#<hash-prefix>`. They let callers show why a
+fact exists, replay the surrounding session, and distinguish retrieved context
+from unsupported generated text.
+
 Temporal filtering is a first-class part of retrieval. Without a temporal
 filter, graph search returns current facts. With an `as_of` filter, the graph
 returns facts whose validity window contains that time. This is what lets agents
@@ -34,6 +40,13 @@ current live benchmark compares markdown, vector, markdown+vector, and Zaxy
 retrieval on the same generated temporal event workload. Treat it as a workload-specific
 signal, not a universal benchmark against production-grade vector RAG or file
 memory systems.
+
+The next retrieval-quality work should close the practical ergonomics gap with
+QMD-style search sidecars: reranking, query expansion, MMR diversity,
+document/file ingestion, transcript indexing, local embedding and reranking
+providers, and graceful degradation when Neo4j, embeddings, or rerankers are
+unavailable. These should augment Zaxy's temporal/provenance layer rather than
+replace it with generic chunk search.
 
 Related references: [graph-schema.md](graph-schema.md), [mcp.md](mcp.md),
 [configuration.md](configuration.md), [testing.md](testing.md), and

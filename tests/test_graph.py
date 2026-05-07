@@ -148,6 +148,9 @@ class TestIngestion:
             ],
             edges=[],
             source_event_seq=1,
+            source_event_hash="b" * 64,
+            source_event_type="goal.created",
+            source_thread="agent-1",
         )
         await store.upsert_extraction(result, session_id="agent-1")
 
@@ -160,9 +163,15 @@ class TestIngestion:
         assert "SET e.valid_to = next_valid_from" in cypher
         assert "e.summary = coalesce($summary, e.summary)" in cypher
         assert "e.embedding = coalesce($embedding, e.embedding)" in cypher
+        assert "e.source_event_seq = $source_event_seq" in cypher
+        assert "e.source_event_hash = $source_event_hash" in cypher
         assert kwargs["name"] == "Alice"
         assert kwargs["entity_type"] == "user"
         assert kwargs["session_id"] == "agent-1"
+        assert kwargs["source_event_seq"] == 1
+        assert kwargs["source_event_hash"] == "b" * 64
+        assert kwargs["source_event_type"] == "goal.created"
+        assert kwargs["source_thread"] == "agent-1"
         assert kwargs["summary"] == "Works on memory"
         assert kwargs["embedding"] == [0.1, 0.2]
 
@@ -198,6 +207,8 @@ class TestIngestion:
                 )
             ],
             source_event_seq=1,
+            source_event_hash="c" * 64,
+            source_event_type="goal.created",
         )
         await store.upsert_extraction(result, session_id="agent-1")
 
@@ -213,9 +224,12 @@ class TestIngestion:
         assert "t.valid_from <= datetime($valid_from)" in cypher
         assert "MERGE (s)-[r:RELATES" in cypher
         assert "r.session_id = $session_id" in cypher
+        assert "r.source_event_seq = $source_event_seq" in cypher
+        assert "r.source_event_hash = $source_event_hash" in cypher
         assert kwargs["source"] == "Alice"
         assert kwargs["target"] == "Goal1"
         assert kwargs["session_id"] == "agent-1"
+        assert kwargs["source_event_hash"] == "c" * 64
 
     async def test_upsert_multiple_entities(self, store: GraphStore) -> None:
         """Multiple entities should produce multiple MERGE calls."""
@@ -399,18 +413,28 @@ class TestHelpers:
     def test_record_to_entity(self) -> None:
         """_record_to_entity should map Neo4j properties correctly."""
         node = _make_node(
+            session_id="agent-1",
             name="Alice",
             entity_type="user",
             valid_from="2024-01-01T00:00:00Z",
             valid_to=None,
+            source_event_seq=7,
+            source_event_hash="d" * 64,
+            source_event_type="goal.created",
             extra="value",
         )
 
         entity = _record_to_entity(node)
+        assert entity.session_id == "agent-1"
         assert entity.name == "Alice"
         assert entity.entity_type == "user"
         assert entity.valid_to is None
-        assert entity.properties == {"extra": "value"}
+        assert entity.properties == {
+            "source_event_seq": 7,
+            "source_event_hash": "d" * 64,
+            "source_event_type": "goal.created",
+            "extra": "value",
+        }
 
     def test_record_to_entity_with_valid_to(self) -> None:
         """valid_to should be converted to string when present."""

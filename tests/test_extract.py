@@ -230,7 +230,7 @@ class TestExtractionSanity:
     """Cross-cutting sanity checks."""
 
     def test_all_results_have_source_event_seq(self) -> None:
-        """Every result should preserve the originating event sequence."""
+        """Every result should preserve originating event provenance."""
         for event_type, payload in [
             ("goal.created", {"title": "X"}),
             ("task.proposed", {"taskId": "t1"}),
@@ -243,6 +243,9 @@ class TestExtractionSanity:
             ev2 = ev.model_copy(update={"seq": 99})
             result = extract(ev2)
             assert result.source_event_seq == 99
+            assert result.source_event_hash == "a" * 64
+            assert result.source_event_type == event_type
+            assert result.source_thread == "default"
 
     def test_observed_at_matches_event_timestamp(self) -> None:
         """Extracted entities should inherit the event timestamp."""

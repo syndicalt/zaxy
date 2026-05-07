@@ -204,6 +204,7 @@ class ZaxyMCPServer:
                 "score": r.score,
                 "valid_from": r.valid_from,
                 "valid_to": r.valid_to,
+                "citation": r.citation,
             }
             for r in results
         ]

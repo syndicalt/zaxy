@@ -302,3 +302,27 @@ class TestContextChunk:
         results = await router.query("OldFact")
         assert results[0].valid_from == "2024-01-01T00:00:00Z"
         assert results[0].valid_to == "2024-06-01T00:00:00Z"
+
+    async def test_chunk_includes_event_citation(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Chunks should cite the originating Eventloom event when available."""
+        mock_store.search_exact.return_value = [
+            GraphEntity(
+                name="Ship MVP",
+                entity_type="goal",
+                valid_from="2024-01-01T00:00:00Z",
+                valid_to=None,
+                session_id="agent-1",
+                properties={
+                    "source_event_seq": 42,
+                    "source_event_hash": "abcdef1234567890" * 4,
+                },
+            )
+        ]
+
+        results = await router.query("Ship MVP")
+
+        assert results[0].citation == "eventloom://agent-1/events/42#abcdef123456"

@@ -28,6 +28,7 @@ class GraphEntity:
     valid_from: str
     valid_to: str | None
     properties: dict[str, Any]
+    session_id: str = "default"
 
 
 @dataclass(frozen=True)
@@ -162,7 +163,11 @@ class GraphStore:
                 ON CREATE SET e.created_at = datetime($observed_at)
                 SET e.updated_at = datetime($observed_at),
                     e.summary = coalesce($summary, e.summary),
-                    e.embedding = coalesce($embedding, e.embedding)
+                    e.embedding = coalesce($embedding, e.embedding),
+                    e.source_event_seq = $source_event_seq,
+                    e.source_event_hash = $source_event_hash,
+                    e.source_event_type = $source_event_type,
+                    e.source_thread = $source_thread
                 WITH e
                 OPTIONAL MATCH (prev:Entity {name: $name, entity_type: $entity_type})
                 WHERE prev.session_id = $session_id
@@ -183,6 +188,10 @@ class GraphStore:
                 observed_at=ent.observed_at,
                 summary=ent.summary,
                 embedding=ent.embedding,
+                source_event_seq=result.source_event_seq,
+                source_event_hash=result.source_event_hash,
+                source_event_type=result.source_event_type,
+                source_thread=result.source_thread,
             )
 
         for edge in result.edges:
@@ -199,13 +208,21 @@ class GraphStore:
                 MERGE (s)-[r:RELATES {relation_type: $relation_type, valid_from: datetime($valid_from)}]->(t)
                 ON CREATE SET r.created_at = datetime($valid_from)
                 SET r.session_id = $session_id,
-                    r.valid_to = null
+                    r.valid_to = null,
+                    r.source_event_seq = $source_event_seq,
+                    r.source_event_hash = $source_event_hash,
+                    r.source_event_type = $source_event_type,
+                    r.source_thread = $source_thread
                 """,
                 session_id=safe_session_id,
                 source=edge.source,
                 target=edge.target,
                 relation_type=edge.relation_type,
                 valid_from=edge.valid_from,
+                source_event_seq=result.source_event_seq,
+                source_event_hash=result.source_event_hash,
+                source_event_type=result.source_event_type,
+                source_thread=result.source_thread,
             )
 
     async def invalidate_entity(
@@ -440,6 +457,7 @@ def _record_to_entity(node: Any) -> GraphEntity:
         entity_type=props.get("entity_type", ""),
         valid_from=str(props.get("valid_from", "")),
         valid_to=str(props.get("valid_to")) if props.get("valid_to") else None,
+        session_id=props.get("session_id", "default"),
         properties={
             k: v
             for k, v in props.items()

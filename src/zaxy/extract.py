@@ -11,7 +11,7 @@ structured event types.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from zaxy.event import Event
 
@@ -45,6 +45,9 @@ class ExtractionResult:
     entities: list[ExtractedEntity]
     edges: list[ExtractedEdge]
     source_event_seq: int
+    source_event_hash: str | None = None
+    source_event_type: str | None = None
+    source_thread: str | None = None
 
 
 # Registry of rule-based extractors: event_type -> extractor function
@@ -76,7 +79,7 @@ def extract(event: Event) -> ExtractionResult:
     generic identity extractor (preserves the event as a single entity).
     """
     if event.type in _RULES:
-        return _RULES[event.type](event)
+        return _with_source(event, _RULES[event.type](event))
 
     # Generic fallback: treat the event itself as an untyped entity node.
     # This avoids LLM costs for unknown events while still preserving them
@@ -88,10 +91,24 @@ def extract(event: Event) -> ExtractionResult:
         observed_at=event.timestamp,
         summary=f"{event.actor} emitted {event.type}",
     )
-    return ExtractionResult(
-        entities=[entity],
-        edges=[],
+    return _with_source(
+        event,
+        ExtractionResult(
+            entities=[entity],
+            edges=[],
+            source_event_seq=event.seq,
+        ),
+    )
+
+
+def _with_source(event: Event, result: ExtractionResult) -> ExtractionResult:
+    """Attach stable Eventloom provenance to extraction results."""
+    return replace(
+        result,
         source_event_seq=event.seq,
+        source_event_hash=event.hash,
+        source_event_type=event.type,
+        source_thread=event.thread,
     )
 
 

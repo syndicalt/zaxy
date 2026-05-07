@@ -142,6 +142,9 @@ def embed_extraction(
         entities=entities,
         edges=result.edges,
         source_event_seq=result.source_event_seq,
+        source_event_hash=result.source_event_hash,
+        source_event_type=result.source_event_type,
+        source_thread=result.source_thread,
     )
 
 

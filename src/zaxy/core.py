@@ -198,6 +198,7 @@ class MemoryFabric:
                 score=c.score,
                 valid_from=c.valid_from,
                 valid_to=c.valid_to,
+                metadata={"citation": c.citation} if c.citation else None,
             )
             for c in chunks
         ]
