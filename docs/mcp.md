@@ -29,6 +29,15 @@ different session.
 window for a graph fact without deleting history. This lets agents correct
 memory while preserving provenance.
 
+`context_assemble(query, session_id?, replay_from_seq?, limit?, max_recent_events?)`
+returns a prompt-ready bundle containing bounded recent replay plus ranked
+retrieval. `context_after_turn(role, content, ...)` first appends a
+`transcript.turn` event, then assembles context for the next model call.
+`subagent_cleanup(parent_session_id, subagent_session_id, summary, ...)` records
+`subagent.cleaned` in the subagent session and returns a handoff bundle with
+summary and integrity status. These lifecycle tools are session-scoped under
+remote SSE auth just like query and append.
+
 Run stdio locally:
 
 ```bash

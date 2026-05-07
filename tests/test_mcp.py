@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -15,6 +16,10 @@ from zaxy.mcp_server import (
     main,
     remote_session_scope,
 )
+
+
+def json_loads(value: str) -> Any:
+    return json.loads(value)
 
 # ------------------------------------------------------------------
 # Fixtures
@@ -55,13 +60,21 @@ class TestToolSchema:
     """Tests for MCP tool definitions."""
 
     def test_tools_list_length(self) -> None:
-        """Should expose exactly 4 tools."""
-        assert len(TOOLS) == 4
+        """Should expose the memory and context lifecycle tools."""
+        assert len(TOOLS) == 7
 
     def test_tool_names(self) -> None:
         """Tool names should match the expected contract."""
         names = {t.name for t in TOOLS}
-        assert names == {"memory_append", "memory_query", "memory_replay", "memory_invalidate"}
+        assert names == {
+            "memory_append",
+            "memory_query",
+            "memory_replay",
+            "memory_invalidate",
+            "context_assemble",
+            "context_after_turn",
+            "subagent_cleanup",
+        }
 
     def test_memory_append_has_required_fields(self) -> None:
         """memory_append schema should require event_type, actor, payload."""
@@ -73,6 +86,11 @@ class TestToolSchema:
         tool = next(t for t in TOOLS if t.name == "memory_query")
         assert "temporal_filter" in tool.inputSchema["properties"]
         assert "temporal_filter" not in (tool.inputSchema.get("required") or [])
+
+    def test_context_after_turn_has_required_fields(self) -> None:
+        """context_after_turn should require role and content."""
+        tool = next(t for t in TOOLS if t.name == "context_after_turn")
+        assert tool.inputSchema["required"] == ["role", "content"]
 
 
 # ------------------------------------------------------------------
@@ -251,6 +269,88 @@ class TestMemoryQuery:
         """Very large queries should be rejected before database work."""
         with pytest.raises(ValueError, match="query"):
             await server.handle_memory_query({"query": "x" * 4097})
+
+
+class TestContextLifecycleTools:
+    """Tests for MCP context lifecycle handlers."""
+
+    async def test_context_assemble_returns_prompt_and_contexts(self, server: ZaxyMCPServer) -> None:
+        """context_assemble should combine replay with retrieved context."""
+        event = MagicMock(
+            seq=2,
+            type="transcript.turn",
+            actor="assistant",
+            payload={"content": "Use MMR."},
+        )
+        replay = MagicMock(events=[event])
+        server.session_manager.replay.return_value = replay
+        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
+            router = AsyncMock()
+            router.query.return_value = [
+                MagicMock(
+                    content="MMR diversity (decision)",
+                    source="keyword",
+                    score=0.9,
+                    valid_from=None,
+                    valid_to=None,
+                    citation=None,
+                    score_explanation=None,
+                )
+            ]
+            mock_router_cls.return_value = router
+
+            result = await server.handle_context_assemble({
+                "query": "retrieval decision",
+                "session_id": "agent-1",
+                "max_recent_events": 1,
+            })
+
+        output = json_loads(result[0].text)
+        assert output["session_id"] == "agent-1"
+        assert output["replay_event_count"] == 1
+        assert "MMR diversity" in output["prompt"]
+
+    async def test_context_after_turn_appends_and_assembles(self, server: ZaxyMCPServer) -> None:
+        """context_after_turn should persist the latest turn before assembly."""
+        server.session_manager.replay.return_value = MagicMock(events=[])
+        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
+            router = AsyncMock()
+            router.query.return_value = []
+            mock_router_cls.return_value = router
+
+            result = await server.handle_context_after_turn({
+                "role": "assistant",
+                "content": "Use lifecycle hooks.",
+                "session_id": "agent-1",
+            })
+
+        log = server.session_manager.get.return_value.eventlog
+        log.append.assert_called_once()
+        assert log.append.call_args.args == ("transcript.turn",)
+        output = json_loads(result[0].text)
+        assert output["session_id"] == "agent-1"
+
+    async def test_subagent_cleanup_appends_cleanup_event(self, server: ZaxyMCPServer) -> None:
+        """subagent_cleanup should finalize the subagent session with a cleanup event."""
+        server.session_manager.handoff_summary.return_value = {"event_count": 3}
+        replay = MagicMock(events=[], integrity=MagicMock(ok=True))
+        server.session_manager.replay.return_value = replay
+        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
+            router = AsyncMock()
+            router.query.return_value = []
+            mock_router_cls.return_value = router
+
+            result = await server.handle_subagent_cleanup({
+                "parent_session_id": "main",
+                "subagent_session_id": "worker-1",
+                "summary": "Worker finished.",
+            })
+
+        log = server.session_manager.get.return_value.eventlog
+        assert log.append.call_args.args == ("subagent.cleaned",)
+        assert log.append.call_args.kwargs["payload"]["parent_session_id"] == "main"
+        output = json_loads(result[0].text)
+        assert output["summary"]["event_count"] == 3
 
 
 class TestMemoryReplay:

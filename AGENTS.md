@@ -229,21 +229,22 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Configurable scoring profiles and local lexical reranker provider
 - [x] Hosted OpenAI-compatible and local HTTP reranker providers
 - [x] Graceful degradation for graph, embedding, vector, and reranker outages
+- [x] Context lifecycle hooks for after-turn assembly, handoff bundles, and subagent cleanup
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 306 passed |
-| Coverage | 91.98% |
+| Tests | 313 passed |
+| Coverage | 92.15% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
 
 ## Next Steps
 
-1. Add richer context lifecycle hooks: after-turn compaction, handoff bundles, and subagent cleanup.
-2. Add OAuth/OIDC remote MCP authorization for public multi-tenant deployments.
-3. Add extractor authoring templates and schema migration tooling.
-4. Run OpenAI embedding benchmark with frozen corpus and compare against external graph-memory systems.
-5. Add degraded-mode metrics and alerting for fallback frequency.
+1. Add OAuth/OIDC remote MCP authorization for public multi-tenant deployments.
+2. Add extractor authoring templates and schema migration tooling.
+3. Run OpenAI embedding benchmark with frozen corpus and compare against external graph-memory systems.
+4. Add degraded-mode metrics and alerting for fallback frequency.
+5. Add lifecycle import/export adapters for common agent frameworks.

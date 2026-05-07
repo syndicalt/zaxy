@@ -111,6 +111,56 @@ TOOLS = [
             "additionalProperties": False,
         },
     ),
+    Tool(
+        name="context_assemble",
+        description="Assemble replay plus ranked retrieval into a prompt-ready context bundle.",
+        inputSchema={
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+                "query": {"type": "string"},
+                "session_id": {"type": "string"},
+                "replay_from_seq": {"type": "integer", "default": 1},
+                "limit": {"type": "integer", "default": 10},
+                "max_recent_events": {"type": "integer", "default": 20},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="context_after_turn",
+        description="Persist a completed turn and return compact context for the next turn.",
+        inputSchema={
+            "type": "object",
+            "required": ["role", "content"],
+            "properties": {
+                "role": {"type": "string"},
+                "content": {"type": "string"},
+                "query": {"type": "string"},
+                "source": {"type": "string", "default": "mcp"},
+                "session_id": {"type": "string"},
+                "limit": {"type": "integer", "default": 10},
+                "max_recent_events": {"type": "integer", "default": 20},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="subagent_cleanup",
+        description="Finalize a subagent session and return its handoff bundle.",
+        inputSchema={
+            "type": "object",
+            "required": ["parent_session_id", "subagent_session_id", "summary"],
+            "properties": {
+                "parent_session_id": {"type": "string"},
+                "subagent_session_id": {"type": "string"},
+                "summary": {"type": "string"},
+                "query": {"type": "string", "default": "subagent handoff"},
+                "limit": {"type": "integer", "default": 10},
+            },
+            "additionalProperties": False,
+        },
+    ),
 ]
 
 
@@ -242,6 +292,118 @@ class ZaxyMCPServer:
         )
         return [TextContent(type="text", text=json.dumps({"status": "invalidated"}))]
 
+    async def handle_context_assemble(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle context_assemble tool call."""
+        query = validate_query(arguments["query"])
+        session_id = self._session_id_from_arguments(arguments, default="default")
+        replay_from_seq = validate_from_seq(arguments.get("replay_from_seq"))
+        limit = validate_limit(arguments.get("limit"), default=10)
+        max_recent_events = validate_limit(arguments.get("max_recent_events"), default=20)
+
+        output = await self._assemble_context_payload(
+            query=query,
+            session_id=session_id,
+            replay_from_seq=replay_from_seq,
+            limit=limit,
+            max_recent_events=max_recent_events,
+        )
+        return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+    async def handle_context_after_turn(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle context_after_turn tool call."""
+        role = arguments["role"]
+        content = arguments["content"]
+        session_id = self._session_id_from_arguments(arguments, default="default")
+        source = arguments.get("source", "mcp")
+        query = validate_query(arguments.get("query") or content)
+        limit = validate_limit(arguments.get("limit"), default=10)
+        max_recent_events = validate_limit(arguments.get("max_recent_events"), default=20)
+
+        eventlog = self.session_manager.get(session_id).eventlog
+        event = eventlog.append(
+            "transcript.turn",
+            actor=role,
+            payload={"role": role, "content": content, "source": source},
+            thread=session_id,
+        )
+        extraction = extract(event)
+        await self.graph.upsert_extraction(extraction, session_id=session_id)
+        await self.tracer.trace_append("transcript.turn", role, event.seq)
+
+        output = await self._assemble_context_payload(
+            query=query,
+            session_id=session_id,
+            replay_from_seq=1,
+            limit=limit,
+            max_recent_events=max_recent_events,
+        )
+        return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+    async def handle_subagent_cleanup(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle subagent_cleanup tool call."""
+        parent_session_id = validate_session_id(arguments["parent_session_id"])
+        subagent_session_id = validate_session_id(arguments["subagent_session_id"])
+        summary_text = str(arguments["summary"])
+        query = validate_query(arguments.get("query") or "subagent handoff")
+        limit = validate_limit(arguments.get("limit"), default=10)
+
+        if remote_session_scope.get() is not None:
+            self._session_id_from_arguments({"session_id": subagent_session_id})
+
+        eventlog = self.session_manager.get(subagent_session_id).eventlog
+        event = eventlog.append(
+            "subagent.cleaned",
+            actor="zaxy",
+            payload={
+                "parent_session_id": parent_session_id,
+                "subagent_session_id": subagent_session_id,
+                "summary": summary_text,
+            },
+            thread=subagent_session_id,
+        )
+        extraction = extract(event)
+        await self.graph.upsert_extraction(extraction, session_id=subagent_session_id)
+        await self.tracer.trace_append("subagent.cleaned", "zaxy", event.seq)
+
+        assembly = await self._assemble_context_payload(
+            query=query,
+            session_id=subagent_session_id,
+            replay_from_seq=1,
+            limit=limit,
+            max_recent_events=20,
+        )
+        replay = self.session_manager.replay(subagent_session_id, from_seq=1)
+        output = {
+            **assembly,
+            "summary": self.session_manager.handoff_summary(subagent_session_id),
+            "integrity_ok": bool(getattr(getattr(replay, "integrity", None), "ok", False)),
+        }
+        return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+    async def _assemble_context_payload(
+        self,
+        *,
+        query: str,
+        session_id: str,
+        replay_from_seq: int,
+        limit: int,
+        max_recent_events: int,
+    ) -> dict[str, Any]:
+        replay = self.session_manager.replay(session_id, from_seq=replay_from_seq)
+        events = list(replay.events)
+        compacted = len(events) > max_recent_events
+        recent_events = events[-max_recent_events:] if compacted else events
+        router = QueryRouter(self.graph, session_id=session_id)
+        results = await router.query(query, limit=limit)
+        await self.tracer.trace_query(query, len(results), 0.0, None)
+        return {
+            "session_id": session_id,
+            "prompt": _format_prompt(recent_events, results),
+            "contexts": [_context_payload(result) for result in results],
+            "replay_event_count": len(recent_events),
+            "compacted": compacted,
+        }
+
     def _require_admin(self, arguments: dict[str, Any]) -> None:
         """Require an admin token for destructive or bulk-read tools when configured."""
         if self._admin_token and arguments.get("admin_token") != self._admin_token:
@@ -304,6 +466,45 @@ class MCPTransportAuth:
         return validate_session_id(normalized.get(self._session_header, "default"))
 
 
+def _format_prompt(events: list[Any], results: list[Any]) -> str:
+    lines = ["# Recent Events"]
+    for event in events:
+        lines.append(f"[{event.seq}] {event.type} by {event.actor}")
+        content = _event_content(event)
+        if content:
+            lines.append(content)
+    lines.append("")
+    lines.append("# Retrieved Context")
+    for result in results:
+        citation = f" ({result.citation})" if getattr(result, "citation", None) else ""
+        lines.append(f"- {result.content}{citation}")
+    return "\n".join(lines).strip()
+
+
+def _event_content(event: Any) -> str:
+    payload = getattr(event, "payload", {})
+    if not isinstance(payload, dict):
+        return ""
+    parts = [
+        str(payload[key])
+        for key in ("title", "summary", "content", "text", "decision", "task")
+        if payload.get(key)
+    ]
+    return " ".join(parts)
+
+
+def _context_payload(result: Any) -> dict[str, Any]:
+    return {
+        "content": result.content,
+        "source": result.source,
+        "score": result.score,
+        "valid_from": result.valid_from,
+        "valid_to": result.valid_to,
+        "citation": result.citation,
+        "score_explanation": result.score_explanation,
+    }
+
+
 # ------------------------------------------------------------------
 # Entrypoint
 # ------------------------------------------------------------------
@@ -349,6 +550,12 @@ async def main() -> None:
             return await active_server.handle_memory_replay(arguments)
         if name == "memory_invalidate":
             return await active_server.handle_memory_invalidate(arguments)
+        if name == "context_assemble":
+            return await active_server.handle_context_assemble(arguments)
+        if name == "context_after_turn":
+            return await active_server.handle_context_after_turn(arguments)
+        if name == "subagent_cleanup":
+            return await active_server.handle_subagent_cleanup(arguments)
         raise ValueError(f"Unknown tool: {name}")
 
     try:

@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from zaxy.core import Context, MemoryFabric
+from zaxy.core import Context, HandoffBundle, MemoryFabric
 from zaxy.query import ContextChunk
 
 
@@ -401,6 +401,126 @@ class TestContextAssembly:
         assert assembly.contexts[0].content == "MMR diversity (decision)"
         assert "[3] transcript.turn by assistant" in assembly.prompt
         assert "MMR diversity (decision)" in assembly.prompt
+
+    async def test_after_turn_appends_turn_and_returns_compacted_context(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """after_turn() should persist a turn and return a compact lifecycle bundle."""
+        old_event = MagicMock(
+            seq=3,
+            type="transcript.turn",
+            actor="user",
+            payload={"role": "user", "content": "Older context."},
+            hash="b" * 64,
+        )
+        event = MagicMock(
+            seq=4,
+            type="transcript.turn",
+            actor="assistant",
+            payload={"role": "assistant", "content": "Use graceful fallback."},
+            hash="c" * 64,
+        )
+        fabric.session_manager.replay.return_value = MagicMock(
+            events=[old_event, event],
+            integrity=MagicMock(ok=True),
+        )
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content="Graceful fallback (decision)",
+                source="keyword",
+                score=0.9,
+                valid_from=None,
+                valid_to=None,
+            )
+        ]
+
+        assembly = await fabric.after_turn(
+            role="assistant",
+            content="Use graceful fallback.",
+            session_id="agent-1",
+            query="fallback decision",
+            max_recent_events=1,
+            limit=1,
+        )
+
+        log = fabric.session_manager.get.return_value.eventlog
+        log.append.assert_called_once()
+        assert log.append.call_args.args == ("transcript.turn",)
+        assert log.append.call_args.kwargs["payload"]["content"] == "Use graceful fallback."
+        assert assembly.compacted is True
+        assert assembly.replay_event_count == 1
+        assert "Older context." not in assembly.prompt
+        assert "Graceful fallback (decision)" in assembly.prompt
+
+    async def test_handoff_bundle_combines_summary_replay_and_context(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """handoff_bundle() should produce a portable session handoff object."""
+        event = MagicMock(
+            seq=5,
+            type="goal.created",
+            actor="user",
+            payload={"title": "Ship lifecycle hooks"},
+            hash="d" * 64,
+        )
+        fabric.session_manager.handoff_summary.return_value = {
+            "event_count": 5,
+            "goals": ["Ship lifecycle hooks"],
+            "open_tasks": [],
+            "last_actor": "user",
+        }
+        fabric.session_manager.replay.return_value = MagicMock(
+            events=[event],
+            integrity=MagicMock(ok=True),
+        )
+        fabric.query_router.query.return_value = []
+
+        bundle = await fabric.handoff_bundle(
+            session_id="agent-1",
+            query="lifecycle hooks",
+            replay_from_seq=5,
+        )
+
+        assert isinstance(bundle, HandoffBundle)
+        assert bundle.session_id == "agent-1"
+        assert bundle.summary["event_count"] == 5
+        assert bundle.integrity_ok is True
+        assert bundle.replay_event_count == 1
+        assert "Ship lifecycle hooks" in bundle.prompt
+
+    async def test_cleanup_subagent_appends_cleanup_event_and_bundle(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """cleanup_subagent() should mark a subagent session as cleaned up."""
+        event = MagicMock(
+            seq=9,
+            type="subagent.cleaned",
+            actor="zaxy",
+            payload={"summary": "Subagent finished retrieval."},
+            hash="e" * 64,
+        )
+        fabric.session_manager.handoff_summary.return_value = {"event_count": 9}
+        fabric.session_manager.replay.return_value = MagicMock(
+            events=[event],
+            integrity=MagicMock(ok=True),
+        )
+        fabric.query_router.query.return_value = []
+
+        bundle = await fabric.cleanup_subagent(
+            parent_session_id="main",
+            subagent_session_id="worker-1",
+            summary="Subagent finished retrieval.",
+        )
+
+        log = fabric.session_manager.get.return_value.eventlog
+        assert log.append.call_args.args == ("subagent.cleaned",)
+        assert log.append.call_args.kwargs["thread"] == "worker-1"
+        assert log.append.call_args.kwargs["payload"]["parent_session_id"] == "main"
+        assert bundle.session_id == "worker-1"
+        assert bundle.summary["event_count"] == 9
 
 
 # ------------------------------------------------------------------

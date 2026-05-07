@@ -57,6 +57,19 @@ class ContextAssembly:
     prompt: str
     contexts: list[Context]
     replay_event_count: int
+    compacted: bool = False
+
+
+@dataclass(frozen=True)
+class HandoffBundle:
+    """Portable handoff package for resuming a session or subagent."""
+
+    session_id: str
+    summary: dict[str, Any]
+    prompt: str
+    contexts: list[Context]
+    replay_event_count: int
+    integrity_ok: bool
 
 
 class MemoryFabric:
@@ -351,15 +364,21 @@ class MemoryFabric:
         session_id: str = "default",
         replay_from_seq: int = 1,
         limit: int = 10,
+        max_recent_events: int | None = None,
     ) -> ContextAssembly:
         """Assemble recent replay plus retrieval into prompt-ready context."""
         sid = validate_session_id(session_id)
         replay = await self.replay(from_seq=replay_from_seq, session_id=sid)
         contexts = await self.query(query, limit=limit, session_id=sid)
+        replay_events = list(replay.events)
+        compacted = False
+        if max_recent_events is not None and len(replay_events) > max_recent_events:
+            replay_events = replay_events[-max_recent_events:]
+            compacted = True
         lines = ["# Recent Events"]
-        for event in replay.events:
+        for event in replay_events:
             lines.append(f"[{event.seq}] {event.type} by {event.actor}")
-            content = event.payload.get("content")
+            content = _event_content(event)
             if content:
                 lines.append(str(content))
         lines.append("")
@@ -373,7 +392,94 @@ class MemoryFabric:
             session_id=sid,
             prompt="\n".join(lines).strip(),
             contexts=contexts,
-            replay_event_count=len(replay.events),
+            replay_event_count=len(replay_events),
+            compacted=compacted,
+        )
+
+    async def after_turn(
+        self,
+        *,
+        role: str,
+        content: str,
+        session_id: str = "default",
+        query: str | None = None,
+        source: str = "after-turn",
+        max_recent_events: int = 20,
+        limit: int = 10,
+    ) -> ContextAssembly:
+        """Persist a completed turn and assemble compact context for the next turn."""
+        sid = validate_session_id(session_id)
+        await self.append(
+            "transcript.turn",
+            actor=role,
+            payload={"role": role, "content": content, "source": source},
+            session_id=sid,
+        )
+        return await self.assemble_context(
+            query or content,
+            session_id=sid,
+            replay_from_seq=1,
+            limit=limit,
+            max_recent_events=max_recent_events,
+        )
+
+    async def handoff_bundle(
+        self,
+        *,
+        session_id: str = "default",
+        query: str = "session handoff",
+        replay_from_seq: int = 1,
+        limit: int = 10,
+        max_recent_events: int = 20,
+    ) -> HandoffBundle:
+        """Build a portable handoff bundle with summary, replay, and retrieval."""
+        sid = validate_session_id(session_id)
+        summary = self.session_manager.handoff_summary(sid)
+        replay = await self.replay(from_seq=replay_from_seq, session_id=sid)
+        assembly = await self.assemble_context(
+            query,
+            session_id=sid,
+            replay_from_seq=replay_from_seq,
+            limit=limit,
+            max_recent_events=max_recent_events,
+        )
+        integrity = getattr(replay, "integrity", None)
+        return HandoffBundle(
+            session_id=sid,
+            summary=summary,
+            prompt=assembly.prompt,
+            contexts=assembly.contexts,
+            replay_event_count=assembly.replay_event_count,
+            integrity_ok=bool(getattr(integrity, "ok", False)),
+        )
+
+    async def cleanup_subagent(
+        self,
+        *,
+        parent_session_id: str,
+        subagent_session_id: str,
+        summary: str,
+        query: str = "subagent handoff",
+        limit: int = 10,
+    ) -> HandoffBundle:
+        """Finalize a subagent session and return a handoff bundle for the parent."""
+        parent_sid = validate_session_id(parent_session_id)
+        subagent_sid = validate_session_id(subagent_session_id)
+        await self.append(
+            "subagent.cleaned",
+            actor="zaxy",
+            payload={
+                "parent_session_id": parent_sid,
+                "subagent_session_id": subagent_sid,
+                "summary": summary,
+            },
+            session_id=subagent_sid,
+        )
+        return await self.handoff_bundle(
+            session_id=subagent_sid,
+            query=query,
+            replay_from_seq=1,
+            limit=limit,
         )
 
     async def invalidate(

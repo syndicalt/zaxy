@@ -90,6 +90,34 @@ Context assembly combines recent replayed events with graph retrieval. It is the
 first lifecycle API for building an LLM context window from both durable session
 history and ranked memory.
 
+Run lifecycle hooks after a turn or subagent handoff:
+
+```python
+next_context = await fabric.after_turn(
+    role="assistant",
+    content="Use MMR for diversity.",
+    session_id="agent-1",
+    query="retrieval decisions",
+    max_recent_events=20,
+)
+
+handoff = await fabric.handoff_bundle(
+    session_id="agent-1",
+    query="current goals and open tasks",
+)
+
+subagent = await fabric.cleanup_subagent(
+    parent_session_id="main",
+    subagent_session_id="worker-1",
+    summary="Indexed retrieval docs and found no blockers.",
+)
+```
+
+`after_turn` preserves the turn as a `transcript.turn` event before assembling
+bounded context. `handoff_bundle` includes summary data, prompt-ready context,
+and Eventloom integrity status. `cleanup_subagent` records `subagent.cleaned`
+in the subagent session and returns a bundle the parent can import or inspect.
+
 Customize retrieval policy:
 
 ```python
