@@ -6,8 +6,15 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from zaxy.config import Settings
 from zaxy.graph import GraphEntity, GraphStore, SearchResult
-from zaxy.query import LexicalReranker, QueryRouter
+from zaxy.query import (
+    HTTPReranker,
+    LexicalReranker,
+    OpenAICompatibleReranker,
+    QueryRouter,
+    build_reranker,
+)
 
 
 @pytest.fixture
@@ -409,6 +416,170 @@ class TestQueryRouting:
         assert results[0].score_explanation is not None
         assert results[0].score_explanation["reranker"] == "lexical"
         assert results[0].score_explanation["rerank_score"] > 0
+
+
+class TestModelRerankers:
+    """Tests for hosted and local model reranker providers."""
+
+    async def test_openai_compatible_reranker_posts_chat_completion_request(self) -> None:
+        """OpenAI-compatible reranking should use a fakeable chat-completions client."""
+        captured: dict[str, object] = {}
+
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, object]:
+                return {
+                    "choices": [
+                        {"message": {"content": '[{"index": 1, "score": 0.95}, {"index": 0, "score": 0.1}]'}}
+                    ]
+                }
+
+        class FakeClient:
+            def post(
+                self,
+                url: str,
+                *,
+                headers: dict[str, str],
+                json: dict[str, object],
+            ) -> FakeResponse:
+                captured["url"] = url
+                captured["headers"] = headers
+                captured["json"] = json
+                return FakeResponse()
+
+        low = SearchResult(
+            entity=GraphEntity(
+                name="General note",
+                entity_type="document",
+                valid_from="2024-01-01T00:00:00Z",
+                valid_to=None,
+                properties={"summary": "Background"},
+            ),
+            score=0.8,
+            source="keyword",
+        )
+        high = SearchResult(
+            entity=GraphEntity(
+                name="Auth decision",
+                entity_type="decision",
+                valid_from="2024-01-01T00:00:00Z",
+                valid_to=None,
+                properties={"summary": "Auth decision rationale"},
+            ),
+            score=0.7,
+            source="keyword",
+        )
+        reranker = OpenAICompatibleReranker(
+            api_key="test-key",
+            model="gpt-test",
+            client=FakeClient(),
+        )
+
+        results = await reranker.rerank("auth decision rationale", [low, high], limit=1)
+
+        assert results[0].entity.name == "Auth decision"
+        assert results[0].reranker == "openai-compatible"
+        assert results[0].rerank_score == pytest.approx(0.95)
+        assert captured["url"] == "https://api.openai.com/v1/chat/completions"
+        assert captured["headers"] == {"Authorization": "Bearer test-key"}
+        body = captured["json"]
+        assert isinstance(body, dict)
+        assert body["model"] == "gpt-test"
+        assert body["temperature"] == 0
+
+    async def test_http_reranker_promotes_scores_from_local_endpoint(self) -> None:
+        """Local HTTP rerankers should accept endpoint scores without network in tests."""
+        captured: dict[str, object] = {}
+
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, object]:
+                return {"scores": [0.1, 0.9]}
+
+        class FakeClient:
+            def post(
+                self,
+                url: str,
+                *,
+                headers: dict[str, str],
+                json: dict[str, object],
+            ) -> FakeResponse:
+                captured["url"] = url
+                captured["headers"] = headers
+                captured["json"] = json
+                return FakeResponse()
+
+        results = [
+            SearchResult(
+                entity=GraphEntity(
+                    name="General note",
+                    entity_type="document",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={},
+                ),
+                score=0.8,
+                source="keyword",
+            ),
+            SearchResult(
+                entity=GraphEntity(
+                    name="Auth decision",
+                    entity_type="decision",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={},
+                ),
+                score=0.7,
+                source="keyword",
+            ),
+        ]
+        reranker = HTTPReranker(
+            endpoint="http://localhost:11434/rerank",
+            api_key="local-key",
+            client=FakeClient(),
+        )
+
+        reranked = await reranker.rerank("auth decision", results, limit=1)
+
+        assert reranked[0].entity.name == "Auth decision"
+        assert reranked[0].reranker == "http"
+        assert captured["url"] == "http://localhost:11434/rerank"
+        assert captured["headers"] == {"Authorization": "Bearer local-key"}
+
+    def test_build_reranker_uses_configured_provider(self) -> None:
+        """Reranker factory should build the configured provider."""
+        lexical = build_reranker(Settings(_env_file=None, reranker_provider="lexical"))
+        assert isinstance(lexical, LexicalReranker)
+
+        http = build_reranker(
+            Settings(
+                _env_file=None,
+                reranker_provider="http",
+                reranker_url="http://localhost:11434/rerank",
+            )
+        )
+        assert isinstance(http, HTTPReranker)
+
+        openai = build_reranker(
+            Settings(
+                _env_file=None,
+                reranker_provider="openai",
+                openai_api_key="test-key",
+            )
+        )
+        assert isinstance(openai, OpenAICompatibleReranker)
+
+    def test_build_reranker_rejects_missing_required_config(self) -> None:
+        """Hosted/local reranker providers should fail loudly when misconfigured."""
+        with pytest.raises(ValueError, match="RERANKER_URL"):
+            build_reranker(Settings(_env_file=None, reranker_provider="http"))
+
+        with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+            build_reranker(Settings(_env_file=None, reranker_provider="openai", openai_api_key=None))
 
 
 # ------------------------------------------------------------------

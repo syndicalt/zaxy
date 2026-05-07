@@ -46,18 +46,22 @@ class TestSecretFiles:
         admin_file = tmp_path / "mcp_admin"
         remote_file = tmp_path / "mcp_remote"
         openai_file = tmp_path / "openai_key"
+        reranker_file = tmp_path / "reranker_key"
         pathlight_file = tmp_path / "pathlight_token"
         admin_file.write_text("admin-secret\n", encoding="utf-8")
         remote_file.write_text("remote-secret\n", encoding="utf-8")
         openai_file.write_text("openai-secret\n", encoding="utf-8")
+        reranker_file.write_text("reranker-secret\n", encoding="utf-8")
         pathlight_file.write_text("pathlight-secret\n", encoding="utf-8")
         monkeypatch.delenv("MCP_ADMIN_TOKEN", raising=False)
         monkeypatch.delenv("MCP_REMOTE_AUTH_TOKEN", raising=False)
         monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+        monkeypatch.delenv("RERANKER_API_KEY", raising=False)
         monkeypatch.delenv("PATHLIGHT_ACCESS_TOKEN", raising=False)
         monkeypatch.setenv("MCP_ADMIN_TOKEN_FILE", str(admin_file))
         monkeypatch.setenv("MCP_REMOTE_AUTH_TOKEN_FILE", str(remote_file))
         monkeypatch.setenv("OPENAI_API_KEY_FILE", str(openai_file))
+        monkeypatch.setenv("RERANKER_API_KEY_FILE", str(reranker_file))
         monkeypatch.setenv("PATHLIGHT_ACCESS_TOKEN_FILE", str(pathlight_file))
 
         settings = Settings(_env_file=None)
@@ -65,6 +69,7 @@ class TestSecretFiles:
         assert settings.mcp_admin_token == "admin-secret"
         assert settings.mcp_remote_auth_token == "remote-secret"
         assert settings.openai_api_key == "openai-secret"
+        assert settings.reranker_api_key == "reranker-secret"
         assert settings.pathlight_access_token == "pathlight-secret"
 
     def test_missing_secret_file_fails(self, monkeypatch: pytest.MonkeyPatch) -> None:

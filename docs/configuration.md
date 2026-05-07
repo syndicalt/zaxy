@@ -29,11 +29,18 @@ Embedding settings include `EMBEDDING_ENABLED`, `EMBEDDING_PROVIDER`,
 offline development. The hosted OpenAI-compatible provider is useful when vector
 similarity quality matters. See [embeddings.md](embeddings.md).
 
+Retrieval settings include `QUERY_DEFAULT_LIMIT`, `QUERY_SCORING_PROFILE`,
+`RERANKER_PROVIDER`, `RERANKER_URL`, `RERANKER_API_KEY`,
+`OPENAI_RERANK_MODEL`, and `OPENAI_BASE_URL`. `RERANKER_PROVIDER=lexical`
+enables deterministic local reranking. `RERANKER_PROVIDER=http` sends fused
+candidates to a local/self-hosted endpoint. `RERANKER_PROVIDER=openai` uses an
+OpenAI-compatible chat-completions model and `OPENAI_API_KEY`.
+
 Supported secret-file variants are `NEO4J_PASSWORD_FILE`,
 `MCP_ADMIN_TOKEN_FILE`, `MCP_REMOTE_AUTH_TOKEN_FILE`, `OPENAI_API_KEY_FILE`,
-and `PATHLIGHT_ACCESS_TOKEN_FILE`. Production setup writes these references into
-`.env`; the settings loader resolves them during initialization. Secret files
-must not be world-readable.
+`RERANKER_API_KEY_FILE`, and `PATHLIGHT_ACCESS_TOKEN_FILE`. Production setup
+writes these references into `.env`; the settings loader resolves them during
+initialization. Secret files must not be world-readable.
 
 Validation commands:
 

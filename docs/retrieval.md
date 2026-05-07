@@ -37,6 +37,10 @@ Reranking is pluggable. `LexicalReranker` is a deterministic local provider
 that promotes candidates with better query-token coverage over the fused graph
 candidate set. Hosted or model-backed rerankers can implement the same async
 interface and return candidates with `reranker` and `rerank_score` metadata.
+Zaxy ships `HTTPReranker` for local/self-hosted rerank endpoints and
+`OpenAICompatibleReranker` for OpenAI-compatible chat-completions models that
+return JSON candidate scores. `build_reranker(settings)` wires configured
+providers into `MemoryFabric`.
 
 Every graph-backed context chunk should cite its originating Eventloom event
 when provenance is available. Citations use the form
@@ -88,11 +92,10 @@ signal, not a universal benchmark against production-grade vector RAG or file
 memory systems.
 
 The next retrieval-quality work should close the practical ergonomics gap with
-QMD-style search sidecars: hosted/local model reranking providers, richer
-assembly lifecycle hooks, local embedding providers, and graceful degradation
-when Neo4j, embeddings, or rerankers are unavailable. These should augment
-Zaxy's temporal/provenance layer rather than replace it with generic chunk
-search.
+QMD-style search sidecars: richer assembly lifecycle hooks, local embedding
+providers, and graceful degradation when Neo4j, embeddings, or rerankers are
+unavailable. These should augment Zaxy's temporal/provenance layer rather than
+replace it with generic chunk search.
 
 Related references: [graph-schema.md](graph-schema.md), [mcp.md](mcp.md),
 [configuration.md](configuration.md), [testing.md](testing.md), and

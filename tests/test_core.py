@@ -24,6 +24,7 @@ def fabric() -> MemoryFabric:
         patch("zaxy.core.EventLog") as mock_log_cls,
         patch("zaxy.core.GraphStore") as mock_graph_cls,
         patch("zaxy.core.QueryRouter") as mock_router_cls,
+        patch("zaxy.core.build_reranker") as mock_build_reranker,
         patch("zaxy.core.MemoryTracer") as mock_tracer_cls,
         patch("zaxy.core.SessionManager") as mock_session_cls,
     ):
@@ -40,6 +41,7 @@ def fabric() -> MemoryFabric:
 
         router = AsyncMock()
         mock_router_cls.return_value = router
+        mock_build_reranker.return_value = None
 
         tracer = AsyncMock()
         mock_tracer_cls.return_value = tracer
@@ -59,6 +61,31 @@ def fabric() -> MemoryFabric:
 
 class TestLifecycle:
     """Tests for connect/close behavior."""
+
+    def test_initializes_query_router_with_configured_reranker(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """MemoryFabric should wire configured scoring/reranking into QueryRouter."""
+        monkeypatch.setenv("QUERY_SCORING_PROFILE", "precision")
+        monkeypatch.setenv("RERANKER_PROVIDER", "lexical")
+        from zaxy.config import get_settings
+
+        get_settings.cache_clear()
+        with (
+            patch("zaxy.core.GraphStore"),
+            patch("zaxy.core.QueryRouter") as mock_router_cls,
+            patch("zaxy.core.build_reranker") as mock_build_reranker,
+            patch("zaxy.core.MemoryTracer"),
+            patch("zaxy.core.SessionManager") as mock_session_cls,
+        ):
+            mock_build_reranker.return_value = object()
+            mock_session_cls.return_value.get.return_value.eventlog = MagicMock()
+
+            MemoryFabric()
+
+        assert mock_router_cls.call_args.kwargs["scoring_profile"] == "precision"
+        assert mock_router_cls.call_args.kwargs["reranker"] is mock_build_reranker.return_value
 
     async def test_connect_initializes_graph_and_tracer(self, fabric: MemoryFabric) -> None:
         """connect() should init schema and connect tracer."""

@@ -29,7 +29,7 @@ from zaxy.event import EventLog, ReplayResult  # noqa: F401 - compatibility for 
 from zaxy.extract import extract
 from zaxy.graph import GraphStore
 from zaxy.metrics import get_metrics
-from zaxy.query import QueryRouter
+from zaxy.query import QueryRouter, build_reranker
 from zaxy.security import validate_payload, validate_query, validate_session_id
 from zaxy.session import SessionManager
 from zaxy.trace import MemoryTracer
@@ -95,6 +95,8 @@ class MemoryFabric:
             self.graph,
             default_limit=settings.query_default_limit,
             session_id=settings.eventloom_thread,
+            scoring_profile=settings.query_scoring_profile,
+            reranker=build_reranker(settings),
         )
         self.embedding_provider = build_embedding_provider(settings)
         self.tracer = MemoryTracer(

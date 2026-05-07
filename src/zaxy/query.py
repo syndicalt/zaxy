@@ -7,10 +7,13 @@ returning a context window suitable for injection into an agent prompt.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Any, Protocol
+
+import httpx
 
 from zaxy.graph import GraphEntity, GraphStore, SearchResult
 from zaxy.security import validate_limit, validate_query, validate_session_id
@@ -136,6 +139,101 @@ class LexicalReranker:
                 )
             )
         return sorted(reranked, key=lambda item: item.ranking_score or item.score, reverse=True)[:limit]
+
+
+class HTTPReranker:
+    """HTTP reranker for local or self-hosted model endpoints."""
+
+    name = "http"
+
+    def __init__(
+        self,
+        endpoint: str,
+        api_key: str | None = None,
+        weight: float = 0.35,
+        client: Any | None = None,
+    ) -> None:
+        if not endpoint:
+            raise ValueError("RERANKER_URL is required for HTTP reranking")
+        self.endpoint = endpoint
+        self.api_key = api_key
+        self.weight = weight
+        self._client = client or httpx.Client(timeout=30.0)
+
+    async def rerank(self, query: str, results: list[SearchResult], *, limit: int) -> list[SearchResult]:
+        response = self._client.post(
+            self.endpoint,
+            headers=_auth_headers(self.api_key),
+            json={
+                "query": query,
+                "candidates": [_candidate_payload(index, result) for index, result in enumerate(results)],
+            },
+        )
+        response.raise_for_status()
+        scores = _extract_rerank_scores(response.json(), expected=len(results))
+        return _apply_rerank_scores(results, scores, limit=limit, weight=self.weight, reranker=self.name)
+
+
+class OpenAICompatibleReranker:
+    """OpenAI-compatible chat-completions reranker.
+
+    The provider expects the model to return JSON like:
+    ``[{"index": 1, "score": 0.95}, {"index": 0, "score": 0.2}]``.
+    """
+
+    name = "openai-compatible"
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "gpt-5-mini",
+        base_url: str = "https://api.openai.com/v1",
+        weight: float = 0.35,
+        client: Any | None = None,
+    ) -> None:
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY is required for OpenAI-compatible reranking")
+        self.api_key = api_key
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+        self.weight = weight
+        self._client = client or httpx.Client(timeout=30.0)
+
+    async def rerank(self, query: str, results: list[SearchResult], *, limit: int) -> list[SearchResult]:
+        response = self._client.post(
+            f"{self.base_url}/chat/completions",
+            headers=_auth_headers(self.api_key),
+            json={
+                "model": self.model,
+                "temperature": 0,
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": (
+                            "Rank candidates for retrieval relevance. "
+                            "Return only JSON: [{\"index\": int, \"score\": float}] with scores from 0 to 1."
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": json.dumps(
+                            {
+                                "query": query,
+                                "candidates": [
+                                    _candidate_payload(index, result)
+                                    for index, result in enumerate(results)
+                                ],
+                            },
+                            separators=(",", ":"),
+                        ),
+                    },
+                ],
+            },
+        )
+        response.raise_for_status()
+        content = response.json()["choices"][0]["message"]["content"]
+        scores = _extract_rerank_scores(json.loads(content), expected=len(results))
+        return _apply_rerank_scores(results, scores, limit=limit, weight=self.weight, reranker=self.name)
 
 
 class QueryRouter:
@@ -306,6 +404,33 @@ class QueryRouter:
         return reranked[:limit]
 
 
+def build_reranker(settings: Any) -> Reranker | None:
+    """Build the configured reranker provider."""
+    provider = str(getattr(settings, "reranker_provider", "none")).casefold()
+    if provider in {"none", "disabled", "off", ""}:
+        return None
+    if provider == "lexical":
+        return LexicalReranker()
+    if provider == "http":
+        endpoint = getattr(settings, "reranker_url", None)
+        if not endpoint:
+            raise ValueError("RERANKER_URL is required when RERANKER_PROVIDER=http")
+        return HTTPReranker(
+            endpoint=endpoint,
+            api_key=getattr(settings, "reranker_api_key", None),
+        )
+    if provider == "openai":
+        api_key = getattr(settings, "openai_api_key", None)
+        if not api_key:
+            raise ValueError("OPENAI_API_KEY is required when RERANKER_PROVIDER=openai")
+        return OpenAICompatibleReranker(
+            api_key=api_key,
+            model=getattr(settings, "openai_rerank_model", "gpt-5-mini"),
+            base_url=getattr(settings, "openai_base_url", "https://api.openai.com/v1"),
+        )
+    raise ValueError("RERANKER_PROVIDER must be 'none', 'lexical', 'http', or 'openai'")
+
+
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
@@ -367,6 +492,73 @@ def _expanded_queries(query: str) -> list[str]:
     if not expanded_terms:
         return [query]
     return [query, f"{query} {' '.join(expanded_terms)}"]
+
+
+def _candidate_payload(index: int, result: SearchResult) -> dict[str, object]:
+    """Return a compact candidate payload for model rerankers."""
+    return {
+        "index": index,
+        "content": _candidate_text(result.entity),
+        "source": result.source,
+        "score": round(result.score, 6),
+    }
+
+
+def _candidate_text(entity: GraphEntity) -> str:
+    parts = [f"{entity.name} ({entity.entity_type})"]
+    summary = entity.properties.get("summary")
+    if isinstance(summary, str) and summary:
+        parts.append(summary)
+    return " ".join(parts)
+
+
+def _auth_headers(api_key: str | None) -> dict[str, str]:
+    if not api_key:
+        return {}
+    return {"Authorization": f"Bearer {api_key}"}
+
+
+def _extract_rerank_scores(payload: Any, *, expected: int) -> list[float]:
+    """Extract per-candidate scores from common reranker response shapes."""
+    scores: list[float | None] = [None] * expected
+    if isinstance(payload, dict) and isinstance(payload.get("scores"), list):
+        raw_scores = payload["scores"]
+        if len(raw_scores) != expected:
+            raise ValueError(f"reranker returned {len(raw_scores)} scores for {expected} candidates")
+        return [float(score) for score in raw_scores]
+
+    records = payload.get("results") if isinstance(payload, dict) else payload
+    if not isinstance(records, list):
+        raise ValueError("reranker response must be a score list or result records")
+    for record in records:
+        if not isinstance(record, dict):
+            raise ValueError("reranker result records must be objects")
+        index = int(record["index"])
+        if index < 0 or index >= expected:
+            raise ValueError(f"reranker returned out-of-range candidate index: {index}")
+        scores[index] = float(record["score"])
+    return [0.0 if score is None else score for score in scores]
+
+
+def _apply_rerank_scores(
+    results: list[SearchResult],
+    scores: list[float],
+    *,
+    limit: int,
+    weight: float,
+    reranker: str,
+) -> list[SearchResult]:
+    reranked = [
+        replace(
+            result,
+            score=result.score + (weight * scores[index]),
+            ranking_score=result.score + (weight * scores[index]),
+            reranker=reranker,
+            rerank_score=scores[index],
+        )
+        for index, result in enumerate(results)
+    ]
+    return sorted(reranked, key=lambda item: item.ranking_score or item.score, reverse=True)[:limit]
 
 
 def _resolve_scoring_profile(

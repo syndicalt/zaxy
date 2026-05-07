@@ -93,7 +93,7 @@ history and ranked memory.
 Customize retrieval policy:
 
 ```python
-from zaxy.query import LexicalReranker, QueryRouter
+from zaxy.query import HTTPReranker, LexicalReranker, QueryRouter
 
 router = QueryRouter(
     fabric.graph,
@@ -106,6 +106,9 @@ chunks = await router.query("auth decision rationale", session_id="agent-1")
 Built-in scoring profiles are `balanced`, `precision`, `recall`, and
 `temporal`. Rerankers implement an async `rerank(query, results, limit=...)`
 method and receive fused, deduplicated graph candidates before final truncation.
+Use `LexicalReranker` for deterministic local reranking, `HTTPReranker` for
+local/self-hosted model endpoints, or `OpenAICompatibleReranker` for
+OpenAI-compatible chat-completions reranking.
 
 Replay a session:
 

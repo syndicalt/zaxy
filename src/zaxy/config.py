@@ -159,6 +159,10 @@ class Settings(BaseSettings):
         default=10,
         description="Default result limit for queries",
     )
+    query_scoring_profile: str = Field(
+        default="balanced",
+        description="Query scoring profile: balanced, precision, recall, or temporal",
+    )
 
     # ------------------------------------------------------------------
     # Embeddings
@@ -192,6 +196,30 @@ class Settings(BaseSettings):
         description="OpenAI-compatible API base URL",
     )
 
+    # ------------------------------------------------------------------
+    # Reranking
+    # ------------------------------------------------------------------
+    reranker_provider: str = Field(
+        default="none",
+        description="Reranker provider: none, lexical, http, or openai",
+    )
+    reranker_url: str | None = Field(
+        default=None,
+        description="HTTP reranker endpoint URL",
+    )
+    reranker_api_key: str | None = Field(
+        default=None,
+        description="Optional bearer token for HTTP reranker endpoint",
+    )
+    reranker_api_key_file: str | None = Field(
+        default=None,
+        description="Path to a file containing the reranker bearer token",
+    )
+    openai_rerank_model: str = Field(
+        default="gpt-5-mini",
+        description="OpenAI-compatible chat model used for reranking",
+    )
+
     def model_post_init(self, __context: Any) -> None:
         """Load Docker/Kubernetes-style secret files after env parsing."""
         self._load_secret_file("NEO4J_PASSWORD", "neo4j_password", "neo4j_password_file")
@@ -202,6 +230,7 @@ class Settings(BaseSettings):
             "mcp_remote_auth_token_file",
         )
         self._load_secret_file("OPENAI_API_KEY", "openai_api_key", "openai_api_key_file")
+        self._load_secret_file("RERANKER_API_KEY", "reranker_api_key", "reranker_api_key_file")
         self._load_secret_file(
             "PATHLIGHT_ACCESS_TOKEN",
             "pathlight_access_token",
