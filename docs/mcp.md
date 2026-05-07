@@ -17,7 +17,8 @@ runs exact/keyword/vector/traversal search, fuses scores, and returns compact
 context suitable for an agent prompt. Temporal filters let a client ask what was
 valid at a specific time. Remote SSE requests are constrained to the session
 from the configured session header. Results include Eventloom citations when
-available so clients can display or replay the source event.
+available so clients can display or replay the source event. Results also
+include `score_explanation` metadata for ranking diagnostics.
 
 `memory_replay(session_id, from_seq?)` rebuilds session history from the
 Eventloom log. This is useful for handoffs, audits, and debugging. In remote SSE

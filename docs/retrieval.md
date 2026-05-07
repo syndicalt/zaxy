@@ -9,8 +9,16 @@ retriever would miss.
 The query router lives in `src/zaxy/query.py`. It validates the query and limit,
 calls `GraphStore.search_exact`, `search_keyword`, and `search_vector` where
 appropriate, expands from high-confidence hits through traversal, fuses scores,
-and returns `ContextChunk` objects. A context chunk contains the content an agent
-should see and metadata about source entities, scores, and provenance.
+applies MMR diversity, and returns `ContextChunk` objects. A context chunk
+contains the content an agent should see and metadata about source entities,
+scores, and provenance.
+
+Ranking is intentionally explainable. Each chunk carries `score_explanation`
+metadata with the retrieval source, raw backend score, source weight, weighted
+score, and final ranking score. The ranking pass uses maximum marginal
+relevance so near-duplicate hits do not crowd out adjacent context. Traversal
+hits get a small preservation bonus because graph-neighbor evidence is often
+the difference between generic search and relational memory.
 
 Every graph-backed context chunk should cite its originating Eventloom event
 when provenance is available. Citations use the form
@@ -42,7 +50,7 @@ signal, not a universal benchmark against production-grade vector RAG or file
 memory systems.
 
 The next retrieval-quality work should close the practical ergonomics gap with
-QMD-style search sidecars: reranking, query expansion, MMR diversity,
+QMD-style search sidecars: stronger reranking, query expansion,
 document/file ingestion, transcript indexing, local embedding and reranking
 providers, and graceful degradation when Neo4j, embeddings, or rerankers are
 unavailable. These should augment Zaxy's temporal/provenance layer rather than

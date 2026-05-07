@@ -144,6 +144,7 @@ class TestQuery:
                 valid_from="2024-01-01T00:00:00Z",
                 valid_to=None,
                 citation="eventloom://default/events/1#aaaaaaaaaaaa",
+                score_explanation={"source": "exact", "weighted_score": 1.0},
             )
         ]
         results = await fabric.query("Alice")
@@ -155,7 +156,8 @@ class TestQuery:
         assert len(results) == 1
         assert isinstance(results[0], Context)
         assert results[0].metadata == {
-            "citation": "eventloom://default/events/1#aaaaaaaaaaaa"
+            "citation": "eventloom://default/events/1#aaaaaaaaaaaa",
+            "score_explanation": {"source": "exact", "weighted_score": 1.0},
         }
 
     async def test_passes_temporal_filter(self, fabric: MemoryFabric) -> None:

@@ -191,17 +191,24 @@ class MemoryFabric:
         # Metrics
         get_metrics().record_query(duration_ms / 1000.0)
 
-        return [
-            Context(
-                content=c.content,
-                source=c.source,
-                score=c.score,
-                valid_from=c.valid_from,
-                valid_to=c.valid_to,
-                metadata={"citation": c.citation} if c.citation else None,
+        contexts = []
+        for c in chunks:
+            metadata: dict[str, Any] = {}
+            if c.citation:
+                metadata["citation"] = c.citation
+            if c.score_explanation:
+                metadata["score_explanation"] = c.score_explanation
+            contexts.append(
+                Context(
+                    content=c.content,
+                    source=c.source,
+                    score=c.score,
+                    valid_from=c.valid_from,
+                    valid_to=c.valid_to,
+                    metadata=metadata or None,
+                )
             )
-            for c in chunks
-        ]
+        return contexts
 
     async def replay(self, from_seq: int = 1, session_id: str = "default") -> ReplayResult:
         """Replay events from the log starting at a sequence number.

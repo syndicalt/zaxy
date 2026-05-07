@@ -36,6 +36,9 @@ context = await fabric.query(
 )
 ```
 
+Returned context metadata includes Eventloom citations when available and
+`score_explanation` details for retrieval debugging.
+
 Replay a session:
 
 ```python

@@ -177,6 +177,7 @@ class TestMemoryQuery:
                     valid_from="2024-01-01T00:00:00Z",
                     valid_to=None,
                     citation="eventloom://default/events/1#aaaaaaaaaaaa",
+                    score_explanation={"source": "exact", "weighted_score": 1.0},
                 )
             ]
             mock_router_cls.return_value = mock_router
@@ -192,6 +193,8 @@ class TestMemoryQuery:
             assert "Alice" in data
             assert "exact" in data
             assert "eventloom://default/events/1#aaaaaaaaaaaa" in data
+            assert "score_explanation" in data
+            assert "weighted_score" in data
 
     async def test_passes_temporal_filter(self, server: ZaxyMCPServer) -> None:
         """temporal_filter should be forwarded to the router."""

@@ -50,6 +50,9 @@ class SearchResult:
     entity: GraphEntity
     score: float
     source: str  # 'vector', 'keyword', 'traversal', 'exact'
+    raw_score: float | None = None
+    source_weight: float | None = None
+    ranking_score: float | None = None
 
 
 class GraphStore:

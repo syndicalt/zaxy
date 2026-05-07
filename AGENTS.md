@@ -222,20 +222,21 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Public static site and expanded documentation set
 - [x] Eventloom provenance citations on graph-backed retrieval results
 - [x] Append-time secret redaction and payload classification
+- [x] MMR diversity and explainable score metadata in query router
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 276 passed |
-| Coverage | 92.43% |
+| Tests | 278 passed |
+| Coverage | 92.41% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
 
 ## Next Steps
 
-1. Add reranking, query expansion, MMR diversity, and temporal-aware scoring explanations.
+1. Add stronger reranking, query expansion, and temporal-aware scoring policies.
 2. Add filesystem/document ingestion with source path and line citations.
 3. Add sanitized transcript ingestion and replay-to-context assembly lifecycle hooks.
 4. Add OAuth/OIDC remote MCP authorization for public multi-tenant deployments.

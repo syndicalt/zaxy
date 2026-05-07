@@ -236,6 +236,55 @@ class TestQueryRouting:
         assert results[0].content.startswith("High")
         assert results[1].content.startswith("Low")
 
+    async def test_ranking_uses_mmr_to_diversify_near_duplicate_hits(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Near-duplicate hits should not crowd out useful adjacent context."""
+        mock_store.search_keyword.return_value = [
+            SearchResult(
+                entity=GraphEntity(
+                    name="Alpha API design",
+                    entity_type="doc",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={"summary": "Alpha API design reference"},
+                ),
+                score=1.0,
+                source="keyword",
+            ),
+            SearchResult(
+                entity=GraphEntity(
+                    name="Alpha API design notes",
+                    entity_type="doc",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={"summary": "Alpha API design draft notes"},
+                ),
+                score=0.99,
+                source="keyword",
+            ),
+            SearchResult(
+                entity=GraphEntity(
+                    name="Billing rollout task",
+                    entity_type="task",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={"summary": "Billing rollout depends on Alpha"},
+                ),
+                score=0.75,
+                source="keyword",
+            ),
+        ]
+
+        results = await router.query("Alpha API", limit=2)
+
+        assert [r.content.split(" (", 1)[0] for r in results] == [
+            "Alpha API design",
+            "Billing rollout task",
+        ]
+
 
 # ------------------------------------------------------------------
 # Context chunk tests
@@ -326,3 +375,33 @@ class TestContextChunk:
         results = await router.query("Ship MVP")
 
         assert results[0].citation == "eventloom://agent-1/events/42#abcdef123456"
+
+    async def test_chunk_includes_explainable_score_metadata(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Chunks should expose enough score metadata to debug ranking."""
+        mock_store.search_keyword.return_value = [
+            SearchResult(
+                entity=GraphEntity(
+                    name="Ship MVP",
+                    entity_type="goal",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={},
+                ),
+                score=1.5,
+                source="keyword",
+            )
+        ]
+
+        results = await router.query("Ship MVP")
+
+        assert results[0].score_explanation == {
+            "source": "keyword",
+            "raw_score": 1.5,
+            "source_weight": 0.8,
+            "weighted_score": 0.8,
+            "ranking_score": 0.8,
+        }
