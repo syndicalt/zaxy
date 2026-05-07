@@ -26,6 +26,11 @@ when provenance is available. Citations use the form
 fact exists, replay the surrounding session, and distinguish retrieved context
 from unsupported generated text.
 
+Filesystem document chunks use file-line citations when source path metadata is
+available: `file://docs/guide.md:42`. These chunks still originate from
+Eventloom `document.indexed` events, but retrieval prefers the file citation
+because it is the most useful pointer for human review and editor navigation.
+
 Temporal filtering is a first-class part of retrieval. Without a temporal
 filter, graph search returns current facts. With an `as_of` filter, the graph
 returns facts whose validity window contains that time. This is what lets agents
@@ -42,6 +47,13 @@ out by vague semantic hits. Traversal should add connected evidence, not flood
 the prompt. Limits are validated centrally, and traversal depth is bounded in
 `src/zaxy/security.py` to avoid runaway graph expansion.
 
+Document ingestion is intentionally source-preserving rather than a separate
+chunk store. `MemoryFabric.ingest_documents()` reads supported local files
+(`.md`, `.markdown`, `.txt`, `.rst`), skips hidden directories, chunks by line
+range, appends `document.indexed` events, and projects those chunks into the
+same graph as agent memory. This gives Zaxy generic project-material recall
+without losing replayability or provenance.
+
 Benchmark coverage lives in `src/zaxy/benchmark.py`, `src/zaxy/live_benchmark.py`,
 `tests/test_competitive_benchmarks.py`, and `tests/test_live_benchmark.py`. The
 current live benchmark compares markdown, vector, markdown+vector, and Zaxy
@@ -51,10 +63,10 @@ memory systems.
 
 The next retrieval-quality work should close the practical ergonomics gap with
 QMD-style search sidecars: stronger reranking, query expansion,
-document/file ingestion, transcript indexing, local embedding and reranking
-providers, and graceful degradation when Neo4j, embeddings, or rerankers are
-unavailable. These should augment Zaxy's temporal/provenance layer rather than
-replace it with generic chunk search.
+transcript indexing, local embedding and reranking providers, and graceful
+degradation when Neo4j, embeddings, or rerankers are unavailable. These should
+augment Zaxy's temporal/provenance layer rather than replace it with generic
+chunk search.
 
 Related references: [graph-schema.md](graph-schema.md), [mcp.md](mcp.md),
 [configuration.md](configuration.md), [testing.md](testing.md), and

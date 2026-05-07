@@ -222,6 +222,37 @@ class TestPreferenceChanged:
         assert preference.summary == "theme=dark"
 
 
+class TestDocumentIndexed:
+    """Tests for document.indexed extractor."""
+
+    def test_extracts_document_chunk_with_source_properties(self) -> None:
+        ev = _make_event(
+            "document.indexed",
+            {
+                "path": "docs/guide.md",
+                "start_line": 4,
+                "end_line": 8,
+                "content": "Alpha context\nBeta context",
+                "sha256": "abc123",
+            },
+            actor="indexer",
+        )
+
+        result = extract(ev)
+
+        assert len(result.entities) == 1
+        doc = result.entities[0]
+        assert doc.name == "docs/guide.md:4-8"
+        assert doc.entity_type == "document"
+        assert doc.summary == "Alpha context\nBeta context"
+        assert doc.properties == {
+            "source_path": "docs/guide.md",
+            "source_start_line": 4,
+            "source_end_line": 8,
+            "source_sha256": "abc123",
+        }
+
+
 # ------------------------------------------------------------------
 # Integration / sanity tests
 # ------------------------------------------------------------------
@@ -237,6 +268,7 @@ class TestExtractionSanity:
             ("task.claimed", {"taskId": "t1"}),
             ("task.completed", {"taskId": "t1"}),
             ("user.preference_changed", {"key": "k"}),
+            ("document.indexed", {"path": "README.md", "content": "hello"}),
             ("unknown.type", {}),
         ]:
             ev = _make_event(event_type, payload)

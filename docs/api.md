@@ -39,6 +39,22 @@ context = await fabric.query(
 Returned context metadata includes Eventloom citations when available and
 `score_explanation` details for retrieval debugging.
 
+Ingest local project documents:
+
+```python
+count = await fabric.ingest_documents(
+    "docs",
+    session_id="agent-1",
+    max_lines=80,
+)
+```
+
+Document ingestion currently supports Markdown, plain text, and reStructuredText
+files. It skips hidden directories, chunks content by line range, writes
+`document.indexed` Eventloom events, and projects each chunk as a `document`
+entity. Retrieved document chunks cite their original file and starting line
+with `file://path:line` citations.
+
 Replay a session:
 
 ```python

@@ -174,6 +174,37 @@ class TestIngestion:
         assert kwargs["source_thread"] == "agent-1"
         assert kwargs["summary"] == "Works on memory"
         assert kwargs["embedding"] == [0.1, 0.2]
+        assert kwargs["properties"] == {}
+
+    async def test_upsert_entity_applies_extracted_properties(self, store: GraphStore) -> None:
+        """Extractor-supplied safe properties should be projected to Neo4j."""
+        result = ExtractionResult(
+            entities=[
+                ExtractedEntity(
+                    name="docs/guide.md:4-8",
+                    entity_type="document",
+                    observed_at="2024-01-01T00:00:00Z",
+                    summary="Document chunk",
+                    properties={
+                        "source_path": "docs/guide.md",
+                        "source_start_line": 4,
+                        "ignored_none": None,
+                    },
+                )
+            ],
+            edges=[],
+            source_event_seq=1,
+        )
+
+        await store.upsert_extraction(result, session_id="agent-1")
+
+        call = store._driver.execute_query.await_args_list[0]
+        cypher, kwargs = call.args[0], call.kwargs
+        assert "SET e += $properties" in cypher
+        assert kwargs["properties"] == {
+            "source_path": "docs/guide.md",
+            "source_start_line": 4,
+        }
 
     async def test_upsert_entity_versions_by_valid_from(self, store: GraphStore) -> None:
         """Reassertions should create new versions instead of overwriting history."""

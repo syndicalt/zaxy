@@ -127,6 +127,29 @@ class TestAppend:
         fabric.graph.connect.assert_awaited_once()
 
 
+class TestDocumentIngestion:
+    """Tests for filesystem document ingestion orchestration."""
+
+    async def test_ingest_documents_appends_document_events(
+        self,
+        fabric: MemoryFabric,
+        tmp_path,
+    ) -> None:  # type: ignore[no-untyped-def]
+        """ingest_documents() should append collected document chunks."""
+        doc = tmp_path / "README.md"
+        doc.write_text("Alpha\nBeta\n", encoding="utf-8")
+
+        await fabric.ingest_documents(tmp_path, session_id="agent-1", max_lines=1)
+
+        log = fabric.session_manager.get.return_value.eventlog
+        assert log.append.call_count == 2
+        assert log.append.call_args_list[0].args == ("document.indexed",)
+        assert log.append.call_args_list[0].kwargs["actor"] == "zaxy-doc-ingest"
+        assert log.append.call_args_list[0].kwargs["payload"]["path"] == "README.md"
+        assert log.append.call_args_list[0].kwargs["payload"]["start_line"] == 1
+        assert log.append.call_args_list[0].kwargs["thread"] == "agent-1"
+
+
 # ------------------------------------------------------------------
 # Query tests
 # ------------------------------------------------------------------

@@ -223,13 +223,14 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Eventloom provenance citations on graph-backed retrieval results
 - [x] Append-time secret redaction and payload classification
 - [x] MMR diversity and explainable score metadata in query router
+- [x] Filesystem document ingestion with source path and line citations
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 278 passed |
-| Coverage | 92.41% |
+| Tests | 284 passed |
+| Coverage | 92.17% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
@@ -237,8 +238,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 ## Next Steps
 
 1. Add stronger reranking, query expansion, and temporal-aware scoring policies.
-2. Add filesystem/document ingestion with source path and line citations.
-3. Add sanitized transcript ingestion and replay-to-context assembly lifecycle hooks.
-4. Add OAuth/OIDC remote MCP authorization for public multi-tenant deployments.
-5. Add extractor authoring templates and schema migration tooling.
-6. Run OpenAI embedding benchmark with frozen corpus and compare against external graph-memory systems.
+2. Add sanitized transcript ingestion and replay-to-context assembly lifecycle hooks.
+3. Add OAuth/OIDC remote MCP authorization for public multi-tenant deployments.
+4. Add extractor authoring templates and schema migration tooling.
+5. Run OpenAI embedding benchmark with frozen corpus and compare against external graph-memory systems.

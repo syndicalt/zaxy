@@ -171,6 +171,7 @@ class GraphStore:
                     e.source_event_hash = $source_event_hash,
                     e.source_event_type = $source_event_type,
                     e.source_thread = $source_thread
+                SET e += $properties
                 WITH e
                 OPTIONAL MATCH (prev:Entity {name: $name, entity_type: $entity_type})
                 WHERE prev.session_id = $session_id
@@ -195,6 +196,11 @@ class GraphStore:
                 source_event_hash=result.source_event_hash,
                 source_event_type=result.source_event_type,
                 source_thread=result.source_thread,
+                properties={
+                    key: value
+                    for key, value in (ent.properties or {}).items()
+                    if value is not None
+                },
             )
 
         for edge in result.edges:

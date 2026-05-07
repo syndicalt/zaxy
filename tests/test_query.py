@@ -376,6 +376,33 @@ class TestContextChunk:
 
         assert results[0].citation == "eventloom://agent-1/events/42#abcdef123456"
 
+    async def test_chunk_prefers_file_line_citation_for_document_sources(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Document chunks should cite their source path and line."""
+        mock_store.search_exact.return_value = [
+            GraphEntity(
+                name="docs/guide.md:4-8",
+                entity_type="document",
+                valid_from="2024-01-01T00:00:00Z",
+                valid_to=None,
+                session_id="agent-1",
+                properties={
+                    "source_path": "docs/guide.md",
+                    "source_start_line": 4,
+                    "source_end_line": 8,
+                    "source_event_seq": 42,
+                    "source_event_hash": "abcdef1234567890" * 4,
+                },
+            )
+        ]
+
+        results = await router.query("docs/guide.md:4-8")
+
+        assert results[0].citation == "file://docs/guide.md:4"
+
     async def test_chunk_includes_explainable_score_metadata(
         self,
         router: QueryRouter,

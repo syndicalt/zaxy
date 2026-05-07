@@ -291,6 +291,11 @@ def _score_explanation(result: SearchResult) -> dict[str, Any]:
 def _citation(entity: GraphEntity) -> str | None:
     """Build a compact Eventloom citation for an entity result."""
     properties = entity.properties
+    source_path = properties.get("source_path")
+    source_start_line = properties.get("source_start_line")
+    if source_path and source_start_line:
+        return f"file://{source_path}:{source_start_line}"
+
     seq = properties.get("source_event_seq")
     event_hash = properties.get("source_event_hash")
     if seq is None or not event_hash:

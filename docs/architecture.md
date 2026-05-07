@@ -7,8 +7,9 @@ extraction engine converts typed events into `ExtractedEntity` and
 `ExtractedEdge` objects. Neo4j stores temporal graph projections. MCP exposes
 the memory operations to agent frameworks and clients.
 
-The data flow starts when an agent calls `memory_append` or a Python caller uses
-`MemoryFabric.append`. Zaxy validates the payload, writes an Eventloom event,
+The data flow starts when an agent calls `memory_append`, a Python caller uses
+`MemoryFabric.append`, or a service calls `MemoryFabric.ingest_documents` for
+local project material. Zaxy validates the payload, writes an Eventloom event,
 runs extraction, optionally generates embeddings, upserts graph facts, emits
 metrics, and traces the operation through Pathlight when enabled. Query calls
 flow in the opposite direction: input validation, optional query embedding,

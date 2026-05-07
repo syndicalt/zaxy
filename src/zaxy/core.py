@@ -19,9 +19,11 @@ Example::
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, cast
 
 from zaxy.config import get_settings
+from zaxy.documents import collect_document_events
 from zaxy.embedding import build_embedding_provider, embed_extraction
 from zaxy.event import EventLog, ReplayResult  # noqa: F401 - compatibility for existing tests
 from zaxy.extract import extract
@@ -151,6 +153,25 @@ class MemoryFabric:
         metrics.record_event_append(event_type)
         for ent in extraction.entities:
             metrics.record_upsert(ent.entity_type)
+
+    async def ingest_documents(
+        self,
+        path: str | Path,
+        *,
+        session_id: str = "default",
+        max_lines: int = 80,
+    ) -> int:
+        """Ingest local Markdown/text documents as cited memory events."""
+        sid = validate_session_id(session_id)
+        events = collect_document_events(path, max_lines=max_lines)
+        for event in events:
+            await self.append(
+                event["event_type"],
+                actor=event["actor"],
+                payload=event["payload"],
+                session_id=sid,
+            )
+        return len(events)
 
     async def query(
         self,

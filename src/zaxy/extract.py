@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
+from typing import Any
 
 from zaxy.event import Event
 
@@ -25,6 +26,7 @@ class ExtractedEntity:
     observed_at: str  # ISO-8601 timestamp from the event
     summary: str | None = None
     embedding: list[float] | None = None
+    properties: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -264,6 +266,33 @@ def _extract_preference_changed(event: Event) -> ExtractionResult:
     )
 
 
+@register("document.indexed")
+def _extract_document_indexed(event: Event) -> ExtractionResult:
+    """Extract a cited document chunk from filesystem ingestion."""
+    path = _optional_text(event.payload.get("path")) or "document"
+    start_line = _positive_int(event.payload.get("start_line"), default=1)
+    end_line = _positive_int(event.payload.get("end_line"), default=start_line)
+    content = _optional_text(event.payload.get("content")) or ""
+    sha256 = _optional_text(event.payload.get("sha256"))
+    entity = ExtractedEntity(
+        name=f"{path}:{start_line}-{end_line}",
+        entity_type="document",
+        observed_at=event.timestamp,
+        summary=content,
+        properties={
+            "source_path": path,
+            "source_start_line": start_line,
+            "source_end_line": end_line,
+            "source_sha256": sha256,
+        },
+    )
+    return ExtractionResult(
+        entities=[entity],
+        edges=[],
+        source_event_seq=event.seq,
+    )
+
+
 def _optional_text(value: object) -> str | None:
     """Return non-empty text for extracted summaries."""
     if value is None:
@@ -279,3 +308,15 @@ def _preference_summary(key: object, value: object) -> str | None:
     if value_text is None:
         return key_text
     return f"{key_text}={value_text}"
+
+
+def _positive_int(value: object, default: int) -> int:
+    if isinstance(value, bool):
+        return default
+    if not isinstance(value, int | str | bytes | bytearray):
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
