@@ -139,6 +139,24 @@ class TestTaskProposed:
         task = next(e for e in result.entities if e.entity_type == "task")
         assert task.summary == "Design landing page"
 
+    def test_links_task_to_goal_when_goal_title_present(self) -> None:
+        """Structured task proposals should preserve task-goal graph links."""
+        ev = _make_event(
+            "task.proposed",
+            {"taskId": "t1", "summary": "Design landing page", "goalTitle": "Ship MVP"},
+            actor="bot",
+        )
+
+        result = extract(ev)
+
+        assert any(e.name == "Ship MVP" and e.entity_type == "goal" for e in result.entities)
+        assert any(
+            edge.source == "Ship MVP"
+            and edge.target == "t1"
+            and edge.relation_type == "has_task"
+            for edge in result.edges
+        )
+
 
 class TestTaskClaimed:
     """Tests for task.claimed extractor."""

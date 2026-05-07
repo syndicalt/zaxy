@@ -7,6 +7,7 @@ returning a context window suitable for injection into an agent prompt.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from zaxy.graph import GraphStore, SearchResult
@@ -68,9 +69,14 @@ class QueryRouter:
         lim = validate_limit(limit, default=self.default_limit)
         results: list[SearchResult] = []
 
-        # 1. Exact match attempt
-        exact = await self.store.search_exact(query, temporal_point=temporal_point)
-        for ent in exact:
+        # 1. Exact match attempt against the full query and structured entity
+        # names embedded in natural-language questions.
+        exact_entities = []
+        for candidate in _exact_candidates(query):
+            exact_entities.extend(
+                await self.store.search_exact(candidate, temporal_point=temporal_point)
+            )
+        for ent in exact_entities:
             results.append(
                 SearchResult(
                     entity=ent,
@@ -100,14 +106,14 @@ class QueryRouter:
         for hit in keyword_hits:
             hit = SearchResult(
                 entity=hit.entity,
-                score=hit.score * self.fusion_weights["keyword"],
+                score=min(hit.score, 1.0) * self.fusion_weights["keyword"],
                 source="keyword",
             )
             results.append(hit)
 
         # 4. Traversal from top keyword + vector hits (breadth expansion)
         seen = {r.entity.name for r in results}
-        traversal_seeds = (vector_hits + keyword_hits)[:3]
+        traversal_seeds = results[:3] + (vector_hits + keyword_hits)[:3]
         for hit in traversal_seeds:
             neighbors = await self.store.search_traversal(
                 hit.entity.name,
@@ -120,7 +126,7 @@ class QueryRouter:
                 results.append(
                     SearchResult(
                         entity=neighbor,
-                        score=0.7 * self.fusion_weights["traversal"],
+                        score=0.95 * self.fusion_weights["traversal"],
                         source="traversal",
                     )
                 )
@@ -149,8 +155,14 @@ def _to_chunk(result: SearchResult) -> ContextChunk:
     # Build a concise natural-language summary of the entity
     content = f"{ent.name} ({ent.entity_type})"
     if ent.properties:
-        props = ", ".join(f"{k}={v}" for k, v in list(ent.properties.items())[:3])
-        content += f" — {props}"
+        safe_properties = {
+            key: value
+            for key, value in ent.properties.items()
+            if key not in {"embedding", "created_at", "updated_at"}
+        }
+        props = ", ".join(f"{k}={v}" for k, v in list(safe_properties.items())[:3])
+        if props:
+            content += f" — {props}"
 
     return ContextChunk(
         content=content,
@@ -159,3 +171,24 @@ def _to_chunk(result: SearchResult) -> ContextChunk:
         valid_from=ent.valid_from,
         valid_to=ent.valid_to,
     )
+
+
+def _exact_candidates(query: str) -> list[str]:
+    """Return exact entity candidates named inside a natural-language query."""
+    candidates = [query]
+    patterns = [
+        r"\bGoal\s+\d{4}\b",
+        r"\btask-\d{4}\b",
+        r"\buser-\d{4}:[A-Za-z0-9_.-]+\b",
+        r"\buser-\d{4}\b",
+    ]
+    for pattern in patterns:
+        candidates.extend(match.group(0) for match in re.finditer(pattern, query))
+
+    seen: set[str] = set()
+    unique: list[str] = []
+    for candidate in candidates:
+        if candidate not in seen:
+            unique.append(candidate)
+            seen.add(candidate)
+    return unique

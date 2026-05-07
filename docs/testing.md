@@ -39,6 +39,26 @@ fail-fast behavior without running destructive commands.
 Benchmark tests cover extraction latency, append latency, graph upsert latency,
 query latency, and competitive retrieval harness behavior. Benchmarks are useful
 for detecting large regressions, but correctness tests decide release readiness.
+For live comparative statistics against markdown, vector, markdown+vector, and
+Zaxy retrieval, run the statistically powered workload:
+
+```bash
+./scripts/generate-certs.sh .certs
+docker compose up -d neo4j-test
+scripts/live-benchmark.sh --embedding-provider openai --workload statistical --subjects 100 --runs 1 --reset-graph
+```
+
+OpenAI mode uses `OPENAI_API_KEY`, `OPENAI_EMBEDDING_MODEL`, and
+`EMBEDDING_DIMENSION`. The default model is `text-embedding-3-small`.
+The script writes `reports/benchmarks/live-benchmark.json` for automation and
+`reports/benchmarks/live-benchmark.md` for human review. Use
+`--embedding-provider hash` for deterministic offline smoke checks.
+
+Interpret these results narrowly. The statistical corpus is a generated temporal
+event workload, not a broad document-search benchmark or a claim against every
+production-grade vector RAG implementation. Use it to measure Zaxy's target
+problem: current versus historical facts, stale-context avoidance, graph
+connections, latency, and returned context size on the same paired workload.
 
 CI runs lint, mypy, the full test matrix, package artifact validation, and
 integration tests. The local release gate mirrors the important pieces. See

@@ -315,6 +315,8 @@ PATHLIGHT_ACCESS_TOKEN_FILE=/run/secrets/pathlight_access_token
 
 - Performance benchmark regression test:
   `pytest tests/test_competitive_benchmarks.py --benchmark-only --no-cov`
+- Live retrieval benchmark:
+  `scripts/live-benchmark.sh --embedding-provider openai --workload statistical --subjects 100 --runs 1 --reset-graph`
 - Capacity planning review
 - Security audit (dependency updates, key rotation)
 

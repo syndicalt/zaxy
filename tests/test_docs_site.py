@@ -66,6 +66,17 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
         assert f'id="{section_id}"' in html
 
 
+def test_public_site_benchmark_claim_is_scoped_to_fixture() -> None:
+    """Benchmark copy should not overclaim against broad markdown/vector systems."""
+    html = Path("site/index.html").read_text(encoding="utf-8")
+
+    assert "Temporal workload benchmark" in html
+    assert "not a universal benchmark" in html
+    assert "reports/benchmarks/live-benchmark.md" in html
+    assert "production-grade vector RAG" not in html
+    assert "destroyed" not in html.casefold()
+
+
 def test_public_site_links_to_all_core_docs() -> None:
     """The public site should expose the complete documentation set."""
     html = Path("site/index.html").read_text(encoding="utf-8")
@@ -90,7 +101,7 @@ def test_site_local_links_resolve() -> None:
             continue
         path_part, _, anchor = href.partition("#")
         if path_part:
-            if path_part.startswith(("docs/", "README.md")):
+            if path_part.startswith(("docs/", "README.md", "reports/")):
                 target = Path(path_part).resolve()
             else:
                 target = (site_path.parent / path_part).resolve()
@@ -152,6 +163,8 @@ def test_github_pages_workflow_publishes_site_directory() -> None:
     assert "cp -R site/. _site/" in workflow
     assert "cp -R docs _site/docs" in workflow
     assert "cp README.md _site/README.md" in workflow
+    assert "cp -R reports _site/reports" in workflow
+    assert "cp -R reports _site/site/reports" in workflow
     assert "actions/upload-pages-artifact@v3" in workflow
     assert "path: _site" in workflow
     assert "actions/deploy-pages@v4" in workflow

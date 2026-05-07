@@ -28,10 +28,12 @@ out by vague semantic hits. Traversal should add connected evidence, not flood
 the prompt. Limits are validated centrally, and traversal depth is bounded in
 `src/zaxy/security.py` to avoid runaway graph expansion.
 
-Benchmark coverage lives in `src/zaxy/benchmark.py` and
-`tests/test_competitive_benchmarks.py`. The current baseline compares Zaxy's
-structured retrieval harness with flat JSONL context. Future external adapters
-can compare vector RAG, hybrid RAG, file memory, and framework-native memories.
+Benchmark coverage lives in `src/zaxy/benchmark.py`, `src/zaxy/live_benchmark.py`,
+`tests/test_competitive_benchmarks.py`, and `tests/test_live_benchmark.py`. The
+current live benchmark compares markdown, vector, markdown+vector, and Zaxy
+retrieval on the same generated temporal event workload. Treat it as a workload-specific
+signal, not a universal benchmark against production-grade vector RAG or file
+memory systems.
 
 Related references: [graph-schema.md](graph-schema.md), [mcp.md](mcp.md),
 [configuration.md](configuration.md), [testing.md](testing.md), and

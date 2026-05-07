@@ -24,6 +24,7 @@
       <a href="#why">Why</a>
       <a href="#architecture">Architecture</a>
       <a href="#mcp">MCP</a>
+      <a href="#benchmarks">Benchmarks</a>
       <a href="#docs">Docs</a>
       <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
     </div>
@@ -57,8 +58,8 @@
     </section>
 
     <section class="proof-strip" aria-label="Project status">
-      <span>235 tests</span>
-      <span>93.95% coverage</span>
+      <span>249 tests</span>
+      <span>92.11% coverage</span>
       <span>ruff clean</span>
       <span>mypy clean</span>
       <span>release gate ready</span>
@@ -137,6 +138,25 @@
         <article><h3>Remote MCP auth</h3><p>SSE requests require bearer auth and are scoped by per-client session headers.</p></article>
         <article><h3>TLS-ready Neo4j</h3><p>Production compose and certificate scripts support encrypted Bolt connections.</p></article>
       </div>
+    </section>
+
+    <section id="benchmarks" class="section">
+      <div class="section-heading">
+        <p class="eyebrow">Temporal workload benchmark</p>
+        <h2>Zaxy wins on a statistically powered temporal-memory workload.</h2>
+        <p>
+          This is not a universal benchmark against every markdown or vector RAG
+          implementation. It is a 300-query paired evaluation over a generated
+          temporal event workload: current facts, historical facts, and connected
+          task-goal context.
+        </p>
+      </div>
+      <div class="value-grid">
+        <article><h3>0.983</h3><p>Mean Zaxy score with local hash embeddings across 300 paired temporal-memory queries.</p></article>
+        <article><h3>p = 0.0001</h3><p>Paired randomization p-value versus markdown, vector, and markdown+vector baselines; all 95% confidence intervals were positive.</p></article>
+        <article><h3>110 tokens</h3><p>Approximate returned context for Zaxy, versus 369-418 tokens for the simple baselines on the same workload.</p></article>
+      </div>
+      <p><a href="reports/benchmarks/live-benchmark.md">Read the full benchmark report</a></p>
     </section>
 
     <section id="install" class="section install">

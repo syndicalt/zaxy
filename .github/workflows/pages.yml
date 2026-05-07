@@ -35,7 +35,9 @@ jobs:
           cp -R site/. _site/
           cp -R docs _site/docs
           cp README.md _site/README.md
+          cp -R reports _site/reports
           cp -R site _site/site
+          cp -R reports _site/site/reports
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

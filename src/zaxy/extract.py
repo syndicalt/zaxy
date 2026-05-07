@@ -131,6 +131,7 @@ def _extract_goal_created(event: Event) -> ExtractionResult:
 def _extract_task_proposed(event: Event) -> ExtractionResult:
     """Extract task and actor from task.proposed."""
     tid = event.payload.get("taskId", f"task_{event.seq}")
+    goal_title = _optional_text(event.payload.get("goalTitle"))
     task = ExtractedEntity(
         name=tid,
         entity_type="task",
@@ -148,9 +149,27 @@ def _extract_task_proposed(event: Event) -> ExtractionResult:
         relation_type="proposed_task",
         valid_from=event.timestamp,
     )
+    entities = [task, actor]
+    edges = [edge]
+    if goal_title:
+        entities.append(
+            ExtractedEntity(
+                name=goal_title,
+                entity_type="goal",
+                observed_at=event.timestamp,
+            )
+        )
+        edges.append(
+            ExtractedEdge(
+                source=goal_title,
+                target=tid,
+                relation_type="has_task",
+                valid_from=event.timestamp,
+            )
+        )
     return ExtractionResult(
-        entities=[task, actor],
-        edges=[edge],
+        entities=entities,
+        edges=edges,
         source_event_seq=event.seq,
     )
 

@@ -16,12 +16,26 @@ Example::
 from __future__ import annotations
 
 import json
+import tempfile
 from pathlib import Path
 
 import typer
 
+from zaxy.benchmark import build_competitive_event_log, competitive_cases
+from zaxy.embedding import EmbeddingProvider, HashEmbeddingProvider, OpenAIEmbeddingProvider
 from zaxy.event import EventLog
 from zaxy.graph import GraphStore
+from zaxy.live_benchmark import (
+    MarkdownRetriever,
+    MarkdownVectorRetriever,
+    VectorRetriever,
+    benchmark_live_retrievers,
+    build_live_zaxy_retriever,
+    build_statistical_event_log,
+    corpus_from_event_log,
+    report_to_markdown,
+    write_benchmark_report,
+)
 from zaxy.mcp_server import main as mcp_main
 
 app = typer.Typer(help="Zaxy: Event-sourced temporal knowledge graph fabric")
@@ -173,6 +187,98 @@ def status(
         raise typer.Exit(0 if ok else 1)
 
     asyncio.run(_check())
+
+
+@app.command()
+def benchmark(
+    output_dir: Path = typer.Option(  # noqa: B008
+        Path("reports/benchmarks"),
+        help="Directory for JSON and Markdown benchmark reports",
+    ),
+    embedding_provider: str = typer.Option("openai", help="Embedding provider: openai or hash"),
+    runs: int = typer.Option(5, min=1, help="Measured runs per backend/case"),
+    limit: int = typer.Option(10, min=1, max=50, help="Returned contexts per query"),
+    neo4j_uri: str = typer.Option("bolt://localhost:7688", help="Benchmark Neo4j Bolt URI"),
+    neo4j_user: str = typer.Option("neo4j", help="Benchmark Neo4j username"),
+    neo4j_password: str = typer.Option("testpassword", help="Benchmark Neo4j password"),
+    reset_graph: bool = typer.Option(
+        False,
+        help="Delete Entity nodes in the benchmark Neo4j database before ingestion",
+    ),
+    workload: str = typer.Option("fixture", help="Workload: fixture or statistical"),
+    subjects: int = typer.Option(
+        100,
+        min=1,
+        help="Subject count for the statistical workload; each subject creates 3 queries",
+    ),
+) -> None:
+    """Run live retrieval benchmarks against md/vector/md+vector/Zaxy."""
+    import asyncio
+
+    from zaxy.config import get_settings
+
+    settings = get_settings()
+    provider_name = embedding_provider.casefold()
+    provider: EmbeddingProvider
+    if provider_name == "openai":
+        if not settings.openai_api_key:
+            raise typer.BadParameter("OPENAI_API_KEY is required for OpenAI benchmarks")
+        provider = OpenAIEmbeddingProvider(
+            api_key=settings.openai_api_key,
+            model=settings.openai_embedding_model,
+            dimension=settings.embedding_dimension,
+            base_url=settings.openai_base_url,
+        )
+        provider_label = f"openai:{settings.openai_embedding_model}"
+    elif provider_name == "hash":
+        provider = HashEmbeddingProvider(dimension=settings.embedding_dimension)
+        provider_label = f"hash:{settings.embedding_dimension}"
+    else:
+        raise typer.BadParameter("embedding provider must be 'openai' or 'hash'")
+
+    async def _run() -> None:
+        with tempfile.TemporaryDirectory(prefix="zaxy-live-benchmark-") as tmp:
+            if workload == "fixture":
+                eventlog = build_competitive_event_log(Path(tmp) / "bench.jsonl")
+                cases = competitive_cases()
+            elif workload == "statistical":
+                eventlog, cases = build_statistical_event_log(
+                    Path(tmp) / "bench.jsonl",
+                    subjects=subjects,
+                )
+            else:
+                raise typer.BadParameter("workload must be 'fixture' or 'statistical'")
+            corpus = corpus_from_event_log(eventlog)
+            zaxy_retriever, graph = await build_live_zaxy_retriever(
+                eventlog,
+                provider,
+                neo4j_uri=neo4j_uri,
+                neo4j_user=neo4j_user,
+                neo4j_password=neo4j_password,
+                reset_graph=reset_graph,
+            )
+            try:
+                report = await benchmark_live_retrievers(
+                    {
+                        "md": MarkdownRetriever(corpus),
+                        "vector": VectorRetriever(corpus, provider),
+                        "md+vector": MarkdownVectorRetriever(corpus, provider),
+                    },
+                    zaxy_retriever,
+                    cases,
+                    runs=runs,
+                    limit=limit,
+                    embedding_provider=provider_label,
+                )
+            finally:
+                await graph.close()
+
+        written = write_benchmark_report(report, output_dir)
+        typer.echo(report_to_markdown(report))
+        typer.echo(f"Wrote JSON report: {written.json_path}")
+        typer.echo(f"Wrote Markdown report: {written.markdown_path}")
+
+    asyncio.run(_run())
 
 
 def main() -> None:

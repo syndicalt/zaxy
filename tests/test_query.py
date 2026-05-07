@@ -69,7 +69,34 @@ class TestQueryRouting:
         results = await router.query("ship mvp")
         assert len(results) == 1
         assert results[0].source == "keyword"
-        assert results[0].score == pytest.approx(1.5 * 0.8)
+        assert results[0].score == pytest.approx(0.8)
+
+    async def test_exact_results_are_not_drowned_by_unbounded_keyword_scores(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Exact entity matches should outrank high BM25 scores."""
+        exact = GraphEntity(
+            name="Goal 0003", entity_type="goal",
+            valid_from="2024-01-01T00:00:00Z", valid_to=None, properties={}
+        )
+        keyword = GraphEntity(
+            name="Unrelated", entity_type="task",
+            valid_from="2024-01-01T00:00:00Z", valid_to=None, properties={}
+        )
+
+        async def _search_exact(name: str, **_: object) -> list[GraphEntity]:
+            return [exact] if name == "Goal 0003" else []
+
+        mock_store.search_exact.side_effect = _search_exact
+        mock_store.search_keyword.return_value = [
+            SearchResult(entity=keyword, score=99.0, source="keyword")
+        ]
+
+        results = await router.query("Which task is connected to Goal 0003?")
+
+        assert results[0].content.startswith("Goal 0003")
 
     async def test_traversal_expansion(self, router: QueryRouter, mock_store: AsyncMock) -> None:
         """Traversal from keyword hits should bring in neighbors."""
@@ -90,6 +117,43 @@ class TestQueryRouting:
         sources = {r.source for r in results}
         assert "keyword" in sources
         assert "traversal" in sources
+
+    async def test_structured_entity_names_seed_traversal(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Queries naming structured entities should exact-match them before BM25."""
+        goal = GraphEntity(
+            name="Goal 0003", entity_type="goal",
+            valid_from="2024-01-01T00:00:00Z", valid_to=None, properties={}
+        )
+        task = GraphEntity(
+            name="task-0003", entity_type="task",
+            valid_from="2024-01-02T00:00:00Z", valid_to=None, properties={}
+        )
+
+        async def _search_exact(name: str, **_: object) -> list[GraphEntity]:
+            return [goal] if name == "Goal 0003" else []
+
+        mock_store.search_exact.side_effect = _search_exact
+        mock_store.search_traversal.return_value = [task]
+        mock_store.search_keyword.return_value = [
+            SearchResult(
+                entity=GraphEntity(
+                    name=f"Unrelated {i}", entity_type="task",
+                    valid_from="2024-01-01T00:00:00Z", valid_to=None, properties={}
+                ),
+                score=99.0,
+                source="keyword",
+            )
+            for i in range(5)
+        ]
+
+        results = await router.query("Which task is connected to Goal 0003?", limit=2)
+
+        assert any(result.content.startswith("Goal 0003") for result in results)
+        assert any(result.content.startswith("task-0003") for result in results)
 
     async def test_deduplication_keeps_highest_score(self, router: QueryRouter, mock_store: AsyncMock) -> None:
         """If the same entity appears from multiple sources, keep the highest score."""
@@ -185,6 +249,28 @@ class TestContextChunk:
         assert "region=us" in chunk.content
         # Should only include first few properties
         assert "extra=ignored" not in chunk.content
+
+    async def test_chunk_content_omits_embedding_vectors(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Chunks should not leak raw embedding vectors into prompt context."""
+        mock_store.search_exact.return_value = [
+            GraphEntity(
+                name="Alice",
+                entity_type="user",
+                valid_from="2024-01-01T00:00:00Z",
+                valid_to=None,
+                properties={"embedding": [0.1, 0.2, 0.3], "summary": "Agent owner"},
+            )
+        ]
+
+        results = await router.query("Alice")
+
+        assert "embedding=" not in results[0].content
+        assert "0.1" not in results[0].content
+        assert "summary=Agent owner" in results[0].content
 
     async def test_chunk_validity_window(self, router: QueryRouter, mock_store: AsyncMock) -> None:
         """Chunks should preserve temporal validity."""
