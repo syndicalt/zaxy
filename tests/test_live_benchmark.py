@@ -10,6 +10,7 @@ from zaxy.embedding import HashEmbeddingProvider
 from zaxy.live_benchmark import (
     FROZEN_WORKLOAD_SUBJECTS,
     FROZEN_WORKLOAD_VERSION,
+    CachedEmbeddingProvider,
     MarkdownRetriever,
     MarkdownVectorRetriever,
     VectorRetriever,
@@ -102,3 +103,31 @@ def test_frozen_statistical_workload_has_stable_identity(tmp_path: Path) -> None
     assert first_workload.sha256 == second_workload.sha256
     assert first_workload.sha256 == workload_fingerprint(first_log, first_cases, FROZEN_WORKLOAD_VERSION)
     assert first_workload == second_workload
+
+
+def test_cached_embedding_provider_reuses_repeated_text() -> None:
+    """Benchmark runs should not repeat hosted embedding calls for identical text."""
+    class CountingProvider:
+        dimension = 2
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def embed(self, text: str) -> list[float]:
+            self.calls += 1
+            return [float(len(text)), 1.0]
+
+    inner = CountingProvider()
+    provider = CachedEmbeddingProvider(inner)
+
+    assert provider.embed("same") == [4.0, 1.0]
+    assert provider.embed("same") == [4.0, 1.0]
+    assert provider.embed("other") == [5.0, 1.0]
+    assert provider.cache_size == 2
+    assert inner.calls == 2
+
+
+def test_live_benchmark_script_help_mentions_frozen_workload() -> None:
+    script = Path("scripts/live-benchmark.sh").read_text(encoding="utf-8")
+
+    assert "--workload fixture|statistical|frozen" in script

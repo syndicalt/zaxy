@@ -167,6 +167,32 @@ class Retriever(Protocol):
         """Return context strings for a query."""
 
 
+class CachedEmbeddingProvider:
+    """In-memory embedding cache for benchmark runs.
+
+    This keeps hosted benchmark runs from re-embedding identical corpus chunks
+    and repeated paired queries across baselines.
+    """
+
+    def __init__(self, provider: EmbeddingProvider) -> None:
+        self._provider = provider
+        self.dimension = provider.dimension
+        self._cache: dict[str, list[float]] = {}
+
+    @property
+    def cache_size(self) -> int:
+        """Number of cached embedding texts."""
+        return len(self._cache)
+
+    def embed(self, text: str) -> list[float]:
+        """Return a cached embedding for text, computing it once."""
+        cached = self._cache.get(text)
+        if cached is None:
+            cached = self._provider.embed(text)
+            self._cache[text] = cached
+        return list(cached)
+
+
 class MarkdownRetriever:
     """Markdown/file-memory baseline using direct token scanning."""
 

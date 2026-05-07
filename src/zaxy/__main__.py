@@ -28,6 +28,7 @@ from zaxy.extract_templates import ExtractorTemplateSpec, render_extractor_templ
 from zaxy.graph import GraphStore
 from zaxy.live_benchmark import (
     BenchmarkWorkload,
+    CachedEmbeddingProvider,
     ExternalBenchmarkResult,
     MarkdownRetriever,
     MarkdownVectorRetriever,
@@ -277,6 +278,7 @@ def benchmark(
         provider_label = f"hash:{settings.embedding_dimension}"
     else:
         raise typer.BadParameter("embedding provider must be 'openai' or 'hash'")
+    provider = CachedEmbeddingProvider(provider)
 
     async def _run() -> None:
         with tempfile.TemporaryDirectory(prefix="zaxy-live-benchmark-") as tmp:

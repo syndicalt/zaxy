@@ -17,10 +17,10 @@ SUBJECTS="100"
 
 usage() {
     cat <<USAGE
-Usage: scripts/live-benchmark.sh [--root PATH] [--output-dir PATH] [--runs N] [--limit N] [--embedding-provider openai|hash] [--workload fixture|statistical] [--subjects N] [--reset-graph]
+Usage: scripts/live-benchmark.sh [--root PATH] [--output-dir PATH] [--runs N] [--limit N] [--embedding-provider openai|hash] [--workload fixture|statistical|frozen] [--subjects N] [--reset-graph]
 
 Runs zaxy benchmark against markdown, vector, markdown+vector, and live Zaxy retrieval.
-OpenAI mode requires OPENAI_API_KEY.
+OpenAI mode requires OPENAI_API_KEY or OPENAI_API_KEY_FILE.
 USAGE
 }
 
