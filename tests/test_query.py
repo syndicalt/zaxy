@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from zaxy.graph import GraphEntity, GraphStore, SearchResult
-from zaxy.query import QueryRouter
+from zaxy.query import LexicalReranker, QueryRouter
 
 
 @pytest.fixture
@@ -340,6 +340,76 @@ class TestQueryRouting:
         assert results[0].score_explanation is not None
         assert results[0].score_explanation["temporal_score"] > results[1].score_explanation["temporal_score"]
 
+    async def test_named_scoring_profile_changes_weights_and_explains_profile(
+        self,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Scoring profiles should make retrieval policy explicit and auditable."""
+        router = QueryRouter(store=mock_store, default_limit=5, session_id="agent-1", scoring_profile="precision")
+        mock_store.search_keyword.return_value = [
+            SearchResult(
+                entity=GraphEntity(
+                    name="Auth decision",
+                    entity_type="decision",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={},
+                ),
+                score=1.0,
+                source="keyword",
+            )
+        ]
+
+        results = await router.query("auth decision")
+
+        assert results[0].score == pytest.approx(0.65)
+        assert results[0].score_explanation is not None
+        assert results[0].score_explanation["scoring_profile"] == "precision"
+        assert results[0].score_explanation["source_weight"] == 0.65
+
+    async def test_lexical_reranker_can_promote_best_text_match(
+        self,
+        mock_store: AsyncMock,
+    ) -> None:
+        """A reranker provider should get the fused candidates before final truncation."""
+        router = QueryRouter(
+            store=mock_store,
+            default_limit=5,
+            session_id="agent-1",
+            reranker=LexicalReranker(),
+        )
+        mock_store.search_keyword.return_value = [
+            SearchResult(
+                entity=GraphEntity(
+                    name="General auth note",
+                    entity_type="document",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={"summary": "Authentication background"},
+                ),
+                score=1.0,
+                source="keyword",
+            ),
+            SearchResult(
+                entity=GraphEntity(
+                    name="Auth decision",
+                    entity_type="decision",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={"summary": "Auth decision rationale"},
+                ),
+                score=0.9,
+                source="keyword",
+            ),
+        ]
+
+        results = await router.query("auth decision rationale", limit=1)
+
+        assert results[0].content.startswith("Auth decision")
+        assert results[0].score_explanation is not None
+        assert results[0].score_explanation["reranker"] == "lexical"
+        assert results[0].score_explanation["rerank_score"] > 0
+
 
 # ------------------------------------------------------------------
 # Context chunk tests
@@ -484,6 +554,7 @@ class TestContextChunk:
             "source": "keyword",
             "raw_score": 1.5,
             "source_weight": 0.8,
+            "scoring_profile": "balanced",
             "query_weight": 1.0,
             "matched_query": "Ship MVP",
             "weighted_score": 0.8,

@@ -90,6 +90,23 @@ Context assembly combines recent replayed events with graph retrieval. It is the
 first lifecycle API for building an LLM context window from both durable session
 history and ranked memory.
 
+Customize retrieval policy:
+
+```python
+from zaxy.query import LexicalReranker, QueryRouter
+
+router = QueryRouter(
+    fabric.graph,
+    scoring_profile="precision",
+    reranker=LexicalReranker(),
+)
+chunks = await router.query("auth decision rationale", session_id="agent-1")
+```
+
+Built-in scoring profiles are `balanced`, `precision`, `recall`, and
+`temporal`. Rerankers implement an async `rerank(query, results, limit=...)`
+method and receive fused, deduplicated graph candidates before final truncation.
+
 Replay a session:
 
 ```python

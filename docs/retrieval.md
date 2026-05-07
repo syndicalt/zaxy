@@ -27,6 +27,17 @@ For example, `auth decision` also searches known equivalents such as
 additional query and receives a small query-weight discount so broadened matches
 help recall without overpowering the user's literal query.
 
+Scoring profiles make retrieval policy explicit. `balanced` is the default.
+`precision` favors exact and literal evidence, `recall` keeps more vector and
+graph-neighbor evidence in play, and `temporal` gives as-of freshness a stronger
+role. Callers can also pass a custom `ScoringProfile` or override individual
+fusion weights for advanced deployments.
+
+Reranking is pluggable. `LexicalReranker` is a deterministic local provider
+that promotes candidates with better query-token coverage over the fused graph
+candidate set. Hosted or model-backed rerankers can implement the same async
+interface and return candidates with `reranker` and `rerank_score` metadata.
+
 Every graph-backed context chunk should cite its originating Eventloom event
 when provenance is available. Citations use the form
 `eventloom://<session>/events/<seq>#<hash-prefix>`. They let callers show why a
@@ -77,10 +88,11 @@ signal, not a universal benchmark against production-grade vector RAG or file
 memory systems.
 
 The next retrieval-quality work should close the practical ergonomics gap with
-QMD-style search sidecars: stronger reranking, richer assembly lifecycle hooks,
-local embedding and reranking providers, and graceful degradation when Neo4j,
-embeddings, or rerankers are unavailable. These should augment Zaxy's
-temporal/provenance layer rather than replace it with generic chunk search.
+QMD-style search sidecars: hosted/local model reranking providers, richer
+assembly lifecycle hooks, local embedding providers, and graceful degradation
+when Neo4j, embeddings, or rerankers are unavailable. These should augment
+Zaxy's temporal/provenance layer rather than replace it with generic chunk
+search.
 
 Related references: [graph-schema.md](graph-schema.md), [mcp.md](mcp.md),
 [configuration.md](configuration.md), [testing.md](testing.md), and

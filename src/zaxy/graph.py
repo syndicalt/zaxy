@@ -57,6 +57,9 @@ class SearchResult:
     query_weight: float | None = None
     temporal_score: float | None = None
     temporal_weight: float | None = None
+    scoring_profile: str | None = None
+    reranker: str | None = None
+    rerank_score: float | None = None
 
 
 class GraphStore:
