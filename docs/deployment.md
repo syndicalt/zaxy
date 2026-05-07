@@ -21,10 +21,16 @@ production unless you are doing a temporary emergency recovery with a written
 risk acceptance.
 
 Remote MCP/SSE should only be exposed behind bearer auth. Configure
-`MCP_REMOTE_AUTH_TOKEN_FILE` and require clients to send the token. Require a
-session header such as `x-zaxy-session-id` for every remote client. Place the
-service behind your normal ingress controls and prefer private network exposure
-over direct public internet exposure.
+`MCP_REMOTE_AUTH_TOKEN_FILE` and require clients to send the token. Configure
+`MCP_ADMIN_TOKEN_FILE` as well; production config rejects deployments that leave
+admin replay/invalidation unprotected. Require a session header such as
+`x-zaxy-session-id` for every remote client. Place the service behind your
+normal ingress controls and prefer private network exposure over direct public
+internet exposure.
+
+The production container starts the SSE transport on `0.0.0.0:8080` so Docker
+and orchestration platforms can route traffic to it. Local development still
+defaults to stdio and the SSE CLI host defaults to `127.0.0.1`.
 
 Before promoting a deployment:
 

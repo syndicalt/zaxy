@@ -43,3 +43,32 @@ def test_production_compose_enables_neo4j_bolt_tls() -> None:
     assert "NEO4J_server_bolt_tls__level: REQUIRED" in compose
     assert "NEO4J_dbms_ssl_policy_bolt_enabled: \"true\"" in compose
     assert "${NEO4J_TLS_CERTS_DIR:-./.certs/neo4j}:/ssl/bolt:ro" in compose
+
+
+def test_dockerfile_copies_package_sources_before_building_wheel() -> None:
+    """The production image build should include files required by pyproject."""
+    dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
+
+    assert "COPY README.md ./" in dockerfile
+    assert "COPY src ./src" in dockerfile
+    assert dockerfile.index("COPY README.md ./") < dockerfile.index("python -m build --wheel")
+    assert dockerfile.index("COPY src ./src") < dockerfile.index("python -m build --wheel")
+
+
+def test_dockerfile_defaults_to_remote_sse_server_on_exposed_port() -> None:
+    """The production image should serve the advertised HTTP/SSE port."""
+    dockerfile = Path("Dockerfile").read_text(encoding="utf-8")
+
+    assert 'EXPOSE 8080' in dockerfile
+    assert 'CMD ["serve", "--transport", "sse", "--host", "0.0.0.0", "--port", "8080"]' in dockerfile
+
+
+def test_sse_transport_host_is_configurable() -> None:
+    """Container deployments need the SSE listener host to be explicit."""
+    cli = Path("src/zaxy/__main__.py").read_text(encoding="utf-8")
+    server = Path("src/zaxy/mcp_server.py").read_text(encoding="utf-8")
+
+    assert "host: str = typer.Option" in cli
+    assert "mcp_server.main_sse(port=port, host=host)" in cli
+    assert "async def main_sse(port: int = 8080, host: str = \"127.0.0.1\")" in server
+    assert "uvicorn.Config(starlette_app, host=host, port=port" in server

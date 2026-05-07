@@ -201,12 +201,12 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] CI/CD (GitHub Actions)
 - [x] Operational runbooks
 - [x] Configuration management (pydantic-settings, env vars)
-- [x] Docker containerization (Dockerfile + compose)
+- [x] Docker containerization (Dockerfile + compose + SSE production command)
 - [x] Structured logging (console + JSON)
 - [x] Graceful shutdown (SIGTERM/SIGINT handling)
 - [x] Production secrets management (Docker secrets + `*_FILE` config)
 - [x] TLS for Neo4j (generated certs + TLS compose service + integration test)
-- [x] Multi-agent session sharding (SessionManager + MemoryFabric/MCP wiring)
+- [x] Multi-agent session sharding (SessionManager + MemoryFabric/MCP wiring + graph session isolation)
 - [x] Prometheus metrics
 - [x] Vector index and vector similarity search in query router
 - [x] SSE transport for MCP daemon mode
@@ -225,13 +225,16 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 | Metric | Value |
 |--------|-------|
-| Tests | 254 passed |
-| Coverage | 91.89% |
+| Tests | 263 passed |
+| Coverage | 92.01% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
 
 ## Next Steps
 
-1. Competitive benchmarks vs. external memory/RAG systems.
-2. Competitive benchmark suite covering vector RAG, hybrid RAG, file memory, graph memory, and agent framework memory baselines.
+1. Add append-time secret redaction and payload classification.
+2. Add OAuth/OIDC remote MCP authorization for public multi-tenant deployments.
+3. Add extractor authoring templates and schema migration tooling.
+4. Run OpenAI embedding benchmark with frozen corpus and publish raw statistical report.
+5. Compare against external graph-memory systems, not only md/vector/md+vector baselines.

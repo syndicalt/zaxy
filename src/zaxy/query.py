@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass
 
 from zaxy.graph import GraphStore, SearchResult
-from zaxy.security import validate_limit, validate_query
+from zaxy.security import validate_limit, validate_query, validate_session_id
 
 
 @dataclass(frozen=True)
@@ -38,10 +38,12 @@ class QueryRouter:
         self,
         store: GraphStore,
         default_limit: int = 10,
+        session_id: str = "default",
         fusion_weights: dict[str, float] | None = None,
     ) -> None:
         self.store = store
         self.default_limit = default_limit
+        self.session_id = validate_session_id(session_id)
         self.fusion_weights = fusion_weights or {
             "exact": 1.0,
             "vector": 0.95,
@@ -55,6 +57,7 @@ class QueryRouter:
         temporal_point: str | None = None,
         limit: int | None = None,
         embedding: list[float] | None = None,
+        session_id: str | None = None,
     ) -> list[ContextChunk]:
         """Run a hybrid query and return ranked context chunks.
 
@@ -67,6 +70,7 @@ class QueryRouter:
         """
         validate_query(query)
         lim = validate_limit(limit, default=self.default_limit)
+        scope = validate_session_id(session_id or self.session_id)
         results: list[SearchResult] = []
 
         # 1. Exact match attempt against the full query and structured entity
@@ -74,7 +78,11 @@ class QueryRouter:
         exact_entities = []
         for candidate in _exact_candidates(query):
             exact_entities.extend(
-                await self.store.search_exact(candidate, temporal_point=temporal_point)
+                await self.store.search_exact(
+                    candidate,
+                    temporal_point=temporal_point,
+                    session_id=scope,
+                )
             )
         for ent in exact_entities:
             results.append(
@@ -89,7 +97,10 @@ class QueryRouter:
         vector_hits: list[SearchResult] = []
         if embedding:
             vector_hits = await self.store.search_vector(
-                embedding, limit=lim, temporal_point=temporal_point
+                embedding,
+                limit=lim,
+                temporal_point=temporal_point,
+                session_id=scope,
             )
             for hit in vector_hits:
                 hit = SearchResult(
@@ -101,7 +112,10 @@ class QueryRouter:
 
         # 3. Keyword search
         keyword_hits = await self.store.search_keyword(
-            query, limit=lim, temporal_point=temporal_point
+            query,
+            limit=lim,
+            temporal_point=temporal_point,
+            session_id=scope,
         )
         for hit in keyword_hits:
             hit = SearchResult(
@@ -119,6 +133,7 @@ class QueryRouter:
                 hit.entity.name,
                 depth=2,
                 temporal_point=temporal_point,
+                session_id=scope,
             )
             for neighbor in neighbors:
                 if neighbor.name in seen:

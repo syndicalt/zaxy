@@ -79,7 +79,9 @@ class MemoryFabric:
             trust_all=settings.neo4j_trust_all,
         )
         self.query_router = QueryRouter(
-            self.graph, default_limit=settings.query_default_limit
+            self.graph,
+            default_limit=settings.query_default_limit,
+            session_id=settings.eventloom_thread,
         )
         self.embedding_provider = build_embedding_provider(settings)
         self.tracer = MemoryTracer(
@@ -141,7 +143,7 @@ class MemoryFabric:
         extraction = extract(event)
         if self.embedding_provider is not None:
             extraction = embed_extraction(extraction, self.embedding_provider)
-        await self.graph.upsert_extraction(extraction)
+        await self.graph.upsert_extraction(extraction, session_id=sid)
         await self.tracer.trace_append(event_type, actor, event.seq)
 
         # Metrics
@@ -156,6 +158,7 @@ class MemoryFabric:
         temporal_point: str | None = None,
         limit: int = 10,
         embedding: list[float] | None = None,
+        session_id: str = "default",
     ) -> list[Context]:
         """Query the temporal knowledge graph for relevant context.
 
@@ -168,6 +171,7 @@ class MemoryFabric:
         import time
 
         validate_query(query)
+        sid = validate_session_id(session_id)
         start = time.perf_counter()
         query_embedding = embedding
         if query_embedding is None and self.embedding_provider is not None:
@@ -178,6 +182,7 @@ class MemoryFabric:
             temporal_point=temporal_point,
             limit=limit,
             embedding=query_embedding,
+            session_id=sid,
         )
         duration_ms = (time.perf_counter() - start) * 1000
 
@@ -204,7 +209,13 @@ class MemoryFabric:
         """
         return cast(ReplayResult, self.session_manager.replay(session_id, from_seq=from_seq))
 
-    async def invalidate(self, entity_name: str, entity_type: str, invalid_at: str) -> None:
+    async def invalidate(
+        self,
+        entity_name: str,
+        entity_type: str,
+        invalid_at: str,
+        session_id: str = "default",
+    ) -> None:
         """Mark a fact as invalid at a given time (bi-temporal update).
 
         This performs a "soft delete" by setting valid_to on the live
@@ -212,7 +223,12 @@ class MemoryFabric:
         """
         if not self._connected:
             await self.connect()
-        await self.graph.invalidate_entity(entity_name, entity_type, invalid_at)
+        await self.graph.invalidate_entity(
+            entity_name,
+            entity_type,
+            invalid_at,
+            session_id=validate_session_id(session_id),
+        )
 
     async def handoff_summary(self, session_id: str = "default") -> dict[str, Any]:
         """Generate a concise handoff summary from the event log.

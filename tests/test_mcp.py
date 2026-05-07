@@ -185,6 +185,7 @@ class TestMemoryQuery:
                 "limit": 5,
             })
 
+            mock_router_cls.assert_called_once_with(server.graph, session_id="default")
             assert len(result) == 1
             data = result[0].text
             assert "Alice" in data
@@ -202,8 +203,39 @@ class TestMemoryQuery:
                 "temporal_filter": "2024-03-01T00:00:00Z",
             })
 
+            mock_router_cls.assert_called_once_with(server.graph, session_id="default")
             call = mock_router.query.await_args
             assert call.kwargs["temporal_point"] == "2024-03-01T00:00:00Z"
+
+    async def test_remote_scope_passes_session_to_router(self, server: ZaxyMCPServer) -> None:
+        """Remote SSE queries should search only within their request session scope."""
+        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
+            mock_router = AsyncMock()
+            mock_router.query.return_value = []
+            mock_router_cls.return_value = mock_router
+
+            token = remote_session_scope.set("client-session")
+            try:
+                await server.handle_memory_query({"query": "x"})
+            finally:
+                remote_session_scope.reset(token)
+
+            mock_router_cls.assert_called_once_with(
+                server.graph,
+                session_id="client-session",
+            )
+
+    async def test_remote_scope_rejects_cross_session_query(self, server: ZaxyMCPServer) -> None:
+        """Remote SSE clients should not query another explicit session."""
+        token = remote_session_scope.set("client-session")
+        try:
+            with pytest.raises(PermissionError, match="session scope"):
+                await server.handle_memory_query({
+                    "query": "x",
+                    "session_id": "other-session",
+                })
+        finally:
+            remote_session_scope.reset(token)
 
     async def test_rejects_invalid_limit(self, server: ZaxyMCPServer) -> None:
         """Query limits should be bounded to prevent expensive fan-out."""
@@ -327,7 +359,7 @@ class TestMemoryInvalidate:
         })
 
         server.graph.invalidate_entity.assert_awaited_once_with(
-            "OldFact", "fact", "2024-06-01T00:00:00Z"
+            "OldFact", "fact", "2024-06-01T00:00:00Z", session_id="default"
         )
         assert "invalidated" in result[0].text
 

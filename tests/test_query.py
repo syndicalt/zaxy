@@ -23,7 +23,7 @@ def mock_store() -> AsyncMock:
 @pytest.fixture
 def router(mock_store: AsyncMock) -> QueryRouter:
     """Return a QueryRouter wired to the mock store."""
-    return QueryRouter(store=mock_store, default_limit=5)
+    return QueryRouter(store=mock_store, default_limit=5, session_id="agent-1")
 
 
 # ------------------------------------------------------------------
@@ -53,6 +53,7 @@ class TestQueryRouting:
         assert len(results) == 1
         assert results[0].source == "exact"
         assert results[0].score == 1.0
+        assert mock_store.search_exact.await_args.kwargs["session_id"] == "agent-1"
 
     async def test_keyword_results_included(self, router: QueryRouter, mock_store: AsyncMock) -> None:
         """Keyword hits should be included with keyword weight."""
@@ -70,6 +71,7 @@ class TestQueryRouting:
         assert len(results) == 1
         assert results[0].source == "keyword"
         assert results[0].score == pytest.approx(0.8)
+        assert mock_store.search_keyword.await_args.kwargs["session_id"] == "agent-1"
 
     async def test_exact_results_are_not_drowned_by_unbounded_keyword_scores(
         self,
@@ -117,6 +119,7 @@ class TestQueryRouting:
         sources = {r.source for r in results}
         assert "keyword" in sources
         assert "traversal" in sources
+        assert mock_store.search_traversal.await_args.kwargs["session_id"] == "agent-1"
 
     async def test_structured_entity_names_seed_traversal(
         self,
@@ -173,7 +176,7 @@ class TestQueryRouting:
 
     async def test_limit_truncates(self, mock_store: AsyncMock) -> None:
         """Result list should be truncated to the limit."""
-        router = QueryRouter(store=mock_store, default_limit=2)
+        router = QueryRouter(store=mock_store, default_limit=2, session_id="agent-1")
         mock_store.search_keyword.return_value = [
             SearchResult(
                 entity=GraphEntity(
@@ -193,8 +196,21 @@ class TestQueryRouting:
         await router.query("x", temporal_point="2024-03-01T00:00:00Z")
         mock_store.search_exact.assert_awaited_once()
         assert mock_store.search_exact.await_args.kwargs["temporal_point"] == "2024-03-01T00:00:00Z"
+        assert mock_store.search_exact.await_args.kwargs["session_id"] == "agent-1"
         mock_store.search_keyword.assert_awaited_once()
         assert mock_store.search_keyword.await_args.kwargs["temporal_point"] == "2024-03-01T00:00:00Z"
+        assert mock_store.search_keyword.await_args.kwargs["session_id"] == "agent-1"
+
+    async def test_vector_search_is_session_scoped(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Vector search should be constrained to the router session."""
+        await router.query("Alice", embedding=[0.1, 0.2])
+
+        mock_store.search_vector.assert_awaited_once()
+        assert mock_store.search_vector.await_args.kwargs["session_id"] == "agent-1"
 
     async def test_results_sorted_by_score(self, router: QueryRouter, mock_store: AsyncMock) -> None:
         """Results should be ordered by descending score."""

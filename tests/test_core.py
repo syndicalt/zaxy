@@ -112,6 +112,7 @@ class TestAppend:
         """append() should extract entities and upsert to graph."""
         await fabric.append("goal.created", actor="user", payload={"title": "T"})
         fabric.graph.upsert_extraction.assert_awaited_once()
+        assert fabric.graph.upsert_extraction.await_args.kwargs["session_id"] == "default"
         extraction = fabric.graph.upsert_extraction.await_args.args[0]
         assert extraction.entities[0].embedding is not None
 
@@ -161,7 +162,14 @@ class TestQuery:
         assert args.args == ("x",)
         assert args.kwargs["temporal_point"] == "2024-03-01T00:00:00Z"
         assert args.kwargs["limit"] == 5
+        assert args.kwargs["session_id"] == "default"
         assert args.kwargs["embedding"] is not None
+
+    async def test_query_with_session_id(self, fabric: MemoryFabric) -> None:
+        """query() should scope graph retrieval to the requested session."""
+        fabric.query_router.query.return_value = []
+        await fabric.query("x", session_id="agent-1")
+        assert fabric.query_router.query.await_args.kwargs["session_id"] == "agent-1"
 
     async def test_explicit_query_embedding_wins(self, fabric: MemoryFabric) -> None:
         """query() should not overwrite a caller-provided embedding."""
@@ -221,7 +229,7 @@ class TestInvalidate:
         """invalidate() should call graph.invalidate_entity."""
         await fabric.invalidate("OldFact", "fact", "2024-06-01T00:00:00Z")
         fabric.graph.invalidate_entity.assert_awaited_once_with(
-            "OldFact", "fact", "2024-06-01T00:00:00Z"
+            "OldFact", "fact", "2024-06-01T00:00:00Z", session_id="default"
         )
 
     async def test_auto_connects(self, fabric: MemoryFabric) -> None:

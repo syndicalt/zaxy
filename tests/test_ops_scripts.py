@@ -32,6 +32,7 @@ def _write_deployment_fixture(root: Path) -> None:
                 "ZAXY_ENV=production",
                 "NEO4J_URI=bolt://neo4j:7687",
                 "NEO4J_CA_CERT=/ssl/bolt/trusted/public.crt",
+                "MCP_ADMIN_TOKEN_FILE=secrets/mcp_admin_token.txt",
                 "MCP_REMOTE_AUTH_TOKEN_FILE=secrets/mcp_remote_auth_token.txt",
                 "MCP_REMOTE_SESSION_HEADER=x-zaxy-session-id",
             ]
@@ -291,6 +292,31 @@ def test_validate_deployment_requires_remote_auth_token(tmp_path: Path) -> None:
 
     assert result.returncode != 0
     assert "MCP_REMOTE_AUTH_TOKEN" in result.stderr
+
+
+def test_validate_deployment_requires_admin_token(tmp_path: Path) -> None:
+    """Production deployments should require an admin token for replay/invalidate."""
+    root = tmp_path / "project"
+    root.mkdir()
+    _write_deployment_fixture(root)
+    (root / ".env").write_text(
+        "ZAXY_ENV=production\n"
+        "NEO4J_URI=bolt://neo4j:7687\n"
+        "NEO4J_CA_CERT=/ssl/bolt/trusted/public.crt\n"
+        "MCP_REMOTE_AUTH_TOKEN_FILE=secrets/mcp_remote_auth_token.txt\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["bash", "scripts/validate-deployment.sh", "--root", str(root)],
+        cwd=Path.cwd(),
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode != 0
+    assert "MCP_ADMIN_TOKEN" in result.stderr
 
 
 def test_validate_deployment_rejects_world_readable_secret(tmp_path: Path) -> None:

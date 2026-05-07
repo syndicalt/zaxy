@@ -15,7 +15,8 @@ they affect filesystem paths.
 The query router validates the string and limit, optionally embeds the query,
 runs exact/keyword/vector/traversal search, fuses scores, and returns compact
 context suitable for an agent prompt. Temporal filters let a client ask what was
-valid at a specific time.
+valid at a specific time. Remote SSE requests are constrained to the session
+from the configured session header.
 
 `memory_replay(session_id, from_seq?)` rebuilds session history from the
 Eventloom log. This is useful for handoffs, audits, and debugging. In remote SSE
@@ -35,14 +36,14 @@ zaxy serve
 Run SSE daemon mode:
 
 ```bash
-zaxy serve --transport sse --port 8080
+zaxy serve --transport sse --host 127.0.0.1 --port 8080
 ```
 
 Production SSE requires `MCP_REMOTE_AUTH_TOKEN` or
 `MCP_REMOTE_AUTH_TOKEN_FILE`. Clients send `Authorization: Bearer <token>` and a
 session header such as `x-zaxy-session-id: agent-1`. The header name is
-configurable through `MCP_REMOTE_SESSION_HEADER`. Replay and invalidation can
-also be protected by `MCP_ADMIN_TOKEN` depending on deployment policy.
+configurable through `MCP_REMOTE_SESSION_HEADER`. Production also requires
+`MCP_ADMIN_TOKEN` or `MCP_ADMIN_TOKEN_FILE` for replay and invalidation.
 
 The MCP implementation lives in `src/zaxy/mcp_server.py`. Core orchestration
 lives in `src/zaxy/core.py`. Security helpers live in `src/zaxy/security.py`.

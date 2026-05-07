@@ -181,7 +181,7 @@ class ZaxyMCPServer:
 
         # Project to graph
         extraction = extract(event)
-        await self.graph.upsert_extraction(extraction)
+        await self.graph.upsert_extraction(extraction, session_id=session_id)
         await self.tracer.trace_append(event_type, actor, event.seq)
 
         return [TextContent(type="text", text=json.dumps({"seq": event.seq, "hash": event.hash}))]
@@ -191,9 +191,9 @@ class ZaxyMCPServer:
         query = validate_query(arguments["query"])
         temporal = arguments.get("temporal_filter")
         limit = validate_limit(arguments.get("limit"), default=10)
-        self._enforce_optional_session(arguments)
+        session_id = self._session_id_from_arguments(arguments, default="default")
 
-        router = QueryRouter(self.graph)
+        router = QueryRouter(self.graph, session_id=session_id)
         results = await router.query(query, temporal_point=temporal, limit=limit)
         await self.tracer.trace_query(query, len(results), 0.0, temporal)
 
@@ -232,7 +232,12 @@ class ZaxyMCPServer:
         entity_type = arguments["entity_type"]
         invalid_at = arguments["invalid_at"]
 
-        await self.graph.invalidate_entity(name, entity_type, invalid_at)
+        await self.graph.invalidate_entity(
+            name,
+            entity_type,
+            invalid_at,
+            session_id=self._session_id_from_arguments(arguments, default="default"),
+        )
         return [TextContent(type="text", text=json.dumps({"status": "invalidated"}))]
 
     def _require_admin(self, arguments: dict[str, Any]) -> None:
@@ -361,7 +366,7 @@ async def main() -> None:
         logger.info("zaxy_mcp_server_stopped")
 
 
-async def main_sse(port: int = 8080) -> None:
+async def main_sse(port: int = 8080, host: str = "127.0.0.1") -> None:
     """Run the MCP server with SSE transport over HTTP.
 
     This allows the server to run as a background daemon, accessible
@@ -374,7 +379,7 @@ async def main_sse(port: int = 8080) -> None:
     active_server = server or ZaxyMCPServer()
 
     await active_server.setup()
-    logger.info("zaxy_mcp_server_ready transport=sse port=%s", port)
+    logger.info("zaxy_mcp_server_ready transport=sse host=%s port=%s", host, port)
 
     import signal
 
@@ -439,7 +444,7 @@ async def main_sse(port: int = 8080) -> None:
 
     import uvicorn
 
-    config = uvicorn.Config(starlette_app, host="127.0.0.1", port=port, log_level="warning")
+    config = uvicorn.Config(starlette_app, host=host, port=port, log_level="warning")
     uvicorn_server = uvicorn.Server(config)
 
     serve_task = asyncio.create_task(uvicorn_server.serve())

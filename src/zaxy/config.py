@@ -232,6 +232,8 @@ class Settings(BaseSettings):
                 raise ValueError("NEO4J_PASSWORD must be overridden in production")
             if self.neo4j_uri.startswith("bolt://") and not self.neo4j_ca_cert:
                 raise ValueError("NEO4J_URI must use TLS or NEO4J_CA_CERT in production")
+            if not self.mcp_admin_token:
+                raise ValueError("MCP_ADMIN_TOKEN must be configured in production")
         return self
 
     # ------------------------------------------------------------------

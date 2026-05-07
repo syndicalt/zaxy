@@ -113,7 +113,7 @@ class TestSchema:
         cypher_statements = [call.args[0] for call in calls]
         assert any("DROP CONSTRAINT entity_id IF EXISTS" in s for s in cypher_statements)
         assert any(
-            "REQUIRE (e.name, e.entity_type, e.valid_from) IS UNIQUE" in s
+            "REQUIRE (e.session_id, e.name, e.entity_type, e.valid_from) IS UNIQUE" in s
             for s in cypher_statements
         )
         assert any("CREATE INDEX entity_lookup" in s for s in cypher_statements)
@@ -149,11 +149,12 @@ class TestIngestion:
             edges=[],
             source_event_seq=1,
         )
-        await store.upsert_extraction(result)
+        await store.upsert_extraction(result, session_id="agent-1")
 
         call = store._driver.execute_query.await_args_list[0]
         cypher, kwargs = call.args[0], call.kwargs
         assert "MERGE (e:Entity" in cypher
+        assert "session_id: $session_id" in cypher
         assert "valid_from: datetime($observed_at)" in cypher
         assert "SET prev.valid_to = e.valid_from" in cypher
         assert "SET e.valid_to = next_valid_from" in cypher
@@ -161,6 +162,7 @@ class TestIngestion:
         assert "e.embedding = coalesce($embedding, e.embedding)" in cypher
         assert kwargs["name"] == "Alice"
         assert kwargs["entity_type"] == "user"
+        assert kwargs["session_id"] == "agent-1"
         assert kwargs["summary"] == "Works on memory"
         assert kwargs["embedding"] == [0.1, 0.2]
 
@@ -171,10 +173,11 @@ class TestIngestion:
             edges=[],
             source_event_seq=1,
         )
-        await store.upsert_extraction(result)
+        await store.upsert_extraction(result, session_id="agent-1")
 
         cypher = store._driver.execute_query.await_args_list[0].args[0]
         assert "MERGE (e:Entity" in cypher
+        assert "prev.session_id = $session_id" in cypher
         assert "valid_from: datetime($observed_at)" in cypher
         assert "ON MATCH SET e.updated_at = datetime($observed_at)" not in cypher
         assert "SET prev.valid_to = e.valid_from" in cypher
@@ -196,7 +199,7 @@ class TestIngestion:
             ],
             source_event_seq=1,
         )
-        await store.upsert_extraction(result)
+        await store.upsert_extraction(result, session_id="agent-1")
 
         # Entities are upserted first (2 calls), then edges (1 call)
         assert store._driver.execute_query.await_count == 3
@@ -204,11 +207,15 @@ class TestIngestion:
         cypher, kwargs = call.args[0], call.kwargs
         assert "MATCH (s:Entity" in cypher
         assert "MATCH (t:Entity" in cypher
+        assert "s.session_id = $session_id" in cypher
+        assert "t.session_id = $session_id" in cypher
         assert "s.valid_from <= datetime($valid_from)" in cypher
         assert "t.valid_from <= datetime($valid_from)" in cypher
         assert "MERGE (s)-[r:RELATES" in cypher
+        assert "r.session_id = $session_id" in cypher
         assert kwargs["source"] == "Alice"
         assert kwargs["target"] == "Goal1"
+        assert kwargs["session_id"] == "agent-1"
 
     async def test_upsert_multiple_entities(self, store: GraphStore) -> None:
         """Multiple entities should produce multiple MERGE calls."""
@@ -221,23 +228,37 @@ class TestIngestion:
             edges=[],
             source_event_seq=1,
         )
-        await store.upsert_extraction(result)
+        await store.upsert_extraction(result, session_id="agent-1")
         assert store._driver.execute_query.await_count == 3
 
     async def test_invalidate_entity(self, store: GraphStore) -> None:
         """invalidate_entity should set valid_to on the live node."""
-        await store.invalidate_entity("Alice", "user", "2024-06-01T00:00:00Z")
+        await store.invalidate_entity(
+            "Alice", "user", "2024-06-01T00:00:00Z", session_id="agent-1"
+        )
         call = store._driver.execute_query.await_args
         cypher, kwargs = call.args[0], call.kwargs
+        assert "e.session_id = $session_id" in cypher
         assert "SET e.valid_to = datetime($invalid_at)" in cypher
+        assert kwargs["session_id"] == "agent-1"
         assert kwargs["invalid_at"] == "2024-06-01T00:00:00Z"
 
     async def test_invalidate_edge(self, store: GraphStore) -> None:
         """invalidate_edge should set valid_to on the live relationship."""
-        await store.invalidate_edge("A", "B", "rel", "2024-01-01T00:00:00Z", "2024-06-01T00:00:00Z")
+        await store.invalidate_edge(
+            "A",
+            "B",
+            "rel",
+            "2024-01-01T00:00:00Z",
+            "2024-06-01T00:00:00Z",
+            session_id="agent-1",
+        )
         call = store._driver.execute_query.await_args
         cypher, kwargs = call.args[0], call.kwargs
+        assert "s.session_id = $session_id" in cypher
+        assert "r.session_id = $session_id" in cypher
         assert "SET r.valid_to = datetime($invalid_at)" in cypher
+        assert kwargs["session_id"] == "agent-1"
         assert kwargs["invalid_at"] == "2024-06-01T00:00:00Z"
 
 
@@ -253,23 +274,29 @@ class TestRetrieval:
         node = _make_node(name="Alice", entity_type="user", valid_from="2024-01-01T00:00:00Z")
         store._driver.execute_query.return_value = ([{"e": node}], None, None)
 
-        results = await store.search_exact("Alice")
+        results = await store.search_exact("Alice", session_id="agent-1")
         assert len(results) == 1
         assert results[0].name == "Alice"
         call = store._driver.execute_query.await_args
+        assert "e.session_id = $session_id" in call.args[0]
+        assert call.kwargs["session_id"] == "agent-1"
         assert "e.valid_to IS NULL" in call.args[0]
 
     async def test_search_exact_with_type_filter(self, store: GraphStore) -> None:
         """Exact search should optionally filter by entity_type."""
         store._driver.execute_query.return_value = ([], None, None)
-        await store.search_exact("Alice", entity_type="user")
+        await store.search_exact("Alice", entity_type="user", session_id="agent-1")
         call = store._driver.execute_query.await_args
         assert "e.entity_type = $entity_type" in call.args[0]
 
     async def test_search_exact_with_temporal_filter(self, store: GraphStore) -> None:
         """Exact search should optionally filter by temporal point."""
         store._driver.execute_query.return_value = ([], None, None)
-        await store.search_exact("Alice", temporal_point="2024-03-01T00:00:00Z")
+        await store.search_exact(
+            "Alice",
+            temporal_point="2024-03-01T00:00:00Z",
+            session_id="agent-1",
+        )
         call = store._driver.execute_query.await_args
         assert "datetime($t)" in call.args[0]
 
@@ -278,25 +305,36 @@ class TestRetrieval:
         node = _make_node(name="Bob", entity_type="user", valid_from="2024-01-01T00:00:00Z")
         store._driver.execute_query.return_value = ([{"neighbor": node}], None, None)
 
-        results = await store.search_traversal("Alice", depth=2)
+        results = await store.search_traversal("Alice", depth=2, session_id="agent-1")
         assert len(results) == 1
         assert results[0].name == "Bob"
+        call = store._driver.execute_query.await_args
+        assert "start.session_id = $session_id" in call.args[0]
+        assert "neighbor.session_id = $session_id" in call.args[0]
+        assert call.kwargs["session_id"] == "agent-1"
 
     async def test_search_keyword(self, store: GraphStore) -> None:
         """Keyword search should use the full-text index."""
         node = _make_node(name="Goal1", entity_type="goal", valid_from="2024-01-01T00:00:00Z")
         store._driver.execute_query.return_value = ([{"node": node, "score": 1.23}], None, None)
 
-        results = await store.search_keyword("ship mvp")
+        results = await store.search_keyword("ship mvp", session_id="agent-1")
         assert len(results) == 1
         assert isinstance(results[0], SearchResult)
         assert results[0].score == 1.23
         assert results[0].source == "keyword"
+        call = store._driver.execute_query.await_args
+        assert "node.session_id = $session_id" in call.args[0]
+        assert call.kwargs["session_id"] == "agent-1"
 
     async def test_search_keyword_with_temporal_filter(self, store: GraphStore) -> None:
         """Keyword search should optionally filter by temporal point."""
         store._driver.execute_query.return_value = ([], None, None)
-        await store.search_keyword("ship", temporal_point="2024-03-01T00:00:00Z")
+        await store.search_keyword(
+            "ship",
+            temporal_point="2024-03-01T00:00:00Z",
+            session_id="agent-1",
+        )
         call = store._driver.execute_query.await_args
         assert "datetime($t)" in call.args[0]
 
@@ -305,7 +343,11 @@ class TestRetrieval:
         node = _make_node(name="Bob", entity_type="user", valid_from="2024-01-01T00:00:00Z")
         store._driver.execute_query.return_value = ([{"neighbor": node}], None, None)
 
-        results = await store.search_traversal("Alice", relation_type="created_goal")
+        results = await store.search_traversal(
+            "Alice",
+            relation_type="created_goal",
+            session_id="agent-1",
+        )
         call = store._driver.execute_query.await_args
         assert "relation_type: $relation_type" in call.args[0]
         assert call.kwargs["relation_type"] == "created_goal"
@@ -315,7 +357,11 @@ class TestRetrieval:
     async def test_search_traversal_with_temporal_filter(self, store: GraphStore) -> None:
         """Traversal should optionally filter by temporal point."""
         store._driver.execute_query.return_value = ([], None, None)
-        await store.search_traversal("Alice", temporal_point="2024-03-01T00:00:00Z")
+        await store.search_traversal(
+            "Alice",
+            temporal_point="2024-03-01T00:00:00Z",
+            session_id="agent-1",
+        )
         call = store._driver.execute_query.await_args
         assert "datetime($t)" in call.args[0]
         assert "start.valid_from <= datetime($t)" in call.args[0]
@@ -324,16 +370,18 @@ class TestRetrieval:
     async def test_search_keyword_defaults_to_current_versions(self, store: GraphStore) -> None:
         """Keyword search without a temporal point should hide historical versions."""
         store._driver.execute_query.return_value = ([], None, None)
-        await store.search_keyword("ship")
+        await store.search_keyword("ship", session_id="agent-1")
         call = store._driver.execute_query.await_args
-        assert "WHERE node.valid_to IS NULL" in call.args[0]
+        assert "node.session_id = $session_id AND node.valid_to IS NULL" in call.args[0]
 
     async def test_search_vector_defaults_to_current_versions(self, store: GraphStore) -> None:
         """Vector search without a temporal point should hide historical versions."""
         store._driver.execute_query.return_value = ([], None, None)
-        await store.search_vector([0.1, 0.2])
+        await store.search_vector([0.1, 0.2], session_id="agent-1")
         call = store._driver.execute_query.await_args
-        assert "WHERE node.valid_to IS NULL" in call.args[0]
+        assert "node.session_id = $session_id" in call.args[0]
+        assert call.kwargs["session_id"] == "agent-1"
+        assert "node.session_id = $session_id AND node.valid_to IS NULL" in call.args[0]
 
     async def test_search_traversal_rejects_invalid_depth(self, store: GraphStore) -> None:
         """Traversal depth must be bounded before being interpolated into Cypher."""

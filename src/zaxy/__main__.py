@@ -48,6 +48,7 @@ def serve(
     neo4j_user: str | None = typer.Option(None, help="Neo4j username"),
     neo4j_password: str | None = typer.Option(None, help="Neo4j password"),
     transport: str = typer.Option("stdio", help="Transport: stdio or sse"),
+    host: str = typer.Option("127.0.0.1", help="Host for SSE transport"),
     port: int = typer.Option(8080, help="Port for SSE transport"),
 ) -> None:
     """Start the MCP server (stdio or sse)."""
@@ -64,7 +65,7 @@ def serve(
     )
 
     if transport == "sse":
-        asyncio.run(mcp_server.main_sse(port=port))
+        asyncio.run(mcp_server.main_sse(port=port, host=host))
     else:
         asyncio.run(mcp_main())
 

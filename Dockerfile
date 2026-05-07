@@ -10,8 +10,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Install Python dependencies and build the wheel from the package sources.
 COPY pyproject.toml ./
+COPY README.md ./
+COPY src ./src
 RUN pip install --no-cache-dir build && \
     python -m build --wheel && \
     pip install --no-cache-dir dist/*.whl
@@ -48,4 +50,4 @@ HEALTHCHECK --interval=10s --timeout=5s --start-period=5s --retries=3 \
 EXPOSE 8080
 
 ENTRYPOINT ["zaxy"]
-CMD ["serve"]
+CMD ["serve", "--transport", "sse", "--host", "0.0.0.0", "--port", "8080"]

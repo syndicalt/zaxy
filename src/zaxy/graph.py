@@ -16,7 +16,7 @@ from typing import Any
 from neo4j import AsyncDriver, AsyncGraphDatabase, TrustAll, TrustCustomCAs
 
 from zaxy.extract import ExtractionResult
-from zaxy.security import validate_limit, validate_traversal_depth
+from zaxy.security import validate_limit, validate_session_id, validate_traversal_depth
 
 
 @dataclass(frozen=True)
@@ -105,16 +105,17 @@ class GraphStore:
         # Older schemas used identity-only uniqueness, which prevents
         # multiple temporal versions for the same entity.
         await self._driver.execute_query("DROP CONSTRAINT entity_id IF EXISTS")
+        await self._driver.execute_query("DROP CONSTRAINT entity_version_id IF EXISTS")
 
         # Unique constraint on each temporal entity version.
         await self._driver.execute_query(
             "CREATE CONSTRAINT entity_version_id IF NOT EXISTS "
-            "FOR (e:Entity) REQUIRE (e.name, e.entity_type, e.valid_from) IS UNIQUE"
+            "FOR (e:Entity) REQUIRE (e.session_id, e.name, e.entity_type, e.valid_from) IS UNIQUE"
         )
 
         await self._driver.execute_query(
             "CREATE INDEX entity_lookup IF NOT EXISTS "
-            "FOR (e:Entity) ON (e.name, e.entity_type)"
+            "FOR (e:Entity) ON (e.session_id, e.name, e.entity_type)"
         )
 
         # Vector index for semantic search on entity summaries
@@ -134,7 +135,11 @@ class GraphStore:
     # Ingestion
     # ------------------------------------------------------------------
 
-    async def upsert_extraction(self, result: ExtractionResult) -> None:
+    async def upsert_extraction(
+        self,
+        result: ExtractionResult,
+        session_id: str = "default",
+    ) -> None:
         """Project an ExtractionResult into the graph.
 
         Entities are versioned by (name, type, valid_from). Reasserting an
@@ -143,11 +148,13 @@ class GraphStore:
         valid_from) so that re-ingestion is idempotent.
         """
         assert self._driver is not None
+        safe_session_id = validate_session_id(session_id)
 
         for ent in result.entities:
             await self._driver.execute_query(
                 """
                 MERGE (e:Entity {
+                    session_id: $session_id,
                     name: $name,
                     entity_type: $entity_type,
                     valid_from: datetime($observed_at)
@@ -158,16 +165,19 @@ class GraphStore:
                     e.embedding = coalesce($embedding, e.embedding)
                 WITH e
                 OPTIONAL MATCH (prev:Entity {name: $name, entity_type: $entity_type})
-                WHERE prev.valid_from < e.valid_from
+                WHERE prev.session_id = $session_id
+                  AND prev.valid_from < e.valid_from
                   AND (prev.valid_to IS NULL OR prev.valid_to > e.valid_from)
                 SET prev.valid_to = e.valid_from,
                     prev.updated_at = datetime($observed_at)
                 WITH e
                 OPTIONAL MATCH (next:Entity {name: $name, entity_type: $entity_type})
-                WHERE next.valid_from > e.valid_from
+                WHERE next.session_id = $session_id
+                  AND next.valid_from > e.valid_from
                 WITH e, min(next.valid_from) AS next_valid_from
                 SET e.valid_to = next_valid_from
                 """,
+                session_id=safe_session_id,
                 name=ent.name,
                 entity_type=ent.entity_type,
                 observed_at=ent.observed_at,
@@ -179,30 +189,43 @@ class GraphStore:
             await self._driver.execute_query(
                 """
                 MATCH (s:Entity {name: $source})
-                WHERE s.valid_from <= datetime($valid_from)
+                WHERE s.session_id = $session_id
+                  AND s.valid_from <= datetime($valid_from)
                   AND (s.valid_to IS NULL OR s.valid_to > datetime($valid_from))
                 MATCH (t:Entity {name: $target})
-                WHERE t.valid_from <= datetime($valid_from)
+                WHERE t.session_id = $session_id
+                  AND t.valid_from <= datetime($valid_from)
                   AND (t.valid_to IS NULL OR t.valid_to > datetime($valid_from))
                 MERGE (s)-[r:RELATES {relation_type: $relation_type, valid_from: datetime($valid_from)}]->(t)
                 ON CREATE SET r.created_at = datetime($valid_from)
-                SET r.valid_to = null
+                SET r.session_id = $session_id,
+                    r.valid_to = null
                 """,
+                session_id=safe_session_id,
                 source=edge.source,
                 target=edge.target,
                 relation_type=edge.relation_type,
                 valid_from=edge.valid_from,
             )
 
-    async def invalidate_entity(self, name: str, entity_type: str, invalid_at: str) -> None:
+    async def invalidate_entity(
+        self,
+        name: str,
+        entity_type: str,
+        invalid_at: str,
+        session_id: str = "default",
+    ) -> None:
         """Mark an entity as invalid after a given time (bi-temporal update)."""
         assert self._driver is not None
+        safe_session_id = validate_session_id(session_id)
         await self._driver.execute_query(
             """
             MATCH (e:Entity {name: $name, entity_type: $entity_type})
-            WHERE e.valid_to IS NULL
+            WHERE e.session_id = $session_id
+              AND e.valid_to IS NULL
             SET e.valid_to = datetime($invalid_at)
             """,
+            session_id=safe_session_id,
             name=name,
             entity_type=entity_type,
             invalid_at=invalid_at,
@@ -215,15 +238,21 @@ class GraphStore:
         relation_type: str,
         valid_from: str,
         invalid_at: str,
+        session_id: str = "default",
     ) -> None:
         """Mark an edge as invalid after a given time."""
         assert self._driver is not None
+        safe_session_id = validate_session_id(session_id)
         await self._driver.execute_query(
             """
             MATCH (s:Entity {name: $source})-[r:RELATES {relation_type: $relation_type, valid_from: datetime($valid_from)}]->(t:Entity {name: $target})
-            WHERE r.valid_to IS NULL
+            WHERE s.session_id = $session_id
+              AND t.session_id = $session_id
+              AND r.session_id = $session_id
+              AND r.valid_to IS NULL
             SET r.valid_to = datetime($invalid_at)
             """,
+            session_id=safe_session_id,
             source=source,
             target=target,
             relation_type=relation_type,
@@ -240,13 +269,17 @@ class GraphStore:
         name: str,
         entity_type: str | None = None,
         temporal_point: str | None = None,
+        session_id: str = "default",
     ) -> list[GraphEntity]:
         """Exact-match lookup by name, optionally filtered by type and time."""
         assert self._driver is not None
 
         cypher = "MATCH (e:Entity {name: $name})"
-        params: dict[str, Any] = {"name": name}
-        where_clauses: list[str] = []
+        params: dict[str, Any] = {
+            "name": name,
+            "session_id": validate_session_id(session_id),
+        }
+        where_clauses: list[str] = ["e.session_id = $session_id"]
 
         if entity_type:
             where_clauses.append("e.entity_type = $entity_type")
@@ -274,26 +307,37 @@ class GraphStore:
         relation_type: str | None = None,
         depth: int = 2,
         temporal_point: str | None = None,
+        session_id: str = "default",
     ) -> list[GraphEntity]:
         """Graph traversal from a starting entity, optionally filtered."""
         assert self._driver is not None
         depth = validate_traversal_depth(depth)
 
         rel_filter = "{relation_type: $relation_type}" if relation_type else ""
-        params: dict[str, Any] = {"start_name": start_name}
+        params: dict[str, Any] = {
+            "start_name": start_name,
+            "session_id": validate_session_id(session_id),
+        }
 
         if relation_type:
             params["relation_type"] = relation_type
 
         temporal_checks = " AND rel.valid_to IS NULL"
-        entity_checks = "start.valid_to IS NULL AND neighbor.valid_to IS NULL"
+        entity_checks = (
+            "start.session_id = $session_id"
+            " AND neighbor.session_id = $session_id"
+            " AND start.valid_to IS NULL"
+            " AND neighbor.valid_to IS NULL"
+        )
         if temporal_point:
             temporal_checks = (
                 " AND rel.valid_from <= datetime($t)"
                 " AND (rel.valid_to IS NULL OR rel.valid_to > datetime($t))"
             )
             entity_checks = (
-                "start.valid_from <= datetime($t)"
+                "start.session_id = $session_id"
+                " AND neighbor.session_id = $session_id"
+                " AND start.valid_from <= datetime($t)"
                 " AND (start.valid_to IS NULL OR start.valid_to > datetime($t))"
                 " AND neighbor.valid_from <= datetime($t)"
                 " AND (neighbor.valid_to IS NULL OR neighbor.valid_to > datetime($t))"
@@ -315,21 +359,27 @@ class GraphStore:
         query: str,
         limit: int = 10,
         temporal_point: str | None = None,
+        session_id: str = "default",
     ) -> list[SearchResult]:
         """BM25 full-text search over entity names and summaries."""
         assert self._driver is not None
         limit = validate_limit(limit)
 
         cypher = "CALL db.index.fulltext.queryNodes('entity_fulltext', $query) YIELD node, score"
-        params: dict[str, Any] = {"query": query, "limit": limit}
+        params: dict[str, Any] = {
+            "query": query,
+            "limit": limit,
+            "session_id": validate_session_id(session_id),
+        }
 
         if temporal_point:
             cypher += (
-                " WHERE (node.valid_from <= datetime($t) AND (node.valid_to IS NULL OR node.valid_to > datetime($t)))"
+                " WHERE node.session_id = $session_id"
+                " AND (node.valid_from <= datetime($t) AND (node.valid_to IS NULL OR node.valid_to > datetime($t)))"
             )
             params["t"] = temporal_point
         else:
-            cypher += " WHERE node.valid_to IS NULL"
+            cypher += " WHERE node.session_id = $session_id AND node.valid_to IS NULL"
 
         cypher += " RETURN node, score LIMIT $limit"
 
@@ -344,6 +394,7 @@ class GraphStore:
         embedding: list[float],
         limit: int = 10,
         temporal_point: str | None = None,
+        session_id: str = "default",
     ) -> list[SearchResult]:
         """Vector similarity search over entity embeddings."""
         assert self._driver is not None
@@ -353,15 +404,20 @@ class GraphStore:
         CALL db.index.vector.queryNodes('entity_vector', $limit, $embedding)
         YIELD node, score
         """
-        params: dict[str, Any] = {"embedding": embedding, "limit": limit}
+        params: dict[str, Any] = {
+            "embedding": embedding,
+            "limit": limit,
+            "session_id": validate_session_id(session_id),
+        }
 
         if temporal_point:
             cypher += (
-                " WHERE (node.valid_from <= datetime($t) AND (node.valid_to IS NULL OR node.valid_to > datetime($t)))"
+                " WHERE node.session_id = $session_id"
+                " AND (node.valid_from <= datetime($t) AND (node.valid_to IS NULL OR node.valid_to > datetime($t)))"
             )
             params["t"] = temporal_point
         else:
-            cypher += " WHERE node.valid_to IS NULL"
+            cypher += " WHERE node.session_id = $session_id AND node.valid_to IS NULL"
 
         cypher += " RETURN node, score"
 
@@ -384,5 +440,9 @@ def _record_to_entity(node: Any) -> GraphEntity:
         entity_type=props.get("entity_type", ""),
         valid_from=str(props.get("valid_from", "")),
         valid_to=str(props.get("valid_to")) if props.get("valid_to") else None,
-        properties={k: v for k, v in props.items() if k not in {"name", "entity_type", "valid_from", "valid_to"}},
+        properties={
+            k: v
+            for k, v in props.items()
+            if k not in {"session_id", "name", "entity_type", "valid_from", "valid_to"}
+        },
     )

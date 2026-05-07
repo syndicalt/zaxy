@@ -81,15 +81,18 @@ class TestSecretFiles:
         """Secret file references in `.env` should populate sensitive settings."""
         password_file = tmp_path / "neo4j_password.txt"
         remote_file = tmp_path / "mcp_remote_auth_token.txt"
+        admin_file = tmp_path / "mcp_admin_token.txt"
         env_file = tmp_path / ".env"
         password_file.write_text("secure-password\n", encoding="utf-8")
         remote_file.write_text("remote-token\n", encoding="utf-8")
+        admin_file.write_text("admin-token\n", encoding="utf-8")
         env_file.write_text(
             f"ZAXY_ENV=production\n"
             f"NEO4J_URI=bolt://neo4j:7687\n"
             f"NEO4J_CA_CERT=/ssl/bolt/trusted/public.crt\n"
             f"NEO4J_PASSWORD_FILE={password_file}\n"
-            f"MCP_REMOTE_AUTH_TOKEN_FILE={remote_file}\n",
+            f"MCP_REMOTE_AUTH_TOKEN_FILE={remote_file}\n"
+            f"MCP_ADMIN_TOKEN_FILE={admin_file}\n",
             encoding="utf-8",
         )
         monkeypatch.delenv("ZAXY_ENV", raising=False)
@@ -97,11 +100,14 @@ class TestSecretFiles:
         monkeypatch.delenv("NEO4J_PASSWORD_FILE", raising=False)
         monkeypatch.delenv("MCP_REMOTE_AUTH_TOKEN", raising=False)
         monkeypatch.delenv("MCP_REMOTE_AUTH_TOKEN_FILE", raising=False)
+        monkeypatch.delenv("MCP_ADMIN_TOKEN", raising=False)
+        monkeypatch.delenv("MCP_ADMIN_TOKEN_FILE", raising=False)
 
         settings = Settings(_env_file=env_file)
 
         assert settings.neo4j_password == "secure-password"
         assert settings.mcp_remote_auth_token == "remote-token"
+        assert settings.mcp_admin_token == "admin-token"
 
 
 class TestProductionValidation:
@@ -114,6 +120,7 @@ class TestProductionValidation:
         monkeypatch.setenv("ZAXY_ENV", "production")
         monkeypatch.setenv("NEO4J_URI", "bolt+s://neo4j:7687")
         monkeypatch.setenv("NEO4J_PASSWORD", "testpassword")
+        monkeypatch.setenv("MCP_ADMIN_TOKEN", "admin-token")
 
         with pytest.raises(ValidationError, match="NEO4J_PASSWORD"):
             Settings(_env_file=None)
@@ -124,8 +131,22 @@ class TestProductionValidation:
         monkeypatch.setenv("NEO4J_URI", "bolt://neo4j:7687")
         monkeypatch.delenv("NEO4J_CA_CERT", raising=False)
         monkeypatch.setenv("NEO4J_PASSWORD", "secure-password")
+        monkeypatch.setenv("MCP_ADMIN_TOKEN", "admin-token")
 
         with pytest.raises(ValidationError, match="NEO4J_URI"):
+            Settings(_env_file=None)
+
+    def test_production_requires_admin_token(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Production mode should not expose admin tools without an admin token."""
+        monkeypatch.setenv("ZAXY_ENV", "production")
+        monkeypatch.setenv("NEO4J_URI", "bolt+s://neo4j:7687")
+        monkeypatch.setenv("NEO4J_PASSWORD", "secure-password")
+        monkeypatch.delenv("MCP_ADMIN_TOKEN", raising=False)
+        monkeypatch.delenv("MCP_ADMIN_TOKEN_FILE", raising=False)
+
+        with pytest.raises(ValidationError, match="MCP_ADMIN_TOKEN"):
             Settings(_env_file=None)
 
     def test_production_allows_bolt_uri_with_custom_ca(
@@ -136,6 +157,7 @@ class TestProductionValidation:
         monkeypatch.setenv("NEO4J_URI", "bolt://neo4j:7687")
         monkeypatch.setenv("NEO4J_PASSWORD", "secure-password")
         monkeypatch.setenv("NEO4J_CA_CERT", "/ssl/bolt/trusted/public.crt")
+        monkeypatch.setenv("MCP_ADMIN_TOKEN", "admin-token")
 
         settings = Settings(_env_file=None)
 

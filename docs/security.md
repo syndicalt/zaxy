@@ -20,6 +20,17 @@ so each remote client is scoped to a validated session ID. Remote clients should
 not be able to replay or query another session by choosing a different payload
 field.
 
+Production also requires `MCP_ADMIN_TOKEN` or `MCP_ADMIN_TOKEN_FILE`.
+Replay and invalidation are bulk-read or state-changing operations, so they
+must fail closed when no admin token is configured. Remote sessions still remain
+session-scoped after admin authorization.
+
+Graph projections are session-scoped. Zaxy stores `session_id` on projected
+entities and relationships, includes it in the temporal uniqueness constraint,
+and applies it to exact, keyword, vector, traversal, replay, and invalidation
+paths. This prevents one remote client from retrieving another client's memory
+through the shared Neo4j database.
+
 Neo4j should use TLS in production. Development compose binds ports to
 localhost. Production compose enables Bolt TLS and mounts certificates generated
 by `scripts/generate-certs.sh` or supplied by your platform. The deployment

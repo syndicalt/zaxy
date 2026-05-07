@@ -20,7 +20,8 @@ validated before becoming filenames.
 MCP settings include `SERVER_NAME`, `MCP_ADMIN_TOKEN`,
 `MCP_REMOTE_AUTH_TOKEN`, and `MCP_REMOTE_SESSION_HEADER`. The remote bearer
 token protects SSE endpoints. The session header scopes remote clients so one
-client cannot query or replay another client's session by accident.
+client cannot query or replay another client's session by accident. Production
+mode requires an admin token so replay and invalidation cannot be left open.
 
 Embedding settings include `EMBEDDING_ENABLED`, `EMBEDDING_PROVIDER`,
 `EMBEDDING_DIMENSION`, `OPENAI_EMBEDDING_MODEL`, `OPENAI_BASE_URL`, and
@@ -42,7 +43,8 @@ scripts/release-check.sh --root .
 ```
 
 The deployment validator checks production mode, TLS configuration, remote MCP
-auth, and secret-file permissions. The full release gate also runs tests,
-package validation, and documentation validation. See [deployment.md](deployment.md),
-[security.md](security.md), and [runbook.md](runbook.md). The short setup path
-is still documented in [README.md](../README.md).
+auth, admin-token configuration, and secret-file permissions. The full release
+gate also runs tests, package validation, and documentation validation. See
+[deployment.md](deployment.md), [security.md](security.md), and
+[runbook.md](runbook.md). The short setup path is still documented in
+[README.md](../README.md).

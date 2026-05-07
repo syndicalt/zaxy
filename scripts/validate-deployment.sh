@@ -100,6 +100,12 @@ if [[ -z "${remote_token}" && -z "${remote_token_file}" ]]; then
     fail "MCP_REMOTE_AUTH_TOKEN or MCP_REMOTE_AUTH_TOKEN_FILE is required"
 fi
 
+admin_token="${ENV[MCP_ADMIN_TOKEN]:-}"
+admin_token_file="${ENV[MCP_ADMIN_TOKEN_FILE]:-}"
+if [[ -z "${admin_token}" && -z "${admin_token_file}" ]]; then
+    fail "MCP_ADMIN_TOKEN or MCP_ADMIN_TOKEN_FILE is required"
+fi
+
 session_header="${ENV[MCP_REMOTE_SESSION_HEADER]:-x-zaxy-session-id}"
 if [[ -z "${session_header}" ]]; then
     fail "MCP_REMOTE_SESSION_HEADER must not be empty"
