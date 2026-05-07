@@ -150,6 +150,29 @@ class TestDocumentIngestion:
         assert log.append.call_args_list[0].kwargs["thread"] == "agent-1"
 
 
+class TestTranscriptIngestion:
+    """Tests for transcript ingestion orchestration."""
+
+    async def test_ingest_transcript_appends_sanitized_turn_events(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """ingest_transcript() should append sanitized transcript turns."""
+        await fabric.ingest_transcript(
+            [{"role": "user", "content": "remember sk-abcdefghijklmnop"}],
+            source="codex",
+            session_id="agent-1",
+        )
+
+        log = fabric.session_manager.get.return_value.eventlog
+        log.append.assert_called_once()
+        assert log.append.call_args.args == ("transcript.turn",)
+        assert log.append.call_args.kwargs["actor"] == "user"
+        assert log.append.call_args.kwargs["payload"]["content"] == "[REDACTED]"
+        assert log.append.call_args.kwargs["payload"]["source"] == "codex"
+        assert log.append.call_args.kwargs["thread"] == "agent-1"
+
+
 # ------------------------------------------------------------------
 # Query tests
 # ------------------------------------------------------------------
@@ -221,6 +244,50 @@ class TestQuery:
         fabric.query_router.query.return_value = []
         await fabric.query("x")
         fabric.graph.connect.assert_awaited_once()
+
+
+class TestContextAssembly:
+    """Tests for prompt-ready context assembly."""
+
+    async def test_assemble_context_combines_replay_and_retrieval(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """assemble_context() should include recent replay and retrieved context."""
+        event = MagicMock(
+            seq=3,
+            type="transcript.turn",
+            actor="assistant",
+            payload={"role": "assistant", "content": "We chose MMR."},
+            hash="b" * 64,
+        )
+        fabric.session_manager.replay.return_value = MagicMock(
+            events=[event],
+            integrity=MagicMock(ok=True),
+        )
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content="MMR diversity (decision)",
+                source="keyword",
+                score=0.8,
+                valid_from=None,
+                valid_to=None,
+                citation="eventloom://agent-1/events/2#aaaaaaaaaaaa",
+            )
+        ]
+
+        assembly = await fabric.assemble_context(
+            "What did we decide about retrieval?",
+            session_id="agent-1",
+            replay_from_seq=3,
+            limit=1,
+        )
+
+        assert assembly.session_id == "agent-1"
+        assert assembly.replay_event_count == 1
+        assert assembly.contexts[0].content == "MMR diversity (decision)"
+        assert "[3] transcript.turn by assistant" in assembly.prompt
+        assert "MMR diversity (decision)" in assembly.prompt
 
 
 # ------------------------------------------------------------------

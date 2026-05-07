@@ -55,6 +55,39 @@ files. It skips hidden directories, chunks content by line range, writes
 entity. Retrieved document chunks cite their original file and starting line
 with `file://path:line` citations.
 
+Ingest a sanitized transcript:
+
+```python
+count = await fabric.ingest_transcript(
+    [
+        {"role": "user", "content": "What did we decide?"},
+        {"role": "assistant", "content": "Use MMR for diversity."},
+    ],
+    source="codex",
+    session_id="agent-1",
+)
+```
+
+Transcript ingestion writes one `transcript.turn` event per non-empty turn.
+Secret-looking content is redacted before the event is appended, and redaction
+paths are retained on the event payload for auditability.
+
+Assemble prompt-ready context:
+
+```python
+assembly = await fabric.assemble_context(
+    "What did we decide about retrieval?",
+    session_id="agent-1",
+    replay_from_seq=1,
+    limit=5,
+)
+print(assembly.prompt)
+```
+
+Context assembly combines recent replayed events with graph retrieval. It is the
+first lifecycle API for building an LLM context window from both durable session
+history and ranked memory.
+
 Replay a session:
 
 ```python

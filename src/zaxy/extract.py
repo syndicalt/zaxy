@@ -293,6 +293,35 @@ def _extract_document_indexed(event: Event) -> ExtractionResult:
     )
 
 
+@register("transcript.turn")
+def _extract_transcript_turn(event: Event) -> ExtractionResult:
+    """Extract a sanitized session transcript turn."""
+    source = _optional_text(event.payload.get("source")) or "transcript"
+    turn_index = _positive_int(event.payload.get("turn_index"), default=event.seq)
+    role = _optional_text(event.payload.get("role")) or event.actor
+    content = _optional_text(event.payload.get("content")) or ""
+    redacted_paths = event.payload.get("redacted_paths")
+    if not isinstance(redacted_paths, list):
+        redacted_paths = []
+    entity = ExtractedEntity(
+        name=f"{source}:turn-{turn_index}",
+        entity_type="transcript_turn",
+        observed_at=event.timestamp,
+        summary=f"{role}: {content}",
+        properties={
+            "transcript_source": source,
+            "transcript_role": role,
+            "transcript_turn_index": turn_index,
+            "redacted_paths": redacted_paths,
+        },
+    )
+    return ExtractionResult(
+        entities=[entity],
+        edges=[],
+        source_event_seq=event.seq,
+    )
+
+
 def _optional_text(value: object) -> str | None:
     """Return non-empty text for extracted summaries."""
     if value is None:

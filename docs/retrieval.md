@@ -54,6 +54,12 @@ range, appends `document.indexed` events, and projects those chunks into the
 same graph as agent memory. This gives Zaxy generic project-material recall
 without losing replayability or provenance.
 
+Transcript ingestion follows the same rule. `MemoryFabric.ingest_transcript()`
+turns session messages into sanitized `transcript.turn` events and graph
+`transcript_turn` entities. `MemoryFabric.assemble_context()` can then combine
+recent replay with ranked retrieval, giving callers a single prompt-ready view
+without throwing away replayability.
+
 Benchmark coverage lives in `src/zaxy/benchmark.py`, `src/zaxy/live_benchmark.py`,
 `tests/test_competitive_benchmarks.py`, and `tests/test_live_benchmark.py`. The
 current live benchmark compares markdown, vector, markdown+vector, and Zaxy
@@ -62,8 +68,8 @@ signal, not a universal benchmark against production-grade vector RAG or file
 memory systems.
 
 The next retrieval-quality work should close the practical ergonomics gap with
-QMD-style search sidecars: stronger reranking, query expansion,
-transcript indexing, local embedding and reranking providers, and graceful
+QMD-style search sidecars: stronger reranking, query expansion, richer assembly
+lifecycle hooks, local embedding and reranking providers, and graceful
 degradation when Neo4j, embeddings, or rerankers are unavailable. These should
 augment Zaxy's temporal/provenance layer rather than replace it with generic
 chunk search.

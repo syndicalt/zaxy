@@ -8,13 +8,20 @@ extraction engine converts typed events into `ExtractedEntity` and
 the memory operations to agent frameworks and clients.
 
 The data flow starts when an agent calls `memory_append`, a Python caller uses
-`MemoryFabric.append`, or a service calls `MemoryFabric.ingest_documents` for
-local project material. Zaxy validates the payload, writes an Eventloom event,
-runs extraction, optionally generates embeddings, upserts graph facts, emits
-metrics, and traces the operation through Pathlight when enabled. Query calls
-flow in the opposite direction: input validation, optional query embedding,
-exact search, keyword search, vector similarity, traversal expansion, fusion,
-and compact context chunk rendering.
+`MemoryFabric.append`, a service calls `MemoryFabric.ingest_documents` for
+local project material, or `MemoryFabric.ingest_transcript` imports sanitized
+session turns. Zaxy validates the payload, writes an Eventloom event, runs
+extraction, optionally generates embeddings, upserts graph facts, emits metrics,
+and traces the operation through Pathlight when enabled. Query calls flow in
+the opposite direction: input validation, optional query embedding, exact
+search, keyword search, vector similarity, traversal expansion, fusion, and
+compact context chunk rendering.
+
+Context assembly sits above replay and retrieval. `MemoryFabric.assemble_context`
+replays recent session events, queries ranked graph memory, and formats both
+into a prompt-ready bundle. This is intentionally a thin lifecycle API: it uses
+Eventloom as the recovery anchor and the graph as the relevance layer instead
+of creating a separate context cache.
 
 Eventloom is deliberately the bottom layer. It must remain useful even if Neo4j
 is unavailable or a projection bug is discovered. If the graph needs to be

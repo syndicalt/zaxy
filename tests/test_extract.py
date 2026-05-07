@@ -253,6 +253,37 @@ class TestDocumentIndexed:
         }
 
 
+class TestTranscriptTurn:
+    """Tests for transcript.turn extractor."""
+
+    def test_extracts_transcript_turn_with_role_properties(self) -> None:
+        ev = _make_event(
+            "transcript.turn",
+            {
+                "source": "codex",
+                "turn_index": 7,
+                "role": "assistant",
+                "content": "We decided to ship the retrieval sprint.",
+                "redacted_paths": [],
+            },
+            actor="assistant",
+        )
+
+        result = extract(ev)
+
+        assert len(result.entities) == 1
+        turn = result.entities[0]
+        assert turn.name == "codex:turn-7"
+        assert turn.entity_type == "transcript_turn"
+        assert turn.summary == "assistant: We decided to ship the retrieval sprint."
+        assert turn.properties == {
+            "transcript_source": "codex",
+            "transcript_role": "assistant",
+            "transcript_turn_index": 7,
+            "redacted_paths": [],
+        }
+
+
 # ------------------------------------------------------------------
 # Integration / sanity tests
 # ------------------------------------------------------------------
@@ -269,6 +300,7 @@ class TestExtractionSanity:
             ("task.completed", {"taskId": "t1"}),
             ("user.preference_changed", {"key": "k"}),
             ("document.indexed", {"path": "README.md", "content": "hello"}),
+            ("transcript.turn", {"role": "user", "content": "hello"}),
             ("unknown.type", {}),
         ]:
             ev = _make_event(event_type, payload)

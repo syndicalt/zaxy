@@ -33,6 +33,7 @@ from zaxy.query import QueryRouter
 from zaxy.security import validate_payload, validate_query, validate_session_id
 from zaxy.session import SessionManager
 from zaxy.trace import MemoryTracer
+from zaxy.transcripts import collect_transcript_events
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,16 @@ class Context:
     valid_from: str | None = None
     valid_to: str | None = None
     metadata: dict[str, Any] | None = None
+
+
+@dataclass(frozen=True)
+class ContextAssembly:
+    """Prompt-ready assembled context from replay plus retrieval."""
+
+    session_id: str
+    prompt: str
+    contexts: list[Context]
+    replay_event_count: int
 
 
 class MemoryFabric:
@@ -173,6 +184,25 @@ class MemoryFabric:
             )
         return len(events)
 
+    async def ingest_transcript(
+        self,
+        turns: list[dict[str, Any]],
+        *,
+        source: str = "transcript",
+        session_id: str = "default",
+    ) -> int:
+        """Ingest sanitized transcript turns as Eventloom-backed memory."""
+        sid = validate_session_id(session_id)
+        events = collect_transcript_events(turns, source=source)
+        for event in events:
+            await self.append(
+                event["event_type"],
+                actor=event["actor"],
+                payload=event["payload"],
+                session_id=sid,
+            )
+        return len(events)
+
     async def query(
         self,
         query: str,
@@ -237,6 +267,38 @@ class MemoryFabric:
         Returns the full replay result including integrity verification.
         """
         return cast(ReplayResult, self.session_manager.replay(session_id, from_seq=from_seq))
+
+    async def assemble_context(
+        self,
+        query: str,
+        *,
+        session_id: str = "default",
+        replay_from_seq: int = 1,
+        limit: int = 10,
+    ) -> ContextAssembly:
+        """Assemble recent replay plus retrieval into prompt-ready context."""
+        sid = validate_session_id(session_id)
+        replay = await self.replay(from_seq=replay_from_seq, session_id=sid)
+        contexts = await self.query(query, limit=limit, session_id=sid)
+        lines = ["# Recent Events"]
+        for event in replay.events:
+            lines.append(f"[{event.seq}] {event.type} by {event.actor}")
+            content = event.payload.get("content")
+            if content:
+                lines.append(str(content))
+        lines.append("")
+        lines.append("# Retrieved Context")
+        for context in contexts:
+            citation = ""
+            if context.metadata and context.metadata.get("citation"):
+                citation = f" ({context.metadata['citation']})"
+            lines.append(f"- {context.content}{citation}")
+        return ContextAssembly(
+            session_id=sid,
+            prompt="\n".join(lines).strip(),
+            contexts=contexts,
+            replay_event_count=len(replay.events),
+        )
 
     async def invalidate(
         self,
