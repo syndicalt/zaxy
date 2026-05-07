@@ -285,6 +285,61 @@ class TestQueryRouting:
             "Billing rollout task",
         ]
 
+    async def test_keyword_query_expansion_adds_domain_synonyms(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Keyword search should broaden terse agent queries with known synonyms."""
+        await router.query("auth decision", limit=3)
+
+        searched = [call.args[0] for call in mock_store.search_keyword.await_args_list]
+        assert searched[0] == "auth decision"
+        assert any("authentication" in query for query in searched[1:])
+        assert any("authorization" in query for query in searched[1:])
+        assert any("rationale" in query for query in searched[1:])
+
+    async def test_temporal_point_boosts_facts_asserted_closer_to_that_time(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """As-of queries should prefer the active fact version closest to the point in time."""
+        mock_store.search_keyword.return_value = [
+            SearchResult(
+                entity=GraphEntity(
+                    name="Legacy architecture decision",
+                    entity_type="decision",
+                    valid_from="2023-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={},
+                ),
+                score=1.0,
+                source="keyword",
+            ),
+            SearchResult(
+                entity=GraphEntity(
+                    name="Current architecture decision",
+                    entity_type="decision",
+                    valid_from="2024-02-20T00:00:00Z",
+                    valid_to=None,
+                    properties={},
+                ),
+                score=1.0,
+                source="keyword",
+            ),
+        ]
+
+        results = await router.query(
+            "architecture decision",
+            temporal_point="2024-03-01T00:00:00Z",
+            limit=2,
+        )
+
+        assert results[0].content.startswith("Current architecture decision")
+        assert results[0].score_explanation is not None
+        assert results[0].score_explanation["temporal_score"] > results[1].score_explanation["temporal_score"]
+
 
 # ------------------------------------------------------------------
 # Context chunk tests
@@ -429,6 +484,8 @@ class TestContextChunk:
             "source": "keyword",
             "raw_score": 1.5,
             "source_weight": 0.8,
+            "query_weight": 1.0,
+            "matched_query": "Ship MVP",
             "weighted_score": 0.8,
             "ranking_score": 0.8,
         }

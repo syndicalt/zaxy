@@ -53,6 +53,10 @@ class SearchResult:
     raw_score: float | None = None
     source_weight: float | None = None
     ranking_score: float | None = None
+    matched_query: str | None = None
+    query_weight: float | None = None
+    temporal_score: float | None = None
+    temporal_weight: float | None = None
 
 
 class GraphStore:

@@ -9,10 +9,23 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, replace
+from datetime import datetime
 from typing import Any
 
 from zaxy.graph import GraphEntity, GraphStore, SearchResult
 from zaxy.security import validate_limit, validate_query, validate_session_id
+
+QUERY_EXPANSIONS: dict[str, tuple[str, ...]] = {
+    "auth": ("authentication", "authorization"),
+    "decision": ("decided", "choice", "rationale"),
+    "decisions": ("decided", "choice", "rationale"),
+    "doc": ("document", "documentation"),
+    "docs": ("document", "documentation"),
+    "bug": ("defect", "failure", "regression"),
+    "bugs": ("defect", "failure", "regression"),
+    "task": ("todo", "work", "action"),
+    "tasks": ("todo", "work", "action"),
+}
 
 
 @dataclass(frozen=True)
@@ -53,6 +66,7 @@ class QueryRouter:
             "traversal": 0.9,
             "keyword": 0.8,
         }
+        self.temporal_weight = 0.12
 
     async def query(
         self,
@@ -95,6 +109,7 @@ class QueryRouter:
                     source="exact",
                     raw_score=1.0,
                     source_weight=self.fusion_weights["exact"],
+                    matched_query=candidate,
                 )
             )
 
@@ -114,25 +129,33 @@ class QueryRouter:
                     source="vector",
                     raw_score=hit.score,
                     source_weight=self.fusion_weights["vector"],
+                    matched_query=query,
                 )
-                results.append(hit)
+                results.append(_apply_temporal_score(hit, temporal_point, self.temporal_weight))
 
         # 3. Keyword search
-        keyword_hits = await self.store.search_keyword(
-            query,
-            limit=lim,
-            temporal_point=temporal_point,
-            session_id=scope,
-        )
-        for hit in keyword_hits:
-            hit = SearchResult(
-                entity=hit.entity,
-                score=min(hit.score, 1.0) * self.fusion_weights["keyword"],
-                source="keyword",
-                raw_score=hit.score,
-                source_weight=self.fusion_weights["keyword"],
+        keyword_hits: list[SearchResult] = []
+        for keyword_query in _expanded_queries(query):
+            query_weight = 1.0 if keyword_query == query else 0.92
+            query_hits = await self.store.search_keyword(
+                keyword_query,
+                limit=lim,
+                temporal_point=temporal_point,
+                session_id=scope,
             )
-            results.append(hit)
+            for hit in query_hits:
+                hit = SearchResult(
+                    entity=hit.entity,
+                    score=min(hit.score, 1.0) * self.fusion_weights["keyword"] * query_weight,
+                    source="keyword",
+                    raw_score=hit.score,
+                    source_weight=self.fusion_weights["keyword"],
+                    matched_query=keyword_query,
+                    query_weight=query_weight,
+                )
+                hit = _apply_temporal_score(hit, temporal_point, self.temporal_weight)
+                keyword_hits.append(hit)
+                results.append(hit)
 
         # 4. Traversal from top keyword + vector hits (breadth expansion)
         seen = {r.entity.name for r in results}
@@ -222,6 +245,18 @@ def _exact_candidates(query: str) -> list[str]:
     return unique
 
 
+def _expanded_queries(query: str) -> list[str]:
+    """Return the original query plus deterministic synonym expansions."""
+    tokens = re.findall(r"[A-Za-z0-9]+", query.lower())
+    expanded_terms: list[str] = []
+    for token in tokens:
+        expanded_terms.extend(QUERY_EXPANSIONS.get(token, ()))
+    expanded_terms = _unique(expanded_terms)
+    if not expanded_terms:
+        return [query]
+    return [query, f"{query} {' '.join(expanded_terms)}"]
+
+
 def _mmr_rank(results: list[SearchResult], limit: int, lambda_score: float = 0.7) -> list[SearchResult]:
     """Rank by weighted relevance while penalizing near-duplicate context."""
     candidates = sorted(results, key=lambda x: x.score, reverse=True)
@@ -277,12 +312,62 @@ def _entity_tokens(entity: GraphEntity) -> set[str]:
     }
 
 
+def _apply_temporal_score(
+    result: SearchResult,
+    temporal_point: str | None,
+    temporal_weight: float,
+) -> SearchResult:
+    """Apply a small, explainable as-of-time freshness adjustment."""
+    temporal_score = _temporal_proximity(result.entity.valid_from, temporal_point)
+    if temporal_score is None:
+        return result
+    multiplier = 1.0 + temporal_weight * (temporal_score - 0.5)
+    return replace(
+        result,
+        score=result.score * multiplier,
+        temporal_score=temporal_score,
+        temporal_weight=temporal_weight,
+    )
+
+
+def _temporal_proximity(valid_from: str | None, temporal_point: str | None) -> float | None:
+    """Score how close an assertion is to the requested as-of point."""
+    if not valid_from or not temporal_point:
+        return None
+    try:
+        start = _parse_iso_datetime(valid_from)
+        point = _parse_iso_datetime(temporal_point)
+    except ValueError:
+        return None
+    age_seconds = max((point - start).total_seconds(), 0.0)
+    age_days = age_seconds / 86_400
+    return 1.0 / (1.0 + (age_days / 365.0))
+
+
+def _parse_iso_datetime(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _unique(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        if value not in seen:
+            unique.append(value)
+            seen.add(value)
+    return unique
+
+
 def _score_explanation(result: SearchResult) -> dict[str, Any]:
     """Return compact score details for retrieval debugging."""
     return {
         "source": result.source,
         "raw_score": round(result.raw_score if result.raw_score is not None else result.score, 4),
         "source_weight": round(result.source_weight if result.source_weight is not None else 1.0, 4),
+        **({"query_weight": round(result.query_weight, 4)} if result.query_weight is not None else {}),
+        **({"matched_query": result.matched_query} if result.matched_query is not None else {}),
+        **({"temporal_score": round(result.temporal_score, 4)} if result.temporal_score is not None else {}),
+        **({"temporal_weight": round(result.temporal_weight, 4)} if result.temporal_weight is not None else {}),
         "weighted_score": round(result.score, 4),
         "ranking_score": round(result.ranking_score if result.ranking_score is not None else result.score, 4),
     }

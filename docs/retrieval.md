@@ -15,10 +15,17 @@ scores, and provenance.
 
 Ranking is intentionally explainable. Each chunk carries `score_explanation`
 metadata with the retrieval source, raw backend score, source weight, weighted
-score, and final ranking score. The ranking pass uses maximum marginal
-relevance so near-duplicate hits do not crowd out adjacent context. Traversal
-hits get a small preservation bonus because graph-neighbor evidence is often
-the difference between generic search and relational memory.
+score, matched query, query expansion weight, temporal scoring fields when an
+as-of query is used, and final ranking score. The ranking pass uses maximum
+marginal relevance so near-duplicate hits do not crowd out adjacent context.
+Traversal hits get a small preservation bonus because graph-neighbor evidence
+is often the difference between generic search and relational memory.
+
+Keyword search includes a deterministic expansion pass for terse agent queries.
+For example, `auth decision` also searches known equivalents such as
+`authentication`, `authorization`, and `rationale`. Expansion is bounded to one
+additional query and receives a small query-weight discount so broadened matches
+help recall without overpowering the user's literal query.
 
 Every graph-backed context chunk should cite its originating Eventloom event
 when provenance is available. Citations use the form
@@ -35,7 +42,9 @@ Temporal filtering is a first-class part of retrieval. Without a temporal
 filter, graph search returns current facts. With an `as_of` filter, the graph
 returns facts whose validity window contains that time. This is what lets agents
 answer questions like "what did we believe before the rollback?" without losing
-newer corrections.
+newer corrections. As-of retrieval also applies a small temporal-proximity
+score that prefers facts asserted closer to the requested point in time while
+keeping old-but-still-valid facts eligible.
 
 The vector path depends on embeddings. Local deterministic embeddings are useful
 for tests and offline development. Hosted embeddings are better for semantic
@@ -68,11 +77,10 @@ signal, not a universal benchmark against production-grade vector RAG or file
 memory systems.
 
 The next retrieval-quality work should close the practical ergonomics gap with
-QMD-style search sidecars: stronger reranking, query expansion, richer assembly
-lifecycle hooks, local embedding and reranking providers, and graceful
-degradation when Neo4j, embeddings, or rerankers are unavailable. These should
-augment Zaxy's temporal/provenance layer rather than replace it with generic
-chunk search.
+QMD-style search sidecars: stronger reranking, richer assembly lifecycle hooks,
+local embedding and reranking providers, and graceful degradation when Neo4j,
+embeddings, or rerankers are unavailable. These should augment Zaxy's
+temporal/provenance layer rather than replace it with generic chunk search.
 
 Related references: [graph-schema.md](graph-schema.md), [mcp.md](mcp.md),
 [configuration.md](configuration.md), [testing.md](testing.md), and

@@ -225,20 +225,21 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] MMR diversity and explainable score metadata in query router
 - [x] Filesystem document ingestion with source path and line citations
 - [x] Sanitized transcript ingestion and replay-to-context assembly API
+- [x] Query expansion and temporal-aware retrieval scoring policies
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 289 passed |
-| Coverage | 92.44% |
+| Tests | 291 passed |
+| Coverage | 92.53% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
 
 ## Next Steps
 
-1. Add stronger reranking, query expansion, and temporal-aware scoring policies.
+1. Add stronger reranking providers and configurable scoring profiles.
 2. Add richer context lifecycle hooks: after-turn compaction, handoff bundles, and subagent cleanup.
 3. Add OAuth/OIDC remote MCP authorization for public multi-tenant deployments.
 4. Add extractor authoring templates and schema migration tooling.

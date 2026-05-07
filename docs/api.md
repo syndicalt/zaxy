@@ -37,7 +37,9 @@ context = await fabric.query(
 ```
 
 Returned context metadata includes Eventloom citations when available and
-`score_explanation` details for retrieval debugging.
+`score_explanation` details for retrieval debugging. Score explanations include
+source weights, the matched query, query-expansion weights when applicable, and
+temporal scoring fields for as-of queries.
 
 Ingest local project documents:
 
