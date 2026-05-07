@@ -233,20 +233,21 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] OIDC/JWKS remote MCP authentication for public multi-tenant deployments
 - [x] Degraded-mode Prometheus metrics and alerting guidance
 - [x] Extractor authoring templates and auditable schema migration tooling
+- [x] Frozen benchmark workload fingerprints and external comparison disclosures
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 337 passed |
-| Coverage | 92.26% |
+| Tests | 339 passed |
+| Coverage | 92.41% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
 
 ## Next Steps
 
-1. Run OpenAI embedding benchmark with frozen corpus and compare against external graph-memory systems.
+1. Run and publish OpenAI embedding results for the frozen benchmark workload.
 2. Add lifecycle import/export adapters for common agent frameworks.
 3. Add remote MCP rate limiting and audit event export.
 4. Add local-first embedding/reranker setup helpers.

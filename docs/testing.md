@@ -54,6 +54,19 @@ The script writes `reports/benchmarks/live-benchmark.json` for automation and
 `reports/benchmarks/live-benchmark.md` for human review. Use
 `--embedding-provider hash` for deterministic offline smoke checks.
 
+For publishable comparisons, use the frozen workload instead of a custom
+subject count:
+
+```bash
+scripts/live-benchmark.sh --embedding-provider openai --workload frozen --runs 1 --reset-graph
+```
+
+Frozen reports include a workload version, event count, query count, and
+SHA-256 fingerprint so later runs can prove they used the same corpus. External
+systems such as QMD/OpenClaw, Graphiti/Zep, or Mem0 can be included only as
+operator-supplied disclosure rows via the Python CLI's `--external-results`
+JSON option; those rows are not treated as harness-verified results.
+
 Interpret these results narrowly. The statistical corpus is a generated temporal
 event workload, not a broad document-search benchmark or a claim against every
 production-grade vector RAG implementation. Use it to measure Zaxy's target

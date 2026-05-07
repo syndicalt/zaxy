@@ -27,10 +27,13 @@ from zaxy.event import EventLog
 from zaxy.extract_templates import ExtractorTemplateSpec, render_extractor_template
 from zaxy.graph import GraphStore
 from zaxy.live_benchmark import (
+    BenchmarkWorkload,
+    ExternalBenchmarkResult,
     MarkdownRetriever,
     MarkdownVectorRetriever,
     VectorRetriever,
     benchmark_live_retrievers,
+    build_frozen_statistical_workload,
     build_live_zaxy_retriever,
     build_statistical_event_log,
     corpus_from_event_log,
@@ -240,11 +243,15 @@ def benchmark(
         False,
         help="Delete Entity nodes in the benchmark Neo4j database before ingestion",
     ),
-    workload: str = typer.Option("fixture", help="Workload: fixture or statistical"),
+    workload: str = typer.Option("fixture", help="Workload: fixture, statistical, or frozen"),
     subjects: int = typer.Option(
         100,
         min=1,
         help="Subject count for the statistical workload; each subject creates 3 queries",
+    ),
+    external_results: Path | None = typer.Option(  # noqa: B008
+        None,
+        help="Optional JSON file with operator-supplied external comparison rows",
     ),
 ) -> None:
     """Run live retrieval benchmarks against md/vector/md+vector/Zaxy."""
@@ -273,16 +280,32 @@ def benchmark(
 
     async def _run() -> None:
         with tempfile.TemporaryDirectory(prefix="zaxy-live-benchmark-") as tmp:
+            benchmark_workload: BenchmarkWorkload
             if workload == "fixture":
                 eventlog = build_competitive_event_log(Path(tmp) / "bench.jsonl")
                 cases = competitive_cases()
+                benchmark_workload = BenchmarkWorkload.from_event_log(
+                    eventlog,
+                    cases,
+                    version="fixture-v1",
+                )
             elif workload == "statistical":
                 eventlog, cases = build_statistical_event_log(
                     Path(tmp) / "bench.jsonl",
                     subjects=subjects,
                 )
+                benchmark_workload = BenchmarkWorkload.from_event_log(
+                    eventlog,
+                    cases,
+                    version=f"statistical-subjects-{subjects}",
+                    subjects=subjects,
+                )
+            elif workload == "frozen":
+                eventlog, cases, benchmark_workload = build_frozen_statistical_workload(
+                    Path(tmp) / "bench.jsonl"
+                )
             else:
-                raise typer.BadParameter("workload must be 'fixture' or 'statistical'")
+                raise typer.BadParameter("workload must be 'fixture', 'statistical', or 'frozen'")
             corpus = corpus_from_event_log(eventlog)
             zaxy_retriever, graph = await build_live_zaxy_retriever(
                 eventlog,
@@ -304,6 +327,8 @@ def benchmark(
                     runs=runs,
                     limit=limit,
                     embedding_provider=provider_label,
+                    workload=benchmark_workload,
+                    external_results=_load_external_results(external_results),
                 )
             finally:
                 await graph.close()
@@ -314,6 +339,24 @@ def benchmark(
         typer.echo(f"Wrote Markdown report: {written.markdown_path}")
 
     asyncio.run(_run())
+
+
+def _load_external_results(path: Path | None) -> tuple[ExternalBenchmarkResult, ...]:
+    """Load operator-supplied external benchmark rows from JSON."""
+    if path is None:
+        return ()
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, list):
+        raise typer.BadParameter("external results JSON must be a list")
+    results: list[ExternalBenchmarkResult] = []
+    for idx, item in enumerate(payload):
+        if not isinstance(item, dict):
+            raise typer.BadParameter(f"external result {idx} must be an object")
+        try:
+            results.append(ExternalBenchmarkResult(**item))
+        except TypeError as exc:
+            raise typer.BadParameter(f"invalid external result {idx}: {exc}") from exc
+    return tuple(results)
 
 
 def main() -> None:

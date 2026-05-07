@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import math
 import random
@@ -19,6 +20,9 @@ from zaxy.event import EventLog
 from zaxy.extract import extract
 from zaxy.graph import GraphStore
 from zaxy.query import QueryRouter
+
+FROZEN_WORKLOAD_VERSION = "statistical-v1"
+FROZEN_WORKLOAD_SUBJECTS = 100
 
 
 @dataclass(frozen=True)
@@ -89,6 +93,47 @@ class CategorySummary:
 
 
 @dataclass(frozen=True)
+class BenchmarkWorkload:
+    """Identity metadata for a benchmark workload."""
+
+    version: str
+    subjects: int | None
+    event_count: int
+    case_count: int
+    sha256: str
+
+    @classmethod
+    def from_event_log(
+        cls,
+        eventlog: EventLog,
+        cases: tuple[BenchmarkCase, ...],
+        *,
+        version: str,
+        subjects: int | None = None,
+    ) -> BenchmarkWorkload:
+        """Create workload metadata from an Eventloom log and cases."""
+        return cls(
+            version=version,
+            subjects=subjects,
+            event_count=len(eventlog.read_all()),
+            case_count=len(cases),
+            sha256=workload_fingerprint(eventlog, cases, version),
+        )
+
+
+@dataclass(frozen=True)
+class ExternalBenchmarkResult:
+    """Operator-supplied benchmark row for an external context system."""
+
+    system: str
+    version: str
+    mean_score: float
+    latency_ms_p95: float | None = None
+    source: str = "operator-supplied"
+    notes: str | None = None
+
+
+@dataclass(frozen=True)
 class BenchmarkReport:
     """Complete benchmark output."""
 
@@ -98,6 +143,8 @@ class BenchmarkReport:
     summaries: tuple[BenchmarkSummary, ...]
     category_summaries: tuple[CategorySummary, ...] = ()
     comparisons: tuple[BackendComparison, ...] = ()
+    workload: BenchmarkWorkload | None = None
+    external_results: tuple[ExternalBenchmarkResult, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -339,12 +386,46 @@ def build_statistical_event_log(
     return log, tuple(cases)
 
 
+def build_frozen_statistical_workload(
+    path: str | Path,
+) -> tuple[EventLog, tuple[BenchmarkCase, ...], BenchmarkWorkload]:
+    """Build the frozen statistical workload used for publishable comparisons."""
+    eventlog, cases = build_statistical_event_log(path, subjects=FROZEN_WORKLOAD_SUBJECTS)
+    workload = BenchmarkWorkload.from_event_log(
+        eventlog,
+        cases,
+        version=FROZEN_WORKLOAD_VERSION,
+        subjects=FROZEN_WORKLOAD_SUBJECTS,
+    )
+    return eventlog, cases, workload
+
+
+def workload_fingerprint(
+    eventlog: EventLog,
+    cases: tuple[BenchmarkCase, ...],
+    version: str,
+) -> str:
+    """Return a deterministic SHA-256 fingerprint for a benchmark workload."""
+    payload = {
+        "version": version,
+        "events": [
+            event.model_dump(mode="json")
+            for event in eventlog.read_all()
+        ],
+        "cases": [asdict(case) for case in cases],
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def benchmark_retrievers(
     retrievers: dict[str, Retriever],
     cases: tuple[BenchmarkCase, ...],
     runs: int = 5,
     limit: int = 10,
     embedding_provider: str = "unknown",
+    workload: BenchmarkWorkload | None = None,
+    external_results: tuple[ExternalBenchmarkResult, ...] = (),
 ) -> BenchmarkReport:
     """Benchmark retrievers against shared cases and return statistics."""
     if runs <= 0:
@@ -378,6 +459,8 @@ def benchmark_retrievers(
         runs=tuple(measurements),
         summaries=tuple(_summaries(measurements, cases, runs)),
         category_summaries=tuple(_category_summaries(measurements)),
+        workload=workload,
+        external_results=external_results,
     )
     return _with_comparisons(report)
 
@@ -389,6 +472,8 @@ async def benchmark_live_retrievers(
     runs: int = 5,
     limit: int = 10,
     embedding_provider: str = "unknown",
+    workload: BenchmarkWorkload | None = None,
+    external_results: tuple[ExternalBenchmarkResult, ...] = (),
 ) -> BenchmarkReport:
     """Benchmark sync baselines and live Zaxy retrieval in one event loop."""
     if runs <= 0:
@@ -443,6 +528,8 @@ async def benchmark_live_retrievers(
         runs=tuple(measurements),
         summaries=tuple(_summaries(measurements, cases, runs)),
         category_summaries=tuple(_category_summaries(measurements)),
+        workload=workload,
+        external_results=external_results,
     )
     return _with_comparisons(report)
 
@@ -489,15 +576,26 @@ def write_benchmark_report(
 
 def report_to_markdown(report: BenchmarkReport) -> str:
     """Render benchmark summaries as Markdown."""
+    workload = report.workload or _ad_hoc_workload(report)
     lines = [
         "# Live Retrieval Benchmark",
         "",
         f"- Generated: `{report.generated_at}`",
         f"- Embedding provider: `{report.embedding_provider}`",
+        f"- Workload: `{workload.version}`",
+        f"- Workload SHA-256: `{workload.sha256}`",
+        f"- Events: `{workload.event_count}`",
+        f"- Queries: `{workload.case_count}`",
+    ]
+    if workload.subjects is not None:
+        lines.append(f"- Subjects: `{workload.subjects}`")
+    lines.extend(
+        [
         "",
         "| Backend | Mean score | p50 ms | p95 ms | p99 ms | Returned bytes | Approx tokens |",
         "|---------|------------|--------|--------|--------|----------------|---------------|",
-    ]
+        ]
+    )
     for backend_summary in report.summaries:
         lines.append(
             "| "
@@ -547,6 +645,27 @@ def report_to_markdown(report: BenchmarkReport) -> str:
                 f"[{comparison.ci_low:.4f}, {comparison.ci_high:.4f}] | "
                 f"{comparison.p_value:.4f} | "
                 f"{'yes' if comparison.significant else 'no'} |"
+            )
+    if report.external_results:
+        lines.extend(
+            [
+                "",
+                "## External comparison disclosures",
+                "",
+                "| System | Version | Mean score | p95 ms | Source | Notes |",
+                "|--------|---------|------------|--------|--------|-------|",
+            ]
+        )
+        for result in report.external_results:
+            p95 = "" if result.latency_ms_p95 is None else f"{result.latency_ms_p95:.2f}"
+            lines.append(
+                "| "
+                f"{result.system} | "
+                f"{result.version} | "
+                f"{result.mean_score:.3f} | "
+                f"{p95} | "
+                f"{result.source} | "
+                f"{result.notes or ''} |"
             )
     return "\n".join(lines) + "\n"
 
@@ -699,9 +818,11 @@ def _report_payload(report: BenchmarkReport) -> dict[str, object]:
     return {
         "generated_at": report.generated_at,
         "embedding_provider": report.embedding_provider,
+        "workload": asdict(report.workload or _ad_hoc_workload(report)),
         "summaries": [asdict(summary) for summary in report.summaries],
         "category_summaries": [asdict(summary) for summary in report.category_summaries],
         "comparisons": [asdict(comparison) for comparison in report.comparisons],
+        "external_results": [asdict(result) for result in report.external_results],
         "runs": [asdict(run) for run in report.runs],
     }
 
@@ -716,6 +837,25 @@ def _with_comparisons(report: BenchmarkReport) -> BenchmarkReport:
         summaries=report.summaries,
         category_summaries=report.category_summaries,
         comparisons=compare_target_to_baselines(report),
+        workload=report.workload,
+        external_results=report.external_results,
+    )
+
+
+def _ad_hoc_workload(report: BenchmarkReport) -> BenchmarkWorkload:
+    case_names = sorted({run.case_name for run in report.runs})
+    payload = {
+        "embedding_provider": report.embedding_provider,
+        "cases": case_names,
+        "runs": len(report.runs),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return BenchmarkWorkload(
+        version="ad-hoc",
+        subjects=None,
+        event_count=0,
+        case_count=len(case_names),
+        sha256=hashlib.sha256(encoded).hexdigest(),
     )
 
 

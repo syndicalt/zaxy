@@ -8,12 +8,16 @@ from pathlib import Path
 from zaxy.benchmark import build_competitive_event_log, competitive_cases
 from zaxy.embedding import HashEmbeddingProvider
 from zaxy.live_benchmark import (
+    FROZEN_WORKLOAD_SUBJECTS,
+    FROZEN_WORKLOAD_VERSION,
     MarkdownRetriever,
     MarkdownVectorRetriever,
     VectorRetriever,
     benchmark_retrievers,
+    build_frozen_statistical_workload,
     corpus_from_event_log,
     report_to_markdown,
+    workload_fingerprint,
     write_benchmark_report,
 )
 
@@ -27,6 +31,7 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert 'embedding_provider: str = typer.Option("openai"' in cli
     assert "build_live_zaxy_retriever" in cli
     assert "build_statistical_event_log" in cli
+    assert "build_frozen_statistical_workload" in cli
     assert "--workload" in script
     assert "--subjects" in script
     assert "zaxy benchmark" in script
@@ -80,5 +85,20 @@ def test_live_benchmark_outputs_machine_and_markdown_reports(tmp_path: Path) -> 
     assert output.json_path.name == "live-benchmark.json"
     assert output.markdown_path.name == "live-benchmark.md"
     assert payload["summaries"][0]["backend"] in {"md", "vector"}
+    assert payload["workload"]["version"] == "ad-hoc"
     assert "| Backend | Mean score | p50 ms | p95 ms |" in markdown
     assert "Approx tokens" in markdown
+
+
+def test_frozen_statistical_workload_has_stable_identity(tmp_path: Path) -> None:
+    """Frozen workload metadata should make benchmark reports reproducible."""
+    first_log, first_cases, first_workload = build_frozen_statistical_workload(tmp_path / "first.jsonl")
+    second_log, second_cases, second_workload = build_frozen_statistical_workload(tmp_path / "second.jsonl")
+
+    assert first_workload.version == FROZEN_WORKLOAD_VERSION
+    assert first_workload.subjects == FROZEN_WORKLOAD_SUBJECTS
+    assert first_workload.event_count == 500
+    assert first_workload.case_count == 300
+    assert first_workload.sha256 == second_workload.sha256
+    assert first_workload.sha256 == workload_fingerprint(first_log, first_cases, FROZEN_WORKLOAD_VERSION)
+    assert first_workload == second_workload
