@@ -24,6 +24,7 @@ import typer
 from zaxy.benchmark import build_competitive_event_log, competitive_cases
 from zaxy.embedding import EmbeddingProvider, HashEmbeddingProvider, OpenAIEmbeddingProvider
 from zaxy.event import EventLog
+from zaxy.extract_templates import ExtractorTemplateSpec, render_extractor_template
 from zaxy.graph import GraphStore
 from zaxy.live_benchmark import (
     MarkdownRetriever,
@@ -37,8 +38,41 @@ from zaxy.live_benchmark import (
     write_benchmark_report,
 )
 from zaxy.mcp_server import main as mcp_main
+from zaxy.schema import render_schema_plan
 
 app = typer.Typer(help="Zaxy: Event-sourced temporal knowledge graph fabric")
+
+
+@app.command("schema-plan")
+def schema_plan() -> None:
+    """Print the current Neo4j schema migration plan."""
+    typer.echo(render_schema_plan())
+
+
+@app.command("extractor-template")
+def extractor_template(
+    event_type: str = typer.Argument(..., help="Typed Eventloom event, e.g. decision.recorded"),  # noqa: B008
+    entity_type: str = typer.Option(..., "--entity-type", help="Graph entity type to extract"),
+    name_key: str = typer.Option(..., "--name-key", help="Payload key used as the entity name"),
+    summary_key: str | None = typer.Option(None, "--summary-key", help="Payload key used as summary"),
+    actor_relation: str | None = typer.Option(
+        None,
+        "--actor-relation",
+        help="Optional relation from event actor to extracted entity",
+    ),
+) -> None:
+    """Print a validated rule-extractor starter for a new event type."""
+    try:
+        spec = ExtractorTemplateSpec(
+            event_type=event_type,
+            entity_type=entity_type,
+            entity_name_payload_key=name_key,
+            summary_payload_key=summary_key,
+            actor_relation_type=actor_relation,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(render_extractor_template(spec))
 
 
 @app.command()

@@ -232,21 +232,22 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Context lifecycle hooks for after-turn assembly, handoff bundles, and subagent cleanup
 - [x] OIDC/JWKS remote MCP authentication for public multi-tenant deployments
 - [x] Degraded-mode Prometheus metrics and alerting guidance
+- [x] Extractor authoring templates and auditable schema migration tooling
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 321 passed |
-| Coverage | 92.04% |
+| Tests | 337 passed |
+| Coverage | 92.26% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
 
 ## Next Steps
 
-1. Add extractor authoring templates and schema migration tooling.
-2. Run OpenAI embedding benchmark with frozen corpus and compare against external graph-memory systems.
-3. Add lifecycle import/export adapters for common agent frameworks.
-4. Add remote MCP rate limiting and audit event export.
-5. Add local-first embedding/reranker setup helpers.
+1. Run OpenAI embedding benchmark with frozen corpus and compare against external graph-memory systems.
+2. Add lifecycle import/export adapters for common agent frameworks.
+3. Add remote MCP rate limiting and audit event export.
+4. Add local-first embedding/reranker setup helpers.
+5. Add extractor schema-pack examples for common agent event taxonomies.

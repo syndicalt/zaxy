@@ -24,8 +24,17 @@ were valid at the requested time.
 
 Indexes matter for production behavior. Zaxy creates lookup constraints for
 entity versions, full-text indexes for keyword search, and vector indexes for
-embedding similarity when configured. The manual Cypher file under
-`scripts/setup_neo4j_indexes.cypher` documents the operational index setup.
+embedding similarity when configured. Schema setup is expressed as named,
+idempotent migrations in `src/zaxy/schema.py`; each applied migration is
+recorded as a `ZaxySchemaMigration` node with a checksum and statement count.
+Operators can inspect the current plan without opening a database connection:
+
+```bash
+zaxy schema-plan
+```
+
+The manual Cypher file under `scripts/setup_neo4j_indexes.cypher` documents the
+operational index setup for environments that apply Cypher separately.
 
 Invalidation does not delete nodes. `memory_invalidate` closes validity windows
 at `invalid_at`. This preserves history while preventing default current-time

@@ -173,6 +173,18 @@ projection, `GraphStore` for Neo4j operations, `QueryRouter` for retrieval, and
 `MemoryTracer` for Pathlight spans. Prefer `MemoryFabric` unless you are
 building tests, migrations, or specialized tooling.
 
+For extractor and schema authoring, use the CLI helpers before editing
+production code:
+
+```bash
+zaxy extractor-template decision.recorded --entity-type decision --name-key title
+zaxy schema-plan
+```
+
+Extractor templates validate event names and identifiers before rendering code.
+Schema migrations are named, checksum-addressed, and still applied through
+`GraphStore.init_schema()` so existing callers keep the same lifecycle.
+
 Errors should be treated as operational signals. Validation errors normally mean
 the caller sent an unsafe session ID, oversized payload, invalid limit, or empty
 query. Graph errors usually mean Neo4j is unavailable, indexes are missing, or

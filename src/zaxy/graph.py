@@ -16,6 +16,7 @@ from typing import Any
 from neo4j import AsyncDriver, AsyncGraphDatabase, TrustAll, TrustCustomCAs
 
 from zaxy.extract import ExtractionResult
+from zaxy.schema import apply_schema_migrations
 from zaxy.security import validate_limit, validate_session_id, validate_traversal_depth
 
 
@@ -113,35 +114,7 @@ class GraphStore:
         Must be called once before ingestion.
         """
         assert self._driver is not None, "Call connect() first"
-
-        # Older schemas used identity-only uniqueness, which prevents
-        # multiple temporal versions for the same entity.
-        await self._driver.execute_query("DROP CONSTRAINT entity_id IF EXISTS")
-        await self._driver.execute_query("DROP CONSTRAINT entity_version_id IF EXISTS")
-
-        # Unique constraint on each temporal entity version.
-        await self._driver.execute_query(
-            "CREATE CONSTRAINT entity_version_id IF NOT EXISTS "
-            "FOR (e:Entity) REQUIRE (e.session_id, e.name, e.entity_type, e.valid_from) IS UNIQUE"
-        )
-
-        await self._driver.execute_query(
-            "CREATE INDEX entity_lookup IF NOT EXISTS "
-            "FOR (e:Entity) ON (e.session_id, e.name, e.entity_type)"
-        )
-
-        # Vector index for semantic search on entity summaries
-        await self._driver.execute_query(
-            "CREATE VECTOR INDEX entity_vector IF NOT EXISTS "
-            "FOR (e:Entity) ON (e.embedding) "
-            "OPTIONS {indexConfig: {`vector.dimensions`: 1536, `vector.similarity_function`: 'cosine'}}"
-        )
-
-        # Full-text index for BM25 keyword search
-        await self._driver.execute_query(
-            "CREATE FULLTEXT INDEX entity_fulltext IF NOT EXISTS "
-            "FOR (e:Entity) ON EACH [e.name, e.summary]"
-        )
+        await apply_schema_migrations(self._driver)
 
     # ------------------------------------------------------------------
     # Ingestion

@@ -15,7 +15,20 @@ Typed event names matter. Zaxy's extractor uses deterministic handlers for
 known events such as `goal.created`, `task.proposed`, and related lifecycle
 records. Deterministic extraction is cheaper and easier to test than broad LLM
 extraction. New event types should come with a schema decision and extractor
-tests before they are considered public.
+tests before they are considered public. Use `zaxy extractor-template` to
+generate a validated starter that follows the registry and provenance pattern:
+
+```bash
+zaxy extractor-template decision.recorded \
+  --entity-type decision \
+  --name-key title \
+  --summary-key rationale \
+  --actor-relation recorded_decision
+```
+
+The generator rejects unsafe event names and identifiers so template rendering
+cannot become an injection path. The output is still starter code: add tests
+for the specific payload contract before making the extractor public.
 
 Events are session-scoped. The `SessionManager` maps validated session IDs to
 per-session JSONL paths under `EVENTLOOM_PATH`. Multi-agent deployments should
