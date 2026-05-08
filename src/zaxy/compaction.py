@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 import re
 import statistics
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any
 
 from zaxy.benchmark import _event_context
@@ -31,6 +34,30 @@ class CompactionAuditReport:
     identity_hits: tuple[str, ...]
     missing_identities: tuple[str, ...]
     unsafe_reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class CompactionProjectionRecord:
+    """A real source-backed record stored in a compaction projection."""
+
+    kind: str
+    event_seq: int
+    event_ref: str
+    text: str
+    identities: tuple[str, ...]
+    citations: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class CompactionProjection:
+    """Stored compaction projection with source backpointers."""
+
+    projection_id: str
+    strategy: str
+    source_event_count: int
+    source_identities: tuple[str, ...]
+    records: tuple[CompactionProjectionRecord, ...]
+    audit: CompactionAuditReport
 
 
 def audit_event_log(
@@ -103,6 +130,64 @@ def audit_event_log(
     )
 
 
+def build_compaction_projection(
+    eventlog: EventLog,
+    *,
+    provider: EmbeddingProvider | None = None,
+    strategy: str = "medoid",
+    max_records: int = 5,
+) -> CompactionProjection:
+    """Build a source-backed compaction projection without rewriting the log."""
+    if strategy not in {"medoid", "exemplar"}:
+        raise ValueError("strategy must be 'medoid' or 'exemplar'")
+    if max_records <= 0:
+        raise ValueError("max_records must be positive")
+
+    provider = provider or HashEmbeddingProvider()
+    events = eventlog.read_all()
+    audit = audit_event_log(eventlog, provider=provider)
+    selected = (
+        [_select_medoid(events, provider)]
+        if strategy == "medoid" and events
+        else _select_exemplars(events, provider, max_records)
+    )
+    selected = [event for event in selected if event is not None]
+    records = tuple(
+        _projection_record(event, "medoid" if strategy == "medoid" else "exemplar")
+        for event in selected
+    )
+    payload = {
+        "strategy": strategy,
+        "source_hashes": [event.hash for event in events],
+        "records": [record.event_ref for record in records],
+    }
+    projection_id = hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    return CompactionProjection(
+        projection_id=projection_id,
+        strategy=strategy,
+        source_event_count=len(events),
+        source_identities=audit.identities,
+        records=records,
+        audit=audit,
+    )
+
+
+def write_compaction_projection(
+    projection: CompactionProjection,
+    path: str | Path,
+) -> Path:
+    """Write a compaction projection JSON artifact."""
+    output = Path(path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        json.dumps(asdict(projection), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return output
+
+
 def _event_identities(event: Event) -> tuple[str, ...]:
     payload = event.payload
     identities = [
@@ -139,6 +224,72 @@ def _event_identities(event: Event) -> tuple[str, ...]:
     return tuple(dict.fromkeys(identities))
 
 
+def _projection_record(event: Event, kind: str) -> CompactionProjectionRecord:
+    identities = _event_identities(event)
+    return CompactionProjectionRecord(
+        kind=kind,
+        event_seq=event.seq,
+        event_ref=_event_ref(event),
+        text=_event_context(event.model_dump()),
+        identities=identities,
+        citations=tuple(identity for identity in identities if _is_source_citation(identity)),
+    )
+
+
+def _select_medoid(events: list[Event], provider: EmbeddingProvider) -> Event | None:
+    if not events:
+        return None
+    if len(events) == 1:
+        return events[0]
+    texts = [_event_context(event.model_dump()) for event in events]
+    embeddings = [provider.embed(text) for text in texts]
+    best_index = 0
+    best_distance = float("inf")
+    for left_index, left in enumerate(embeddings):
+        distance = statistics.fmean(
+            1.0 - _cosine(left, right)
+            for right_index, right in enumerate(embeddings)
+            if right_index != left_index
+        )
+        if distance < best_distance:
+            best_distance = distance
+            best_index = left_index
+    return events[best_index]
+
+
+def _select_exemplars(
+    events: list[Event],
+    provider: EmbeddingProvider,
+    max_records: int,
+) -> list[Event]:
+    if len(events) <= max_records:
+        return list(events)
+    selected: list[Event] = []
+    remaining = list(events)
+    medoid = _select_medoid(remaining, provider)
+    if medoid is not None:
+        selected.append(medoid)
+        remaining.remove(medoid)
+    while remaining and len(selected) < max_records:
+        selected_embeddings = [
+            provider.embed(_event_context(event.model_dump()))
+            for event in selected
+        ]
+        best_event = max(
+            remaining,
+            key=lambda event: min(
+                1.0 - _cosine(
+                    provider.embed(_event_context(event.model_dump())),
+                    selected_embedding,
+                )
+                for selected_embedding in selected_embeddings
+            ),
+        )
+        selected.append(best_event)
+        remaining.remove(best_event)
+    return selected
+
+
 def _citation_coverage(events: list[Event]) -> float:
     if not events:
         return 1.0
@@ -160,6 +311,18 @@ def _representative_text(events: list[Event]) -> str:
         return ""
     event = events[0]
     return "\n".join([_event_context(event.model_dump()), *_event_identities(event)])
+
+
+def _event_ref(event: Event) -> str:
+    return f"eventloom://{event.thread}/events/{event.seq}#{event.hash[:12]}"
+
+
+def _is_source_citation(identity: str) -> bool:
+    return (
+        "/" in identity
+        or ":turn-" in identity
+        or identity.startswith("eventloom://")
+    )
 
 
 def _mean_within_cluster_distance(

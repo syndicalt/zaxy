@@ -5,7 +5,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from zaxy.compaction import audit_event_log
+from zaxy.compaction import (
+    audit_event_log,
+    build_compaction_projection,
+    write_compaction_projection,
+)
 from zaxy.embedding import HashEmbeddingProvider
 from zaxy.event import EventLog
 
@@ -99,3 +103,98 @@ def test_audit_blocks_broken_eventloom_integrity(tmp_path: Path) -> None:
     assert report.integrity_ok is False
     assert report.integrity_reason == "Event 1 hash mismatch"
     assert "integrity check failed" in report.unsafe_reasons
+
+
+def test_builds_medoid_projection_with_source_backpointers(tmp_path: Path) -> None:
+    """A medoid projection should keep a real source event and all source IDs."""
+    log = EventLog(tmp_path / "projection.jsonl")
+    first = log.append(
+        "document.indexed",
+        actor="indexer",
+        payload={
+            "path": "docs/a.md",
+            "start_line": 1,
+            "end_line": 4,
+            "content": "Cache migration note records identity-code-0001.",
+        },
+    )
+    second = log.append(
+        "document.indexed",
+        actor="indexer",
+        payload={
+            "path": "docs/b.md",
+            "start_line": 5,
+            "end_line": 8,
+            "content": "Cache migration note records identity-code-0002.",
+        },
+    )
+
+    projection = build_compaction_projection(
+        log,
+        provider=HashEmbeddingProvider(dimension=64),
+        strategy="medoid",
+    )
+
+    assert projection.strategy == "medoid"
+    assert projection.source_event_count == 2
+    assert len(projection.records) == 1
+    assert projection.records[0].event_ref.startswith("eventloom://default/events/")
+    assert projection.records[0].kind == "medoid"
+    assert projection.records[0].event_seq in {first.seq, second.seq}
+    assert "docs/a.md:1-4" in projection.source_identities
+    assert "docs/b.md:5-8" in projection.source_identities
+    assert projection.audit.identity_recall < 1.0
+
+
+def test_builds_exemplar_projection_with_multiple_cited_records(tmp_path: Path) -> None:
+    """Exemplar projections should store multiple real records with source citations."""
+    log = EventLog(tmp_path / "exemplars.jsonl")
+    for idx in range(4):
+        log.append(
+            "document.indexed",
+            actor="indexer",
+            payload={
+                "path": f"docs/exemplar-{idx}.md",
+                "start_line": idx + 1,
+                "end_line": idx + 2,
+                "content": f"Planner note records identity-code-{idx:04d}.",
+            },
+        )
+
+    projection = build_compaction_projection(
+        log,
+        provider=HashEmbeddingProvider(dimension=64),
+        strategy="exemplar",
+        max_records=3,
+    )
+
+    assert projection.strategy == "exemplar"
+    assert len(projection.records) == 3
+    assert {record.kind for record in projection.records} == {"exemplar"}
+    assert all(record.citations for record in projection.records)
+    assert len({record.event_seq for record in projection.records}) == 3
+    assert "identity-code-0003" in projection.source_identities
+
+
+def test_writes_projection_json_for_later_context_assembly(tmp_path: Path) -> None:
+    """Projection storage should produce deterministic JSON with backpointers."""
+    log = EventLog(tmp_path / "projection.jsonl")
+    log.append(
+        "goal.created",
+        actor="user",
+        payload={"title": "Goal 0001", "description": "Ship projection storage"},
+    )
+    projection = build_compaction_projection(
+        log,
+        provider=HashEmbeddingProvider(dimension=64),
+        strategy="medoid",
+    )
+    output = tmp_path / "projection.compaction.json"
+
+    write_compaction_projection(projection, output)
+    payload = json.loads(output.read_text(encoding="utf-8"))
+
+    assert payload["projection_id"] == projection.projection_id
+    assert payload["strategy"] == "medoid"
+    assert payload["source_identities"] == list(projection.source_identities)
+    assert payload["records"][0]["event_ref"].startswith("eventloom://default/events/1#")

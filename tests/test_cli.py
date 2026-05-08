@@ -91,3 +91,39 @@ def test_compact_audit_json_output(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert '"safe": true' in result.output
     assert '"identity_recall": 1.0' in result.output
+
+
+def test_compact_writes_projection_without_rewriting_log(tmp_path: Path) -> None:
+    """compact --projection-output should store backpointer projections only."""
+    log_path = tmp_path / "work.jsonl"
+    projection_path = tmp_path / "work.compaction.json"
+    EventLog(log_path).append(
+        "document.indexed",
+        actor="indexer",
+        payload={
+            "path": "docs/context.md",
+            "start_line": 10,
+            "end_line": 12,
+            "content": "Context note records identity-code-0001.",
+        },
+    )
+    before = log_path.read_text(encoding="utf-8")
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "compact",
+            str(log_path),
+            "--projection-output",
+            str(projection_path),
+            "--strategy",
+            "medoid",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Wrote compaction projection:" in result.output
+    assert projection_path.exists()
+    assert '"strategy": "medoid"' in projection_path.read_text(encoding="utf-8")
+    assert log_path.read_text(encoding="utf-8") == before

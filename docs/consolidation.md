@@ -151,13 +151,22 @@ gaps.
 
 Use `zaxy compact PATH --audit --json` for automation.
 
+## Projection Storage
+
+Run `zaxy compact PATH --projection-output PATH.compaction.json` to write a
+source-backed projection without rewriting the Eventloom log. The default
+`medoid` strategy stores one real source event nearest the cluster center.
+`--strategy exemplar --max-records N` stores a bounded set of real source
+events selected for diversity. Projection records include Eventloom event
+references, source identities, and document/transcript citations, so future
+retrieval can use compact routing artifacts while final context remains tied to
+durable evidence.
+
 ## Roadmap
 
 1. Expand the consolidation-collapse benchmark with mixed temporal validity and
    transcript/session identities.
-2. Add medoid/exemplar projection storage with backpointers to Eventloom and
-   source citations.
-3. Add context assembly warnings when output depends on a compacted summary
+2. Add context assembly warnings when output depends on a compacted summary
    without source-level support.
 
 ## References

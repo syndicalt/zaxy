@@ -23,7 +23,11 @@ from pathlib import Path
 import typer
 
 from zaxy.benchmark import build_competitive_event_log, competitive_cases
-from zaxy.compaction import audit_event_log
+from zaxy.compaction import (
+    audit_event_log,
+    build_compaction_projection,
+    write_compaction_projection,
+)
 from zaxy.embedding import EmbeddingProvider, HashEmbeddingProvider, OpenAIEmbeddingProvider
 from zaxy.event import EventLog
 from zaxy.extract_templates import ExtractorTemplateSpec, render_extractor_template
@@ -154,6 +158,13 @@ def compact(
     output: Path = typer.Option(None, help="Output path (default: in-place)"),  # noqa: B008
     audit: bool = typer.Option(False, "--audit", help="Run compaction safety audit only"),
     json_output: bool = typer.Option(False, "--json", help="Output audit report as JSON"),
+    projection_output: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--projection-output",
+        help="Write source-backed compaction projection JSON without rewriting the log",
+    ),
+    strategy: str = typer.Option("medoid", help="Projection strategy: medoid or exemplar"),
+    max_records: int = typer.Option(5, min=1, help="Maximum exemplar records to store"),
 ) -> None:
     """Compact an Eventloom log and optionally create snapshots."""
     log = EventLog(str(log_path))
@@ -185,6 +196,22 @@ def compact(
                 if len(report.missing_identities) > 10:
                     typer.echo(f"  - ... {len(report.missing_identities) - 10} more")
         raise typer.Exit(0 if report.safe else 1)
+
+    if projection_output is not None:
+        try:
+            projection = build_compaction_projection(
+                log,
+                strategy=strategy,
+                max_records=max_records,
+            )
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        written = write_compaction_projection(projection, projection_output)
+        typer.echo(f"Wrote compaction projection: {written}")
+        typer.echo(f"Strategy: {projection.strategy}")
+        typer.echo(f"Records: {len(projection.records)}")
+        typer.echo(f"Source identities: {len(projection.source_identities)}")
+        raise typer.Exit(0)
 
     events = log.read_all()
     total = len(events)

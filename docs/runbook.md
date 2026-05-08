@@ -65,6 +65,12 @@ python -m zaxy compact .eventloom/work.jsonl --audit
 # Export a machine-readable audit report
 python -m zaxy compact .eventloom/work.jsonl --audit --json
 
+# Store a source-backed medoid projection without rewriting the log
+python -m zaxy compact .eventloom/work.jsonl --projection-output .eventloom/work.compaction.json
+
+# Store a bounded exemplar projection for high-spread clusters
+python -m zaxy compact .eventloom/work.jsonl --projection-output .eventloom/work.compaction.json --strategy exemplar --max-records 5
+
 # Compact old logs
 python -m zaxy compact .eventloom/work.jsonl --snapshot-every 10000
 ```

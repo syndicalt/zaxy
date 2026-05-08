@@ -238,20 +238,21 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Geometry-aware consolidation roadmap for identity-preserving compaction
 - [x] Consolidation-collapse benchmark lane and identity-recall metric
 - [x] `zaxy compact --audit` safety checks for integrity, identity recall, and citations
+- [x] Medoid/exemplar projection storage with Eventloom and source backpointers
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 358 passed |
-| Coverage | 92.22% |
+| Tests | 362 passed |
+| Coverage | 92.29% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
 
 ## Next Steps
 
-1. Add medoid/exemplar projection storage with backpointers to Eventloom and source citations.
+1. Add context assembly warnings when output depends on a compacted summary without source-level support.
 2. Add first-run IDE lifecycle workflows and import/export adapters for common agent frameworks.
 3. Add remote MCP rate limiting and audit event export.
 4. Add local-first embedding/reranker setup helpers.
