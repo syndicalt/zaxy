@@ -252,6 +252,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Symbol-level codebase mapping for functions, classes, types, and imports
 - [x] Local code dependency mapping from resolved imports to source files
 - [x] Python call-site mapping with resolved symbol call edges
+- [x] Static Python test coverage links from tests to imported production symbols
 
 ## Metrics
 
@@ -265,4 +266,4 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 ## Next Steps
 
-1. Add test coverage links from test symbols to production symbols.
+1. Add JavaScript and TypeScript call-site mapping.

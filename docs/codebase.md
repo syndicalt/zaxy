@@ -1,10 +1,13 @@
 # Codebase Mapping
 
-Codebase mapping starts with replayable file, symbol, import, dependency, and
-call-site events. Zaxy walks a local repository or directory, writes one
+Codebase mapping starts with replayable file, symbol, import, dependency,
+call-site, and coverage events. Zaxy walks a local repository or directory,
+writes one
 `code.file.indexed` event per supported source file, and by default adds
 `code.symbol.indexed`, `code.import.indexed`, `code.dependency.indexed`, and
-`code.call.indexed` events inferred from the file type.
+`code.call.indexed` events inferred from the file type. Python test files can
+also emit `code.coverage.indexed` events when tests call imported production
+symbols.
 
 Run:
 
@@ -44,6 +47,12 @@ functions. Calls to same-file symbols and locally imported symbols are resolved
 to target files and qualified names when possible; unresolved calls still keep a
 cited `code.call.indexed` event with caller, callee, and line metadata.
 
+Python coverage events are conservative. Files under `tests/` or named
+`test_*.py` are scanned for `test_*` functions. When a test calls an imported
+local production symbol, Zaxy records the test symbol, target symbol, target
+file, and line number. This is not a replacement for runtime coverage; it is a
+static map of obvious test-to-code relationships.
+
 The graph projection creates one `code_file` entity per indexed path. The
 entity name is the relative path, the summary records language and line count,
 and properties preserve the source path, language, SHA-256 hash, byte count, and
@@ -54,7 +63,9 @@ connected from the file with `defines_symbol`; import events project to
 dependency events connect source and target `code_file` entities with
 `depends_on_file`. Resolved call-site events connect caller and callee
 `code_symbol` entities with `calls_symbol` and keep a `code_call` citation
-entity for provenance.
+entity for provenance. Coverage events connect test and production
+`code_symbol` entities with `tests_symbol` and keep a `code_coverage` citation
+entity.
 
 Use a project-scoped session when indexing. For example, a generated MCP config
 for the Zaxy repository uses `EVENTLOOM_THREAD=zaxy-default`; indexing into that

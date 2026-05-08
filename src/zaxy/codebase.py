@@ -85,6 +85,7 @@ def collect_codebase_events(
         events.extend(code_events)
         events.extend(_collect_dependency_events(rel_path, language, code_events, file_index))
         events.extend(_collect_call_events(rel_path, language, content, code_events, file_index))
+        events.extend(_collect_coverage_events(rel_path, language, content, code_events, file_index))
     return events
 
 
@@ -485,6 +486,73 @@ def _resolve_python_call_target(
     return None, None, "unresolved"
 
 
+def _collect_coverage_events(
+    rel_path: str,
+    language: str,
+    content: bytes,
+    code_events: list[dict[str, Any]],
+    file_index: set[str],
+) -> list[dict[str, Any]]:
+    if language != "python" or not _is_python_test_file(rel_path):
+        return []
+    text = content.decode("utf-8", errors="replace")
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    imported_symbols = _python_imported_symbol_targets(rel_path, code_events, file_index)
+    if not imported_symbols:
+        return []
+    events: list[dict[str, Any]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) or not node.name.startswith("test_"):
+            continue
+        test_qualified_name = _python_qualified_name(node, _parent_map(tree))
+        seen_targets: set[tuple[str, str, int]] = set()
+        for child in ast.walk(node):
+            if not isinstance(child, ast.Call):
+                continue
+            callee = _python_call_name(child.func)
+            if callee is None:
+                continue
+            symbol_name = callee.rsplit(".", 1)[-1]
+            target = imported_symbols.get(callee) or imported_symbols.get(symbol_name)
+            if target is None:
+                continue
+            target_path, target_qualified_name = target
+            key = (target_path, target_qualified_name, child.lineno)
+            if key in seen_targets:
+                continue
+            seen_targets.add(key)
+            events.append(
+                _coverage_event(
+                    rel_path,
+                    language,
+                    test_name=node.name,
+                    test_qualified_name=test_qualified_name,
+                    target_path=target_path,
+                    target_name=symbol_name,
+                    target_qualified_name=target_qualified_name,
+                    start_line=child.lineno,
+                    resolution="imported_symbol",
+                )
+            )
+    return events
+
+
+def _parent_map(tree: ast.AST) -> dict[ast.AST, ast.AST | None]:
+    parent_by_node: dict[ast.AST, ast.AST | None] = {}
+    for parent in ast.walk(tree):
+        for child in ast.iter_child_nodes(parent):
+            parent_by_node[child] = parent
+    return parent_by_node
+
+
+def _is_python_test_file(rel_path: str) -> bool:
+    path = Path(rel_path)
+    return path.name.startswith("test_") or any(part == "tests" for part in path.parts)
+
+
 def _resolve_dependency_target(
     rel_path: str,
     language: str,
@@ -585,6 +653,35 @@ def _call_event(
         "event_type": "code.call.indexed",
         "actor": "zaxy-codebase-indexer",
         "payload": payload,
+    }
+
+
+def _coverage_event(
+    rel_path: str,
+    language: str,
+    *,
+    test_name: str,
+    test_qualified_name: str,
+    target_path: str,
+    target_name: str,
+    target_qualified_name: str,
+    start_line: int,
+    resolution: str,
+) -> dict[str, Any]:
+    return {
+        "event_type": "code.coverage.indexed",
+        "actor": "zaxy-codebase-indexer",
+        "payload": {
+            "test_path": rel_path,
+            "test_name": test_name,
+            "test_qualified_name": test_qualified_name,
+            "target_path": target_path,
+            "target_name": target_name,
+            "target_qualified_name": target_qualified_name,
+            "language": language,
+            "start_line": start_line,
+            "resolution": resolution,
+        },
     }
 
 

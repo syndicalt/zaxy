@@ -272,6 +272,39 @@ def test_collect_codebase_events_indexes_python_call_sites(tmp_path: Path) -> No
     ]
 
 
+def test_collect_codebase_events_links_python_tests_to_imported_symbols(tmp_path: Path) -> None:
+    core = tmp_path / "src" / "zaxy" / "core.py"
+    core.parent.mkdir(parents=True)
+    core.write_text("class MemoryFabric:\n    pass\n", encoding="utf-8")
+    test_core = tmp_path / "tests" / "test_core.py"
+    test_core.parent.mkdir()
+    test_core.write_text(
+        "from zaxy.core import MemoryFabric\n"
+        "\n"
+        "def test_memory_fabric_starts():\n"
+        "    fabric = MemoryFabric()\n"
+        "    assert fabric\n",
+        encoding="utf-8",
+    )
+
+    events = collect_codebase_events(tmp_path)
+
+    coverage = [event["payload"] for event in events if event["event_type"] == "code.coverage.indexed"]
+    assert coverage == [
+        {
+            "test_path": "tests/test_core.py",
+            "test_name": "test_memory_fabric_starts",
+            "test_qualified_name": "test_memory_fabric_starts",
+            "target_path": "src/zaxy/core.py",
+            "target_name": "MemoryFabric",
+            "target_qualified_name": "MemoryFabric",
+            "language": "python",
+            "start_line": 4,
+            "resolution": "imported_symbol",
+        }
+    ]
+
+
 def test_collect_codebase_events_skips_hidden_cache_dependency_and_large_files(tmp_path: Path) -> None:
     keep = tmp_path / "pkg" / "mod.ts"
     keep.parent.mkdir()

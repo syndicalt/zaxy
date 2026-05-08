@@ -602,6 +602,52 @@ class TestCodeCallIndexed:
         assert edge.relation_type == "calls_symbol"
 
 
+class TestCodeCoverageIndexed:
+    """Tests for code.coverage.indexed extractor."""
+
+    def test_extracts_test_coverage_edge(self) -> None:
+        ev = _make_event(
+            "code.coverage.indexed",
+            {
+                "test_path": "tests/test_core.py",
+                "test_name": "test_memory_fabric_starts",
+                "test_qualified_name": "TestCore.test_memory_fabric_starts",
+                "target_path": "src/zaxy/core.py",
+                "target_name": "MemoryFabric",
+                "target_qualified_name": "MemoryFabric",
+                "language": "python",
+                "start_line": 14,
+                "resolution": "imported_symbol",
+            },
+            actor="zaxy-codebase-indexer",
+        )
+
+        result = extract(ev)
+
+        symbols = [e for e in result.entities if e.entity_type == "code_symbol"]
+        assert [symbol.name for symbol in symbols] == [
+            "tests/test_core.py::TestCore.test_memory_fabric_starts",
+            "src/zaxy/core.py::MemoryFabric",
+        ]
+        coverage = next(e for e in result.entities if e.entity_type == "code_coverage")
+        assert coverage.name == "tests/test_core.py::TestCore.test_memory_fabric_starts=>src/zaxy/core.py::MemoryFabric:14"
+        assert coverage.properties == {
+            "test_path": "tests/test_core.py",
+            "test_name": "test_memory_fabric_starts",
+            "test_qualified_name": "TestCore.test_memory_fabric_starts",
+            "target_path": "src/zaxy/core.py",
+            "target_name": "MemoryFabric",
+            "target_qualified_name": "MemoryFabric",
+            "language": "python",
+            "source_start_line": 14,
+            "resolution": "imported_symbol",
+        }
+        edge = result.edges[0]
+        assert edge.source == "tests/test_core.py::TestCore.test_memory_fabric_starts"
+        assert edge.target == "src/zaxy/core.py::MemoryFabric"
+        assert edge.relation_type == "tests_symbol"
+
+
 class TestTranscriptTurn:
     """Tests for transcript.turn extractor."""
 

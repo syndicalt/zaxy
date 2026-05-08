@@ -89,11 +89,12 @@ without losing replayability or provenance.
 Codebase indexing follows the same Eventloom-first shape. `zaxy index-codebase`
 and `MemoryFabric.ingest_codebase()` append `code.file.indexed`,
 `code.symbol.indexed`, `code.import.indexed`, and `code.dependency.indexed`
-events plus Python `code.call.indexed` events for supported source files. The
-graph projection creates `code_file`, `code_symbol`, `code_import`, and
-`code_call` entities plus `depends_on_file` and `calls_symbol` edges so
-retrieval can answer inventory, definition, import, local dependency, and call
-graph questions without storing full source text.
+events plus Python `code.call.indexed` and `code.coverage.indexed` events for
+supported source files. The graph projection creates `code_file`,
+`code_symbol`, `code_import`, `code_call`, and `code_coverage` entities plus
+`depends_on_file`, `calls_symbol`, and `tests_symbol` edges so retrieval can
+answer inventory, definition, import, local dependency, call graph, and static
+test coverage questions without storing full source text.
 
 Transcript ingestion follows the same rule. `MemoryFabric.ingest_transcript()`
 turns session messages into sanitized `transcript.turn` events and graph

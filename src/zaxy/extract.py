@@ -727,6 +727,71 @@ def _extract_code_call_indexed(event: Event) -> ExtractionResult:
     )
 
 
+@register("code.coverage.indexed")
+def _extract_code_coverage_indexed(event: Event) -> ExtractionResult:
+    """Extract a test-to-production symbol coverage link."""
+    test_path = _optional_text(event.payload.get("test_path")) or "test-code-file"
+    test_name = _optional_text(event.payload.get("test_name")) or "test"
+    test_qualified_name = _optional_text(event.payload.get("test_qualified_name")) or test_name
+    target_path = _optional_text(event.payload.get("target_path")) or "target-code-file"
+    target_name = _optional_text(event.payload.get("target_name")) or "target"
+    target_qualified_name = _optional_text(event.payload.get("target_qualified_name")) or target_name
+    language = _optional_text(event.payload.get("language")) or "unknown"
+    start_line = _positive_int(event.payload.get("start_line"), default=1)
+    resolution = _optional_text(event.payload.get("resolution")) or "unknown"
+    test_symbol = ExtractedEntity(
+        name=f"{test_path}::{test_qualified_name}",
+        entity_type="code_symbol",
+        observed_at=event.timestamp,
+        properties={
+            "source_path": test_path,
+            "language": language,
+            "symbol_name": test_name,
+            "qualified_name": test_qualified_name,
+            "symbol_kind": "test",
+        },
+    )
+    target_symbol = ExtractedEntity(
+        name=f"{target_path}::{target_qualified_name}",
+        entity_type="code_symbol",
+        observed_at=event.timestamp,
+        properties={
+            "source_path": target_path,
+            "language": language,
+            "symbol_name": target_name,
+            "qualified_name": target_qualified_name,
+        },
+    )
+    coverage = ExtractedEntity(
+        name=f"{test_symbol.name}=>{target_symbol.name}:{start_line}",
+        entity_type="code_coverage",
+        observed_at=event.timestamp,
+        summary=f"{test_qualified_name} tests {target_qualified_name} at {test_path}:{start_line}",
+        properties={
+            "test_path": test_path,
+            "test_name": test_name,
+            "test_qualified_name": test_qualified_name,
+            "target_path": target_path,
+            "target_name": target_name,
+            "target_qualified_name": target_qualified_name,
+            "language": language,
+            "source_start_line": start_line,
+            "resolution": resolution,
+        },
+    )
+    edge = ExtractedEdge(
+        source=test_symbol.name,
+        target=target_symbol.name,
+        relation_type="tests_symbol",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(
+        entities=[test_symbol, target_symbol, coverage],
+        edges=[edge],
+        source_event_seq=event.seq,
+    )
+
+
 @register("transcript.turn")
 def _extract_transcript_turn(event: Event) -> ExtractionResult:
     """Extract a sanitized session transcript turn."""
