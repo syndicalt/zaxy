@@ -39,7 +39,7 @@ fail-fast behavior without running destructive commands.
 Benchmark tests cover extraction latency, append latency, graph upsert latency,
 query latency, and competitive retrieval harness behavior. Benchmarks are useful
 for detecting large regressions, but correctness tests decide release readiness.
-For live comparative statistics against markdown, vector, markdown+vector, and
+For live comparative statistics against markdown, BM25, vector, markdown+vector, and
 Zaxy retrieval, run the statistically powered workload:
 
 ```bash

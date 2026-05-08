@@ -12,6 +12,8 @@ from zaxy.live_benchmark import (
     FROZEN_WORKLOAD_SUBJECTS,
     FROZEN_WORKLOAD_VERSION,
     SUITE_WORKLOAD_VERSION,
+    BenchmarkChunk,
+    BM25Retriever,
     CachedEmbeddingProvider,
     CentroidConsolidationRetriever,
     MarkdownRetriever,
@@ -48,13 +50,14 @@ def test_cli_exposes_live_benchmark_command() -> None:
 
 
 def test_live_benchmark_compares_all_retriever_backends(tmp_path: Path) -> None:
-    """The benchmark core should compare md, vector, md+vector, and zaxy rows."""
+    """The benchmark core should compare md, BM25, vector, md+vector, and zaxy rows."""
     log = build_competitive_event_log(tmp_path / "bench.jsonl")
     corpus = corpus_from_event_log(log)
     provider = HashEmbeddingProvider(dimension=64)
 
     retrievers = {
         "md": MarkdownRetriever(corpus),
+        "bm25": BM25Retriever(corpus),
         "vector": VectorRetriever(corpus, provider),
         "md+vector": MarkdownVectorRetriever(corpus, provider),
         "zaxy": MarkdownRetriever(corpus),
@@ -64,6 +67,7 @@ def test_live_benchmark_compares_all_retriever_backends(tmp_path: Path) -> None:
 
     assert {summary.backend for summary in report.summaries} == {
         "md",
+        "bm25",
         "vector",
         "md+vector",
         "zaxy",
@@ -71,6 +75,24 @@ def test_live_benchmark_compares_all_retriever_backends(tmp_path: Path) -> None:
     assert all(summary.runs == 2 for summary in report.summaries)
     assert all(summary.case_count == len(competitive_cases()) for summary in report.summaries)
     assert all(summary.latency_ms_p95 >= summary.latency_ms_p50 for summary in report.summaries)
+
+
+def test_bm25_retriever_ranks_specific_identifier_above_generic_overlap() -> None:
+    """BM25 should prefer rare identity terms over broad keyword overlap."""
+    corpus = (
+        BenchmarkChunk(
+            "generic",
+            "release cache context mentions rollback planning and deployment notes",
+        ),
+        BenchmarkChunk(
+            "target",
+            "release cache context records doc-code-0001 as the rollback owner source",
+        ),
+    )
+
+    results = BM25Retriever(corpus).query("cache rollback doc-code-0001", limit=1)
+
+    assert results == [corpus[1].text]
 
 
 def test_live_benchmark_outputs_machine_and_markdown_reports(tmp_path: Path) -> None:

@@ -241,13 +241,14 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Medoid/exemplar projection storage with Eventloom and source backpointers
 - [x] Context assembly warnings for unsupported compacted/projection context
 - [x] Projection artifact retrieval as cited local routing candidates
+- [x] Okapi BM25 baseline in the live benchmark harness
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 368 passed |
-| Coverage | 92.42% |
+| Tests | 369 passed |
+| Coverage | 92.47% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |

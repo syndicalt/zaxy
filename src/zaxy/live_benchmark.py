@@ -7,8 +7,10 @@ import hashlib
 import json
 import math
 import random
+import re
 import statistics
 import time
+from collections import Counter
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -239,6 +241,59 @@ class MarkdownRetriever:
             if len(matches) >= limit:
                 break
         return matches
+
+
+class BM25Retriever:
+    """Okapi BM25 baseline over the same markdown-style benchmark corpus."""
+
+    def __init__(
+        self,
+        corpus: tuple[BenchmarkChunk, ...],
+        *,
+        k1: float = 1.5,
+        b: float = 0.75,
+    ) -> None:
+        self._corpus = corpus
+        self._k1 = k1
+        self._b = b
+        self._tokenized = tuple(tuple(_bm25_tokens(chunk.text)) for chunk in corpus)
+        self._document_frequencies = _bm25_document_frequencies(self._tokenized)
+        self._document_count = len(self._tokenized)
+        self._average_document_length = (
+            statistics.fmean(len(tokens) for tokens in self._tokenized)
+            if self._tokenized
+            else 0.0
+        )
+
+    def query(
+        self,
+        query: str,
+        temporal_point: str | None = None,
+        limit: int = 10,
+    ) -> list[str]:
+        """Return chunks ranked by Okapi BM25 score."""
+        del temporal_point
+        query_terms = tuple(dict.fromkeys(_bm25_tokens(query)))
+        if not query_terms:
+            return []
+        scored = [
+            (
+                _bm25_score(
+                    query_terms,
+                    document_terms,
+                    self._document_frequencies,
+                    self._document_count,
+                    self._average_document_length,
+                    self._k1,
+                    self._b,
+                ),
+                chunk.text,
+            )
+            for chunk, document_terms in zip(self._corpus, self._tokenized, strict=True)
+        ]
+        scored = [(score, text) for score, text in scored if score > 0.0]
+        scored.sort(key=lambda item: item[0], reverse=True)
+        return [text for _, text in scored[:limit]]
 
 
 class VectorRetriever:
@@ -1094,6 +1149,48 @@ def _centroid(embeddings: list[list[float]]) -> list[float]:
 
 def _tokens(query: str) -> list[str]:
     return [token for token in query.casefold().replace("?", " ").split() if len(token) > 2]
+
+
+def _bm25_tokens(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+(?:[-_:./#][a-z0-9]+)*", text.casefold())
+
+
+def _bm25_document_frequencies(
+    documents: tuple[tuple[str, ...], ...],
+) -> dict[str, int]:
+    frequencies: dict[str, int] = {}
+    for document in documents:
+        for term in set(document):
+            frequencies[term] = frequencies.get(term, 0) + 1
+    return frequencies
+
+
+def _bm25_score(
+    query_terms: tuple[str, ...],
+    document_terms: tuple[str, ...],
+    document_frequencies: dict[str, int],
+    document_count: int,
+    average_document_length: float,
+    k1: float,
+    b: float,
+) -> float:
+    if not document_terms or document_count == 0:
+        return 0.0
+    document_length = len(document_terms)
+    length_normalizer = document_length / max(average_document_length, 1.0)
+    term_counts = Counter(document_terms)
+    score = 0.0
+    for term in query_terms:
+        frequency = term_counts.get(term, 0)
+        if frequency == 0:
+            continue
+        document_frequency = document_frequencies.get(term, 0)
+        idf = math.log(
+            1.0 + (document_count - document_frequency + 0.5) / (document_frequency + 0.5)
+        )
+        denominator = frequency + k1 * (1.0 - b + b * length_normalizer)
+        score += idf * ((frequency * (k1 + 1.0)) / denominator)
+    return score
 
 
 def _content_sha256(content: str) -> str:

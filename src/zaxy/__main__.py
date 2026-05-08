@@ -34,6 +34,7 @@ from zaxy.extract_templates import ExtractorTemplateSpec, render_extractor_templ
 from zaxy.graph import GraphStore
 from zaxy.live_benchmark import (
     BenchmarkWorkload,
+    BM25Retriever,
     CachedEmbeddingProvider,
     CentroidConsolidationRetriever,
     ExternalBenchmarkResult,
@@ -331,7 +332,7 @@ def benchmark(
         help="Optional JSON file with operator-supplied external comparison rows",
     ),
 ) -> None:
-    """Run live retrieval benchmarks against md/vector/md+vector/Zaxy."""
+    """Run live retrieval benchmarks against md/BM25/vector/md+vector/Zaxy."""
     import asyncio
 
     from zaxy.config import get_settings
@@ -412,6 +413,7 @@ def benchmark(
                 report = await benchmark_live_retrievers(
                     {
                         "md": MarkdownRetriever(corpus),
+                        "bm25": BM25Retriever(corpus),
                         "vector": VectorRetriever(corpus, provider),
                         "md+vector": MarkdownVectorRetriever(corpus, provider),
                         **(

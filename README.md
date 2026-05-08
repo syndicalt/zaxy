@@ -131,7 +131,7 @@ mypy src
 # Competitive retrieval benchmark harness
 pytest tests/test_competitive_benchmarks.py --benchmark-only --no-cov
 
-# Frozen live benchmark: markdown vs vector vs markdown+vector vs Zaxy
+# Frozen live benchmark: markdown vs BM25 vs vector vs markdown+vector vs Zaxy
 scripts/live-benchmark.sh --embedding-provider openai --workload frozen --runs 1 --reset-graph
 
 # Representative benchmark suite: temporal memory + docs + transcripts + mixed context
