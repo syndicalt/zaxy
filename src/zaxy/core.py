@@ -19,7 +19,7 @@ Example::
 from __future__ import annotations
 
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
@@ -58,6 +58,7 @@ class ContextAssembly:
     contexts: list[Context]
     replay_event_count: int
     compacted: bool = False
+    warnings: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -396,12 +397,19 @@ class MemoryFabric:
             if context.metadata and context.metadata.get("citation"):
                 citation = f" ({context.metadata['citation']})"
             lines.append(f"- {context.content}{citation}")
+        warnings = _context_warnings(contexts, compacted=compacted)
+        if warnings:
+            lines.append("")
+            lines.append("# Context Warnings")
+            for warning in warnings:
+                lines.append(f"- {warning}")
         return ContextAssembly(
             session_id=sid,
             prompt="\n".join(lines).strip(),
             contexts=contexts,
             replay_event_count=len(replay_events),
             compacted=compacted,
+            warnings=warnings,
         )
 
     async def after_turn(
@@ -531,6 +539,48 @@ def _event_content(event: Any) -> str:
     if not parts:
         parts = [f"{getattr(event, 'type', 'event')} by {getattr(event, 'actor', 'unknown')}"]
     return " ".join(parts)
+
+
+def _context_warnings(contexts: list[Context], *, compacted: bool) -> list[str]:
+    warnings: list[str] = []
+    for context in contexts:
+        if _is_compacted_context(context) and not _has_source_support(context):
+            warnings.append(
+                f"{context.source} context '{_warning_label(context.content)}' "
+                "lacks source-level citation"
+            )
+    if compacted and not any(_has_source_support(context) for context in contexts):
+        warnings.append(
+            "recent replay was truncated and no retrieved source context was available"
+        )
+    return warnings
+
+
+def _is_compacted_context(context: Context) -> bool:
+    source = context.source.casefold()
+    if source in {"projection", "compaction", "compacted"}:
+        return True
+    metadata = context.metadata or {}
+    return bool(
+        metadata.get("compacted")
+        or metadata.get("projection_id")
+        or metadata.get("compaction_projection")
+    )
+
+
+def _has_source_support(context: Context) -> bool:
+    metadata = context.metadata or {}
+    if metadata.get("citation"):
+        return True
+    citations = metadata.get("citations")
+    return bool(citations)
+
+
+def _warning_label(content: str) -> str:
+    compact = " ".join(content.split())
+    if len(compact) <= 80:
+        return compact
+    return f"{compact[:77]}..."
 
 
 def _tokens(value: str) -> set[str]:

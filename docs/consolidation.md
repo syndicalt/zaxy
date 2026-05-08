@@ -162,12 +162,21 @@ references, source identities, and document/transcript citations, so future
 retrieval can use compact routing artifacts while final context remains tied to
 durable evidence.
 
+## Assembly Warnings
+
+Context assembly now warns when retrieved context comes from a compacted or
+projection source but lacks a source-level citation. It also warns when recent
+Eventloom replay is truncated and no retrieved source context is available.
+These warnings are included in the prompt under `# Context Warnings` and on the
+`ContextAssembly.warnings` field so agents and operators can distinguish
+source-backed context from degraded compacted context.
+
 ## Roadmap
 
 1. Expand the consolidation-collapse benchmark with mixed temporal validity and
    transcript/session identities.
-2. Add context assembly warnings when output depends on a compacted summary
-   without source-level support.
+2. Teach retrieval to load projection artifacts as routing candidates while
+   assembling final answers from cited source records.
 
 ## References
 

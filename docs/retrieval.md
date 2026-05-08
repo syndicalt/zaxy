@@ -110,9 +110,11 @@ chunk search.
 
 Future compaction work should remain identity-preserving. Consolidated vectors
 or summaries may route queries and reduce token load, but they should not become
-the sole authority for event, document, transcript, or graph facts. See
-[consolidation.md](consolidation.md) for the geometry-aware consolidation
-roadmap and the planned identity-invariant benchmark lane.
+the sole authority for event, document, transcript, or graph facts. Prompt
+assembly emits warnings when compacted or projection-derived context lacks
+source-level citations, and when replay truncation leaves no retrieved source
+support. See [consolidation.md](consolidation.md) for the geometry-aware
+consolidation roadmap and identity-preserving projection model.
 
 Related references: [graph-schema.md](graph-schema.md), [mcp.md](mcp.md),
 [configuration.md](configuration.md), [testing.md](testing.md),

@@ -472,6 +472,99 @@ class TestContextAssembly:
         assert "Older context." not in assembly.prompt
         assert "Graceful fallback (decision)" in assembly.prompt
 
+    async def test_assemble_context_warns_for_uncited_projection_context(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Projection-derived context without source citations should be explicit."""
+        event = MagicMock(
+            seq=7,
+            type="document.indexed",
+            actor="indexer",
+            payload={"content": "Projection candidate."},
+            hash="e" * 64,
+        )
+        fabric.session_manager.replay.return_value = MagicMock(
+            events=[event],
+            integrity=MagicMock(ok=True),
+        )
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content="Compacted projection summary",
+                source="projection",
+                score=0.7,
+                valid_from=None,
+                valid_to=None,
+            )
+        ]
+
+        assembly = await fabric.assemble_context("projection", session_id="agent-1")
+
+        assert assembly.warnings == [
+            "projection context 'Compacted projection summary' lacks source-level citation"
+        ]
+        assert "# Context Warnings" in assembly.prompt
+        assert "lacks source-level citation" in assembly.prompt
+
+    async def test_assemble_context_accepts_cited_projection_context(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Projection context with an Eventloom citation should not warn."""
+        fabric.session_manager.replay.return_value = MagicMock(
+            events=[],
+            integrity=MagicMock(ok=True),
+        )
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content="Source-backed projection record",
+                source="projection",
+                score=0.8,
+                valid_from=None,
+                valid_to=None,
+                citation="eventloom://agent-1/events/9#aaaaaaaaaaaa",
+            )
+        ]
+
+        assembly = await fabric.assemble_context("projection", session_id="agent-1")
+
+        assert assembly.warnings == []
+        assert "# Context Warnings" not in assembly.prompt
+
+    async def test_assemble_context_warns_when_replay_is_truncated_without_retrieval(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Replay truncation without retrieved support should be visible to callers."""
+        events = [
+            MagicMock(
+                seq=idx,
+                type="transcript.turn",
+                actor="assistant",
+                payload={"content": f"Turn {idx}"},
+                hash=str(idx) * 64,
+            )
+            for idx in range(1, 4)
+        ]
+        fabric.session_manager.replay.return_value = MagicMock(
+            events=events,
+            integrity=MagicMock(ok=True),
+        )
+        fabric.query_router.query.return_value = []
+
+        assembly = await fabric.assemble_context(
+            "handoff",
+            session_id="agent-1",
+            max_recent_events=1,
+        )
+
+        assert assembly.compacted is True
+        assert assembly.warnings == [
+            "recent replay was truncated and no retrieved source context was available"
+        ]
+        assert "Turn 1" not in assembly.prompt
+        assert "recent replay was truncated" in assembly.prompt
+
     async def test_handoff_bundle_combines_summary_replay_and_context(
         self,
         fabric: MemoryFabric,

@@ -239,20 +239,21 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Consolidation-collapse benchmark lane and identity-recall metric
 - [x] `zaxy compact --audit` safety checks for integrity, identity recall, and citations
 - [x] Medoid/exemplar projection storage with Eventloom and source backpointers
+- [x] Context assembly warnings for unsupported compacted/projection context
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 362 passed |
-| Coverage | 92.29% |
+| Tests | 365 passed |
+| Coverage | 92.34% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
 
 ## Next Steps
 
-1. Add context assembly warnings when output depends on a compacted summary without source-level support.
+1. Teach retrieval to load projection artifacts as routing candidates while assembling final answers from cited source records.
 2. Add first-run IDE lifecycle workflows and import/export adapters for common agent frameworks.
 3. Add remote MCP rate limiting and audit event export.
 4. Add local-first embedding/reranker setup helpers.
