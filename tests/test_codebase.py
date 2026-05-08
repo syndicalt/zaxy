@@ -305,6 +305,38 @@ def test_collect_codebase_events_links_python_tests_to_imported_symbols(tmp_path
     ]
 
 
+def test_collect_codebase_events_indexes_typescript_call_sites(tmp_path: Path) -> None:
+    app = tmp_path / "web" / "app.ts"
+    app.parent.mkdir()
+    app.write_text(
+        "import { helper } from './util';\n"
+        "\n"
+        "export function start() {\n"
+        "  helper();\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    util = tmp_path / "web" / "util.ts"
+    util.write_text("export function helper() {}\n", encoding="utf-8")
+
+    events = collect_codebase_events(tmp_path)
+
+    calls = [event["payload"] for event in events if event["event_type"] == "code.call.indexed"]
+    assert calls == [
+        {
+            "path": "web/app.ts",
+            "language": "typescript",
+            "caller": "start",
+            "callee": "helper",
+            "callee_qualified_name": "helper",
+            "target_path": "web/util.ts",
+            "target_qualified_name": "helper",
+            "start_line": 4,
+            "resolution": "imported_symbol",
+        }
+    ]
+
+
 def test_collect_codebase_events_skips_hidden_cache_dependency_and_large_files(tmp_path: Path) -> None:
     keep = tmp_path / "pkg" / "mod.ts"
     keep.parent.mkdir()

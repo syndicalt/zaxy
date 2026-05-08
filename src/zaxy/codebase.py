@@ -372,6 +372,9 @@ def _collect_call_events(
     code_events: list[dict[str, Any]],
     file_index: set[str],
 ) -> list[dict[str, Any]]:
+    if language in {"javascript", "typescript"}:
+        text = content.decode("utf-8", errors="replace")
+        return _collect_js_ts_call_events(rel_path, language, text, code_events, file_index)
     if language != "python":
         return []
     text = content.decode("utf-8", errors="replace")
@@ -444,6 +447,95 @@ def _collect_python_call_events(
             )
         )
     return events
+
+
+_JS_TS_FUNCTION_START_RE = re.compile(
+    r"""^\s*(?:export\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)\s*\(|^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\("""
+)
+_JS_TS_CALL_RE = re.compile(r"""\b([A-Za-z_$][\w$]*)\s*\(""")
+_JS_TS_KEYWORDS = {"if", "for", "while", "switch", "catch", "function", "return"}
+
+
+def _collect_js_ts_call_events(
+    rel_path: str,
+    language: str,
+    text: str,
+    code_events: list[dict[str, Any]],
+    file_index: set[str],
+) -> list[dict[str, Any]]:
+    same_file_symbols = {
+        str(event["payload"]["qualified_name"]): event["payload"]
+        for event in code_events
+        if event["event_type"] == "code.symbol.indexed"
+    }
+    imported_symbols = _js_ts_imported_symbol_targets(rel_path, code_events, file_index)
+    events: list[dict[str, Any]] = []
+    current_function: str | None = None
+    brace_depth = 0
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if current_function is None:
+            match = _JS_TS_FUNCTION_START_RE.match(line)
+            if not match:
+                continue
+            current_function = next(group for group in match.groups() if group)
+            brace_depth = line.count("{") - line.count("}")
+            continue
+
+        for match in _JS_TS_CALL_RE.finditer(line):
+            callee = match.group(1)
+            if callee in _JS_TS_KEYWORDS:
+                continue
+            resolved = _resolve_js_ts_call_target(rel_path, callee, same_file_symbols, imported_symbols)
+            events.append(
+                _call_event(
+                    rel_path,
+                    language,
+                    caller=current_function,
+                    callee=callee,
+                    callee_qualified_name=callee,
+                    target_path=resolved[0],
+                    target_qualified_name=resolved[1],
+                    start_line=line_number,
+                    resolution=resolved[2],
+                )
+            )
+        brace_depth += line.count("{") - line.count("}")
+        if brace_depth <= 0:
+            current_function = None
+    return events
+
+
+def _js_ts_imported_symbol_targets(
+    rel_path: str,
+    code_events: list[dict[str, Any]],
+    file_index: set[str],
+) -> dict[str, tuple[str, str]]:
+    targets: dict[str, tuple[str, str]] = {}
+    for event in code_events:
+        if event["event_type"] != "code.import.indexed":
+            continue
+        payload = event["payload"]
+        module = str(payload["module"])
+        target_path, _resolution = _resolve_js_ts_dependency(rel_path, module, file_index)
+        if target_path is None:
+            continue
+        name = str(payload["name"])
+        targets[name] = (target_path, name)
+    return targets
+
+
+def _resolve_js_ts_call_target(
+    rel_path: str,
+    callee: str,
+    same_file_symbols: dict[str, dict[str, Any]],
+    imported_symbols: dict[str, tuple[str, str]],
+) -> tuple[str | None, str | None, str]:
+    if callee in same_file_symbols:
+        return rel_path, callee, "same_file_symbol"
+    if callee in imported_symbols:
+        target_path, target_qualified_name = imported_symbols[callee]
+        return target_path, target_qualified_name, "imported_symbol"
+    return None, None, "unresolved"
 
 
 def _nearest_python_callable(node: ast.AST, parent_by_node: dict[ast.AST, ast.AST | None]) -> str | None:

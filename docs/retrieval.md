@@ -89,8 +89,9 @@ without losing replayability or provenance.
 Codebase indexing follows the same Eventloom-first shape. `zaxy index-codebase`
 and `MemoryFabric.ingest_codebase()` append `code.file.indexed`,
 `code.symbol.indexed`, `code.import.indexed`, and `code.dependency.indexed`
-events plus Python `code.call.indexed` and `code.coverage.indexed` events for
-supported source files. The graph projection creates `code_file`,
+events plus Python and JavaScript/TypeScript `code.call.indexed` events and
+Python `code.coverage.indexed` events for supported source files. The graph
+projection creates `code_file`,
 `code_symbol`, `code_import`, `code_call`, and `code_coverage` entities plus
 `depends_on_file`, `calls_symbol`, and `tests_symbol` edges so retrieval can
 answer inventory, definition, import, local dependency, call graph, and static
