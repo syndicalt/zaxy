@@ -59,6 +59,12 @@ python -m zaxy replay .eventloom/work.jsonl --from-seq 42
 # Export as JSON
 python -m zaxy replay .eventloom/work.jsonl --json
 
+# Audit identity and citation safety before compacting
+python -m zaxy compact .eventloom/work.jsonl --audit
+
+# Export a machine-readable audit report
+python -m zaxy compact .eventloom/work.jsonl --audit --json
+
 # Compact old logs
 python -m zaxy compact .eventloom/work.jsonl --snapshot-every 10000
 ```
@@ -437,6 +443,7 @@ groups:
 zaxy serve          # Start MCP stdio server
 zaxy serve --transport sse --port 8080  # Start MCP SSE server bound to localhost
 zaxy replay PATH    # Replay Eventloom log
+zaxy compact PATH --audit  # Audit compaction safety without rewriting the log
 zaxy compact PATH   # Compact log + create snapshot
 zaxy status         # Check service health
 scripts/backup.sh --root . --output-dir backups

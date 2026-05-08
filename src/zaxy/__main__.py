@@ -17,11 +17,13 @@ from __future__ import annotations
 
 import json
 import tempfile
+from dataclasses import asdict
 from pathlib import Path
 
 import typer
 
 from zaxy.benchmark import build_competitive_event_log, competitive_cases
+from zaxy.compaction import audit_event_log
 from zaxy.embedding import EmbeddingProvider, HashEmbeddingProvider, OpenAIEmbeddingProvider
 from zaxy.event import EventLog
 from zaxy.extract_templates import ExtractorTemplateSpec, render_extractor_template
@@ -150,9 +152,40 @@ def compact(
     log_path: Path = typer.Argument(..., help="Path to Eventloom JSONL file"),  # noqa: B008
     snapshot_every: int = typer.Option(10000, help="Create snapshot every N events"),
     output: Path = typer.Option(None, help="Output path (default: in-place)"),  # noqa: B008
+    audit: bool = typer.Option(False, "--audit", help="Run compaction safety audit only"),
+    json_output: bool = typer.Option(False, "--json", help="Output audit report as JSON"),
 ) -> None:
     """Compact an Eventloom log and optionally create snapshots."""
     log = EventLog(str(log_path))
+    if audit:
+        report = audit_event_log(log)
+        if json_output:
+            typer.echo(json.dumps(asdict(report), indent=2, sort_keys=True))
+        else:
+            typer.echo(f"Compaction audit: {'SAFE' if report.safe else 'UNSAFE'}")
+            typer.echo(f"Events: {report.event_count}")
+            typer.echo(f"Integrity: {'OK' if report.integrity_ok else 'FAILED'}")
+            if report.integrity_reason:
+                typer.echo(f"Integrity reason: {report.integrity_reason}")
+            typer.echo(f"Identities: {report.identity_count}")
+            typer.echo(f"Identity recall: {report.identity_recall:.3f}")
+            typer.echo(f"Citation coverage: {report.citation_coverage:.3f}")
+            typer.echo(
+                "Mean within-cluster distance: "
+                f"{report.mean_within_cluster_distance:.3f}"
+            )
+            if report.unsafe_reasons:
+                typer.echo("Unsafe reasons:")
+                for reason in report.unsafe_reasons:
+                    typer.echo(f"  - {reason}")
+            if report.missing_identities:
+                typer.echo("Missing identities:")
+                for identity in report.missing_identities[:10]:
+                    typer.echo(f"  - {identity}")
+                if len(report.missing_identities) > 10:
+                    typer.echo(f"  - ... {len(report.missing_identities) - 10} more")
+        raise typer.Exit(0 if report.safe else 1)
+
     events = log.read_all()
     total = len(events)
 

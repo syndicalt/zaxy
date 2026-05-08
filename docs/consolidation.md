@@ -14,8 +14,8 @@ identity-preserving context memory: Eventloom event sequences and hashes, typed
 graph entities, source path and line citations, transcript source and turn
 identifiers, temporal validity windows, exact lookup, keyword search, vector
 search, and traversal. The benchmark harness now includes a consolidation
-collapse lane and identity-recall metric; the remaining roadmap turns those
-measurements into explicit safety policies for future memory compression.
+collapse lane and identity-recall metric, and `zaxy compact --audit` applies
+the same safety model before any log rewrite or snapshot operation.
 
 ## Motivation
 
@@ -139,15 +139,25 @@ The current release also should not claim that Zaxy avoids latent-space failure
 automatically. Zaxy avoids making latent vectors authoritative only when callers
 use the identity-preserving retrieval and assembly policies described here.
 
+## Current Safety Check
+
+Run `zaxy compact PATH --audit` before compaction. The command is
+non-destructive: it reads the Eventloom log, verifies hash-chain integrity,
+measures source identity recall for a one-representative compaction candidate,
+reports citation coverage for document and transcript sources, and reports mean
+within-cluster embedding distance using the deterministic local embedding
+provider. Unsafe reports exit non-zero and list missing identities or citation
+gaps.
+
+Use `zaxy compact PATH --audit --json` for automation.
+
 ## Roadmap
 
 1. Expand the consolidation-collapse benchmark with mixed temporal validity and
    transcript/session identities.
-2. Add a `zaxy compact --audit` mode that reports spread, citation coverage, and
-   identity recall before compaction.
-3. Add medoid/exemplar projection storage with backpointers to Eventloom and
+2. Add medoid/exemplar projection storage with backpointers to Eventloom and
    source citations.
-4. Add context assembly warnings when output depends on a compacted summary
+3. Add context assembly warnings when output depends on a compacted summary
    without source-level support.
 
 ## References

@@ -237,20 +237,21 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Representative benchmark suite for temporal, document, transcript, and mixed workloads
 - [x] Geometry-aware consolidation roadmap for identity-preserving compaction
 - [x] Consolidation-collapse benchmark lane and identity-recall metric
+- [x] `zaxy compact --audit` safety checks for integrity, identity recall, and citations
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 352 passed |
-| Coverage | 92.35% |
+| Tests | 358 passed |
+| Coverage | 92.22% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
 
 ## Next Steps
 
-1. Add `zaxy compact --audit` with spread, citation coverage, and identity-recall checks.
+1. Add medoid/exemplar projection storage with backpointers to Eventloom and source citations.
 2. Add first-run IDE lifecycle workflows and import/export adapters for common agent frameworks.
 3. Add remote MCP rate limiting and audit event export.
 4. Add local-first embedding/reranker setup helpers.
