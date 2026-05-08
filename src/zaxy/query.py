@@ -386,14 +386,15 @@ class QueryRouter:
                 warnings.append("traversal search unavailable")
                 continue
             for neighbor in neighbors:
-                if neighbor.name in seen:
+                if neighbor.name in seen and hit.source != "exact":
                     continue
+                raw_score = 1.5 if hit.source == "exact" else 0.95
                 results.append(
                     SearchResult(
                         entity=neighbor,
-                        score=0.95 * self.fusion_weights["traversal"],
+                        score=raw_score * self.fusion_weights["traversal"],
                         source="traversal",
-                        raw_score=0.95,
+                        raw_score=raw_score,
                         source_weight=self.fusion_weights["traversal"],
                         scoring_profile=self.scoring_profile.name,
                     )
@@ -474,6 +475,9 @@ def _to_chunk(result: SearchResult) -> ContextChunk:
         props = ", ".join(f"{k}={v}" for k, v in list(safe_properties.items())[:3])
         if props:
             content += f" — {props}"
+    summary = ent.properties.get("summary")
+    if isinstance(summary, str) and summary and summary not in content:
+        content += f" — {summary}"
 
     return ContextChunk(
         content=content,
@@ -497,6 +501,7 @@ def _exact_candidates(query: str) -> list[str]:
     ]
     for pattern in patterns:
         candidates.extend(match.group(0) for match in re.finditer(pattern, query))
+    candidates.extend(_structured_preference_candidates(query))
 
     seen: set[str] = set()
     unique: list[str] = []
@@ -505,6 +510,23 @@ def _exact_candidates(query: str) -> list[str]:
             unique.append(candidate)
             seen.add(candidate)
     return unique
+
+
+def _structured_preference_candidates(query: str) -> list[str]:
+    """Infer deterministic preference entity names from common memory questions."""
+    user_ids = re.findall(r"\buser-\d{4}\b", query)
+    if not user_ids:
+        return []
+    lowered = query.casefold()
+    keys = []
+    for key in ("theme", "language", "timezone", "locale"):
+        if key in lowered:
+            keys.append(key)
+    if "preference" not in lowered and not keys:
+        return []
+    if not keys:
+        keys.append("preference")
+    return [f"{user_id}:{key}" for user_id in user_ids for key in keys]
 
 
 def _expanded_queries(query: str) -> list[str]:

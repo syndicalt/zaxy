@@ -58,8 +58,8 @@
     </section>
 
     <section class="proof-strip" aria-label="Project status">
-      <span>249 tests</span>
-      <span>92.11% coverage</span>
+      <span>344 tests</span>
+      <span>92.48% coverage</span>
       <span>ruff clean</span>
       <span>mypy clean</span>
       <span>release gate ready</span>
@@ -152,9 +152,9 @@
         </p>
       </div>
       <div class="value-grid">
-        <article><h3>0.983</h3><p>Mean Zaxy score with local hash embeddings across 300 paired temporal-memory queries.</p></article>
-        <article><h3>p = 0.0001</h3><p>Paired randomization p-value versus markdown, vector, and markdown+vector baselines; all 95% confidence intervals were positive.</p></article>
-        <article><h3>110 tokens</h3><p>Approximate returned context for Zaxy, versus 369-418 tokens for the simple baselines on the same workload.</p></article>
+        <article><h3>1.000</h3><p>Mean Zaxy score with OpenAI <code>text-embedding-3-small</code> on the frozen 300-query temporal-memory workload.</p></article>
+        <article><h3>+0.493</h3><p>Mean score delta versus markdown+vector and vector baselines; paired randomization p-value was 0.0001.</p></article>
+        <article><h3>237 tokens</h3><p>Approximate returned context for Zaxy, versus 421 tokens for vector and markdown+vector on the same workload.</p></article>
       </div>
       <p><a href="reports/benchmarks/live-benchmark.md">Read the full benchmark report</a></p>
     </section>

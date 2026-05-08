@@ -71,6 +71,9 @@ def test_public_site_benchmark_claim_is_scoped_to_fixture() -> None:
     html = Path("site/index.html").read_text(encoding="utf-8")
 
     assert "Temporal workload benchmark" in html
+    assert "text-embedding-3-small" in html
+    assert "1.000" in html
+    assert "+0.493" in html
     assert "not a universal benchmark" in html
     assert "reports/benchmarks/live-benchmark.md" in html
     assert "production-grade vector RAG" not in html

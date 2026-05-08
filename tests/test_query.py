@@ -128,6 +128,60 @@ class TestQueryRouting:
         assert "traversal" in sources
         assert mock_store.search_traversal.await_args.kwargs["session_id"] == "agent-1"
 
+    async def test_direct_traversal_neighbors_from_exact_hits_survive_mmr(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Direct graph neighbors from exact anchors should not be crowded out by vector hits."""
+        goal = GraphEntity(
+            name="Goal 0000",
+            entity_type="goal",
+            valid_from="2024-01-01T00:00:00Z",
+            valid_to=None,
+            properties={},
+        )
+        direct_task = GraphEntity(
+            name="task-0000",
+            entity_type="task",
+            valid_from="2024-01-02T00:00:00Z",
+            valid_to=None,
+            properties={"summary": "task-0000 implements Goal 0000 release path"},
+        )
+        wrong_tasks = [
+            SearchResult(
+                entity=GraphEntity(
+                    name=f"task-000{i}",
+                    entity_type="task",
+                    valid_from="2024-01-02T00:00:00Z",
+                    valid_to=None,
+                    properties={"summary": f"task-000{i} implements Goal 000{i} release path"},
+                ),
+                score=0.99,
+                source="vector",
+            )
+            for i in range(1, 8)
+        ]
+
+        async def _search_exact(name: str, **_: object) -> list[GraphEntity]:
+            return [goal] if name == "Goal 0000" else []
+
+        async def _search_traversal(name: str, **_: object) -> list[GraphEntity]:
+            return [direct_task] if name == "Goal 0000" else []
+
+        mock_store.search_exact.side_effect = _search_exact
+        mock_store.search_vector.return_value = wrong_tasks
+        mock_store.search_traversal.side_effect = _search_traversal
+
+        results = await router.query(
+            "Which task is connected to Goal 0000?",
+            embedding=[0.1, 0.2],
+            limit=4,
+        )
+
+        result_names = [result.content.split(" ", 1)[0] for result in results]
+        assert result_names.index("task-0000") <= 1
+
     async def test_structured_entity_names_seed_traversal(
         self,
         router: QueryRouter,
@@ -164,6 +218,66 @@ class TestQueryRouting:
 
         assert any(result.content.startswith("Goal 0003") for result in results)
         assert any(result.content.startswith("task-0003") for result in results)
+
+    async def test_preference_queries_exact_match_structured_preference_entity(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Preference questions should target user:key entities, not only users."""
+        preference = GraphEntity(
+            name="user-0003:theme",
+            entity_type="preference",
+            valid_from="2024-06-01T00:00:00Z",
+            valid_to=None,
+            properties={"summary": "theme=theme-new-3"},
+        )
+
+        async def _search_exact(name: str, **_: object) -> list[GraphEntity]:
+            return [preference] if name == "user-0003:theme" else []
+
+        mock_store.search_exact.side_effect = _search_exact
+
+        results = await router.query("What is the current theme preference for user-0003?")
+
+        exact_names = [
+            call.args[0]
+            for call in mock_store.search_exact.await_args_list
+        ]
+        assert "user-0003:theme" in exact_names
+        assert results[0].content.startswith("user-0003:theme")
+        assert "theme=theme-new-3" in results[0].content
+
+    async def test_temporal_preference_queries_use_same_structured_preference_anchor(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Historical preference questions should exact-match the temporal fact anchor."""
+        preference = GraphEntity(
+            name="user-0004:theme",
+            entity_type="preference",
+            valid_from="2024-02-01T00:00:00Z",
+            valid_to="2024-06-01T00:00:00Z",
+            properties={"summary": "theme=theme-old-4"},
+        )
+
+        async def _search_exact(name: str, **_: object) -> list[GraphEntity]:
+            return [preference] if name == "user-0004:theme" else []
+
+        mock_store.search_exact.side_effect = _search_exact
+
+        await router.query(
+            "What was the theme preference for user-0004 in March 2024?",
+            temporal_point="2024-03-01T00:00:00Z",
+        )
+
+        matching_call = next(
+            call
+            for call in mock_store.search_exact.await_args_list
+            if call.args[0] == "user-0004:theme"
+        )
+        assert matching_call.kwargs["temporal_point"] == "2024-03-01T00:00:00Z"
 
     async def test_deduplication_keeps_highest_score(self, router: QueryRouter, mock_store: AsyncMock) -> None:
         """If the same entity appears from multiple sources, keep the highest score."""
