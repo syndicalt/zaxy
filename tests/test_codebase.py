@@ -440,6 +440,51 @@ def test_collect_codebase_events_resolves_go_cross_file_package_calls(tmp_path: 
     }
 
 
+def test_collect_codebase_events_resolves_rust_cross_file_use_calls(tmp_path: Path) -> None:
+    lib = tmp_path / "src" / "lib.rs"
+    lib.parent.mkdir()
+    lib.write_text(
+        "mod worker;\n"
+        "use crate::worker::run_worker;\n\n"
+        "pub fn start() {\n"
+        "    run_worker();\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    worker = tmp_path / "src" / "worker.rs"
+    worker.write_text("pub fn run_worker() {}\n", encoding="utf-8")
+
+    events = collect_codebase_events(tmp_path)
+
+    calls = [event["payload"] for event in events if event["event_type"] == "code.call.indexed"]
+    assert {
+        (
+            call["path"],
+            call["language"],
+            call["caller"],
+            call["callee"],
+            call["callee_qualified_name"],
+            call["target_path"],
+            call["target_qualified_name"],
+            call["start_line"],
+            call["resolution"],
+        )
+        for call in calls
+    } == {
+        (
+            "src/lib.rs",
+            "rust",
+            "start",
+            "run_worker",
+            "run_worker",
+            "src/worker.rs",
+            "run_worker",
+            5,
+            "imported_symbol",
+        )
+    }
+
+
 def test_collect_codebase_events_skips_hidden_cache_dependency_and_large_files(tmp_path: Path) -> None:
     keep = tmp_path / "pkg" / "mod.ts"
     keep.parent.mkdir()
