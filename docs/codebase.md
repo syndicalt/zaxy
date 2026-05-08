@@ -49,6 +49,11 @@ symbols and locally imported symbols are resolved to target files and qualified
 names when possible; unresolved calls still keep a cited `code.call.indexed`
 event with caller, callee, and line metadata.
 
+Go call-site mapping can also resolve package-qualified calls such as
+`worker.Run()` when the imported package path maps to a scanned local package
+directory. Rust and Java call-site mapping currently resolve same-file calls
+only.
+
 Python coverage events are conservative. Files under `tests/` or named
 `test_*.py` are scanned for `test_*` functions. When a test calls an imported
 local production symbol, Zaxy records the test symbol, target symbol, target

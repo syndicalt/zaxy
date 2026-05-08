@@ -390,6 +390,56 @@ def test_collect_codebase_events_indexes_go_rust_and_java_same_file_call_sites(t
     }
 
 
+def test_collect_codebase_events_resolves_go_cross_file_package_calls(tmp_path: Path) -> None:
+    main_file = tmp_path / "cmd" / "server.go"
+    main_file.parent.mkdir()
+    main_file.write_text(
+        "package main\n\n"
+        "import \"example.com/project/pkg/worker\"\n\n"
+        "func Start() {\n"
+        "    worker.Run()\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    worker_file = tmp_path / "pkg" / "worker" / "worker.go"
+    worker_file.parent.mkdir(parents=True)
+    worker_file.write_text(
+        "package worker\n\n"
+        "func Run() {}\n",
+        encoding="utf-8",
+    )
+
+    events = collect_codebase_events(tmp_path)
+
+    calls = [event["payload"] for event in events if event["event_type"] == "code.call.indexed"]
+    assert {
+        (
+            call["path"],
+            call["language"],
+            call["caller"],
+            call["callee"],
+            call["callee_qualified_name"],
+            call["target_path"],
+            call["target_qualified_name"],
+            call["start_line"],
+            call["resolution"],
+        )
+        for call in calls
+    } == {
+        (
+            "cmd/server.go",
+            "go",
+            "Start",
+            "Run",
+            "worker.Run",
+            "pkg/worker/worker.go",
+            "Run",
+            6,
+            "imported_symbol",
+        )
+    }
+
+
 def test_collect_codebase_events_skips_hidden_cache_dependency_and_large_files(tmp_path: Path) -> None:
     keep = tmp_path / "pkg" / "mod.ts"
     keep.parent.mkdir()

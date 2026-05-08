@@ -255,6 +255,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Static Python test coverage links from tests to imported production symbols
 - [x] JavaScript and TypeScript call-site mapping for same-file and imported local symbols
 - [x] Go, Rust, and Java same-file call-site mapping
+- [x] Go cross-file call resolution for local package-qualified imports
 
 ## Metrics
 
@@ -268,4 +269,4 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 ## Next Steps
 
-1. Add cross-file call resolution for Go, Rust, and Java imports.
+1. Add cross-file call resolution for Rust and Java imports.

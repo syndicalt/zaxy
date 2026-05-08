@@ -95,7 +95,9 @@ supported source files. The graph projection creates `code_file`,
 `code_symbol`, `code_import`, `code_call`, and `code_coverage` entities plus
 `depends_on_file`, `calls_symbol`, and `tests_symbol` edges so retrieval can
 answer inventory, definition, import, local dependency, call graph, and static
-test coverage questions without storing full source text.
+test coverage questions without storing full source text. Go package-qualified
+local calls can resolve across files when the imported package maps to a scanned
+local package directory.
 
 Transcript ingestion follows the same rule. `MemoryFabric.ingest_transcript()`
 turns session messages into sanitized `transcript.turn` events and graph

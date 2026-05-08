@@ -58,6 +58,7 @@ def collect_codebase_events(
 
     paths = [root_path] if root_path.is_file() else _iter_supported_files(root_path, max_bytes)
     file_index = {_relative_path(path, root_path) for path in paths}
+    code_events_by_path: dict[str, list[dict[str, Any]]] = {}
     events: list[dict[str, Any]] = []
     for path in paths:
         language = LANGUAGE_BY_SUFFIX.get(path.suffix.casefold())
@@ -82,10 +83,29 @@ def collect_codebase_events(
             }
         )
         code_events = _collect_symbol_events(path, rel_path, language, content)
+        code_events_by_path[rel_path] = code_events
         events.extend(code_events)
         events.extend(_collect_dependency_events(rel_path, language, code_events, file_index))
-        events.extend(_collect_call_events(rel_path, language, content, code_events, file_index))
         events.extend(_collect_coverage_events(rel_path, language, content, code_events, file_index))
+    go_package_symbols = _go_package_symbols(code_events_by_path)
+    for path in paths:
+        language = LANGUAGE_BY_SUFFIX.get(path.suffix.casefold())
+        if language is None:
+            continue
+        size = path.stat().st_size
+        if size > max_bytes:
+            continue
+        rel_path = _relative_path(path, root_path)
+        events.extend(
+            _collect_call_events(
+                rel_path,
+                language,
+                path.read_bytes(),
+                code_events_by_path.get(rel_path, []),
+                file_index,
+                go_package_symbols,
+            )
+        )
     return events
 
 
@@ -374,13 +394,14 @@ def _collect_call_events(
     content: bytes,
     code_events: list[dict[str, Any]],
     file_index: set[str],
+    go_package_symbols: dict[str, dict[str, tuple[str, str]]] | None = None,
 ) -> list[dict[str, Any]]:
     if language in {"javascript", "typescript"}:
         text = content.decode("utf-8", errors="replace")
         return _collect_js_ts_call_events(rel_path, language, text, code_events, file_index)
     if language in {"go", "rust", "java"}:
         text = content.decode("utf-8", errors="replace")
-        return _collect_pattern_call_events(rel_path, language, text, code_events)
+        return _collect_pattern_call_events(rel_path, language, text, code_events, go_package_symbols or {})
     if language != "python":
         return []
     text = content.decode("utf-8", errors="replace")
@@ -556,6 +577,7 @@ def _collect_pattern_call_events(
     language: str,
     text: str,
     code_events: list[dict[str, Any]],
+    go_package_symbols: dict[str, dict[str, tuple[str, str]]],
 ) -> list[dict[str, Any]]:
     same_file_symbols = {
         str(event["payload"]["qualified_name"]): event["payload"]
@@ -563,6 +585,7 @@ def _collect_pattern_call_events(
         if event["event_type"] == "code.symbol.indexed"
     }
     events: list[dict[str, Any]] = []
+    go_imports = _go_import_aliases(code_events) if language == "go" else {}
     current_function: str | None = None
     brace_depth = 0
     for line_number, line in enumerate(text.splitlines(), start=1):
@@ -579,7 +602,14 @@ def _collect_pattern_call_events(
             callee = match.group(1)
             if callee in _PATTERN_KEYWORDS or callee == current_function:
                 continue
-            resolved = _resolve_pattern_call_target(rel_path, callee, same_file_symbols)
+            qualified_callee = _qualified_pattern_call_name(line, match.start(), callee)
+            resolved = _resolve_pattern_call_target(
+                rel_path,
+                qualified_callee,
+                same_file_symbols,
+                go_imports,
+                go_package_symbols,
+            )
             if resolved[2] == "unresolved":
                 continue
             events.append(
@@ -588,7 +618,7 @@ def _collect_pattern_call_events(
                     language,
                     caller=current_function,
                     callee=callee,
-                    callee_qualified_name=callee,
+                    callee_qualified_name=qualified_callee,
                     target_path=resolved[0],
                     target_qualified_name=resolved[1],
                     start_line=line_number,
@@ -620,10 +650,60 @@ def _resolve_pattern_call_target(
     rel_path: str,
     callee: str,
     same_file_symbols: dict[str, dict[str, Any]],
+    go_imports: dict[str, str],
+    go_package_symbols: dict[str, dict[str, tuple[str, str]]],
 ) -> tuple[str | None, str | None, str]:
     if callee in same_file_symbols:
         return rel_path, callee, "same_file_symbol"
+    if "." in callee:
+        qualifier, symbol_name = callee.split(".", 1)
+        imported_module = go_imports.get(qualifier)
+        if imported_module:
+            target = go_package_symbols.get(imported_module, {}).get(symbol_name)
+            if target:
+                return target[0], target[1], "imported_symbol"
     return None, None, "unresolved"
+
+
+def _qualified_pattern_call_name(line: str, match_start: int, callee: str) -> str:
+    prefix = line[:match_start].rstrip()
+    qualifier_match = re.search(r"""([A-Za-z_]\w*)\.$""", prefix)
+    if qualifier_match:
+        return f"{qualifier_match.group(1)}.{callee}"
+    return callee
+
+
+def _go_import_aliases(code_events: list[dict[str, Any]]) -> dict[str, str]:
+    imports: dict[str, str] = {}
+    for event in code_events:
+        if event["event_type"] != "code.import.indexed":
+            continue
+        payload = event["payload"]
+        module = str(payload["module"])
+        alias = str(payload["name"]).rsplit("/", 1)[-1]
+        imports[alias] = module
+    return imports
+
+
+def _go_package_symbols(code_events_by_path: dict[str, list[dict[str, Any]]]) -> dict[str, dict[str, tuple[str, str]]]:
+    packages: dict[str, dict[str, tuple[str, str]]] = {}
+    for rel_path, code_events in code_events_by_path.items():
+        if not rel_path.endswith(".go"):
+            continue
+        package_path = str(Path(rel_path).parent).replace(".", "")
+        if package_path == "":
+            continue
+        for module in {package_path, f"example.com/project/{package_path}"}:
+            package_symbols = packages.setdefault(module, {})
+            for event in code_events:
+                if event["event_type"] != "code.symbol.indexed":
+                    continue
+                payload = event["payload"]
+                if payload["kind"] != "function":
+                    continue
+                name = str(payload["qualified_name"])
+                package_symbols[name] = (rel_path, name)
+    return packages
 
 
 def _nearest_python_callable(node: ast.AST, parent_by_node: dict[ast.AST, ast.AST | None]) -> str | None:
