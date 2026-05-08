@@ -23,6 +23,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
+from zaxy.compaction import (
+    CompactionProjection,
+    load_compaction_projection,
+    search_compaction_projections,
+)
 from zaxy.config import get_settings
 from zaxy.documents import collect_document_events
 from zaxy.embedding import build_embedding_provider, embed_extraction
@@ -89,6 +94,7 @@ class MemoryFabric:
         pathlight_url: str | None = None,
         pathlight_project_id: str | None = None,
         tracer_disabled: bool = False,
+        projection_paths: list[str | Path] | tuple[str | Path, ...] = (),
     ) -> None:
         """Initialize fabric with configuration.
 
@@ -118,6 +124,9 @@ class MemoryFabric:
             base_url=pathlight_url or settings.pathlight_url,
             project_id=pathlight_project_id or settings.pathlight_project_id,
             disabled=tracer_disabled or not settings.pathlight_enabled,
+        )
+        self.projections: tuple[CompactionProjection, ...] = tuple(
+            load_compaction_projection(path) for path in projection_paths
         )
         self._connected = False
 
@@ -254,7 +263,11 @@ class MemoryFabric:
                 await self.connect()
             except Exception:
                 get_metrics().record_degraded_operation("query", "graph_unavailable")
-                chunks = self._query_eventlog_fallback(query, sid, limit, reason="graph unavailable")
+                chunks = self._merge_projection_contexts(
+                    self._query_eventlog_fallback(query, sid, limit, reason="graph unavailable"),
+                    query,
+                    limit,
+                )
                 duration_ms = (time.perf_counter() - start) * 1000
                 await self._trace_query_best_effort(query, len(chunks), duration_ms, temporal_point)
                 get_metrics().record_query(duration_ms / 1000.0, source="eventloom")
@@ -278,7 +291,11 @@ class MemoryFabric:
             )
         except Exception:
             get_metrics().record_degraded_operation("query", "graph_retrieval_unavailable")
-            contexts = self._query_eventlog_fallback(query, sid, limit, reason="graph retrieval unavailable")
+            contexts = self._merge_projection_contexts(
+                self._query_eventlog_fallback(query, sid, limit, reason="graph retrieval unavailable"),
+                query,
+                limit,
+            )
             duration_ms = (time.perf_counter() - start) * 1000
             await self._trace_query_best_effort(query, len(contexts), duration_ms, temporal_point)
             get_metrics().record_query(duration_ms / 1000.0, source="eventloom")
@@ -307,7 +324,7 @@ class MemoryFabric:
                     metadata=metadata or None,
                 )
             )
-        return contexts
+        return self._merge_projection_contexts(contexts, query, limit)
 
     def _query_eventlog_fallback(
         self,
@@ -348,6 +365,38 @@ class MemoryFabric:
                 )
             )
         return sorted(contexts, key=lambda item: item.score, reverse=True)[:limit]
+
+    def _merge_projection_contexts(
+        self,
+        contexts: list[Context],
+        query: str,
+        limit: int,
+    ) -> list[Context]:
+        """Merge projection routing hits while preserving source citations."""
+        if not self.projections:
+            return contexts[:limit]
+        projection_contexts = [
+            Context(
+                content=result.record.text,
+                source="projection",
+                score=result.score,
+                metadata={
+                    "projection_id": result.projection_id,
+                    "projection_strategy": result.strategy,
+                    "event_ref": result.record.event_ref,
+                    "citation": result.citations[0] if result.citations else result.record.event_ref,
+                    "citations": list(result.citations),
+                },
+            )
+            for result in search_compaction_projections(
+                self.projections,
+                query,
+                limit=limit,
+            )
+        ]
+        merged = [*contexts, *projection_contexts]
+        merged.sort(key=lambda item: item.score, reverse=True)
+        return merged[:limit]
 
     async def _trace_query_best_effort(
         self,

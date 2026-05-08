@@ -162,6 +162,12 @@ references, source identities, and document/transcript citations, so future
 retrieval can use compact routing artifacts while final context remains tied to
 durable evidence.
 
+Projection artifacts can be loaded by `MemoryFabric(projection_paths=[...])`.
+Loaded projections participate as local routing candidates and return context
+with `source="projection"`, `projection_id`, `event_ref`, and source citations.
+This keeps compacted routing useful while context assembly can still require
+source-level support.
+
 ## Assembly Warnings
 
 Context assembly now warns when retrieved context comes from a compacted or
@@ -175,8 +181,7 @@ source-backed context from degraded compacted context.
 
 1. Expand the consolidation-collapse benchmark with mixed temporal validity and
    transcript/session identities.
-2. Teach retrieval to load projection artifacts as routing candidates while
-   assembling final answers from cited source records.
+2. Add automatic projection discovery under the Eventloom/session directory.
 
 ## References
 

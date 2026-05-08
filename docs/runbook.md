@@ -71,6 +71,13 @@ python -m zaxy compact .eventloom/work.jsonl --projection-output .eventloom/work
 # Store a bounded exemplar projection for high-spread clusters
 python -m zaxy compact .eventloom/work.jsonl --projection-output .eventloom/work.compaction.json --strategy exemplar --max-records 5
 
+# Load projections in Python integrations
+python - <<'PY'
+from zaxy import MemoryFabric
+
+fabric = MemoryFabric(projection_paths=[".eventloom/work.compaction.json"])
+PY
+
 # Compact old logs
 python -m zaxy compact .eventloom/work.jsonl --snapshot-every 10000
 ```

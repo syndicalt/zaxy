@@ -60,6 +60,17 @@ class CompactionProjection:
     audit: CompactionAuditReport
 
 
+@dataclass(frozen=True)
+class CompactionProjectionSearchResult:
+    """Projection routing hit with source citations preserved."""
+
+    projection_id: str
+    strategy: str
+    record: CompactionProjectionRecord
+    score: float
+    citations: tuple[str, ...]
+
+
 def audit_event_log(
     eventlog: EventLog,
     *,
@@ -186,6 +197,45 @@ def write_compaction_projection(
         encoding="utf-8",
     )
     return output
+
+
+def load_compaction_projection(path: str | Path) -> CompactionProjection:
+    """Load a source-backed compaction projection JSON artifact."""
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    return _projection_from_payload(payload)
+
+
+def search_compaction_projections(
+    projections: list[CompactionProjection] | tuple[CompactionProjection, ...],
+    query: str,
+    *,
+    limit: int = 10,
+) -> list[CompactionProjectionSearchResult]:
+    """Search projection records as routing candidates with citations."""
+    if limit <= 0:
+        raise ValueError("limit must be positive")
+    query_tokens = _tokens(query)
+    if not query_tokens:
+        return []
+    results: list[CompactionProjectionSearchResult] = []
+    for projection in projections:
+        for record in projection.records:
+            searchable = " ".join([record.text, *record.identities])
+            record_tokens = _tokens(searchable)
+            overlap = query_tokens & record_tokens
+            if not overlap:
+                continue
+            score = len(overlap) / len(query_tokens)
+            results.append(
+                CompactionProjectionSearchResult(
+                    projection_id=projection.projection_id,
+                    strategy=projection.strategy,
+                    record=record,
+                    score=round(score, 4),
+                    citations=record.citations,
+                )
+            )
+    return sorted(results, key=lambda item: item.score, reverse=True)[:limit]
 
 
 def _event_identities(event: Event) -> tuple[str, ...]:
@@ -370,3 +420,49 @@ def _cosine(left: list[float], right: list[float]) -> float:
 
 def _string(value: Any) -> str | None:
     return value if isinstance(value, str) and value else None
+
+
+def _projection_from_payload(payload: dict[str, Any]) -> CompactionProjection:
+    return CompactionProjection(
+        projection_id=str(payload["projection_id"]),
+        strategy=str(payload["strategy"]),
+        source_event_count=int(payload["source_event_count"]),
+        source_identities=tuple(str(value) for value in payload["source_identities"]),
+        records=tuple(
+            CompactionProjectionRecord(
+                kind=str(record["kind"]),
+                event_seq=int(record["event_seq"]),
+                event_ref=str(record["event_ref"]),
+                text=str(record["text"]),
+                identities=tuple(str(value) for value in record["identities"]),
+                citations=tuple(str(value) for value in record["citations"]),
+            )
+            for record in payload["records"]
+        ),
+        audit=CompactionAuditReport(
+            safe=bool(payload["audit"]["safe"]),
+            event_count=int(payload["audit"]["event_count"]),
+            integrity_ok=bool(payload["audit"]["integrity_ok"]),
+            integrity_reason=payload["audit"].get("integrity_reason"),
+            identity_count=int(payload["audit"]["identity_count"]),
+            identity_recall=float(payload["audit"]["identity_recall"]),
+            citation_coverage=float(payload["audit"]["citation_coverage"]),
+            mean_within_cluster_distance=float(
+                payload["audit"]["mean_within_cluster_distance"]
+            ),
+            identities=tuple(str(value) for value in payload["audit"]["identities"]),
+            identity_hits=tuple(str(value) for value in payload["audit"]["identity_hits"]),
+            missing_identities=tuple(
+                str(value) for value in payload["audit"]["missing_identities"]
+            ),
+            unsafe_reasons=tuple(str(value) for value in payload["audit"]["unsafe_reasons"]),
+        ),
+    )
+
+
+def _tokens(value: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[A-Za-z0-9][A-Za-z0-9_.:/#-]*", value.casefold())
+        if len(token) > 1
+    }

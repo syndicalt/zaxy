@@ -5,12 +5,16 @@ with all external dependencies mocked."""
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from zaxy.compaction import build_compaction_projection, write_compaction_projection
 from zaxy.core import Context, HandoffBundle, MemoryFabric
+from zaxy.embedding import HashEmbeddingProvider
+from zaxy.event import EventLog
 from zaxy.query import ContextChunk
 
 
@@ -564,6 +568,58 @@ class TestContextAssembly:
         ]
         assert "Turn 1" not in assembly.prompt
         assert "recent replay was truncated" in assembly.prompt
+
+    async def test_query_merges_projection_records_with_source_citations(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """MemoryFabric should use projection artifacts as cited routing candidates."""
+        log = EventLog(tmp_path / "projection-source.jsonl")
+        log.append(
+            "document.indexed",
+            actor="indexer",
+            payload={
+                "path": "docs/cache.md",
+                "start_line": 2,
+                "end_line": 6,
+                "content": "Cache routing note records identity-code-0001.",
+            },
+        )
+        projection = build_compaction_projection(
+            log,
+            provider=HashEmbeddingProvider(dimension=64),
+            strategy="medoid",
+        )
+        projection_path = write_compaction_projection(
+            projection,
+            tmp_path / "projection.compaction.json",
+        )
+
+        with (
+            patch("zaxy.core.GraphStore") as mock_graph_cls,
+            patch("zaxy.core.QueryRouter") as mock_router_cls,
+            patch("zaxy.core.build_reranker") as mock_build_reranker,
+            patch("zaxy.core.MemoryTracer") as mock_tracer_cls,
+            patch("zaxy.core.SessionManager") as mock_session_cls,
+        ):
+            session_mgr = MagicMock()
+            session_mgr.get.return_value.eventlog = MagicMock()
+            mock_session_cls.return_value = session_mgr
+            mock_graph_cls.return_value = AsyncMock()
+            router = AsyncMock()
+            router.query.return_value = []
+            mock_router_cls.return_value = router
+            mock_build_reranker.return_value = None
+            mock_tracer_cls.return_value = AsyncMock()
+            fabric = MemoryFabric(projection_paths=[projection_path])
+
+        contexts = await fabric.query("cache identity-code-0001", limit=3)
+
+        assert len(contexts) == 1
+        assert contexts[0].source == "projection"
+        assert contexts[0].metadata is not None
+        assert contexts[0].metadata["citation"].startswith("eventloom://default/events/1#")
+        assert "docs/cache.md:2-6" in contexts[0].metadata["citations"]
 
     async def test_handoff_bundle_combines_summary_replay_and_context(
         self,

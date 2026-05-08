@@ -240,20 +240,21 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] `zaxy compact --audit` safety checks for integrity, identity recall, and citations
 - [x] Medoid/exemplar projection storage with Eventloom and source backpointers
 - [x] Context assembly warnings for unsupported compacted/projection context
+- [x] Projection artifact retrieval as cited local routing candidates
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 365 passed |
-| Coverage | 92.34% |
+| Tests | 368 passed |
+| Coverage | 92.42% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
 
 ## Next Steps
 
-1. Teach retrieval to load projection artifacts as routing candidates while assembling final answers from cited source records.
+1. Add automatic projection discovery under the Eventloom/session directory.
 2. Add first-run IDE lifecycle workflows and import/export adapters for common agent frameworks.
 3. Add remote MCP rate limiting and audit event export.
 4. Add local-first embedding/reranker setup helpers.

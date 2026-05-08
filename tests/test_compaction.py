@@ -8,6 +8,8 @@ from pathlib import Path
 from zaxy.compaction import (
     audit_event_log,
     build_compaction_projection,
+    load_compaction_projection,
+    search_compaction_projections,
     write_compaction_projection,
 )
 from zaxy.embedding import HashEmbeddingProvider
@@ -198,3 +200,68 @@ def test_writes_projection_json_for_later_context_assembly(tmp_path: Path) -> No
     assert payload["strategy"] == "medoid"
     assert payload["source_identities"] == list(projection.source_identities)
     assert payload["records"][0]["event_ref"].startswith("eventloom://default/events/1#")
+
+
+def test_loads_projection_json_roundtrip(tmp_path: Path) -> None:
+    """Projection JSON should load back into typed records."""
+    log = EventLog(tmp_path / "projection.jsonl")
+    log.append(
+        "document.indexed",
+        actor="indexer",
+        payload={
+            "path": "docs/cache.md",
+            "start_line": 2,
+            "end_line": 6,
+            "content": "Cache routing note records identity-code-0001.",
+        },
+    )
+    projection = build_compaction_projection(
+        log,
+        provider=HashEmbeddingProvider(dimension=64),
+        strategy="medoid",
+    )
+    output = write_compaction_projection(projection, tmp_path / "projection.json")
+
+    loaded = load_compaction_projection(output)
+
+    assert loaded == projection
+    assert loaded.records[0].citations == projection.records[0].citations
+
+
+def test_searches_projection_records_with_source_citations(tmp_path: Path) -> None:
+    """Projection search should return cited routing candidates."""
+    log = EventLog(tmp_path / "projection.jsonl")
+    log.append(
+        "document.indexed",
+        actor="indexer",
+        payload={
+            "path": "docs/cache.md",
+            "start_line": 2,
+            "end_line": 6,
+            "content": "Cache routing note records identity-code-0001.",
+        },
+    )
+    log.append(
+        "document.indexed",
+        actor="indexer",
+        payload={
+            "path": "docs/auth.md",
+            "start_line": 4,
+            "end_line": 8,
+            "content": "Auth routing note records identity-code-0002.",
+        },
+    )
+    projection = build_compaction_projection(
+        log,
+        provider=HashEmbeddingProvider(dimension=64),
+        strategy="exemplar",
+        max_records=2,
+    )
+
+    results = search_compaction_projections([projection], "cache identity-code-0001", limit=1)
+
+    assert len(results) == 1
+    assert results[0].projection_id == projection.projection_id
+    assert results[0].record.text
+    assert "docs/cache.md:2-6" in results[0].citations
+    assert results[0].score > 0.0
