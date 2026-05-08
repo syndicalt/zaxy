@@ -603,6 +603,62 @@ def _extract_code_import_indexed(event: Event) -> ExtractionResult:
     )
 
 
+@register("code.dependency.indexed")
+def _extract_code_dependency_indexed(event: Event) -> ExtractionResult:
+    """Extract a resolved local code dependency between files."""
+    source_path = _optional_text(event.payload.get("source_path")) or "source-code-file"
+    target_path = _optional_text(event.payload.get("target_path")) or "target-code-file"
+    language = _optional_text(event.payload.get("language")) or "unknown"
+    module = _optional_text(event.payload.get("module")) or "unknown"
+    import_name = _optional_text(event.payload.get("import_name")) or module
+    start_line = _positive_int(event.payload.get("start_line"), default=1)
+    resolution = _optional_text(event.payload.get("resolution")) or "unknown"
+    source_file = ExtractedEntity(
+        name=source_path,
+        entity_type="code_file",
+        observed_at=event.timestamp,
+        properties={
+            "source_path": source_path,
+            "language": language,
+        },
+    )
+    target_file = ExtractedEntity(
+        name=target_path,
+        entity_type="code_file",
+        observed_at=event.timestamp,
+        properties={
+            "source_path": target_path,
+            "language": language,
+        },
+    )
+    edge = ExtractedEdge(
+        source=source_path,
+        target=target_path,
+        relation_type="depends_on_file",
+        valid_from=event.timestamp,
+    )
+    dependency = ExtractedEntity(
+        name=f"{source_path}->{target_path}:{start_line}",
+        entity_type="code_dependency",
+        observed_at=event.timestamp,
+        summary=f"{source_path} imports {import_name} from {module} via {target_path}:{start_line}",
+        properties={
+            "source_path": source_path,
+            "target_path": target_path,
+            "language": language,
+            "module": module,
+            "import_name": import_name,
+            "source_start_line": start_line,
+            "resolution": resolution,
+        },
+    )
+    return ExtractionResult(
+        entities=[source_file, target_file, dependency],
+        edges=[edge],
+        source_event_seq=event.seq,
+    )
+
+
 @register("transcript.turn")
 def _extract_transcript_turn(event: Event) -> ExtractionResult:
     """Extract a sanitized session transcript turn."""

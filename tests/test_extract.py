@@ -524,6 +524,38 @@ class TestCodeImportIndexed:
         assert edge.relation_type == "imports"
 
 
+class TestCodeDependencyIndexed:
+    """Tests for code.dependency.indexed extractor."""
+
+    def test_extracts_dependency_between_code_files(self) -> None:
+        ev = _make_event(
+            "code.dependency.indexed",
+            {
+                "source_path": "src/zaxy/mcp_server.py",
+                "target_path": "src/zaxy/core.py",
+                "language": "python",
+                "module": "zaxy.core",
+                "import_name": "MemoryFabric",
+                "start_line": 31,
+                "resolution": "module_file",
+            },
+            actor="zaxy-codebase-indexer",
+        )
+
+        result = extract(ev)
+
+        files = [e for e in result.entities if e.entity_type == "code_file"]
+        assert [file.name for file in files] == ["src/zaxy/mcp_server.py", "src/zaxy/core.py"]
+        assert files[0].properties == {
+            "source_path": "src/zaxy/mcp_server.py",
+            "language": "python",
+        }
+        edge = result.edges[0]
+        assert edge.source == "src/zaxy/mcp_server.py"
+        assert edge.target == "src/zaxy/core.py"
+        assert edge.relation_type == "depends_on_file"
+
+
 class TestTranscriptTurn:
     """Tests for transcript.turn extractor."""
 

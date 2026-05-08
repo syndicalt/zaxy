@@ -57,6 +57,7 @@ def collect_codebase_events(
         raise ValueError("max_bytes must be positive")
 
     paths = [root_path] if root_path.is_file() else _iter_supported_files(root_path, max_bytes)
+    file_index = {_relative_path(path, root_path) for path in paths}
     events: list[dict[str, Any]] = []
     for path in paths:
         language = LANGUAGE_BY_SUFFIX.get(path.suffix.casefold())
@@ -80,7 +81,9 @@ def collect_codebase_events(
                 },
             }
         )
-        events.extend(_collect_symbol_events(path, rel_path, language, content))
+        code_events = _collect_symbol_events(path, rel_path, language, content)
+        events.extend(code_events)
+        events.extend(_collect_dependency_events(rel_path, language, code_events, file_index))
     return events
 
 
@@ -325,6 +328,110 @@ def _import_event(
             "start_line": start_line,
         },
     }
+
+
+def _collect_dependency_events(
+    rel_path: str,
+    language: str,
+    code_events: list[dict[str, Any]],
+    file_index: set[str],
+) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for event in code_events:
+        if event["event_type"] != "code.import.indexed":
+            continue
+        payload = event["payload"]
+        module = str(payload["module"])
+        target_path, resolution = _resolve_dependency_target(rel_path, language, module, file_index)
+        if target_path is None:
+            continue
+        events.append(
+            {
+                "event_type": "code.dependency.indexed",
+                "actor": "zaxy-codebase-indexer",
+                "payload": {
+                    "source_path": rel_path,
+                    "target_path": target_path,
+                    "language": language,
+                    "module": module,
+                    "import_name": payload["name"],
+                    "start_line": payload["start_line"],
+                    "resolution": resolution,
+                },
+            }
+        )
+    return events
+
+
+def _resolve_dependency_target(
+    rel_path: str,
+    language: str,
+    module: str,
+    file_index: set[str],
+) -> tuple[str | None, str | None]:
+    if language == "python":
+        return _resolve_python_dependency(rel_path, module, file_index)
+    if language in {"javascript", "typescript"}:
+        return _resolve_js_ts_dependency(rel_path, module, file_index)
+    return None, None
+
+
+def _resolve_python_dependency(rel_path: str, module: str, file_index: set[str]) -> tuple[str | None, str | None]:
+    if module.startswith("."):
+        target = _resolve_python_relative_dependency(rel_path, module, file_index)
+        return target, "relative_file" if target else None
+    target = _first_existing_python_module_path(module, file_index)
+    return target, "module_file" if target else None
+
+
+def _resolve_python_relative_dependency(rel_path: str, module: str, file_index: set[str]) -> str | None:
+    level = len(module) - len(module.lstrip("."))
+    remainder = module[level:]
+    source_parent = Path(rel_path).parent
+    base_parts = list(source_parent.parts)
+    if level > 1:
+        base_parts = base_parts[: max(0, len(base_parts) - (level - 1))]
+    module_parts = [part for part in remainder.split(".") if part]
+    candidates = _python_module_candidates("/".join([*base_parts, *module_parts]))
+    return _first_in_index(candidates, file_index)
+
+
+def _first_existing_python_module_path(module: str, file_index: set[str]) -> str | None:
+    module_path = module.replace(".", "/")
+    prefixes = ["", "src/"]
+    candidates: list[str] = []
+    for prefix in prefixes:
+        candidates.extend(_python_module_candidates(f"{prefix}{module_path}"))
+    return _first_in_index(candidates, file_index)
+
+
+def _python_module_candidates(module_path: str) -> list[str]:
+    clean_path = module_path.strip("/")
+    if not clean_path:
+        return []
+    return [f"{clean_path}.py", f"{clean_path}/__init__.py"]
+
+
+def _resolve_js_ts_dependency(rel_path: str, module: str, file_index: set[str]) -> tuple[str | None, str | None]:
+    if not module.startswith("."):
+        return None, None
+    base = Path(rel_path).parent / module
+    base_path = base.as_posix()
+    candidates: list[str] = []
+    for suffix in (".ts", ".tsx", ".js", ".jsx"):
+        candidates.append(f"{base_path}{suffix}")
+    for suffix in (".ts", ".tsx", ".js", ".jsx"):
+        candidates.append(f"{base_path}/index{suffix}")
+    target = _first_in_index(candidates, file_index)
+    return target, "relative_file" if target else None
+
+
+def _first_in_index(candidates: list[str], file_index: set[str]) -> str | None:
+    for candidate in candidates:
+        normalized = Path(candidate).as_posix()
+        if normalized in file_index:
+            return normalized
+    return None
 
 
 def _iter_supported_files(root: Path, max_bytes: int) -> list[Path]:

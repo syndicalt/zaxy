@@ -162,6 +162,70 @@ def test_collect_codebase_events_indexes_symbols_for_multiple_file_types(tmp_pat
     ) in event_payloads
 
 
+def test_collect_codebase_events_resolves_python_imports_to_local_files(tmp_path: Path) -> None:
+    core = tmp_path / "src" / "zaxy" / "core.py"
+    core.parent.mkdir(parents=True)
+    core.write_text("class MemoryFabric:\n    pass\n", encoding="utf-8")
+    server = tmp_path / "src" / "zaxy" / "mcp_server.py"
+    server.write_text(
+        "from pathlib import Path\n"
+        "from zaxy.core import MemoryFabric\n"
+        "from .core import MemoryFabric as LocalFabric\n",
+        encoding="utf-8",
+    )
+
+    events = collect_codebase_events(tmp_path)
+
+    dependencies = [event["payload"] for event in events if event["event_type"] == "code.dependency.indexed"]
+    assert dependencies == [
+        {
+            "source_path": "src/zaxy/mcp_server.py",
+            "target_path": "src/zaxy/core.py",
+            "language": "python",
+            "module": "zaxy.core",
+            "import_name": "MemoryFabric",
+            "start_line": 2,
+            "resolution": "module_file",
+        },
+        {
+            "source_path": "src/zaxy/mcp_server.py",
+            "target_path": "src/zaxy/core.py",
+            "language": "python",
+            "module": ".core",
+            "import_name": "LocalFabric",
+            "start_line": 3,
+            "resolution": "relative_file",
+        },
+    ]
+
+
+def test_collect_codebase_events_resolves_javascript_relative_imports(tmp_path: Path) -> None:
+    app = tmp_path / "web" / "app.ts"
+    app.parent.mkdir()
+    app.write_text(
+        "import { helper } from './util';\n"
+        "import { createApp } from 'vue';\n",
+        encoding="utf-8",
+    )
+    util = tmp_path / "web" / "util.ts"
+    util.write_text("export function helper() {}\n", encoding="utf-8")
+
+    events = collect_codebase_events(tmp_path)
+
+    dependencies = [event["payload"] for event in events if event["event_type"] == "code.dependency.indexed"]
+    assert dependencies == [
+        {
+            "source_path": "web/app.ts",
+            "target_path": "web/util.ts",
+            "language": "typescript",
+            "module": "./util",
+            "import_name": "helper",
+            "start_line": 1,
+            "resolution": "relative_file",
+        }
+    ]
+
+
 def test_collect_codebase_events_skips_hidden_cache_dependency_and_large_files(tmp_path: Path) -> None:
     keep = tmp_path / "pkg" / "mod.ts"
     keep.parent.mkdir()

@@ -88,9 +88,10 @@ without losing replayability or provenance.
 
 Codebase indexing follows the same Eventloom-first shape. `zaxy index-codebase`
 and `MemoryFabric.ingest_codebase()` append `code.file.indexed`,
-`code.symbol.indexed`, and `code.import.indexed` events for supported source
-files. The graph projection creates `code_file`, `code_symbol`, and
-`code_import` entities so retrieval can answer inventory, definition, and import
+`code.symbol.indexed`, `code.import.indexed`, and `code.dependency.indexed`
+events for supported source files. The graph projection creates `code_file`,
+`code_symbol`, and `code_import` entities plus `depends_on_file` edges so
+retrieval can answer inventory, definition, import, and local dependency
 questions without storing full source text.
 
 Transcript ingestion follows the same rule. `MemoryFabric.ingest_transcript()`

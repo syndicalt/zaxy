@@ -1,9 +1,10 @@
 # Codebase Mapping
 
-Codebase mapping starts with replayable file, symbol, and import events. Zaxy
-walks a local repository or directory, writes one `code.file.indexed` event per
-supported source file, and by default adds `code.symbol.indexed` and
-`code.import.indexed` events inferred from the file type.
+Codebase mapping starts with replayable file, symbol, import, and dependency
+events. Zaxy walks a local repository or directory, writes one
+`code.file.indexed` event per supported source file, and by default adds
+`code.symbol.indexed`, `code.import.indexed`, and `code.dependency.indexed`
+events inferred from the file type.
 
 Run:
 
@@ -31,13 +32,22 @@ source languages such as JavaScript, TypeScript, Go, Rust, Java, and shell.
 Malformed or unsupported source files still get file inventory events; symbol
 extraction for that file is skipped instead of aborting indexing.
 
+Dependency events resolve imports to local files when that can be done without
+guessing. Python absolute imports are matched against root-level and `src/`
+layout modules, Python relative imports are resolved from the importing file,
+and JavaScript/TypeScript relative imports are resolved against sibling files or
+`index` modules. Unresolved third-party imports remain `code.import.indexed`
+events only.
+
 The graph projection creates one `code_file` entity per indexed path. The
 entity name is the relative path, the summary records language and line count,
 and properties preserve the source path, language, SHA-256 hash, byte count, and
 line count. The indexer actor is connected to each file with an
 `indexed_code_file` relation. Symbol events project to `code_symbol` entities
 connected from the file with `defines_symbol`; import events project to
-`code_import` entities connected from the file with `imports`.
+`code_import` entities connected from the file with `imports`. Resolved local
+dependency events connect source and target `code_file` entities with
+`depends_on_file`.
 
 Use a project-scoped session when indexing. For example, a generated MCP config
 for the Zaxy repository uses `EVENTLOOM_THREAD=zaxy-default`; indexing into that
