@@ -29,6 +29,17 @@ secret files under `./secrets`, configures `ZAXY_ENV=production`, and expects a
 TLS-enabled Neo4j profile. See [deployment.md](deployment.md) before exposing
 remote SSE.
 
+For an offline retrieval profile with no hosted services or API keys:
+
+```bash
+zaxy local-profile --output .env.local
+zaxy local-profile --check
+```
+
+This configures deterministic hash embeddings, lexical reranking, and local
+Neo4j auto-start. It is the recommended baseline for local development before
+switching to hosted embeddings or model-backed rerankers.
+
 To start the default stdio MCP server:
 
 ```bash

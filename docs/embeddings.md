@@ -10,6 +10,19 @@ behavior. It does not provide high-quality semantic meaning, but it allows vecto
 code paths to run without network access or secrets. This is valuable for CI and
 for local contributors who only need to verify mechanics.
 
+For the local-first profile:
+
+```bash
+zaxy local-profile
+zaxy local-profile --output .env.local
+zaxy local-profile --check
+```
+
+The generated profile uses `EMBEDDING_PROVIDER=hash`,
+`RERANKER_PROVIDER=lexical`, and `NEO4J_AUTO_START=true`. It intentionally omits
+hosted API key variables so the default local path stays offline and
+deterministic.
+
 The hosted provider is selected with:
 
 ```bash

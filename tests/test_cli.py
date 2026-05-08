@@ -69,6 +69,38 @@ def test_extractor_template_command_prints_safe_starter() -> None:
     assert 'relation_type="recorded_decision"' in result.output
 
 
+def test_local_profile_command_prints_offline_env() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["local-profile"])
+
+    assert result.exit_code == 0
+    assert "EMBEDDING_PROVIDER=hash" in result.output
+    assert "RERANKER_PROVIDER=lexical" in result.output
+    assert "OPENAI_API_KEY" not in result.output
+
+
+def test_local_profile_command_writes_output_file(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / ".env.local"
+
+    result = runner.invoke(app, ["local-profile", "--output", str(target)])
+
+    assert result.exit_code == 0
+    assert "Wrote local profile" in result.output
+    assert "RERANKER_PROVIDER=lexical" in target.read_text(encoding="utf-8")
+
+
+def test_local_profile_check_reports_success() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["local-profile", "--check"])
+
+    assert result.exit_code == 0
+    assert '"status": "ok"' in result.output
+    assert '"reranker_provider": "lexical"' in result.output
+
+
 @patch("zaxy.__main__.GraphStore")
 def test_reproject_command_replays_log_into_graph(mock_graph_store: MagicMock, tmp_path: Path) -> None:
     """reproject should rebuild graph projections from an Eventloom log."""

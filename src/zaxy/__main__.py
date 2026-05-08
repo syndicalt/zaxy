@@ -53,6 +53,7 @@ from zaxy.live_benchmark import (
     report_to_markdown,
     write_benchmark_report,
 )
+from zaxy.local_profile import check_local_profile, render_local_profile, write_local_profile
 from zaxy.mcp_server import main as mcp_main
 from zaxy.schema import render_schema_plan
 
@@ -79,6 +80,26 @@ def ide_config(
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(config, indent=2, sort_keys=True))
+
+
+@app.command("local-profile")
+def local_profile(
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write profile to this file"),  # noqa: B008
+    force: bool = typer.Option(False, "--force", help="Overwrite an existing output file"),  # noqa: B008
+    check: bool = typer.Option(False, "--check", help="Validate deterministic local providers"),  # noqa: B008
+) -> None:
+    """Print, write, or check an offline local retrieval profile."""
+    if check:
+        typer.echo(json.dumps(check_local_profile(), indent=2, sort_keys=True))
+        return
+    if output is None:
+        typer.echo(render_local_profile(), nl=False)
+        return
+    try:
+        written = write_local_profile(output, force=force)
+    except FileExistsError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(f"Wrote local profile to {written}")
 
 
 @app.command("schema-plan")

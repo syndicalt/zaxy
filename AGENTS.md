@@ -244,6 +244,8 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Okapi BM25 baseline in the live benchmark harness
 - [x] Automatic compaction projection discovery under Eventloom directories
 - [x] First-run MCP client config and framework handoff adapter helpers
+- [x] Local-first embedding/reranker setup helpers
+- [x] Extractor schema-pack examples for common agent event taxonomies
 
 ## Metrics
 
@@ -258,5 +260,4 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 ## Next Steps
 
 1. Add remote MCP rate limiting and audit event export.
-2. Add local-first embedding/reranker setup helpers.
-3. Add extractor schema-pack examples for common agent event taxonomies.
+2. Add codebase mapping as an Eventloom-backed graph projection.
