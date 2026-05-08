@@ -178,6 +178,68 @@ class TestTaskCompleted:
         result = extract(ev)
         assert result.edges[0].relation_type == "completed_task"
 
+    def test_uses_task_and_summary_payload(self) -> None:
+        ev = _make_event(
+            "task.completed",
+            {
+                "task": "Debug and repair Zaxy MCP startup in Codex.",
+                "summary": "Fixed startup_timeout_sec and Pathlight async trace compatibility.",
+            },
+            actor="assistant",
+        )
+        result = extract(ev)
+        task = next(e for e in result.entities if e.entity_type == "task")
+        assert task.name == "Debug and repair Zaxy MCP startup in Codex."
+        assert task.summary == "Fixed startup_timeout_sec and Pathlight async trace compatibility."
+
+
+class TestDecisionMade:
+    """Tests for decision.made extractor."""
+
+    def test_extracts_decision_with_rationale(self) -> None:
+        ev = _make_event(
+            "decision.made",
+            {
+                "decision": "Preserve the previous chat as a structured Eventloom trace.",
+                "rationale": [
+                    "Typed events are easier to replay.",
+                    "Raw transcript remains available in resumed chat.",
+                ],
+            },
+            actor="assistant",
+        )
+        result = extract(ev)
+        decision = next(e for e in result.entities if e.entity_type == "decision")
+        assert decision.name == "Preserve the previous chat as a structured Eventloom trace."
+        assert "Typed events are easier to replay." in decision.summary
+        assert "Raw transcript remains available in resumed chat." in decision.summary
+        assert any(e.name == "assistant" and e.entity_type == "actor" for e in result.entities)
+        assert result.edges[0].relation_type == "made_decision"
+
+
+class TestContextPolicy:
+    """Tests for context.policy extractor."""
+
+    def test_extracts_policy_with_instruction_summary(self) -> None:
+        ev = _make_event(
+            "context.policy",
+            {
+                "source": "AGENTS.md",
+                "project": "Zaxy",
+                "instructions": [
+                    "Use Eventloom append-only JSONL as immutable source of truth.",
+                    "Write tests first for public functions and behavior changes.",
+                ],
+            },
+            actor="user",
+        )
+        result = extract(ev)
+        policy = next(e for e in result.entities if e.entity_type == "context_policy")
+        assert policy.name == "Zaxy:AGENTS.md"
+        assert "Use Eventloom append-only JSONL" in policy.summary
+        assert policy.properties == {"source": "AGENTS.md", "project": "Zaxy"}
+        assert result.edges[0].relation_type == "set_context_policy"
+
 
 class TestPreferenceChanged:
     """Tests for user.preference_changed extractor."""

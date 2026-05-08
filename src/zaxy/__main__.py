@@ -30,6 +30,7 @@ from zaxy.compaction import (
 )
 from zaxy.embedding import EmbeddingProvider, HashEmbeddingProvider, OpenAIEmbeddingProvider
 from zaxy.event import EventLog
+from zaxy.extract import extract
 from zaxy.extract_templates import ExtractorTemplateSpec, render_extractor_template
 from zaxy.graph import GraphStore
 from zaxy.integrations import render_mcp_client_config
@@ -173,6 +174,44 @@ def replay(
     typer.echo(f"  Goals: {summary['goals']}")
     typer.echo(f"  Open tasks: {len(summary['open_tasks'])}")
     typer.echo(f"  Last actor: {summary['last_actor']}")
+
+
+@app.command()
+def reproject(
+    log_path: Path = typer.Argument(..., help="Path to Eventloom JSONL file"),  # noqa: B008
+    from_seq: int = typer.Option(1, help="Start sequence number"),
+    session_id: str = typer.Option("default", help="Graph session ID to project into"),
+    neo4j_uri: str | None = typer.Option(None, help="Neo4j Bolt URI"),
+    neo4j_user: str | None = typer.Option(None, help="Neo4j username"),
+    neo4j_password: str | None = typer.Option(None, help="Neo4j password"),
+) -> None:
+    """Replay an Eventloom log and rebuild its Neo4j graph projection."""
+    import asyncio
+
+    from zaxy.config import get_settings
+
+    async def _run() -> int:
+        settings = get_settings()
+        store = GraphStore(
+            neo4j_uri or settings.neo4j_uri,
+            neo4j_user or settings.neo4j_user,
+            neo4j_password or settings.neo4j_password,
+        )
+        await store.connect()
+        try:
+            await store.init_schema()
+            replay_result = EventLog(str(log_path)).replay(from_seq=from_seq)
+            if not replay_result.integrity.ok:
+                reason = replay_result.integrity.broken_reason or "unknown integrity failure"
+                raise typer.BadParameter(f"Eventloom integrity failed: {reason}")
+            for event in replay_result.events:
+                await store.upsert_extraction(extract(event), session_id=session_id)
+            return len(replay_result.events)
+        finally:
+            await store.close()
+
+    count = asyncio.run(_run())
+    typer.echo(f"Reprojected {count} events into session {session_id}")
 
 
 @app.command()

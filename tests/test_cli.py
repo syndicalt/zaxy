@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from typer.testing import CliRunner
 
@@ -22,7 +23,16 @@ def test_ide_config_command_prints_copyable_mcp_json() -> None:
     assert '"mcpServers"' in result.output
     assert '"zaxy"' in result.output
     assert '"args": [' in result.output
-    assert "token" not in result.output.casefold()
+    assert '"ZAXY_ENV": "development"' in result.output
+    assert '"NEO4J_URI": "bolt://localhost:7687"' in result.output
+    assert '"NEO4J_AUTO_START": "true"' in result.output
+    assert '"NEO4J_CA_CERT": ""' in result.output
+    assert '"NEO4J_PASSWORD_FILE": ""' in result.output
+    assert '"MCP_ADMIN_TOKEN_FILE": ""' in result.output
+    assert '"MCP_REMOTE_AUTH_TOKEN_FILE": ""' in result.output
+    assert '"OPENAI_API_KEY_FILE": ""' in result.output
+    assert '"PATHLIGHT_ACCESS_TOKEN_FILE": ""' in result.output
+    assert "testpassword" not in result.output.casefold()
 
 
 def test_schema_plan_command_prints_migration_plan() -> None:
@@ -57,6 +67,50 @@ def test_extractor_template_command_prints_safe_starter() -> None:
     assert result.exit_code == 0
     assert '@register("decision.recorded")' in result.output
     assert 'relation_type="recorded_decision"' in result.output
+
+
+@patch("zaxy.__main__.GraphStore")
+def test_reproject_command_replays_log_into_graph(mock_graph_store: MagicMock, tmp_path: Path) -> None:
+    """reproject should rebuild graph projections from an Eventloom log."""
+    log_path = tmp_path / "default.jsonl"
+    log = EventLog(log_path)
+    log.append(
+        "decision.made",
+        actor="assistant",
+        payload={
+            "decision": "Use structured Eventloom trace.",
+            "rationale": ["Supports replayable memory."],
+        },
+        thread="default",
+    )
+    store = AsyncMock()
+    mock_graph_store.return_value = store
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "reproject",
+            str(log_path),
+            "--session-id",
+            "default",
+            "--neo4j-uri",
+            "bolt://test:7687",
+            "--neo4j-password",
+            "testpassword",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Reprojected 1 events into session default" in result.output
+    mock_graph_store.assert_called_once_with("bolt://test:7687", "neo4j", "testpassword")
+    store.connect.assert_awaited_once()
+    store.init_schema.assert_awaited_once()
+    store.upsert_extraction.assert_awaited_once()
+    extraction = store.upsert_extraction.await_args.args[0]
+    assert extraction.entities[0].entity_type == "decision"
+    assert store.upsert_extraction.await_args.kwargs == {"session_id": "default"}
+    store.close.assert_awaited_once()
 
 
 def test_compact_audit_reports_identity_safety_without_rewriting_log(tmp_path: Path) -> None:

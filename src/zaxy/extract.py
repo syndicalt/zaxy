@@ -218,7 +218,14 @@ def _extract_task_claimed(event: Event) -> ExtractionResult:
 @register("task.completed")
 def _extract_task_completed(event: Event) -> ExtractionResult:
     """Mark task as completed."""
-    tid = event.payload.get("taskId", "unknown")
+    tid = _optional_text(event.payload.get("taskId") or event.payload.get("task")) or "unknown"
+    summary = _optional_text(event.payload.get("summary"))
+    task = ExtractedEntity(
+        name=tid,
+        entity_type="task",
+        observed_at=event.timestamp,
+        summary=summary,
+    )
     actor = ExtractedEntity(
         name=event.actor,
         entity_type="actor",
@@ -231,7 +238,76 @@ def _extract_task_completed(event: Event) -> ExtractionResult:
         valid_from=event.timestamp,
     )
     return ExtractionResult(
-        entities=[actor],
+        entities=[task, actor],
+        edges=[edge],
+        source_event_seq=event.seq,
+    )
+
+
+@register("decision.made")
+def _extract_decision_made(event: Event) -> ExtractionResult:
+    """Extract an agent decision with rationale into searchable graph context."""
+    decision = _optional_text(event.payload.get("decision")) or f"decision:{event.seq}"
+    entity = ExtractedEntity(
+        name=decision,
+        entity_type="decision",
+        observed_at=event.timestamp,
+        summary=_join_summary(
+            event.payload.get("summary"),
+            event.payload.get("rationale"),
+            event.payload.get("alternatives_considered"),
+        ),
+    )
+    actor = ExtractedEntity(
+        name=event.actor,
+        entity_type="actor",
+        observed_at=event.timestamp,
+    )
+    edge = ExtractedEdge(
+        source=event.actor,
+        target=decision,
+        relation_type="made_decision",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(
+        entities=[entity, actor],
+        edges=[edge],
+        source_event_seq=event.seq,
+    )
+
+
+@register("context.policy")
+def _extract_context_policy(event: Event) -> ExtractionResult:
+    """Extract durable project/session guidance into searchable graph context."""
+    source = _optional_text(event.payload.get("source")) or "context"
+    project = _optional_text(event.payload.get("project"))
+    name = f"{project}:{source}" if project else source
+    entity = ExtractedEntity(
+        name=name,
+        entity_type="context_policy",
+        observed_at=event.timestamp,
+        summary=_join_summary(
+            event.payload.get("status"),
+            event.payload.get("instructions"),
+        ),
+        properties={
+            "source": source,
+            "project": project,
+        },
+    )
+    actor = ExtractedEntity(
+        name=event.actor,
+        entity_type="actor",
+        observed_at=event.timestamp,
+    )
+    edge = ExtractedEdge(
+        source=event.actor,
+        target=name,
+        relation_type="set_context_policy",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(
+        entities=[entity, actor],
         edges=[edge],
         source_event_seq=event.seq,
     )
@@ -337,6 +413,18 @@ def _preference_summary(key: object, value: object) -> str | None:
     if value_text is None:
         return key_text
     return f"{key_text}={value_text}"
+
+
+def _join_summary(*values: object) -> str | None:
+    """Return a readable summary from scalar or list payload fields."""
+    parts: list[str] = []
+    for value in values:
+        if isinstance(value, list):
+            parts.extend(text for item in value if (text := _optional_text(item)))
+            continue
+        if text := _optional_text(value):
+            parts.append(text)
+    return " ".join(parts) or None
 
 
 def _positive_int(value: object, default: int) -> int:

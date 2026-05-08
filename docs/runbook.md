@@ -59,6 +59,9 @@ python -m zaxy replay .eventloom/work.jsonl --from-seq 42
 # Export as JSON
 python -m zaxy replay .eventloom/work.jsonl --json
 
+# Rebuild Neo4j projection after extractor changes
+python -m zaxy reproject .eventloom/default.jsonl --session-id default
+
 # Audit identity and citation safety before compacting
 python -m zaxy compact .eventloom/work.jsonl --audit
 

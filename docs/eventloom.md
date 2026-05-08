@@ -42,6 +42,18 @@ If a handoff needs context, replay reconstructs the sequence of events from a
 known point. This is why append performance and file locking are treated as core
 requirements.
 
+When a new extractor is added for an event type that already exists in a log,
+rebuild the graph projection from Eventloom so retrieval can see the richer
+entities and summaries:
+
+```bash
+zaxy reproject .eventloom/default.jsonl --session-id default
+```
+
+Use `--from-seq` to reproject only newer events after a known migration point.
+Reprojection does not rewrite the Eventloom log; it rebuilds Neo4j projections
+from the immutable events using the current extractor registry.
+
 Do not store secrets in Eventloom payloads. Payloads are durable and may be
 exported to observability systems. Event appends redact common secret keys and
 secret-looking values before the hash is sealed, and record the affected payload
