@@ -454,6 +454,11 @@ groups:
 | `MCP_OIDC_REQUIRED_SCOPE` | `zaxy:mcp` | Required OAuth scope for remote MCP/SSE |
 | `MCP_OIDC_SESSION_CLAIM` | `zaxy_session` | JWT claim containing the Zaxy session/tenant ID |
 | `MCP_OIDC_CLIENT_SECRET_FILE` | unset | Optional OIDC client secret file for future introspection flows |
+| `MCP_RATE_LIMIT_ENABLED` | `true` | Enable session-scoped remote MCP/SSE request rate limiting |
+| `MCP_RATE_LIMIT_REQUESTS` | `120` | Maximum remote MCP/SSE requests per window |
+| `MCP_RATE_LIMIT_WINDOW_SECONDS` | `60` | Remote MCP/SSE rate-limit window |
+| `MCP_AUDIT_ENABLED` | `false` | Export remote MCP/SSE request audit JSONL |
+| `MCP_AUDIT_PATH` | `.eventloom/remote_audit.jsonl` | Remote MCP/SSE request audit JSONL path |
 | `QUERY_DEFAULT_LIMIT` | `10` | Default query result limit |
 | `EMBEDDING_ENABLED` | `true` | Generate embeddings for vector search |
 | `EMBEDDING_PROVIDER` | `hash` | Embedding provider: `hash` or `openai` |

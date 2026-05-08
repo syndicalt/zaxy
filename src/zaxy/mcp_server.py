@@ -17,6 +17,8 @@ import contextvars
 import hmac
 import json
 from collections.abc import Mapping
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Protocol
 
 import jwt
@@ -29,7 +31,9 @@ from zaxy.config import get_settings
 from zaxy.extract import extract
 from zaxy.graph import GraphStore
 from zaxy.log import get_logger, setup_logging
+from zaxy.metrics import get_metrics
 from zaxy.query import QueryRouter
+from zaxy.remote_security import AuditEventExporter, RemoteAuditEvent, SessionRateLimiter
 from zaxy.runtime import LocalNeo4jRuntime
 from zaxy.security import (
     MAX_REPLAY_EVENTS,
@@ -540,6 +544,103 @@ class MCPTransportAuth:
         return validate_session_id(session_claim)
 
 
+class RemoteRateLimitError(PermissionError):
+    """Raised when a remote session exceeds its request rate limit."""
+
+    def __init__(self, retry_after_seconds: int) -> None:
+        super().__init__("remote MCP rate limit exceeded")
+        self.retry_after_seconds = retry_after_seconds
+
+
+class RemoteRequestGuard:
+    """Authorize, rate-limit, and audit remote MCP/SSE HTTP requests."""
+
+    def __init__(
+        self,
+        *,
+        auth: MCPTransportAuth,
+        rate_limit_enabled: bool,
+        rate_limit_requests: int,
+        rate_limit_window_seconds: int,
+        audit_enabled: bool,
+        audit_path: Path | str,
+    ) -> None:
+        self._auth = auth
+        self._limiter = SessionRateLimiter(
+            enabled=rate_limit_enabled,
+            max_requests=rate_limit_requests,
+            window_seconds=rate_limit_window_seconds,
+        )
+        self._audit = AuditEventExporter(path=Path(audit_path), enabled=audit_enabled)
+
+    def authorize(
+        self,
+        headers: Mapping[str, str],
+        *,
+        route: str,
+        method: str,
+        client_host: str | None,
+    ) -> str:
+        """Return authorized session ID or raise an auth/rate-limit error."""
+        try:
+            session_id = self._auth.authorize(headers)
+        except (PermissionError, ValueError) as exc:
+            self._write_audit(
+                session_id=None,
+                route=route,
+                method=method,
+                outcome="denied_auth",
+                reason=str(exc),
+                client_host=client_host,
+            )
+            raise
+
+        decision = self._limiter.check(session_id)
+        if not decision.allowed:
+            get_metrics().record_rate_limit_denial(session_id)
+            self._write_audit(
+                session_id=session_id,
+                route=route,
+                method=method,
+                outcome="denied_rate_limit",
+                reason="rate limit exceeded",
+                client_host=client_host,
+            )
+            raise RemoteRateLimitError(decision.retry_after_seconds)
+
+        self._write_audit(
+            session_id=session_id,
+            route=route,
+            method=method,
+            outcome="allowed",
+            reason=None,
+            client_host=client_host,
+        )
+        return session_id
+
+    def _write_audit(
+        self,
+        *,
+        session_id: str | None,
+        route: str,
+        method: str,
+        outcome: str,
+        reason: str | None,
+        client_host: str | None,
+    ) -> None:
+        self._audit.write(
+            RemoteAuditEvent(
+                timestamp=datetime.now(UTC).isoformat().replace("+00:00", "Z"),
+                session_id=session_id,
+                route=route,
+                method=method,
+                outcome=outcome,  # type: ignore[arg-type]
+                reason=reason,
+                client_host=client_host,
+            )
+        )
+
+
 def _format_prompt(events: list[Any], results: list[Any]) -> str:
     lines = ["# Recent Events"]
     for event in events:
@@ -699,13 +800,29 @@ async def main_sse(port: int = 8080, host: str = "127.0.0.1") -> None:
         oidc_required_scope=settings.mcp_oidc_required_scope,
         oidc_session_claim=settings.mcp_oidc_session_claim,
     )
-
-    def _authorize_request(request: Any) -> str:
-        return transport_auth.authorize(request.headers)
+    request_guard = RemoteRequestGuard(
+        auth=transport_auth,
+        rate_limit_enabled=settings.mcp_rate_limit_enabled,
+        rate_limit_requests=settings.mcp_rate_limit_requests,
+        rate_limit_window_seconds=settings.mcp_rate_limit_window_seconds,
+        audit_enabled=settings.mcp_audit_enabled,
+        audit_path=settings.mcp_audit_path,
+    )
 
     async def _sse_handler(request: Any) -> Any:
         try:
-            session_id = _authorize_request(request)
+            session_id = request_guard.authorize(
+                request.headers,
+                route="/sse",
+                method=request.method,
+                client_host=getattr(request.client, "host", None),
+            )
+        except RemoteRateLimitError as exc:
+            return PlainTextResponse(
+                str(exc),
+                status_code=429,
+                headers={"Retry-After": str(exc.retry_after_seconds)},
+            )
         except (PermissionError, ValueError) as exc:
             return PlainTextResponse(str(exc), status_code=401)
         token = remote_session_scope.set(session_id)
@@ -719,7 +836,18 @@ async def main_sse(port: int = 8080, host: str = "127.0.0.1") -> None:
 
     async def _messages_handler(request: Any) -> Any:
         try:
-            session_id = _authorize_request(request)
+            session_id = request_guard.authorize(
+                request.headers,
+                route="/messages/",
+                method=request.method,
+                client_host=getattr(request.client, "host", None),
+            )
+        except RemoteRateLimitError as exc:
+            return PlainTextResponse(
+                str(exc),
+                status_code=429,
+                headers={"Retry-After": str(exc.retry_after_seconds)},
+            )
         except (PermissionError, ValueError) as exc:
             return PlainTextResponse(str(exc), status_code=401)
         token = remote_session_scope.set(session_id)

@@ -47,6 +47,11 @@ class TestMetricsCollectorEnabled:
             "Total degraded operations and fallback paths",
             ["operation", "reason"],
         )
+        mock_prometheus["Counter"].assert_any_call(
+            "zaxy_remote_rate_limit_denials_total",
+            "Total remote MCP requests denied by rate limiting",
+            ["session_id"],
+        )
         mock_prometheus["Histogram"].assert_any_call(
             "zaxy_query_duration_seconds",
             "Query execution time",
@@ -101,6 +106,13 @@ class TestMetricsCollectorEnabled:
         )
         mc.degraded_operations.labels.return_value.inc.assert_called_once()
 
+    def test_record_rate_limit_denial(self, mock_prometheus: MagicMock) -> None:
+        """record_rate_limit_denial should increment the session counter."""
+        mc = MetricsCollector(enabled=True)
+        mc.record_rate_limit_denial("tenant-1")
+        mc.rate_limit_denials.labels.assert_called_once_with(session_id="tenant-1")
+        mc.rate_limit_denials.labels.return_value.inc.assert_called_once()
+
 
 # ------------------------------------------------------------------
 # MetricsCollector — disabled / no prometheus_client
@@ -118,6 +130,7 @@ class TestMetricsCollectorDisabled:
         mc.record_upsert("x")
         mc.record_invalidation()
         mc.record_degraded_operation("query", "graph_unavailable")
+        mc.record_rate_limit_denial("tenant-1")
 
     @patch("zaxy.metrics._HAS_PROMETHEUS", False)
     def test_disabled_when_import_missing(self) -> None:
@@ -135,6 +148,7 @@ class TestMetricsCollectorDisabled:
         mc.record_upsert("x")
         mc.record_invalidation()
         mc.record_degraded_operation("query", "graph_unavailable")
+        mc.record_rate_limit_denial("tenant-1")
 
 
 # ------------------------------------------------------------------

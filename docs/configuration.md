@@ -27,7 +27,10 @@ client cannot query or replay another client's session by accident. Production
 mode requires an admin token so replay and invalidation cannot be left open.
 Public multi-tenant deployments should use OIDC instead by setting
 `MCP_OIDC_ISSUER`, `MCP_OIDC_AUDIENCE`, `MCP_OIDC_JWKS_URL`,
-`MCP_OIDC_REQUIRED_SCOPE`, and `MCP_OIDC_SESSION_CLAIM`.
+`MCP_OIDC_REQUIRED_SCOPE`, and `MCP_OIDC_SESSION_CLAIM`. Remote MCP/SSE rate
+limiting is controlled by `MCP_RATE_LIMIT_ENABLED`,
+`MCP_RATE_LIMIT_REQUESTS`, and `MCP_RATE_LIMIT_WINDOW_SECONDS`. Remote request
+audit export is controlled by `MCP_AUDIT_ENABLED` and `MCP_AUDIT_PATH`.
 
 Embedding settings include `EMBEDDING_ENABLED`, `EMBEDDING_PROVIDER`,
 `EMBEDDING_DIMENSION`, `OPENAI_EMBEDDING_MODEL`, `OPENAI_BASE_URL`, and

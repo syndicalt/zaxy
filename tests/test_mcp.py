@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -477,6 +478,90 @@ class TestTransportAuth:
 
         with pytest.raises(ValueError, match="session_id"):
             auth.authorize({"x-zaxy-session-id": "../escape"})
+
+    def test_remote_request_guard_allows_and_audits_request(self, tmp_path: Path) -> None:
+        """Remote request guard should authorize, rate-limit, and audit allowed requests."""
+        from zaxy.mcp_server import RemoteRequestGuard
+
+        audit_path = tmp_path / "audit.jsonl"
+        guard = RemoteRequestGuard(
+            auth=MCPTransportAuth(token="secret"),
+            rate_limit_enabled=True,
+            rate_limit_requests=2,
+            rate_limit_window_seconds=60,
+            audit_enabled=True,
+            audit_path=audit_path,
+        )
+
+        session_id = guard.authorize(
+            {
+                "authorization": "Bearer secret",
+                "x-zaxy-session-id": "tenant-1",
+            },
+            route="/messages/",
+            method="POST",
+            client_host="127.0.0.1",
+        )
+
+        assert session_id == "tenant-1"
+        assert '"outcome":"allowed"' in audit_path.read_text(encoding="utf-8")
+
+    def test_remote_request_guard_denies_after_session_limit(self, tmp_path: Path) -> None:
+        """Remote request guard should return a rate-limit error for excess session traffic."""
+        from zaxy.mcp_server import RemoteRateLimitError, RemoteRequestGuard
+
+        audit_path = tmp_path / "audit.jsonl"
+        guard = RemoteRequestGuard(
+            auth=MCPTransportAuth(token=None),
+            rate_limit_enabled=True,
+            rate_limit_requests=1,
+            rate_limit_window_seconds=60,
+            audit_enabled=True,
+            audit_path=audit_path,
+        )
+
+        guard.authorize(
+            {"x-zaxy-session-id": "tenant-1"},
+            route="/messages/",
+            method="POST",
+            client_host=None,
+        )
+        with pytest.raises(RemoteRateLimitError) as exc:
+            guard.authorize(
+                {"x-zaxy-session-id": "tenant-1"},
+                route="/messages/",
+                method="POST",
+                client_host=None,
+            )
+
+        assert exc.value.retry_after_seconds == 60
+        assert '"outcome":"denied_rate_limit"' in audit_path.read_text(encoding="utf-8")
+
+    def test_remote_request_guard_audits_auth_denial(self, tmp_path: Path) -> None:
+        """Remote request guard should audit authentication failures without secrets."""
+        from zaxy.mcp_server import RemoteRequestGuard
+
+        audit_path = tmp_path / "audit.jsonl"
+        guard = RemoteRequestGuard(
+            auth=MCPTransportAuth(token="secret"),
+            rate_limit_enabled=True,
+            rate_limit_requests=2,
+            rate_limit_window_seconds=60,
+            audit_enabled=True,
+            audit_path=audit_path,
+        )
+
+        with pytest.raises(PermissionError):
+            guard.authorize(
+                {"authorization": "Bearer wrong", "x-zaxy-session-id": "tenant-1"},
+                route="/sse",
+                method="GET",
+                client_host="127.0.0.1",
+            )
+
+        text = audit_path.read_text(encoding="utf-8")
+        assert '"outcome":"denied_auth"' in text
+        assert "wrong" not in text
 
     def test_oidc_accepts_valid_token_scope_and_session_claim(self) -> None:
         """OIDC mode should validate JWT claims and scope the request from the token."""

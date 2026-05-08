@@ -54,6 +54,11 @@ class MetricsCollector:
                 "Total degraded operations and fallback paths",
                 ["operation", "reason"],
             )
+            self.rate_limit_denials = Counter(
+                "zaxy_remote_rate_limit_denials_total",
+                "Total remote MCP requests denied by rate limiting",
+                ["session_id"],
+            )
 
     def start_server(self, port: int = 8080) -> None:
         """Start the Prometheus metrics HTTP server."""
@@ -86,6 +91,11 @@ class MetricsCollector:
         """Record a graceful degradation or fallback path."""
         if self.enabled:
             self.degraded_operations.labels(operation=operation, reason=reason).inc()
+
+    def record_rate_limit_denial(self, session_id: str) -> None:
+        """Record a remote MCP request denied by rate limiting."""
+        if self.enabled:
+            self.rate_limit_denials.labels(session_id=session_id).inc()
 
 
 # Global singleton

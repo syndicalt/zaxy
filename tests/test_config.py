@@ -12,6 +12,16 @@ from zaxy.config import Settings
 from zaxy.log import setup_logging
 
 
+def test_remote_rate_limit_and_audit_defaults() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.mcp_rate_limit_enabled is True
+    assert settings.mcp_rate_limit_requests == 120
+    assert settings.mcp_rate_limit_window_seconds == 60
+    assert settings.mcp_audit_enabled is False
+    assert settings.mcp_audit_path == ".eventloom/remote_audit.jsonl"
+
+
 class TestSecretFiles:
     """Docker/Kubernetes secret file loading."""
 

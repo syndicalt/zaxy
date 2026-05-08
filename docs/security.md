@@ -33,6 +33,20 @@ mode uses `MCP_REMOTE_SESSION_HEADER`, defaulting to `x-zaxy-session-id`, for
 session scoping. Remote clients should not be able to replay or query another
 session by choosing a different payload field.
 
+Remote MCP/SSE requests are rate-limited by resolved session ID before the MCP
+transport handles the request. `MCP_RATE_LIMIT_ENABLED=true`,
+`MCP_RATE_LIMIT_REQUESTS=120`, and `MCP_RATE_LIMIT_WINDOW_SECONDS=60` provide a
+process-local fixed-window guard. A rejected request returns HTTP `429` with a
+`Retry-After` header. This is a single-process control; place a shared limiter
+or gateway in front of horizontally scaled deployments.
+
+Audit export can be enabled with `MCP_AUDIT_ENABLED=true`. Zaxy appends compact
+JSONL records to `MCP_AUDIT_PATH`, defaulting to
+`.eventloom/remote_audit.jsonl`, for allowed, auth-denied, and rate-limited
+remote requests. Audit records include route, method, outcome, session ID when
+known, reason, timestamp, and client host when available. They do not include
+bearer tokens, JWTs, request payloads, or raw query text.
+
 Production also requires `MCP_ADMIN_TOKEN` or `MCP_ADMIN_TOKEN_FILE`.
 Replay and invalidation are bulk-read or state-changing operations, so they
 must fail closed when no admin token is configured. Remote sessions still remain

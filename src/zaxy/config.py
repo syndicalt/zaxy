@@ -179,6 +179,26 @@ class Settings(BaseSettings):
         default=None,
         description="Path to a file containing the OIDC client secret",
     )
+    mcp_rate_limit_enabled: bool = Field(
+        default=True,
+        description="Enable per-session remote MCP/SSE request rate limiting",
+    )
+    mcp_rate_limit_requests: int = Field(
+        default=120,
+        description="Maximum remote MCP/SSE requests per rate-limit window",
+    )
+    mcp_rate_limit_window_seconds: int = Field(
+        default=60,
+        description="Remote MCP/SSE rate-limit window in seconds",
+    )
+    mcp_audit_enabled: bool = Field(
+        default=False,
+        description="Export remote MCP/SSE request audit JSONL records",
+    )
+    mcp_audit_path: str = Field(
+        default=".eventloom/remote_audit.jsonl",
+        description="Path for remote MCP/SSE request audit JSONL export",
+    )
 
     # ------------------------------------------------------------------
     # Logging
