@@ -46,6 +46,10 @@ configs set `ZAXY_DOMAIN` and `EVENTLOOM_THREAD` together, for example
 `ZAXY_DOMAIN=zaxy` and `EVENTLOOM_THREAD=zaxy-default`. A session ID may still
 change per run or per agent, but the domain should stay stable for a project.
 
+Codebase inventory is represented as typed events, not as direct graph writes.
+`code.file.indexed` records preserve relative path, language, hash, byte count,
+and line count. Replaying Eventloom can regenerate the file map projection.
+
 Replay is the operational escape hatch. If Neo4j is unavailable, Eventloom still
 contains the history. If an extractor changes, replay can regenerate the graph.
 If a handoff needs context, replay reconstructs the sequence of events from a

@@ -248,6 +248,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Extractor schema-pack examples for common agent event taxonomies
 - [x] Remote MCP rate limiting and audit event export
 - [x] Domain-separated MCP defaults to avoid cross-project `default` session bleed
+- [x] File-level codebase mapping as Eventloom-backed graph projection
 
 ## Metrics
 
@@ -261,4 +262,4 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 ## Next Steps
 
-1. Add codebase mapping as an Eventloom-backed graph projection.
+1. Add symbol-level codebase mapping for functions, classes, and imports.

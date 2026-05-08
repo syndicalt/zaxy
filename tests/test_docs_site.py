@@ -14,6 +14,7 @@ REQUIRED_DOCS = [
     "docs/mcp.md",
     "docs/eventloom.md",
     "docs/agent-events.md",
+    "docs/codebase.md",
     "docs/graph-schema.md",
     "docs/retrieval.md",
     "docs/embeddings.md",

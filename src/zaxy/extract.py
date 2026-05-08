@@ -472,6 +472,45 @@ def _extract_document_indexed(event: Event) -> ExtractionResult:
     )
 
 
+@register("code.file.indexed")
+def _extract_code_file_indexed(event: Event) -> ExtractionResult:
+    """Extract a code file inventory node from codebase indexing."""
+    path = _optional_text(event.payload.get("path")) or "code-file"
+    language = _optional_text(event.payload.get("language")) or "unknown"
+    sha256 = _optional_text(event.payload.get("sha256"))
+    byte_count = _positive_int(event.payload.get("bytes"), default=0)
+    line_count = _positive_int(event.payload.get("lines"), default=0)
+    actor = ExtractedEntity(
+        name=event.actor,
+        entity_type="actor",
+        observed_at=event.timestamp,
+    )
+    code_file = ExtractedEntity(
+        name=path,
+        entity_type="code_file",
+        observed_at=event.timestamp,
+        summary=f"{language} source file with {line_count} lines",
+        properties={
+            "source_path": path,
+            "language": language,
+            "source_sha256": sha256,
+            "bytes": byte_count,
+            "lines": line_count,
+        },
+    )
+    edge = ExtractedEdge(
+        source=actor.name,
+        target=code_file.name,
+        relation_type="indexed_code_file",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(
+        entities=[actor, code_file],
+        edges=[edge],
+        source_event_seq=event.seq,
+    )
+
+
 @register("transcript.turn")
 def _extract_transcript_turn(event: Event) -> ExtractionResult:
     """Extract a sanitized session transcript turn."""

@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
+from zaxy.codebase import collect_codebase_events
 from zaxy.compaction import (
     CompactionProjection,
     load_compaction_projection,
@@ -217,6 +218,25 @@ class MemoryFabric:
         """Ingest local Markdown/text documents as cited memory events."""
         sid = validate_session_id(session_id)
         events = collect_document_events(path, max_lines=max_lines)
+        for event in events:
+            await self.append(
+                event["event_type"],
+                actor=event["actor"],
+                payload=event["payload"],
+                session_id=sid,
+            )
+        return len(events)
+
+    async def ingest_codebase(
+        self,
+        path: str | Path,
+        *,
+        session_id: str = "default",
+        max_bytes: int = 512 * 1024,
+    ) -> int:
+        """Ingest a local codebase file inventory as memory events."""
+        sid = validate_session_id(session_id)
+        events = collect_codebase_events(path, max_bytes=max_bytes)
         for event in events:
             await self.append(
                 event["event_type"],

@@ -103,6 +103,25 @@ def test_local_profile_check_reports_success() -> None:
     assert '"reranker_provider": "lexical"' in result.output
 
 
+@patch("zaxy.__main__.MemoryFabric")
+def test_index_codebase_command_reports_indexed_count(mock_fabric_cls: MagicMock, tmp_path: Path) -> None:
+    """index-codebase should append codebase file events through MemoryFabric."""
+    fabric = AsyncMock()
+    fabric.ingest_codebase.return_value = 3
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["index-codebase", str(tmp_path), "--session-id", "agent-1", "--max-bytes", "1024"],
+    )
+
+    assert result.exit_code == 0
+    assert "Indexed 3 code files into session agent-1" in result.output
+    fabric.ingest_codebase.assert_awaited_once_with(tmp_path, session_id="agent-1", max_bytes=1024)
+    fabric.close.assert_awaited_once()
+
+
 @patch("zaxy.__main__.GraphStore")
 def test_reproject_command_replays_log_into_graph(mock_graph_store: MagicMock, tmp_path: Path) -> None:
     """reproject should rebuild graph projections from an Eventloom log."""

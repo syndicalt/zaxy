@@ -414,6 +414,40 @@ class TestDocumentIndexed:
         }
 
 
+class TestCodeFileIndexed:
+    """Tests for code.file.indexed extractor."""
+
+    def test_extracts_code_file_with_metadata_and_actor_edge(self) -> None:
+        ev = _make_event(
+            "code.file.indexed",
+            {
+                "path": "src/zaxy/core.py",
+                "language": "python",
+                "sha256": "abc123",
+                "bytes": 2048,
+                "lines": 80,
+            },
+            actor="zaxy-codebase-indexer",
+        )
+
+        result = extract(ev)
+
+        code_file = next(e for e in result.entities if e.entity_type == "code_file")
+        assert code_file.name == "src/zaxy/core.py"
+        assert code_file.summary == "python source file with 80 lines"
+        assert code_file.properties == {
+            "source_path": "src/zaxy/core.py",
+            "language": "python",
+            "source_sha256": "abc123",
+            "bytes": 2048,
+            "lines": 80,
+        }
+        edge = result.edges[0]
+        assert edge.relation_type == "indexed_code_file"
+        assert edge.source == "zaxy-codebase-indexer"
+        assert edge.target == "src/zaxy/core.py"
+
+
 class TestTranscriptTurn:
     """Tests for transcript.turn extractor."""
 

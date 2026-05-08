@@ -86,6 +86,12 @@ range, appends `document.indexed` events, and projects those chunks into the
 same graph as agent memory. This gives Zaxy generic project-material recall
 without losing replayability or provenance.
 
+Codebase indexing follows the same Eventloom-first shape. `zaxy index-codebase`
+and `MemoryFabric.ingest_codebase()` append `code.file.indexed` events for
+supported source files and project file inventory into `code_file` graph
+entities. This first layer supports codebase inventory queries before later
+symbol and import extractors are added.
+
 Transcript ingestion follows the same rule. `MemoryFabric.ingest_transcript()`
 turns session messages into sanitized `transcript.turn` events and graph
 `transcript_turn` entities. `MemoryFabric.assemble_context()` can then combine

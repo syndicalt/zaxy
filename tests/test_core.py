@@ -227,6 +227,31 @@ class TestDocumentIngestion:
         assert log.append.call_args_list[0].kwargs["thread"] == "agent-1"
 
 
+class TestCodebaseIngestion:
+    """Tests for codebase file inventory ingestion orchestration."""
+
+    async def test_ingest_codebase_appends_code_file_events(
+        self,
+        fabric: MemoryFabric,
+        tmp_path,
+    ) -> None:  # type: ignore[no-untyped-def]
+        """ingest_codebase() should append collected code file events."""
+        source = tmp_path / "src" / "app.py"
+        source.parent.mkdir()
+        source.write_text("def main():\n    return 42\n", encoding="utf-8")
+
+        count = await fabric.ingest_codebase(tmp_path, session_id="agent-1")
+
+        assert count == 1
+        log = fabric.session_manager.get.return_value.eventlog
+        log.append.assert_called_once()
+        assert log.append.call_args.args == ("code.file.indexed",)
+        assert log.append.call_args.kwargs["actor"] == "zaxy-codebase-indexer"
+        assert log.append.call_args.kwargs["payload"]["path"] == "src/app.py"
+        assert log.append.call_args.kwargs["payload"]["language"] == "python"
+        assert log.append.call_args.kwargs["thread"] == "agent-1"
+
+
 class TestTranscriptIngestion:
     """Tests for transcript ingestion orchestration."""
 

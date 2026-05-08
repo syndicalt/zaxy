@@ -28,6 +28,7 @@ from zaxy.compaction import (
     build_compaction_projection,
     write_compaction_projection,
 )
+from zaxy.core import MemoryFabric
 from zaxy.embedding import EmbeddingProvider, HashEmbeddingProvider, OpenAIEmbeddingProvider
 from zaxy.event import EventLog
 from zaxy.extract import extract
@@ -102,6 +103,26 @@ def local_profile(
     except FileExistsError as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(f"Wrote local profile to {written}")
+
+
+@app.command("index-codebase")
+def index_codebase(
+    path: Path = typer.Argument(..., help="Repository or directory to index"),  # noqa: B008
+    session_id: str = typer.Option("default", help="Session ID to append codebase events into"),  # noqa: B008
+    max_bytes: int = typer.Option(512 * 1024, help="Maximum source file size to index"),  # noqa: B008
+) -> None:
+    """Append file-level codebase inventory events."""
+    import asyncio
+
+    async def _run() -> int:
+        fabric = MemoryFabric()
+        try:
+            return await fabric.ingest_codebase(path, session_id=session_id, max_bytes=max_bytes)
+        finally:
+            await fabric.close()
+
+    count = asyncio.run(_run())
+    typer.echo(f"Indexed {count} code files into session {session_id}")
 
 
 @app.command("schema-plan")
