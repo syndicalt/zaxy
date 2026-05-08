@@ -251,6 +251,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] File-level codebase mapping as Eventloom-backed graph projection
 - [x] Symbol-level codebase mapping for functions, classes, types, and imports
 - [x] Local code dependency mapping from resolved imports to source files
+- [x] Python call-site mapping with resolved symbol call edges
 
 ## Metrics
 
@@ -264,4 +265,4 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 ## Next Steps
 
-1. Add call-site mapping and test coverage links.
+1. Add test coverage links from test symbols to production symbols.

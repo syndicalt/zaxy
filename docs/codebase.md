@@ -1,10 +1,10 @@
 # Codebase Mapping
 
-Codebase mapping starts with replayable file, symbol, import, and dependency
-events. Zaxy walks a local repository or directory, writes one
+Codebase mapping starts with replayable file, symbol, import, dependency, and
+call-site events. Zaxy walks a local repository or directory, writes one
 `code.file.indexed` event per supported source file, and by default adds
-`code.symbol.indexed`, `code.import.indexed`, and `code.dependency.indexed`
-events inferred from the file type.
+`code.symbol.indexed`, `code.import.indexed`, `code.dependency.indexed`, and
+`code.call.indexed` events inferred from the file type.
 
 Run:
 
@@ -39,6 +39,11 @@ and JavaScript/TypeScript relative imports are resolved against sibling files or
 `index` modules. Unresolved third-party imports remain `code.import.indexed`
 events only.
 
+Python call-site events use the standard `ast` module to record calls inside
+functions. Calls to same-file symbols and locally imported symbols are resolved
+to target files and qualified names when possible; unresolved calls still keep a
+cited `code.call.indexed` event with caller, callee, and line metadata.
+
 The graph projection creates one `code_file` entity per indexed path. The
 entity name is the relative path, the summary records language and line count,
 and properties preserve the source path, language, SHA-256 hash, byte count, and
@@ -47,7 +52,9 @@ line count. The indexer actor is connected to each file with an
 connected from the file with `defines_symbol`; import events project to
 `code_import` entities connected from the file with `imports`. Resolved local
 dependency events connect source and target `code_file` entities with
-`depends_on_file`.
+`depends_on_file`. Resolved call-site events connect caller and callee
+`code_symbol` entities with `calls_symbol` and keep a `code_call` citation
+entity for provenance.
 
 Use a project-scoped session when indexing. For example, a generated MCP config
 for the Zaxy repository uses `EVENTLOOM_THREAD=zaxy-default`; indexing into that

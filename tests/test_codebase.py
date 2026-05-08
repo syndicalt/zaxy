@@ -226,6 +226,52 @@ def test_collect_codebase_events_resolves_javascript_relative_imports(tmp_path: 
     ]
 
 
+def test_collect_codebase_events_indexes_python_call_sites(tmp_path: Path) -> None:
+    source = tmp_path / "src" / "zaxy" / "workflow.py"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        "from zaxy.core import MemoryFabric\n"
+        "\n"
+        "def helper():\n"
+        "    return 1\n"
+        "\n"
+        "def run():\n"
+        "    helper()\n"
+        "    MemoryFabric()\n",
+        encoding="utf-8",
+    )
+    core = tmp_path / "src" / "zaxy" / "core.py"
+    core.write_text("class MemoryFabric:\n    pass\n", encoding="utf-8")
+
+    events = collect_codebase_events(tmp_path)
+
+    calls = [event["payload"] for event in events if event["event_type"] == "code.call.indexed"]
+    assert calls == [
+        {
+            "path": "src/zaxy/workflow.py",
+            "language": "python",
+            "caller": "run",
+            "callee": "helper",
+            "callee_qualified_name": "helper",
+            "target_path": "src/zaxy/workflow.py",
+            "target_qualified_name": "helper",
+            "start_line": 7,
+            "resolution": "same_file_symbol",
+        },
+        {
+            "path": "src/zaxy/workflow.py",
+            "language": "python",
+            "caller": "run",
+            "callee": "MemoryFabric",
+            "callee_qualified_name": "MemoryFabric",
+            "target_path": "src/zaxy/core.py",
+            "target_qualified_name": "MemoryFabric",
+            "start_line": 8,
+            "resolution": "imported_symbol",
+        },
+    ]
+
+
 def test_collect_codebase_events_skips_hidden_cache_dependency_and_large_files(tmp_path: Path) -> None:
     keep = tmp_path / "pkg" / "mod.ts"
     keep.parent.mkdir()

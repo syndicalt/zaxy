@@ -556,6 +556,52 @@ class TestCodeDependencyIndexed:
         assert edge.relation_type == "depends_on_file"
 
 
+class TestCodeCallIndexed:
+    """Tests for code.call.indexed extractor."""
+
+    def test_extracts_call_with_resolved_symbol_edge(self) -> None:
+        ev = _make_event(
+            "code.call.indexed",
+            {
+                "path": "src/zaxy/workflow.py",
+                "language": "python",
+                "caller": "run",
+                "callee": "MemoryFabric",
+                "callee_qualified_name": "MemoryFabric",
+                "target_path": "src/zaxy/core.py",
+                "target_qualified_name": "MemoryFabric",
+                "start_line": 8,
+                "resolution": "imported_symbol",
+            },
+            actor="zaxy-codebase-indexer",
+        )
+
+        result = extract(ev)
+
+        symbols = [e for e in result.entities if e.entity_type == "code_symbol"]
+        assert [symbol.name for symbol in symbols] == [
+            "src/zaxy/workflow.py::run",
+            "src/zaxy/core.py::MemoryFabric",
+        ]
+        call = next(e for e in result.entities if e.entity_type == "code_call")
+        assert call.name == "src/zaxy/workflow.py::run->MemoryFabric:8"
+        assert call.properties == {
+            "source_path": "src/zaxy/workflow.py",
+            "language": "python",
+            "caller": "run",
+            "callee": "MemoryFabric",
+            "callee_qualified_name": "MemoryFabric",
+            "target_path": "src/zaxy/core.py",
+            "target_qualified_name": "MemoryFabric",
+            "source_start_line": 8,
+            "resolution": "imported_symbol",
+        }
+        edge = result.edges[0]
+        assert edge.source == "src/zaxy/workflow.py::run"
+        assert edge.target == "src/zaxy/core.py::MemoryFabric"
+        assert edge.relation_type == "calls_symbol"
+
+
 class TestTranscriptTurn:
     """Tests for transcript.turn extractor."""
 

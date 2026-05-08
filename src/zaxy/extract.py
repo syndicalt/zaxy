@@ -659,6 +659,74 @@ def _extract_code_dependency_indexed(event: Event) -> ExtractionResult:
     )
 
 
+@register("code.call.indexed")
+def _extract_code_call_indexed(event: Event) -> ExtractionResult:
+    """Extract a code call-site and resolved call edge when available."""
+    path = _optional_text(event.payload.get("path")) or "code-file"
+    language = _optional_text(event.payload.get("language")) or "unknown"
+    caller = _optional_text(event.payload.get("caller")) or "caller"
+    callee = _optional_text(event.payload.get("callee")) or "callee"
+    callee_qualified_name = _optional_text(event.payload.get("callee_qualified_name")) or callee
+    target_path = _optional_text(event.payload.get("target_path"))
+    target_qualified_name = _optional_text(event.payload.get("target_qualified_name"))
+    start_line = _positive_int(event.payload.get("start_line"), default=1)
+    resolution = _optional_text(event.payload.get("resolution")) or "unresolved"
+    caller_symbol = ExtractedEntity(
+        name=f"{path}::{caller}",
+        entity_type="code_symbol",
+        observed_at=event.timestamp,
+        properties={
+            "source_path": path,
+            "language": language,
+            "qualified_name": caller,
+        },
+    )
+    call = ExtractedEntity(
+        name=f"{path}::{caller}->{callee_qualified_name}:{start_line}",
+        entity_type="code_call",
+        observed_at=event.timestamp,
+        summary=f"{caller} calls {callee_qualified_name} in {path}:{start_line}",
+        properties={
+            "source_path": path,
+            "language": language,
+            "caller": caller,
+            "callee": callee,
+            "callee_qualified_name": callee_qualified_name,
+            "target_path": target_path,
+            "target_qualified_name": target_qualified_name,
+            "source_start_line": start_line,
+            "resolution": resolution,
+        },
+    )
+    entities = [caller_symbol, call]
+    edges: list[ExtractedEdge] = []
+    if target_path and target_qualified_name:
+        target_symbol = ExtractedEntity(
+            name=f"{target_path}::{target_qualified_name}",
+            entity_type="code_symbol",
+            observed_at=event.timestamp,
+            properties={
+                "source_path": target_path,
+                "language": language,
+                "qualified_name": target_qualified_name,
+            },
+        )
+        entities.append(target_symbol)
+        edges.append(
+            ExtractedEdge(
+                source=caller_symbol.name,
+                target=target_symbol.name,
+                relation_type="calls_symbol",
+                valid_from=event.timestamp,
+            )
+        )
+    return ExtractionResult(
+        entities=entities,
+        edges=edges,
+        source_event_seq=event.seq,
+    )
+
+
 @register("transcript.turn")
 def _extract_transcript_turn(event: Event) -> ExtractionResult:
     """Extract a sanitized session transcript turn."""

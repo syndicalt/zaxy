@@ -84,6 +84,7 @@ def collect_codebase_events(
         code_events = _collect_symbol_events(path, rel_path, language, content)
         events.extend(code_events)
         events.extend(_collect_dependency_events(rel_path, language, code_events, file_index))
+        events.extend(_collect_call_events(rel_path, language, content, code_events, file_index))
     return events
 
 
@@ -363,6 +364,127 @@ def _collect_dependency_events(
     return events
 
 
+def _collect_call_events(
+    rel_path: str,
+    language: str,
+    content: bytes,
+    code_events: list[dict[str, Any]],
+    file_index: set[str],
+) -> list[dict[str, Any]]:
+    if language != "python":
+        return []
+    text = content.decode("utf-8", errors="replace")
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return []
+    same_file_symbols = {
+        str(event["payload"]["qualified_name"]): event["payload"]
+        for event in code_events
+        if event["event_type"] == "code.symbol.indexed"
+    }
+    imported_symbols = _python_imported_symbol_targets(rel_path, code_events, file_index)
+    return _collect_python_call_events(rel_path, language, tree, same_file_symbols, imported_symbols)
+
+
+def _python_imported_symbol_targets(
+    rel_path: str,
+    code_events: list[dict[str, Any]],
+    file_index: set[str],
+) -> dict[str, tuple[str, str]]:
+    targets: dict[str, tuple[str, str]] = {}
+    for event in code_events:
+        if event["event_type"] != "code.import.indexed":
+            continue
+        payload = event["payload"]
+        module = str(payload["module"])
+        target_path, _resolution = _resolve_python_dependency(rel_path, module, file_index)
+        if target_path is None:
+            continue
+        name = str(payload["name"])
+        targets[name] = (target_path, name)
+    return targets
+
+
+def _collect_python_call_events(
+    rel_path: str,
+    language: str,
+    tree: ast.AST,
+    same_file_symbols: dict[str, dict[str, Any]],
+    imported_symbols: dict[str, tuple[str, str]],
+) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    parent_by_node: dict[ast.AST, ast.AST | None] = {}
+    for parent in ast.walk(tree):
+        for child in ast.iter_child_nodes(parent):
+            parent_by_node[child] = parent
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        caller = _nearest_python_callable(node, parent_by_node)
+        if caller is None:
+            continue
+        callee = _python_call_name(node.func)
+        if callee is None:
+            continue
+        resolved = _resolve_python_call_target(rel_path, callee, same_file_symbols, imported_symbols)
+        events.append(
+            _call_event(
+                rel_path,
+                language,
+                caller=caller,
+                callee=callee.rsplit(".", 1)[-1],
+                callee_qualified_name=callee,
+                target_path=resolved[0],
+                target_qualified_name=resolved[1],
+                start_line=node.lineno,
+                resolution=resolved[2],
+            )
+        )
+    return events
+
+
+def _nearest_python_callable(node: ast.AST, parent_by_node: dict[ast.AST, ast.AST | None]) -> str | None:
+    parent = parent_by_node.get(node)
+    while parent is not None:
+        if isinstance(parent, ast.FunctionDef | ast.AsyncFunctionDef):
+            return _python_qualified_name(parent, parent_by_node)
+        parent = parent_by_node.get(parent)
+    return None
+
+
+def _python_call_name(node: ast.AST) -> str | None:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        base = _python_call_name(node.value)
+        if base is None:
+            return node.attr
+        return f"{base}.{node.attr}"
+    return None
+
+
+def _resolve_python_call_target(
+    rel_path: str,
+    callee: str,
+    same_file_symbols: dict[str, dict[str, Any]],
+    imported_symbols: dict[str, tuple[str, str]],
+) -> tuple[str | None, str | None, str]:
+    if callee in same_file_symbols:
+        return rel_path, callee, "same_file_symbol"
+    short_name = callee.rsplit(".", 1)[-1]
+    if short_name in same_file_symbols:
+        return rel_path, str(same_file_symbols[short_name]["qualified_name"]), "same_file_symbol"
+    if callee in imported_symbols:
+        target_path, target_qualified_name = imported_symbols[callee]
+        return target_path, target_qualified_name, "imported_symbol"
+    if short_name in imported_symbols:
+        target_path, target_qualified_name = imported_symbols[short_name]
+        return target_path, target_qualified_name, "imported_symbol"
+    return None, None, "unresolved"
+
+
 def _resolve_dependency_target(
     rel_path: str,
     language: str,
@@ -432,6 +554,38 @@ def _first_in_index(candidates: list[str], file_index: set[str]) -> str | None:
         if normalized in file_index:
             return normalized
     return None
+
+
+def _call_event(
+    rel_path: str,
+    language: str,
+    *,
+    caller: str,
+    callee: str,
+    callee_qualified_name: str,
+    target_path: str | None,
+    target_qualified_name: str | None,
+    start_line: int,
+    resolution: str,
+) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "path": rel_path,
+        "language": language,
+        "caller": caller,
+        "callee": callee,
+        "callee_qualified_name": callee_qualified_name,
+        "start_line": start_line,
+        "resolution": resolution,
+    }
+    if target_path is not None:
+        payload["target_path"] = target_path
+    if target_qualified_name is not None:
+        payload["target_qualified_name"] = target_qualified_name
+    return {
+        "event_type": "code.call.indexed",
+        "actor": "zaxy-codebase-indexer",
+        "payload": payload,
+    }
 
 
 def _iter_supported_files(root: Path, max_bytes: int) -> list[Path]:
