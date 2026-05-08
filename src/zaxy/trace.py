@@ -7,6 +7,7 @@ that memory operations are never blocked by observability.
 
 from __future__ import annotations
 
+import inspect
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -80,23 +81,22 @@ class MemoryTracer:
             yield {}
             return
 
-        import time
-
-        trace = self._client.trace("zaxy-memory", metadata or {})
-        sp = trace.span(name, span_type, input=metadata)
+        trace = self._client.trace("zaxy-memory", metadata=metadata or {})
+        if inspect.isawaitable(trace):
+            trace = await trace
+        sp = trace.span(name, type=span_type, input=metadata)
+        if inspect.isawaitable(sp):
+            sp = await sp
         result: dict[str, Any] = {}
-        start = time.perf_counter()
         try:
             yield result
         except Exception as exc:
             result["error"] = str(exc)
             raise
         finally:
-            duration_ms = (time.perf_counter() - start) * 1000
             await sp.end(
                 output=result.get("output"),
                 error=result.get("error"),
-                duration_ms=duration_ms,
             )
             await trace.end()
 

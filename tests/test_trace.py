@@ -62,6 +62,64 @@ class TestSpan:
     """Tests for the span context manager."""
 
     @patch("zaxy.trace.AsyncPathlight")
+    async def test_span_uses_keyword_metadata_for_pathlight_trace(self, mock_cls: MagicMock) -> None:
+        """trace() metadata should be passed as a keyword for current Pathlight SDKs."""
+        with patch("zaxy.trace._HAS_PATHLIGHT", True):
+            t = MemoryTracer()
+            mock_trace = MagicMock()
+            mock_trace.end = AsyncMock()
+            mock_span = AsyncMock()
+            mock_trace.span.return_value = mock_span
+
+            def trace(
+                name: str,
+                *,
+                input: object | None = None,
+                tags: list[str] | None = None,
+                metadata: dict[str, object] | None = None,
+            ) -> MagicMock:
+                return mock_trace
+
+            mock_cls.return_value.trace.side_effect = trace
+            await t.connect()
+
+            async with t.span("test_op", metadata={"k": "v"}):
+                pass
+
+            mock_cls.return_value.trace.assert_called_once_with(
+                "zaxy-memory",
+                metadata={"k": "v"},
+            )
+
+    @patch("zaxy.trace.AsyncPathlight")
+    async def test_span_uses_async_pathlight_api(self, mock_cls: MagicMock) -> None:
+        """Current Pathlight async clients return trace and span objects from coroutines."""
+        with patch("zaxy.trace._HAS_PATHLIGHT", True):
+            t = MemoryTracer()
+            mock_trace = MagicMock()
+            mock_trace.end = AsyncMock()
+            mock_span = MagicMock()
+            mock_span.end = AsyncMock()
+            mock_trace.span = AsyncMock(return_value=mock_span)
+            mock_cls.return_value.trace = AsyncMock(return_value=mock_trace)
+            await t.connect()
+
+            async with t.span("test_op", span_type="tool", metadata={"k": "v"}) as result:
+                result["output"] = {"ok": True}
+
+            mock_cls.return_value.trace.assert_awaited_once_with(
+                "zaxy-memory",
+                metadata={"k": "v"},
+            )
+            mock_trace.span.assert_awaited_once_with(
+                "test_op",
+                type="tool",
+                input={"k": "v"},
+            )
+            mock_span.end.assert_awaited_once_with(output={"ok": True}, error=None)
+            mock_trace.end.assert_awaited_once()
+
+    @patch("zaxy.trace.AsyncPathlight")
     async def test_span_yields_result_dict(self, mock_cls: MagicMock) -> None:
         """The context manager should yield a mutable result dict."""
         with patch("zaxy.trace._HAS_PATHLIGHT", True):
