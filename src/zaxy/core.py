@@ -125,8 +125,13 @@ class MemoryFabric:
             project_id=pathlight_project_id or settings.pathlight_project_id,
             disabled=tracer_disabled or not settings.pathlight_enabled,
         )
+        projection_search_base = Path(eventloom_path or settings.eventloom_path)
         self.projections: tuple[CompactionProjection, ...] = tuple(
-            load_compaction_projection(path) for path in projection_paths
+            load_compaction_projection(path)
+            for path in _compaction_projection_paths(
+                projection_search_base,
+                projection_paths,
+            )
         )
         self._connected = False
 
@@ -630,6 +635,22 @@ def _warning_label(content: str) -> str:
     if len(compact) <= 80:
         return compact
     return f"{compact[:77]}..."
+
+
+def _compaction_projection_paths(
+    eventloom_path: Path,
+    explicit_paths: list[str | Path] | tuple[str | Path, ...],
+) -> tuple[Path, ...]:
+    discovered = (
+        sorted(eventloom_path.rglob("*.compaction.json"))
+        if eventloom_path.exists() and eventloom_path.is_dir()
+        else []
+    )
+    ordered = [*discovered, *(Path(path) for path in explicit_paths)]
+    unique: dict[Path, Path] = {}
+    for path in ordered:
+        unique.setdefault(path.resolve(), path)
+    return tuple(unique.values())
 
 
 def _tokens(value: str) -> set[str]:

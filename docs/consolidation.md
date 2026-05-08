@@ -162,7 +162,9 @@ references, source identities, and document/transcript citations, so future
 retrieval can use compact routing artifacts while final context remains tied to
 durable evidence.
 
-Projection artifacts can be loaded by `MemoryFabric(projection_paths=[...])`.
+Projection artifacts named `*.compaction.json` under the configured Eventloom
+directory are auto-discovered by `MemoryFabric(eventloom_path=...)`. Artifacts
+stored elsewhere can still be loaded with `MemoryFabric(projection_paths=[...])`.
 Loaded projections participate as local routing candidates and return context
 with `source="projection"`, `projection_id`, `event_ref`, and source citations.
 This keeps compacted routing useful while context assembly can still require

@@ -113,12 +113,13 @@ or summaries may route queries and reduce token load, but they should not become
 the sole authority for event, document, transcript, or graph facts. Prompt
 assembly emits warnings when compacted or projection-derived context lacks
 source-level citations, and when replay truncation leaves no retrieved source
-support. `MemoryFabric(projection_paths=[...])` can load source-backed
-compaction projection artifacts as local routing candidates; returned projection
-contexts carry `projection_id`, `event_ref`, and source citations so prompt
-assembly can distinguish supported compact context from degraded summaries. See
-[consolidation.md](consolidation.md) for the geometry-aware consolidation
-roadmap and identity-preserving projection model.
+support. `MemoryFabric(eventloom_path=...)` auto-discovers
+`*.compaction.json` artifacts under the Eventloom directory; explicit
+`projection_paths=[...]` remain available for artifacts stored elsewhere.
+Returned projection contexts carry `projection_id`, `event_ref`, and source
+citations so prompt assembly can distinguish supported compact context from
+degraded summaries. See [consolidation.md](consolidation.md) for the
+geometry-aware consolidation roadmap and identity-preserving projection model.
 
 Related references: [graph-schema.md](graph-schema.md), [mcp.md](mcp.md),
 [configuration.md](configuration.md), [testing.md](testing.md),
