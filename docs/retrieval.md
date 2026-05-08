@@ -108,6 +108,13 @@ embedding providers, and broader degraded-mode observability. These should
 augment Zaxy's temporal/provenance layer rather than replace it with generic
 chunk search.
 
+Future compaction work should remain identity-preserving. Consolidated vectors
+or summaries may route queries and reduce token load, but they should not become
+the sole authority for event, document, transcript, or graph facts. See
+[consolidation.md](consolidation.md) for the geometry-aware consolidation
+roadmap and the planned identity-invariant benchmark lane.
+
 Related references: [graph-schema.md](graph-schema.md), [mcp.md](mcp.md),
-[configuration.md](configuration.md), [testing.md](testing.md), and
-[README.md](../README.md). The public explanation is [site/index.html](../site/index.html).
+[configuration.md](configuration.md), [testing.md](testing.md),
+[consolidation.md](consolidation.md), and [README.md](../README.md). The public
+explanation is [site/index.html](../site/index.html).

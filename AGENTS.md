@@ -235,6 +235,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Extractor authoring templates and auditable schema migration tooling
 - [x] Frozen benchmark workload fingerprints and external comparison disclosures
 - [x] Representative benchmark suite for temporal, document, transcript, and mixed workloads
+- [x] Geometry-aware consolidation roadmap for identity-preserving compaction
 
 ## Metrics
 
@@ -248,8 +249,8 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 ## Next Steps
 
-1. Run and publish OpenAI embedding results for the representative suite workload.
-2. Add lifecycle import/export adapters for common agent frameworks.
+1. Add a consolidation-collapse benchmark lane and identity-recall metric.
+2. Add first-run IDE lifecycle workflows and import/export adapters for common agent frameworks.
 3. Add remote MCP rate limiting and audit event export.
 4. Add local-first embedding/reranker setup helpers.
 5. Add extractor schema-pack examples for common agent event taxonomies.

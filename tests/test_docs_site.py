@@ -21,6 +21,7 @@ REQUIRED_DOCS = [
     "docs/deployment.md",
     "docs/testing.md",
     "docs/benchmark-review.md",
+    "docs/consolidation.md",
     "docs/api.md",
 ]
 
