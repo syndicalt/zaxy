@@ -43,11 +43,11 @@ and JavaScript/TypeScript relative imports are resolved against sibling files or
 events only.
 
 Python call-site events use the standard `ast` module to record calls inside
-functions. JavaScript and TypeScript call-site events use a conservative line
-scanner for function blocks. Calls to same-file symbols and locally imported
-symbols are resolved to target files and qualified names when possible;
-unresolved calls still keep a cited `code.call.indexed` event with caller,
-callee, and line metadata.
+functions. JavaScript, TypeScript, Go, Rust, and Java call-site events use
+conservative line scanners for function or method blocks. Calls to same-file
+symbols and locally imported symbols are resolved to target files and qualified
+names when possible; unresolved calls still keep a cited `code.call.indexed`
+event with caller, callee, and line metadata.
 
 Python coverage events are conservative. Files under `tests/` or named
 `test_*.py` are scanned for `test_*` functions. When a test calls an imported

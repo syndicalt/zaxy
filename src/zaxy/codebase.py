@@ -260,6 +260,9 @@ def _java_events(rel_path: str, language: str, line: str, line_number: int) -> l
     if match := _JAVA_TYPE_RE.match(line):
         kind, name = match.groups()
         return [_symbol_event(rel_path, language, name=name, qualified_name=name, kind=kind, start_line=line_number, end_line=line_number)]
+    if match := _JAVA_METHOD_RE.match(line):
+        name = match.group(1)
+        return [_symbol_event(rel_path, language, name=name, qualified_name=name, kind="method", start_line=line_number, end_line=line_number)]
     return []
 
 
@@ -375,6 +378,9 @@ def _collect_call_events(
     if language in {"javascript", "typescript"}:
         text = content.decode("utf-8", errors="replace")
         return _collect_js_ts_call_events(rel_path, language, text, code_events, file_index)
+    if language in {"go", "rust", "java"}:
+        text = content.decode("utf-8", errors="replace")
+        return _collect_pattern_call_events(rel_path, language, text, code_events)
     if language != "python":
         return []
     text = content.decode("utf-8", errors="replace")
@@ -535,6 +541,88 @@ def _resolve_js_ts_call_target(
     if callee in imported_symbols:
         target_path, target_qualified_name = imported_symbols[callee]
         return target_path, target_qualified_name, "imported_symbol"
+    return None, None, "unresolved"
+
+
+_PATTERN_CALL_RE = re.compile(r"""\b([A-Za-z_]\w*)\s*\(""")
+_PATTERN_KEYWORDS = {"if", "for", "while", "switch", "catch", "return", "func", "fn", "class", "new"}
+_JAVA_METHOD_RE = re.compile(
+    r"""^\s*(?:public|private|protected|static|final|abstract|\s)*\s*(?:[A-Za-z_][\w<>\[\]]+\s+)+([A-Za-z_]\w*)\s*\("""
+)
+
+
+def _collect_pattern_call_events(
+    rel_path: str,
+    language: str,
+    text: str,
+    code_events: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    same_file_symbols = {
+        str(event["payload"]["qualified_name"]): event["payload"]
+        for event in code_events
+        if event["event_type"] == "code.symbol.indexed"
+    }
+    events: list[dict[str, Any]] = []
+    current_function: str | None = None
+    brace_depth = 0
+    for line_number, line in enumerate(text.splitlines(), start=1):
+        if current_function is None:
+            current_function = _pattern_function_name(language, line)
+            if current_function is None:
+                continue
+            brace_depth = line.count("{") - line.count("}")
+            if brace_depth <= 0:
+                current_function = None
+            continue
+
+        for match in _PATTERN_CALL_RE.finditer(line):
+            callee = match.group(1)
+            if callee in _PATTERN_KEYWORDS or callee == current_function:
+                continue
+            resolved = _resolve_pattern_call_target(rel_path, callee, same_file_symbols)
+            if resolved[2] == "unresolved":
+                continue
+            events.append(
+                _call_event(
+                    rel_path,
+                    language,
+                    caller=current_function,
+                    callee=callee,
+                    callee_qualified_name=callee,
+                    target_path=resolved[0],
+                    target_qualified_name=resolved[1],
+                    start_line=line_number,
+                    resolution=resolved[2],
+                )
+            )
+        brace_depth += line.count("{") - line.count("}")
+        if brace_depth <= 0:
+            current_function = None
+    return events
+
+
+def _pattern_function_name(language: str, line: str) -> str | None:
+    if language == "go":
+        match = _GO_FUNC_RE.match(line)
+        return match.group(1) if match else None
+    if language == "rust":
+        match = _RUST_SYMBOL_RE.match(line)
+        if match and match.group(1) == "fn":
+            return match.group(2)
+        return None
+    if language == "java":
+        match = _JAVA_METHOD_RE.match(line)
+        return match.group(1) if match else None
+    return None
+
+
+def _resolve_pattern_call_target(
+    rel_path: str,
+    callee: str,
+    same_file_symbols: dict[str, dict[str, Any]],
+) -> tuple[str | None, str | None, str]:
+    if callee in same_file_symbols:
+        return rel_path, callee, "same_file_symbol"
     return None, None, "unresolved"
 
 

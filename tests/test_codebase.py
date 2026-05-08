@@ -337,6 +337,59 @@ def test_collect_codebase_events_indexes_typescript_call_sites(tmp_path: Path) -
     ]
 
 
+def test_collect_codebase_events_indexes_go_rust_and_java_same_file_call_sites(tmp_path: Path) -> None:
+    go_file = tmp_path / "cmd" / "server.go"
+    go_file.parent.mkdir()
+    go_file.write_text(
+        "package main\n\n"
+        "func helper() {}\n"
+        "func Start() {\n"
+        "    helper()\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    rust_file = tmp_path / "src" / "lib.rs"
+    rust_file.parent.mkdir()
+    rust_file.write_text(
+        "fn helper() {}\n"
+        "pub fn start() {\n"
+        "    helper();\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    java_file = tmp_path / "src" / "App.java"
+    java_file.write_text(
+        "class App {\n"
+        "  void helper() {}\n"
+        "  void start() {\n"
+        "    helper();\n"
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    events = collect_codebase_events(tmp_path)
+
+    calls = [event["payload"] for event in events if event["event_type"] == "code.call.indexed"]
+    assert {
+        (
+            call["path"],
+            call["language"],
+            call["caller"],
+            call["callee"],
+            call["target_path"],
+            call["target_qualified_name"],
+            call["start_line"],
+            call["resolution"],
+        )
+        for call in calls
+    } == {
+        ("cmd/server.go", "go", "Start", "helper", "cmd/server.go", "helper", 5, "same_file_symbol"),
+        ("src/lib.rs", "rust", "start", "helper", "src/lib.rs", "helper", 3, "same_file_symbol"),
+        ("src/App.java", "java", "start", "helper", "src/App.java", "helper", 4, "same_file_symbol"),
+    }
+
+
 def test_collect_codebase_events_skips_hidden_cache_dependency_and_large_files(tmp_path: Path) -> None:
     keep = tmp_path / "pkg" / "mod.ts"
     keep.parent.mkdir()
