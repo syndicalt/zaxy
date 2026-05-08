@@ -20,6 +20,7 @@ REQUIRED_DOCS = [
     "docs/operations.md",
     "docs/deployment.md",
     "docs/testing.md",
+    "docs/benchmark-review.md",
     "docs/api.md",
 ]
 
@@ -70,12 +71,14 @@ def test_public_site_benchmark_claim_is_scoped_to_fixture() -> None:
     """Benchmark copy should not overclaim against broad markdown/vector systems."""
     html = Path("site/index.html").read_text(encoding="utf-8")
 
-    assert "Temporal workload benchmark" in html
+    assert "Representative context benchmark" in html
     assert "text-embedding-3-small" in html
     assert "1.000" in html
-    assert "+0.493" in html
+    assert "+0.480" in html
+    assert "650 paired queries" in html
     assert "not a universal benchmark" in html
     assert "reports/benchmarks/live-benchmark.md" in html
+    assert "docs/benchmark-review.md" in html
     assert "production-grade vector RAG" not in html
     assert "destroyed" not in html.casefold()
 

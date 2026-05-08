@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 
+import httpx
 import pytest
 
 from zaxy.config import Settings
@@ -218,3 +219,45 @@ class TestOpenAIEmbeddingProvider:
 
         with pytest.raises(ValueError, match="dimension"):
             provider.embed("Ship MVP")
+
+    def test_embed_retries_transient_server_errors(self) -> None:
+        calls = 0
+
+        class FakeResponse:
+            def __init__(self, status_code: int) -> None:
+                self.status_code = status_code
+                self.request = httpx.Request("POST", "https://api.openai.com/v1/embeddings")
+
+            def raise_for_status(self) -> None:
+                if self.status_code >= 400:
+                    raise httpx.HTTPStatusError(
+                        "server unavailable",
+                        request=self.request,
+                        response=httpx.Response(self.status_code, request=self.request),
+                    )
+
+            def json(self) -> dict[str, object]:
+                return {"data": [{"embedding": [0.1, 0.2, 0.3]}]}
+
+        class FakeClient:
+            def post(
+                self,
+                url: str,
+                *,
+                headers: dict[str, str],
+                json: dict[str, object],
+            ) -> FakeResponse:
+                nonlocal calls
+                del url, headers, json
+                calls += 1
+                return FakeResponse(503 if calls == 1 else 200)
+
+        provider = OpenAIEmbeddingProvider(
+            api_key="test-key",
+            dimension=3,
+            client=FakeClient(),
+            retry_backoff_seconds=0,
+        )
+
+        assert provider.embed("Ship MVP") == [0.1, 0.2, 0.3]
+        assert calls == 2

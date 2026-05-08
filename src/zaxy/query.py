@@ -342,6 +342,7 @@ class QueryRouter:
 
         # 3. Keyword search
         keyword_hits: list[SearchResult] = []
+        identifier_terms = _identifier_terms(query)
         for keyword_query in _expanded_queries(query):
             query_weight = 1.0 if keyword_query == query else self.scoring_profile.expansion_weight
             try:
@@ -356,9 +357,14 @@ class QueryRouter:
                 warnings.append("keyword search unavailable")
                 continue
             for hit in query_hits:
+                raw_score = _identifier_boosted_score(
+                    min(hit.score, 1.0),
+                    hit.entity,
+                    identifier_terms,
+                )
                 hit = SearchResult(
                     entity=hit.entity,
-                    score=min(hit.score, 1.0) * self.fusion_weights["keyword"] * query_weight,
+                    score=raw_score * self.fusion_weights["keyword"] * query_weight,
                     source="keyword",
                     raw_score=hit.score,
                     source_weight=self.fusion_weights["keyword"],
@@ -529,6 +535,38 @@ def _structured_preference_candidates(query: str) -> list[str]:
     return [f"{user_id}:{key}" for user_id in user_ids for key in keys]
 
 
+def _identifier_terms(query: str) -> tuple[str, ...]:
+    """Extract durable identifiers that should dominate fuzzy similarity."""
+    return tuple(
+        dict.fromkeys(
+            match.group(0)
+            for match in re.finditer(r"\b[A-Za-z]+(?:-[A-Za-z0-9]+)+\b", query)
+        )
+    )
+
+
+def _identifier_boosted_score(
+    base_score: float,
+    entity: GraphEntity,
+    identifiers: tuple[str, ...],
+) -> float:
+    if not identifiers:
+        return base_score
+    searchable = _entity_identifier_text(entity).casefold()
+    if any(identifier.casefold() in searchable for identifier in identifiers):
+        return max(base_score, 1.35)
+    return base_score
+
+
+def _entity_identifier_text(entity: GraphEntity) -> str:
+    values = [entity.name, entity.entity_type]
+    for key in ("summary", "source_path", "transcript_source"):
+        value = entity.properties.get(key)
+        if isinstance(value, str):
+            values.append(value)
+    return " ".join(values)
+
+
 def _expanded_queries(query: str) -> list[str]:
     """Return the original query plus deterministic synonym expansions."""
     tokens = re.findall(r"[A-Za-z0-9]+", query.lower())
@@ -536,9 +574,10 @@ def _expanded_queries(query: str) -> list[str]:
     for token in tokens:
         expanded_terms.extend(QUERY_EXPANSIONS.get(token, ()))
     expanded_terms = _unique(expanded_terms)
+    identifier_terms = list(_identifier_terms(query))
     if not expanded_terms:
-        return [query]
-    return [query, f"{query} {' '.join(expanded_terms)}"]
+        return [query, *identifier_terms]
+    return [query, f"{query} {' '.join(expanded_terms)}", *identifier_terms]
 
 
 def _candidate_payload(index: int, result: SearchResult) -> dict[str, object]:

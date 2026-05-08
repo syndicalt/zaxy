@@ -182,6 +182,97 @@ class TestQueryRouting:
         result_names = [result.content.split(" ", 1)[0] for result in results]
         assert result_names.index("task-0000") <= 1
 
+    async def test_identifier_keyword_hits_outrank_semantic_vector_neighbors(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Exact identifiers in content should beat semantically similar vector misses."""
+        correct_doc = SearchResult(
+            entity=GraphEntity(
+                name="docs/runbooks/service-0015.md:106-111",
+                entity_type="document",
+                valid_from="2024-08-01T00:00:00Z",
+                valid_to=None,
+                properties={
+                    "summary": "service-0015 runbook uses release marker doc-code-0015.",
+                    "source_path": "docs/runbooks/service-0015.md",
+                    "source_start_line": 106,
+                    "source_end_line": 111,
+                },
+            ),
+            score=0.5,
+            source="keyword",
+        )
+        wrong_doc = SearchResult(
+            entity=GraphEntity(
+                name="docs/runbooks/service-0013.md:92-97",
+                entity_type="document",
+                valid_from="2024-08-01T00:00:00Z",
+                valid_to=None,
+                properties={"summary": "service-0013 runbook uses release marker doc-code-0013."},
+            ),
+            score=0.99,
+            source="vector",
+        )
+        mock_store.search_vector.return_value = [wrong_doc]
+        mock_store.search_keyword.return_value = [correct_doc]
+
+        results = await router.query(
+            "Which runbook mentions release marker doc-code-0015?",
+            embedding=[0.1, 0.2],
+            limit=2,
+        )
+
+        assert results[0].content.startswith("docs/runbooks/service-0015.md:106-111")
+        keyword_queries = [call.args[0] for call in mock_store.search_keyword.await_args_list]
+        assert "doc-code-0015" in keyword_queries
+
+    async def test_session_identifier_keyword_hits_outrank_other_transcript_turns(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Session id matches should pin the intended transcript turn above generic hits."""
+        correct_turn = SearchResult(
+            entity=GraphEntity(
+                name="session-0001:turn-2",
+                entity_type="transcript_turn",
+                valid_from="2024-09-01T00:01:00Z",
+                valid_to=None,
+                properties={
+                    "summary": "assistant: We decided decision-code-0001 for workstream 0001.",
+                },
+            ),
+            score=0.5,
+            source="keyword",
+        )
+        wrong_turn = SearchResult(
+            entity=GraphEntity(
+                name="session-0010:turn-2",
+                entity_type="transcript_turn",
+                valid_from="2024-09-01T00:01:00Z",
+                valid_to=None,
+                properties={
+                    "summary": "assistant: We decided decision-code-0010 for workstream 0010.",
+                },
+            ),
+            score=0.99,
+            source="vector",
+        )
+        mock_store.search_vector.return_value = [wrong_turn]
+        mock_store.search_keyword.return_value = [correct_turn]
+
+        results = await router.query(
+            "What decision code was recorded in session-0001?",
+            embedding=[0.1, 0.2],
+            limit=2,
+        )
+
+        assert results[0].content.startswith("session-0001:turn-2")
+        keyword_queries = [call.args[0] for call in mock_store.search_keyword.await_args_list]
+        assert "session-0001" in keyword_queries
+
     async def test_structured_entity_names_seed_traversal(
         self,
         router: QueryRouter,

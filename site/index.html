@@ -58,8 +58,8 @@
     </section>
 
     <section class="proof-strip" aria-label="Project status">
-      <span>347 tests</span>
-      <span>92.48% coverage</span>
+      <span>350 tests</span>
+      <span>92.41% coverage</span>
       <span>ruff clean</span>
       <span>mypy clean</span>
       <span>release gate ready</span>
@@ -142,21 +142,21 @@
 
     <section id="benchmarks" class="section">
       <div class="section-heading">
-        <p class="eyebrow">Temporal workload benchmark</p>
-        <h2>Zaxy wins on a statistically powered temporal-memory workload.</h2>
+        <p class="eyebrow">Representative context benchmark</p>
+        <h2>Zaxy wins on a 650-query suite across memory, docs, transcripts, and mixed context.</h2>
         <p>
           This is not a universal benchmark against every markdown or vector RAG
-          implementation. It is a 300-query paired evaluation over a generated
-          temporal event workload: current facts, historical facts, and connected
-          task-goal context.
+          implementation. It is a paired OpenAI embedding evaluation over a
+          generated suite with current facts, historical facts, graph traversal,
+          cited documents, session transcripts, and mixed cross-lane context.
         </p>
       </div>
       <div class="value-grid">
-        <article><h3>1.000</h3><p>Mean Zaxy score with OpenAI <code>text-embedding-3-small</code> on the frozen 300-query temporal-memory workload.</p></article>
-        <article><h3>+0.493</h3><p>Mean score delta versus markdown+vector and vector baselines; paired randomization p-value was 0.0001.</p></article>
-        <article><h3>237 tokens</h3><p>Approximate returned context for Zaxy, versus 421 tokens for vector and markdown+vector on the same workload.</p></article>
+        <article><h3>1.000</h3><p>Mean Zaxy score with OpenAI <code>text-embedding-3-small</code> on the suite-v1 workload: 850 events and 650 paired queries.</p></article>
+        <article><h3>+0.480</h3><p>Mean score delta versus markdown+vector and vector baselines; paired randomization p-value was 0.0001.</p></article>
+        <article><h3>404 tokens</h3><p>Approximate returned context for Zaxy, versus 960 tokens for vector and markdown+vector on the same workload.</p></article>
       </div>
-      <p><a href="reports/benchmarks/live-benchmark.md">Read the full benchmark report</a></p>
+      <p><a href="reports/benchmarks/live-benchmark.md">Read the full benchmark report</a> · <a href="docs/benchmark-review.md">Read the academic review</a></p>
     </section>
 
     <section id="install" class="section install">
@@ -194,6 +194,7 @@ scripts/release-check.sh --root .</code></pre>
         <a href="docs/operations.md">Operations</a>
         <a href="docs/deployment.md">Deployment</a>
         <a href="docs/testing.md">Testing</a>
+        <a href="docs/benchmark-review.md">Benchmark review</a>
         <a href="docs/api.md">Python API</a>
       </div>
     </section>

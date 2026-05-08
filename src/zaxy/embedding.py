@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+import time
 from dataclasses import replace
 from typing import Any, Protocol
 
@@ -58,6 +59,8 @@ class HashEmbeddingProvider:
 class OpenAIEmbeddingProvider:
     """Hosted OpenAI embeddings provider."""
 
+    _RETRYABLE_STATUS_CODES = {408, 409, 429, 500, 502, 503, 504}
+
     def __init__(
         self,
         api_key: str,
@@ -65,30 +68,28 @@ class OpenAIEmbeddingProvider:
         dimension: int = 1536,
         base_url: str = "https://api.openai.com/v1",
         client: Any | None = None,
+        max_retries: int = 3,
+        retry_backoff_seconds: float = 0.5,
     ) -> None:
         if not api_key:
             raise ValueError("OPENAI_API_KEY is required for OpenAI embeddings")
         if dimension <= 0:
             raise ValueError("embedding dimension must be positive")
+        if max_retries < 0:
+            raise ValueError("max_retries must be non-negative")
+        if retry_backoff_seconds < 0:
+            raise ValueError("retry_backoff_seconds must be non-negative")
         self.dimension = dimension
         self.model = model
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._client = client or httpx.Client(timeout=30.0)
+        self._max_retries = max_retries
+        self._retry_backoff_seconds = retry_backoff_seconds
 
     def embed(self, text: str) -> list[float]:
         """Embed text with OpenAI's embeddings API."""
-        response = self._client.post(
-            f"{self._base_url}/embeddings",
-            headers={"Authorization": f"Bearer {self._api_key}"},
-            json={
-                "model": self.model,
-                "input": text,
-                "encoding_format": "float",
-                "dimensions": self.dimension,
-            },
-        )
-        response.raise_for_status()
+        response = self._post_with_retries(text)
         payload = response.json()
         embedding = payload["data"][0]["embedding"]
         vector = [float(value) for value in embedding]
@@ -97,6 +98,35 @@ class OpenAIEmbeddingProvider:
                 f"embedding dimension mismatch: expected {self.dimension}, got {len(vector)}"
             )
         return vector
+
+    def _post_with_retries(self, text: str) -> httpx.Response:
+        last_error: Exception | None = None
+        for attempt in range(self._max_retries + 1):
+            try:
+                response = self._client.post(
+                    f"{self._base_url}/embeddings",
+                    headers={"Authorization": f"Bearer {self._api_key}"},
+                    json={
+                        "model": self.model,
+                        "input": text,
+                        "encoding_format": "float",
+                        "dimensions": self.dimension,
+                    },
+                )
+                response.raise_for_status()
+                return response
+            except (httpx.HTTPStatusError, httpx.TransportError) as exc:
+                last_error = exc
+                if not self._should_retry(exc) or attempt >= self._max_retries:
+                    raise
+                time.sleep(self._retry_backoff_seconds * (2 ** attempt))
+        assert last_error is not None
+        raise last_error
+
+    def _should_retry(self, exc: httpx.HTTPStatusError | httpx.TransportError) -> bool:
+        if isinstance(exc, httpx.TransportError):
+            return True
+        return exc.response.status_code in self._RETRYABLE_STATUS_CODES
 
 
 def build_embedding_provider(settings: Any) -> EmbeddingProvider | None:
