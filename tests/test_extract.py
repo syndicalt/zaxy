@@ -64,6 +64,29 @@ class TestRegistry:
         result = extract(ev2)
         assert result.entities[0].name == "event:x.y:42"
 
+    def test_unknown_event_summary_includes_safe_payload_text(self) -> None:
+        """Fallback summaries should keep unknown typed events keyword-searchable."""
+        ev = _make_event(
+            "tool.result",
+            {
+                "tool": "pytest",
+                "status": "failed",
+                "findings": ["Neo4j unavailable", "Pathlight trace recovered"],
+                "nested": {"ignored": "not flattened"},
+                "secret": "sk-123",
+            },
+            actor="assistant",
+        )
+        result = extract(ev)
+        summary = result.entities[0].summary
+        assert "assistant emitted tool.result" in summary
+        assert "tool=pytest" in summary
+        assert "status=failed" in summary
+        assert "Neo4j unavailable" in summary
+        assert "Pathlight trace recovered" in summary
+        assert "nested" not in summary
+        assert "sk-123" not in summary
+
 
 # ------------------------------------------------------------------
 # Built-in extractor tests
@@ -239,6 +262,82 @@ class TestContextPolicy:
         assert "Use Eventloom append-only JSONL" in policy.summary
         assert policy.properties == {"source": "AGENTS.md", "project": "Zaxy"}
         assert result.edges[0].relation_type == "set_context_policy"
+
+
+class TestIssueDiagnosed:
+    """Tests for issue.diagnosed extractor."""
+
+    def test_extracts_issue_with_root_cause_and_evidence(self) -> None:
+        ev = _make_event(
+            "issue.diagnosed",
+            {
+                "issue": "memory_query returned no results for recent decisions",
+                "root_cause": "decision payload text was not projected into graph summaries",
+                "evidence": [
+                    "memory_replay showed the event existed",
+                    "exact query for event:decision.made:3 worked",
+                ],
+                "fix": "add typed extractors and reproject Eventloom",
+            },
+            actor="assistant",
+        )
+        result = extract(ev)
+        issue = next(e for e in result.entities if e.entity_type == "issue")
+        assert issue.name == "memory_query returned no results for recent decisions"
+        assert "decision payload text was not projected" in issue.summary
+        assert "exact query for event:decision.made:3 worked" in issue.summary
+        assert issue.properties == {"status": "diagnosed"}
+        assert result.edges[0].relation_type == "diagnosed_issue"
+
+
+class TestVerificationRecorded:
+    """Tests for verification.recorded extractor."""
+
+    def test_extracts_verification_with_command_and_outcome(self) -> None:
+        ev = _make_event(
+            "verification.recorded",
+            {
+                "command": "pytest --no-cov -m 'not integration'",
+                "outcome": "passed",
+                "summary": "382 passed, 5 deselected",
+                "evidence": ["exit code 0", "ruff clean"],
+            },
+            actor="assistant",
+        )
+        result = extract(ev)
+        verification = next(e for e in result.entities if e.entity_type == "verification")
+        assert verification.name == "pytest --no-cov -m 'not integration'"
+        assert "passed" in verification.summary
+        assert "382 passed, 5 deselected" in verification.summary
+        assert "ruff clean" in verification.summary
+        assert verification.properties == {"outcome": "passed"}
+        assert result.edges[0].relation_type == "recorded_verification"
+
+
+class TestHandoffCreated:
+    """Tests for handoff.created extractor."""
+
+    def test_extracts_handoff_with_next_steps_and_risks(self) -> None:
+        ev = _make_event(
+            "handoff.created",
+            {
+                "summary": "Zaxy MCP is online with temporal memory.",
+                "next_steps": [
+                    "Add remote MCP rate limiting",
+                    "Add local-first embedding setup",
+                ],
+                "risks": ["Pathlight traces are currently sparse"],
+            },
+            actor="assistant",
+        )
+        result = extract(ev)
+        handoff = next(e for e in result.entities if e.entity_type == "handoff")
+        assert handoff.name == "handoff:1"
+        assert "Zaxy MCP is online" in handoff.summary
+        assert "Add remote MCP rate limiting" in handoff.summary
+        assert "Pathlight traces are currently sparse" in handoff.summary
+        assert handoff.properties == {"status": "created"}
+        assert result.edges[0].relation_type == "created_handoff"
 
 
 class TestPreferenceChanged:

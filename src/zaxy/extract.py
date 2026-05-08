@@ -91,7 +91,10 @@ def extract(event: Event) -> ExtractionResult:
         name=entity_name,
         entity_type="event",
         observed_at=event.timestamp,
-        summary=f"{event.actor} emitted {event.type}",
+        summary=_join_summary(
+            f"{event.actor} emitted {event.type}",
+            _fallback_payload_summary(event.payload),
+        ),
     )
     return _with_source(
         event,
@@ -313,6 +316,106 @@ def _extract_context_policy(event: Event) -> ExtractionResult:
     )
 
 
+@register("issue.diagnosed")
+def _extract_issue_diagnosed(event: Event) -> ExtractionResult:
+    """Extract a diagnosed issue with root cause and supporting evidence."""
+    issue = _optional_text(event.payload.get("issue")) or f"issue:{event.seq}"
+    entity = ExtractedEntity(
+        name=issue,
+        entity_type="issue",
+        observed_at=event.timestamp,
+        summary=_join_summary(
+            event.payload.get("root_cause"),
+            event.payload.get("evidence"),
+            event.payload.get("fix"),
+        ),
+        properties={"status": "diagnosed"},
+    )
+    actor = ExtractedEntity(
+        name=event.actor,
+        entity_type="actor",
+        observed_at=event.timestamp,
+    )
+    edge = ExtractedEdge(
+        source=event.actor,
+        target=issue,
+        relation_type="diagnosed_issue",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(
+        entities=[entity, actor],
+        edges=[edge],
+        source_event_seq=event.seq,
+    )
+
+
+@register("verification.recorded")
+def _extract_verification_recorded(event: Event) -> ExtractionResult:
+    """Extract verification evidence such as test, lint, build, or smoke checks."""
+    command = _optional_text(event.payload.get("command")) or f"verification:{event.seq}"
+    outcome = _optional_text(event.payload.get("outcome")) or "unknown"
+    entity = ExtractedEntity(
+        name=command,
+        entity_type="verification",
+        observed_at=event.timestamp,
+        summary=_join_summary(
+            outcome,
+            event.payload.get("summary"),
+            event.payload.get("evidence"),
+        ),
+        properties={"outcome": outcome},
+    )
+    actor = ExtractedEntity(
+        name=event.actor,
+        entity_type="actor",
+        observed_at=event.timestamp,
+    )
+    edge = ExtractedEdge(
+        source=event.actor,
+        target=command,
+        relation_type="recorded_verification",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(
+        entities=[entity, actor],
+        edges=[edge],
+        source_event_seq=event.seq,
+    )
+
+
+@register("handoff.created")
+def _extract_handoff_created(event: Event) -> ExtractionResult:
+    """Extract a handoff summary with next steps and residual risks."""
+    name = _optional_text(event.payload.get("title")) or f"handoff:{event.seq}"
+    entity = ExtractedEntity(
+        name=name,
+        entity_type="handoff",
+        observed_at=event.timestamp,
+        summary=_join_summary(
+            event.payload.get("summary"),
+            event.payload.get("next_steps"),
+            event.payload.get("risks"),
+        ),
+        properties={"status": "created"},
+    )
+    actor = ExtractedEntity(
+        name=event.actor,
+        entity_type="actor",
+        observed_at=event.timestamp,
+    )
+    edge = ExtractedEdge(
+        source=event.actor,
+        target=name,
+        relation_type="created_handoff",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(
+        entities=[entity, actor],
+        edges=[edge],
+        source_event_seq=event.seq,
+    )
+
+
 @register("user.preference_changed")
 def _extract_preference_changed(event: Event) -> ExtractionResult:
     """Extract user preference as a persistent entity property."""
@@ -424,6 +527,24 @@ def _join_summary(*values: object) -> str | None:
             continue
         if text := _optional_text(value):
             parts.append(text)
+    return " ".join(parts) or None
+
+
+def _fallback_payload_summary(payload: dict[str, Any]) -> str | None:
+    """Return safe top-level payload text for unknown event searchability."""
+    parts: list[str] = []
+    blocked_keys = {"secret", "token", "password", "api_key", "access_token"}
+    for key in sorted(payload):
+        if key.casefold() in blocked_keys:
+            continue
+        value = payload[key]
+        if isinstance(value, list):
+            parts.extend(text for item in value if (text := _optional_text(item)))
+            continue
+        if isinstance(value, dict):
+            continue
+        if text := _optional_text(value):
+            parts.append(f"{key}={text}")
     return " ".join(parts) or None
 
 

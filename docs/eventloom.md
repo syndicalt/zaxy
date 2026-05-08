@@ -30,6 +30,11 @@ The generator rejects unsafe event names and identifiers so template rendering
 cannot become an injection path. The output is still starter code: add tests
 for the specific payload contract before making the extractor public.
 
+For common agent memory events such as decisions, diagnosed issues,
+verification evidence, handoffs, and policies, use the payload shapes in
+[agent-events.md](agent-events.md). These shapes are backed by built-in
+extractors and are intended to keep future `memory_query` calls useful.
+
 Events are session-scoped. The `SessionManager` maps validated session IDs to
 per-session JSONL paths under `EVENTLOOM_PATH`. Multi-agent deployments should
 shard by session so a busy agent does not contend on the same file as every

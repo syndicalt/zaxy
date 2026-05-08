@@ -13,6 +13,7 @@ REQUIRED_DOCS = [
     "docs/configuration.md",
     "docs/mcp.md",
     "docs/eventloom.md",
+    "docs/agent-events.md",
     "docs/graph-schema.md",
     "docs/retrieval.md",
     "docs/embeddings.md",
