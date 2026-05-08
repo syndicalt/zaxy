@@ -228,28 +228,31 @@ class TestDocumentIngestion:
 
 
 class TestCodebaseIngestion:
-    """Tests for codebase file inventory ingestion orchestration."""
+    """Tests for codebase mapping ingestion orchestration."""
 
-    async def test_ingest_codebase_appends_code_file_events(
+    async def test_ingest_codebase_appends_codebase_mapping_events(
         self,
         fabric: MemoryFabric,
         tmp_path,
     ) -> None:  # type: ignore[no-untyped-def]
-        """ingest_codebase() should append collected code file events."""
+        """ingest_codebase() should append collected file and symbol events."""
         source = tmp_path / "src" / "app.py"
         source.parent.mkdir()
         source.write_text("def main():\n    return 42\n", encoding="utf-8")
 
         count = await fabric.ingest_codebase(tmp_path, session_id="agent-1")
 
-        assert count == 1
+        assert count == 2
         log = fabric.session_manager.get.return_value.eventlog
-        log.append.assert_called_once()
-        assert log.append.call_args.args == ("code.file.indexed",)
-        assert log.append.call_args.kwargs["actor"] == "zaxy-codebase-indexer"
-        assert log.append.call_args.kwargs["payload"]["path"] == "src/app.py"
-        assert log.append.call_args.kwargs["payload"]["language"] == "python"
-        assert log.append.call_args.kwargs["thread"] == "agent-1"
+        assert [call.args[0] for call in log.append.call_args_list] == [
+            "code.file.indexed",
+            "code.symbol.indexed",
+        ]
+        first_call = log.append.call_args_list[0]
+        assert first_call.kwargs["actor"] == "zaxy-codebase-indexer"
+        assert first_call.kwargs["payload"]["path"] == "src/app.py"
+        assert first_call.kwargs["payload"]["language"] == "python"
+        assert first_call.kwargs["thread"] == "agent-1"
 
 
 class TestTranscriptIngestion:

@@ -1,8 +1,9 @@
 # Codebase Mapping
 
-Codebase mapping starts with a replayable file inventory. Zaxy walks a local
-repository or directory, writes one `code.file.indexed` event per supported
-source file, and projects each event into a `code_file` graph entity.
+Codebase mapping starts with replayable file, symbol, and import events. Zaxy
+walks a local repository or directory, writes one `code.file.indexed` event per
+supported source file, and by default adds `code.symbol.indexed` and
+`code.import.indexed` events inferred from the file type.
 
 Run:
 
@@ -10,7 +11,7 @@ Run:
 zaxy index-codebase . --session-id zaxy-default
 ```
 
-Each event payload contains:
+Each file event payload contains:
 
 - `path`: POSIX path relative to the indexed root
 - `language`: inferred from file suffix
@@ -22,18 +23,21 @@ The collector skips hidden directories, `.git`, `.eventloom`, Python and Node
 caches, virtual environments, dependency directories, and build outputs. It
 also skips files larger than the configured byte limit.
 
-This first slice does not parse symbols, imports, call graphs, or test
-relationships. Those should layer on top of the file inventory with additional
-event types, keeping Eventloom as the source of truth and Neo4j as the
-projection.
+Symbol events contain `path`, `language`, `name`, `qualified_name`, `kind`,
+`start_line`, and `end_line`. Import events contain `path`, `language`,
+`module`, `name`, `kind`, and `start_line`. Zaxy uses Python's standard `ast`
+module for `.py` files and conservative file-type-specific patterns for common
+source languages such as JavaScript, TypeScript, Go, Rust, Java, and shell.
+Malformed or unsupported source files still get file inventory events; symbol
+extraction for that file is skipped instead of aborting indexing.
 
 The graph projection creates one `code_file` entity per indexed path. The
 entity name is the relative path, the summary records language and line count,
 and properties preserve the source path, language, SHA-256 hash, byte count, and
 line count. The indexer actor is connected to each file with an
-`indexed_code_file` relation. This makes the first map intentionally simple:
-agents can ask which files exist, which languages are present, which files are
-large, and whether a file hash changed after a later indexing run.
+`indexed_code_file` relation. Symbol events project to `code_symbol` entities
+connected from the file with `defines_symbol`; import events project to
+`code_import` entities connected from the file with `imports`.
 
 Use a project-scoped session when indexing. For example, a generated MCP config
 for the Zaxy repository uses `EVENTLOOM_THREAD=zaxy-default`; indexing into that
@@ -42,13 +46,11 @@ same session keeps codebase inventory available to future `memory_query` and
 repositories into a raw `default` session. See [mcp.md](mcp.md) and
 [eventloom.md](eventloom.md) for domain-separated defaults.
 
-The file inventory is deliberately not a code search index. It does not include
+The codebase map is deliberately not a code search index. It does not include
 file contents, snippets, private tokens, or full source text. If source-level
 recall is needed, combine this feature with document ingestion for selected
-files or add a later symbol extractor that records names, line ranges, imports,
-and test relationships as structured events. Keeping the first layer metadata
-only reduces accidental sensitive content capture while still creating a useful
-map of the repository.
+files. Keeping this layer metadata-only reduces accidental sensitive content
+capture while still creating a useful structural map of the repository.
 
 Reindexing appends new events instead of mutating old ones. That preserves the
 timeline: a file can be observed with one hash today and another hash tomorrow.

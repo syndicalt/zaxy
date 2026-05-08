@@ -234,7 +234,7 @@ class MemoryFabric:
         session_id: str = "default",
         max_bytes: int = 512 * 1024,
     ) -> int:
-        """Ingest a local codebase file inventory as memory events."""
+        """Ingest local codebase file, symbol, and import mapping events."""
         sid = validate_session_id(session_id)
         events = collect_codebase_events(path, max_bytes=max_bytes)
         for event in events:

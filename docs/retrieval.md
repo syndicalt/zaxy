@@ -87,10 +87,11 @@ same graph as agent memory. This gives Zaxy generic project-material recall
 without losing replayability or provenance.
 
 Codebase indexing follows the same Eventloom-first shape. `zaxy index-codebase`
-and `MemoryFabric.ingest_codebase()` append `code.file.indexed` events for
-supported source files and project file inventory into `code_file` graph
-entities. This first layer supports codebase inventory queries before later
-symbol and import extractors are added.
+and `MemoryFabric.ingest_codebase()` append `code.file.indexed`,
+`code.symbol.indexed`, and `code.import.indexed` events for supported source
+files. The graph projection creates `code_file`, `code_symbol`, and
+`code_import` entities so retrieval can answer inventory, definition, and import
+questions without storing full source text.
 
 Transcript ingestion follows the same rule. `MemoryFabric.ingest_transcript()`
 turns session messages into sanitized `transcript.turn` events and graph

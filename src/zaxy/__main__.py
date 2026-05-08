@@ -111,7 +111,7 @@ def index_codebase(
     session_id: str = typer.Option("default", help="Session ID to append codebase events into"),  # noqa: B008
     max_bytes: int = typer.Option(512 * 1024, help="Maximum source file size to index"),  # noqa: B008
 ) -> None:
-    """Append file-level codebase inventory events."""
+    """Append codebase file, symbol, and import mapping events."""
     import asyncio
 
     async def _run() -> int:
@@ -122,7 +122,7 @@ def index_codebase(
             await fabric.close()
 
     count = asyncio.run(_run())
-    typer.echo(f"Indexed {count} code files into session {session_id}")
+    typer.echo(f"Indexed {count} codebase events into session {session_id}")
 
 
 @app.command("schema-plan")

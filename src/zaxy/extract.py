@@ -511,6 +511,98 @@ def _extract_code_file_indexed(event: Event) -> ExtractionResult:
     )
 
 
+@register("code.symbol.indexed")
+def _extract_code_symbol_indexed(event: Event) -> ExtractionResult:
+    """Extract a code symbol and connect it to the defining file."""
+    path = _optional_text(event.payload.get("path")) or "code-file"
+    language = _optional_text(event.payload.get("language")) or "unknown"
+    name = _optional_text(event.payload.get("name")) or "symbol"
+    qualified_name = _optional_text(event.payload.get("qualified_name")) or name
+    kind = _optional_text(event.payload.get("kind")) or "symbol"
+    start_line = _positive_int(event.payload.get("start_line"), default=1)
+    end_line = _positive_int(event.payload.get("end_line"), default=start_line)
+    code_file = ExtractedEntity(
+        name=path,
+        entity_type="code_file",
+        observed_at=event.timestamp,
+        properties={
+            "source_path": path,
+            "language": language,
+        },
+    )
+    symbol = ExtractedEntity(
+        name=f"{path}::{qualified_name}",
+        entity_type="code_symbol",
+        observed_at=event.timestamp,
+        summary=f"{language} {kind} {qualified_name} defined in {path}:{start_line}-{end_line}",
+        properties={
+            "source_path": path,
+            "language": language,
+            "symbol_name": name,
+            "qualified_name": qualified_name,
+            "symbol_kind": kind,
+            "source_start_line": start_line,
+            "source_end_line": end_line,
+        },
+    )
+    edge = ExtractedEdge(
+        source=code_file.name,
+        target=symbol.name,
+        relation_type="defines_symbol",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(
+        entities=[code_file, symbol],
+        edges=[edge],
+        source_event_seq=event.seq,
+    )
+
+
+@register("code.import.indexed")
+def _extract_code_import_indexed(event: Event) -> ExtractionResult:
+    """Extract a code import and connect it to the importing file."""
+    path = _optional_text(event.payload.get("path")) or "code-file"
+    language = _optional_text(event.payload.get("language")) or "unknown"
+    module = _optional_text(event.payload.get("module")) or "unknown"
+    name = _optional_text(event.payload.get("name")) or module
+    kind = _optional_text(event.payload.get("kind")) or "import"
+    start_line = _positive_int(event.payload.get("start_line"), default=1)
+    code_file = ExtractedEntity(
+        name=path,
+        entity_type="code_file",
+        observed_at=event.timestamp,
+        properties={
+            "source_path": path,
+            "language": language,
+        },
+    )
+    imported = ExtractedEntity(
+        name=f"import:{module}:{name}",
+        entity_type="code_import",
+        observed_at=event.timestamp,
+        summary=f"{language} {kind} {name} from {module} in {path}:{start_line}",
+        properties={
+            "source_path": path,
+            "language": language,
+            "module": module,
+            "import_name": name,
+            "import_kind": kind,
+            "source_start_line": start_line,
+        },
+    )
+    edge = ExtractedEdge(
+        source=code_file.name,
+        target=imported.name,
+        relation_type="imports",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(
+        entities=[code_file, imported],
+        edges=[edge],
+        source_event_seq=event.seq,
+    )
+
+
 @register("transcript.turn")
 def _extract_transcript_turn(event: Event) -> ExtractionResult:
     """Extract a sanitized session transcript turn."""

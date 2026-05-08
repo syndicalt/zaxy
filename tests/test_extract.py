@@ -448,6 +448,82 @@ class TestCodeFileIndexed:
         assert edge.target == "src/zaxy/core.py"
 
 
+class TestCodeSymbolIndexed:
+    """Tests for code.symbol.indexed extractor."""
+
+    def test_extracts_symbol_with_file_definition_edge(self) -> None:
+        ev = _make_event(
+            "code.symbol.indexed",
+            {
+                "path": "src/zaxy/core.py",
+                "language": "python",
+                "name": "MemoryFabric",
+                "qualified_name": "MemoryFabric",
+                "kind": "class",
+                "start_line": 45,
+                "end_line": 180,
+            },
+            actor="zaxy-codebase-indexer",
+        )
+
+        result = extract(ev)
+
+        symbol = next(e for e in result.entities if e.entity_type == "code_symbol")
+        assert symbol.name == "src/zaxy/core.py::MemoryFabric"
+        assert symbol.summary == "python class MemoryFabric defined in src/zaxy/core.py:45-180"
+        assert symbol.properties == {
+            "source_path": "src/zaxy/core.py",
+            "language": "python",
+            "symbol_name": "MemoryFabric",
+            "qualified_name": "MemoryFabric",
+            "symbol_kind": "class",
+            "source_start_line": 45,
+            "source_end_line": 180,
+        }
+        assert any(e.name == "src/zaxy/core.py" and e.entity_type == "code_file" for e in result.entities)
+        edge = result.edges[0]
+        assert edge.source == "src/zaxy/core.py"
+        assert edge.target == "src/zaxy/core.py::MemoryFabric"
+        assert edge.relation_type == "defines_symbol"
+
+
+class TestCodeImportIndexed:
+    """Tests for code.import.indexed extractor."""
+
+    def test_extracts_import_with_file_import_edge(self) -> None:
+        ev = _make_event(
+            "code.import.indexed",
+            {
+                "path": "src/zaxy/core.py",
+                "language": "python",
+                "module": "pathlib",
+                "name": "Path",
+                "kind": "from_import",
+                "start_line": 23,
+            },
+            actor="zaxy-codebase-indexer",
+        )
+
+        result = extract(ev)
+
+        imported = next(e for e in result.entities if e.entity_type == "code_import")
+        assert imported.name == "import:pathlib:Path"
+        assert imported.summary == "python from_import Path from pathlib in src/zaxy/core.py:23"
+        assert imported.properties == {
+            "source_path": "src/zaxy/core.py",
+            "language": "python",
+            "module": "pathlib",
+            "import_name": "Path",
+            "import_kind": "from_import",
+            "source_start_line": 23,
+        }
+        assert any(e.name == "src/zaxy/core.py" and e.entity_type == "code_file" for e in result.entities)
+        edge = result.edges[0]
+        assert edge.source == "src/zaxy/core.py"
+        assert edge.target == "import:pathlib:Path"
+        assert edge.relation_type == "imports"
+
+
 class TestTranscriptTurn:
     """Tests for transcript.turn extractor."""
 

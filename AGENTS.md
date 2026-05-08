@@ -249,6 +249,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Remote MCP rate limiting and audit event export
 - [x] Domain-separated MCP defaults to avoid cross-project `default` session bleed
 - [x] File-level codebase mapping as Eventloom-backed graph projection
+- [x] Symbol-level codebase mapping for functions, classes, types, and imports
 
 ## Metrics
 
@@ -262,4 +263,4 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 ## Next Steps
 
-1. Add symbol-level codebase mapping for functions, classes, and imports.
+1. Add code relationship mapping for call sites and test coverage links.
