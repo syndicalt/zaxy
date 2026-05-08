@@ -14,10 +14,12 @@ NEO4J_PASSWORD="${NEO4J_PASSWORD:-testpassword}"
 RESET_GRAPH="false"
 WORKLOAD="fixture"
 SUBJECTS="100"
+DOCUMENTS="250"
+SESSIONS="50"
 
 usage() {
     cat <<USAGE
-Usage: scripts/live-benchmark.sh [--root PATH] [--output-dir PATH] [--runs N] [--limit N] [--embedding-provider openai|hash] [--workload fixture|statistical|frozen] [--subjects N] [--reset-graph]
+Usage: scripts/live-benchmark.sh [--root PATH] [--output-dir PATH] [--runs N] [--limit N] [--embedding-provider openai|hash] [--workload fixture|statistical|frozen|suite] [--subjects N] [--documents N] [--sessions N] [--reset-graph]
 
 Runs zaxy benchmark against markdown, vector, markdown+vector, and live Zaxy retrieval.
 OpenAI mode requires OPENAI_API_KEY or OPENAI_API_KEY_FILE.
@@ -54,6 +56,14 @@ while [[ $# -gt 0 ]]; do
             SUBJECTS="$2"
             shift 2
             ;;
+        --documents)
+            DOCUMENTS="$2"
+            shift 2
+            ;;
+        --sessions)
+            SESSIONS="$2"
+            shift 2
+            ;;
         --reset-graph)
             RESET_GRAPH="true"
             shift
@@ -80,6 +90,8 @@ args=(
     --embedding-provider "${EMBEDDING_PROVIDER}"
     --workload "${WORKLOAD}"
     --subjects "${SUBJECTS}"
+    --documents "${DOCUMENTS}"
+    --sessions "${SESSIONS}"
     --neo4j-uri "${NEO4J_URI}"
     --neo4j-user "${NEO4J_USER}"
     --neo4j-password "${NEO4J_PASSWORD}"

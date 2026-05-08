@@ -234,12 +234,13 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Degraded-mode Prometheus metrics and alerting guidance
 - [x] Extractor authoring templates and auditable schema migration tooling
 - [x] Frozen benchmark workload fingerprints and external comparison disclosures
+- [x] Representative benchmark suite for temporal, document, transcript, and mixed workloads
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 344 passed |
+| Tests | 347 passed |
 | Coverage | 92.48% |
 | Lint | ruff clean |
 | Types | mypy clean |
@@ -247,7 +248,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 ## Next Steps
 
-1. Run and publish OpenAI embedding results for the frozen benchmark workload.
+1. Run and publish OpenAI embedding results for the representative suite workload.
 2. Add lifecycle import/export adapters for common agent frameworks.
 3. Add remote MCP rate limiting and audit event export.
 4. Add local-first embedding/reranker setup helpers.

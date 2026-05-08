@@ -317,6 +317,8 @@ PATHLIGHT_ACCESS_TOKEN_FILE=/run/secrets/pathlight_access_token
   `pytest tests/test_competitive_benchmarks.py --benchmark-only --no-cov`
 - Frozen live retrieval benchmark:
   `scripts/live-benchmark.sh --embedding-provider openai --workload frozen --runs 1 --reset-graph`
+- Representative retrieval benchmark suite:
+  `scripts/live-benchmark.sh --embedding-provider openai --workload suite --subjects 100 --documents 250 --sessions 50 --runs 1 --reset-graph`
 - Capacity planning review
 - Security audit (dependency updates, key rotation)
 

@@ -34,6 +34,7 @@ from zaxy.live_benchmark import (
     MarkdownVectorRetriever,
     VectorRetriever,
     benchmark_live_retrievers,
+    build_benchmark_suite_workload,
     build_frozen_statistical_workload,
     build_live_zaxy_retriever,
     build_statistical_event_log,
@@ -244,11 +245,21 @@ def benchmark(
         False,
         help="Delete Entity nodes in the benchmark Neo4j database before ingestion",
     ),
-    workload: str = typer.Option("fixture", help="Workload: fixture, statistical, or frozen"),
+    workload: str = typer.Option("fixture", help="Workload: fixture, statistical, frozen, or suite"),
     subjects: int = typer.Option(
         100,
         min=1,
-        help="Subject count for the statistical workload; each subject creates 3 queries",
+        help="Subject count for statistical/suite workloads; each subject creates 3 memory queries",
+    ),
+    documents: int = typer.Option(
+        250,
+        min=1,
+        help="Document count for the suite workload",
+    ),
+    sessions: int = typer.Option(
+        50,
+        min=1,
+        help="Transcript session count for the suite workload",
     ),
     external_results: Path | None = typer.Option(  # noqa: B008
         None,
@@ -306,8 +317,17 @@ def benchmark(
                 eventlog, cases, benchmark_workload = build_frozen_statistical_workload(
                     Path(tmp) / "bench.jsonl"
                 )
+            elif workload == "suite":
+                eventlog, cases, benchmark_workload = build_benchmark_suite_workload(
+                    Path(tmp) / "bench.jsonl",
+                    subjects=subjects,
+                    documents=documents,
+                    sessions=sessions,
+                )
             else:
-                raise typer.BadParameter("workload must be 'fixture', 'statistical', or 'frozen'")
+                raise typer.BadParameter(
+                    "workload must be 'fixture', 'statistical', 'frozen', or 'suite'"
+                )
             corpus = corpus_from_event_log(eventlog)
             zaxy_retriever, graph = await build_live_zaxy_retriever(
                 eventlog,

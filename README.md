@@ -134,6 +134,9 @@ pytest tests/test_competitive_benchmarks.py --benchmark-only --no-cov
 # Frozen live benchmark: markdown vs vector vs markdown+vector vs Zaxy
 scripts/live-benchmark.sh --embedding-provider openai --workload frozen --runs 1 --reset-graph
 
+# Representative benchmark suite: temporal memory + docs + transcripts + mixed context
+scripts/live-benchmark.sh --embedding-provider openai --workload suite --subjects 100 --documents 250 --sessions 50 --runs 1 --reset-graph
+
 # Production deployment preflight
 scripts/validate-deployment.sh --root .
 

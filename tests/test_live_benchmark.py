@@ -10,11 +10,13 @@ from zaxy.embedding import HashEmbeddingProvider
 from zaxy.live_benchmark import (
     FROZEN_WORKLOAD_SUBJECTS,
     FROZEN_WORKLOAD_VERSION,
+    SUITE_WORKLOAD_VERSION,
     CachedEmbeddingProvider,
     MarkdownRetriever,
     MarkdownVectorRetriever,
     VectorRetriever,
     benchmark_retrievers,
+    build_benchmark_suite_workload,
     build_frozen_statistical_workload,
     corpus_from_event_log,
     report_to_markdown,
@@ -33,8 +35,11 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "build_live_zaxy_retriever" in cli
     assert "build_statistical_event_log" in cli
     assert "build_frozen_statistical_workload" in cli
+    assert "build_benchmark_suite_workload" in cli
     assert "--workload" in script
     assert "--subjects" in script
+    assert "--documents" in script
+    assert "--sessions" in script
     assert "zaxy benchmark" in script
 
 
@@ -105,6 +110,92 @@ def test_frozen_statistical_workload_has_stable_identity(tmp_path: Path) -> None
     assert first_workload == second_workload
 
 
+def test_benchmark_suite_workload_covers_memory_document_and_transcript_lanes(
+    tmp_path: Path,
+) -> None:
+    """The suite workload should be broad enough to represent production context."""
+    eventlog, cases, workload = build_benchmark_suite_workload(
+        tmp_path / "suite.jsonl",
+        subjects=4,
+        documents=5,
+        sessions=3,
+    )
+
+    assert workload.version == SUITE_WORKLOAD_VERSION
+    assert workload.subjects == 4
+    assert workload.documents == 5
+    assert workload.sessions == 3
+    assert workload.lanes == (
+        "current",
+        "temporal",
+        "traversal",
+        "document",
+        "transcript",
+        "mixed",
+    )
+    assert workload.event_count == len(eventlog.read_all())
+    assert workload.case_count == len(cases)
+    assert workload.event_count == 20 + 5 + 6
+    assert workload.case_count == 12 + 5 + 3 + 3
+    assert {case.category for case in cases} == set(workload.lanes)
+    assert any(case.name.startswith("document-source-") for case in cases)
+    assert any(case.name.startswith("session-decision-") for case in cases)
+    assert any(case.name.startswith("mixed-release-") for case in cases)
+
+
+def test_benchmark_suite_workload_has_stable_identity(tmp_path: Path) -> None:
+    """Suite fingerprints should be stable across output paths."""
+    first_log, first_cases, first_workload = build_benchmark_suite_workload(
+        tmp_path / "first.jsonl",
+        subjects=3,
+        documents=4,
+        sessions=2,
+    )
+    second_log, second_cases, second_workload = build_benchmark_suite_workload(
+        tmp_path / "second.jsonl",
+        subjects=3,
+        documents=4,
+        sessions=2,
+    )
+
+    assert first_workload == second_workload
+    assert first_workload.sha256 == workload_fingerprint(
+        first_log,
+        first_cases,
+        SUITE_WORKLOAD_VERSION,
+    )
+    assert first_workload.sha256 == workload_fingerprint(
+        second_log,
+        second_cases,
+        SUITE_WORKLOAD_VERSION,
+    )
+
+
+def test_suite_report_renders_workload_dimensions(tmp_path: Path) -> None:
+    """Reports should disclose suite dimensions for reproducibility."""
+    eventlog, cases, workload = build_benchmark_suite_workload(
+        tmp_path / "suite.jsonl",
+        subjects=2,
+        documents=3,
+        sessions=2,
+    )
+    corpus = corpus_from_event_log(eventlog)
+    report = benchmark_retrievers(
+        {"md": MarkdownRetriever(corpus)},
+        cases,
+        runs=1,
+        limit=4,
+        workload=workload,
+    )
+
+    markdown = report_to_markdown(report)
+
+    assert f"Workload: `{SUITE_WORKLOAD_VERSION}`" in markdown
+    assert "- Documents: `3`" in markdown
+    assert "- Sessions: `2`" in markdown
+    assert "- Lanes: `current, temporal, traversal, document, transcript, mixed`" in markdown
+
+
 def test_cached_embedding_provider_reuses_repeated_text() -> None:
     """Benchmark runs should not repeat hosted embedding calls for identical text."""
     class CountingProvider:
@@ -130,4 +221,4 @@ def test_cached_embedding_provider_reuses_repeated_text() -> None:
 def test_live_benchmark_script_help_mentions_frozen_workload() -> None:
     script = Path("scripts/live-benchmark.sh").read_text(encoding="utf-8")
 
-    assert "--workload fixture|statistical|frozen" in script
+    assert "--workload fixture|statistical|frozen|suite" in script

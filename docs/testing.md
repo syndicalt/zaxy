@@ -67,11 +67,24 @@ systems such as QMD/OpenClaw, Graphiti/Zep, or Mem0 can be included only as
 operator-supplied disclosure rows via the Python CLI's `--external-results`
 JSON option; those rows are not treated as harness-verified results.
 
-Interpret these results narrowly. The statistical corpus is a generated temporal
-event workload, not a broad document-search benchmark or a claim against every
-production-grade vector RAG implementation. Use it to measure Zaxy's target
-problem: current versus historical facts, stale-context avoidance, graph
-connections, latency, and returned context size on the same paired workload.
+For production-scale representative evaluation, use the suite workload. It keeps
+the same paired backends but expands the corpus to current facts, historical
+facts, graph traversal, indexed documents, sanitized transcript turns, and mixed
+cross-lane queries:
+
+```bash
+scripts/live-benchmark.sh --embedding-provider openai --workload suite --subjects 100 --documents 250 --sessions 50 --runs 1 --reset-graph
+```
+
+Suite reports disclose subject, document, session, lane, event, query, and
+SHA-256 workload metadata. Increase `--subjects`, `--documents`, and
+`--sessions` for capacity tests after the smoke run is stable.
+
+Interpret the frozen temporal results narrowly. The suite workload is broader,
+but still synthetic; use it to measure Zaxy's target problem before making broad
+market claims: current versus historical facts, stale-context avoidance, graph
+connections, cited document recall, transcript recall, mixed context assembly,
+latency, and returned context size on the same paired workload.
 
 CI runs lint, mypy, the full test matrix, package artifact validation, and
 integration tests. The local release gate mirrors the important pieces. See

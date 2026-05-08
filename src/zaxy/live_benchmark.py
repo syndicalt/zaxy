@@ -23,6 +23,15 @@ from zaxy.query import QueryRouter
 
 FROZEN_WORKLOAD_VERSION = "statistical-v1"
 FROZEN_WORKLOAD_SUBJECTS = 100
+SUITE_WORKLOAD_VERSION = "suite-v1"
+SUITE_WORKLOAD_LANES = (
+    "current",
+    "temporal",
+    "traversal",
+    "document",
+    "transcript",
+    "mixed",
+)
 
 
 @dataclass(frozen=True)
@@ -101,6 +110,9 @@ class BenchmarkWorkload:
     event_count: int
     case_count: int
     sha256: str
+    documents: int | None = None
+    sessions: int | None = None
+    lanes: tuple[str, ...] = ()
 
     @classmethod
     def from_event_log(
@@ -110,6 +122,9 @@ class BenchmarkWorkload:
         *,
         version: str,
         subjects: int | None = None,
+        documents: int | None = None,
+        sessions: int | None = None,
+        lanes: tuple[str, ...] = (),
     ) -> BenchmarkWorkload:
         """Create workload metadata from an Eventloom log and cases."""
         return cls(
@@ -118,6 +133,9 @@ class BenchmarkWorkload:
             event_count=len(eventlog.read_all()),
             case_count=len(cases),
             sha256=workload_fingerprint(eventlog, cases, version),
+            documents=documents,
+            sessions=sessions,
+            lanes=lanes,
         )
 
 
@@ -426,6 +444,123 @@ def build_frozen_statistical_workload(
     return eventlog, cases, workload
 
 
+def build_benchmark_suite_workload(
+    path: str | Path,
+    subjects: int = 100,
+    documents: int = 250,
+    sessions: int = 50,
+) -> tuple[EventLog, tuple[BenchmarkCase, ...], BenchmarkWorkload]:
+    """Build a representative workload across memory, docs, transcripts, and mixed context."""
+    if subjects <= 0:
+        raise ValueError("subjects must be positive")
+    if documents <= 0:
+        raise ValueError("documents must be positive")
+    if sessions <= 0:
+        raise ValueError("sessions must be positive")
+
+    eventlog, cases = build_statistical_event_log(path, subjects=subjects)
+    suite_cases = list(cases)
+
+    for idx in range(documents):
+        release_code = f"doc-code-{idx:04d}"
+        service = f"service-{idx % subjects:04d}"
+        doc_path = f"docs/runbooks/{service}.md"
+        content = (
+            f"{service} production runbook uses release marker {release_code}. "
+            f"Owner team-{idx % 9} validates rollback window {idx % 5}."
+        )
+        eventlog.append(
+            "document.indexed",
+            actor="indexer",
+            payload={
+                "path": doc_path,
+                "start_line": 1 + (idx * 7),
+                "end_line": 6 + (idx * 7),
+                "content": content,
+                "sha256": _content_sha256(content),
+            },
+            timestamp=datetime(2024, 8, 1, tzinfo=UTC),
+        )
+        suite_cases.append(
+            BenchmarkCase(
+                name=f"document-source-{idx:04d}",
+                query=f"Which runbook mentions release marker {release_code}?",
+                expected_terms=(release_code, doc_path),
+                category="document",
+            )
+        )
+
+    for idx in range(sessions):
+        session_id = f"session-{idx:04d}"
+        decision_code = f"decision-code-{idx:04d}"
+        subject_id = idx % subjects
+        eventlog.append(
+            "transcript.turn",
+            actor="user",
+            payload={
+                "source": session_id,
+                "turn_index": 1,
+                "role": "user",
+                "content": f"Review workstream {subject_id:04d} release constraints.",
+                "redacted_paths": [],
+            },
+            timestamp=datetime(2024, 9, 1, tzinfo=UTC),
+        )
+        eventlog.append(
+            "transcript.turn",
+            actor="assistant",
+            payload={
+                "source": session_id,
+                "turn_index": 2,
+                "role": "assistant",
+                "content": (
+                    f"We decided {decision_code} for workstream {subject_id:04d} "
+                    f"after checking Goal {subject_id:04d}."
+                ),
+                "redacted_paths": [],
+            },
+            timestamp=datetime(2024, 9, 1, 0, 1, tzinfo=UTC),
+        )
+        suite_cases.append(
+            BenchmarkCase(
+                name=f"session-decision-{idx:04d}",
+                query=f"What decision code was recorded in {session_id}?",
+                expected_terms=(decision_code, session_id),
+                category="transcript",
+            )
+        )
+
+    mixed_count = min(subjects, documents, sessions)
+    for idx in range(mixed_count):
+        suite_cases.append(
+            BenchmarkCase(
+                name=f"mixed-release-{idx:04d}",
+                query=(
+                    f"For user-{idx:04d} in workstream {idx:04d}, recover the current theme, "
+                    f"runbook marker doc-code-{idx:04d}, and session decision."
+                ),
+                expected_terms=(
+                    f"theme=theme-new-{idx % 7}",
+                    f"doc-code-{idx:04d}",
+                    f"decision-code-{idx:04d}",
+                ),
+                forbidden_terms=(f"theme=theme-old-{idx % 7}",),
+                category="mixed",
+            )
+        )
+
+    workload = BenchmarkWorkload.from_event_log(
+        eventlog,
+        tuple(suite_cases),
+        version=SUITE_WORKLOAD_VERSION,
+        subjects=subjects,
+        documents=documents,
+        sessions=sessions,
+        lanes=SUITE_WORKLOAD_LANES,
+    )
+    return eventlog, tuple(suite_cases), workload
+
+
 def workload_fingerprint(
     eventlog: EventLog,
     cases: tuple[BenchmarkCase, ...],
@@ -615,6 +750,12 @@ def report_to_markdown(report: BenchmarkReport) -> str:
     ]
     if workload.subjects is not None:
         lines.append(f"- Subjects: `{workload.subjects}`")
+    if workload.documents is not None:
+        lines.append(f"- Documents: `{workload.documents}`")
+    if workload.sessions is not None:
+        lines.append(f"- Sessions: `{workload.sessions}`")
+    if workload.lanes:
+        lines.append(f"- Lanes: `{', '.join(workload.lanes)}`")
     lines.extend(
         [
         "",
@@ -838,6 +979,10 @@ def _cosine(left: list[float], right: list[float]) -> float:
 
 def _tokens(query: str) -> list[str]:
     return [token for token in query.casefold().replace("?", " ").split() if len(token) > 2]
+
+
+def _content_sha256(content: str) -> str:
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
 def _report_payload(report: BenchmarkReport) -> dict[str, object]:
