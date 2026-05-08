@@ -10,6 +10,21 @@ from zaxy.__main__ import app
 from zaxy.event import EventLog
 
 
+def test_ide_config_command_prints_copyable_mcp_json() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["ide-config", "claude-desktop", "--eventloom-path", ".eventloom"],
+    )
+
+    assert result.exit_code == 0
+    assert '"mcpServers"' in result.output
+    assert '"zaxy"' in result.output
+    assert '"args": [' in result.output
+    assert "token" not in result.output.casefold()
+
+
 def test_schema_plan_command_prints_migration_plan() -> None:
     runner = CliRunner()
 

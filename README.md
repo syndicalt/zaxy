@@ -34,6 +34,9 @@ pytest -m integration --no-cov
 
 # 4. Test drive (no agent needed)
 python scripts/test_drive.py
+
+# 5. Print first-run MCP config for an IDE/client
+zaxy ide-config claude-desktop --eventloom-path .eventloom
 ```
 
 ## Architecture

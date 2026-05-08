@@ -462,6 +462,7 @@ groups:
 ```bash
 zaxy serve          # Start MCP stdio server
 zaxy serve --transport sse --port 8080  # Start MCP SSE server bound to localhost
+zaxy ide-config claude-desktop --eventloom-path .eventloom  # Print first-run MCP config
 zaxy replay PATH    # Replay Eventloom log
 zaxy compact PATH --audit  # Audit compaction safety without rewriting the log
 zaxy compact PATH   # Compact log + create snapshot

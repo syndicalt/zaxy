@@ -44,6 +44,18 @@ Run stdio locally:
 zaxy serve
 ```
 
+Generate first-run MCP client config:
+
+```bash
+zaxy ide-config claude-desktop --eventloom-path .eventloom
+zaxy ide-config cursor --eventloom-path .eventloom
+zaxy ide-config vscode --eventloom-path .eventloom
+```
+
+These commands print copyable JSON fragments and do not include bearer tokens,
+passwords, or admin secrets. Keep remote SSE credentials in the client secret
+store or environment, not in committed config.
+
 Run SSE daemon mode:
 
 ```bash

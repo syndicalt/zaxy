@@ -32,6 +32,7 @@ from zaxy.embedding import EmbeddingProvider, HashEmbeddingProvider, OpenAIEmbed
 from zaxy.event import EventLog
 from zaxy.extract_templates import ExtractorTemplateSpec, render_extractor_template
 from zaxy.graph import GraphStore
+from zaxy.integrations import render_mcp_client_config
 from zaxy.live_benchmark import (
     BenchmarkWorkload,
     BM25Retriever,
@@ -55,6 +56,28 @@ from zaxy.mcp_server import main as mcp_main
 from zaxy.schema import render_schema_plan
 
 app = typer.Typer(help="Zaxy: Event-sourced temporal knowledge graph fabric")
+
+
+@app.command("ide-config")
+def ide_config(
+    client: str = typer.Argument(..., help="MCP client: claude-desktop, cursor, or vscode"),  # noqa: B008
+    eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory for this client"),
+    transport: str = typer.Option("stdio", help="Transport: stdio or sse"),
+    host: str = typer.Option("127.0.0.1", help="SSE host when transport=sse"),
+    port: int = typer.Option(8080, help="SSE port when transport=sse"),
+) -> None:
+    """Print a first-run MCP client configuration fragment."""
+    try:
+        config = render_mcp_client_config(
+            client,
+            eventloom_path=eventloom_path,
+            transport=transport,
+            host=host,
+            port=port,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(config, indent=2, sort_keys=True))
 
 
 @app.command("schema-plan")

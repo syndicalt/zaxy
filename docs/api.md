@@ -118,6 +118,20 @@ bounded context. `handoff_bundle` includes summary data, prompt-ready context,
 and Eventloom integrity status. `cleanup_subagent` records `subagent.cleaned`
 in the subagent session and returns a bundle the parent can import or inspect.
 
+Render first-run integration payloads:
+
+```python
+from zaxy import render_handoff_adapter, render_mcp_client_config
+
+config = render_mcp_client_config("claude-desktop", eventloom_path=".eventloom")
+handoff_payload = render_handoff_adapter(handoff, "langgraph")
+```
+
+`render_mcp_client_config()` supports `claude-desktop`, `cursor`, and `vscode`
+JSON fragments for local MCP setup. `render_handoff_adapter()` supports
+`generic`, `langgraph`, `crewai`, and `autogen` payload shapes without importing
+those frameworks.
+
 Customize retrieval policy:
 
 ```python

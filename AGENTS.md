@@ -243,20 +243,20 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Projection artifact retrieval as cited local routing candidates
 - [x] Okapi BM25 baseline in the live benchmark harness
 - [x] Automatic compaction projection discovery under Eventloom directories
+- [x] First-run MCP client config and framework handoff adapter helpers
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 370 passed |
-| Coverage | 92.49% |
+| Tests | 374 passed |
+| Coverage | 92.25% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
 
 ## Next Steps
 
-1. Add first-run IDE lifecycle workflows and import/export adapters for common agent frameworks.
-2. Add remote MCP rate limiting and audit event export.
-3. Add local-first embedding/reranker setup helpers.
-4. Add extractor schema-pack examples for common agent event taxonomies.
+1. Add remote MCP rate limiting and audit event export.
+2. Add local-first embedding/reranker setup helpers.
+3. Add extractor schema-pack examples for common agent event taxonomies.
