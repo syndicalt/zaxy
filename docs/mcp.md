@@ -56,6 +56,15 @@ These commands print copyable JSON fragments and do not include bearer tokens,
 passwords, or admin secrets. Keep remote SSE credentials in the client secret
 store or environment, not in committed config.
 
+For local stdio clients, the generated config is intentionally self-contained:
+it forces development-mode localhost settings and enables `NEO4J_AUTO_START`.
+On startup, Zaxy reuses `bolt://localhost:7687` when it is already available;
+otherwise it starts a named Docker container, `zaxy-neo4j`, with the default
+local credentials. Generated stdio configs set `startup_timeout_sec` to `90`
+so MCP clients do not kill startup while Docker is creating or warming the
+local Neo4j container. Set `NEO4J_AUTO_START=false` or provide a non-local
+`NEO4J_URI` when you want to manage Neo4j yourself.
+
 Run SSE daemon mode:
 
 ```bash

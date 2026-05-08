@@ -22,10 +22,10 @@ def setup_logging() -> None:
     level = getattr(logging, settings.log_level.upper(), logging.INFO)
 
     if settings.log_format == "json":
-        handler = logging.StreamHandler(sys.stdout)
+        handler = logging.StreamHandler(sys.stderr)
         handler.setFormatter(_JsonFormatter())
     else:
-        handler = logging.StreamHandler(sys.stdout)
+        handler = logging.StreamHandler(sys.stderr)
         fmt = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
         handler.setFormatter(logging.Formatter(fmt))
 

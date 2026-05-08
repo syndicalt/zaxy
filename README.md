@@ -13,7 +13,12 @@ Pathlight tracing.
 # CLI remain zaxy.
 pip install zaxy-memory
 
-# 1. Setup (generates .env and directories)
+# 1. Print first-run MCP config for an IDE/client.
+# Local stdio MCP auto-starts a localhost Neo4j container when Docker is
+# available, so average users do not need to manage a sidecar manually.
+zaxy ide-config claude-desktop --eventloom-path .eventloom
+
+# Optional: explicit local development setup if you want shell commands too.
 ./scripts/setup.sh
 
 # Production setup writes Docker secret files under ./secrets/.
@@ -21,7 +26,7 @@ pip install zaxy-memory
 ./scripts/generate-certs.sh .certs
 docker compose -f docker-compose.prod.yml up -d
 
-# 2. Start Neo4j + Zaxy MCP server
+# 2. Explicitly start Neo4j + Zaxy MCP server for development outside an MCP client
 docker compose up -d
 
 # 3. Verify
@@ -35,8 +40,6 @@ pytest -m integration --no-cov
 # 4. Test drive (no agent needed)
 python scripts/test_drive.py
 
-# 5. Print first-run MCP config for an IDE/client
-zaxy ide-config claude-desktop --eventloom-path .eventloom
 ```
 
 ## Architecture

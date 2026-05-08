@@ -17,9 +17,21 @@ def test_renders_claude_desktop_mcp_config_without_secrets() -> None:
     server = config["mcpServers"]["zaxy"]
     assert server["command"] == "zaxy"
     assert server["args"] == ["serve", "--eventloom-path", ".eventloom"]
-    assert server["env"] == {"EVENTLOOM_PATH": ".eventloom"}
-    assert "token" not in str(config).casefold()
-    assert "password" not in str(config).casefold()
+    assert server["startup_timeout_sec"] == 90
+    assert server["env"] == {
+        "EVENTLOOM_PATH": ".eventloom",
+        "LOG_LEVEL": "ERROR",
+        "MCP_ADMIN_TOKEN_FILE": "",
+        "MCP_REMOTE_AUTH_TOKEN_FILE": "",
+        "NEO4J_CA_CERT": "",
+        "NEO4J_AUTO_START": "true",
+        "NEO4J_PASSWORD_FILE": "",
+        "NEO4J_URI": "bolt://localhost:7687",
+        "OPENAI_API_KEY_FILE": "",
+        "PATHLIGHT_ACCESS_TOKEN_FILE": "",
+        "ZAXY_ENV": "development",
+    }
+    assert "testpassword" not in str(config).casefold()
 
 
 def test_renders_vscode_mcp_config_with_servers_key() -> None:

@@ -271,6 +271,33 @@ class TestMemoryQuery:
             await server.handle_memory_query({"query": "x" * 4097})
 
 
+class TestServerSetup:
+    """Tests for MCP server startup orchestration."""
+
+    async def test_setup_bootstraps_local_neo4j_before_graph_schema(self) -> None:
+        """Local stdio startup should make its Neo4j dependency transparent."""
+        with (
+            patch("zaxy.mcp_server.GraphStore") as mock_graph_cls,
+            patch("zaxy.mcp_server.MemoryTracer") as mock_tracer_cls,
+            patch("zaxy.mcp_server.SessionManager"),
+            patch("zaxy.mcp_server.LocalNeo4jRuntime") as mock_runtime_cls,
+        ):
+            mock_graph = AsyncMock()
+            mock_graph_cls.return_value = mock_graph
+            mock_tracer = AsyncMock()
+            mock_tracer_cls.return_value = mock_tracer
+            mock_runtime = MagicMock()
+            mock_runtime_cls.return_value = mock_runtime
+
+            srv = ZaxyMCPServer()
+            await srv.setup()
+
+        mock_runtime.ensure_available.assert_called_once()
+        mock_graph.connect.assert_awaited_once()
+        mock_graph.init_schema.assert_awaited_once()
+        mock_tracer.connect.assert_awaited_once()
+
+
 class TestContextLifecycleTools:
     """Tests for MCP context lifecycle handlers."""
 

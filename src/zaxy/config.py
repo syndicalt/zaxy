@@ -67,6 +67,18 @@ class Settings(BaseSettings):
         default="neo4j",
         description="Neo4j database name",
     )
+    neo4j_auto_start: bool = Field(
+        default=True,
+        description="Automatically start local Neo4j for localhost development MCP use",
+    )
+    neo4j_auto_start_image: str = Field(
+        default="neo4j:5.26-community",
+        description="Docker image used when automatically starting local Neo4j",
+    )
+    neo4j_auto_start_container: str = Field(
+        default="zaxy-neo4j",
+        description="Docker container name used for automatically started local Neo4j",
+    )
 
     # ------------------------------------------------------------------
     # TLS / Security

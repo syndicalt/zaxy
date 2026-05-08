@@ -30,6 +30,7 @@ from zaxy.extract import extract
 from zaxy.graph import GraphStore
 from zaxy.log import get_logger, setup_logging
 from zaxy.query import QueryRouter
+from zaxy.runtime import LocalNeo4jRuntime
 from zaxy.security import (
     MAX_REPLAY_EVENTS,
     validate_from_seq,
@@ -189,10 +190,21 @@ class ZaxyMCPServer:
         settings = get_settings()
         self._admin_token = settings.mcp_admin_token
         self.session_manager = SessionManager(base_path=eventloom_path or settings.eventloom_path)
+        self._neo4j_uri = neo4j_uri or settings.neo4j_uri
+        self._neo4j_user = neo4j_user or settings.neo4j_user
+        self._neo4j_password = neo4j_password or settings.neo4j_password
+        self.local_neo4j = LocalNeo4jRuntime(
+            uri=self._neo4j_uri,
+            user=self._neo4j_user,
+            password=self._neo4j_password,
+            enabled=settings.neo4j_auto_start and settings.zaxy_env.lower() != "production",
+            image=settings.neo4j_auto_start_image,
+            container_name=settings.neo4j_auto_start_container,
+        )
         self.graph = GraphStore(
-            neo4j_uri or settings.neo4j_uri,
-            neo4j_user or settings.neo4j_user,
-            neo4j_password or settings.neo4j_password,
+            self._neo4j_uri,
+            self._neo4j_user,
+            self._neo4j_password,
             ca_cert=settings.neo4j_ca_cert,
             trust_all=settings.neo4j_trust_all,
         )
@@ -204,6 +216,7 @@ class ZaxyMCPServer:
 
     async def setup(self) -> None:
         """Connect to Neo4j and initialize schema."""
+        self.local_neo4j.ensure_available()
         await self.graph.connect()
         await self.graph.init_schema()
         await self.tracer.connect()

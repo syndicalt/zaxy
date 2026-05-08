@@ -35,6 +35,12 @@ To start the default stdio MCP server:
 zaxy serve
 ```
 
+When stdio starts in local development mode, Zaxy checks
+`bolt://localhost:7687`. If Neo4j is not reachable and Docker is available, it
+starts a `zaxy-neo4j` container automatically and waits for Bolt before serving
+MCP tools. This is the default in generated MCP client config. Set
+`NEO4J_AUTO_START=false` to opt out.
+
 To run the SSE transport for daemon-style clients:
 
 ```bash

@@ -429,6 +429,9 @@ groups:
 | `NEO4J_PASSWORD_FILE` | unset | File containing Neo4j password |
 | `NEO4J_CA_CERT` | unset | CA certificate path for encrypted custom-CA Bolt connections |
 | `NEO4J_TRUST_ALL` | `false` | Trust all Neo4j certs; development only |
+| `NEO4J_AUTO_START` | `true` | Auto-start a local Docker Neo4j container for localhost development MCP startup |
+| `NEO4J_AUTO_START_IMAGE` | `neo4j:5.26-community` | Docker image used by local Neo4j auto-start |
+| `NEO4J_AUTO_START_CONTAINER` | `zaxy-neo4j` | Container name used by local Neo4j auto-start |
 | `PATHLIGHT_URL` | `http://localhost:4100` | Pathlight collector |
 | `PATHLIGHT_ENABLED` | `false` | Enable Pathlight client and health check |
 | `PATHLIGHT_ACCESS_TOKEN` | unset | Optional Pathlight token |

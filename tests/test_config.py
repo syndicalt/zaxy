@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
 
 from zaxy.config import Settings
+from zaxy.log import setup_logging
 
 
 class TestSecretFiles:
@@ -215,3 +217,14 @@ class TestProductionValidation:
         settings = Settings(_env_file=None)
 
         assert settings.neo4j_uri == "bolt://neo4j:7687"
+
+
+def test_logging_uses_stderr_for_mcp_stdio(capsys: pytest.CaptureFixture[str]) -> None:
+    """Logs must not contaminate MCP stdio frames on stdout."""
+    setup_logging()
+
+    logging.getLogger("zaxy.mcp_server").error("startup failed")
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "startup failed" in captured.err

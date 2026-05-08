@@ -69,7 +69,20 @@ def _server_config(
         return {
             "command": "zaxy",
             "args": ["serve", "--eventloom-path", eventloom_path],
-            "env": {"EVENTLOOM_PATH": eventloom_path},
+            "startup_timeout_sec": 90,
+            "env": {
+                "EVENTLOOM_PATH": eventloom_path,
+                "LOG_LEVEL": "ERROR",
+                "MCP_ADMIN_TOKEN_FILE": "",
+                "MCP_REMOTE_AUTH_TOKEN_FILE": "",
+                "NEO4J_CA_CERT": "",
+                "NEO4J_AUTO_START": "true",
+                "NEO4J_PASSWORD_FILE": "",
+                "NEO4J_URI": "bolt://localhost:7687",
+                "OPENAI_API_KEY_FILE": "",
+                "PATHLIGHT_ACCESS_TOKEN_FILE": "",
+                "ZAXY_ENV": "development",
+            },
         }
     if normalized_transport == "sse":
         return {
