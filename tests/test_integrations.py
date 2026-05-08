@@ -12,6 +12,7 @@ def test_renders_claude_desktop_mcp_config_without_secrets() -> None:
         "claude-desktop",
         eventloom_path=".eventloom",
         transport="stdio",
+        domain="zaxy",
     )
 
     server = config["mcpServers"]["zaxy"]
@@ -20,6 +21,7 @@ def test_renders_claude_desktop_mcp_config_without_secrets() -> None:
     assert server["startup_timeout_sec"] == 90
     assert server["env"] == {
         "EVENTLOOM_PATH": ".eventloom",
+        "EVENTLOOM_THREAD": "zaxy-default",
         "LOG_LEVEL": "ERROR",
         "MCP_ADMIN_TOKEN_FILE": "",
         "MCP_REMOTE_AUTH_TOKEN_FILE": "",
@@ -29,6 +31,7 @@ def test_renders_claude_desktop_mcp_config_without_secrets() -> None:
         "NEO4J_URI": "bolt://localhost:7687",
         "OPENAI_API_KEY_FILE": "",
         "PATHLIGHT_ACCESS_TOKEN_FILE": "",
+        "ZAXY_DOMAIN": "zaxy",
         "ZAXY_ENV": "development",
     }
     assert "testpassword" not in str(config).casefold()
@@ -41,6 +44,19 @@ def test_renders_vscode_mcp_config_with_servers_key() -> None:
     assert "servers" in config
     assert config["servers"]["zaxy"]["command"] == "zaxy"
     assert config["servers"]["zaxy"]["args"][0] == "serve"
+
+
+def test_renders_sse_config_with_domain_session_header() -> None:
+    """Remote MCP config should avoid raw default session scope."""
+    config = render_mcp_client_config(
+        "cursor",
+        eventloom_path=".eventloom",
+        transport="sse",
+        domain="gallerie",
+    )
+
+    server = config["mcpServers"]["zaxy"]
+    assert server["headers"]["x-zaxy-session-id"] == "gallerie-default"
 
 
 def test_handoff_adapter_preserves_prompt_context_and_integrity() -> None:

@@ -16,13 +16,15 @@ def test_ide_config_command_prints_copyable_mcp_json() -> None:
 
     result = runner.invoke(
         app,
-        ["ide-config", "claude-desktop", "--eventloom-path", ".eventloom"],
+        ["ide-config", "claude-desktop", "--eventloom-path", ".eventloom", "--domain", "zaxy"],
     )
 
     assert result.exit_code == 0
     assert '"mcpServers"' in result.output
     assert '"zaxy"' in result.output
     assert '"args": [' in result.output
+    assert '"EVENTLOOM_THREAD": "zaxy-default"' in result.output
+    assert '"ZAXY_DOMAIN": "zaxy"' in result.output
     assert '"ZAXY_ENV": "development"' in result.output
     assert '"NEO4J_URI": "bolt://localhost:7687"' in result.output
     assert '"NEO4J_AUTO_START": "true"' in result.output

@@ -15,10 +15,12 @@ password `testpassword`. For localhost development MCP startup,
 password and requires TLS evidence when using a `bolt://` URI. Use `bolt+s://`
 or set `NEO4J_CA_CERT` to a trusted certificate path.
 
-Eventloom settings are `EVENTLOOM_PATH` and `EVENTLOOM_THREAD`. The path is the
-directory containing session JSONL logs. The thread is the default session name
-when callers do not provide an explicit session. Session identifiers are
-validated before becoming filenames.
+Eventloom settings are `EVENTLOOM_PATH`, `EVENTLOOM_THREAD`, and `ZAXY_DOMAIN`.
+The path is the directory containing session JSONL logs. The thread is the
+default session name when callers do not provide an explicit session. Generated
+MCP configs derive a domain-prefixed default such as `zaxy-default` so separate
+projects do not collide on raw `default`. Session identifiers are validated
+before becoming filenames.
 
 MCP settings include `SERVER_NAME`, `MCP_ADMIN_TOKEN`,
 `MCP_REMOTE_AUTH_TOKEN`, and `MCP_REMOTE_SESSION_HEADER`. The remote bearer

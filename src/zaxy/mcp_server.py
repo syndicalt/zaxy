@@ -193,6 +193,7 @@ class ZaxyMCPServer:
     ) -> None:
         settings = get_settings()
         self._admin_token = settings.mcp_admin_token
+        self._default_session_id = validate_session_id(settings.eventloom_thread)
         self.session_manager = SessionManager(base_path=eventloom_path or settings.eventloom_path)
         self._neo4j_uri = neo4j_uri or settings.neo4j_uri
         self._neo4j_user = neo4j_user or settings.neo4j_user
@@ -241,7 +242,7 @@ class ZaxyMCPServer:
         payload = validate_payload(arguments.get("payload", {}))
         session_id = self._session_id_from_arguments(
             arguments,
-            default="default",
+            default=self._default_session_id,
         )
 
         eventlog = self.session_manager.get(session_id).eventlog
@@ -259,7 +260,7 @@ class ZaxyMCPServer:
         query = validate_query(arguments["query"])
         temporal = arguments.get("temporal_filter")
         limit = validate_limit(arguments.get("limit"), default=10)
-        session_id = self._session_id_from_arguments(arguments, default="default")
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
 
         router = QueryRouter(self.graph, session_id=session_id)
         results = await router.query(query, temporal_point=temporal, limit=limit)
@@ -306,14 +307,14 @@ class ZaxyMCPServer:
             name,
             entity_type,
             invalid_at,
-            session_id=self._session_id_from_arguments(arguments, default="default"),
+            session_id=self._session_id_from_arguments(arguments, default=self._default_session_id),
         )
         return [TextContent(type="text", text=json.dumps({"status": "invalidated"}))]
 
     async def handle_context_assemble(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle context_assemble tool call."""
         query = validate_query(arguments["query"])
-        session_id = self._session_id_from_arguments(arguments, default="default")
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
         replay_from_seq = validate_from_seq(arguments.get("replay_from_seq"))
         limit = validate_limit(arguments.get("limit"), default=10)
         max_recent_events = validate_limit(arguments.get("max_recent_events"), default=20)
@@ -331,7 +332,7 @@ class ZaxyMCPServer:
         """Handle context_after_turn tool call."""
         role = arguments["role"]
         content = arguments["content"]
-        session_id = self._session_id_from_arguments(arguments, default="default")
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
         source = arguments.get("source", "mcp")
         query = validate_query(arguments.get("query") or content)
         limit = validate_limit(arguments.get("limit"), default=10)

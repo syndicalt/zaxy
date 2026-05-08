@@ -247,6 +247,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Local-first embedding/reranker setup helpers
 - [x] Extractor schema-pack examples for common agent event taxonomies
 - [x] Remote MCP rate limiting and audit event export
+- [x] Domain-separated MCP defaults to avoid cross-project `default` session bleed
 
 ## Metrics
 

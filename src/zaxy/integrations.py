@@ -6,6 +6,7 @@ from dataclasses import asdict
 from typing import Any, Literal
 
 from zaxy.core import HandoffBundle
+from zaxy.domain import derive_domain, domain_default_session, slug_domain
 
 MCPClient = Literal["claude-desktop", "cursor", "vscode"]
 HandoffAdapter = Literal["generic", "langgraph", "crewai", "autogen"]
@@ -18,14 +19,17 @@ def render_mcp_client_config(
     transport: str = "stdio",
     host: str = "127.0.0.1",
     port: int = 8080,
+    domain: str | None = None,
 ) -> dict[str, Any]:
     """Render a copyable MCP client config fragment for a first-run setup."""
     normalized = _normalize_client(client)
+    resolved_domain = slug_domain(domain) if domain else derive_domain()
     server = _server_config(
         eventloom_path=eventloom_path,
         transport=transport,
         host=host,
         port=port,
+        domain=resolved_domain,
     )
     if normalized == "vscode":
         return {"servers": {"zaxy": server}}
@@ -63,8 +67,10 @@ def _server_config(
     transport: str,
     host: str,
     port: int,
+    domain: str,
 ) -> dict[str, Any]:
     normalized_transport = transport.casefold()
+    default_session = domain_default_session(domain)
     if normalized_transport == "stdio":
         return {
             "command": "zaxy",
@@ -72,6 +78,7 @@ def _server_config(
             "startup_timeout_sec": 90,
             "env": {
                 "EVENTLOOM_PATH": eventloom_path,
+                "EVENTLOOM_THREAD": default_session,
                 "LOG_LEVEL": "ERROR",
                 "MCP_ADMIN_TOKEN_FILE": "",
                 "MCP_REMOTE_AUTH_TOKEN_FILE": "",
@@ -81,13 +88,14 @@ def _server_config(
                 "NEO4J_URI": "bolt://localhost:7687",
                 "OPENAI_API_KEY_FILE": "",
                 "PATHLIGHT_ACCESS_TOKEN_FILE": "",
+                "ZAXY_DOMAIN": domain,
                 "ZAXY_ENV": "development",
             },
         }
     if normalized_transport == "sse":
         return {
             "url": f"http://{host}:{port}/sse",
-            "headers": {"x-zaxy-session-id": "default"},
+            "headers": {"x-zaxy-session-id": default_session},
         }
     raise ValueError("transport must be 'stdio' or 'sse'")
 

@@ -22,6 +22,12 @@ def test_remote_rate_limit_and_audit_defaults() -> None:
     assert settings.mcp_audit_path == ".eventloom/remote_audit.jsonl"
 
 
+def test_domain_default_is_optional() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.zaxy_domain is None
+
+
 class TestSecretFiles:
     """Docker/Kubernetes secret file loading."""
 

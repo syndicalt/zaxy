@@ -442,6 +442,7 @@ groups:
 | `TRACE_RAW_QUERIES` | `false` | Include raw query text in traces |
 | `EVENTLOOM_PATH` | `.eventloom` | Event log directory |
 | `EVENTLOOM_THREAD` | `default` | Default session/log name |
+| `ZAXY_DOMAIN` | unset | Stable project/domain label used by generated MCP configs |
 | `ZAXY_ENV` | `development` | Runtime environment; production enables stricter config validation |
 | `MCP_ADMIN_TOKEN` | unset | Optional token for replay/invalidate tools |
 | `MCP_ADMIN_TOKEN_FILE` | unset | File containing optional admin token |

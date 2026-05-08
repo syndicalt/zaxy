@@ -50,11 +50,18 @@ Generate first-run MCP client config:
 zaxy ide-config claude-desktop --eventloom-path .eventloom
 zaxy ide-config cursor --eventloom-path .eventloom
 zaxy ide-config vscode --eventloom-path .eventloom
+zaxy ide-config claude-desktop --eventloom-path .eventloom --domain zaxy
 ```
 
 These commands print copyable JSON fragments and do not include bearer tokens,
 passwords, or admin secrets. Keep remote SSE credentials in the client secret
 store or environment, not in committed config.
+
+Generated configs include `ZAXY_DOMAIN` and a domain-prefixed
+`EVENTLOOM_THREAD`, such as `zaxy-default`. This prevents clients that omit
+`session_id` from accidentally sharing the global `default` session across
+different projects. For remote SSE configs, the same default is sent through the
+session header.
 
 For local stdio clients, the generated config is intentionally self-contained:
 it forces development-mode localhost settings and enables `NEO4J_AUTO_START`.

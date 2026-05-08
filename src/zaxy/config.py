@@ -43,6 +43,10 @@ class Settings(BaseSettings):
         default="default",
         description="Default thread/session identifier",
     )
+    zaxy_domain: str | None = Field(
+        default=None,
+        description="Project/domain identifier used to derive safe default sessions",
+    )
 
     # ------------------------------------------------------------------
     # Neo4j

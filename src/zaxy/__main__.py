@@ -67,6 +67,7 @@ def ide_config(
     transport: str = typer.Option("stdio", help="Transport: stdio or sse"),
     host: str = typer.Option("127.0.0.1", help="SSE host when transport=sse"),
     port: int = typer.Option(8080, help="SSE port when transport=sse"),
+    domain: str | None = typer.Option(None, help="Project/domain used for default session scoping"),  # noqa: B008
 ) -> None:
     """Print a first-run MCP client configuration fragment."""
     try:
@@ -76,6 +77,7 @@ def ide_config(
             transport=transport,
             host=host,
             port=port,
+            domain=domain,
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc

@@ -41,6 +41,11 @@ shard by session so a busy agent does not contend on the same file as every
 other agent. The graph remains shared, letting retrieval cross relevant facts
 while preserving provenance.
 
+Project domains separate default sessions across repositories. Generated MCP
+configs set `ZAXY_DOMAIN` and `EVENTLOOM_THREAD` together, for example
+`ZAXY_DOMAIN=zaxy` and `EVENTLOOM_THREAD=zaxy-default`. A session ID may still
+change per run or per agent, but the domain should stay stable for a project.
+
 Replay is the operational escape hatch. If Neo4j is unavailable, Eventloom still
 contains the history. If an extractor changes, replay can regenerate the graph.
 If a handoff needs context, replay reconstructs the sequence of events from a

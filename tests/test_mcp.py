@@ -338,6 +338,21 @@ class TestContextLifecycleTools:
         assert output["replay_event_count"] == 1
         assert "MMR diversity" in output["prompt"]
 
+    async def test_context_assemble_uses_configured_default_session(self, server: ZaxyMCPServer) -> None:
+        """Omitted session_id should use the configured domain-separated default."""
+        server._default_session_id = "zaxy-default"
+        server.session_manager.replay.return_value = MagicMock(events=[])
+        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
+            router = AsyncMock()
+            router.query.return_value = []
+            mock_router_cls.return_value = router
+
+            result = await server.handle_context_assemble({"query": "retrieval decision"})
+
+        output = json_loads(result[0].text)
+        assert output["session_id"] == "zaxy-default"
+        server.session_manager.replay.assert_called_with("zaxy-default", from_seq=1)
+
     async def test_context_after_turn_appends_and_assembles(self, server: ZaxyMCPServer) -> None:
         """context_after_turn should persist the latest turn before assembly."""
         server.session_manager.replay.return_value = MagicMock(events=[])
