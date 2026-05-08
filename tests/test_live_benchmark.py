@@ -8,15 +8,18 @@ from pathlib import Path
 from zaxy.benchmark import build_competitive_event_log, competitive_cases
 from zaxy.embedding import HashEmbeddingProvider
 from zaxy.live_benchmark import (
+    CONSOLIDATION_WORKLOAD_VERSION,
     FROZEN_WORKLOAD_SUBJECTS,
     FROZEN_WORKLOAD_VERSION,
     SUITE_WORKLOAD_VERSION,
     CachedEmbeddingProvider,
+    CentroidConsolidationRetriever,
     MarkdownRetriever,
     MarkdownVectorRetriever,
     VectorRetriever,
     benchmark_retrievers,
     build_benchmark_suite_workload,
+    build_consolidation_collapse_workload,
     build_frozen_statistical_workload,
     corpus_from_event_log,
     report_to_markdown,
@@ -36,6 +39,7 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "build_statistical_event_log" in cli
     assert "build_frozen_statistical_workload" in cli
     assert "build_benchmark_suite_workload" in cli
+    assert "build_consolidation_collapse_workload" in cli
     assert "--workload" in script
     assert "--subjects" in script
     assert "--documents" in script
@@ -92,7 +96,7 @@ def test_live_benchmark_outputs_machine_and_markdown_reports(tmp_path: Path) -> 
     assert output.markdown_path.name == "live-benchmark.md"
     assert payload["summaries"][0]["backend"] in {"md", "vector"}
     assert payload["workload"]["version"] == "ad-hoc"
-    assert "| Backend | Mean score | p50 ms | p95 ms |" in markdown
+    assert "| Backend | Mean score | Identity recall | p50 ms | p95 ms |" in markdown
     assert "Approx tokens" in markdown
 
 
@@ -171,6 +175,57 @@ def test_benchmark_suite_workload_has_stable_identity(tmp_path: Path) -> None:
     )
 
 
+def test_consolidation_workload_targets_identity_collapse(tmp_path: Path) -> None:
+    """The consolidation workload should isolate identity-preservation failures."""
+    eventlog, cases, workload = build_consolidation_collapse_workload(
+        tmp_path / "collapse.jsonl",
+        identities=8,
+    )
+
+    assert workload.version == CONSOLIDATION_WORKLOAD_VERSION
+    assert workload.event_count == 8
+    assert workload.case_count == 8
+    assert workload.documents == 8
+    assert workload.lanes == ("consolidation",)
+    assert {case.category for case in cases} == {"consolidation"}
+    assert all(case.identity_terms for case in cases)
+    assert any("identity-code-0007" in case.identity_terms for case in cases)
+    assert workload.sha256 == workload_fingerprint(
+        eventlog,
+        cases,
+        CONSOLIDATION_WORKLOAD_VERSION,
+    )
+
+
+def test_identity_recall_exposes_centroid_consolidation_collapse(
+    tmp_path: Path,
+) -> None:
+    """Centroid-style consolidation can score as relevant while losing exact identities."""
+    eventlog, cases, workload = build_consolidation_collapse_workload(
+        tmp_path / "collapse.jsonl",
+        identities=6,
+    )
+    corpus = corpus_from_event_log(eventlog)
+    provider = HashEmbeddingProvider(dimension=64)
+    report = benchmark_retrievers(
+        {
+            "md": MarkdownRetriever(corpus),
+            "centroid": CentroidConsolidationRetriever(corpus, provider),
+        },
+        cases,
+        runs=1,
+        limit=8,
+        workload=workload,
+    )
+
+    summaries = {summary.backend: summary for summary in report.summaries}
+    assert summaries["md"].mean_identity_recall == 1.0
+    assert summaries["centroid"].mean_identity_recall is not None
+    assert summaries["centroid"].mean_identity_recall < summaries["md"].mean_identity_recall
+    assert any(run.missing_identities for run in report.runs if run.backend == "centroid")
+    assert "Identity recall" in report_to_markdown(report)
+
+
 def test_suite_report_renders_workload_dimensions(tmp_path: Path) -> None:
     """Reports should disclose suite dimensions for reproducibility."""
     eventlog, cases, workload = build_benchmark_suite_workload(
@@ -221,4 +276,4 @@ def test_cached_embedding_provider_reuses_repeated_text() -> None:
 def test_live_benchmark_script_help_mentions_frozen_workload() -> None:
     script = Path("scripts/live-benchmark.sh").read_text(encoding="utf-8")
 
-    assert "--workload fixture|statistical|frozen|suite" in script
+    assert "--workload fixture|statistical|frozen|suite|consolidation" in script

@@ -80,6 +80,20 @@ Suite reports disclose subject, document, session, lane, event, query, and
 SHA-256 workload metadata. Increase `--subjects`, `--documents`, and
 `--sessions` for capacity tests after the smoke run is stable.
 
+For consolidation safety checks, use the identity-collapse workload. It creates
+near-duplicate source records with distinct durable identifiers and adds an
+identity-recall metric to the report. The `centroid` baseline intentionally
+models semantic consolidation that keeps one representative text, so it can
+look topically relevant while losing exact source identities:
+
+```bash
+scripts/live-benchmark.sh --embedding-provider openai --workload consolidation --documents 100 --runs 1 --reset-graph
+```
+
+Use this lane to detect whether a compaction strategy preserves exact event,
+document, transcript, or entity identity under retrieval, not just broad topic
+coverage.
+
 Interpret the frozen temporal results narrowly. The suite workload is broader,
 but still synthetic; use it to measure Zaxy's target problem before making broad
 market claims: current versus historical facts, stale-context avoidance, graph

@@ -29,12 +29,14 @@ from zaxy.graph import GraphStore
 from zaxy.live_benchmark import (
     BenchmarkWorkload,
     CachedEmbeddingProvider,
+    CentroidConsolidationRetriever,
     ExternalBenchmarkResult,
     MarkdownRetriever,
     MarkdownVectorRetriever,
     VectorRetriever,
     benchmark_live_retrievers,
     build_benchmark_suite_workload,
+    build_consolidation_collapse_workload,
     build_frozen_statistical_workload,
     build_live_zaxy_retriever,
     build_statistical_event_log,
@@ -245,7 +247,10 @@ def benchmark(
         False,
         help="Delete Entity nodes in the benchmark Neo4j database before ingestion",
     ),
-    workload: str = typer.Option("fixture", help="Workload: fixture, statistical, frozen, or suite"),
+    workload: str = typer.Option(
+        "fixture",
+        help="Workload: fixture, statistical, frozen, suite, or consolidation",
+    ),
     subjects: int = typer.Option(
         100,
         min=1,
@@ -254,7 +259,7 @@ def benchmark(
     documents: int = typer.Option(
         250,
         min=1,
-        help="Document count for the suite workload",
+        help="Document count for suite workloads; identity count for consolidation",
     ),
     sessions: int = typer.Option(
         50,
@@ -324,9 +329,15 @@ def benchmark(
                     documents=documents,
                     sessions=sessions,
                 )
+            elif workload == "consolidation":
+                eventlog, cases, benchmark_workload = build_consolidation_collapse_workload(
+                    Path(tmp) / "bench.jsonl",
+                    identities=documents,
+                )
             else:
                 raise typer.BadParameter(
-                    "workload must be 'fixture', 'statistical', 'frozen', or 'suite'"
+                    "workload must be 'fixture', 'statistical', 'frozen', "
+                    "'suite', or 'consolidation'"
                 )
             corpus = corpus_from_event_log(eventlog)
             zaxy_retriever, graph = await build_live_zaxy_retriever(
@@ -343,6 +354,11 @@ def benchmark(
                         "md": MarkdownRetriever(corpus),
                         "vector": VectorRetriever(corpus, provider),
                         "md+vector": MarkdownVectorRetriever(corpus, provider),
+                        **(
+                            {"centroid": CentroidConsolidationRetriever(corpus, provider)}
+                            if workload == "consolidation"
+                            else {}
+                        ),
                     },
                     zaxy_retriever,
                     cases,

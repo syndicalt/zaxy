@@ -236,20 +236,21 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Frozen benchmark workload fingerprints and external comparison disclosures
 - [x] Representative benchmark suite for temporal, document, transcript, and mixed workloads
 - [x] Geometry-aware consolidation roadmap for identity-preserving compaction
+- [x] Consolidation-collapse benchmark lane and identity-recall metric
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 350 passed |
-| Coverage | 92.41% |
+| Tests | 352 passed |
+| Coverage | 92.35% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
 
 ## Next Steps
 
-1. Add a consolidation-collapse benchmark lane and identity-recall metric.
+1. Add `zaxy compact --audit` with spread, citation coverage, and identity-recall checks.
 2. Add first-run IDE lifecycle workflows and import/export adapters for common agent frameworks.
 3. Add remote MCP rate limiting and audit event export.
 4. Add local-first embedding/reranker setup helpers.

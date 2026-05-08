@@ -8,13 +8,14 @@ coverage while damaging identity-level retrieval when clusters are geometrically
 spread. The practical lesson for Zaxy is straightforward: context compaction
 must preserve identity, citations, temporal validity, and replayability.
 
-This document is a product/research roadmap note, not a completed feature
-claim. The current system already has the primitives needed for
-identity-preserving context memory: Eventloom event sequences and hashes,
-typed graph entities, source path and line citations, transcript source and turn
+This document is a product/research roadmap note, not a completed compaction
+feature claim. The current system already has the primitives needed for
+identity-preserving context memory: Eventloom event sequences and hashes, typed
+graph entities, source path and line citations, transcript source and turn
 identifiers, temporal validity windows, exact lookup, keyword search, vector
-search, and traversal. The consolidation roadmap turns those primitives into
-explicit safety policies for future memory compression.
+search, and traversal. The benchmark harness now includes a consolidation
+collapse lane and identity-recall metric; the remaining roadmap turns those
+measurements into explicit safety policies for future memory compression.
 
 ## Motivation
 
@@ -98,7 +99,13 @@ not as replacements for the Eventloom log or cited source chunks.
 
 ### 4. Geometry-Aware Benchmark Lane
 
-The benchmark suite should gain a consolidation lane that compares:
+The benchmark harness includes a consolidation lane that compares identity
+preservation for raw retrieval, vector-style baselines, live Zaxy retrieval, and
+a centroid baseline that keeps one representative text. The lane uses
+near-duplicate source records with distinct durable identifiers so reports can
+separate topical coverage from exact identity recall.
+
+Future expansions should compare:
 
 - centroid summaries;
 - medoid representatives;
@@ -107,8 +114,8 @@ The benchmark suite should gain a consolidation lane that compares:
 - Zaxy replay plus graph-backed retrieval;
 - Zaxy compacted projections with identity invariants.
 
-The lane should score both coverage and identity. Coverage asks whether the
-right topic or cluster is found. Identity asks whether the exact source record is
+The lane scores both coverage and identity. Coverage asks whether the right
+topic or cluster is found. Identity asks whether the exact source record is
 recoverable. Zaxy should optimize for both, with identity treated as a release
 invariant for authoritative context.
 
@@ -134,14 +141,13 @@ use the identity-preserving retrieval and assembly policies described here.
 
 ## Roadmap
 
-1. Add a consolidation-collapse benchmark fixture with controlled identifiers,
-   near-duplicate language, and mixed temporal validity.
-2. Add an identity-recall metric to benchmark reports.
-3. Add a `zaxy compact --audit` mode that reports spread, citation coverage, and
+1. Expand the consolidation-collapse benchmark with mixed temporal validity and
+   transcript/session identities.
+2. Add a `zaxy compact --audit` mode that reports spread, citation coverage, and
    identity recall before compaction.
-4. Add medoid/exemplar projection storage with backpointers to Eventloom and
+3. Add medoid/exemplar projection storage with backpointers to Eventloom and
    source citations.
-5. Add context assembly warnings when output depends on a compacted summary
+4. Add context assembly warnings when output depends on a compacted summary
    without source-level support.
 
 ## References

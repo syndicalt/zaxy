@@ -20,6 +20,7 @@ class BenchmarkCase:
     forbidden_terms: tuple[str, ...] = ()
     category: str = "general"
     temporal_point: str | None = None
+    identity_terms: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,9 @@ class RetrievalScore:
     expected_hits: tuple[str, ...]
     missing_expected: tuple[str, ...]
     forbidden_hits: tuple[str, ...]
+    identity_recall: float | None = None
+    identity_hits: tuple[str, ...] = ()
+    missing_identities: tuple[str, ...] = ()
 
 
 class FlatJsonlRetriever:
@@ -144,15 +148,27 @@ def score_retrieval(case: BenchmarkCase, contexts: list[str]) -> RetrievalScore:
         term for term in case.expected_terms if term.casefold() not in haystack
     )
     forbidden_hits = tuple(term for term in case.forbidden_terms if term.casefold() in haystack)
+    identity_hits = tuple(term for term in case.identity_terms if term.casefold() in haystack)
+    missing_identities = tuple(
+        term for term in case.identity_terms if term.casefold() not in haystack
+    )
 
     expected_score = len(expected_hits) / len(case.expected_terms) if case.expected_terms else 1.0
     penalty = len(forbidden_hits) / max(len(case.forbidden_terms), 1)
     score = max(0.0, expected_score - penalty)
+    identity_recall = (
+        len(identity_hits) / len(case.identity_terms)
+        if case.identity_terms
+        else None
+    )
     return RetrievalScore(
         score=round(score, 4),
         expected_hits=expected_hits,
         missing_expected=missing_expected,
         forbidden_hits=forbidden_hits,
+        identity_recall=round(identity_recall, 4) if identity_recall is not None else None,
+        identity_hits=identity_hits,
+        missing_identities=missing_identities,
     )
 
 

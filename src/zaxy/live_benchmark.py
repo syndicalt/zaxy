@@ -23,6 +23,7 @@ from zaxy.query import QueryRouter
 
 FROZEN_WORKLOAD_VERSION = "statistical-v1"
 FROZEN_WORKLOAD_SUBJECTS = 100
+CONSOLIDATION_WORKLOAD_VERSION = "consolidation-v1"
 SUITE_WORKLOAD_VERSION = "suite-v1"
 SUITE_WORKLOAD_LANES = (
     "current",
@@ -58,6 +59,9 @@ class BenchmarkRun:
     expected_hits: tuple[str, ...]
     missing_expected: tuple[str, ...]
     forbidden_hits: tuple[str, ...]
+    identity_recall: float | None
+    identity_hits: tuple[str, ...]
+    missing_identities: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -74,6 +78,7 @@ class BenchmarkSummary:
     latency_ms_p99: float
     mean_returned_bytes: float
     mean_approx_tokens: float
+    mean_identity_recall: float | None = None
 
 
 @dataclass(frozen=True)
@@ -294,6 +299,35 @@ class MarkdownVectorRetriever:
         return [text for _, text in scored[:limit]]
 
 
+class CentroidConsolidationRetriever:
+    """Centroid-style consolidation baseline that keeps one representative text.
+
+    This intentionally models the failure mode where a compressed semantic
+    memory remains topically relevant but cannot preserve each source identity.
+    """
+
+    def __init__(self, corpus: tuple[BenchmarkChunk, ...], provider: EmbeddingProvider) -> None:
+        self._provider = provider
+        embeddings = [provider.embed(chunk.text) for chunk in corpus]
+        self._centroid = _centroid(embeddings)
+        self._representative = corpus[0].text if corpus else ""
+
+    def query(
+        self,
+        query: str,
+        temporal_point: str | None = None,
+        limit: int = 10,
+    ) -> list[str]:
+        """Return the consolidated representative when the centroid is relevant."""
+        del temporal_point, limit
+        if not self._representative:
+            return []
+        query_embedding = self._provider.embed(query)
+        if _cosine(query_embedding, self._centroid) <= 0.0:
+            return []
+        return [self._representative]
+
+
 class ZaxyRetriever:
     """Synchronous wrapper around Zaxy's live graph retrieval path."""
 
@@ -442,6 +476,56 @@ def build_frozen_statistical_workload(
         subjects=FROZEN_WORKLOAD_SUBJECTS,
     )
     return eventlog, cases, workload
+
+
+def build_consolidation_collapse_workload(
+    path: str | Path,
+    identities: int = 100,
+) -> tuple[EventLog, tuple[BenchmarkCase, ...], BenchmarkWorkload]:
+    """Build a workload that detects identity loss during semantic consolidation."""
+    if identities <= 0:
+        raise ValueError("identities must be positive")
+
+    eventlog = EventLog(path)
+    cases: list[BenchmarkCase] = []
+    for idx in range(identities):
+        identity_code = f"identity-code-{idx:04d}"
+        doc_path = f"docs/consolidation/service-{idx:04d}.md"
+        content = (
+            "Consolidation review for the platform migration records "
+            f"{identity_code}. The note covers rollback ownership, incident "
+            "readiness, retry policy, and release coordination."
+        )
+        eventlog.append(
+            "document.indexed",
+            actor="indexer",
+            payload={
+                "path": doc_path,
+                "start_line": 1,
+                "end_line": 8,
+                "content": content,
+                "sha256": _content_sha256(content),
+            },
+            timestamp=datetime(2024, 10, 1, tzinfo=UTC),
+        )
+        cases.append(
+            BenchmarkCase(
+                name=f"consolidation-identity-{idx:04d}",
+                query=f"Which consolidation source records {identity_code}?",
+                expected_terms=("Consolidation review",),
+                category="consolidation",
+                identity_terms=(identity_code, doc_path),
+            )
+        )
+
+    workload = BenchmarkWorkload.from_event_log(
+        eventlog,
+        tuple(cases),
+        version=CONSOLIDATION_WORKLOAD_VERSION,
+        documents=identities,
+        lanes=("consolidation",),
+    )
+    return eventlog, tuple(cases), workload
 
 
 def build_benchmark_suite_workload(
@@ -759,15 +843,21 @@ def report_to_markdown(report: BenchmarkReport) -> str:
     lines.extend(
         [
         "",
-        "| Backend | Mean score | p50 ms | p95 ms | p99 ms | Returned bytes | Approx tokens |",
-        "|---------|------------|--------|--------|--------|----------------|---------------|",
+        "| Backend | Mean score | Identity recall | p50 ms | p95 ms | p99 ms | Returned bytes | Approx tokens |",
+        "|---------|------------|-----------------|--------|--------|--------|----------------|---------------|",
         ]
     )
     for backend_summary in report.summaries:
+        identity_recall = (
+            ""
+            if backend_summary.mean_identity_recall is None
+            else f"{backend_summary.mean_identity_recall:.3f}"
+        )
         lines.append(
             "| "
             f"{backend_summary.backend} | "
             f"{backend_summary.mean_score:.3f} | "
+            f"{identity_recall} | "
             f"{backend_summary.latency_ms_p50:.2f} | "
             f"{backend_summary.latency_ms_p95:.2f} | "
             f"{backend_summary.latency_ms_p99:.2f} | "
@@ -894,6 +984,9 @@ def _measurement(
         expected_hits=score.expected_hits,
         missing_expected=score.missing_expected,
         forbidden_hits=score.forbidden_hits,
+        identity_recall=score.identity_recall,
+        identity_hits=score.identity_hits,
+        missing_identities=score.missing_identities,
     )
 
 
@@ -907,6 +1000,11 @@ def _summaries(
     for backend in backends:
         rows = [measurement for measurement in measurements if measurement.backend == backend]
         latencies = [row.latency_ms for row in rows]
+        identity_recalls = [
+            row.identity_recall
+            for row in rows
+            if row.identity_recall is not None
+        ]
         summaries.append(
             BenchmarkSummary(
                 backend=backend,
@@ -922,6 +1020,11 @@ def _summaries(
                 ),
                 mean_approx_tokens=round(
                     statistics.fmean(row.approx_tokens for row in rows), 4
+                ),
+                mean_identity_recall=(
+                    round(statistics.fmean(identity_recalls), 4)
+                    if identity_recalls
+                    else None
                 ),
             )
         )
@@ -975,6 +1078,18 @@ def _cosine(left: list[float], right: list[float]) -> float:
         return 0.0
     dot = sum(a * b for a, b in zip(left, right, strict=True))
     return dot / (left_norm * right_norm)
+
+
+def _centroid(embeddings: list[list[float]]) -> list[float]:
+    if not embeddings:
+        return []
+    dimension = len(embeddings[0])
+    if any(len(embedding) != dimension for embedding in embeddings):
+        raise ValueError("embedding dimensions must match")
+    return [
+        statistics.fmean(embedding[index] for embedding in embeddings)
+        for index in range(dimension)
+    ]
 
 
 def _tokens(query: str) -> list[str]:
