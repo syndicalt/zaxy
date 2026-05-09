@@ -203,6 +203,10 @@ class Settings(BaseSettings):
         default=".eventloom/remote_audit.jsonl",
         description="Path for remote MCP/SSE request audit JSONL export",
     )
+    mcp_lifecycle_capture_enabled: bool = Field(
+        default=True,
+        description="Append redacted lifecycle events for MCP tool calls",
+    )
 
     # ------------------------------------------------------------------
     # Logging

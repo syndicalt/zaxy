@@ -59,6 +59,9 @@ python -m zaxy replay .eventloom/work.jsonl --from-seq 42
 # Export as JSON
 python -m zaxy replay .eventloom/work.jsonl --json
 
+# Write a standalone HTML viewer for one log or an Eventloom directory
+python -m zaxy viewer .eventloom --output eventloom-viewer.html
+
 # Rebuild Neo4j projection after extractor changes
 python -m zaxy reproject .eventloom/default.jsonl --session-id default
 
@@ -73,6 +76,9 @@ python -m zaxy compact .eventloom/work.jsonl --projection-output .eventloom/work
 
 # Store a bounded exemplar projection for high-spread clusters
 python -m zaxy compact .eventloom/work.jsonl --projection-output .eventloom/work.compaction.json --strategy exemplar --max-records 5
+
+# Rewrite compaction appends compaction.completed to the output log.
+# Audit and projection-only modes leave the source log unchanged.
 
 # Projections under the Eventloom directory are auto-discovered
 python - <<'PY'

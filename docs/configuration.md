@@ -33,6 +33,9 @@ Public multi-tenant deployments should use OIDC instead by setting
 limiting is controlled by `MCP_RATE_LIMIT_ENABLED`,
 `MCP_RATE_LIMIT_REQUESTS`, and `MCP_RATE_LIMIT_WINDOW_SECONDS`. Remote request
 audit export is controlled by `MCP_AUDIT_ENABLED` and `MCP_AUDIT_PATH`.
+Automatic MCP tool-call lifecycle events are controlled by
+`MCP_LIFECYCLE_CAPTURE_ENABLED`; when enabled, Zaxy records redacted
+`tool.call.completed` metadata for successful and failed tool dispatch.
 
 Embedding settings include `EMBEDDING_ENABLED`, `EMBEDDING_PROVIDER`,
 `EMBEDDING_DIMENSION`, `OPENAI_EMBEDDING_MODEL`, `OPENAI_BASE_URL`, and

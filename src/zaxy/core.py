@@ -35,6 +35,7 @@ from zaxy.embedding import build_embedding_provider, embed_extraction
 from zaxy.event import EventLog, ReplayResult  # noqa: F401 - compatibility for existing tests
 from zaxy.extract import extract
 from zaxy.graph import GraphStore
+from zaxy.lifecycle import build_subagent_completed_event
 from zaxy.metrics import get_metrics
 from zaxy.query import QueryRouter, build_reranker
 from zaxy.security import validate_payload, validate_query, validate_session_id
@@ -659,6 +660,18 @@ class MemoryFabric:
                 "subagent_session_id": subagent_sid,
                 "summary": summary,
             },
+            session_id=subagent_sid,
+        )
+        event = build_subagent_completed_event(
+            parent_session_id=parent_sid,
+            subagent_session_id=subagent_sid,
+            status="succeeded",
+            summary=summary,
+        )
+        await self.append(
+            event["event_type"],
+            actor=event["actor"],
+            payload=event["payload"],
             session_id=subagent_sid,
         )
         return await self.handoff_bundle(

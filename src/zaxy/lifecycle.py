@@ -84,3 +84,76 @@ def build_file_edit_applied_event(
         "actor": "zaxy",
         "payload": payload,
     }
+
+
+def build_compaction_completed_event(
+    *,
+    session_id: str,
+    mode: str,
+    status: str,
+    log_path: str,
+    event_count: int,
+    output_path: str | None = None,
+    projection_path: str | None = None,
+    snapshot_path: str | None = None,
+    strategy: str | None = None,
+) -> dict[str, Any]:
+    """Build a compaction lifecycle event with artifact paths, not content."""
+    payload: dict[str, Any] = {
+        "session_id": session_id,
+        "mode": mode,
+        "status": status,
+        "log_path": log_path,
+        "event_count": event_count,
+    }
+    if output_path is not None:
+        payload["output_path"] = output_path
+    if projection_path is not None:
+        payload["projection_path"] = projection_path
+    if snapshot_path is not None:
+        payload["snapshot_path"] = snapshot_path
+    if strategy is not None:
+        payload["strategy"] = strategy
+    return {
+        "event_type": "compaction.completed",
+        "actor": "zaxy",
+        "payload": payload,
+    }
+
+
+def build_subagent_completed_event(
+    *,
+    parent_session_id: str,
+    subagent_session_id: str,
+    status: str,
+    summary: str,
+) -> dict[str, Any]:
+    """Build a subagent completion lifecycle event with bounded summary text."""
+    return {
+        "event_type": "subagent.completed",
+        "actor": "zaxy",
+        "payload": {
+            "parent_session_id": parent_session_id,
+            "subagent_session_id": subagent_session_id,
+            "status": status,
+            "summary": summary[:OUTPUT_EXCERPT_CHARS],
+        },
+    }
+
+
+def build_session_ended_event(
+    *,
+    session_id: str,
+    reason: str,
+    status: str,
+) -> dict[str, Any]:
+    """Build a session-end lifecycle event."""
+    return {
+        "event_type": "session.ended",
+        "actor": "zaxy",
+        "payload": {
+            "session_id": session_id,
+            "reason": reason,
+            "status": status,
+        },
+    }

@@ -20,6 +20,7 @@ def test_remote_rate_limit_and_audit_defaults() -> None:
     assert settings.mcp_rate_limit_window_seconds == 60
     assert settings.mcp_audit_enabled is False
     assert settings.mcp_audit_path == ".eventloom/remote_audit.jsonl"
+    assert settings.mcp_lifecycle_capture_enabled is True
 
 
 def test_domain_default_is_optional() -> None:

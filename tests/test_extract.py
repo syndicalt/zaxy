@@ -811,6 +811,66 @@ class TestLifecycleEvents:
         assert edit.summary == "modified Added lifecycle hook."
         assert edit.properties["path"] == "src/zaxy/core.py"
 
+    def test_extracts_compaction_completed(self) -> None:
+        ev = _make_event(
+            "compaction.completed",
+            {
+                "session_id": "demo",
+                "mode": "rewrite",
+                "status": "succeeded",
+                "log_path": ".eventloom/demo.jsonl",
+                "event_count": 7,
+            },
+            actor="zaxy",
+        )
+
+        result = extract(ev)
+
+        compaction = next(e for e in result.entities if e.entity_type == "compaction_run")
+        assert compaction.name == "demo:compaction:1"
+        assert compaction.summary == "succeeded rewrite .eventloom/demo.jsonl"
+        assert compaction.properties["event_count"] == 7
+        assert result.edges[0].relation_type == "completed_compaction"
+
+    def test_extracts_subagent_completed(self) -> None:
+        ev = _make_event(
+            "subagent.completed",
+            {
+                "parent_session_id": "main",
+                "subagent_session_id": "worker-1",
+                "status": "succeeded",
+                "summary": "Worker finished retrieval.",
+            },
+            actor="zaxy",
+        )
+
+        result = extract(ev)
+
+        subagent = next(e for e in result.entities if e.entity_type == "subagent_run")
+        assert subagent.name == "main:worker-1:1"
+        assert subagent.summary == "succeeded Worker finished retrieval."
+        assert subagent.properties["parent_session_id"] == "main"
+        assert result.edges[0].relation_type == "completed_subagent"
+
+    def test_extracts_session_ended(self) -> None:
+        ev = _make_event(
+            "session.ended",
+            {
+                "session_id": "demo",
+                "reason": "teardown",
+                "status": "succeeded",
+            },
+            actor="zaxy",
+        )
+
+        result = extract(ev)
+
+        ended = next(e for e in result.entities if e.entity_type == "session_end")
+        assert ended.name == "demo:session-ended:1"
+        assert ended.summary == "succeeded teardown"
+        assert ended.properties["session_id"] == "demo"
+        assert result.edges[0].relation_type == "ended_session"
+
 
 class TestTranscriptTurn:
     """Tests for transcript.turn extractor."""

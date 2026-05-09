@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from zaxy.lifecycle import (
     build_command_completed_event,
+    build_compaction_completed_event,
     build_file_edit_applied_event,
+    build_session_ended_event,
+    build_subagent_completed_event,
     build_tool_call_completed_event,
 )
 
@@ -72,5 +75,69 @@ def test_build_file_edit_applied_event_records_paths_not_content() -> None:
             "session_id": "agent-1",
             "summary": "Added lifecycle hook.",
             "line_count": 12,
+        },
+    }
+
+
+def test_build_compaction_completed_event_records_artifact_metadata() -> None:
+    event = build_compaction_completed_event(
+        session_id="agent-1",
+        mode="rewrite",
+        status="succeeded",
+        log_path=".eventloom/agent.jsonl",
+        event_count=12,
+        output_path=".eventloom/agent.jsonl",
+        snapshot_path=".eventloom/agent.snapshot-12.json",
+    )
+
+    assert event == {
+        "event_type": "compaction.completed",
+        "actor": "zaxy",
+        "payload": {
+            "session_id": "agent-1",
+            "mode": "rewrite",
+            "status": "succeeded",
+            "log_path": ".eventloom/agent.jsonl",
+            "event_count": 12,
+            "output_path": ".eventloom/agent.jsonl",
+            "snapshot_path": ".eventloom/agent.snapshot-12.json",
+        },
+    }
+
+
+def test_build_subagent_completed_event_records_summary_without_transcript() -> None:
+    event = build_subagent_completed_event(
+        parent_session_id="main",
+        subagent_session_id="worker-1",
+        status="succeeded",
+        summary="Worker finished retrieval.",
+    )
+
+    assert event == {
+        "event_type": "subagent.completed",
+        "actor": "zaxy",
+        "payload": {
+            "parent_session_id": "main",
+            "subagent_session_id": "worker-1",
+            "status": "succeeded",
+            "summary": "Worker finished retrieval.",
+        },
+    }
+
+
+def test_build_session_ended_event_records_reason() -> None:
+    event = build_session_ended_event(
+        session_id="agent-1",
+        reason="teardown",
+        status="succeeded",
+    )
+
+    assert event == {
+        "event_type": "session.ended",
+        "actor": "zaxy",
+        "payload": {
+            "session_id": "agent-1",
+            "reason": "teardown",
+            "status": "succeeded",
         },
     }

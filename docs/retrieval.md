@@ -98,7 +98,8 @@ answer inventory, definition, import, local dependency, call graph, and static
 test coverage questions without storing full source text. Go package-qualified
 local calls can resolve across files when the imported package maps to a scanned
 local package directory, and simple Rust `use crate::module::symbol` imports can
-resolve calls to scanned sibling module files.
+resolve calls to scanned sibling module files. Java package imports can resolve
+class-qualified calls to scanned local `.java` files.
 
 Transcript ingestion follows the same rule. `MemoryFabric.ingest_transcript()`
 turns session messages into sanitized `transcript.turn` events and graph

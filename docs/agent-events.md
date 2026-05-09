@@ -142,6 +142,49 @@ File edit application:
 Projection: `file_edit` entity linked from the session with
 `applied_file_edit`.
 
+Compaction completion:
+
+```json
+{
+  "session_id": "zaxy-default",
+  "mode": "rewrite",
+  "status": "succeeded",
+  "log_path": ".eventloom/zaxy-default.jsonl",
+  "event_count": 120,
+  "output_path": ".eventloom/zaxy-default.jsonl",
+  "snapshot_path": ".eventloom/zaxy-default.snapshot-120.json"
+}
+```
+
+Projection: `compaction_run` entity linked from the session with
+`completed_compaction`.
+
+Subagent completion:
+
+```json
+{
+  "parent_session_id": "main",
+  "subagent_session_id": "worker-1",
+  "status": "succeeded",
+  "summary": "Worker finished retrieval."
+}
+```
+
+Projection: `subagent_run` entity linked from the parent session with
+`completed_subagent`.
+
+Session end:
+
+```json
+{
+  "session_id": "zaxy-default",
+  "reason": "teardown",
+  "status": "succeeded"
+}
+```
+
+Projection: `session_end` entity linked from the session with `ended_session`.
+
 ## Unknown Events
 
 Unknown event types still project as `event` entities. Zaxy includes safe
