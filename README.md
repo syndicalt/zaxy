@@ -41,8 +41,8 @@ pytest
 # is intended for the full suite.
 pytest -m integration --no-cov
 
-# 4. Test drive (no agent needed)
-python scripts/test_drive.py
+# 4. Validate local onboarding and hook posture.
+zaxy doctor --eventloom-path .eventloom
 
 ```
 

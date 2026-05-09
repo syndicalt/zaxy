@@ -275,6 +275,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Safe hook config write mode with no-overwrite default
 - [x] Searchable hook checkpoint events with summary and reason metadata
 - [x] Hook installation detection and supported-client matrix
+- [x] Pruned stale direct-Neo4j demo scripts superseded by doctor, hooks, and MCP smoke coverage
 
 ## Metrics
 
