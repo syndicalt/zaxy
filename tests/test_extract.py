@@ -648,6 +648,71 @@ class TestCodeCoverageIndexed:
         assert edge.relation_type == "tests_symbol"
 
 
+class TestSessionGenesis:
+    """Tests for session.genesis extractor."""
+
+    def test_extracts_workspace_profile_and_session_edge(self) -> None:
+        ev = _make_event(
+            "session.genesis",
+            {
+                "root": "/repo",
+                "workspace_type": "codebase",
+                "confidence": 0.91,
+                "signals": ["pyproject.toml", "src/"],
+                "instructions_profile": "codebase",
+                "session_id": "zaxy-default",
+            },
+            actor="zaxy",
+        )
+
+        result = extract(ev)
+
+        workspace = next(e for e in result.entities if e.entity_type == "workspace")
+        assert workspace.name == "/repo"
+        assert workspace.summary == "codebase workspace profile codebase"
+        assert workspace.properties == {
+            "root": "/repo",
+            "workspace_type": "codebase",
+            "confidence": 0.91,
+            "signals": ["pyproject.toml", "src/"],
+            "instructions_profile": "codebase",
+            "session_id": "zaxy-default",
+        }
+        session = next(e for e in result.entities if e.entity_type == "session")
+        assert session.name == "zaxy-default"
+        edge = result.edges[0]
+        assert edge.source == "zaxy-default"
+        assert edge.target == "/repo"
+        assert edge.relation_type == "initialized_workspace"
+
+
+class TestSessionProfileCorrected:
+    """Tests for session.profile.corrected extractor."""
+
+    def test_extracts_profile_correction_decision(self) -> None:
+        ev = _make_event(
+            "session.profile.corrected",
+            {
+                "session_id": "demo",
+                "root": "/repo",
+                "from": "generic_workspace",
+                "to": "codebase",
+                "reason": "pyproject.toml detected",
+            },
+            actor="user",
+        )
+
+        result = extract(ev)
+
+        correction = next(e for e in result.entities if e.entity_type == "workspace_profile_correction")
+        assert correction.name == "demo:generic_workspace->codebase"
+        assert correction.summary == "pyproject.toml detected"
+        edge = result.edges[0]
+        assert edge.source == "demo"
+        assert edge.target == correction.name
+        assert edge.relation_type == "corrected_workspace_profile"
+
+
 class TestTranscriptTurn:
     """Tests for transcript.turn extractor."""
 

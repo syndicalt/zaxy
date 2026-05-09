@@ -257,6 +257,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Go, Rust, and Java same-file call-site mapping
 - [x] Go cross-file call resolution for local package-qualified imports
 - [x] Rust cross-file call resolution for simple `use crate::module::symbol` imports
+- [x] Workspace genesis entry process with profile discovery and write instructions
 
 ## Metrics
 
@@ -271,3 +272,4 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 ## Next Steps
 
 1. Add cross-file call resolution for Java imports.
+2. Add more workspace profiles beyond codebase and generic fallback.

@@ -25,6 +25,12 @@ event = await fabric.append(
 )
 ```
 
+Initialize a workspace session with a durable genesis profile:
+
+```python
+profile = await fabric.initialize_session(".", session_id="zaxy-default")
+```
+
 Query memory:
 
 ```python

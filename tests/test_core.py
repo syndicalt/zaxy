@@ -255,6 +255,30 @@ class TestCodebaseIngestion:
         assert first_call.kwargs["thread"] == "agent-1"
 
 
+class TestSessionInitialization:
+    """Tests for session genesis orchestration."""
+
+    async def test_initialize_session_appends_genesis_event(
+        self,
+        fabric: MemoryFabric,
+        tmp_path,
+    ) -> None:  # type: ignore[no-untyped-def]
+        """initialize_session() should append a session.genesis event."""
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
+        (tmp_path / "src").mkdir()
+
+        profile = await fabric.initialize_session(tmp_path, session_id="agent-1")
+
+        assert profile.workspace_type == "codebase"
+        log = fabric.session_manager.get.return_value.eventlog
+        log.append.assert_called_once()
+        assert log.append.call_args.args == ("session.genesis",)
+        assert log.append.call_args.kwargs["actor"] == "zaxy"
+        assert log.append.call_args.kwargs["payload"]["workspace_type"] == "codebase"
+        assert log.append.call_args.kwargs["payload"]["session_id"] == "agent-1"
+        assert log.append.call_args.kwargs["thread"] == "agent-1"
+
+
 class TestTranscriptIngestion:
     """Tests for transcript ingestion orchestration."""
 
