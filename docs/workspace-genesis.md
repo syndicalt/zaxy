@@ -24,5 +24,13 @@ a `session.profile.corrected` event instead of rewriting history. That preserves
 the provenance trail: what Zaxy believed at session start, which write
 instructions that implied, and when the profile changed.
 
+MCP startup also discovers workspace instruction files adjacent to genesis:
+`AGENTS.md`, `CLAUDE.md`, `SOUL.md`, and `.github/copilot-instructions.md`.
+Zaxy writes compact `workspace.instructions.discovered` events with per-file
+hashes, citations, kinds, sizes, and short summaries; it does not store full
+instruction file content. On later startup, if the discovered signature differs
+from the latest recorded signature, Zaxy appends `workspace.instructions.updated`
+with `previous_signature` to preserve instruction drift.
+
 Related pages: [eventloom.md](eventloom.md), [codebase.md](codebase.md), and
 [runbook.md](runbook.md).

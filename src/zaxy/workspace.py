@@ -122,6 +122,23 @@ def build_workspace_instruction_event(root: str | Path, *, session_id: str) -> d
     }
 
 
+def mark_workspace_instruction_event_updated(
+    event: dict[str, Any],
+    *,
+    previous_signature: str,
+) -> dict[str, Any]:
+    """Return an instruction event marked as an update from a previous signature."""
+    updated = {
+        "event_type": "workspace.instructions.updated",
+        "actor": event["actor"],
+        "payload": {
+            **event["payload"],
+            "previous_signature": previous_signature,
+        },
+    }
+    return updated
+
+
 def workspace_profile_from_payload(payload: dict[str, Any]) -> WorkspaceProfile:
     """Reconstruct a workspace profile from a session genesis payload."""
     signals = payload.get("signals", [])
@@ -164,7 +181,10 @@ def existing_workspace_instructions_signature(
     resolved_root = str(Path(root).resolve())
     signature: str | None = None
     for event in events:
-        if getattr(event, "type", None) != "workspace.instructions.discovered":
+        if getattr(event, "type", None) not in {
+            "workspace.instructions.discovered",
+            "workspace.instructions.updated",
+        }:
             continue
         payload = getattr(event, "payload", None)
         if not isinstance(payload, dict):
