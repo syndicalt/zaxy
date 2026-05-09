@@ -52,6 +52,59 @@ def test_integration_template_command_prints_framework_starter() -> None:
     assert "import langgraph" not in result.output.casefold()
 
 
+def test_hooks_command_prints_claude_code_settings(tmp_path: Path) -> None:
+    """hooks should render copyable observer hook config."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "hooks",
+            "claude-code",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--domain",
+            "zaxy",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert '"hooks"' in result.output
+    assert '"Stop"' in result.output
+    assert '"PreCompact"' in result.output
+    assert "zaxy hook-event stop" in result.output
+    assert "zaxy hook-event precompact" in result.output
+    assert "--session-id zaxy-default" in result.output
+
+
+def test_hook_event_command_appends_eventloom_event(tmp_path: Path) -> None:
+    """hook-event should append lightweight lifecycle observations without Neo4j."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "hook-event",
+            "precompact",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent-1",
+            "--source",
+            "codex",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Recorded hook precompact" in result.output
+    events = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").read_all()
+    assert len(events) == 1
+    assert events[0].type == "hook.precompact"
+    assert events[0].actor == "zaxy-hook"
+    assert events[0].thread == "agent-1"
+    assert events[0].payload["source"] == "codex"
+
+
 def test_schema_plan_command_prints_migration_plan() -> None:
     runner = CliRunner()
 

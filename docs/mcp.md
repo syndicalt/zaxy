@@ -71,6 +71,20 @@ zaxy ide-config vscode --eventloom-path .eventloom
 zaxy ide-config claude-desktop --eventloom-path .eventloom --domain zaxy
 ```
 
+Generate observer hook adapters:
+
+```bash
+zaxy hooks claude-code --eventloom-path .eventloom --domain zaxy
+zaxy hooks codex --eventloom-path .eventloom --domain zaxy
+```
+
+Hook adapters do not proxy tool execution. Agents and tools continue to execute
+normally while hooks append lightweight Eventloom observations through
+`zaxy hook-event`. The sink is intentionally graph-independent so session stop
+and pre-compaction hooks can record provenance even when Neo4j is unavailable.
+Custom clients can implement the same contract by emitting normalized triggers
+such as `session-start`, `stop`, `precompact`, and `checkpoint`.
+
 These commands print copyable JSON fragments and do not include bearer tokens,
 passwords, or admin secrets. Keep remote SSE credentials in the client secret
 store or environment, not in committed config.

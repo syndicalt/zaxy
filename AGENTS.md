@@ -270,12 +270,13 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Retention metadata extraction and reinforcement events for decay-aware retrieval
 - [x] Retrieval feedback events that reinforce used context
 - [x] MCP tool support for retrieval feedback events
+- [x] Observer hook config and lightweight hook-event capture
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 494 passed |
+| Tests | 496 passed |
 | Coverage | 92.25% |
 | Lint | ruff clean |
 | Types | mypy clean |
@@ -283,4 +284,5 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 ## Next Steps
 
-1. Add optional deeper framework packages once direct templates see usage.
+1. Expand hook adapters and onboarding around "agents/tools execute normally; Zaxy observes."
+2. Add optional deeper framework packages once direct templates see usage.

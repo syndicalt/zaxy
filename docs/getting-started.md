@@ -71,6 +71,13 @@ To run the SSE transport for daemon-style clients:
 zaxy serve --transport sse --port 8080
 ```
 
+To let Zaxy observe client lifecycle checkpoints without proxying tool
+execution, generate hook adapter config:
+
+```bash
+zaxy hooks claude-code --eventloom-path .eventloom --domain my-project
+```
+
 The MCP tool names are stable: `memory_append`, `memory_query`,
 `memory_feedback`, `memory_replay`, and `memory_invalidate`. A simple client can
 append a typed `goal.created` or `task.proposed` event, query for the goal
