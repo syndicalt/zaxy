@@ -927,6 +927,16 @@ def _extract_workspace_instructions_discovered(event: Event) -> ExtractionResult
     files = event.payload.get("files")
     if not isinstance(files, list):
         files = []
+    file_paths = [
+        path
+        for file in files
+        if isinstance(file, dict) and (path := _optional_text(file.get("path")))
+    ]
+    file_kinds = [
+        kind
+        for file in files
+        if isinstance(file, dict) and (kind := _optional_text(file.get("kind")))
+    ]
     instruction = ExtractedEntity(
         name=f"{root}:instructions:{signature}",
         entity_type="workspace_instructions",
@@ -936,7 +946,9 @@ def _extract_workspace_instructions_discovered(event: Event) -> ExtractionResult
             "session_id": session_id,
             "root": root,
             "signature": signature,
-            "files": files,
+            "file_count": len(files),
+            "file_paths": file_paths,
+            "file_kinds": file_kinds,
         },
     )
     session = ExtractedEntity(

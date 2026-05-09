@@ -805,7 +805,9 @@ class TestWorkspaceInstructionsDiscovered:
             "session_id": "demo",
             "root": "/repo",
             "signature": "abc123",
-            "files": [{"path": "AGENTS.md", "kind": "agents"}],
+            "file_count": 1,
+            "file_paths": ["AGENTS.md"],
+            "file_kinds": ["agents"],
         }
         edge = result.edges[0]
         assert edge.source == "demo"

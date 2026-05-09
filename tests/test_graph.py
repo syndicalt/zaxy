@@ -206,6 +206,35 @@ class TestIngestion:
             "source_start_line": 4,
         }
 
+    async def test_upsert_entity_drops_neo4j_unsafe_nested_properties(self, store: GraphStore) -> None:
+        """Nested extracted properties should not reach Neo4j node projection."""
+        result = ExtractionResult(
+            entities=[
+                ExtractedEntity(
+                    name="/repo:instructions:abc123",
+                    entity_type="workspace_instructions",
+                    observed_at="2024-01-01T00:00:00Z",
+                    properties={
+                        "root": "/repo",
+                        "files": [{"path": "AGENTS.md", "kind": "agents"}],
+                        "metadata": {"signature": "abc123"},
+                        "file_paths": ["AGENTS.md"],
+                        "ignored_none": None,
+                    },
+                )
+            ],
+            edges=[],
+            source_event_seq=1,
+        )
+
+        await store.upsert_extraction(result, session_id="agent-1")
+
+        call = store._driver.execute_query.await_args_list[0]
+        assert call.kwargs["properties"] == {
+            "root": "/repo",
+            "file_paths": ["AGENTS.md"],
+        }
+
     async def test_upsert_entity_versions_by_valid_from(self, store: GraphStore) -> None:
         """Reassertions should create new versions instead of overwriting history."""
         result = ExtractionResult(
