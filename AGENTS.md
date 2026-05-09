@@ -272,12 +272,13 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] MCP tool support for retrieval feedback events
 - [x] Observer hook config and lightweight hook-event capture
 - [x] Hook protocol documentation and doctor onboarding guidance
+- [x] Safe hook config write mode with no-overwrite default
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 497 passed |
+| Tests | 500 passed |
 | Coverage | 92.25% |
 | Lint | ruff clean |
 | Types | mypy clean |
@@ -285,5 +286,6 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 ## Next Steps
 
-1. Expand hook adapters and onboarding around "agents/tools execute normally; Zaxy observes."
-2. Add optional deeper framework packages once direct templates see usage.
+1. Add richer checkpoint semantics for hook events.
+2. Expand hook adapters and onboarding around "agents/tools execute normally; Zaxy observes."
+3. Add optional deeper framework packages once direct templates see usage.

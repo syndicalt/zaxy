@@ -12,6 +12,18 @@ zaxy hooks claude-code --eventloom-path .eventloom --domain my-project
 zaxy hooks codex --eventloom-path .eventloom --domain my-project
 ```
 
+Write config directly during onboarding:
+
+```bash
+zaxy hooks claude-code \
+  --eventloom-path .eventloom \
+  --domain my-project \
+  --output .claude/settings.local.json
+```
+
+`--output` creates parent directories and refuses to overwrite existing files.
+Pass `--force` when replacing a generated hook config intentionally.
+
 The generated commands call the stable sink:
 
 ```bash

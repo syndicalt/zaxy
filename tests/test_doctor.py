@@ -69,3 +69,4 @@ def test_run_doctor_reports_hook_adapter_guidance(tmp_path: Path) -> None:
     assert check["status"] == "ok"
     assert "observer hook adapters" in check["message"]
     assert "zaxy hooks claude-code" in check["action"]
+    assert "--output .claude/settings.local.json" in check["action"]

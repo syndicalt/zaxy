@@ -20,7 +20,7 @@ zaxy ide-config claude-desktop --eventloom-path .eventloom
 
 # Print observer hook config so Zaxy can record lifecycle checkpoints without
 # proxying normal agent/tool execution.
-zaxy hooks claude-code --eventloom-path .eventloom --domain my-project
+zaxy hooks claude-code --eventloom-path .eventloom --domain my-project --output .claude/settings.local.json
 
 # Optional: explicit local development setup if you want shell commands too.
 ./scripts/setup.sh

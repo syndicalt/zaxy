@@ -77,6 +77,64 @@ def test_hooks_command_prints_claude_code_settings(tmp_path: Path) -> None:
     assert "--session-id zaxy-default" in result.output
 
 
+def test_hooks_command_writes_output_file(tmp_path: Path) -> None:
+    """hooks --output should write config instead of printing it."""
+    runner = CliRunner()
+    output = tmp_path / ".claude" / "settings.local.json"
+
+    result = runner.invoke(
+        app,
+        [
+            "hooks",
+            "claude-code",
+            "--eventloom-path",
+            ".eventloom",
+            "--domain",
+            "zaxy",
+            "--output",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Wrote hook config" in result.output
+    assert output.is_file()
+    assert '"PreCompact"' in output.read_text(encoding="utf-8")
+    assert '"hooks"' not in result.output
+
+
+def test_hooks_command_refuses_to_overwrite_without_force(tmp_path: Path) -> None:
+    """hooks --output should be non-destructive by default."""
+    runner = CliRunner()
+    output = tmp_path / "hooks.sh"
+    output.write_text("existing\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["hooks", "generic", "--output", str(output)],
+    )
+
+    assert result.exit_code != 0
+    assert "already exists" in result.output
+    assert output.read_text(encoding="utf-8") == "existing\n"
+
+
+def test_hooks_command_force_overwrites_output_file(tmp_path: Path) -> None:
+    """hooks --force should replace an existing output file."""
+    runner = CliRunner()
+    output = tmp_path / "hooks.sh"
+    output.write_text("existing\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["hooks", "generic", "--domain", "zaxy", "--output", str(output), "--force"],
+    )
+
+    assert result.exit_code == 0
+    assert "Wrote hook config" in result.output
+    assert "zaxy hook-event session-start" in output.read_text(encoding="utf-8")
+
+
 def test_hook_event_command_appends_eventloom_event(tmp_path: Path) -> None:
     """hook-event should append lightweight lifecycle observations without Neo4j."""
     runner = CliRunner()

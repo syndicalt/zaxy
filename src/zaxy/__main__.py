@@ -35,7 +35,7 @@ from zaxy.event import EventLog
 from zaxy.extract import extract
 from zaxy.extract_templates import ExtractorTemplateSpec, render_extractor_template
 from zaxy.graph import GraphStore
-from zaxy.hooks import build_hook_payload, hook_event_type, render_hook_config
+from zaxy.hooks import build_hook_payload, hook_event_type, render_hook_config, write_hook_config
 from zaxy.integrations import render_agent_integration_template, render_mcp_client_config
 from zaxy.lifecycle import build_compaction_completed_event
 from zaxy.live_benchmark import (
@@ -113,18 +113,24 @@ def hooks(
     eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory for hook events"),
     domain: str | None = typer.Option(None, help="Project/domain used for default session scoping"),  # noqa: B008
     source: str | None = typer.Option(None, help="Override hook source name"),  # noqa: B008
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write hook config to this file"),  # noqa: B008
+    force: bool = typer.Option(False, "--force", help="Overwrite an existing output file"),  # noqa: B008
 ) -> None:
-    """Print observer hook configuration for supported clients."""
+    """Print or write observer hook configuration for supported clients."""
     try:
-        typer.echo(
-            render_hook_config(
-                client,
-                eventloom_path=eventloom_path,
-                domain=domain,
-                source=source,
-            ),
-            nl=False,
+        config = render_hook_config(
+            client,
+            eventloom_path=eventloom_path,
+            domain=domain,
+            source=source,
         )
+        if output is not None:
+            written = write_hook_config(output, config, force=force)
+            typer.echo(f"Wrote hook config to {written}")
+            return
+        typer.echo(config, nl=False)
+    except FileExistsError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
 
