@@ -143,6 +143,9 @@ def hook_event(
     source: str = typer.Option("generic", help="Client or adapter that emitted the hook"),
     workspace: str | None = typer.Option(None, help="Workspace path associated with the hook"),  # noqa: B008
     transcript_path: str | None = typer.Option(None, help="Transcript path associated with the hook"),  # noqa: B008
+    summary: str | None = typer.Option(None, help="Checkpoint summary for retrieval"),  # noqa: B008
+    reason: str | None = typer.Option(None, help="Checkpoint reason, e.g. manual, interval, precompact, shutdown"),  # noqa: B008
+    turn_count: int | None = typer.Option(None, help="Turn count associated with the checkpoint"),  # noqa: B008
 ) -> None:
     """Append a lightweight observer hook event without requiring Neo4j."""
     from zaxy.session import SessionManager
@@ -156,6 +159,9 @@ def hook_event(
         source=source,
         workspace=workspace,
         transcript_path=transcript_path,
+        summary=summary,
+        reason=reason,
+        turn_count=turn_count,
     )
     eventlog = SessionManager(base_path=eventloom_path).get(session_id).eventlog
     event = eventlog.append(event_type, actor="zaxy-hook", payload=payload, thread=session_id)

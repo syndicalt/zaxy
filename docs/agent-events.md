@@ -138,6 +138,26 @@ Projection: unknown-event fallback today, preserving the feedback as an
 Eventloom-backed audit record without deleting, invalidating, or downranking the
 target entity.
 
+## Hook Checkpoints
+
+Use `hook.checkpoint` for observer-hook milestones that should remain
+searchable during future context assembly.
+
+```json
+{
+  "trigger": "checkpoint",
+  "source": "codex",
+  "summary": "Finished hook install mode.",
+  "reason": "manual",
+  "turn_count": 7,
+  "workspace": "/repo"
+}
+```
+
+Projection: `hook_checkpoint` entity linked from the session with
+`recorded_checkpoint`. The summary is indexed for retrieval, while source,
+reason, turn count, and workspace remain structured graph properties.
+
 ## Lifecycle Hooks
 
 Use lifecycle events for automatic capture around agent execution. These events

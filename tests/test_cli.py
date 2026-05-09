@@ -163,6 +163,38 @@ def test_hook_event_command_appends_eventloom_event(tmp_path: Path) -> None:
     assert events[0].payload["source"] == "codex"
 
 
+def test_hook_event_checkpoint_carries_summary_and_reason(tmp_path: Path) -> None:
+    """checkpoint hooks should carry retrieval-useful checkpoint metadata."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "hook-event",
+            "checkpoint",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent-1",
+            "--source",
+            "codex",
+            "--summary",
+            "Finished hook install mode.",
+            "--reason",
+            "manual",
+            "--turn-count",
+            "7",
+        ],
+    )
+
+    assert result.exit_code == 0
+    events = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").read_all()
+    assert events[0].type == "hook.checkpoint"
+    assert events[0].payload["summary"] == "Finished hook install mode."
+    assert events[0].payload["reason"] == "manual"
+    assert events[0].payload["turn_count"] == 7
+
+
 def test_schema_plan_command_prints_migration_plan() -> None:
     runner = CliRunner()
 

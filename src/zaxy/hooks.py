@@ -112,6 +112,9 @@ def build_hook_payload(
     source: str,
     workspace: str | None = None,
     transcript_path: str | None = None,
+    summary: str | None = None,
+    reason: str | None = None,
+    turn_count: int | None = None,
 ) -> dict[str, Any]:
     """Build a compact, non-blocking lifecycle payload for hook adapters."""
     payload: dict[str, Any] = {
@@ -122,6 +125,12 @@ def build_hook_payload(
         payload["workspace"] = workspace
     if transcript_path:
         payload["transcript_path"] = transcript_path
+    if summary:
+        payload["summary"] = summary
+    if reason:
+        payload["reason"] = reason
+    if turn_count is not None:
+        payload["turn_count"] = turn_count
     return payload
 
 
