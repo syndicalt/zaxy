@@ -282,3 +282,23 @@ def test_compact_rewrite_appends_lifecycle_event(tmp_path: Path) -> None:
     assert events[-1].payload["mode"] == "rewrite"
     assert events[-1].payload["status"] == "succeeded"
     assert events[-1].payload["event_count"] == 1
+
+
+def test_viewer_command_writes_static_html(tmp_path: Path) -> None:
+    """viewer should write a standalone Eventloom inspection page."""
+    log_path = tmp_path / "default.jsonl"
+    output = tmp_path / "viewer.html"
+    EventLog(log_path).append(
+        "session.genesis",
+        actor="zaxy",
+        payload={"session_id": "default", "workspace_type": "codebase"},
+        thread="default",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["viewer", str(log_path), "--output", str(output)])
+
+    assert result.exit_code == 0
+    assert f"Wrote Eventloom viewer: {output}" in result.output
+    assert output.exists()
+    assert "Eventloom Session Viewer" in output.read_text(encoding="utf-8")

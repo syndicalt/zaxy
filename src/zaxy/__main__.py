@@ -58,6 +58,7 @@ from zaxy.live_benchmark import (
 from zaxy.local_profile import check_local_profile, render_local_profile, write_local_profile
 from zaxy.mcp_server import main as mcp_main
 from zaxy.schema import render_schema_plan
+from zaxy.viewer import write_viewer_html
 
 app = typer.Typer(help="Zaxy: Event-sourced temporal knowledge graph fabric")
 
@@ -148,6 +149,16 @@ def init_session(
         f"Initialized {session_id} as {profile.workspace_type} workspace "
         f"(confidence {profile.confidence})"
     )
+
+
+@app.command("viewer")
+def viewer(
+    path: Path = typer.Argument(..., help="Eventloom JSONL log or directory to inspect"),  # noqa: B008
+    output: Path = typer.Option("eventloom-viewer.html", "--output", "-o", help="HTML output path"),  # noqa: B008
+) -> None:
+    """Write a standalone HTML viewer for Eventloom sessions."""
+    written = write_viewer_html(path, output)
+    typer.echo(f"Wrote Eventloom viewer: {written}")
 
 
 @app.command("schema-plan")

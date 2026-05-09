@@ -59,6 +59,9 @@ python -m zaxy replay .eventloom/work.jsonl --from-seq 42
 # Export as JSON
 python -m zaxy replay .eventloom/work.jsonl --json
 
+# Write a standalone HTML viewer for one log or an Eventloom directory
+python -m zaxy viewer .eventloom --output eventloom-viewer.html
+
 # Rebuild Neo4j projection after extractor changes
 python -m zaxy reproject .eventloom/default.jsonl --session-id default
 

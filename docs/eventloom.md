@@ -35,6 +35,16 @@ verification evidence, handoffs, and policies, use the payload shapes in
 [agent-events.md](agent-events.md). These shapes are backed by built-in
 extractors and are intended to keep future `memory_query` calls useful.
 
+For local inspection, generate a standalone HTML viewer:
+
+```bash
+zaxy viewer .eventloom --output eventloom-viewer.html
+```
+
+The viewer reads one JSONL log or every `*.jsonl` file in an Eventloom
+directory. It highlights session bootstrap events, lifecycle events, integrity
+status, and underlying payloads without requiring Neo4j or an MCP client.
+
 Events are session-scoped. The `SessionManager` maps validated session IDs to
 per-session JSONL paths under `EVENTLOOM_PATH`. Multi-agent deployments should
 shard by session so a busy agent does not contend on the same file as every
