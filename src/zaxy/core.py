@@ -37,7 +37,7 @@ from zaxy.extract import extract
 from zaxy.graph import GraphStore
 from zaxy.lifecycle import build_subagent_completed_event
 from zaxy.metrics import get_metrics
-from zaxy.query import QueryRouter, build_reranker
+from zaxy.query import QueryRouter, build_reranker, build_retention_policy
 from zaxy.security import validate_payload, validate_query, validate_session_id
 from zaxy.session import SessionManager
 from zaxy.trace import MemoryTracer
@@ -129,6 +129,7 @@ class MemoryFabric:
             session_id=settings.eventloom_thread,
             scoring_profile=settings.query_scoring_profile,
             reranker=build_reranker(settings),
+            retention_policy=build_retention_policy(settings),
         )
         self.embedding_provider = build_embedding_provider(settings)
         self.tracer = MemoryTracer(

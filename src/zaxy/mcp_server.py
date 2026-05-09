@@ -39,7 +39,7 @@ from zaxy.lifecycle import (
 )
 from zaxy.log import get_logger, setup_logging
 from zaxy.metrics import get_metrics
-from zaxy.query import QueryRouter
+from zaxy.query import QueryRouter, build_retention_policy
 from zaxy.remote_security import AuditEventExporter, RemoteAuditEvent, SessionRateLimiter
 from zaxy.runtime import LocalNeo4jRuntime
 from zaxy.security import (
@@ -239,6 +239,7 @@ class ZaxyMCPServer:
             project_id=settings.pathlight_project_id,
             disabled=not settings.pathlight_enabled,
         )
+        self._retention_policy = build_retention_policy(settings)
 
     async def setup(self) -> None:
         """Connect to Neo4j and initialize schema."""
@@ -428,7 +429,11 @@ class ZaxyMCPServer:
         limit = validate_limit(arguments.get("limit"), default=10)
         session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
 
-        router = QueryRouter(self.graph, session_id=session_id)
+        router = QueryRouter(
+            self.graph,
+            session_id=session_id,
+            retention_policy=self._retention_policy,
+        )
         results = await router.query(query, temporal_point=temporal, limit=limit)
         await self.tracer.trace_query(query, len(results), 0.0, temporal)
 
@@ -585,7 +590,11 @@ class ZaxyMCPServer:
         events = list(replay.events)
         compacted = len(events) > max_recent_events
         recent_events = events[-max_recent_events:] if compacted else events
-        router = QueryRouter(self.graph, session_id=session_id)
+        router = QueryRouter(
+            self.graph,
+            session_id=session_id,
+            retention_policy=self._retention_policy,
+        )
         results = await router.query(query, limit=limit)
         await self.tracer.trace_query(query, len(results), 0.0, None)
         return {

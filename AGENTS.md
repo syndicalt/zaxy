@@ -265,12 +265,13 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Lifecycle capture for compaction, subagent completion, and session end
 - [x] Minimal static Eventloom/session viewer for bootstrap and lifecycle inspection
 - [x] Local onboarding doctor for Eventloom, MCP defaults, viewer, local profile, and config posture
+- [x] Non-destructive temporal retention and decay-aware retrieval policies
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 473 passed |
+| Tests | 478 passed |
 | Coverage | 92.25% |
 | Lint | ruff clean |
 | Types | mypy clean |
@@ -278,5 +279,5 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 ## Next Steps
 
-1. Add non-destructive temporal retention and decay-aware retrieval policies.
-2. Broaden direct agent integrations beyond MCP.
+1. Broaden direct agent integrations beyond MCP.
+2. Expand retention metadata extraction and reinforcement events.

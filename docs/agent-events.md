@@ -2,6 +2,10 @@
 
 Zaxy retrieves best when agents emit typed events with stable payload fields.
 These built-in event shapes are deterministic, searchable, and replayable.
+Events may also carry optional retrieval-retention metadata such as
+`expires_at`, `importance`, `last_reinforced_at`, and `reinforcement_count`.
+Retention policies use this metadata only while ranking or filtering retrieved
+context; they do not mutate the underlying Eventloom record.
 
 ## Decisions
 

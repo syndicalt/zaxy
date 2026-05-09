@@ -44,10 +44,15 @@ offline development. The hosted OpenAI-compatible provider is useful when vector
 similarity quality matters. See [embeddings.md](embeddings.md).
 
 Retrieval settings include `QUERY_DEFAULT_LIMIT`, `QUERY_SCORING_PROFILE`,
-`RERANKER_PROVIDER`, `RERANKER_URL`, `RERANKER_API_KEY`,
-`OPENAI_RERANK_MODEL`, and `OPENAI_BASE_URL`. `RERANKER_PROVIDER=lexical`
-enables deterministic local reranking. `RERANKER_PROVIDER=http` sends fused
-candidates to a local/self-hosted endpoint. `RERANKER_PROVIDER=openai` uses an
+`RETENTION_POLICY`, `RETENTION_DECAY_HALF_LIFE_DAYS`,
+`RETENTION_EXPIRED_WEIGHT`, `RERANKER_PROVIDER`, `RERANKER_URL`,
+`RERANKER_API_KEY`, `OPENAI_RERANK_MODEL`, and `OPENAI_BASE_URL`.
+`RETENTION_POLICY=none` is the default and preserves current retrieval
+behavior. `filter_expired` removes expired candidates at query time, while
+`decay` keeps candidates eligible but downranks stale or expired memory without
+mutating Eventloom or Neo4j facts. `RERANKER_PROVIDER=lexical` enables
+deterministic local reranking. `RERANKER_PROVIDER=http` sends fused candidates
+to a local/self-hosted endpoint. `RERANKER_PROVIDER=openai` uses an
 OpenAI-compatible chat-completions model and `OPENAI_API_KEY`.
 
 Supported secret-file variants are `NEO4J_PASSWORD_FILE`,

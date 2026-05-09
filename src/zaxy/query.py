@@ -8,9 +8,10 @@ returning a context window suitable for injection into an agent prompt.
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 import httpx
@@ -42,6 +43,15 @@ class ScoringProfile:
     temporal_weight: float = 0.12
     mmr_lambda: float = 0.7
     traversal_bonus: float = 0.1
+
+
+@dataclass(frozen=True)
+class RetentionPolicy:
+    """Non-destructive retrieval-time retention policy."""
+
+    mode: str = "none"
+    decay_half_life_days: int = 30
+    expired_weight: float = 0.0
 
 
 SCORING_PROFILES: dict[str, ScoringProfile] = {
@@ -254,6 +264,9 @@ class QueryRouter:
         fusion_weights: dict[str, float] | None = None,
         scoring_profile: str | ScoringProfile = "balanced",
         reranker: Reranker | None = None,
+        retention_policy: str | RetentionPolicy = "none",
+        retention_decay_half_life_days: int = 30,
+        retention_expired_weight: float = 0.0,
     ) -> None:
         self.store = store
         self.default_limit = default_limit
@@ -262,6 +275,11 @@ class QueryRouter:
         self.fusion_weights = self.scoring_profile.fusion_weights
         self.temporal_weight = self.scoring_profile.temporal_weight
         self.reranker = reranker
+        self.retention_policy = _resolve_retention_policy(
+            retention_policy,
+            decay_half_life_days=retention_decay_half_life_days,
+            expired_weight=retention_expired_weight,
+        )
 
     async def query(
         self,
@@ -410,6 +428,10 @@ class QueryRouter:
         # 5. Deduplicate by (name, type), keep highest score
         best: dict[tuple[str, str], SearchResult] = {}
         for r in results:
+            retained = _apply_retention_policy(r, self.retention_policy, temporal_point)
+            if retained is None:
+                continue
+            r = retained
             key = (r.entity.name, r.entity.entity_type)
             if key not in best or r.score > best[key].score:
                 best[key] = r
@@ -463,6 +485,15 @@ def build_reranker(settings: Any) -> Reranker | None:
     raise ValueError("RERANKER_PROVIDER must be 'none', 'lexical', 'http', or 'openai'")
 
 
+def build_retention_policy(settings: Any) -> RetentionPolicy:
+    """Build the configured non-destructive retrieval retention policy."""
+    return _resolve_retention_policy(
+        str(getattr(settings, "retention_policy", "none")),
+        decay_half_life_days=int(getattr(settings, "retention_decay_half_life_days", 30)),
+        expired_weight=float(getattr(settings, "retention_expired_weight", 0.0)),
+    )
+
+
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
@@ -476,7 +507,7 @@ def _to_chunk(result: SearchResult) -> ContextChunk:
         safe_properties = {
             key: value
             for key, value in ent.properties.items()
-            if key not in {"embedding", "created_at", "updated_at"}
+            if key not in {"embedding", "created_at", "updated_at"} and not key.startswith("_")
         }
         props = ", ".join(f"{k}={v}" for k, v in list(safe_properties.items())[:3])
         if props:
@@ -666,6 +697,30 @@ def _resolve_scoring_profile(
     return replace(profile, fusion_weights={**profile.fusion_weights, **fusion_weights})
 
 
+def _resolve_retention_policy(
+    retention_policy: str | RetentionPolicy,
+    *,
+    decay_half_life_days: int,
+    expired_weight: float,
+) -> RetentionPolicy:
+    if isinstance(retention_policy, RetentionPolicy):
+        return retention_policy
+    mode = retention_policy.casefold()
+    if mode in {"", "off", "disabled"}:
+        mode = "none"
+    if mode not in {"none", "filter_expired", "decay"}:
+        raise ValueError("RETENTION_POLICY must be 'none', 'filter_expired', or 'decay'")
+    if decay_half_life_days < 1:
+        raise ValueError("RETENTION_DECAY_HALF_LIFE_DAYS must be positive")
+    if not 0.0 <= expired_weight <= 1.0:
+        raise ValueError("RETENTION_EXPIRED_WEIGHT must be between 0 and 1")
+    return RetentionPolicy(
+        mode=mode,
+        decay_half_life_days=decay_half_life_days,
+        expired_weight=expired_weight,
+    )
+
+
 def _mmr_rank(
     results: list[SearchResult],
     limit: int,
@@ -804,6 +859,89 @@ def _with_warnings(result: SearchResult, warnings: list[str] | tuple[str, ...]) 
     return replace(result, warnings=_merge_warnings(result.warnings, warnings))
 
 
+def _apply_retention_policy(
+    result: SearchResult,
+    policy: RetentionPolicy,
+    temporal_point: str | None,
+) -> SearchResult | None:
+    if policy.mode == "none":
+        return result
+    now = _retention_now(temporal_point)
+    expires_at = _parse_optional_datetime(result.entity.properties.get("expires_at"))
+    if expires_at is not None and expires_at <= now:
+        if policy.mode == "filter_expired":
+            return None
+        return _retention_replace(
+            result,
+            multiplier=policy.expired_weight,
+            policy=policy,
+            expired=True,
+        )
+    if policy.mode != "decay":
+        return _retention_replace(result, multiplier=1.0, policy=policy, expired=False)
+
+    reference = (
+        _parse_optional_datetime(result.entity.properties.get("last_reinforced_at"))
+        or _parse_optional_datetime(result.entity.valid_from)
+    )
+    if reference is None:
+        return _retention_replace(result, multiplier=1.0, policy=policy, expired=False)
+    age_days = max(0.0, (now - reference).total_seconds() / 86400.0)
+    multiplier = math.pow(0.5, age_days / policy.decay_half_life_days)
+    importance = _bounded_float(result.entity.properties.get("importance"), default=1.0)
+    reinforcement_count = _bounded_float(
+        result.entity.properties.get("reinforcement_count"),
+        default=0.0,
+    )
+    reinforcement_boost = min(0.25, reinforcement_count * 0.03)
+    multiplier = min(1.0, multiplier * importance + reinforcement_boost)
+    return _retention_replace(result, multiplier=multiplier, policy=policy, expired=False)
+
+
+def _retention_replace(
+    result: SearchResult,
+    *,
+    multiplier: float,
+    policy: RetentionPolicy,
+    expired: bool,
+) -> SearchResult:
+    metadata = dict(result.entity.properties)
+    metadata["_retention_policy"] = policy.mode
+    metadata["_retention_decay_multiplier"] = multiplier
+    metadata["_retention_expired"] = expired
+    return replace(
+        result,
+        entity=replace(result.entity, properties=metadata),
+        score=result.score * multiplier,
+        ranking_score=None if result.ranking_score is None else result.ranking_score * multiplier,
+    )
+
+
+def _retention_now(temporal_point: str | None) -> datetime:
+    if temporal_point:
+        return _parse_iso_datetime(temporal_point)
+    return datetime.now(UTC)
+
+
+def _parse_optional_datetime(value: object) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return _parse_iso_datetime(str(value))
+    except ValueError:
+        return None
+
+
+def _bounded_float(value: object, *, default: float) -> float:
+    if value is None:
+        return default
+    try:
+        parsed = float(str(value))
+    except (TypeError, ValueError):
+        return default
+    return max(0.0, min(1.0, parsed))
+
+
 def _score_explanation(result: SearchResult) -> dict[str, Any]:
     """Return compact score details for retrieval debugging."""
     return {
@@ -818,6 +956,26 @@ def _score_explanation(result: SearchResult) -> dict[str, Any]:
         **({"reranker": result.reranker} if result.reranker is not None else {}),
         **({"rerank_score": round(result.rerank_score, 4)} if result.rerank_score is not None else {}),
         **({"warnings": list(result.warnings)} if result.warnings else {}),
+        **(
+            {"retention_policy": result.entity.properties["_retention_policy"]}
+            if "_retention_policy" in result.entity.properties
+            else {}
+        ),
+        **(
+            {
+                "retention_decay_multiplier": round(
+                    float(result.entity.properties["_retention_decay_multiplier"]),
+                    4,
+                )
+            }
+            if "_retention_decay_multiplier" in result.entity.properties
+            else {}
+        ),
+        **(
+            {"retention_expired": bool(result.entity.properties["_retention_expired"])}
+            if "_retention_expired" in result.entity.properties
+            else {}
+        ),
         "weighted_score": round(result.score, 4),
         "ranking_score": round(result.ranking_score if result.ranking_score is not None else result.score, 4),
     }
