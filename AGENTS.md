@@ -260,12 +260,13 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Workspace genesis entry process with profile discovery and write instructions
 - [x] Workspace instruction bootstrap and drift events for agent guidance files
 - [x] Initial lifecycle hook taxonomy for tool calls, command results, and file edits
+- [x] Automatic redacted MCP tool-call lifecycle capture
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 451 passed |
+| Tests | 455 passed |
 | Coverage | 92.25% |
 | Lint | ruff clean |
 | Types | mypy clean |

@@ -15,8 +15,10 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import hmac
+import inspect
 import json
 from collections.abc import Mapping
+from contextlib import suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
@@ -30,6 +32,7 @@ from mcp.types import TextContent, Tool
 from zaxy.config import get_settings
 from zaxy.extract import extract
 from zaxy.graph import GraphStore
+from zaxy.lifecycle import build_tool_call_completed_event
 from zaxy.log import get_logger, setup_logging
 from zaxy.metrics import get_metrics
 from zaxy.query import QueryRouter
@@ -204,6 +207,7 @@ class ZaxyMCPServer:
         settings = get_settings()
         self._admin_token = settings.mcp_admin_token
         self._default_session_id = validate_session_id(settings.eventloom_thread)
+        self._lifecycle_capture_enabled = settings.mcp_lifecycle_capture_enabled
         self._workspace_root = Path(workspace_root or Path.cwd()).resolve()
         self._initialized_workspaces: dict[tuple[str, str], WorkspaceProfile] = {}
         self._initialized_instruction_signatures: dict[tuple[str, str], str] = {}
@@ -247,6 +251,35 @@ class ZaxyMCPServer:
         """Close connections."""
         await self.graph.close()
         await self.tracer.close()
+
+    async def capture_tool_call_completed(
+        self,
+        *,
+        tool_name: str,
+        status: str,
+        session_id: str,
+        arguments: dict[str, Any],
+        result_summary: str | None = None,
+    ) -> None:
+        """Append and project a redacted tool-call lifecycle event."""
+        sid = validate_session_id(session_id)
+        event_input = build_tool_call_completed_event(
+            tool_name=tool_name,
+            status=status,
+            session_id=sid,
+            arguments=arguments,
+            result_summary=result_summary,
+        )
+        eventlog = self.session_manager.get(sid).eventlog
+        event = eventlog.append(
+            event_input["event_type"],
+            actor=event_input["actor"],
+            payload=validate_payload(event_input["payload"]),
+            thread=sid,
+        )
+        extraction = extract(event)
+        await self.graph.upsert_extraction(extraction, session_id=sid)
+        await self.tracer.trace_append(event_input["event_type"], event_input["actor"], event.seq)
 
     async def ensure_session_initialized(
         self,
@@ -798,6 +831,82 @@ def _claim_values(value: Any) -> set[str]:
 server: ZaxyMCPServer | None = None
 
 
+async def _dispatch_tool_call(
+    active_server: ZaxyMCPServer,
+    name: str,
+    arguments: dict[str, Any],
+) -> list[TextContent]:
+    if name == "memory_append":
+        return await active_server.handle_memory_append(arguments)
+    if name == "memory_query":
+        return await active_server.handle_memory_query(arguments)
+    if name == "memory_replay":
+        return await active_server.handle_memory_replay(arguments)
+    if name == "memory_invalidate":
+        return await active_server.handle_memory_invalidate(arguments)
+    if name == "context_assemble":
+        return await active_server.handle_context_assemble(arguments)
+    if name == "context_after_turn":
+        return await active_server.handle_context_after_turn(arguments)
+    if name == "subagent_cleanup":
+        return await active_server.handle_subagent_cleanup(arguments)
+    raise ValueError(f"Unknown tool: {name}")
+
+
+def _capture_session_id(active_server: ZaxyMCPServer, arguments: dict[str, Any]) -> str:
+    fallback = _default_capture_session_id(active_server)
+    try:
+        resolved = active_server._session_id_from_arguments(
+            arguments,
+            default=fallback,
+        )
+        if inspect.isawaitable(resolved):
+            if inspect.iscoroutine(resolved):
+                resolved.close()
+            return fallback
+        if isinstance(resolved, str):
+            return resolved
+        return fallback
+    except Exception:
+        return fallback
+
+
+def _default_capture_session_id(active_server: ZaxyMCPServer) -> str:
+    default = vars(active_server).get("_default_session_id", "default")
+    return default if isinstance(default, str) else "default"
+
+
+async def _capture_tool_call_best_effort(
+    active_server: ZaxyMCPServer,
+    *,
+    name: str,
+    arguments: dict[str, Any],
+    session_id: str,
+    status: str,
+    result_summary: str | None,
+) -> None:
+    if vars(active_server).get("_lifecycle_capture_enabled", True) is False:
+        return
+    with suppress(Exception):
+        await active_server.capture_tool_call_completed(
+            tool_name=name,
+            status=status,
+            session_id=session_id,
+            arguments=arguments,
+            result_summary=result_summary,
+        )
+
+
+def _tool_result_summary(result: list[TextContent]) -> str:
+    if not result:
+        return "0 content items"
+    first = result[0]
+    text = getattr(first, "text", "")
+    if text:
+        return str(text)[:240]
+    return f"{len(result)} content item{'s' if len(result) != 1 else ''}"
+
+
 async def main() -> None:
     """Run the MCP stdio server with graceful shutdown."""
     setup_logging()
@@ -828,21 +937,28 @@ async def main() -> None:
 
     @app.call_tool()  # type: ignore[untyped-decorator]
     async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:
-        if name == "memory_append":
-            return await active_server.handle_memory_append(arguments)
-        if name == "memory_query":
-            return await active_server.handle_memory_query(arguments)
-        if name == "memory_replay":
-            return await active_server.handle_memory_replay(arguments)
-        if name == "memory_invalidate":
-            return await active_server.handle_memory_invalidate(arguments)
-        if name == "context_assemble":
-            return await active_server.handle_context_assemble(arguments)
-        if name == "context_after_turn":
-            return await active_server.handle_context_after_turn(arguments)
-        if name == "subagent_cleanup":
-            return await active_server.handle_subagent_cleanup(arguments)
-        raise ValueError(f"Unknown tool: {name}")
+        session_id = _capture_session_id(active_server, arguments)
+        try:
+            result = await _dispatch_tool_call(active_server, name, arguments)
+        except Exception:
+            await _capture_tool_call_best_effort(
+                active_server,
+                name=name,
+                arguments=arguments,
+                session_id=session_id,
+                status="failed",
+                result_summary=None,
+            )
+            raise
+        await _capture_tool_call_best_effort(
+            active_server,
+            name=name,
+            arguments=arguments,
+            session_id=session_id,
+            status="succeeded",
+            result_summary=_tool_result_summary(result),
+        )
+        return result
 
     try:
         async with stdio_server() as (read_stream, write_stream):

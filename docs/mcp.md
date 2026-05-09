@@ -38,6 +38,14 @@ retrieval. `context_after_turn(role, content, ...)` first appends a
 summary and integrity status. These lifecycle tools are session-scoped under
 remote SSE auth just like query and append.
 
+MCP dispatch also performs automatic lifecycle capture by default. After each
+tool call, Zaxy appends a `tool.call.completed` event to the resolved session
+with the tool name, status, argument keys, and a bounded result summary. Raw
+argument values are not persisted in the lifecycle payload. Capture is
+best-effort: failures while recording metadata do not fail the original MCP
+tool call. Set `MCP_LIFECYCLE_CAPTURE_ENABLED=false` to disable this automatic
+capture.
+
 Run stdio locally:
 
 ```bash

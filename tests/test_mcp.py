@@ -800,6 +800,176 @@ class TestEntrypoint:
         with pytest.raises(ValueError, match="Unknown tool"):
             await captured_handlers["call_tool"]("unknown_tool", {})
 
+    @patch("zaxy.mcp_server.ZaxyMCPServer")
+    @patch("zaxy.mcp_server.stdio_server")
+    async def test_call_tool_records_lifecycle_capture_without_raw_arguments(
+        self,
+        mock_stdio: MagicMock,
+        mock_server_cls: MagicMock,
+    ) -> None:
+        """The MCP dispatcher should record a redacted tool.call.completed event."""
+        mock_server = AsyncMock()
+        mock_server.handle_memory_query.return_value = [MagicMock(text="[]")]
+        mock_server.capture_tool_call_completed = AsyncMock()
+        mock_server._default_session_id = "default"
+        mock_server._session_id_from_arguments = MagicMock(return_value="agent-1")
+        mock_server_cls.return_value = mock_server
+
+        mock_read = AsyncMock()
+        mock_write = AsyncMock()
+        mock_stdio.return_value.__aenter__ = AsyncMock(return_value=(mock_read, mock_write))
+        mock_stdio.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        captured_handlers: dict[str, Any] = {}
+
+        def make_capture_decorator(name: str) -> Any:
+            def decorator(fn: Any) -> Any:
+                captured_handlers[name] = fn
+                return fn
+            return decorator
+
+        with (
+            patch("zaxy.mcp_server.app.run", new_callable=AsyncMock),
+            patch.object(
+                zaxy.mcp_server.app,
+                "list_tools",
+                return_value=make_capture_decorator("list_tools"),
+            ),
+            patch.object(
+                zaxy.mcp_server.app,
+                "call_tool",
+                return_value=make_capture_decorator("call_tool"),
+            ),
+        ):
+            await main()
+
+        await captured_handlers["call_tool"](
+            "memory_query",
+            {
+                "query": "roadmap",
+                "session_id": "agent-1",
+                "api_key": "secret",
+            },
+        )
+
+        mock_server.capture_tool_call_completed.assert_awaited_once()
+        call = mock_server.capture_tool_call_completed.await_args
+        assert call.kwargs["tool_name"] == "memory_query"
+        assert call.kwargs["status"] == "succeeded"
+        assert call.kwargs["session_id"] == "agent-1"
+        assert call.kwargs["arguments"] == {
+            "query": "roadmap",
+            "session_id": "agent-1",
+            "api_key": "secret",
+        }
+        assert "secret" not in call.kwargs["result_summary"]
+
+    @patch("zaxy.mcp_server.ZaxyMCPServer")
+    @patch("zaxy.mcp_server.stdio_server")
+    async def test_call_tool_records_failed_lifecycle_capture(
+        self,
+        mock_stdio: MagicMock,
+        mock_server_cls: MagicMock,
+    ) -> None:
+        """Failed MCP dispatch should record a failed lifecycle event and re-raise."""
+        mock_server = AsyncMock()
+        mock_server.capture_tool_call_completed = AsyncMock()
+        mock_server._default_session_id = "default"
+        mock_server._session_id_from_arguments = MagicMock(return_value="agent-1")
+        mock_server_cls.return_value = mock_server
+
+        mock_read = AsyncMock()
+        mock_write = AsyncMock()
+        mock_stdio.return_value.__aenter__ = AsyncMock(return_value=(mock_read, mock_write))
+        mock_stdio.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        captured_handlers: dict[str, Any] = {}
+
+        def make_capture_decorator(name: str) -> Any:
+            def decorator(fn: Any) -> Any:
+                captured_handlers[name] = fn
+                return fn
+            return decorator
+
+        with (
+            patch("zaxy.mcp_server.app.run", new_callable=AsyncMock),
+            patch.object(
+                zaxy.mcp_server.app,
+                "list_tools",
+                return_value=make_capture_decorator("list_tools"),
+            ),
+            patch.object(
+                zaxy.mcp_server.app,
+                "call_tool",
+                return_value=make_capture_decorator("call_tool"),
+            ),
+        ):
+            await main()
+
+        with pytest.raises(ValueError, match="Unknown tool"):
+            await captured_handlers["call_tool"](
+                "unknown_tool",
+                {"session_id": "agent-1", "api_key": "secret"},
+            )
+
+        mock_server.capture_tool_call_completed.assert_awaited_once()
+        call = mock_server.capture_tool_call_completed.await_args
+        assert call.kwargs["tool_name"] == "unknown_tool"
+        assert call.kwargs["status"] == "failed"
+        assert call.kwargs["session_id"] == "agent-1"
+        assert call.kwargs["result_summary"] is None
+
+    @patch("zaxy.mcp_server.ZaxyMCPServer")
+    @patch("zaxy.mcp_server.stdio_server")
+    async def test_call_tool_skips_lifecycle_capture_when_disabled(
+        self,
+        mock_stdio: MagicMock,
+        mock_server_cls: MagicMock,
+    ) -> None:
+        """The dispatcher should honor disabled lifecycle capture config."""
+        mock_server = AsyncMock()
+        mock_server.handle_memory_query.return_value = [MagicMock(text="[]")]
+        mock_server.capture_tool_call_completed = AsyncMock()
+        mock_server._default_session_id = "default"
+        mock_server._lifecycle_capture_enabled = False
+        mock_server._session_id_from_arguments = MagicMock(return_value="agent-1")
+        mock_server_cls.return_value = mock_server
+
+        mock_read = AsyncMock()
+        mock_write = AsyncMock()
+        mock_stdio.return_value.__aenter__ = AsyncMock(return_value=(mock_read, mock_write))
+        mock_stdio.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        captured_handlers: dict[str, Any] = {}
+
+        def make_capture_decorator(name: str) -> Any:
+            def decorator(fn: Any) -> Any:
+                captured_handlers[name] = fn
+                return fn
+            return decorator
+
+        with (
+            patch("zaxy.mcp_server.app.run", new_callable=AsyncMock),
+            patch.object(
+                zaxy.mcp_server.app,
+                "list_tools",
+                return_value=make_capture_decorator("list_tools"),
+            ),
+            patch.object(
+                zaxy.mcp_server.app,
+                "call_tool",
+                return_value=make_capture_decorator("call_tool"),
+            ),
+        ):
+            await main()
+
+        await captured_handlers["call_tool"](
+            "memory_query",
+            {"query": "roadmap", "session_id": "agent-1"},
+        )
+
+        mock_server.capture_tool_call_completed.assert_not_awaited()
+
 
 # ------------------------------------------------------------------
 # Lifecycle tests
@@ -807,6 +977,30 @@ class TestEntrypoint:
 
 class TestLifecycle:
     """Tests for server setup/teardown."""
+
+    async def test_capture_tool_call_completed_appends_redacted_event(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """capture_tool_call_completed() should append and project redacted lifecycle metadata."""
+        await server.capture_tool_call_completed(
+            tool_name="memory_query",
+            status="succeeded",
+            session_id="agent-1",
+            arguments={"query": "roadmap", "api_key": "secret"},
+            result_summary="1 result",
+        )
+
+        log = server.session_manager.get.return_value.eventlog
+        log.append.assert_called_once()
+        assert log.append.call_args.args == ("tool.call.completed",)
+        payload = log.append.call_args.kwargs["payload"]
+        assert payload["tool_name"] == "memory_query"
+        assert payload["argument_keys"] == ["api_key", "query"]
+        assert payload["arguments_redacted"] is True
+        assert "api_key" in payload["argument_keys"]
+        assert "secret" not in str(payload)
+        server.graph.upsert_extraction.assert_awaited_once()
 
     @patch("zaxy.mcp_server.GraphStore")
     @patch("zaxy.mcp_server.MemoryTracer")
