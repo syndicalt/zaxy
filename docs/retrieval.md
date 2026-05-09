@@ -16,10 +16,11 @@ scores, and provenance.
 Ranking is intentionally explainable. Each chunk carries `score_explanation`
 metadata with the retrieval source, raw backend score, source weight, weighted
 score, matched query, query expansion weight, temporal scoring fields when an
-as-of query is used, and final ranking score. The ranking pass uses maximum
-marginal relevance so near-duplicate hits do not crowd out adjacent context.
-Traversal hits get a small preservation bonus because graph-neighbor evidence
-is often the difference between generic search and relational memory.
+as-of query is used, retention policy effects when configured, and final ranking
+score. The ranking pass uses maximum marginal relevance so near-duplicate hits
+do not crowd out adjacent context. Traversal hits get a small preservation bonus
+because graph-neighbor evidence is often the difference between generic search
+and relational memory.
 
 Keyword search includes a deterministic expansion pass for terse agent queries.
 For example, `auth decision` also searches known equivalents such as
@@ -68,6 +69,16 @@ answer questions like "what did we believe before the rollback?" without losing
 newer corrections. As-of retrieval also applies a small temporal-proximity
 score that prefers facts asserted closer to the requested point in time while
 keeping old-but-still-valid facts eligible.
+
+Retention is retrieval-side and non-destructive. Eventloom remains immutable and
+Neo4j facts remain replayable; retention policies only filter or rescore
+candidate context. `RETENTION_POLICY=filter_expired` hides results whose
+`expires_at` metadata is at or before the query time. `RETENTION_POLICY=decay`
+keeps results eligible but applies a half-life multiplier based on
+`last_reinforced_at` or `valid_from`, with optional `importance` and
+`reinforcement_count` metadata nudging the multiplier. Expired results under
+decay use `RETENTION_EXPIRED_WEIGHT`. Goal, task, decision, context policy, fallback event, and `memory.reinforced` extractors project these fields into graph properties. These effects are exposed in
+`score_explanation` and are not written back as memory facts.
 
 The vector path depends on embeddings. Local deterministic embeddings are useful
 for tests and offline development. Hosted embeddings are better for semantic

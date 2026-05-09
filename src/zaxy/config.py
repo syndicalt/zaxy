@@ -231,6 +231,18 @@ class Settings(BaseSettings):
         default="balanced",
         description="Query scoring profile: balanced, precision, recall, or temporal",
     )
+    retention_policy: str = Field(
+        default="none",
+        description="Retrieval retention policy: none, filter_expired, or decay",
+    )
+    retention_decay_half_life_days: int = Field(
+        default=30,
+        description="Half-life in days for decay-aware retrieval scoring",
+    )
+    retention_expired_weight: float = Field(
+        default=0.0,
+        description="Score multiplier for expired results under decay policy",
+    )
 
     # ------------------------------------------------------------------
     # Embeddings

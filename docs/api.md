@@ -124,13 +124,31 @@ bounded context. `handoff_bundle` includes summary data, prompt-ready context,
 and Eventloom integrity status. `cleanup_subagent` records `subagent.cleaned`
 in the subagent session and returns a bundle the parent can import or inspect.
 
+Record feedback for retrieved context:
+
+```python
+contexts = await fabric.query("retention decisions", session_id="agent-1")
+await fabric.record_context_feedback(
+    contexts[:2],
+    feedback="used",
+    session_id="agent-1",
+    actor="assistant",
+    importance=0.8,
+)
+```
+
+Positive feedback (`used` or `helpful`) appends `memory.reinforced` events for
+the retrieved entity. Negative feedback (`irrelevant`) appends audit-only
+`memory.feedback` events and does not delete or decay existing memory.
+
 Render first-run integration payloads:
 
 ```python
-from zaxy import render_handoff_adapter, render_mcp_client_config
+from zaxy import render_agent_integration_template, render_handoff_adapter, render_mcp_client_config
 
 config = render_mcp_client_config("claude-desktop", eventloom_path=".eventloom")
 handoff_payload = render_handoff_adapter(handoff, "langgraph")
+template = render_agent_integration_template("langgraph", session_id="agent-1")
 ```
 
 `render_mcp_client_config()` supports `claude-desktop`, `cursor`, and `vscode`

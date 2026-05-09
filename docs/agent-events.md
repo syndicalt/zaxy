@@ -2,6 +2,12 @@
 
 Zaxy retrieves best when agents emit typed events with stable payload fields.
 These built-in event shapes are deterministic, searchable, and replayable.
+Events may also carry optional retrieval-retention metadata such as
+`expires_at`, `importance`, `last_reinforced_at`, and `reinforcement_count`.
+Retention policies use this metadata only while ranking or filtering retrieved
+context; they do not mutate the underlying Eventloom record.
+Built-in extractors project this metadata for goals, tasks, decisions, context
+policies, and unknown fallback events.
 
 ## Decisions
 
@@ -86,6 +92,51 @@ also consider updating `AGENTS.md`.
 
 Projection: `context_policy` entity linked from the actor with
 `set_context_policy`.
+
+## Reinforcement
+
+Use `memory.reinforced` when a still-relevant memory should resist decay. This
+does not rewrite the original event; it appends a new event that projects
+ranking metadata onto the named entity.
+
+```json
+{
+  "entity_name": "Use event-sourced retention metadata.",
+  "entity_type": "decision",
+  "summary": "Still relevant after roadmap review.",
+  "importance": 0.9,
+  "reinforcement_count": 3
+}
+```
+
+Projection: target entity with `last_reinforced_at`, `reinforcement_count`, and
+optional `importance`, linked from the actor with `reinforced_memory`.
+
+Retention fields are intentionally small and typed:
+
+- `expires_at`: ISO-8601 timestamp after which `filter_expired` hides a result.
+- `importance`: float from `0.0` to `1.0` used by decay scoring.
+- `last_reinforced_at`: ISO-8601 timestamp used as decay age reference.
+- `reinforcement_count`: positive integer that adds a bounded decay boost.
+
+Use `memory.feedback` for audit-only retrieval feedback that should not update
+retention metadata. `MemoryFabric.record_context_feedback(...,
+feedback="irrelevant")` emits this event.
+
+```json
+{
+  "entity_name": "Outdated deployment note",
+  "entity_type": "decision",
+  "feedback": "irrelevant",
+  "source": "keyword",
+  "score": 0.42,
+  "citation": "eventloom://agent-1/events/42#abcdef123456"
+}
+```
+
+Projection: unknown-event fallback today, preserving the feedback as an
+Eventloom-backed audit record without deleting, invalidating, or downranking the
+target entity.
 
 ## Lifecycle Hooks
 

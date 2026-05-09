@@ -10,6 +10,7 @@ from zaxy.domain import derive_domain, domain_default_session, slug_domain
 
 MCPClient = Literal["claude-desktop", "cursor", "vscode"]
 HandoffAdapter = Literal["generic", "langgraph", "crewai", "autogen"]
+AgentFramework = Literal["langgraph", "crewai", "autogen"]
 
 
 def render_mcp_client_config(
@@ -59,6 +60,112 @@ def render_handoff_adapter(
         "system_message": bundle.prompt,
         "context_variables": {"zaxy": payload},
     }
+
+
+def render_agent_integration_template(
+    framework: AgentFramework | str,
+    *,
+    session_id: str = "default",
+    eventloom_path: str = ".eventloom",
+) -> str:
+    """Render a dependency-light Python starter for an agent framework."""
+    normalized = _normalize_framework(framework)
+    if normalized == "langgraph":
+        return _langgraph_template(session_id=session_id, eventloom_path=eventloom_path)
+    if normalized == "crewai":
+        return _crewai_template(session_id=session_id, eventloom_path=eventloom_path)
+    return _autogen_template(session_id=session_id, eventloom_path=eventloom_path)
+
+
+def _langgraph_template(*, session_id: str, eventloom_path: str) -> str:
+    return f'''"""LangGraph starter for Zaxy memory.
+
+Paste this into your LangGraph app and call `zaxy_langgraph_memory_node` from
+your graph where you want durable memory capture and prompt context assembly.
+"""
+
+from zaxy import MemoryFabric
+
+
+async def zaxy_langgraph_memory_node(state: dict) -> dict:
+    fabric = MemoryFabric(eventloom_path={eventloom_path!r})
+    await fabric.connect()
+    try:
+        content = str(state.get("latest_message", ""))
+        context = await fabric.after_turn(
+            role="assistant",
+            content=content,
+            session_id={session_id!r},
+            query=content or "session context",
+        )
+        handoff = await fabric.handoff_bundle(
+            session_id={session_id!r},
+            query=content or "session handoff",
+        )
+        return {{**state, "zaxy_context": context.prompt, "zaxy_handoff": handoff.prompt}}
+    finally:
+        await fabric.close()
+'''
+
+
+def _crewai_template(*, session_id: str, eventloom_path: str) -> str:
+    return f'''"""CrewAI starter for Zaxy memory.
+
+Call `zaxy_crewai_memory_step` inside a task callback or before a task hands
+context to the next crew member.
+"""
+
+from zaxy import MemoryFabric
+
+
+async def zaxy_crewai_memory_step(message: str) -> str:
+    fabric = MemoryFabric(eventloom_path={eventloom_path!r})
+    await fabric.connect()
+    try:
+        context = await fabric.after_turn(
+            role="assistant",
+            content=message,
+            session_id={session_id!r},
+            query=message or "crew context",
+        )
+        handoff = await fabric.handoff_bundle(
+            session_id={session_id!r},
+            query=message or "crew handoff",
+        )
+        return "\n\n".join([context.prompt, handoff.prompt])
+    finally:
+        await fabric.close()
+'''
+
+
+def _autogen_template(*, session_id: str, eventloom_path: str) -> str:
+    return f'''"""AutoGen starter for Zaxy memory.
+
+Call `zaxy_autogen_context` from an agent hook before replying, then place the
+returned prompt in your agent's system/context variables.
+"""
+
+from zaxy import MemoryFabric
+
+
+async def zaxy_autogen_context(message: str) -> dict[str, str]:
+    fabric = MemoryFabric(eventloom_path={eventloom_path!r})
+    await fabric.connect()
+    try:
+        context = await fabric.after_turn(
+            role="assistant",
+            content=message,
+            session_id={session_id!r},
+            query=message or "autogen context",
+        )
+        handoff = await fabric.handoff_bundle(
+            session_id={session_id!r},
+            query=message or "autogen handoff",
+        )
+        return {{"zaxy_context": context.prompt, "zaxy_handoff": handoff.prompt}}
+    finally:
+        await fabric.close()
+'''
 
 
 def _server_config(
@@ -127,3 +234,10 @@ def _normalize_adapter(adapter: str) -> HandoffAdapter:
     if normalized in {"generic", "langgraph", "crewai", "autogen"}:
         return normalized  # type: ignore[return-value]
     raise ValueError("adapter must be one of: generic, langgraph, crewai, autogen")
+
+
+def _normalize_framework(framework: str) -> AgentFramework:
+    normalized = framework.casefold().replace("_", "-")
+    if normalized in {"langgraph", "crewai", "autogen"}:
+        return normalized  # type: ignore[return-value]
+    raise ValueError("framework must be one of: langgraph, crewai, autogen")

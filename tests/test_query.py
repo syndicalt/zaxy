@@ -14,6 +14,7 @@ from zaxy.query import (
     OpenAICompatibleReranker,
     QueryRouter,
     build_reranker,
+    build_retention_policy,
 )
 
 
@@ -579,6 +580,122 @@ class TestQueryRouting:
         assert results[0].score_explanation["scoring_profile"] == "precision"
         assert results[0].score_explanation["source_weight"] == 0.65
 
+    def test_custom_fusion_weights_override_individual_sources(self, mock_store: AsyncMock) -> None:
+        """Partial fusion overrides should preserve unspecified source weights."""
+        router = QueryRouter(
+            store=mock_store,
+            default_limit=5,
+            session_id="agent-1",
+            fusion_weights={"keyword": 0.2},
+        )
+
+        assert router.fusion_weights["keyword"] == 0.2
+        assert router.fusion_weights["exact"] == 1.0
+        assert router.fusion_weights["traversal"] == 0.9
+
+    async def test_filter_expired_retention_policy_hides_expired_results(
+        self,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Expired memories should remain in storage but be filtered at retrieval time."""
+        router = QueryRouter(
+            store=mock_store,
+            default_limit=5,
+            session_id="agent-1",
+            retention_policy="filter_expired",
+        )
+        mock_store.search_keyword.return_value = [
+            SearchResult(
+                entity=GraphEntity(
+                    name="Expired decision",
+                    entity_type="decision",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={"expires_at": "2024-02-01T00:00:00Z"},
+                ),
+                score=1.0,
+                source="keyword",
+            ),
+            SearchResult(
+                entity=GraphEntity(
+                    name="Current decision",
+                    entity_type="decision",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={"expires_at": "2024-05-01T00:00:00Z"},
+                ),
+                score=0.9,
+                source="keyword",
+            ),
+        ]
+
+        results = await router.query("decision", temporal_point="2024-03-01T00:00:00Z", limit=5)
+
+        assert [result.content.split(" (", 1)[0] for result in results] == ["Current decision"]
+        assert results[0].score_explanation is not None
+        assert results[0].score_explanation["retention_policy"] == "filter_expired"
+
+    async def test_decay_retention_policy_downranks_stale_results(
+        self,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Decay policy should reduce stale scores without deleting history."""
+        router = QueryRouter(
+            store=mock_store,
+            default_limit=5,
+            session_id="agent-1",
+            retention_policy="decay",
+            retention_decay_half_life_days=30,
+            retention_expired_weight=0.2,
+        )
+        mock_store.search_keyword.return_value = [
+            SearchResult(
+                entity=GraphEntity(
+                    name="Old decision",
+                    entity_type="decision",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={},
+                ),
+                score=1.0,
+                source="keyword",
+            ),
+            SearchResult(
+                entity=GraphEntity(
+                    name="Recent decision",
+                    entity_type="decision",
+                    valid_from="2024-02-25T00:00:00Z",
+                    valid_to=None,
+                    properties={},
+                ),
+                score=0.9,
+                source="keyword",
+            ),
+        ]
+
+        results = await router.query("decision", temporal_point="2024-03-01T00:00:00Z", limit=2)
+
+        assert results[0].content.startswith("Recent decision")
+        assert results[0].score_explanation is not None
+        assert results[0].score_explanation["retention_policy"] == "decay"
+        assert results[1].score_explanation is not None
+        assert results[1].score_explanation["retention_decay_multiplier"] < 1.0
+
+    def test_build_retention_policy_uses_configured_defaults(self) -> None:
+        """Retention policy config should be explicit and auditable."""
+        policy = build_retention_policy(
+            Settings(
+                _env_file=None,
+                retention_policy="decay",
+                retention_decay_half_life_days=14,
+                retention_expired_weight=0.25,
+            )
+        )
+
+        assert policy.mode == "decay"
+        assert policy.decay_half_life_days == 14
+        assert policy.expired_weight == 0.25
+
     async def test_lexical_reranker_can_promote_best_text_match(
         self,
         mock_store: AsyncMock,
@@ -885,6 +1002,27 @@ class TestContextChunk:
         assert "region=us" in chunk.content
         # Should only include first few properties
         assert "extra=ignored" not in chunk.content
+
+    async def test_chunk_exposes_entity_identity(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Feedback APIs should be able to reinforce the retrieved graph entity."""
+        mock_store.search_exact.return_value = [
+            GraphEntity(
+                name="Ship MVP",
+                entity_type="goal",
+                valid_from="2024-01-01T00:00:00Z",
+                valid_to=None,
+                properties={},
+            )
+        ]
+
+        results = await router.query("Ship MVP")
+
+        assert results[0].entity_name == "Ship MVP"
+        assert results[0].entity_type == "goal"
 
     async def test_chunk_content_omits_embedding_vectors(
         self,

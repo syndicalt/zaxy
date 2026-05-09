@@ -29,6 +29,14 @@ def test_domain_default_is_optional() -> None:
     assert settings.zaxy_domain is None
 
 
+def test_retention_policy_defaults_are_non_destructive() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.retention_policy == "none"
+    assert settings.retention_decay_half_life_days == 30
+    assert settings.retention_expired_weight == 0.0
+
+
 class TestSecretFiles:
     """Docker/Kubernetes secret file loading."""
 

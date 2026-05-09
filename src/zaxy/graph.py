@@ -19,6 +19,8 @@ from zaxy.extract import ExtractionResult
 from zaxy.schema import apply_schema_migrations
 from zaxy.security import validate_limit, validate_session_id, validate_traversal_depth
 
+_Neo4jPropertyValue = str | int | float | bool | list[str] | list[int] | list[float] | list[bool]
+
 
 @dataclass(frozen=True)
 class GraphEntity:
@@ -177,11 +179,7 @@ class GraphStore:
                 source_event_hash=result.source_event_hash,
                 source_event_type=result.source_event_type,
                 source_thread=result.source_thread,
-                properties={
-                    key: value
-                    for key, value in (ent.properties or {}).items()
-                    if value is not None
-                },
+                properties=_neo4j_properties(ent.properties),
             )
 
         for edge in result.edges:
@@ -454,3 +452,25 @@ def _record_to_entity(node: Any) -> GraphEntity:
             if k not in {"session_id", "name", "entity_type", "valid_from", "valid_to"}
         },
     )
+
+
+def _neo4j_properties(properties: dict[str, Any] | None) -> dict[str, _Neo4jPropertyValue]:
+    """Filter extracted properties to values accepted by Neo4j node properties."""
+    if not properties:
+        return {}
+    return {
+        key: value
+        for key, value in properties.items()
+        if _is_neo4j_property_value(value)
+    }
+
+
+def _is_neo4j_property_value(value: Any) -> bool:
+    """Return whether a value is a Neo4j scalar or scalar list."""
+    if value is None:
+        return False
+    if isinstance(value, str | int | float | bool):
+        return True
+    if not isinstance(value, list):
+        return False
+    return all(isinstance(item, str | int | float | bool) for item in value)

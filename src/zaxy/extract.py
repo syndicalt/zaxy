@@ -95,6 +95,7 @@ def extract(event: Event) -> ExtractionResult:
             f"{event.actor} emitted {event.type}",
             _fallback_payload_summary(event.payload),
         ),
+        properties=_retention_properties(event.payload),
     )
     return _with_source(
         event,
@@ -130,6 +131,7 @@ def _extract_goal_created(event: Event) -> ExtractionResult:
         entity_type="goal",
         observed_at=event.timestamp,
         summary=_optional_text(event.payload.get("description")),
+        properties=_retention_properties(event.payload),
     )
     actor = ExtractedEntity(
         name=event.actor,
@@ -159,6 +161,7 @@ def _extract_task_proposed(event: Event) -> ExtractionResult:
         entity_type="task",
         observed_at=event.timestamp,
         summary=_optional_text(event.payload.get("summary") or event.payload.get("title")),
+        properties=_retention_properties(event.payload),
     )
     actor = ExtractedEntity(
         name=event.actor,
@@ -228,6 +231,7 @@ def _extract_task_completed(event: Event) -> ExtractionResult:
         entity_type="task",
         observed_at=event.timestamp,
         summary=summary,
+        properties=_retention_properties(event.payload),
     )
     actor = ExtractedEntity(
         name=event.actor,
@@ -260,6 +264,7 @@ def _extract_decision_made(event: Event) -> ExtractionResult:
             event.payload.get("rationale"),
             event.payload.get("alternatives_considered"),
         ),
+        properties=_retention_properties(event.payload),
     )
     actor = ExtractedEntity(
         name=event.actor,
@@ -293,10 +298,10 @@ def _extract_context_policy(event: Event) -> ExtractionResult:
             event.payload.get("status"),
             event.payload.get("instructions"),
         ),
-        properties={
+        properties=_merge_properties({
             "source": source,
             "project": project,
-        },
+        }, _retention_properties(event.payload)),
     )
     actor = ExtractedEntity(
         name=event.actor,
@@ -307,6 +312,43 @@ def _extract_context_policy(event: Event) -> ExtractionResult:
         source=event.actor,
         target=name,
         relation_type="set_context_policy",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(
+        entities=[entity, actor],
+        edges=[edge],
+        source_event_seq=event.seq,
+    )
+
+
+@register("memory.reinforced")
+def _extract_memory_reinforced(event: Event) -> ExtractionResult:
+    """Extract reinforcement metadata for an existing memory entity."""
+    entity_name = _optional_text(event.payload.get("entity_name")) or f"memory:{event.seq}"
+    entity_type = _optional_text(event.payload.get("entity_type")) or "memory"
+    properties = _merge_properties(
+        _retention_properties(event.payload),
+        {
+            "last_reinforced_at": event.timestamp,
+            "reinforcement_count": _positive_int(event.payload.get("reinforcement_count"), default=1),
+        },
+    )
+    entity = ExtractedEntity(
+        name=entity_name,
+        entity_type=entity_type,
+        observed_at=event.timestamp,
+        summary=_optional_text(event.payload.get("summary")),
+        properties=properties,
+    )
+    actor = ExtractedEntity(
+        name=event.actor,
+        entity_type="actor",
+        observed_at=event.timestamp,
+    )
+    edge = ExtractedEdge(
+        source=event.actor,
+        target=entity_name,
+        relation_type="reinforced_memory",
         valid_from=event.timestamp,
     )
     return ExtractionResult(
@@ -885,6 +927,16 @@ def _extract_workspace_instructions_discovered(event: Event) -> ExtractionResult
     files = event.payload.get("files")
     if not isinstance(files, list):
         files = []
+    file_paths = [
+        path
+        for file in files
+        if isinstance(file, dict) and (path := _optional_text(file.get("path")))
+    ]
+    file_kinds = [
+        kind
+        for file in files
+        if isinstance(file, dict) and (kind := _optional_text(file.get("kind")))
+    ]
     instruction = ExtractedEntity(
         name=f"{root}:instructions:{signature}",
         entity_type="workspace_instructions",
@@ -894,7 +946,9 @@ def _extract_workspace_instructions_discovered(event: Event) -> ExtractionResult
             "session_id": session_id,
             "root": root,
             "signature": signature,
-            "files": files,
+            "file_count": len(files),
+            "file_paths": file_paths,
+            "file_kinds": file_kinds,
         },
     )
     session = ExtractedEntity(
@@ -1176,6 +1230,44 @@ def _fallback_payload_summary(payload: dict[str, Any]) -> str | None:
         if text := _optional_text(value):
             parts.append(f"{key}={text}")
     return " ".join(parts) or None
+
+
+def _retention_properties(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Return safe retrieval-retention metadata from an event payload."""
+    properties: dict[str, Any] = {}
+    if expires_at := _optional_text(payload.get("expires_at")):
+        properties["expires_at"] = expires_at
+    if last_reinforced_at := _optional_text(payload.get("last_reinforced_at")):
+        properties["last_reinforced_at"] = last_reinforced_at
+    importance = _bounded_float(payload.get("importance"))
+    if importance is not None:
+        properties["importance"] = importance
+    if reinforcement_count := _optional_positive_int(payload.get("reinforcement_count")):
+        properties["reinforcement_count"] = reinforcement_count
+    return properties or None
+
+
+def _merge_properties(*values: dict[str, Any] | None) -> dict[str, Any] | None:
+    merged: dict[str, Any] = {}
+    for value in values:
+        if value:
+            merged.update(value)
+    return merged or None
+
+
+def _bounded_float(value: object) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed = float(str(value))
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, min(1.0, parsed))
+
+
+def _optional_positive_int(value: object) -> int | None:
+    parsed = _positive_int(value, default=0)
+    return parsed or None
 
 
 def _positive_int(value: object, default: int) -> int:

@@ -29,12 +29,13 @@ from zaxy.compaction import (
     write_compaction_projection,
 )
 from zaxy.core import MemoryFabric
+from zaxy.doctor import format_doctor_report, run_doctor
 from zaxy.embedding import EmbeddingProvider, HashEmbeddingProvider, OpenAIEmbeddingProvider
 from zaxy.event import EventLog
 from zaxy.extract import extract
 from zaxy.extract_templates import ExtractorTemplateSpec, render_extractor_template
 from zaxy.graph import GraphStore
-from zaxy.integrations import render_mcp_client_config
+from zaxy.integrations import render_agent_integration_template, render_mcp_client_config
 from zaxy.lifecycle import build_compaction_completed_event
 from zaxy.live_benchmark import (
     BenchmarkWorkload,
@@ -87,6 +88,24 @@ def ide_config(
     typer.echo(json.dumps(config, indent=2, sort_keys=True))
 
 
+@app.command("integration-template")
+def integration_template(
+    framework: str = typer.Argument(..., help="Agent framework: langgraph, crewai, or autogen"),
+    session_id: str = typer.Option("default", help="Session ID used by the template"),
+    eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory for the template"),
+) -> None:
+    """Print a direct Python framework integration starter."""
+    try:
+        template = render_agent_integration_template(
+            framework,
+            session_id=session_id,
+            eventloom_path=eventloom_path,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(template, nl=False)
+
+
 @app.command("local-profile")
 def local_profile(
     output: Path | None = typer.Option(None, "--output", "-o", help="Write profile to this file"),  # noqa: B008
@@ -105,6 +124,24 @@ def local_profile(
     except FileExistsError as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(f"Wrote local profile to {written}")
+
+
+@app.command("doctor")
+def doctor(
+    eventloom_path: str | None = typer.Option(None, help="Override Eventloom path for this check"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Run local setup and onboarding checks."""
+    from zaxy.config import get_settings
+
+    settings = get_settings()
+    if eventloom_path is not None:
+        settings = settings.model_copy(update={"eventloom_path": eventloom_path})
+    report = run_doctor(settings=settings)
+    if json_output:
+        typer.echo(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        typer.echo(format_doctor_report(report))
 
 
 @app.command("index-codebase")

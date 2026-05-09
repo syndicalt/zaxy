@@ -207,7 +207,11 @@ class TestMemoryQuery:
                 "limit": 5,
             })
 
-            mock_router_cls.assert_called_once_with(server.graph, session_id="default")
+            mock_router_cls.assert_called_once_with(
+                server.graph,
+                session_id="default",
+                retention_policy=server._retention_policy,
+            )
             assert len(result) == 1
             data = result[0].text
             assert "Alice" in data
@@ -228,7 +232,11 @@ class TestMemoryQuery:
                 "temporal_filter": "2024-03-01T00:00:00Z",
             })
 
-            mock_router_cls.assert_called_once_with(server.graph, session_id="default")
+            mock_router_cls.assert_called_once_with(
+                server.graph,
+                session_id="default",
+                retention_policy=server._retention_policy,
+            )
             call = mock_router.query.await_args
             assert call.kwargs["temporal_point"] == "2024-03-01T00:00:00Z"
 
@@ -248,6 +256,7 @@ class TestMemoryQuery:
             mock_router_cls.assert_called_once_with(
                 server.graph,
                 session_id="client-session",
+                retention_policy=server._retention_policy,
             )
 
     async def test_remote_scope_rejects_cross_session_query(self, server: ZaxyMCPServer) -> None:

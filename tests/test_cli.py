@@ -37,6 +37,21 @@ def test_ide_config_command_prints_copyable_mcp_json() -> None:
     assert "testpassword" not in result.output.casefold()
 
 
+def test_integration_template_command_prints_framework_starter() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["integration-template", "langgraph", "--session-id", "zaxy-default"],
+    )
+
+    assert result.exit_code == 0
+    assert "async def zaxy_langgraph_memory_node" in result.output
+    assert "from zaxy import MemoryFabric" in result.output
+    assert "session_id='zaxy-default'" in result.output
+    assert "import langgraph" not in result.output.casefold()
+
+
 def test_schema_plan_command_prints_migration_plan() -> None:
     runner = CliRunner()
 
@@ -101,6 +116,30 @@ def test_local_profile_check_reports_success() -> None:
     assert result.exit_code == 0
     assert '"status": "ok"' in result.output
     assert '"reranker_provider": "lexical"' in result.output
+
+
+def test_doctor_command_reports_text_summary(tmp_path: Path) -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["doctor", "--eventloom-path", str(tmp_path / ".eventloom")])
+
+    assert result.exit_code == 0
+    assert "Zaxy doctor:" in result.output
+    assert "eventloom: ok" in result.output
+    assert "viewer: ok" in result.output
+
+
+def test_doctor_command_reports_json(tmp_path: Path) -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["doctor", "--eventloom-path", str(tmp_path / ".eventloom"), "--json"],
+    )
+
+    assert result.exit_code == 0
+    assert '"status": "ok"' in result.output
+    assert '"name": "eventloom"' in result.output
 
 
 @patch("zaxy.__main__.MemoryFabric")

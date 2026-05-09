@@ -264,12 +264,17 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Automatic redacted MCP tool-call lifecycle capture
 - [x] Lifecycle capture for compaction, subagent completion, and session end
 - [x] Minimal static Eventloom/session viewer for bootstrap and lifecycle inspection
+- [x] Local onboarding doctor for Eventloom, MCP defaults, viewer, local profile, and config posture
+- [x] Non-destructive temporal retention and decay-aware retrieval policies
+- [x] Direct agent integration templates for LangGraph, CrewAI, and AutoGen
+- [x] Retention metadata extraction and reinforcement events for decay-aware retrieval
+- [x] Retrieval feedback events that reinforce used context
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 469 passed |
+| Tests | 489 passed |
 | Coverage | 92.25% |
 | Lint | ruff clean |
 | Types | mypy clean |
@@ -277,4 +282,5 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 ## Next Steps
 
-1. Open a PR for the local roadmap commits and merge after CI passes.
+1. Add MCP tool support for retrieval feedback events.
+2. Add optional deeper framework packages once direct templates see usage.
