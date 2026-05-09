@@ -74,6 +74,9 @@ python -m zaxy compact .eventloom/work.jsonl --projection-output .eventloom/work
 # Store a bounded exemplar projection for high-spread clusters
 python -m zaxy compact .eventloom/work.jsonl --projection-output .eventloom/work.compaction.json --strategy exemplar --max-records 5
 
+# Rewrite compaction appends compaction.completed to the output log.
+# Audit and projection-only modes leave the source log unchanged.
+
 # Projections under the Eventloom directory are auto-discovered
 python - <<'PY'
 from zaxy import MemoryFabric

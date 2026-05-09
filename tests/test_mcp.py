@@ -425,8 +425,10 @@ class TestContextLifecycleTools:
             })
 
         log = server.session_manager.get.return_value.eventlog
-        assert log.append.call_args.args == ("subagent.cleaned",)
-        assert log.append.call_args.kwargs["payload"]["parent_session_id"] == "main"
+        appended_types = [call.args[0] for call in log.append.call_args_list]
+        assert appended_types == ["subagent.cleaned", "subagent.completed"]
+        assert log.append.call_args_list[0].kwargs["payload"]["parent_session_id"] == "main"
+        assert log.append.call_args_list[1].kwargs["payload"]["status"] == "succeeded"
         output = json_loads(result[0].text)
         assert output["summary"]["event_count"] == 3
 
@@ -1001,6 +1003,17 @@ class TestLifecycle:
         assert "api_key" in payload["argument_keys"]
         assert "secret" not in str(payload)
         server.graph.upsert_extraction.assert_awaited_once()
+
+    async def test_teardown_records_session_end_when_lifecycle_capture_enabled(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """teardown should record a best-effort session.ended lifecycle event."""
+        await server.teardown()
+
+        log = server.session_manager.get.return_value.eventlog
+        assert log.append.call_args.args == ("session.ended",)
+        assert log.append.call_args.kwargs["payload"]["reason"] == "teardown"
 
     @patch("zaxy.mcp_server.GraphStore")
     @patch("zaxy.mcp_server.MemoryTracer")

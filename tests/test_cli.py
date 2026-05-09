@@ -266,3 +266,19 @@ def test_compact_writes_projection_without_rewriting_log(tmp_path: Path) -> None
     assert projection_path.exists()
     assert '"strategy": "medoid"' in projection_path.read_text(encoding="utf-8")
     assert log_path.read_text(encoding="utf-8") == before
+
+
+def test_compact_rewrite_appends_lifecycle_event(tmp_path: Path) -> None:
+    """compact rewrite should record a compaction.completed lifecycle event."""
+    log_path = tmp_path / "work.jsonl"
+    EventLog(log_path).append("goal.created", actor="user", payload={"title": "Ship"})
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["compact", str(log_path)])
+
+    assert result.exit_code == 0
+    events = EventLog(log_path).read_all()
+    assert events[-1].type == "compaction.completed"
+    assert events[-1].payload["mode"] == "rewrite"
+    assert events[-1].payload["status"] == "succeeded"
+    assert events[-1].payload["event_count"] == 1

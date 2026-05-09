@@ -261,12 +261,13 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Workspace instruction bootstrap and drift events for agent guidance files
 - [x] Initial lifecycle hook taxonomy for tool calls, command results, and file edits
 - [x] Automatic redacted MCP tool-call lifecycle capture
+- [x] Lifecycle capture for compaction, subagent completion, and session end
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 455 passed |
+| Tests | 463 passed |
 | Coverage | 92.25% |
 | Lint | ruff clean |
 | Types | mypy clean |
@@ -274,6 +275,5 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 ## Next Steps
 
-1. Add lifecycle capture for compaction, subagent, and session-end hooks.
-2. Add a minimal Eventloom/session viewer for bootstrap and lifecycle inspection.
-3. Add cross-file call resolution for Java imports.
+1. Add a minimal Eventloom/session viewer for bootstrap and lifecycle inspection.
+2. Add cross-file call resolution for Java imports.

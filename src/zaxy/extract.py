@@ -1001,6 +1001,107 @@ def _extract_file_edit_applied(event: Event) -> ExtractionResult:
     return ExtractionResult(entities=[session, edit], edges=[edge], source_event_seq=event.seq)
 
 
+@register("compaction.completed")
+def _extract_compaction_completed(event: Event) -> ExtractionResult:
+    """Extract a completed compaction lifecycle event."""
+    session_id = _optional_text(event.payload.get("session_id")) or event.thread or "default"
+    mode = _optional_text(event.payload.get("mode")) or "unknown"
+    status = _optional_text(event.payload.get("status")) or "unknown"
+    log_path = _optional_text(event.payload.get("log_path")) or "eventloom"
+    compaction = ExtractedEntity(
+        name=f"{session_id}:compaction:{event.seq}",
+        entity_type="compaction_run",
+        observed_at=event.timestamp,
+        summary=_join_summary(status, mode, log_path),
+        properties={
+            "session_id": session_id,
+            "mode": mode,
+            "status": status,
+            "log_path": log_path,
+            "event_count": event.payload.get("event_count"),
+            "output_path": event.payload.get("output_path"),
+            "projection_path": event.payload.get("projection_path"),
+            "snapshot_path": event.payload.get("snapshot_path"),
+            "strategy": event.payload.get("strategy"),
+        },
+    )
+    session = ExtractedEntity(name=session_id, entity_type="session", observed_at=event.timestamp)
+    edge = ExtractedEdge(
+        source=session.name,
+        target=compaction.name,
+        relation_type="completed_compaction",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(
+        entities=[session, compaction],
+        edges=[edge],
+        source_event_seq=event.seq,
+    )
+
+
+@register("subagent.completed")
+def _extract_subagent_completed(event: Event) -> ExtractionResult:
+    """Extract a completed subagent lifecycle event."""
+    parent_session_id = _optional_text(event.payload.get("parent_session_id")) or "default"
+    subagent_session_id = _optional_text(event.payload.get("subagent_session_id")) or event.thread or "subagent"
+    status = _optional_text(event.payload.get("status")) or "unknown"
+    summary = _optional_text(event.payload.get("summary"))
+    subagent = ExtractedEntity(
+        name=f"{parent_session_id}:{subagent_session_id}:{event.seq}",
+        entity_type="subagent_run",
+        observed_at=event.timestamp,
+        summary=_join_summary(status, summary),
+        properties={
+            "parent_session_id": parent_session_id,
+            "subagent_session_id": subagent_session_id,
+            "status": status,
+        },
+    )
+    parent = ExtractedEntity(
+        name=parent_session_id,
+        entity_type="session",
+        observed_at=event.timestamp,
+    )
+    edge = ExtractedEdge(
+        source=parent.name,
+        target=subagent.name,
+        relation_type="completed_subagent",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(
+        entities=[parent, subagent],
+        edges=[edge],
+        source_event_seq=event.seq,
+    )
+
+
+@register("session.ended")
+def _extract_session_ended(event: Event) -> ExtractionResult:
+    """Extract a session-end lifecycle event."""
+    session_id = _optional_text(event.payload.get("session_id")) or event.thread or "default"
+    reason = _optional_text(event.payload.get("reason")) or "ended"
+    status = _optional_text(event.payload.get("status")) or "unknown"
+    ended = ExtractedEntity(
+        name=f"{session_id}:session-ended:{event.seq}",
+        entity_type="session_end",
+        observed_at=event.timestamp,
+        summary=_join_summary(status, reason),
+        properties={
+            "session_id": session_id,
+            "reason": reason,
+            "status": status,
+        },
+    )
+    session = ExtractedEntity(name=session_id, entity_type="session", observed_at=event.timestamp)
+    edge = ExtractedEdge(
+        source=session.name,
+        target=ended.name,
+        relation_type="ended_session",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(entities=[session, ended], edges=[edge], source_event_seq=event.seq)
+
+
 @register("transcript.turn")
 def _extract_transcript_turn(event: Event) -> ExtractionResult:
     """Extract a sanitized session transcript turn."""

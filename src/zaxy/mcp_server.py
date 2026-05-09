@@ -32,7 +32,11 @@ from mcp.types import TextContent, Tool
 from zaxy.config import get_settings
 from zaxy.extract import extract
 from zaxy.graph import GraphStore
-from zaxy.lifecycle import build_tool_call_completed_event
+from zaxy.lifecycle import (
+    build_session_ended_event,
+    build_subagent_completed_event,
+    build_tool_call_completed_event,
+)
 from zaxy.log import get_logger, setup_logging
 from zaxy.metrics import get_metrics
 from zaxy.query import QueryRouter
@@ -249,8 +253,27 @@ class ZaxyMCPServer:
 
     async def teardown(self) -> None:
         """Close connections."""
+        await self.capture_session_ended(reason="teardown", status="succeeded")
         await self.graph.close()
         await self.tracer.close()
+
+    async def _append_lifecycle_event(
+        self,
+        event_input: dict[str, Any],
+        *,
+        session_id: str,
+    ) -> None:
+        sid = validate_session_id(session_id)
+        eventlog = self.session_manager.get(sid).eventlog
+        event = eventlog.append(
+            event_input["event_type"],
+            actor=event_input["actor"],
+            payload=validate_payload(event_input["payload"]),
+            thread=sid,
+        )
+        extraction = extract(event)
+        await self.graph.upsert_extraction(extraction, session_id=sid)
+        await self.tracer.trace_append(event_input["event_type"], event_input["actor"], event.seq)
 
     async def capture_tool_call_completed(
         self,
@@ -270,16 +293,24 @@ class ZaxyMCPServer:
             arguments=arguments,
             result_summary=result_summary,
         )
-        eventlog = self.session_manager.get(sid).eventlog
-        event = eventlog.append(
-            event_input["event_type"],
-            actor=event_input["actor"],
-            payload=validate_payload(event_input["payload"]),
-            thread=sid,
+        await self._append_lifecycle_event(event_input, session_id=sid)
+
+    async def capture_session_ended(
+        self,
+        *,
+        reason: str,
+        status: str,
+    ) -> None:
+        """Append and project a session-end lifecycle event."""
+        if not self._lifecycle_capture_enabled:
+            return
+        event_input = build_session_ended_event(
+            session_id=self._default_session_id,
+            reason=reason,
+            status=status,
         )
-        extraction = extract(event)
-        await self.graph.upsert_extraction(extraction, session_id=sid)
-        await self.tracer.trace_append(event_input["event_type"], event_input["actor"], event.seq)
+        with suppress(Exception):
+            await self._append_lifecycle_event(event_input, session_id=self._default_session_id)
 
     async def ensure_session_initialized(
         self,
@@ -518,6 +549,13 @@ class ZaxyMCPServer:
         extraction = extract(event)
         await self.graph.upsert_extraction(extraction, session_id=subagent_session_id)
         await self.tracer.trace_append("subagent.cleaned", "zaxy", event.seq)
+        lifecycle = build_subagent_completed_event(
+            parent_session_id=parent_session_id,
+            subagent_session_id=subagent_session_id,
+            status="succeeded",
+            summary=summary_text,
+        )
+        await self._append_lifecycle_event(lifecycle, session_id=subagent_session_id)
 
         assembly = await self._assemble_context_payload(
             query=query,

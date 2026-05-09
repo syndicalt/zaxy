@@ -875,9 +875,11 @@ class TestContextAssembly:
         )
 
         log = fabric.session_manager.get.return_value.eventlog
-        assert log.append.call_args.args == ("subagent.cleaned",)
-        assert log.append.call_args.kwargs["thread"] == "worker-1"
-        assert log.append.call_args.kwargs["payload"]["parent_session_id"] == "main"
+        appended_types = [call.args[0] for call in log.append.call_args_list]
+        assert appended_types == ["subagent.cleaned", "subagent.completed"]
+        assert log.append.call_args_list[0].kwargs["thread"] == "worker-1"
+        assert log.append.call_args_list[0].kwargs["payload"]["parent_session_id"] == "main"
+        assert log.append.call_args_list[1].kwargs["payload"]["status"] == "succeeded"
         assert bundle.session_id == "worker-1"
         assert bundle.summary["event_count"] == 9
 

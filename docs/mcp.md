@@ -44,7 +44,9 @@ with the tool name, status, argument keys, and a bounded result summary. Raw
 argument values are not persisted in the lifecycle payload. Capture is
 best-effort: failures while recording metadata do not fail the original MCP
 tool call. Set `MCP_LIFECYCLE_CAPTURE_ENABLED=false` to disable this automatic
-capture.
+capture. Server shutdown also records a best-effort `session.ended` event for
+the default session when lifecycle capture is enabled, and subagent cleanup
+records `subagent.completed` alongside the existing `subagent.cleaned` event.
 
 Run stdio locally:
 

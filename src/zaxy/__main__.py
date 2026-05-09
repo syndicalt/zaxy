@@ -35,6 +35,7 @@ from zaxy.extract import extract
 from zaxy.extract_templates import ExtractorTemplateSpec, render_extractor_template
 from zaxy.graph import GraphStore
 from zaxy.integrations import render_mcp_client_config
+from zaxy.lifecycle import build_compaction_completed_event
 from zaxy.live_benchmark import (
     BenchmarkWorkload,
     BM25Retriever,
@@ -358,12 +359,28 @@ def compact(
 
     typer.echo(f"Compacted {total} events -> {out_path}")
 
+    snapshot_path = None
     if total >= snapshot_every:
         snapshot_path = log_path.with_suffix(f".snapshot-{total}.json")
         with open(snapshot_path, "w", encoding="utf-8") as fh:
             for ev in events[-snapshot_every:]:
                 fh.write(ev.model_dump_json() + "\n")
         typer.echo(f"Created snapshot: {snapshot_path}")
+    lifecycle = build_compaction_completed_event(
+        session_id=log_path.stem,
+        mode="rewrite",
+        status="succeeded",
+        log_path=str(log_path),
+        event_count=total,
+        output_path=str(out_path),
+        snapshot_path=str(snapshot_path) if snapshot_path is not None else None,
+    )
+    EventLog(out_path).append(
+        lifecycle["event_type"],
+        actor=lifecycle["actor"],
+        payload=lifecycle["payload"],
+        thread=log_path.stem,
+    )
 
 
 @app.command()
