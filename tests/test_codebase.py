@@ -485,6 +485,74 @@ def test_collect_codebase_events_resolves_rust_cross_file_use_calls(tmp_path: Pa
     }
 
 
+def test_collect_codebase_events_resolves_java_cross_file_imported_class_calls(tmp_path: Path) -> None:
+    app = tmp_path / "src" / "app" / "App.java"
+    app.parent.mkdir(parents=True)
+    app.write_text(
+        "package app;\n\n"
+        "import app.worker.Worker;\n\n"
+        "class App {\n"
+        "  void start() {\n"
+        "    Worker.run();\n"
+        "  }\n"
+        "}\n",
+        encoding="utf-8",
+    )
+    worker = tmp_path / "src" / "app" / "worker" / "Worker.java"
+    worker.parent.mkdir(parents=True)
+    worker.write_text(
+        "package app.worker;\n\n"
+        "class Worker {\n"
+        "  static void run() {}\n"
+        "}\n",
+        encoding="utf-8",
+    )
+
+    events = collect_codebase_events(tmp_path)
+
+    dependencies = [
+        event["payload"] for event in events if event["event_type"] == "code.dependency.indexed"
+    ]
+    calls = [event["payload"] for event in events if event["event_type"] == "code.call.indexed"]
+    assert dependencies == [
+        {
+            "source_path": "src/app/App.java",
+            "target_path": "src/app/worker/Worker.java",
+            "language": "java",
+            "module": "app.worker.Worker",
+            "import_name": "Worker",
+            "start_line": 3,
+            "resolution": "module_file",
+        }
+    ]
+    assert {
+        (
+            call["path"],
+            call["language"],
+            call["caller"],
+            call["callee"],
+            call["callee_qualified_name"],
+            call["target_path"],
+            call["target_qualified_name"],
+            call["start_line"],
+            call["resolution"],
+        )
+        for call in calls
+    } == {
+        (
+            "src/app/App.java",
+            "java",
+            "start",
+            "run",
+            "Worker.run",
+            "src/app/worker/Worker.java",
+            "run",
+            7,
+            "imported_symbol",
+        )
+    }
+
+
 def test_collect_codebase_events_skips_hidden_cache_dependency_and_large_files(tmp_path: Path) -> None:
     keep = tmp_path / "pkg" / "mod.ts"
     keep.parent.mkdir()

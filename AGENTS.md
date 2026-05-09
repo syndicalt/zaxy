@@ -257,6 +257,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Go, Rust, and Java same-file call-site mapping
 - [x] Go cross-file call resolution for local package-qualified imports
 - [x] Rust cross-file call resolution for simple `use crate::module::symbol` imports
+- [x] Java cross-file call resolution for imported local classes
 - [x] Workspace genesis entry process with profile discovery and write instructions
 - [x] Workspace instruction bootstrap and drift events for agent guidance files
 - [x] Initial lifecycle hook taxonomy for tool calls, command results, and file edits
@@ -268,7 +269,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 | Metric | Value |
 |--------|-------|
-| Tests | 468 passed |
+| Tests | 469 passed |
 | Coverage | 92.25% |
 | Lint | ruff clean |
 | Types | mypy clean |
@@ -276,4 +277,4 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 ## Next Steps
 
-1. Add cross-file call resolution for Java imports.
+1. Open a PR for the local roadmap commits and merge after CI passes.

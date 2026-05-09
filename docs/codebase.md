@@ -52,8 +52,9 @@ event with caller, callee, and line metadata.
 Go call-site mapping can resolve package-qualified calls such as `worker.Run()`
 when the imported package path maps to a scanned local package directory. Rust
 call-site mapping can resolve simple `use crate::module::symbol` imports to
-scanned sibling module files. Java call-site mapping currently resolves
-same-file calls only.
+scanned sibling module files. Java call-site mapping resolves package imports
+such as `import app.worker.Worker;` and calls such as `Worker.run()` when the
+imported class maps to a scanned local `.java` file.
 
 Python coverage events are conservative. Files under `tests/` or named
 `test_*.py` are scanned for `test_*` functions. When a test calls an imported

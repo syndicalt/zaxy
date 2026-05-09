@@ -89,6 +89,7 @@ def collect_codebase_events(
         events.extend(_collect_coverage_events(rel_path, language, content, code_events, file_index))
     go_package_symbols = _go_package_symbols(code_events_by_path)
     rust_module_symbols = _rust_module_symbols(code_events_by_path)
+    java_module_symbols = _java_module_symbols(code_events_by_path, file_index)
     for path in paths:
         language = LANGUAGE_BY_SUFFIX.get(path.suffix.casefold())
         if language is None:
@@ -106,6 +107,7 @@ def collect_codebase_events(
                 file_index,
                 go_package_symbols,
                 rust_module_symbols,
+                java_module_symbols,
             )
         )
     return events
@@ -208,6 +210,7 @@ _GO_TYPE_RE = re.compile(r"""^\s*type\s+([A-Za-z_]\w*)\s+""")
 _GO_FUNC_RE = re.compile(r"""^\s*func\s+(?:\([^)]+\)\s*)?([A-Za-z_]\w*)\s*\(""")
 _RUST_USE_RE = re.compile(r"""^\s*(?:pub\s+)?use\s+([^;]+);""")
 _RUST_SYMBOL_RE = re.compile(r"""^\s*(?:pub\s+)?(?:async\s+)?(fn|struct|enum|trait|mod)\s+([A-Za-z_]\w*)""")
+_JAVA_PACKAGE_RE = re.compile(r"""^\s*package\s+([^;]+);""")
 _JAVA_IMPORT_RE = re.compile(r"""^\s*import\s+(?:static\s+)?([^;]+);""")
 _JAVA_TYPE_RE = re.compile(r"""^\s*(?:public|private|protected|abstract|final|\s)*\s*(class|interface|enum)\s+([A-Za-z_]\w*)""")
 _SHELL_SOURCE_RE = re.compile(r"""^\s*(?:source|\.)\s+(.+)$""")
@@ -276,6 +279,9 @@ def _rust_events(rel_path: str, language: str, line: str, line_number: int) -> l
 
 
 def _java_events(rel_path: str, language: str, line: str, line_number: int) -> list[dict[str, Any]]:
+    if match := _JAVA_PACKAGE_RE.match(line):
+        module = match.group(1)
+        return [_import_event(rel_path, language, module=module, name=module, kind="package", start_line=line_number)]
     if match := _JAVA_IMPORT_RE.match(line):
         module = match.group(1)
         return [_import_event(rel_path, language, module=module, name=module.rsplit(".", 1)[-1], kind="import", start_line=line_number)]
@@ -398,6 +404,7 @@ def _collect_call_events(
     file_index: set[str],
     go_package_symbols: dict[str, dict[str, tuple[str, str]]] | None = None,
     rust_module_symbols: dict[str, dict[str, tuple[str, str]]] | None = None,
+    java_module_symbols: dict[str, dict[str, tuple[str, str]]] | None = None,
 ) -> list[dict[str, Any]]:
     if language in {"javascript", "typescript"}:
         text = content.decode("utf-8", errors="replace")
@@ -411,6 +418,7 @@ def _collect_call_events(
             code_events,
             go_package_symbols or {},
             rust_module_symbols or {},
+            java_module_symbols or {},
         )
     if language != "python":
         return []
@@ -589,6 +597,7 @@ def _collect_pattern_call_events(
     code_events: list[dict[str, Any]],
     go_package_symbols: dict[str, dict[str, tuple[str, str]]],
     rust_module_symbols: dict[str, dict[str, tuple[str, str]]],
+    java_module_symbols: dict[str, dict[str, tuple[str, str]]],
 ) -> list[dict[str, Any]]:
     same_file_symbols = {
         str(event["payload"]["qualified_name"]): event["payload"]
@@ -598,6 +607,7 @@ def _collect_pattern_call_events(
     events: list[dict[str, Any]] = []
     go_imports = _go_import_aliases(code_events) if language == "go" else {}
     rust_imports = _rust_import_targets(code_events) if language == "rust" else {}
+    java_imports = _java_import_targets(code_events) if language == "java" else {}
     current_function: str | None = None
     brace_depth = 0
     for line_number, line in enumerate(text.splitlines(), start=1):
@@ -623,6 +633,8 @@ def _collect_pattern_call_events(
                 go_package_symbols,
                 rust_imports,
                 rust_module_symbols,
+                java_imports,
+                java_module_symbols,
             )
             if resolved[2] == "unresolved":
                 continue
@@ -668,6 +680,8 @@ def _resolve_pattern_call_target(
     go_package_symbols: dict[str, dict[str, tuple[str, str]]],
     rust_imports: dict[str, str],
     rust_module_symbols: dict[str, dict[str, tuple[str, str]]],
+    java_imports: dict[str, str],
+    java_module_symbols: dict[str, dict[str, tuple[str, str]]],
 ) -> tuple[str | None, str | None, str]:
     if callee in same_file_symbols:
         return rel_path, callee, "same_file_symbol"
@@ -676,6 +690,11 @@ def _resolve_pattern_call_target(
         imported_module = go_imports.get(qualifier)
         if imported_module:
             target = go_package_symbols.get(imported_module, {}).get(symbol_name)
+            if target:
+                return target[0], target[1], "imported_symbol"
+        java_module = java_imports.get(qualifier)
+        if java_module:
+            target = java_module_symbols.get(java_module, {}).get(symbol_name)
             if target:
                 return target[0], target[1], "imported_symbol"
     rust_module = rust_imports.get(callee)
@@ -743,6 +762,74 @@ def _rust_import_targets(code_events: list[dict[str, Any]]) -> dict[str, str]:
         module_path = "::".join(parts[1:-1])
         imports[symbol_name] = module_path
     return imports
+
+
+def _java_import_targets(code_events: list[dict[str, Any]]) -> dict[str, str]:
+    imports: dict[str, str] = {}
+    for event in code_events:
+        if event["event_type"] != "code.import.indexed":
+            continue
+        payload = event["payload"]
+        if payload.get("kind") != "import":
+            continue
+        module = str(payload["module"])
+        imports[str(payload["name"])] = module
+    return imports
+
+
+def _java_module_symbols(
+    code_events_by_path: dict[str, list[dict[str, Any]]],
+    file_index: set[str],
+) -> dict[str, dict[str, tuple[str, str]]]:
+    modules: dict[str, dict[str, tuple[str, str]]] = {}
+    for rel_path, code_events in code_events_by_path.items():
+        if not rel_path.endswith(".java"):
+            continue
+        class_name = Path(rel_path).stem
+        package = _java_package_name(code_events)
+        module_names = [class_name]
+        if package:
+            module_names.append(f"{package}.{class_name}")
+        path_module = _java_module_from_path(rel_path, file_index)
+        if path_module is not None:
+            module_names.append(path_module)
+        for module in set(module_names):
+            module_symbols = modules.setdefault(module, {})
+            for event in code_events:
+                if event["event_type"] != "code.symbol.indexed":
+                    continue
+                payload = event["payload"]
+                if payload["kind"] not in {"method", "class", "interface", "enum"}:
+                    continue
+                name = str(payload["qualified_name"])
+                module_symbols[name] = (rel_path, name)
+    return modules
+
+
+def _java_package_name(code_events: list[dict[str, Any]]) -> str | None:
+    for event in code_events:
+        if event["event_type"] != "code.import.indexed":
+            continue
+        payload = event["payload"]
+        if payload.get("kind") == "package":
+            return str(payload["module"])
+    return None
+
+
+def _java_module_from_path(rel_path: str, file_index: set[str]) -> str | None:
+    path = Path(rel_path)
+    if path.suffix != ".java":
+        return None
+    parts = list(path.with_suffix("").parts)
+    candidates = []
+    if parts:
+        candidates.append(".".join(parts))
+    if parts and parts[0] == "src":
+        candidates.append(".".join(parts[1:]))
+    for candidate in candidates:
+        if _resolve_java_dependency(candidate, file_index)[0] == rel_path:
+            return candidate
+    return None
 
 
 def _rust_module_symbols(code_events_by_path: dict[str, list[dict[str, Any]]]) -> dict[str, dict[str, tuple[str, str]]]:
@@ -896,6 +983,8 @@ def _resolve_dependency_target(
         return _resolve_python_dependency(rel_path, module, file_index)
     if language in {"javascript", "typescript"}:
         return _resolve_js_ts_dependency(rel_path, module, file_index)
+    if language == "java":
+        return _resolve_java_dependency(module, file_index)
     return None, None
 
 
@@ -947,6 +1036,13 @@ def _resolve_js_ts_dependency(rel_path: str, module: str, file_index: set[str]) 
         candidates.append(f"{base_path}/index{suffix}")
     target = _first_in_index(candidates, file_index)
     return target, "relative_file" if target else None
+
+
+def _resolve_java_dependency(module: str, file_index: set[str]) -> tuple[str | None, str | None]:
+    module_path = module.replace(".", "/")
+    candidates = [f"{module_path}.java", f"src/{module_path}.java"]
+    target = _first_in_index(candidates, file_index)
+    return target, "module_file" if target else None
 
 
 def _first_in_index(candidates: list[str], file_index: set[str]) -> str | None:
