@@ -373,6 +373,55 @@ def test_init_session_command_reports_workspace_profile(mock_fabric_cls: MagicMo
     fabric.close.assert_awaited_once()
 
 
+def test_init_command_runs_first_run_onboarding(tmp_path: Path) -> None:
+    """init should expose the unified first-run onboarding orchestrator."""
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    (workspace / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            str(workspace),
+            "--domain",
+            "demo",
+            "--mcp-client",
+            "claude-desktop",
+            "--mcp-output",
+            str(workspace / "mcp.json"),
+            "--hook-client",
+            "claude-code",
+            "--hook-output",
+            str(workspace / ".claude" / "settings.local.json"),
+            "--local-profile-output",
+            str(workspace / ".env.local"),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Zaxy init:" in result.output
+    assert "session: demo-default" in result.output
+    assert "mcp_config: ok" in result.output
+    assert "hook_status:" in result.output
+    assert (workspace / "mcp.json").is_file()
+    assert (workspace / ".claude" / "settings.local.json").is_file()
+    assert (workspace / ".eventloom" / "demo-default.jsonl").is_file()
+
+
+def test_init_command_rejects_mcp_output_without_client(tmp_path: Path) -> None:
+    """init should reject renderer output paths without the matching client option."""
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["init", str(workspace), "--mcp-output", str(workspace / "mcp.json")])
+
+    assert result.exit_code != 0
+    assert "mcp_client is required" in result.output
+
+
 @patch("zaxy.__main__.GraphStore")
 def test_reproject_command_replays_log_into_graph(mock_graph_store: MagicMock, tmp_path: Path) -> None:
     """reproject should rebuild graph projections from an Eventloom log."""

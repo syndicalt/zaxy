@@ -13,14 +13,16 @@ Pathlight tracing.
 # CLI remain zaxy.
 pip install zaxy-memory
 
-# 1. Print first-run MCP config for an IDE/client.
+# 1. Initialize local memory, MCP config, hooks, session genesis, and heartbeat.
 # Local stdio MCP auto-starts a localhost Neo4j container when Docker is
 # available, so average users do not need to manage a sidecar manually.
-zaxy ide-config claude-desktop --eventloom-path .eventloom
-
-# Print observer hook config so Zaxy can record lifecycle checkpoints without
-# proxying normal agent/tool execution.
-zaxy hooks claude-code --eventloom-path .eventloom --domain my-project --output .claude/settings.local.json
+zaxy init . \
+  --domain my-project \
+  --mcp-client claude-desktop \
+  --mcp-output ./zaxy-mcp.json \
+  --hook-client claude-code \
+  --hook-output .claude/settings.local.json \
+  --local-profile-output .env.local
 
 # Optional: explicit local development setup if you want shell commands too.
 ./scripts/setup.sh

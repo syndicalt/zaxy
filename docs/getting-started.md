@@ -53,6 +53,24 @@ configuration posture, and production-mode warnings. It does not start Docker
 or require a live Neo4j connection; use `zaxy status` when you want a live graph
 connectivity test.
 
+For a single first-run flow, use `zaxy init`. It composes the existing
+onboarding primitives rather than replacing them: local profile writing, MCP
+config rendering, hook config writing, workspace genesis, hook heartbeat,
+doctor, and hook status.
+
+```bash
+zaxy init . \
+  --domain my-project \
+  --mcp-client claude-desktop \
+  --mcp-output ./zaxy-mcp.json \
+  --hook-client claude-code \
+  --hook-output .claude/settings.local.json \
+  --local-profile-output .env.local
+```
+
+Generated output files are non-destructive by default. Pass `--force` only when
+you intentionally want to replace generated config.
+
 To start the default stdio MCP server:
 
 ```bash

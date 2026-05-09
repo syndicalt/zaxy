@@ -1,0 +1,217 @@
+"""First-run onboarding orchestration."""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from zaxy.config import Settings
+from zaxy.core import MemoryFabric
+from zaxy.doctor import run_doctor
+from zaxy.domain import domain_default_session, slug_domain
+from zaxy.hooks import (
+    build_hook_payload,
+    hook_event_type,
+    inspect_hook_status,
+    render_hook_config,
+    write_hook_config,
+)
+from zaxy.integrations import render_mcp_client_config
+from zaxy.local_profile import write_local_profile
+from zaxy.session import SessionManager
+
+
+@dataclass(frozen=True)
+class OnboardingStep:
+    """A single observable onboarding step."""
+
+    name: str
+    status: str
+    message: str
+    path: str | None = None
+
+
+@dataclass(frozen=True)
+class OnboardingResult:
+    """Summary of a first-run onboarding execution."""
+
+    status: str
+    workspace: str
+    domain: str
+    session_id: str
+    profile: dict[str, Any]
+    steps: list[OnboardingStep] = field(default_factory=list)
+    doctor: dict[str, Any] = field(default_factory=dict)
+    hook_status: dict[str, Any] = field(default_factory=dict)
+
+
+async def run_onboarding(
+    workspace: str | Path,
+    *,
+    eventloom_path: str | Path = ".eventloom",
+    domain: str | None = None,
+    session_id: str | None = None,
+    mcp_client: str | None = None,
+    mcp_output: str | Path | None = None,
+    hook_client: str | None = None,
+    hook_output: str | Path | None = None,
+    local_profile_output: str | Path | None = None,
+    force: bool = False,
+    fabric_factory: Callable[[str], MemoryFabric] = MemoryFabric,
+) -> OnboardingResult:
+    """Run the idempotent first-run onboarding flow."""
+    root = Path(workspace).resolve()
+    raw_eventloom = Path(eventloom_path)
+    eventloom = raw_eventloom if raw_eventloom.is_absolute() else root / raw_eventloom
+    resolved_domain = slug_domain(domain) if domain else slug_domain(root.name)
+    sid = session_id or domain_default_session(resolved_domain)
+    _validate_render_requests(
+        mcp_client=mcp_client,
+        mcp_output=mcp_output,
+        hook_client=hook_client,
+        hook_output=hook_output,
+    )
+    _preflight_outputs(
+        force=force,
+        paths=[path for path in (mcp_output, hook_output, local_profile_output) if path is not None],
+    )
+
+    steps: list[OnboardingStep] = []
+    eventloom.mkdir(parents=True, exist_ok=True)
+    steps.append(OnboardingStep("eventloom", "ok", "Eventloom directory is ready", str(eventloom)))
+
+    if local_profile_output is not None:
+        written = write_local_profile(Path(local_profile_output), force=force)
+        steps.append(OnboardingStep("local_profile", "ok", "Local retrieval profile written", str(written)))
+
+    if mcp_client is not None:
+        config = render_mcp_client_config(
+            mcp_client,
+            eventloom_path=str(eventloom),
+            domain=resolved_domain,
+        )
+        if mcp_output is not None:
+            written = _write_json(Path(mcp_output), config, force=force)
+            steps.append(OnboardingStep("mcp_config", "ok", f"{mcp_client} MCP config written", str(written)))
+        else:
+            steps.append(OnboardingStep("mcp_config", "preview", f"{mcp_client} MCP config rendered"))
+
+    if hook_client is not None:
+        hook_config = render_hook_config(
+            hook_client,
+            eventloom_path=str(eventloom),
+            domain=resolved_domain,
+        )
+        if hook_output is not None:
+            written = write_hook_config(Path(hook_output), hook_config, force=force)
+            steps.append(OnboardingStep("hook_config", "ok", f"{hook_client} hook config written", str(written)))
+        else:
+            steps.append(OnboardingStep("hook_config", "preview", f"{hook_client} hook config rendered"))
+
+    fabric = fabric_factory(str(eventloom))
+    try:
+        profile = await fabric.ensure_session_initialized(root, session_id=sid)
+    finally:
+        await fabric.close()
+    profile_payload = {
+        "workspace_type": profile.workspace_type,
+        "confidence": profile.confidence,
+        "signals": profile.signals,
+        "instructions_profile": profile.instructions_profile,
+    }
+    steps.append(OnboardingStep("session_genesis", "ok", f"Session {sid} registered"))
+
+    heartbeat = _append_heartbeat(eventloom, session_id=sid, source="zaxy-init", workspace=root)
+    steps.append(OnboardingStep("heartbeat", "ok", f"Hook heartbeat recorded seq={heartbeat.seq}"))
+
+    settings_values: dict[str, Any] = {
+        "_env_file": None,
+        "eventloom_path": str(eventloom),
+        "eventloom_thread": sid,
+        "zaxy_domain": resolved_domain,
+        "zaxy_env": "development",
+        "mcp_lifecycle_capture_enabled": True,
+    }
+    settings = Settings(**settings_values)
+    doctor = run_doctor(settings=settings, workspace_root=root)
+    steps.append(OnboardingStep("doctor", doctor["status"], "Doctor checks completed"))
+    hook_status = inspect_hook_status(eventloom_path=eventloom, workspace_root=root)
+    steps.append(OnboardingStep("hook_status", hook_status["status"], hook_status["message"]))
+    return OnboardingResult(
+        status=_overall_status(step.status for step in steps),
+        workspace=str(root),
+        domain=resolved_domain,
+        session_id=sid,
+        profile=profile_payload,
+        steps=steps,
+        doctor=doctor,
+        hook_status=hook_status,
+    )
+
+
+def format_onboarding_result(result: OnboardingResult) -> str:
+    """Format onboarding output for humans."""
+    lines = [
+        f"Zaxy init: {result.status}",
+        f"workspace: {result.workspace}",
+        f"domain: {result.domain}",
+        f"session: {result.session_id}",
+        f"profile: {result.profile['workspace_type']} ({result.profile['confidence']})",
+    ]
+    for step in result.steps:
+        suffix = f" - {step.path}" if step.path else ""
+        lines.append(f"- {step.name}: {step.status} - {step.message}{suffix}")
+    return "\n".join(lines)
+
+
+def _preflight_outputs(*, force: bool, paths: list[str | Path]) -> None:
+    if force:
+        return
+    for path in paths:
+        target = Path(path)
+        if target.exists():
+            raise FileExistsError(f"{target} already exists; pass --force to overwrite")
+
+
+def _validate_render_requests(
+    *,
+    mcp_client: str | None,
+    mcp_output: str | Path | None,
+    hook_client: str | None,
+    hook_output: str | Path | None,
+) -> None:
+    if mcp_output is not None and mcp_client is None:
+        raise ValueError("mcp_client is required when mcp_output is provided")
+    if hook_output is not None and hook_client is None:
+        raise ValueError("hook_client is required when hook_output is provided")
+
+
+def _write_json(path: Path, payload: dict[str, Any], *, force: bool = False) -> Path:
+    if path.exists() and not force:
+        raise FileExistsError(f"{path} already exists; pass --force to overwrite")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return path
+
+
+def _append_heartbeat(eventloom_path: Path, *, session_id: str, source: str, workspace: Path) -> Any:
+    event_type = hook_event_type("heartbeat")
+    payload = build_hook_payload(
+        trigger="heartbeat",
+        source=source,
+        workspace=str(workspace),
+    )
+    eventlog = SessionManager(base_path=str(eventloom_path)).get(session_id).eventlog
+    return eventlog.append(event_type, actor="zaxy-hook", payload=payload, thread=session_id)
+
+
+def _overall_status(statuses: Any) -> str:
+    status_set = set(statuses)
+    if "error" in status_set:
+        return "error"
+    if "warning" in status_set:
+        return "warning"
+    return "ok"

@@ -66,6 +66,7 @@ from zaxy.live_benchmark import (
 )
 from zaxy.local_profile import check_local_profile, render_local_profile, write_local_profile
 from zaxy.mcp_server import main as mcp_main
+from zaxy.onboarding import OnboardingResult, format_onboarding_result, run_onboarding
 from zaxy.schema import render_schema_plan
 from zaxy.viewer import write_viewer_html
 
@@ -136,9 +137,7 @@ def hooks(
             typer.echo(f"Wrote hook config to {written}")
             return
         typer.echo(config, nl=False)
-    except FileExistsError as exc:
-        raise typer.BadParameter(str(exc)) from exc
-    except ValueError as exc:
+    except (FileExistsError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
 
 
@@ -269,6 +268,47 @@ def init_session(
         f"Initialized {session_id} as {profile.workspace_type} workspace "
         f"(confidence {profile.confidence})"
     )
+
+
+@app.command("init")
+def init(
+    path: Path = typer.Argument(Path("."), help="Workspace root to initialize"),  # noqa: B008
+    eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory for this workspace"),
+    domain: str | None = typer.Option(None, help="Project/domain used for default session scoping"),  # noqa: B008
+    session_id: str | None = typer.Option(None, help="Explicit session ID; defaults to <domain>-default"),  # noqa: B008
+    mcp_client: str | None = typer.Option(None, help="MCP client config to render/write"),  # noqa: B008
+    mcp_output: Path | None = typer.Option(None, help="Write MCP config JSON to this file"),  # noqa: B008
+    hook_client: str | None = typer.Option(None, help="Hook client config to render/write"),  # noqa: B008
+    hook_output: Path | None = typer.Option(None, help="Write hook config to this file"),  # noqa: B008
+    local_profile_output: Path | None = typer.Option(None, help="Write local retrieval profile to this file"),  # noqa: B008
+    force: bool = typer.Option(False, "--force", help="Overwrite generated output files"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),  # noqa: B008
+) -> None:
+    """Run first-run onboarding: MCP config, local profile, genesis, heartbeat, doctor."""
+    import asyncio
+
+    async def _run() -> OnboardingResult:
+        return await run_onboarding(
+            path,
+            eventloom_path=eventloom_path,
+            domain=domain,
+            session_id=session_id,
+            mcp_client=mcp_client,
+            mcp_output=mcp_output,
+            hook_client=hook_client,
+            hook_output=hook_output,
+            local_profile_output=local_profile_output,
+            force=force,
+        )
+
+    try:
+        result = asyncio.run(_run())
+    except (FileExistsError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if json_output:
+        typer.echo(json.dumps(asdict(result), indent=2, sort_keys=True))
+    else:
+        typer.echo(format_onboarding_result(result))
 
 
 @app.command("viewer")
