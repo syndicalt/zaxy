@@ -713,6 +713,39 @@ class TestSessionProfileCorrected:
         assert edge.relation_type == "corrected_workspace_profile"
 
 
+class TestWorkspaceInstructionsDiscovered:
+    """Tests for workspace.instructions.discovered extractor."""
+
+    def test_extracts_instruction_snapshot_and_session_edge(self) -> None:
+        ev = _make_event(
+            "workspace.instructions.discovered",
+            {
+                "session_id": "demo",
+                "root": "/repo",
+                "summary": "Project Rules: Use tests first.",
+                "signature": "abc123",
+                "files": [{"path": "AGENTS.md", "kind": "agents"}],
+            },
+            actor="zaxy",
+        )
+
+        result = extract(ev)
+
+        instruction = next(e for e in result.entities if e.entity_type == "workspace_instructions")
+        assert instruction.name == "/repo:instructions:abc123"
+        assert instruction.summary == "Project Rules: Use tests first."
+        assert instruction.properties == {
+            "session_id": "demo",
+            "root": "/repo",
+            "signature": "abc123",
+            "files": [{"path": "AGENTS.md", "kind": "agents"}],
+        }
+        edge = result.edges[0]
+        assert edge.source == "demo"
+        assert edge.target == "/repo:instructions:abc123"
+        assert edge.relation_type == "uses_workspace_instructions"
+
+
 class TestTranscriptTurn:
     """Tests for transcript.turn extractor."""
 

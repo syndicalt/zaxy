@@ -874,6 +874,46 @@ def _extract_session_profile_corrected(event: Event) -> ExtractionResult:
     )
 
 
+@register("workspace.instructions.discovered")
+def _extract_workspace_instructions_discovered(event: Event) -> ExtractionResult:
+    """Extract a workspace instruction snapshot."""
+    session_id = _optional_text(event.payload.get("session_id")) or event.thread or "default"
+    root = _optional_text(event.payload.get("root")) or "workspace"
+    signature = _optional_text(event.payload.get("signature")) or str(event.seq)
+    summary = _optional_text(event.payload.get("summary"))
+    files = event.payload.get("files")
+    if not isinstance(files, list):
+        files = []
+    instruction = ExtractedEntity(
+        name=f"{root}:instructions:{signature}",
+        entity_type="workspace_instructions",
+        observed_at=event.timestamp,
+        summary=summary,
+        properties={
+            "session_id": session_id,
+            "root": root,
+            "signature": signature,
+            "files": files,
+        },
+    )
+    session = ExtractedEntity(
+        name=session_id,
+        entity_type="session",
+        observed_at=event.timestamp,
+    )
+    edge = ExtractedEdge(
+        source=session.name,
+        target=instruction.name,
+        relation_type="uses_workspace_instructions",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(
+        entities=[session, instruction],
+        edges=[edge],
+        source_event_seq=event.seq,
+    )
+
+
 @register("transcript.turn")
 def _extract_transcript_turn(event: Event) -> ExtractionResult:
     """Extract a sanitized session transcript turn."""
