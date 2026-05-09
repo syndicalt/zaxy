@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shlex
+from pathlib import Path
 from typing import Any, Literal
 
 from zaxy.domain import derive_domain, domain_default_session, slug_domain
@@ -74,6 +75,21 @@ def render_hook_config(
     )
 
 
+def write_hook_config(
+    path: str | Path,
+    content: str,
+    *,
+    force: bool = False,
+) -> Path:
+    """Write hook config to disk without overwriting unless forced."""
+    target = Path(path)
+    if target.exists() and not force:
+        raise FileExistsError(f"{target} already exists; pass --force to overwrite")
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+    return target
+
+
 def hook_event_type(trigger: str) -> str:
     """Return the normalized Eventloom type for a hook trigger."""
     normalized = trigger.casefold().strip().replace("_", "-")
@@ -96,6 +112,9 @@ def build_hook_payload(
     source: str,
     workspace: str | None = None,
     transcript_path: str | None = None,
+    summary: str | None = None,
+    reason: str | None = None,
+    turn_count: int | None = None,
 ) -> dict[str, Any]:
     """Build a compact, non-blocking lifecycle payload for hook adapters."""
     payload: dict[str, Any] = {
@@ -106,6 +125,12 @@ def build_hook_payload(
         payload["workspace"] = workspace
     if transcript_path:
         payload["transcript_path"] = transcript_path
+    if summary:
+        payload["summary"] = summary
+    if reason:
+        payload["reason"] = reason
+    if turn_count is not None:
+        payload["turn_count"] = turn_count
     return payload
 
 

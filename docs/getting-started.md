@@ -75,7 +75,10 @@ To let Zaxy observe client lifecycle checkpoints without proxying tool
 execution, generate hook adapter config:
 
 ```bash
-zaxy hooks claude-code --eventloom-path .eventloom --domain my-project
+zaxy hooks claude-code \
+  --eventloom-path .eventloom \
+  --domain my-project \
+  --output .claude/settings.local.json
 ```
 
 The stable hook contract is documented in [hooks.md](hooks.md).

@@ -149,13 +149,19 @@ def _check_hooks(settings: Settings) -> dict[str, str]:
             "name": "hooks",
             "status": "error",
             "message": f"observer hook adapter rendering failed: {exc}",
-            "action": "Run zaxy hooks claude-code --eventloom-path .eventloom --domain <project>.",
+            "action": (
+                "Run zaxy hooks claude-code --eventloom-path .eventloom "
+                "--domain <project> --output .claude/settings.local.json."
+            ),
         }
     return {
         "name": "hooks",
         "status": "ok",
         "message": "observer hook adapters are available",
-        "action": "Run zaxy hooks claude-code --eventloom-path .eventloom --domain <project>.",
+        "action": (
+            "Run zaxy hooks claude-code --eventloom-path .eventloom "
+            "--domain <project> --output .claude/settings.local.json."
+        ),
     }
 
 

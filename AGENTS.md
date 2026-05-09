@@ -272,12 +272,14 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] MCP tool support for retrieval feedback events
 - [x] Observer hook config and lightweight hook-event capture
 - [x] Hook protocol documentation and doctor onboarding guidance
+- [x] Safe hook config write mode with no-overwrite default
+- [x] Searchable hook checkpoint events with summary and reason metadata
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 497 passed |
+| Tests | 502 passed |
 | Coverage | 92.25% |
 | Lint | ruff clean |
 | Types | mypy clean |

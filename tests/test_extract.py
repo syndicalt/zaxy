@@ -331,6 +331,41 @@ class TestMemoryReinforced:
         assert result.edges[0].relation_type == "reinforced_memory"
 
 
+class TestHookCheckpoint:
+    """Tests for hook.checkpoint extractor."""
+
+    def test_extracts_checkpoint_with_summary_and_session_edge(self) -> None:
+        ev = _make_event(
+            "hook.checkpoint",
+            {
+                "trigger": "checkpoint",
+                "source": "codex",
+                "summary": "Finished hook install mode.",
+                "reason": "manual",
+                "turn_count": 7,
+                "workspace": "/repo",
+            },
+            actor="zaxy-hook",
+        )
+        ev = ev.model_copy(update={"thread": "agent-1"})
+
+        result = extract(ev)
+
+        checkpoint = next(e for e in result.entities if e.entity_type == "hook_checkpoint")
+        assert checkpoint.name == "agent-1:checkpoint:1"
+        assert checkpoint.summary == "Finished hook install mode."
+        assert checkpoint.properties == {
+            "session_id": "agent-1",
+            "source": "codex",
+            "reason": "manual",
+            "turn_count": 7,
+            "workspace": "/repo",
+        }
+        assert result.edges[0].source == "agent-1"
+        assert result.edges[0].target == "agent-1:checkpoint:1"
+        assert result.edges[0].relation_type == "recorded_checkpoint"
+
+
 class TestIssueDiagnosed:
     """Tests for issue.diagnosed extractor."""
 

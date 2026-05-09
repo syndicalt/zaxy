@@ -12,6 +12,18 @@ zaxy hooks claude-code --eventloom-path .eventloom --domain my-project
 zaxy hooks codex --eventloom-path .eventloom --domain my-project
 ```
 
+Write config directly during onboarding:
+
+```bash
+zaxy hooks claude-code \
+  --eventloom-path .eventloom \
+  --domain my-project \
+  --output .claude/settings.local.json
+```
+
+`--output` creates parent directories and refuses to overwrite existing files.
+Pass `--force` when replacing a generated hook config intentionally.
+
 The generated commands call the stable sink:
 
 ```bash
@@ -34,6 +46,21 @@ Supported triggers are:
 
 Unknown triggers are rejected before writing.
 
+Checkpoint hooks can include retrieval-useful metadata:
+
+```bash
+zaxy hook-event checkpoint \
+  --eventloom-path .eventloom \
+  --session-id my-project-default \
+  --source codex \
+  --summary "Finished hook install mode." \
+  --reason manual \
+  --turn-count 7
+```
+
+`hook.checkpoint` events are projected into graph `hook_checkpoint` entities so
+future retrieval can find durable session milestones.
+
 ## Payload
 
 Hook events use actor `zaxy-hook` and append to the selected session log. The
@@ -44,7 +71,10 @@ payload is intentionally small:
   "trigger": "precompact",
   "source": "claude-code",
   "workspace": "/path/to/project",
-  "transcript_path": "/path/to/transcript.jsonl"
+  "transcript_path": "/path/to/transcript.jsonl",
+  "summary": "Finished hook install mode.",
+  "reason": "manual",
+  "turn_count": 7
 }
 ```
 
@@ -57,6 +87,10 @@ Optional fields:
 
 - `workspace`: workspace root associated with the hook.
 - `transcript_path`: transcript file associated with the hook.
+- `summary`: short checkpoint summary.
+- `reason`: checkpoint reason such as `manual`, `interval`, `precompact`, or
+  `shutdown`.
+- `turn_count`: client turn count at the checkpoint.
 
 ## Failure Behavior
 

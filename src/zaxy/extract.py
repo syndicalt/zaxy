@@ -358,6 +358,45 @@ def _extract_memory_reinforced(event: Event) -> ExtractionResult:
     )
 
 
+@register("hook.checkpoint")
+def _extract_hook_checkpoint(event: Event) -> ExtractionResult:
+    """Extract a searchable observer checkpoint."""
+    session_id = _optional_text(event.thread) or _optional_text(event.payload.get("session_id")) or "default"
+    source = _optional_text(event.payload.get("source")) or "hook"
+    reason = _optional_text(event.payload.get("reason")) or "checkpoint"
+    turn_count = _positive_int(event.payload.get("turn_count"), default=0)
+    workspace = _optional_text(event.payload.get("workspace"))
+    checkpoint = ExtractedEntity(
+        name=f"{session_id}:checkpoint:{event.seq}",
+        entity_type="hook_checkpoint",
+        observed_at=event.timestamp,
+        summary=_optional_text(event.payload.get("summary")),
+        properties={
+            "session_id": session_id,
+            "source": source,
+            "reason": reason,
+            "turn_count": turn_count,
+            "workspace": workspace,
+        },
+    )
+    session = ExtractedEntity(
+        name=session_id,
+        entity_type="session",
+        observed_at=event.timestamp,
+    )
+    edge = ExtractedEdge(
+        source=session.name,
+        target=checkpoint.name,
+        relation_type="recorded_checkpoint",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(
+        entities=[session, checkpoint],
+        edges=[edge],
+        source_event_seq=event.seq,
+    )
+
+
 @register("issue.diagnosed")
 def _extract_issue_diagnosed(event: Event) -> ExtractionResult:
     """Extract a diagnosed issue with root cause and supporting evidence."""
