@@ -28,6 +28,7 @@ def run_doctor(
         _check_viewer(root),
         _check_mcp_defaults(active),
         _check_hooks(active),
+        _check_hook_installation(root),
         _check_neo4j(active),
         _check_production(active),
     ]
@@ -163,6 +164,42 @@ def _check_hooks(settings: Settings) -> dict[str, str]:
             "--domain <project> --output .claude/settings.local.json."
         ),
     }
+
+
+def _check_hook_installation(workspace_root: Path) -> dict[str, str]:
+    installed = [
+        path
+        for path in (
+            workspace_root / ".claude" / "settings.local.json",
+            workspace_root / ".claude" / "settings.json",
+            workspace_root / ".codex" / "hooks.json",
+        )
+        if _looks_like_zaxy_hook_config(path)
+    ]
+    if installed:
+        rel = installed[0].relative_to(workspace_root)
+        return {
+            "name": "hook_installation",
+            "status": "ok",
+            "message": f"observer hook config found at {rel}",
+        }
+    return {
+        "name": "hook_installation",
+        "status": "warning",
+        "message": "No installed observer hook config found in this workspace",
+        "action": (
+            "Run zaxy hooks claude-code --eventloom-path .eventloom "
+            "--domain <project> --output .claude/settings.local.json."
+        ),
+    }
+
+
+def _looks_like_zaxy_hook_config(path: Path) -> bool:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return "zaxy hook-event" in text
 
 
 def _check_neo4j(settings: Settings) -> dict[str, str]:
