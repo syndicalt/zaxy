@@ -124,6 +124,8 @@ class ContextChunk:
     valid_to: str | None
     citation: str | None = None
     score_explanation: dict[str, Any] | None = None
+    entity_name: str | None = None
+    entity_type: str | None = None
 
 
 class LexicalReranker:
@@ -524,6 +526,8 @@ def _to_chunk(result: SearchResult) -> ContextChunk:
         valid_to=ent.valid_to,
         citation=_citation(ent),
         score_explanation=_score_explanation(result),
+        entity_name=ent.name,
+        entity_type=ent.entity_type,
     )
 
 

@@ -1003,6 +1003,27 @@ class TestContextChunk:
         # Should only include first few properties
         assert "extra=ignored" not in chunk.content
 
+    async def test_chunk_exposes_entity_identity(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Feedback APIs should be able to reinforce the retrieved graph entity."""
+        mock_store.search_exact.return_value = [
+            GraphEntity(
+                name="Ship MVP",
+                entity_type="goal",
+                valid_from="2024-01-01T00:00:00Z",
+                valid_to=None,
+                properties={},
+            )
+        ]
+
+        results = await router.query("Ship MVP")
+
+        assert results[0].entity_name == "Ship MVP"
+        assert results[0].entity_type == "goal"
+
     async def test_chunk_content_omits_embedding_vectors(
         self,
         router: QueryRouter,

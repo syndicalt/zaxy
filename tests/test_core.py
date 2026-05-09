@@ -204,6 +204,68 @@ class TestAppend:
         fabric.graph.connect.assert_awaited_once()
 
 
+class TestContextFeedback:
+    """Tests for retrieval feedback event capture."""
+
+    async def test_positive_feedback_reinforces_context_entity(self, fabric: MemoryFabric) -> None:
+        """Used context should append a memory.reinforced event."""
+        context = Context(
+            content="Use retention metadata (decision)",
+            source="keyword",
+            score=0.9,
+            metadata={
+                "entity_name": "Use retention metadata",
+                "entity_type": "decision",
+                "citation": "eventloom://default/events/1#abc",
+            },
+        )
+
+        count = await fabric.record_context_feedback(
+            [context],
+            feedback="used",
+            session_id="agent-1",
+            actor="assistant",
+            importance=0.8,
+        )
+
+        assert count == 1
+        log = fabric.session_manager.get.return_value.eventlog
+        call = log.append.call_args_list[-1]
+        assert call.args == ("memory.reinforced",)
+        assert call.kwargs["actor"] == "assistant"
+        assert call.kwargs["thread"] == "agent-1"
+        assert call.kwargs["payload"]["entity_name"] == "Use retention metadata"
+        assert call.kwargs["payload"]["entity_type"] == "decision"
+        assert call.kwargs["payload"]["importance"] == 0.8
+
+    async def test_positive_feedback_falls_back_to_content_identity(self, fabric: MemoryFabric) -> None:
+        """Context without entity metadata should still produce a stable reinforcement event."""
+        context = Context(content="Fallback note", source="eventloom", score=0.5)
+
+        await fabric.record_context_feedback([context], feedback="helpful", session_id="agent-1")
+
+        payload = fabric.session_manager.get.return_value.eventlog.append.call_args_list[-1].kwargs["payload"]
+        assert payload["entity_name"] == "Fallback note"
+        assert payload["entity_type"] == "memory"
+
+    async def test_negative_feedback_is_audit_only(self, fabric: MemoryFabric) -> None:
+        """Irrelevant context should be recorded without mutating retention metadata."""
+        context = Context(
+            content="Stale note (decision)",
+            source="keyword",
+            score=0.2,
+            metadata={"entity_name": "Stale note", "entity_type": "decision"},
+        )
+
+        count = await fabric.record_context_feedback([context], feedback="irrelevant", session_id="agent-1")
+
+        assert count == 1
+        call = fabric.session_manager.get.return_value.eventlog.append.call_args_list[-1]
+        assert call.args == ("memory.feedback",)
+        assert call.kwargs["payload"]["feedback"] == "irrelevant"
+        assert call.kwargs["payload"]["entity_name"] == "Stale note"
+
+
 class TestDocumentIngestion:
     """Tests for filesystem document ingestion orchestration."""
 

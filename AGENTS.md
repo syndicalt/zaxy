@@ -268,12 +268,13 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Non-destructive temporal retention and decay-aware retrieval policies
 - [x] Direct agent integration templates for LangGraph, CrewAI, and AutoGen
 - [x] Retention metadata extraction and reinforcement events for decay-aware retrieval
+- [x] Retrieval feedback events that reinforce used context
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 485 passed |
+| Tests | 489 passed |
 | Coverage | 92.25% |
 | Lint | ruff clean |
 | Types | mypy clean |
@@ -281,5 +282,5 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 ## Next Steps
 
-1. Add optional deeper framework packages once direct templates see usage.
-2. Add retrieval-feedback events that automatically reinforce used context.
+1. Add MCP tool support for retrieval feedback events.
+2. Add optional deeper framework packages once direct templates see usage.

@@ -437,6 +437,10 @@ class MemoryFabric:
                 metadata["citation"] = c.citation
             if c.score_explanation:
                 metadata["score_explanation"] = c.score_explanation
+            if c.entity_name:
+                metadata["entity_name"] = c.entity_name
+            if c.entity_type:
+                metadata["entity_type"] = c.entity_type
             contexts.append(
                 Context(
                     content=c.content,
@@ -584,6 +588,50 @@ class MemoryFabric:
             warnings=warnings,
         )
 
+    async def record_context_feedback(
+        self,
+        contexts: list[Context],
+        *,
+        feedback: str,
+        session_id: str = "default",
+        actor: str = "zaxy",
+        importance: float | None = None,
+    ) -> int:
+        """Append feedback events for retrieved context without mutating history."""
+        sid = validate_session_id(session_id)
+        normalized = _normalize_context_feedback(feedback)
+        count = 0
+        for context in contexts:
+            identity = _context_identity(context)
+            payload: dict[str, Any] = {
+                "entity_name": identity["entity_name"],
+                "entity_type": identity["entity_type"],
+                "feedback": normalized,
+                "source": context.source,
+                "score": context.score,
+            }
+            if context.metadata and (citation := context.metadata.get("citation")):
+                payload["citation"] = citation
+            if normalized in {"used", "helpful"}:
+                payload.pop("feedback")
+                if importance is not None:
+                    payload["importance"] = max(0.0, min(1.0, float(importance)))
+                await self.append(
+                    "memory.reinforced",
+                    actor=actor,
+                    payload=payload,
+                    session_id=sid,
+                )
+            else:
+                await self.append(
+                    "memory.feedback",
+                    actor=actor,
+                    payload=payload,
+                    session_id=sid,
+                )
+            count += 1
+        return count
+
     async def after_turn(
         self,
         *,
@@ -723,6 +771,34 @@ def _event_content(event: Any) -> str:
     if not parts:
         parts = [f"{getattr(event, 'type', 'event')} by {getattr(event, 'actor', 'unknown')}"]
     return " ".join(parts)
+
+
+def _normalize_context_feedback(feedback: str) -> str:
+    normalized = feedback.casefold().strip()
+    if normalized not in {"used", "helpful", "irrelevant"}:
+        raise ValueError("feedback must be one of: used, helpful, irrelevant")
+    return normalized
+
+
+def _context_identity(context: Context) -> dict[str, str]:
+    metadata = context.metadata or {}
+    entity_name = metadata.get("entity_name")
+    entity_type = metadata.get("entity_type")
+    if isinstance(entity_name, str) and entity_name.strip():
+        name = entity_name.strip()
+    else:
+        name = _context_content_identity(context.content)
+    kind = entity_type.strip() if isinstance(entity_type, str) and entity_type.strip() else "memory"
+    return {"entity_name": name, "entity_type": kind}
+
+
+def _context_content_identity(content: str) -> str:
+    text = content.strip()
+    if not text:
+        return "context"
+    if " (" in text:
+        return text.split(" (", 1)[0].strip() or "context"
+    return text.split(" — ", 1)[0].strip() or "context"
 
 
 def _context_warnings(contexts: list[Context], *, compacted: bool) -> list[str]:

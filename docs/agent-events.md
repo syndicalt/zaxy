@@ -119,6 +119,25 @@ Retention fields are intentionally small and typed:
 - `last_reinforced_at`: ISO-8601 timestamp used as decay age reference.
 - `reinforcement_count`: positive integer that adds a bounded decay boost.
 
+Use `memory.feedback` for audit-only retrieval feedback that should not update
+retention metadata. `MemoryFabric.record_context_feedback(...,
+feedback="irrelevant")` emits this event.
+
+```json
+{
+  "entity_name": "Outdated deployment note",
+  "entity_type": "decision",
+  "feedback": "irrelevant",
+  "source": "keyword",
+  "score": 0.42,
+  "citation": "eventloom://agent-1/events/42#abcdef123456"
+}
+```
+
+Projection: unknown-event fallback today, preserving the feedback as an
+Eventloom-backed audit record without deleting, invalidating, or downranking the
+target entity.
+
 ## Lifecycle Hooks
 
 Use lifecycle events for automatic capture around agent execution. These events
