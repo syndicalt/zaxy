@@ -40,6 +40,19 @@ This configures deterministic hash embeddings, lexical reranking, and local
 Neo4j auto-start. It is the recommended baseline for local development before
 switching to hosted embeddings or model-backed rerankers.
 
+Check local onboarding prerequisites before wiring an agent:
+
+```bash
+zaxy doctor
+zaxy doctor --json
+```
+
+The doctor command verifies Eventloom writeability, local embedding/reranker
+construction, static viewer generation, MCP default-session posture, Neo4j
+configuration posture, and production-mode warnings. It does not start Docker
+or require a live Neo4j connection; use `zaxy status` when you want a live graph
+connectivity test.
+
 To start the default stdio MCP server:
 
 ```bash

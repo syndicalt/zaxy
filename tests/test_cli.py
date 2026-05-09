@@ -103,6 +103,30 @@ def test_local_profile_check_reports_success() -> None:
     assert '"reranker_provider": "lexical"' in result.output
 
 
+def test_doctor_command_reports_text_summary(tmp_path: Path) -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["doctor", "--eventloom-path", str(tmp_path / ".eventloom")])
+
+    assert result.exit_code == 0
+    assert "Zaxy doctor:" in result.output
+    assert "eventloom: ok" in result.output
+    assert "viewer: ok" in result.output
+
+
+def test_doctor_command_reports_json(tmp_path: Path) -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["doctor", "--eventloom-path", str(tmp_path / ".eventloom"), "--json"],
+    )
+
+    assert result.exit_code == 0
+    assert '"status": "ok"' in result.output
+    assert '"name": "eventloom"' in result.output
+
+
 @patch("zaxy.__main__.MemoryFabric")
 def test_index_codebase_command_reports_indexed_count(mock_fabric_cls: MagicMock, tmp_path: Path) -> None:
     """index-codebase should append codebase mapping events through MemoryFabric."""

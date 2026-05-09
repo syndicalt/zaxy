@@ -29,6 +29,7 @@ from zaxy.compaction import (
     write_compaction_projection,
 )
 from zaxy.core import MemoryFabric
+from zaxy.doctor import format_doctor_report, run_doctor
 from zaxy.embedding import EmbeddingProvider, HashEmbeddingProvider, OpenAIEmbeddingProvider
 from zaxy.event import EventLog
 from zaxy.extract import extract
@@ -105,6 +106,24 @@ def local_profile(
     except FileExistsError as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(f"Wrote local profile to {written}")
+
+
+@app.command("doctor")
+def doctor(
+    eventloom_path: str | None = typer.Option(None, help="Override Eventloom path for this check"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Run local setup and onboarding checks."""
+    from zaxy.config import get_settings
+
+    settings = get_settings()
+    if eventloom_path is not None:
+        settings = settings.model_copy(update={"eventloom_path": eventloom_path})
+    report = run_doctor(settings=settings)
+    if json_output:
+        typer.echo(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        typer.echo(format_doctor_report(report))
 
 
 @app.command("index-codebase")

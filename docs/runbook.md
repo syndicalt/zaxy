@@ -27,6 +27,12 @@ pytest
 # Start MCP server
 python -m zaxy serve
 
+# Check local onboarding prerequisites
+python -m zaxy doctor
+
+# Emit machine-readable setup diagnostics
+python -m zaxy doctor --json
+
 # Start MCP over SSE for daemon mode
 python -m zaxy serve --transport sse --port 8080
 ```
