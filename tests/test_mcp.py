@@ -302,6 +302,7 @@ class TestServerSetup:
     async def test_setup_appends_workspace_genesis_once(self, tmp_path: Path) -> None:
         """setup() should bootstrap the default session with one workspace genesis event."""
         (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
+        (tmp_path / "AGENTS.md").write_text("# Rules\n\nUse pytest.\n", encoding="utf-8")
         eventlog = EventLog(tmp_path / "events.jsonl")
         mock_log = MagicMock()
         mock_log.read_all.return_value = []
@@ -325,10 +326,12 @@ class TestServerSetup:
             await srv.setup()
 
         mock_session_mgr.get.assert_called_with("default")
-        mock_log.append.assert_called_once()
-        assert mock_log.append.call_args.args == ("session.genesis",)
-        assert mock_log.append.call_args.kwargs["payload"]["root"] == str(tmp_path.resolve())
-        mock_graph.upsert_extraction.assert_awaited_once()
+        assert mock_log.append.call_count == 2
+        assert mock_log.append.call_args_list[0].args == ("session.genesis",)
+        assert mock_log.append.call_args_list[0].kwargs["payload"]["root"] == str(tmp_path.resolve())
+        assert mock_log.append.call_args_list[1].args == ("workspace.instructions.discovered",)
+        assert mock_log.append.call_args_list[1].kwargs["payload"]["summary"] == "Rules: Use pytest."
+        assert mock_graph.upsert_extraction.await_count == 2
 
 
 class TestContextLifecycleTools:

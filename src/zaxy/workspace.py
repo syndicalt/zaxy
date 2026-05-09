@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
@@ -35,6 +36,13 @@ GENERIC_EVENTS = [
     "task.completed",
     "artifact.indexed",
 ]
+
+INSTRUCTION_FILES = {
+    "AGENTS.md": "agents",
+    "CLAUDE.md": "claude",
+    "SOUL.md": "soul",
+    ".github/copilot-instructions.md": "copilot",
+}
 
 
 def discover_workspace_profile(root: str | Path) -> WorkspaceProfile:
@@ -91,6 +99,29 @@ def build_session_genesis_event(root: str | Path, *, session_id: str) -> dict[st
     }
 
 
+def build_workspace_instruction_event(root: str | Path, *, session_id: str) -> dict[str, Any] | None:
+    """Build a compact event describing discovered workspace instruction files."""
+    root_path = Path(root).resolve()
+    files = [
+        _instruction_file_payload(root_path, relative_path, kind)
+        for relative_path, kind in INSTRUCTION_FILES.items()
+    ]
+    discovered = [item for item in files if item is not None]
+    if not discovered:
+        return None
+    return {
+        "event_type": "workspace.instructions.discovered",
+        "actor": "zaxy",
+        "payload": {
+            "root": str(root_path),
+            "session_id": session_id,
+            "summary": " ".join(str(item["summary"]) for item in discovered if item.get("summary")),
+            "signature": _instruction_signature(discovered),
+            "files": discovered,
+        },
+    }
+
+
 def workspace_profile_from_payload(payload: dict[str, Any]) -> WorkspaceProfile:
     """Reconstruct a workspace profile from a session genesis payload."""
     signals = payload.get("signals", [])
@@ -123,6 +154,27 @@ def existing_session_genesis_profile(
     return None
 
 
+def existing_workspace_instructions_signature(
+    events: Iterable[object],
+    *,
+    root: str | Path,
+    session_id: str,
+) -> str | None:
+    """Return the latest instruction discovery signature for the root/session pair."""
+    resolved_root = str(Path(root).resolve())
+    signature: str | None = None
+    for event in events:
+        if getattr(event, "type", None) != "workspace.instructions.discovered":
+            continue
+        payload = getattr(event, "payload", None)
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("root") == resolved_root and payload.get("session_id") == session_id:
+            raw_signature = payload.get("signature")
+            signature = str(raw_signature) if raw_signature is not None else None
+    return signature
+
+
 def _codebase_score(signals: list[str]) -> float:
     score = 0.0
     for signal in signals:
@@ -147,3 +199,46 @@ def _write_instructions(profile: str) -> dict[str, Any]:
         "avoid_writing": ["raw_secrets", "transient_chatter"],
         "indexing_strategy": "metadata_only_artifact_map",
     }
+
+
+def _instruction_file_payload(root: Path, relative_path: str, kind: str) -> dict[str, Any] | None:
+    path = root / relative_path
+    if not path.is_file():
+        return None
+    content = path.read_text(encoding="utf-8", errors="replace")
+    lines = content.splitlines()
+    return {
+        "path": relative_path,
+        "kind": kind,
+        "size_bytes": len(content.encode("utf-8")),
+        "sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        "summary": _summarize_instruction_lines(lines),
+        "citation": f"{path}:1-{max(len(lines), 1)}",
+    }
+
+
+def _summarize_instruction_lines(lines: list[str]) -> str:
+    heading = "Workspace instructions"
+    body = ""
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if stripped.startswith("#") and heading == "Workspace instructions":
+            heading = stripped.lstrip("#").strip() or heading
+            continue
+        body = stripped.lstrip("-*0123456789. ").strip()
+        break
+    if body and body[-1] not in ".!?":
+        body = f"{body}."
+    return f"{heading}: {body}" if body else heading
+
+
+def _instruction_signature(files: list[dict[str, Any]]) -> str:
+    digest = hashlib.sha256()
+    for item in files:
+        digest.update(str(item["path"]).encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(str(item["sha256"]).encode("utf-8"))
+        digest.update(b"\0")
+    return digest.hexdigest()

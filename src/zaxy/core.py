@@ -44,7 +44,9 @@ from zaxy.transcripts import collect_transcript_events
 from zaxy.workspace import (
     WorkspaceProfile,
     build_session_genesis_event,
+    build_workspace_instruction_event,
     existing_session_genesis_profile,
+    existing_workspace_instructions_signature,
     workspace_profile_from_payload,
 )
 
@@ -141,6 +143,7 @@ class MemoryFabric:
             )
         )
         self._initialized_workspaces: dict[tuple[str, str], WorkspaceProfile] = {}
+        self._initialized_instruction_signatures: dict[tuple[str, str], str] = {}
         self._connected = False
 
     async def connect(self) -> None:
@@ -286,6 +289,7 @@ class MemoryFabric:
         eventlog = self.session_manager.get(sid).eventlog
         cached = self._initialized_workspaces.get(key)
         if cached is not None:
+            await self._ensure_workspace_instructions(root, session_id=sid)
             return cached
         profile = existing_session_genesis_profile(
             eventlog.read_all(),
@@ -294,8 +298,43 @@ class MemoryFabric:
         )
         if profile is not None:
             self._initialized_workspaces[key] = profile
+            await self._ensure_workspace_instructions(root, session_id=sid)
             return profile
-        return await self.initialize_session(root, session_id=sid)
+        profile = await self.initialize_session(root, session_id=sid)
+        await self._ensure_workspace_instructions(root, session_id=sid)
+        return profile
+
+    async def _ensure_workspace_instructions(
+        self,
+        path: str | Path,
+        *,
+        session_id: str,
+    ) -> None:
+        """Idempotently append discovered workspace instruction summaries."""
+        root = str(Path(path).resolve())
+        key = (root, session_id)
+        event = build_workspace_instruction_event(root, session_id=session_id)
+        if event is None:
+            return
+        signature = str(event["payload"]["signature"])
+        if self._initialized_instruction_signatures.get(key) == signature:
+            return
+        eventlog = self.session_manager.get(session_id).eventlog
+        existing_signature = existing_workspace_instructions_signature(
+            eventlog.read_all(),
+            root=root,
+            session_id=session_id,
+        )
+        if existing_signature == signature:
+            self._initialized_instruction_signatures[key] = signature
+            return
+        await self.append(
+            event["event_type"],
+            actor=event["actor"],
+            payload=event["payload"],
+            session_id=session_id,
+        )
+        self._initialized_instruction_signatures[key] = signature
 
     async def ingest_transcript(
         self,

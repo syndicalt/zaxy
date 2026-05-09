@@ -305,6 +305,27 @@ class TestSessionInitialization:
         assert profile.confidence == 0.91
         log.append.assert_not_called()
 
+    async def test_ensure_session_initialized_appends_instruction_discovery(
+        self,
+        fabric: MemoryFabric,
+        tmp_path,
+    ) -> None:  # type: ignore[no-untyped-def]
+        """ensure_session_initialized() should write instruction summaries beside genesis."""
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
+        (tmp_path / "AGENTS.md").write_text("# Rules\n\nUse pytest.\n", encoding="utf-8")
+        log = fabric.session_manager.get.return_value.eventlog
+        log.read_all.return_value = []
+
+        await fabric.ensure_session_initialized(tmp_path, session_id="agent-1")
+
+        assert log.append.call_count == 2
+        assert log.append.call_args_list[0].args == ("session.genesis",)
+        instruction_call = log.append.call_args_list[1]
+        assert instruction_call.args == ("workspace.instructions.discovered",)
+        assert instruction_call.kwargs["actor"] == "zaxy"
+        assert instruction_call.kwargs["payload"]["summary"] == "Rules: Use pytest."
+        assert instruction_call.kwargs["thread"] == "agent-1"
+
 
 class TestTranscriptIngestion:
     """Tests for transcript ingestion orchestration."""

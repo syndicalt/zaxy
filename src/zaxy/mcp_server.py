@@ -48,7 +48,9 @@ from zaxy.trace import MemoryTracer
 from zaxy.workspace import (
     WorkspaceProfile,
     build_session_genesis_event,
+    build_workspace_instruction_event,
     existing_session_genesis_profile,
+    existing_workspace_instructions_signature,
     workspace_profile_from_payload,
 )
 
@@ -203,6 +205,7 @@ class ZaxyMCPServer:
         self._default_session_id = validate_session_id(settings.eventloom_thread)
         self._workspace_root = Path(workspace_root or Path.cwd()).resolve()
         self._initialized_workspaces: dict[tuple[str, str], WorkspaceProfile] = {}
+        self._initialized_instruction_signatures: dict[tuple[str, str], str] = {}
         self.session_manager = SessionManager(base_path=eventloom_path or settings.eventloom_path)
         self._neo4j_uri = neo4j_uri or settings.neo4j_uri
         self._neo4j_user = neo4j_user or settings.neo4j_user
@@ -256,6 +259,7 @@ class ZaxyMCPServer:
         key = (root, sid)
         cached = self._initialized_workspaces.get(key)
         if cached is not None:
+            await self._ensure_workspace_instructions(root, session_id=sid)
             return cached
 
         eventlog = self.session_manager.get(sid).eventlog
@@ -266,6 +270,7 @@ class ZaxyMCPServer:
         )
         if profile is not None:
             self._initialized_workspaces[key] = profile
+            await self._ensure_workspace_instructions(root, session_id=sid)
             return profile
 
         event_input = build_session_genesis_event(root, session_id=sid)
@@ -281,7 +286,46 @@ class ZaxyMCPServer:
         await self.tracer.trace_append(event_input["event_type"], event_input["actor"], event.seq)
         profile = workspace_profile_from_payload(payload)
         self._initialized_workspaces[key] = profile
+        await self._ensure_workspace_instructions(root, session_id=sid)
         return profile
+
+    async def _ensure_workspace_instructions(
+        self,
+        path: str | Path,
+        *,
+        session_id: str,
+    ) -> None:
+        """Idempotently append and project discovered workspace instruction summaries."""
+        root = str(Path(path).resolve())
+        key = (root, session_id)
+        event_input = build_workspace_instruction_event(root, session_id=session_id)
+        if event_input is None:
+            return
+        signature = str(event_input["payload"]["signature"])
+        if self._initialized_instruction_signatures.get(key) == signature:
+            return
+
+        eventlog = self.session_manager.get(session_id).eventlog
+        existing_signature = existing_workspace_instructions_signature(
+            eventlog.read_all(),
+            root=root,
+            session_id=session_id,
+        )
+        if existing_signature == signature:
+            self._initialized_instruction_signatures[key] = signature
+            return
+
+        payload = validate_payload(event_input["payload"])
+        event = eventlog.append(
+            event_input["event_type"],
+            actor=event_input["actor"],
+            payload=payload,
+            thread=session_id,
+        )
+        extraction = extract(event)
+        await self.graph.upsert_extraction(extraction, session_id=session_id)
+        await self.tracer.trace_append(event_input["event_type"], event_input["actor"], event.seq)
+        self._initialized_instruction_signatures[key] = signature
 
     # ------------------------------------------------------------------
     # Tool handlers
