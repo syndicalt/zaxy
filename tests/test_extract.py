@@ -87,6 +87,28 @@ class TestRegistry:
         assert "nested" not in summary
         assert "sk-123" not in summary
 
+    def test_unknown_event_carries_safe_retention_metadata(self) -> None:
+        """Fallback event entities should keep retention metadata query policies can consume."""
+        ev = _make_event(
+            "unknown.event",
+            {
+                "summary": "temporary note",
+                "expires_at": "2024-02-01T00:00:00Z",
+                "importance": 0.4,
+                "last_reinforced_at": "2024-01-15T00:00:00Z",
+                "reinforcement_count": 2,
+            },
+        )
+
+        result = extract(ev)
+
+        assert result.entities[0].properties == {
+            "expires_at": "2024-02-01T00:00:00Z",
+            "importance": 0.4,
+            "last_reinforced_at": "2024-01-15T00:00:00Z",
+            "reinforcement_count": 2,
+        }
+
 
 # ------------------------------------------------------------------
 # Built-in extractor tests
@@ -215,6 +237,22 @@ class TestTaskCompleted:
         assert task.name == "Debug and repair Zaxy MCP startup in Codex."
         assert task.summary == "Fixed startup_timeout_sec and Pathlight async trace compatibility."
 
+    def test_carries_retention_metadata(self) -> None:
+        ev = _make_event(
+            "task.completed",
+            {
+                "taskId": "t1",
+                "summary": "Done",
+                "expires_at": "2024-03-01T00:00:00Z",
+                "importance": "0.8",
+            },
+        )
+
+        result = extract(ev)
+
+        task = next(e for e in result.entities if e.entity_type == "task")
+        assert task.properties == {"expires_at": "2024-03-01T00:00:00Z", "importance": 0.8}
+
 
 class TestDecisionMade:
     """Tests for decision.made extractor."""
@@ -262,6 +300,35 @@ class TestContextPolicy:
         assert "Use Eventloom append-only JSONL" in policy.summary
         assert policy.properties == {"source": "AGENTS.md", "project": "Zaxy"}
         assert result.edges[0].relation_type == "set_context_policy"
+
+
+class TestMemoryReinforced:
+    """Tests for memory.reinforced extractor."""
+
+    def test_extracts_reinforced_memory_metadata(self) -> None:
+        ev = _make_event(
+            "memory.reinforced",
+            {
+                "entity_name": "Use retention metadata",
+                "entity_type": "decision",
+                "summary": "Still relevant after review.",
+                "importance": 0.9,
+                "reinforcement_count": 4,
+            },
+            actor="assistant",
+        )
+
+        result = extract(ev)
+
+        entity = next(e for e in result.entities if e.entity_type == "decision")
+        assert entity.name == "Use retention metadata"
+        assert entity.summary == "Still relevant after review."
+        assert entity.properties == {
+            "importance": 0.9,
+            "last_reinforced_at": "2024-01-01T00:00:00Z",
+            "reinforcement_count": 4,
+        }
+        assert result.edges[0].relation_type == "reinforced_memory"
 
 
 class TestIssueDiagnosed:

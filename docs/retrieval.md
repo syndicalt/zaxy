@@ -77,7 +77,7 @@ candidate context. `RETENTION_POLICY=filter_expired` hides results whose
 keeps results eligible but applies a half-life multiplier based on
 `last_reinforced_at` or `valid_from`, with optional `importance` and
 `reinforcement_count` metadata nudging the multiplier. Expired results under
-decay use `RETENTION_EXPIRED_WEIGHT`. These effects are exposed in
+decay use `RETENTION_EXPIRED_WEIGHT`. Goal, task, decision, context policy, fallback event, and `memory.reinforced` extractors project these fields into graph properties. These effects are exposed in
 `score_explanation` and are not written back as memory facts.
 
 The vector path depends on embeddings. Local deterministic embeddings are useful
