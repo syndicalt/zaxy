@@ -47,6 +47,7 @@ from zaxy.workspace import (
     build_workspace_instruction_event,
     existing_session_genesis_profile,
     existing_workspace_instructions_signature,
+    mark_workspace_instruction_event_updated,
     workspace_profile_from_payload,
 )
 
@@ -328,6 +329,11 @@ class MemoryFabric:
         if existing_signature == signature:
             self._initialized_instruction_signatures[key] = signature
             return
+        if existing_signature is not None:
+            event = mark_workspace_instruction_event_updated(
+                event,
+                previous_signature=existing_signature,
+            )
         await self.append(
             event["event_type"],
             actor=event["actor"],

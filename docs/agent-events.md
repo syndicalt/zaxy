@@ -87,6 +87,61 @@ also consider updating `AGENTS.md`.
 Projection: `context_policy` entity linked from the actor with
 `set_context_policy`.
 
+## Lifecycle Hooks
+
+Use lifecycle events for automatic capture around agent execution. These events
+store durable metadata and bounded summaries, not raw tool arguments, full
+command output, or source file bodies.
+
+Tool call completion:
+
+```json
+{
+  "tool_name": "shell",
+  "status": "succeeded",
+  "session_id": "zaxy-default",
+  "call_id": "call-123",
+  "arguments_redacted": true,
+  "argument_keys": ["cmd"],
+  "result_summary": "443 passed"
+}
+```
+
+Projection: `tool_call` entity linked from the session with
+`completed_tool_call`.
+
+Command completion:
+
+```json
+{
+  "command": "pytest -m \"not integration\" --benchmark-disable --no-cov",
+  "exit_code": 0,
+  "outcome": "passed",
+  "session_id": "zaxy-default",
+  "duration_ms": 2600,
+  "stdout_excerpt": "443 passed, 5 deselected",
+  "stderr_excerpt": ""
+}
+```
+
+Projection: `command_run` entity linked from the session with
+`completed_command`.
+
+File edit application:
+
+```json
+{
+  "path": "src/zaxy/core.py",
+  "operation": "modified",
+  "session_id": "zaxy-default",
+  "summary": "Added lifecycle hook.",
+  "line_count": 12
+}
+```
+
+Projection: `file_edit` entity linked from the session with
+`applied_file_edit`.
+
 ## Unknown Events
 
 Unknown event types still project as `event` entities. Zaxy includes safe

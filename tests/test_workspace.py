@@ -118,3 +118,36 @@ def test_existing_workspace_instructions_signature_detects_matching_event(tmp_pa
         root=tmp_path,
         session_id="demo-default",
     ) == event["payload"]["signature"]
+
+
+def test_existing_workspace_instructions_signature_uses_latest_update(tmp_path: Path) -> None:
+    discovered = type(
+        "Event",
+        (),
+        {
+            "type": "workspace.instructions.discovered",
+            "payload": {
+                "root": str(tmp_path.resolve()),
+                "session_id": "demo-default",
+                "signature": "old",
+            },
+        },
+    )()
+    updated = type(
+        "Event",
+        (),
+        {
+            "type": "workspace.instructions.updated",
+            "payload": {
+                "root": str(tmp_path.resolve()),
+                "session_id": "demo-default",
+                "signature": "new",
+            },
+        },
+    )()
+
+    assert existing_workspace_instructions_signature(
+        [discovered, updated],
+        root=tmp_path,
+        session_id="demo-default",
+    ) == "new"

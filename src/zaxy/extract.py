@@ -875,6 +875,7 @@ def _extract_session_profile_corrected(event: Event) -> ExtractionResult:
 
 
 @register("workspace.instructions.discovered")
+@register("workspace.instructions.updated")
 def _extract_workspace_instructions_discovered(event: Event) -> ExtractionResult:
     """Extract a workspace instruction snapshot."""
     session_id = _optional_text(event.payload.get("session_id")) or event.thread or "default"
@@ -912,6 +913,92 @@ def _extract_workspace_instructions_discovered(event: Event) -> ExtractionResult
         edges=[edge],
         source_event_seq=event.seq,
     )
+
+
+@register("tool.call.completed")
+def _extract_tool_call_completed(event: Event) -> ExtractionResult:
+    """Extract a completed tool call lifecycle event."""
+    session_id = _optional_text(event.payload.get("session_id")) or event.thread or "default"
+    tool_name = _optional_text(event.payload.get("tool_name")) or "tool"
+    status = _optional_text(event.payload.get("status")) or "unknown"
+    call_id = _optional_text(event.payload.get("call_id"))
+    name = f"{session_id}:{tool_name}:{call_id or event.seq}"
+    tool_call = ExtractedEntity(
+        name=name,
+        entity_type="tool_call",
+        observed_at=event.timestamp,
+        summary=_join_summary(status, event.payload.get("result_summary")),
+        properties={
+            "tool_name": tool_name,
+            "status": status,
+            "session_id": session_id,
+            "call_id": call_id,
+        },
+    )
+    session = ExtractedEntity(name=session_id, entity_type="session", observed_at=event.timestamp)
+    edge = ExtractedEdge(
+        source=session.name,
+        target=tool_call.name,
+        relation_type="completed_tool_call",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(entities=[session, tool_call], edges=[edge], source_event_seq=event.seq)
+
+
+@register("command.completed")
+def _extract_command_completed(event: Event) -> ExtractionResult:
+    """Extract a completed shell/process command lifecycle event."""
+    session_id = _optional_text(event.payload.get("session_id")) or event.thread or "default"
+    command_text = _optional_text(event.payload.get("command")) or "command"
+    outcome = _optional_text(event.payload.get("outcome")) or "unknown"
+    command = ExtractedEntity(
+        name=f"{session_id}:{command_text}:{event.seq}",
+        entity_type="command_run",
+        observed_at=event.timestamp,
+        summary=_join_summary(outcome, command_text),
+        properties={
+            "command": command_text,
+            "exit_code": event.payload.get("exit_code"),
+            "outcome": outcome,
+            "session_id": session_id,
+        },
+    )
+    session = ExtractedEntity(name=session_id, entity_type="session", observed_at=event.timestamp)
+    edge = ExtractedEdge(
+        source=session.name,
+        target=command.name,
+        relation_type="completed_command",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(entities=[session, command], edges=[edge], source_event_seq=event.seq)
+
+
+@register("file.edit.applied")
+def _extract_file_edit_applied(event: Event) -> ExtractionResult:
+    """Extract a file-edit lifecycle event without source content."""
+    session_id = _optional_text(event.payload.get("session_id")) or event.thread or "default"
+    path = _optional_text(event.payload.get("path")) or "file"
+    operation = _optional_text(event.payload.get("operation")) or "modified"
+    edit = ExtractedEntity(
+        name=f"{session_id}:{path}:{event.seq}",
+        entity_type="file_edit",
+        observed_at=event.timestamp,
+        summary=_join_summary(operation, event.payload.get("summary")),
+        properties={
+            "path": path,
+            "operation": operation,
+            "session_id": session_id,
+            "line_count": event.payload.get("line_count"),
+        },
+    )
+    session = ExtractedEntity(name=session_id, entity_type="session", observed_at=event.timestamp)
+    edge = ExtractedEdge(
+        source=session.name,
+        target=edit.name,
+        relation_type="applied_file_edit",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(entities=[session, edit], edges=[edge], source_event_seq=event.seq)
 
 
 @register("transcript.turn")

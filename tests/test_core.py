@@ -326,6 +326,44 @@ class TestSessionInitialization:
         assert instruction_call.kwargs["payload"]["summary"] == "Rules: Use pytest."
         assert instruction_call.kwargs["thread"] == "agent-1"
 
+    async def test_ensure_session_initialized_appends_instruction_update_on_drift(
+        self,
+        fabric: MemoryFabric,
+        tmp_path,
+    ) -> None:  # type: ignore[no-untyped-def]
+        """ensure_session_initialized() should write an update when instruction hashes change."""
+        root = str(tmp_path.resolve())
+        (tmp_path / "AGENTS.md").write_text("# Rules\n\nUse pytest.\n", encoding="utf-8")
+        existing_genesis = SimpleNamespace(
+            type="session.genesis",
+            payload={
+                "root": root,
+                "workspace_type": "codebase",
+                "confidence": 0.91,
+                "signals": ["pyproject.toml"],
+                "instructions_profile": "codebase",
+                "session_id": "agent-1",
+            },
+        )
+        existing_instructions = SimpleNamespace(
+            type="workspace.instructions.discovered",
+            payload={
+                "root": root,
+                "session_id": "agent-1",
+                "signature": "previous-signature",
+            },
+        )
+        log = fabric.session_manager.get.return_value.eventlog
+        log.read_all.return_value = [existing_genesis, existing_instructions]
+
+        await fabric.ensure_session_initialized(tmp_path, session_id="agent-1")
+
+        log.append.assert_called_once()
+        assert log.append.call_args.args == ("workspace.instructions.updated",)
+        payload = log.append.call_args.kwargs["payload"]
+        assert payload["previous_signature"] == "previous-signature"
+        assert payload["signature"] != "previous-signature"
+
 
 class TestTranscriptIngestion:
     """Tests for transcript ingestion orchestration."""

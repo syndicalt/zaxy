@@ -51,6 +51,7 @@ from zaxy.workspace import (
     build_workspace_instruction_event,
     existing_session_genesis_profile,
     existing_workspace_instructions_signature,
+    mark_workspace_instruction_event_updated,
     workspace_profile_from_payload,
 )
 
@@ -314,6 +315,11 @@ class ZaxyMCPServer:
         if existing_signature == signature:
             self._initialized_instruction_signatures[key] = signature
             return
+        if existing_signature is not None:
+            event_input = mark_workspace_instruction_event_updated(
+                event_input,
+                previous_signature=existing_signature,
+            )
 
         payload = validate_payload(event_input["payload"])
         event = eventlog.append(

@@ -746,6 +746,72 @@ class TestWorkspaceInstructionsDiscovered:
         assert edge.relation_type == "uses_workspace_instructions"
 
 
+class TestLifecycleEvents:
+    """Tests for lifecycle event extractors."""
+
+    def test_extracts_tool_call_completed(self) -> None:
+        ev = _make_event(
+            "tool.call.completed",
+            {
+                "tool_name": "shell",
+                "status": "succeeded",
+                "session_id": "demo",
+                "result_summary": "443 passed",
+            },
+            actor="zaxy",
+        )
+
+        result = extract(ev)
+
+        tool = next(e for e in result.entities if e.entity_type == "tool_call")
+        assert tool.name == "demo:shell:1"
+        assert tool.summary == "succeeded 443 passed"
+        assert tool.properties == {
+            "tool_name": "shell",
+            "status": "succeeded",
+            "session_id": "demo",
+            "call_id": None,
+        }
+
+    def test_extracts_command_completed(self) -> None:
+        ev = _make_event(
+            "command.completed",
+            {
+                "command": "pytest",
+                "exit_code": 0,
+                "outcome": "passed",
+                "session_id": "demo",
+            },
+            actor="zaxy",
+        )
+
+        result = extract(ev)
+
+        command = next(e for e in result.entities if e.entity_type == "command_run")
+        assert command.name == "demo:pytest:1"
+        assert command.summary == "passed pytest"
+        assert command.properties["exit_code"] == 0
+
+    def test_extracts_file_edit_applied(self) -> None:
+        ev = _make_event(
+            "file.edit.applied",
+            {
+                "path": "src/zaxy/core.py",
+                "operation": "modified",
+                "session_id": "demo",
+                "summary": "Added lifecycle hook.",
+            },
+            actor="zaxy",
+        )
+
+        result = extract(ev)
+
+        edit = next(e for e in result.entities if e.entity_type == "file_edit")
+        assert edit.name == "demo:src/zaxy/core.py:1"
+        assert edit.summary == "modified Added lifecycle hook."
+        assert edit.properties["path"] == "src/zaxy/core.py"
+
+
 class TestTranscriptTurn:
     """Tests for transcript.turn extractor."""
 
