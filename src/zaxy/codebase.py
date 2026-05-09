@@ -88,6 +88,7 @@ def collect_codebase_events(
         events.extend(_collect_dependency_events(rel_path, language, code_events, file_index))
         events.extend(_collect_coverage_events(rel_path, language, content, code_events, file_index))
     go_package_symbols = _go_package_symbols(code_events_by_path)
+    rust_module_symbols = _rust_module_symbols(code_events_by_path)
     for path in paths:
         language = LANGUAGE_BY_SUFFIX.get(path.suffix.casefold())
         if language is None:
@@ -104,6 +105,7 @@ def collect_codebase_events(
                 code_events_by_path.get(rel_path, []),
                 file_index,
                 go_package_symbols,
+                rust_module_symbols,
             )
         )
     return events
@@ -395,13 +397,21 @@ def _collect_call_events(
     code_events: list[dict[str, Any]],
     file_index: set[str],
     go_package_symbols: dict[str, dict[str, tuple[str, str]]] | None = None,
+    rust_module_symbols: dict[str, dict[str, tuple[str, str]]] | None = None,
 ) -> list[dict[str, Any]]:
     if language in {"javascript", "typescript"}:
         text = content.decode("utf-8", errors="replace")
         return _collect_js_ts_call_events(rel_path, language, text, code_events, file_index)
     if language in {"go", "rust", "java"}:
         text = content.decode("utf-8", errors="replace")
-        return _collect_pattern_call_events(rel_path, language, text, code_events, go_package_symbols or {})
+        return _collect_pattern_call_events(
+            rel_path,
+            language,
+            text,
+            code_events,
+            go_package_symbols or {},
+            rust_module_symbols or {},
+        )
     if language != "python":
         return []
     text = content.decode("utf-8", errors="replace")
@@ -578,6 +588,7 @@ def _collect_pattern_call_events(
     text: str,
     code_events: list[dict[str, Any]],
     go_package_symbols: dict[str, dict[str, tuple[str, str]]],
+    rust_module_symbols: dict[str, dict[str, tuple[str, str]]],
 ) -> list[dict[str, Any]]:
     same_file_symbols = {
         str(event["payload"]["qualified_name"]): event["payload"]
@@ -586,6 +597,7 @@ def _collect_pattern_call_events(
     }
     events: list[dict[str, Any]] = []
     go_imports = _go_import_aliases(code_events) if language == "go" else {}
+    rust_imports = _rust_import_targets(code_events) if language == "rust" else {}
     current_function: str | None = None
     brace_depth = 0
     for line_number, line in enumerate(text.splitlines(), start=1):
@@ -609,6 +621,8 @@ def _collect_pattern_call_events(
                 same_file_symbols,
                 go_imports,
                 go_package_symbols,
+                rust_imports,
+                rust_module_symbols,
             )
             if resolved[2] == "unresolved":
                 continue
@@ -652,6 +666,8 @@ def _resolve_pattern_call_target(
     same_file_symbols: dict[str, dict[str, Any]],
     go_imports: dict[str, str],
     go_package_symbols: dict[str, dict[str, tuple[str, str]]],
+    rust_imports: dict[str, str],
+    rust_module_symbols: dict[str, dict[str, tuple[str, str]]],
 ) -> tuple[str | None, str | None, str]:
     if callee in same_file_symbols:
         return rel_path, callee, "same_file_symbol"
@@ -662,6 +678,11 @@ def _resolve_pattern_call_target(
             target = go_package_symbols.get(imported_module, {}).get(symbol_name)
             if target:
                 return target[0], target[1], "imported_symbol"
+    rust_module = rust_imports.get(callee)
+    if rust_module:
+        target = rust_module_symbols.get(rust_module, {}).get(callee)
+        if target:
+            return target[0], target[1], "imported_symbol"
     return None, None, "unresolved"
 
 
@@ -704,6 +725,58 @@ def _go_package_symbols(code_events_by_path: dict[str, list[dict[str, Any]]]) ->
                 name = str(payload["qualified_name"])
                 package_symbols[name] = (rel_path, name)
     return packages
+
+
+def _rust_import_targets(code_events: list[dict[str, Any]]) -> dict[str, str]:
+    imports: dict[str, str] = {}
+    for event in code_events:
+        if event["event_type"] != "code.import.indexed":
+            continue
+        payload = event["payload"]
+        module = str(payload["module"])
+        if not module.startswith("crate::"):
+            continue
+        parts = module.split("::")
+        if len(parts) < 3:
+            continue
+        symbol_name = parts[-1]
+        module_path = "::".join(parts[1:-1])
+        imports[symbol_name] = module_path
+    return imports
+
+
+def _rust_module_symbols(code_events_by_path: dict[str, list[dict[str, Any]]]) -> dict[str, dict[str, tuple[str, str]]]:
+    modules: dict[str, dict[str, tuple[str, str]]] = {}
+    for rel_path, code_events in code_events_by_path.items():
+        if not rel_path.endswith(".rs"):
+            continue
+        module = _rust_module_name(rel_path)
+        if module is None:
+            continue
+        module_symbols = modules.setdefault(module, {})
+        for event in code_events:
+            if event["event_type"] != "code.symbol.indexed":
+                continue
+            payload = event["payload"]
+            if payload["kind"] != "fn":
+                continue
+            name = str(payload["qualified_name"])
+            module_symbols[name] = (rel_path, name)
+    return modules
+
+
+def _rust_module_name(rel_path: str) -> str | None:
+    path = Path(rel_path)
+    if path.name == "lib.rs" or path.name == "main.rs":
+        return ""
+    if path.suffix != ".rs":
+        return None
+    parts = list(path.with_suffix("").parts)
+    if parts and parts[0] == "src":
+        parts = parts[1:]
+    if parts[-1] == "mod":
+        parts = parts[:-1]
+    return "::".join(parts)
 
 
 def _nearest_python_callable(node: ast.AST, parent_by_node: dict[ast.AST, ast.AST | None]) -> str | None:

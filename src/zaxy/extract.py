@@ -792,6 +792,88 @@ def _extract_code_coverage_indexed(event: Event) -> ExtractionResult:
     )
 
 
+@register("session.genesis")
+def _extract_session_genesis(event: Event) -> ExtractionResult:
+    """Extract workspace genesis metadata."""
+    root = _optional_text(event.payload.get("root")) or "workspace"
+    workspace_type = _optional_text(event.payload.get("workspace_type")) or "generic_workspace"
+    instructions_profile = _optional_text(event.payload.get("instructions_profile")) or "generic"
+    session_id = _optional_text(event.payload.get("session_id")) or event.thread or "default"
+    confidence = event.payload.get("confidence", 0.0)
+    signals = event.payload.get("signals")
+    if not isinstance(signals, list):
+        signals = []
+    workspace = ExtractedEntity(
+        name=root,
+        entity_type="workspace",
+        observed_at=event.timestamp,
+        summary=f"{workspace_type} workspace profile {instructions_profile}",
+        properties={
+            "root": root,
+            "workspace_type": workspace_type,
+            "confidence": confidence,
+            "signals": signals,
+            "instructions_profile": instructions_profile,
+            "session_id": session_id,
+        },
+    )
+    session = ExtractedEntity(
+        name=session_id,
+        entity_type="session",
+        observed_at=event.timestamp,
+    )
+    edge = ExtractedEdge(
+        source=session.name,
+        target=workspace.name,
+        relation_type="initialized_workspace",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(
+        entities=[session, workspace],
+        edges=[edge],
+        source_event_seq=event.seq,
+    )
+
+
+@register("session.profile.corrected")
+def _extract_session_profile_corrected(event: Event) -> ExtractionResult:
+    """Extract a durable workspace profile correction."""
+    session_id = _optional_text(event.payload.get("session_id")) or event.thread or "default"
+    from_profile = _optional_text(event.payload.get("from")) or "unknown"
+    to_profile = _optional_text(event.payload.get("to")) or "unknown"
+    reason = _optional_text(event.payload.get("reason"))
+    root = _optional_text(event.payload.get("root"))
+    correction = ExtractedEntity(
+        name=f"{session_id}:{from_profile}->{to_profile}",
+        entity_type="workspace_profile_correction",
+        observed_at=event.timestamp,
+        summary=reason,
+        properties={
+            "session_id": session_id,
+            "root": root,
+            "from": from_profile,
+            "to": to_profile,
+            "reason": reason,
+        },
+    )
+    session = ExtractedEntity(
+        name=session_id,
+        entity_type="session",
+        observed_at=event.timestamp,
+    )
+    edge = ExtractedEdge(
+        source=session.name,
+        target=correction.name,
+        relation_type="corrected_workspace_profile",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(
+        entities=[session, correction],
+        edges=[edge],
+        source_event_seq=event.seq,
+    )
+
+
 @register("transcript.turn")
 def _extract_transcript_turn(event: Event) -> ExtractionResult:
     """Extract a sanitized session transcript turn."""

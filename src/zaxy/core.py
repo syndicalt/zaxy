@@ -41,6 +41,7 @@ from zaxy.security import validate_payload, validate_query, validate_session_id
 from zaxy.session import SessionManager
 from zaxy.trace import MemoryTracer
 from zaxy.transcripts import collect_transcript_events
+from zaxy.workspace import WorkspaceProfile, build_session_genesis_event
 
 
 @dataclass(frozen=True)
@@ -245,6 +246,29 @@ class MemoryFabric:
                 session_id=sid,
             )
         return len(events)
+
+    async def initialize_session(
+        self,
+        path: str | Path,
+        *,
+        session_id: str = "default",
+    ) -> WorkspaceProfile:
+        """Append a workspace genesis event for a session."""
+        sid = validate_session_id(session_id)
+        event = build_session_genesis_event(path, session_id=sid)
+        await self.append(
+            event["event_type"],
+            actor=event["actor"],
+            payload=event["payload"],
+            session_id=sid,
+        )
+        payload = event["payload"]
+        return WorkspaceProfile(
+            workspace_type=str(payload["workspace_type"]),
+            confidence=float(payload["confidence"]),
+            signals=list(payload["signals"]),
+            instructions_profile=str(payload["instructions_profile"]),
+        )
 
     async def ingest_transcript(
         self,

@@ -122,6 +122,23 @@ def test_index_codebase_command_reports_indexed_count(mock_fabric_cls: MagicMock
     fabric.close.assert_awaited_once()
 
 
+@patch("zaxy.__main__.MemoryFabric")
+def test_init_session_command_reports_workspace_profile(mock_fabric_cls: MagicMock, tmp_path: Path) -> None:
+    """init-session should append a genesis event through MemoryFabric."""
+    fabric = AsyncMock()
+    fabric.initialize_session.return_value.workspace_type = "codebase"
+    fabric.initialize_session.return_value.confidence = 0.8
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["init-session", str(tmp_path), "--session-id", "agent-1"])
+
+    assert result.exit_code == 0
+    assert "Initialized agent-1 as codebase workspace (confidence 0.8)" in result.output
+    fabric.initialize_session.assert_awaited_once_with(tmp_path, session_id="agent-1")
+    fabric.close.assert_awaited_once()
+
+
 @patch("zaxy.__main__.GraphStore")
 def test_reproject_command_replays_log_into_graph(mock_graph_store: MagicMock, tmp_path: Path) -> None:
     """reproject should rebuild graph projections from an Eventloom log."""

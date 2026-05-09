@@ -125,6 +125,30 @@ def index_codebase(
     typer.echo(f"Indexed {count} codebase events into session {session_id}")
 
 
+@app.command("init-session")
+def init_session(
+    path: Path = typer.Argument(..., help="Workspace root to initialize"),  # noqa: B008
+    session_id: str = typer.Option("default", help="Session ID to append genesis into"),  # noqa: B008
+) -> None:
+    """Append a workspace session genesis event."""
+    import asyncio
+
+    from zaxy.workspace import WorkspaceProfile
+
+    async def _run() -> WorkspaceProfile:
+        fabric = MemoryFabric()
+        try:
+            return await fabric.initialize_session(path, session_id=session_id)
+        finally:
+            await fabric.close()
+
+    profile = asyncio.run(_run())
+    typer.echo(
+        f"Initialized {session_id} as {profile.workspace_type} workspace "
+        f"(confidence {profile.confidence})"
+    )
+
+
 @app.command("schema-plan")
 def schema_plan() -> None:
     """Print the current Neo4j schema migration plan."""
