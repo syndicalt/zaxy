@@ -82,6 +82,9 @@ zaxy hooks claude-code \
 ```
 
 The stable hook contract is documented in [hooks.md](hooks.md).
+Claude Code is the preferred first install target. Codex currently gets a
+generic shell snippet unless your local Codex version documents and enables a
+working hook JSON path.
 
 The MCP tool names are stable: `memory_append`, `memory_query`,
 `memory_feedback`, `memory_replay`, and `memory_invalidate`. A simple client can
