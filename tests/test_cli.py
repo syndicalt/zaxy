@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -434,6 +435,20 @@ def test_init_command_passes_infra_action(mock_run_onboarding: AsyncMock, tmp_pa
 
     assert result.exit_code == 0
     assert mock_run_onboarding.await_args.kwargs["infra"] == "check"
+
+
+def test_init_command_json_includes_next_steps(tmp_path: Path) -> None:
+    """init --json should expose next_steps for client UIs and automation."""
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["init", str(workspace), "--domain", "demo", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["session_id"] == "demo-default"
+    assert any(step.startswith("Run zaxy hook-status") for step in payload["next_steps"])
 
 
 @patch("zaxy.__main__.GraphStore")

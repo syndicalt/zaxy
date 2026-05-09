@@ -279,12 +279,13 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Hook status and heartbeat health checks for observable lifecycle capture
 - [x] Unified `zaxy init` onboarding orchestrator for MCP config, local profile, hooks, genesis, heartbeat, doctor, and hook status
 - [x] Explicit `zaxy init --infra check|start` local Neo4j bootstrap actions
+- [x] Structured onboarding next steps in text and JSON output
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 517 passed |
+| Tests | 519 passed |
 | Coverage | 92.25% |
 | Lint | ruff clean |
 | Types | mypy clean |
@@ -292,5 +293,5 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 ## Next Steps
 
-1. Add richer onboarding output that prints exact client install locations and next manual copy steps.
+1. Add client-specific MCP install target helpers once platform config paths are verified.
 2. Add optional deeper framework packages once direct templates see usage.

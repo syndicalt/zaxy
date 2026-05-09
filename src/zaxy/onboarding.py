@@ -45,6 +45,7 @@ class OnboardingResult:
     session_id: str
     profile: dict[str, Any]
     steps: list[OnboardingStep] = field(default_factory=list)
+    next_steps: list[str] = field(default_factory=list)
     doctor: dict[str, Any] = field(default_factory=dict)
     hook_status: dict[str, Any] = field(default_factory=dict)
 
@@ -148,6 +149,14 @@ async def run_onboarding(
         session_id=sid,
         profile=profile_payload,
         steps=steps,
+        next_steps=_build_next_steps(
+            workspace=root,
+            eventloom=eventloom,
+            mcp_client=mcp_client,
+            mcp_output=mcp_output,
+            infra_action=infra_action,
+            steps=steps,
+        ),
         doctor=doctor,
         hook_status=hook_status,
     )
@@ -165,6 +174,10 @@ def format_onboarding_result(result: OnboardingResult) -> str:
     for step in result.steps:
         suffix = f" - {step.path}" if step.path else ""
         lines.append(f"- {step.name}: {step.status} - {step.message}{suffix}")
+    if result.next_steps:
+        lines.append("")
+        lines.append("Next:")
+        lines.extend(f"- {step}" for step in result.next_steps)
     return "\n".join(lines)
 
 
@@ -220,6 +233,26 @@ def _runtime_field(check: Any, field: str) -> Any:
     if isinstance(check, dict):
         return check[field]
     return getattr(check, field)
+
+
+def _build_next_steps(
+    *,
+    workspace: Path,
+    eventloom: Path,
+    mcp_client: str | None,
+    mcp_output: str | Path | None,
+    infra_action: str,
+    steps: list[OnboardingStep],
+) -> list[str]:
+    next_steps: list[str] = []
+    if mcp_client is not None and mcp_output is not None:
+        next_steps.append(f"Add {Path(mcp_output)} to your {mcp_client} MCP client config.")
+        next_steps.append("Restart the MCP client so it loads the Zaxy server config.")
+    next_steps.append(f"Run zaxy hook-status --eventloom-path {eventloom}")
+    infra_step = next((step for step in steps if step.name == "infra"), None)
+    if infra_action == "check" and infra_step is not None and infra_step.status != "ok":
+        next_steps.append(f"Run zaxy init {workspace} --infra start if you want Zaxy to start local Neo4j now.")
+    return next_steps
 
 
 def _onboarding_settings(*, eventloom: Path, session_id: str, domain: str) -> Settings:

@@ -73,7 +73,8 @@ Generated output files are non-destructive by default. Pass `--force` only when
 you intentionally want to replace generated config. `--infra check` reports
 local Neo4j and Docker posture without starting containers. Use
 `--infra start` when you explicitly want onboarding to start the local Neo4j
-runtime.
+runtime. The command prints a `Next:` section with the client install and
+verification steps still required after files are generated.
 
 To start the default stdio MCP server:
 

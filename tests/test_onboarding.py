@@ -9,7 +9,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from zaxy.event import EventLog
-from zaxy.onboarding import run_onboarding
+from zaxy.onboarding import (
+    OnboardingResult,
+    OnboardingStep,
+    format_onboarding_result,
+    run_onboarding,
+)
 
 
 class FakeRuntime:
@@ -81,6 +86,9 @@ async def test_run_onboarding_writes_requested_configs_and_registers_session(tmp
     events = EventLog(eventloom_path / "demo-default.jsonl").read_all()
     assert events[-1].type == "hook.heartbeat"
     assert events[-1].payload["source"] == "zaxy-init"
+    assert result.next_steps[0] == f"Add {mcp_output} to your claude-desktop MCP client config."
+    assert result.next_steps[1] == "Restart the MCP client so it loads the Zaxy server config."
+    assert f"Run zaxy hook-status --eventloom-path {eventloom_path}" in result.next_steps
 
 
 @pytest.mark.asyncio
@@ -158,6 +166,7 @@ async def test_run_onboarding_can_check_infra_without_starting_it(tmp_path: Path
     infra_step = next(step for step in result.steps if step.name == "infra")
     assert infra_step.status == "warning"
     assert "Docker is available" in infra_step.message
+    assert any(f"Run zaxy init {workspace} --infra start" in step for step in result.next_steps)
 
 
 @pytest.mark.asyncio
@@ -187,3 +196,28 @@ async def test_run_onboarding_can_start_explicit_local_infra(tmp_path: Path) -> 
     infra_step = next(step for step in result.steps if step.name == "infra")
     assert infra_step.status == "ok"
     assert "Neo4j local runtime is available" in infra_step.message
+
+
+def test_format_onboarding_result_includes_next_section(tmp_path: Path) -> None:
+    """Human output should make the next manual steps obvious."""
+    result = OnboardingResult(
+        status="ok",
+        workspace=str(tmp_path),
+        domain="demo",
+        session_id="demo-default",
+        profile={"workspace_type": "codebase", "confidence": 0.7},
+        steps=[
+            OnboardingStep("mcp_config", "ok", "MCP config written", "mcp.json"),
+            OnboardingStep("hook_status", "ok", "Latest hook event is hook.heartbeat"),
+        ],
+        next_steps=[
+            "Add mcp.json to your MCP client config.",
+            "Restart the MCP client.",
+        ],
+    )
+
+    output = format_onboarding_result(result)
+
+    assert "Next:" in output
+    assert "- Add mcp.json to your MCP client config." in output
+    assert "- Restart the MCP client." in output
