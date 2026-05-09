@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 
 from zaxy.config import Settings, get_settings
 from zaxy.event import EventLog
+from zaxy.hooks import render_hook_config
 from zaxy.local_profile import check_local_profile
 from zaxy.viewer import write_viewer_html
 
@@ -26,6 +27,7 @@ def run_doctor(
         _check_local_profile(),
         _check_viewer(root),
         _check_mcp_defaults(active),
+        _check_hooks(active),
         _check_neo4j(active),
         _check_production(active),
     ]
@@ -132,6 +134,28 @@ def _check_mcp_defaults(settings: Settings) -> dict[str, str]:
         "name": "mcp_defaults",
         "status": "ok",
         "message": f"default session is {settings.eventloom_thread}",
+    }
+
+
+def _check_hooks(settings: Settings) -> dict[str, str]:
+    try:
+        render_hook_config(
+            "claude-code",
+            eventloom_path=settings.eventloom_path,
+            domain=settings.zaxy_domain,
+        )
+    except Exception as exc:
+        return {
+            "name": "hooks",
+            "status": "error",
+            "message": f"observer hook adapter rendering failed: {exc}",
+            "action": "Run zaxy hooks claude-code --eventloom-path .eventloom --domain <project>.",
+        }
+    return {
+        "name": "hooks",
+        "status": "ok",
+        "message": "observer hook adapters are available",
+        "action": "Run zaxy hooks claude-code --eventloom-path .eventloom --domain <project>.",
     }
 
 

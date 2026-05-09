@@ -78,6 +78,8 @@ execution, generate hook adapter config:
 zaxy hooks claude-code --eventloom-path .eventloom --domain my-project
 ```
 
+The stable hook contract is documented in [hooks.md](hooks.md).
+
 The MCP tool names are stable: `memory_append`, `memory_query`,
 `memory_feedback`, `memory_replay`, and `memory_invalidate`. A simple client can
 append a typed `goal.created` or `task.proposed` event, query for the goal

@@ -30,6 +30,7 @@ def test_run_doctor_reports_local_setup_ok(tmp_path: Path) -> None:
         "local_profile": "ok",
         "viewer": "ok",
         "mcp_defaults": "ok",
+        "hooks": "ok",
         "neo4j": "ok",
         "production": "ok",
     }
@@ -51,3 +52,20 @@ def test_run_doctor_warns_on_generic_default_session(tmp_path: Path) -> None:
     assert report["status"] == "warning"
     assert check["status"] == "warning"
     assert "EVENTLOOM_THREAD" in check["message"]
+
+
+def test_run_doctor_reports_hook_adapter_guidance(tmp_path: Path) -> None:
+    """Doctor should surface observer hook setup as an onboarding step."""
+    settings = Settings(
+        _env_file=None,
+        eventloom_path=str(tmp_path / ".eventloom"),
+        eventloom_thread="zaxy-default",
+        zaxy_env="development",
+    )
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    check = next(check for check in report["checks"] if check["name"] == "hooks")
+    assert check["status"] == "ok"
+    assert "observer hook adapters" in check["message"]
+    assert "zaxy hooks claude-code" in check["action"]
