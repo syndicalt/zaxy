@@ -48,7 +48,7 @@ python scripts/test_drive.py
 Agent (LangGraph / Any MCP Client)
     |
     v
-MCP Server — memory_append / memory_query / memory_replay / memory_invalidate
+MCP Server — memory_append / memory_query / memory_feedback / memory_replay / memory_invalidate
     |
     v
 Eventloom (immutable JSONL log)  →  Hybrid Extraction  →  Neo4j (temporal KG)

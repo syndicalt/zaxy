@@ -20,6 +20,14 @@ from the configured session header. Results include Eventloom citations when
 available so clients can display or replay the source event. Results also
 include `score_explanation` metadata for ranking diagnostics.
 
+`memory_feedback(entity_name, entity_type, feedback, ...)` records whether a
+retrieved graph entity was useful. Positive feedback values, `used` and
+`helpful`, append a `memory.reinforced` event with optional `importance`,
+`query`, `source`, `score`, `citation`, and `reason` fields. Negative feedback,
+`irrelevant`, appends an audit-only `memory.feedback` event and does not delete
+or decay existing memory. The tool uses the same session scoping rules as
+append and query.
+
 `memory_replay(session_id, from_seq?)` rebuilds session history from the
 Eventloom log. This is useful for handoffs, audits, and debugging. In remote SSE
 mode, the authenticated session scope is enforced so a client cannot replay a

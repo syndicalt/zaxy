@@ -72,11 +72,11 @@ zaxy serve --transport sse --port 8080
 ```
 
 The MCP tool names are stable: `memory_append`, `memory_query`,
-`memory_replay`, and `memory_invalidate`. A simple client can append a typed
-`goal.created` or `task.proposed` event, then query for the goal title and
-receive compact context chunks from the graph. Zaxy also exposes a Python API
-through `MemoryFabric`; see [api.md](api.md) for constructor and method
-details.
+`memory_feedback`, `memory_replay`, and `memory_invalidate`. A simple client can
+append a typed `goal.created` or `task.proposed` event, query for the goal
+title, record whether retrieved context was useful, and receive compact context
+chunks from the graph. Zaxy also exposes a Python API through `MemoryFabric`;
+see [api.md](api.md) for constructor and method details.
 
 For day-to-day validation, run:
 
