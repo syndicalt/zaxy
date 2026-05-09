@@ -41,7 +41,12 @@ from zaxy.security import validate_payload, validate_query, validate_session_id
 from zaxy.session import SessionManager
 from zaxy.trace import MemoryTracer
 from zaxy.transcripts import collect_transcript_events
-from zaxy.workspace import WorkspaceProfile, build_session_genesis_event
+from zaxy.workspace import (
+    WorkspaceProfile,
+    build_session_genesis_event,
+    existing_session_genesis_profile,
+    workspace_profile_from_payload,
+)
 
 
 @dataclass(frozen=True)
@@ -135,6 +140,7 @@ class MemoryFabric:
                 projection_paths,
             )
         )
+        self._initialized_workspaces: dict[tuple[str, str], WorkspaceProfile] = {}
         self._connected = False
 
     async def connect(self) -> None:
@@ -263,12 +269,33 @@ class MemoryFabric:
             session_id=sid,
         )
         payload = event["payload"]
-        return WorkspaceProfile(
-            workspace_type=str(payload["workspace_type"]),
-            confidence=float(payload["confidence"]),
-            signals=list(payload["signals"]),
-            instructions_profile=str(payload["instructions_profile"]),
+        profile = workspace_profile_from_payload(payload)
+        self._initialized_workspaces[(str(Path(path).resolve()), sid)] = profile
+        return profile
+
+    async def ensure_session_initialized(
+        self,
+        path: str | Path,
+        *,
+        session_id: str = "default",
+    ) -> WorkspaceProfile:
+        """Idempotently append a workspace genesis event for a session."""
+        sid = validate_session_id(session_id)
+        root = str(Path(path).resolve())
+        key = (root, sid)
+        eventlog = self.session_manager.get(sid).eventlog
+        cached = self._initialized_workspaces.get(key)
+        if cached is not None:
+            return cached
+        profile = existing_session_genesis_profile(
+            eventlog.read_all(),
+            root=root,
+            session_id=sid,
         )
+        if profile is not None:
+            self._initialized_workspaces[key] = profile
+            return profile
+        return await self.initialize_session(root, session_id=sid)
 
     async def ingest_transcript(
         self,

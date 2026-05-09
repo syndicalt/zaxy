@@ -45,6 +45,12 @@ from zaxy.security import (
 )
 from zaxy.session import SessionManager
 from zaxy.trace import MemoryTracer
+from zaxy.workspace import (
+    WorkspaceProfile,
+    build_session_genesis_event,
+    existing_session_genesis_profile,
+    workspace_profile_from_payload,
+)
 
 app = Server("zaxy-memory")
 remote_session_scope: contextvars.ContextVar[str | None] = contextvars.ContextVar(
@@ -190,10 +196,13 @@ class ZaxyMCPServer:
         neo4j_uri: str | None = None,
         neo4j_user: str | None = None,
         neo4j_password: str | None = None,
+        workspace_root: str | Path | None = None,
     ) -> None:
         settings = get_settings()
         self._admin_token = settings.mcp_admin_token
         self._default_session_id = validate_session_id(settings.eventloom_thread)
+        self._workspace_root = Path(workspace_root or Path.cwd()).resolve()
+        self._initialized_workspaces: dict[tuple[str, str], WorkspaceProfile] = {}
         self.session_manager = SessionManager(base_path=eventloom_path or settings.eventloom_path)
         self._neo4j_uri = neo4j_uri or settings.neo4j_uri
         self._neo4j_user = neo4j_user or settings.neo4j_user
@@ -225,11 +234,54 @@ class ZaxyMCPServer:
         await self.graph.connect()
         await self.graph.init_schema()
         await self.tracer.connect()
+        await self.ensure_session_initialized(
+            self._workspace_root,
+            session_id=self._default_session_id,
+        )
 
     async def teardown(self) -> None:
         """Close connections."""
         await self.graph.close()
         await self.tracer.close()
+
+    async def ensure_session_initialized(
+        self,
+        path: str | Path,
+        *,
+        session_id: str,
+    ) -> WorkspaceProfile:
+        """Idempotently append and project a workspace genesis event."""
+        sid = validate_session_id(session_id)
+        root = str(Path(path).resolve())
+        key = (root, sid)
+        cached = self._initialized_workspaces.get(key)
+        if cached is not None:
+            return cached
+
+        eventlog = self.session_manager.get(sid).eventlog
+        profile = existing_session_genesis_profile(
+            eventlog.read_all(),
+            root=root,
+            session_id=sid,
+        )
+        if profile is not None:
+            self._initialized_workspaces[key] = profile
+            return profile
+
+        event_input = build_session_genesis_event(root, session_id=sid)
+        payload = validate_payload(event_input["payload"])
+        event = eventlog.append(
+            event_input["event_type"],
+            actor=event_input["actor"],
+            payload=payload,
+            thread=sid,
+        )
+        extraction = extract(event)
+        await self.graph.upsert_extraction(extraction, session_id=sid)
+        await self.tracer.trace_append(event_input["event_type"], event_input["actor"], event.seq)
+        profile = workspace_profile_from_payload(payload)
+        self._initialized_workspaces[key] = profile
+        return profile
 
     # ------------------------------------------------------------------
     # Tool handlers

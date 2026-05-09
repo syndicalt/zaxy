@@ -278,6 +278,33 @@ class TestSessionInitialization:
         assert log.append.call_args.kwargs["payload"]["session_id"] == "agent-1"
         assert log.append.call_args.kwargs["thread"] == "agent-1"
 
+    async def test_ensure_session_initialized_skips_existing_genesis(
+        self,
+        fabric: MemoryFabric,
+        tmp_path,
+    ) -> None:  # type: ignore[no-untyped-def]
+        """ensure_session_initialized() should not duplicate an existing genesis event."""
+        root = str(tmp_path.resolve())
+        existing = SimpleNamespace(
+            type="session.genesis",
+            payload={
+                "root": root,
+                "workspace_type": "codebase",
+                "confidence": 0.91,
+                "signals": ["pyproject.toml"],
+                "instructions_profile": "codebase",
+                "session_id": "agent-1",
+            },
+        )
+        log = fabric.session_manager.get.return_value.eventlog
+        log.read_all.return_value = [existing]
+
+        profile = await fabric.ensure_session_initialized(tmp_path, session_id="agent-1")
+
+        assert profile.workspace_type == "codebase"
+        assert profile.confidence == 0.91
+        log.append.assert_not_called()
+
 
 class TestTranscriptIngestion:
     """Tests for transcript ingestion orchestration."""

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -88,6 +89,38 @@ def build_session_genesis_event(root: str | Path, *, session_id: str) -> dict[st
             "write_instructions": _write_instructions(profile.instructions_profile),
         },
     }
+
+
+def workspace_profile_from_payload(payload: dict[str, Any]) -> WorkspaceProfile:
+    """Reconstruct a workspace profile from a session genesis payload."""
+    signals = payload.get("signals", [])
+    if not isinstance(signals, list):
+        signals = []
+    return WorkspaceProfile(
+        workspace_type=str(payload.get("workspace_type", "generic_workspace")),
+        confidence=float(payload.get("confidence", 0.0)),
+        signals=[str(signal) for signal in signals],
+        instructions_profile=str(payload.get("instructions_profile", "generic")),
+    )
+
+
+def existing_session_genesis_profile(
+    events: Iterable[object],
+    *,
+    root: str | Path,
+    session_id: str,
+) -> WorkspaceProfile | None:
+    """Return an existing genesis profile for the root/session pair, if present."""
+    resolved_root = str(Path(root).resolve())
+    for event in events:
+        if getattr(event, "type", None) != "session.genesis":
+            continue
+        payload = getattr(event, "payload", None)
+        if not isinstance(payload, dict):
+            continue
+        if payload.get("root") == resolved_root and payload.get("session_id") == session_id:
+            return workspace_profile_from_payload(payload)
+    return None
 
 
 def _codebase_score(signals: list[str]) -> float:

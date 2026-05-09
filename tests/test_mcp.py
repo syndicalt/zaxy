@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import zaxy.mcp_server
+from zaxy.event import EventLog
 from zaxy.mcp_server import (
     TOOLS,
     MCPTransportAuth,
@@ -297,6 +298,37 @@ class TestServerSetup:
         mock_graph.connect.assert_awaited_once()
         mock_graph.init_schema.assert_awaited_once()
         mock_tracer.connect.assert_awaited_once()
+
+    async def test_setup_appends_workspace_genesis_once(self, tmp_path: Path) -> None:
+        """setup() should bootstrap the default session with one workspace genesis event."""
+        (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
+        eventlog = EventLog(tmp_path / "events.jsonl")
+        mock_log = MagicMock()
+        mock_log.read_all.return_value = []
+        mock_log.append.side_effect = eventlog.append
+        with (
+            patch("zaxy.mcp_server.GraphStore") as mock_graph_cls,
+            patch("zaxy.mcp_server.MemoryTracer") as mock_tracer_cls,
+            patch("zaxy.mcp_server.SessionManager") as mock_session_cls,
+            patch("zaxy.mcp_server.LocalNeo4jRuntime"),
+        ):
+            mock_graph = AsyncMock()
+            mock_graph_cls.return_value = mock_graph
+            mock_tracer = AsyncMock()
+            mock_tracer_cls.return_value = mock_tracer
+            mock_session_mgr = MagicMock()
+            mock_session_mgr.get.return_value.eventlog = mock_log
+            mock_session_cls.return_value = mock_session_mgr
+
+            srv = ZaxyMCPServer(workspace_root=tmp_path)
+            await srv.setup()
+            await srv.setup()
+
+        mock_session_mgr.get.assert_called_with("default")
+        mock_log.append.assert_called_once()
+        assert mock_log.append.call_args.args == ("session.genesis",)
+        assert mock_log.append.call_args.kwargs["payload"]["root"] == str(tmp_path.resolve())
+        mock_graph.upsert_extraction.assert_awaited_once()
 
 
 class TestContextLifecycleTools:
