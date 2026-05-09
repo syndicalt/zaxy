@@ -12,6 +12,23 @@ from zaxy.event import EventLog
 from zaxy.onboarding import run_onboarding
 
 
+class FakeRuntime:
+    """Runtime double for onboarding infra actions."""
+
+    def __init__(self, *, status: str = "ok", message: str = "Neo4j reachable") -> None:
+        self.status = status
+        self.message = message
+        self.checked = False
+        self.started = False
+
+    def check(self) -> object:
+        self.checked = True
+        return {"status": self.status, "message": self.message}
+
+    def ensure_available(self) -> None:
+        self.started = True
+
+
 @pytest.mark.asyncio
 async def test_run_onboarding_writes_requested_configs_and_registers_session(tmp_path: Path) -> None:
     """Onboarding should compose existing primitives into one idempotent first-run flow."""
@@ -111,3 +128,62 @@ async def test_run_onboarding_rejects_output_without_matching_client(tmp_path: P
             domain="demo",
             hook_output=workspace / ".claude" / "settings.local.json",
         )
+
+
+@pytest.mark.asyncio
+async def test_run_onboarding_can_check_infra_without_starting_it(tmp_path: Path) -> None:
+    """Infra check should report local runtime posture without mutating Docker state."""
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    fabric = MagicMock()
+    fabric.ensure_session_initialized = AsyncMock()
+    fabric.ensure_session_initialized.return_value.workspace_type = "generic_workspace"
+    fabric.ensure_session_initialized.return_value.confidence = 0.2
+    fabric.ensure_session_initialized.return_value.signals = []
+    fabric.ensure_session_initialized.return_value.instructions_profile = "generic"
+    fabric.close = AsyncMock()
+    runtime = FakeRuntime(status="warning", message="Neo4j is not reachable; Docker is available")
+
+    result = await run_onboarding(
+        workspace,
+        eventloom_path=workspace / ".eventloom",
+        domain="demo",
+        infra="check",
+        fabric_factory=lambda eventloom_path: fabric,
+        runtime_factory=lambda: runtime,
+    )
+
+    assert runtime.checked is True
+    assert runtime.started is False
+    infra_step = next(step for step in result.steps if step.name == "infra")
+    assert infra_step.status == "warning"
+    assert "Docker is available" in infra_step.message
+
+
+@pytest.mark.asyncio
+async def test_run_onboarding_can_start_explicit_local_infra(tmp_path: Path) -> None:
+    """Infra start should call the existing runtime bootstrap path explicitly."""
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    fabric = MagicMock()
+    fabric.ensure_session_initialized = AsyncMock()
+    fabric.ensure_session_initialized.return_value.workspace_type = "generic_workspace"
+    fabric.ensure_session_initialized.return_value.confidence = 0.2
+    fabric.ensure_session_initialized.return_value.signals = []
+    fabric.ensure_session_initialized.return_value.instructions_profile = "generic"
+    fabric.close = AsyncMock()
+    runtime = FakeRuntime()
+
+    result = await run_onboarding(
+        workspace,
+        eventloom_path=workspace / ".eventloom",
+        domain="demo",
+        infra="start",
+        fabric_factory=lambda eventloom_path: fabric,
+        runtime_factory=lambda: runtime,
+    )
+
+    assert runtime.started is True
+    infra_step = next(step for step in result.steps if step.name == "infra")
+    assert infra_step.status == "ok"
+    assert "Neo4j local runtime is available" in infra_step.message

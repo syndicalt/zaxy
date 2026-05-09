@@ -81,6 +81,25 @@ def test_local_neo4j_runtime_skips_docker_when_port_is_open() -> None:
     assert runner.calls == []
 
 
+def test_local_neo4j_runtime_check_does_not_start_container_when_port_closed() -> None:
+    runner = FakeRunner([
+        result(stdout="24.0.0\n"),
+    ])
+    runtime = LocalNeo4jRuntime(
+        uri="bolt://localhost:7687",
+        user="neo4j",
+        password="testpassword",
+        runner=runner,
+        port_probe=lambda _host, _port: False,
+    )
+
+    check = runtime.check()
+
+    assert check.status == "warning"
+    assert check.message == "Neo4j is not reachable; Docker is available"
+    assert runner.calls == [["docker", "version", "--format", "{{.Server.Version}}"]]
+
+
 def test_local_neo4j_runtime_ignores_non_local_uris() -> None:
     runner = FakeRunner()
     runtime = LocalNeo4jRuntime(

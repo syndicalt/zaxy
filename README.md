@@ -22,7 +22,8 @@ zaxy init . \
   --mcp-output ./zaxy-mcp.json \
   --hook-client claude-code \
   --hook-output .claude/settings.local.json \
-  --local-profile-output .env.local
+  --local-profile-output .env.local \
+  --infra check
 
 # Optional: explicit local development setup if you want shell commands too.
 ./scripts/setup.sh

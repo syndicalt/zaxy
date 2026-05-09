@@ -281,6 +281,7 @@ def init(
     hook_client: str | None = typer.Option(None, help="Hook client config to render/write"),  # noqa: B008
     hook_output: Path | None = typer.Option(None, help="Write hook config to this file"),  # noqa: B008
     local_profile_output: Path | None = typer.Option(None, help="Write local retrieval profile to this file"),  # noqa: B008
+    infra: str = typer.Option("none", help="Local infra action: none, check, or start"),  # noqa: B008
     force: bool = typer.Option(False, "--force", help="Overwrite generated output files"),  # noqa: B008
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),  # noqa: B008
 ) -> None:
@@ -298,6 +299,7 @@ def init(
             hook_client=hook_client,
             hook_output=hook_output,
             local_profile_output=local_profile_output,
+            infra=infra,
             force=force,
         )
 

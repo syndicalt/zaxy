@@ -65,11 +65,15 @@ zaxy init . \
   --mcp-output ./zaxy-mcp.json \
   --hook-client claude-code \
   --hook-output .claude/settings.local.json \
-  --local-profile-output .env.local
+  --local-profile-output .env.local \
+  --infra check
 ```
 
 Generated output files are non-destructive by default. Pass `--force` only when
-you intentionally want to replace generated config.
+you intentionally want to replace generated config. `--infra check` reports
+local Neo4j and Docker posture without starting containers. Use
+`--infra start` when you explicitly want onboarding to start the local Neo4j
+runtime.
 
 To start the default stdio MCP server:
 

@@ -15,6 +15,14 @@ SleepFn = Callable[[float], None]
 
 
 @dataclass(frozen=True)
+class RuntimeCheck:
+    """Local Neo4j runtime posture without mutating container state."""
+
+    status: str
+    message: str
+
+
+@dataclass(frozen=True)
 class LocalNeo4jRuntime:
     """Best-effort local Neo4j bootstrapper for development MCP startup."""
 
@@ -28,6 +36,20 @@ class LocalNeo4jRuntime:
     runner: RunFn = subprocess.run
     port_probe: PortProbe | None = None
     sleeper: SleepFn = time.sleep
+
+    def check(self) -> RuntimeCheck:
+        """Report local Neo4j/Docker posture without starting containers."""
+        endpoint = self._local_endpoint()
+        if not self.enabled:
+            return RuntimeCheck("warning", "Local Neo4j auto-start is disabled")
+        if endpoint is None:
+            return RuntimeCheck("ok", f"Neo4j URI {self.uri} is not a local auto-start target")
+        host, port = endpoint
+        if self._port_open(host, port):
+            return RuntimeCheck("ok", f"Neo4j is reachable at {host}:{port}")
+        if self._docker_available():
+            return RuntimeCheck("warning", "Neo4j is not reachable; Docker is available")
+        return RuntimeCheck("warning", "Neo4j is not reachable; Docker is unavailable")
 
     def ensure_available(self) -> None:
         """Start a local Neo4j container when localhost Bolt is unavailable."""

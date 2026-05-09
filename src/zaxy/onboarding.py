@@ -21,6 +21,7 @@ from zaxy.hooks import (
 )
 from zaxy.integrations import render_mcp_client_config
 from zaxy.local_profile import write_local_profile
+from zaxy.runtime import LocalNeo4jRuntime
 from zaxy.session import SessionManager
 
 
@@ -59,8 +60,10 @@ async def run_onboarding(
     hook_client: str | None = None,
     hook_output: str | Path | None = None,
     local_profile_output: str | Path | None = None,
+    infra: str = "none",
     force: bool = False,
     fabric_factory: Callable[[str], MemoryFabric] = MemoryFabric,
+    runtime_factory: Callable[[], Any] | None = None,
 ) -> OnboardingResult:
     """Run the idempotent first-run onboarding flow."""
     root = Path(workspace).resolve()
@@ -68,6 +71,7 @@ async def run_onboarding(
     eventloom = raw_eventloom if raw_eventloom.is_absolute() else root / raw_eventloom
     resolved_domain = slug_domain(domain) if domain else slug_domain(root.name)
     sid = session_id or domain_default_session(resolved_domain)
+    infra_action = _normalize_infra(infra)
     _validate_render_requests(
         mcp_client=mcp_client,
         mcp_output=mcp_output,
@@ -111,6 +115,11 @@ async def run_onboarding(
         else:
             steps.append(OnboardingStep("hook_config", "preview", f"{hook_client} hook config rendered"))
 
+    if infra_action != "none":
+        settings = _onboarding_settings(eventloom=eventloom, session_id=sid, domain=resolved_domain)
+        runtime = runtime_factory() if runtime_factory is not None else _build_runtime(settings)
+        steps.append(_run_infra_action(runtime, infra_action))
+
     fabric = fabric_factory(str(eventloom))
     try:
         profile = await fabric.ensure_session_initialized(root, session_id=sid)
@@ -127,15 +136,7 @@ async def run_onboarding(
     heartbeat = _append_heartbeat(eventloom, session_id=sid, source="zaxy-init", workspace=root)
     steps.append(OnboardingStep("heartbeat", "ok", f"Hook heartbeat recorded seq={heartbeat.seq}"))
 
-    settings_values: dict[str, Any] = {
-        "_env_file": None,
-        "eventloom_path": str(eventloom),
-        "eventloom_thread": sid,
-        "zaxy_domain": resolved_domain,
-        "zaxy_env": "development",
-        "mcp_lifecycle_capture_enabled": True,
-    }
-    settings = Settings(**settings_values)
+    settings = _onboarding_settings(eventloom=eventloom, session_id=sid, domain=resolved_domain)
     doctor = run_doctor(settings=settings, workspace_root=root)
     steps.append(OnboardingStep("doctor", doctor["status"], "Doctor checks completed"))
     hook_status = inspect_hook_status(eventloom_path=eventloom, workspace_root=root)
@@ -187,6 +188,50 @@ def _validate_render_requests(
         raise ValueError("mcp_client is required when mcp_output is provided")
     if hook_output is not None and hook_client is None:
         raise ValueError("hook_client is required when hook_output is provided")
+
+
+def _normalize_infra(infra: str) -> str:
+    normalized = infra.casefold().strip()
+    if normalized in {"none", "check", "start"}:
+        return normalized
+    raise ValueError("infra must be one of: none, check, start")
+
+
+def _build_runtime(settings: Settings) -> LocalNeo4jRuntime:
+    return LocalNeo4jRuntime(
+        uri=settings.neo4j_uri,
+        user=settings.neo4j_user,
+        password=settings.neo4j_password,
+        enabled=settings.neo4j_auto_start and settings.zaxy_env.lower() != "production",
+        image=settings.neo4j_auto_start_image,
+        container_name=settings.neo4j_auto_start_container,
+    )
+
+
+def _run_infra_action(runtime: Any, infra: str) -> OnboardingStep:
+    if infra == "check":
+        check = runtime.check()
+        return OnboardingStep("infra", str(_runtime_field(check, "status")), str(_runtime_field(check, "message")))
+    runtime.ensure_available()
+    return OnboardingStep("infra", "ok", "Neo4j local runtime is available")
+
+
+def _runtime_field(check: Any, field: str) -> Any:
+    if isinstance(check, dict):
+        return check[field]
+    return getattr(check, field)
+
+
+def _onboarding_settings(*, eventloom: Path, session_id: str, domain: str) -> Settings:
+    settings_values: dict[str, Any] = {
+        "_env_file": None,
+        "eventloom_path": str(eventloom),
+        "eventloom_thread": session_id,
+        "zaxy_domain": domain,
+        "zaxy_env": "development",
+        "mcp_lifecycle_capture_enabled": True,
+    }
+    return Settings(**settings_values)
 
 
 def _write_json(path: Path, payload: dict[str, Any], *, force: bool = False) -> Path:

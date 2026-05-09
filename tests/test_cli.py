@@ -422,6 +422,20 @@ def test_init_command_rejects_mcp_output_without_client(tmp_path: Path) -> None:
     assert "mcp_client is required" in result.output
 
 
+@patch("zaxy.__main__.run_onboarding")
+def test_init_command_passes_infra_action(mock_run_onboarding: AsyncMock, tmp_path: Path) -> None:
+    """init --infra should pass explicit infra action into the orchestrator."""
+    result_obj = MagicMock()
+    result_obj.status = "ok"
+    mock_run_onboarding.return_value = result_obj
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["init", str(tmp_path), "--infra", "check"])
+
+    assert result.exit_code == 0
+    assert mock_run_onboarding.await_args.kwargs["infra"] == "check"
+
+
 @patch("zaxy.__main__.GraphStore")
 def test_reproject_command_replays_log_into_graph(mock_graph_store: MagicMock, tmp_path: Path) -> None:
     """reproject should rebuild graph projections from an Eventloom log."""
