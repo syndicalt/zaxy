@@ -40,14 +40,15 @@ def write_local_profile(path: Path, *, force: bool = False) -> Path:
 
 def check_local_profile() -> dict[str, Any]:
     """Validate that deterministic local embedding and reranker providers build."""
-    settings = Settings(
-        _env_file=None,
-        zaxy_env="development",
-        embedding_enabled=True,
-        embedding_provider="hash",
-        embedding_dimension=1536,
-        reranker_provider="lexical",
-    )
+    settings_values: dict[str, Any] = {
+        "_env_file": None,
+        "zaxy_env": "development",
+        "embedding_enabled": True,
+        "embedding_provider": "hash",
+        "embedding_dimension": 1536,
+        "reranker_provider": "lexical",
+    }
+    settings = Settings(**settings_values)
     embedding_provider = build_embedding_provider(settings)
     reranker = build_reranker(settings)
     return {
