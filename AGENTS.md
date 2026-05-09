@@ -266,12 +266,13 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Minimal static Eventloom/session viewer for bootstrap and lifecycle inspection
 - [x] Local onboarding doctor for Eventloom, MCP defaults, viewer, local profile, and config posture
 - [x] Non-destructive temporal retention and decay-aware retrieval policies
+- [x] Direct agent integration templates for LangGraph, CrewAI, and AutoGen
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 478 passed |
+| Tests | 482 passed |
 | Coverage | 92.25% |
 | Lint | ruff clean |
 | Types | mypy clean |
@@ -279,5 +280,5 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 ## Next Steps
 
-1. Broaden direct agent integrations beyond MCP.
-2. Expand retention metadata extraction and reinforcement events.
+1. Expand retention metadata extraction and reinforcement events.
+2. Add optional deeper framework packages once direct templates see usage.

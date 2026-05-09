@@ -127,10 +127,11 @@ in the subagent session and returns a bundle the parent can import or inspect.
 Render first-run integration payloads:
 
 ```python
-from zaxy import render_handoff_adapter, render_mcp_client_config
+from zaxy import render_agent_integration_template, render_handoff_adapter, render_mcp_client_config
 
 config = render_mcp_client_config("claude-desktop", eventloom_path=".eventloom")
 handoff_payload = render_handoff_adapter(handoff, "langgraph")
+template = render_agent_integration_template("langgraph", session_id="agent-1")
 ```
 
 `render_mcp_client_config()` supports `claude-desktop`, `cursor`, and `vscode`

@@ -35,7 +35,7 @@ from zaxy.event import EventLog
 from zaxy.extract import extract
 from zaxy.extract_templates import ExtractorTemplateSpec, render_extractor_template
 from zaxy.graph import GraphStore
-from zaxy.integrations import render_mcp_client_config
+from zaxy.integrations import render_agent_integration_template, render_mcp_client_config
 from zaxy.lifecycle import build_compaction_completed_event
 from zaxy.live_benchmark import (
     BenchmarkWorkload,
@@ -86,6 +86,24 @@ def ide_config(
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(config, indent=2, sort_keys=True))
+
+
+@app.command("integration-template")
+def integration_template(
+    framework: str = typer.Argument(..., help="Agent framework: langgraph, crewai, or autogen"),
+    session_id: str = typer.Option("default", help="Session ID used by the template"),
+    eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory for the template"),
+) -> None:
+    """Print a direct Python framework integration starter."""
+    try:
+        template = render_agent_integration_template(
+            framework,
+            session_id=session_id,
+            eventloom_path=eventloom_path,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(template, nl=False)
 
 
 @app.command("local-profile")
