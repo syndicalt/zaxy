@@ -8,8 +8,10 @@ from pathlib import Path
 from typing import Any, Literal
 
 from zaxy.domain import derive_domain, domain_default_session, slug_domain
+from zaxy.event import Event, EventLog
 
 HookClient = Literal["claude-code", "codex", "generic"]
+HOOK_CLIENTS = ("claude-code", "codex", "generic")
 
 
 def render_hook_config(
@@ -99,11 +101,12 @@ def hook_event_type(trigger: str) -> str:
         "stop": "hook.stop",
         "precompact": "hook.precompact",
         "checkpoint": "hook.checkpoint",
+        "heartbeat": "hook.heartbeat",
     }
     try:
         return event_types[normalized]
     except KeyError as exc:
-        raise ValueError("hook trigger must be one of: session-start, stop, precompact, checkpoint") from exc
+        raise ValueError("hook trigger must be one of: session-start, stop, precompact, checkpoint, heartbeat") from exc
 
 
 def build_hook_payload(
@@ -132,6 +135,113 @@ def build_hook_payload(
     if turn_count is not None:
         payload["turn_count"] = turn_count
     return payload
+
+
+def inspect_hook_status(
+    *,
+    eventloom_path: str | Path = ".eventloom",
+    workspace_root: str | Path | None = None,
+) -> dict[str, Any]:
+    """Inspect installed hook configs and recent Eventloom lifecycle activity."""
+    root = Path(workspace_root or Path.cwd())
+    eventloom = Path(eventloom_path)
+    installations = _detect_hook_installations(root)
+    latest = _latest_hook_event(eventloom)
+    installed_any = any(client["installed"] for client in installations.values())
+    status = "ok" if latest is not None else "warning"
+    if not installed_any and latest is None:
+        message = "No installed observer hook config or hook lifecycle events found"
+    elif latest is None:
+        message = "Observer hook config is installed, but no hook lifecycle events have been observed"
+    else:
+        message = f"Latest hook event is {latest['type']} in {latest['thread']} at {latest['timestamp']}"
+    return {
+        "status": status,
+        "message": message,
+        "eventloom_path": str(eventloom),
+        "clients": installations,
+        "latest_event": latest,
+    }
+
+
+def format_hook_status(report: dict[str, Any]) -> str:
+    """Format hook status for humans."""
+    lines = [f"Zaxy hooks: {report['status']}", f"- activity: {report['message']}"]
+    for client in HOOK_CLIENTS:
+        info = report["clients"][client]
+        installed = "installed" if info["installed"] else "not installed"
+        suffix = f" ({', '.join(info['paths'])})" if info["paths"] else ""
+        lines.append(f"- {client}: {installed}{suffix}")
+    latest = report.get("latest_event")
+    if latest:
+        lines.append(
+            f"- last event: {latest['type']} seq={latest['seq']} "
+            f"session={latest['thread']} source={latest['source']}"
+        )
+    return "\n".join(lines)
+
+
+def _detect_hook_installations(workspace_root: Path) -> dict[str, dict[str, Any]]:
+    candidates = {
+        "claude-code": [
+            workspace_root / ".claude" / "settings.local.json",
+            workspace_root / ".claude" / "settings.json",
+        ],
+        "codex": [workspace_root / ".codex" / "hooks.json"],
+        "generic": [],
+    }
+    installations: dict[str, dict[str, Any]] = {}
+    for client, paths in candidates.items():
+        installed = [
+            str(path.relative_to(workspace_root))
+            for path in paths
+            if _looks_like_zaxy_hook_config(path)
+        ]
+        installations[client] = {
+            "installed": bool(installed),
+            "paths": installed,
+        }
+    return installations
+
+
+def _latest_hook_event(eventloom_path: Path) -> dict[str, Any] | None:
+    latest: Event | None = None
+    if eventloom_path.is_file():
+        paths = [eventloom_path]
+    elif eventloom_path.is_dir():
+        paths = sorted(eventloom_path.glob("*.jsonl"))
+    else:
+        paths = []
+    for path in paths:
+        try:
+            events = EventLog(path).read_all()
+        except Exception:
+            continue
+        for event in events:
+            if not event.type.startswith("hook."):
+                continue
+            if latest is None or event.timestamp > latest.timestamp or (
+                event.timestamp == latest.timestamp and event.seq > latest.seq
+            ):
+                latest = event
+    if latest is None:
+        return None
+    return {
+        "seq": latest.seq,
+        "timestamp": latest.timestamp,
+        "type": latest.type,
+        "thread": latest.thread,
+        "source": latest.payload.get("source", "unknown"),
+        "trigger": latest.payload.get("trigger", latest.type.removeprefix("hook.")),
+    }
+
+
+def _looks_like_zaxy_hook_config(path: Path) -> bool:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return "zaxy hook-event" in text
 
 
 def _hook_command(

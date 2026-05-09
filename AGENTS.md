@@ -276,12 +276,13 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Searchable hook checkpoint events with summary and reason metadata
 - [x] Hook installation detection and supported-client matrix
 - [x] Pruned stale direct-Neo4j demo scripts superseded by doctor, hooks, and MCP smoke coverage
+- [x] Hook status and heartbeat health checks for observable lifecycle capture
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 504 passed |
+| Tests | 508 passed |
 | Coverage | 92.25% |
 | Lint | ruff clean |
 | Types | mypy clean |

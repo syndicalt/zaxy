@@ -86,6 +86,14 @@ Claude Code is the preferred first install target. Codex currently gets a
 generic shell snippet unless your local Codex version documents and enables a
 working hook JSON path.
 
+To verify that Zaxy can see lifecycle observations:
+
+```bash
+zaxy hook-status --eventloom-path .eventloom
+zaxy hook-event heartbeat --eventloom-path .eventloom --session-id my-project-default --source manual
+zaxy hook-status --eventloom-path .eventloom
+```
+
 The MCP tool names are stable: `memory_append`, `memory_query`,
 `memory_feedback`, `memory_replay`, and `memory_invalidate`. A simple client can
 append a typed `goal.created` or `task.proposed` event, query for the goal

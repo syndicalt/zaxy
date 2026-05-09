@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 
 from zaxy.config import Settings, get_settings
 from zaxy.event import EventLog
-from zaxy.hooks import render_hook_config
+from zaxy.hooks import HOOK_CLIENTS, inspect_hook_status, render_hook_config
 from zaxy.local_profile import check_local_profile
 from zaxy.viewer import write_viewer_html
 
@@ -22,13 +22,15 @@ def run_doctor(
     """Run local setup checks without starting external services."""
     active = settings or get_settings()
     root = Path(workspace_root or Path.cwd())
+    hook_status = inspect_hook_status(eventloom_path=active.eventloom_path, workspace_root=root)
     checks = [
         _check_eventloom(active),
         _check_local_profile(),
         _check_viewer(root),
         _check_mcp_defaults(active),
         _check_hooks(active),
-        _check_hook_installation(root),
+        _check_hook_installation(hook_status),
+        _check_hook_activity(active, hook_status),
         _check_neo4j(active),
         _check_production(active),
     ]
@@ -166,23 +168,19 @@ def _check_hooks(settings: Settings) -> dict[str, str]:
     }
 
 
-def _check_hook_installation(workspace_root: Path) -> dict[str, str]:
-    installed = [
-        path
-        for path in (
-            workspace_root / ".claude" / "settings.local.json",
-            workspace_root / ".claude" / "settings.json",
-            workspace_root / ".codex" / "hooks.json",
-        )
-        if _looks_like_zaxy_hook_config(path)
-    ]
-    if installed:
-        rel = installed[0].relative_to(workspace_root)
-        return {
-            "name": "hook_installation",
-            "status": "ok",
-            "message": f"observer hook config found at {rel}",
-        }
+def _check_hook_installation(hook_status: dict[str, Any]) -> dict[str, str]:
+    for client in HOOK_CLIENTS:
+        info = hook_status["clients"][client]
+        if info["paths"]:
+            rel = info["paths"][0]
+            label = client
+            if client == "claude-code":
+                label = "Claude Code"
+            return {
+                "name": "hook_installation",
+                "status": "ok",
+                "message": f"{label} observer hook config found at {rel}",
+            }
     return {
         "name": "hook_installation",
         "status": "warning",
@@ -194,12 +192,38 @@ def _check_hook_installation(workspace_root: Path) -> dict[str, str]:
     }
 
 
-def _looks_like_zaxy_hook_config(path: Path) -> bool:
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError:
-        return False
-    return "zaxy hook-event" in text
+def _check_hook_activity(settings: Settings, hook_status: dict[str, Any]) -> dict[str, str]:
+    latest = hook_status.get("latest_event")
+    if latest:
+        return {
+            "name": "hook_activity",
+            "status": "ok",
+            "message": (
+                f"latest observed hook event is {latest['type']} in "
+                f"{latest['thread']} at {latest['timestamp']}"
+            ),
+        }
+    installed = any(client["installed"] for client in hook_status["clients"].values())
+    if installed:
+        return {
+            "name": "hook_activity",
+            "status": "warning",
+            "message": "No hook lifecycle events observed after installed hook config",
+            "action": (
+                "Run zaxy hook-event heartbeat --eventloom-path .eventloom "
+                f"--session-id {settings.eventloom_thread} --source manual."
+            ),
+        }
+    return {
+        "name": "hook_activity",
+        "status": "warning",
+        "message": "No hook lifecycle events observed",
+        "action": (
+            "Install hooks with zaxy hooks claude-code --eventloom-path .eventloom "
+            "--domain <project> --output .claude/settings.local.json, then run "
+            "zaxy hook-event heartbeat."
+        ),
+    }
 
 
 def _check_neo4j(settings: Settings) -> dict[str, str]:

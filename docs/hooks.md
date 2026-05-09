@@ -24,6 +24,17 @@ zaxy hooks claude-code \
 `--output` creates parent directories and refuses to overwrite existing files.
 Pass `--force` when replacing a generated hook config intentionally.
 
+Inspect the current observer posture:
+
+```bash
+zaxy hook-status --eventloom-path .eventloom
+zaxy hook-event heartbeat --eventloom-path .eventloom --session-id my-project-default --source manual
+```
+
+`hook-status` reports supported client install detection and the latest observed
+hook event. `heartbeat` is a health probe: it proves the Eventloom observer
+path can write without pretending that a real task or compaction happened.
+
 ## Supported Clients
 
 | Client | Generated Output | Install Detection | Notes |
@@ -51,6 +62,7 @@ Supported triggers are:
 | `stop` | `hook.stop` | Record a normal response/session checkpoint. |
 | `precompact` | `hook.precompact` | Record that context compaction is about to happen. |
 | `checkpoint` | `hook.checkpoint` | Record a manual or periodic save/checkpoint. |
+| `heartbeat` | `hook.heartbeat` | Prove the hook write path is healthy. |
 
 Unknown triggers are rejected before writing.
 

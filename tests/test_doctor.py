@@ -6,6 +6,7 @@ from pathlib import Path
 
 from zaxy.config import Settings
 from zaxy.doctor import run_doctor
+from zaxy.event import EventLog
 
 
 def test_run_doctor_reports_local_setup_ok(tmp_path: Path) -> None:
@@ -32,6 +33,7 @@ def test_run_doctor_reports_local_setup_ok(tmp_path: Path) -> None:
         "mcp_defaults": "ok",
         "hooks": "ok",
         "hook_installation": "warning",
+        "hook_activity": "warning",
         "neo4j": "ok",
         "production": "ok",
     }
@@ -107,3 +109,46 @@ def test_run_doctor_warns_when_hook_config_not_installed(tmp_path: Path) -> None
     assert check["status"] == "warning"
     assert "No installed observer hook config" in check["message"]
     assert "zaxy hooks claude-code" in check["action"]
+
+
+def test_run_doctor_warns_when_hooks_installed_but_no_activity(tmp_path: Path) -> None:
+    """Doctor should surface installed-but-silent observer hooks."""
+    settings = Settings(
+        _env_file=None,
+        eventloom_path=str(tmp_path / ".eventloom"),
+        eventloom_thread="zaxy-default",
+        zaxy_env="development",
+    )
+    settings_path = tmp_path / ".claude" / "settings.local.json"
+    settings_path.parent.mkdir()
+    settings_path.write_text('{"hooks": {"Stop": [{"hooks": [{"command": "zaxy hook-event stop"}]}]}}', encoding="utf-8")
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    check = next(check for check in report["checks"] if check["name"] == "hook_activity")
+    assert check["status"] == "warning"
+    assert "No hook lifecycle events observed" in check["message"]
+    assert "zaxy hook-event heartbeat" in check["action"]
+
+
+def test_run_doctor_reports_recent_hook_activity(tmp_path: Path) -> None:
+    """Doctor should show the latest observed hook lifecycle event."""
+    settings = Settings(
+        _env_file=None,
+        eventloom_path=str(tmp_path / ".eventloom"),
+        eventloom_thread="zaxy-default",
+        zaxy_env="development",
+    )
+    EventLog(tmp_path / ".eventloom" / "zaxy-default.jsonl").append(
+        "hook.heartbeat",
+        actor="zaxy-hook",
+        payload={"trigger": "heartbeat", "source": "claude-code"},
+        thread="zaxy-default",
+    )
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    check = next(check for check in report["checks"] if check["name"] == "hook_activity")
+    assert check["status"] == "ok"
+    assert "hook.heartbeat" in check["message"]
+    assert "zaxy-default" in check["message"]

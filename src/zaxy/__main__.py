@@ -35,7 +35,14 @@ from zaxy.event import EventLog
 from zaxy.extract import extract
 from zaxy.extract_templates import ExtractorTemplateSpec, render_extractor_template
 from zaxy.graph import GraphStore
-from zaxy.hooks import build_hook_payload, hook_event_type, render_hook_config, write_hook_config
+from zaxy.hooks import (
+    build_hook_payload,
+    format_hook_status,
+    hook_event_type,
+    inspect_hook_status,
+    render_hook_config,
+    write_hook_config,
+)
 from zaxy.integrations import render_agent_integration_template, render_mcp_client_config
 from zaxy.lifecycle import build_compaction_completed_event
 from zaxy.live_benchmark import (
@@ -135,9 +142,23 @@ def hooks(
         raise typer.BadParameter(str(exc)) from exc
 
 
+@app.command("hook-status")
+def hook_status(
+    eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory or JSONL log to inspect"),
+    workspace_root: Path = typer.Option(Path("."), help="Workspace root to scan for hook config"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Inspect observer hook installation and recent lifecycle activity."""
+    report = inspect_hook_status(eventloom_path=eventloom_path, workspace_root=workspace_root)
+    if json_output:
+        typer.echo(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        typer.echo(format_hook_status(report))
+
+
 @app.command("hook-event")
 def hook_event(
-    trigger: str = typer.Argument(..., help="Hook trigger: session-start, stop, precompact, or checkpoint"),  # noqa: B008
+    trigger: str = typer.Argument(..., help="Hook trigger: session-start, stop, precompact, checkpoint, or heartbeat"),  # noqa: B008
     eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory for hook events"),
     session_id: str = typer.Option("default", help="Session ID to append hook events into"),
     source: str = typer.Option("generic", help="Client or adapter that emitted the hook"),

@@ -195,6 +195,58 @@ def test_hook_event_checkpoint_carries_summary_and_reason(tmp_path: Path) -> Non
     assert events[0].payload["turn_count"] == 7
 
 
+def test_hook_event_heartbeat_appends_health_event(tmp_path: Path) -> None:
+    """heartbeat hooks should prove the observer path can write Eventloom."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "hook-event",
+            "heartbeat",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent-1",
+            "--source",
+            "claude-code",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Recorded hook heartbeat" in result.output
+    events = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").read_all()
+    assert events[0].type == "hook.heartbeat"
+    assert events[0].payload["trigger"] == "heartbeat"
+    assert events[0].payload["source"] == "claude-code"
+
+
+def test_hooks_status_reports_installed_clients_and_recent_activity(tmp_path: Path) -> None:
+    """hook-status should answer whether Zaxy is observing this workspace."""
+    settings_path = tmp_path / ".claude" / "settings.local.json"
+    settings_path.parent.mkdir()
+    settings_path.write_text('{"hooks": {"Stop": [{"hooks": [{"command": "zaxy hook-event stop"}]}]}}', encoding="utf-8")
+    EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").append(
+        "hook.heartbeat",
+        actor="zaxy-hook",
+        payload={"trigger": "heartbeat", "source": "claude-code"},
+        thread="agent-1",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["hook-status", "--eventloom-path", str(tmp_path / ".eventloom"), "--workspace-root", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "Zaxy hooks: ok" in result.output
+    assert "claude-code: installed" in result.output
+    assert "codex: not installed" in result.output
+    assert "last event: hook.heartbeat" in result.output
+    assert "agent-1" in result.output
+
+
 def test_schema_plan_command_prints_migration_plan() -> None:
     runner = CliRunner()
 
