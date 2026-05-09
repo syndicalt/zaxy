@@ -63,7 +63,7 @@ class TestToolSchema:
 
     def test_tools_list_length(self) -> None:
         """Should expose the memory and context lifecycle tools."""
-        assert len(TOOLS) == 7
+        assert len(TOOLS) == 8
 
     def test_tool_names(self) -> None:
         """Tool names should match the expected contract."""
@@ -71,6 +71,7 @@ class TestToolSchema:
         assert names == {
             "memory_append",
             "memory_query",
+            "memory_feedback",
             "memory_replay",
             "memory_invalidate",
             "context_assemble",
@@ -88,6 +89,12 @@ class TestToolSchema:
         tool = next(t for t in TOOLS if t.name == "memory_query")
         assert "temporal_filter" in tool.inputSchema["properties"]
         assert "temporal_filter" not in (tool.inputSchema.get("required") or [])
+
+    def test_memory_feedback_has_required_identity_and_feedback(self) -> None:
+        """memory_feedback should require a target entity and feedback value."""
+        tool = next(t for t in TOOLS if t.name == "memory_feedback")
+        assert tool.inputSchema["required"] == ["entity_name", "entity_type", "feedback"]
+        assert "importance" in tool.inputSchema["properties"]
 
     def test_context_after_turn_has_required_fields(self) -> None:
         """context_after_turn should require role and content."""
@@ -280,6 +287,71 @@ class TestMemoryQuery:
         """Very large queries should be rejected before database work."""
         with pytest.raises(ValueError, match="query"):
             await server.handle_memory_query({"query": "x" * 4097})
+
+
+class TestMemoryFeedback:
+    """Tests for memory_feedback handler."""
+
+    async def test_positive_feedback_appends_reinforcement_event(self, server: ZaxyMCPServer) -> None:
+        """Used context should reinforce the target memory entity."""
+        result = await server.handle_memory_feedback({
+            "entity_name": "Use retention metadata",
+            "entity_type": "decision",
+            "feedback": "used",
+            "actor": "assistant",
+            "session_id": "agent-1",
+            "importance": 0.8,
+            "query": "retention decisions",
+            "citation": "eventloom://agent-1/events/1#abc",
+            "score": 0.91,
+        })
+
+        log = server.session_manager.get.return_value.eventlog
+        log.append.assert_called_once()
+        call = log.append.call_args
+        assert call.args == ("memory.reinforced",)
+        assert call.kwargs["actor"] == "assistant"
+        assert call.kwargs["thread"] == "agent-1"
+        assert call.kwargs["payload"] == {
+            "entity_name": "Use retention metadata",
+            "entity_type": "decision",
+            "query": "retention decisions",
+            "source": "mcp",
+            "score": 0.91,
+            "citation": "eventloom://agent-1/events/1#abc",
+            "importance": 0.8,
+        }
+        server.graph.upsert_extraction.assert_awaited_once()
+        server.tracer.trace_append.assert_awaited_once_with("memory.reinforced", "assistant", 1)
+        assert json_loads(result[0].text)["event_type"] == "memory.reinforced"
+
+    async def test_negative_feedback_appends_audit_event(self, server: ZaxyMCPServer) -> None:
+        """Irrelevant context should be recorded without reinforcement metadata."""
+        result = await server.handle_memory_feedback({
+            "entity_name": "Stale note",
+            "entity_type": "decision",
+            "feedback": "irrelevant",
+            "reason": "Superseded by later decision",
+        })
+
+        call = server.session_manager.get.return_value.eventlog.append.call_args
+        assert call.args == ("memory.feedback",)
+        assert call.kwargs["actor"] == "zaxy"
+        assert call.kwargs["payload"]["feedback"] == "irrelevant"
+        assert call.kwargs["payload"]["reason"] == "Superseded by later decision"
+        assert "importance" not in call.kwargs["payload"]
+        assert json_loads(result[0].text)["event_type"] == "memory.feedback"
+
+    async def test_rejects_unknown_feedback(self, server: ZaxyMCPServer) -> None:
+        """Feedback values should stay constrained to known retrieval outcomes."""
+        with pytest.raises(ValueError, match="feedback"):
+            await server.handle_memory_feedback({
+                "entity_name": "x",
+                "entity_type": "memory",
+                "feedback": "maybe",
+            })
+
+        server.session_manager.get.assert_not_called()
 
 
 class TestServerSetup:

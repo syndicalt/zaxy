@@ -6,6 +6,7 @@ with Zaxy via the Model Context Protocol.
 Tools exposed:
 - memory_append: Append a typed event to the log.
 - memory_query: Query the temporal knowledge graph.
+- memory_feedback: Record retrieval feedback for a graph entity.
 - memory_replay: Replay events from a session.
 - memory_invalidate: Mark a fact as superseded.
 """
@@ -100,6 +101,35 @@ TOOLS = [
                 "query": {"type": "string", "description": "Natural language query"},
                 "temporal_filter": {"type": "string", "description": "ISO-8601 point-in-time filter"},
                 "limit": {"type": "integer", "description": "Max results", "default": 10},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_feedback",
+        description="Record feedback for retrieved context and reinforce useful memories.",
+        inputSchema={
+            "type": "object",
+            "required": ["entity_name", "entity_type", "feedback"],
+            "properties": {
+                "entity_name": {"type": "string", "description": "Retrieved graph entity name"},
+                "entity_type": {"type": "string", "description": "Retrieved graph entity type"},
+                "feedback": {
+                    "type": "string",
+                    "enum": ["used", "helpful", "irrelevant"],
+                    "description": "Retrieval outcome to record",
+                },
+                "actor": {"type": "string", "description": "Actor recording feedback", "default": "zaxy"},
+                "session_id": {"type": "string", "description": "Session ID for multi-agent sharding"},
+                "query": {"type": "string", "description": "Query that returned the context"},
+                "source": {"type": "string", "description": "Retrieval source", "default": "mcp"},
+                "score": {"type": "number", "description": "Original retrieval score"},
+                "citation": {"type": "string", "description": "Eventloom citation for the retrieved context"},
+                "reason": {"type": "string", "description": "Short rationale for the feedback"},
+                "importance": {
+                    "type": "number",
+                    "description": "Optional 0..1 reinforcement importance for positive feedback",
+                },
             },
             "additionalProperties": False,
         },
@@ -450,6 +480,51 @@ class ZaxyMCPServer:
             for r in results
         ]
         return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+    async def handle_memory_feedback(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_feedback tool call."""
+        feedback = _normalize_feedback(arguments["feedback"])
+        entity_name = _required_text(arguments["entity_name"], "entity_name")
+        entity_type = _required_text(arguments["entity_type"], "entity_type")
+        actor = _optional_text(arguments.get("actor")) or "zaxy"
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
+
+        payload: dict[str, Any] = {
+            "entity_name": entity_name,
+            "entity_type": entity_type,
+            "query": _optional_text(arguments.get("query")),
+            "source": _optional_text(arguments.get("source")) or "mcp",
+            "score": arguments.get("score"),
+            "citation": _optional_text(arguments.get("citation")),
+            "reason": _optional_text(arguments.get("reason")),
+        }
+        event_type = "memory.feedback"
+        if feedback in {"used", "helpful"}:
+            event_type = "memory.reinforced"
+            importance = arguments.get("importance")
+            if importance is not None:
+                payload["importance"] = max(0.0, min(1.0, float(importance)))
+        else:
+            payload["feedback"] = feedback
+        payload = {key: value for key, value in payload.items() if value is not None}
+
+        eventlog = self.session_manager.get(session_id).eventlog
+        event = eventlog.append(
+            event_type,
+            actor=actor,
+            payload=validate_payload(payload),
+            thread=session_id,
+        )
+        extraction = extract(event)
+        await self.graph.upsert_extraction(extraction, session_id=session_id)
+        await self.tracer.trace_append(event_type, actor, event.seq)
+
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps({"seq": event.seq, "hash": event.hash, "event_type": event_type}),
+            )
+        ]
 
     async def handle_memory_replay(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle memory_replay tool call."""
@@ -871,6 +946,27 @@ def _claim_values(value: Any) -> set[str]:
     return set()
 
 
+def _normalize_feedback(feedback: object) -> str:
+    normalized = str(feedback).casefold().strip()
+    if normalized not in {"used", "helpful", "irrelevant"}:
+        raise ValueError("feedback must be one of: used, helpful, irrelevant")
+    return normalized
+
+
+def _required_text(value: object, field: str) -> str:
+    text = _optional_text(value)
+    if text is None:
+        raise ValueError(f"{field} is required")
+    return text
+
+
+def _optional_text(value: object) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 # ------------------------------------------------------------------
 # Entrypoint
 # ------------------------------------------------------------------
@@ -887,6 +983,8 @@ async def _dispatch_tool_call(
         return await active_server.handle_memory_append(arguments)
     if name == "memory_query":
         return await active_server.handle_memory_query(arguments)
+    if name == "memory_feedback":
+        return await active_server.handle_memory_feedback(arguments)
     if name == "memory_replay":
         return await active_server.handle_memory_replay(arguments)
     if name == "memory_invalidate":

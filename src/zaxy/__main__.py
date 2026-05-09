@@ -35,6 +35,7 @@ from zaxy.event import EventLog
 from zaxy.extract import extract
 from zaxy.extract_templates import ExtractorTemplateSpec, render_extractor_template
 from zaxy.graph import GraphStore
+from zaxy.hooks import build_hook_payload, hook_event_type, render_hook_config
 from zaxy.integrations import render_agent_integration_template, render_mcp_client_config
 from zaxy.lifecycle import build_compaction_completed_event
 from zaxy.live_benchmark import (
@@ -104,6 +105,55 @@ def integration_template(
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(template, nl=False)
+
+
+@app.command("hooks")
+def hooks(
+    client: str = typer.Argument(..., help="Hook client: claude-code, codex, or generic"),  # noqa: B008
+    eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory for hook events"),
+    domain: str | None = typer.Option(None, help="Project/domain used for default session scoping"),  # noqa: B008
+    source: str | None = typer.Option(None, help="Override hook source name"),  # noqa: B008
+) -> None:
+    """Print observer hook configuration for supported clients."""
+    try:
+        typer.echo(
+            render_hook_config(
+                client,
+                eventloom_path=eventloom_path,
+                domain=domain,
+                source=source,
+            ),
+            nl=False,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
+@app.command("hook-event")
+def hook_event(
+    trigger: str = typer.Argument(..., help="Hook trigger: session-start, stop, precompact, or checkpoint"),  # noqa: B008
+    eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory for hook events"),
+    session_id: str = typer.Option("default", help="Session ID to append hook events into"),
+    source: str = typer.Option("generic", help="Client or adapter that emitted the hook"),
+    workspace: str | None = typer.Option(None, help="Workspace path associated with the hook"),  # noqa: B008
+    transcript_path: str | None = typer.Option(None, help="Transcript path associated with the hook"),  # noqa: B008
+) -> None:
+    """Append a lightweight observer hook event without requiring Neo4j."""
+    from zaxy.session import SessionManager
+
+    try:
+        event_type = hook_event_type(trigger)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    payload = build_hook_payload(
+        trigger=trigger,
+        source=source,
+        workspace=workspace,
+        transcript_path=transcript_path,
+    )
+    eventlog = SessionManager(base_path=eventloom_path).get(session_id).eventlog
+    event = eventlog.append(event_type, actor="zaxy-hook", payload=payload, thread=session_id)
+    typer.echo(f"Recorded hook {payload['trigger']} as {event_type} seq={event.seq}")
 
 
 @app.command("local-profile")

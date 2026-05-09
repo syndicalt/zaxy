@@ -20,6 +20,14 @@ from the configured session header. Results include Eventloom citations when
 available so clients can display or replay the source event. Results also
 include `score_explanation` metadata for ranking diagnostics.
 
+`memory_feedback(entity_name, entity_type, feedback, ...)` records whether a
+retrieved graph entity was useful. Positive feedback values, `used` and
+`helpful`, append a `memory.reinforced` event with optional `importance`,
+`query`, `source`, `score`, `citation`, and `reason` fields. Negative feedback,
+`irrelevant`, appends an audit-only `memory.feedback` event and does not delete
+or decay existing memory. The tool uses the same session scoping rules as
+append and query.
+
 `memory_replay(session_id, from_seq?)` rebuilds session history from the
 Eventloom log. This is useful for handoffs, audits, and debugging. In remote SSE
 mode, the authenticated session scope is enforced so a client cannot replay a
@@ -62,6 +70,20 @@ zaxy ide-config cursor --eventloom-path .eventloom
 zaxy ide-config vscode --eventloom-path .eventloom
 zaxy ide-config claude-desktop --eventloom-path .eventloom --domain zaxy
 ```
+
+Generate observer hook adapters:
+
+```bash
+zaxy hooks claude-code --eventloom-path .eventloom --domain zaxy
+zaxy hooks codex --eventloom-path .eventloom --domain zaxy
+```
+
+Hook adapters do not proxy tool execution. Agents and tools continue to execute
+normally while hooks append lightweight Eventloom observations through
+`zaxy hook-event`. The sink is intentionally graph-independent so session stop
+and pre-compaction hooks can record provenance even when Neo4j is unavailable.
+Custom clients can implement the same contract by emitting normalized triggers
+such as `session-start`, `stop`, `precompact`, and `checkpoint`.
 
 These commands print copyable JSON fragments and do not include bearer tokens,
 passwords, or admin secrets. Keep remote SSE credentials in the client secret

@@ -18,6 +18,10 @@ pip install zaxy-memory
 # available, so average users do not need to manage a sidecar manually.
 zaxy ide-config claude-desktop --eventloom-path .eventloom
 
+# Print observer hook config so Zaxy can record lifecycle checkpoints without
+# proxying normal agent/tool execution.
+zaxy hooks claude-code --eventloom-path .eventloom --domain my-project
+
 # Optional: explicit local development setup if you want shell commands too.
 ./scripts/setup.sh
 
@@ -48,7 +52,7 @@ python scripts/test_drive.py
 Agent (LangGraph / Any MCP Client)
     |
     v
-MCP Server — memory_append / memory_query / memory_replay / memory_invalidate
+MCP Server — memory_append / memory_query / memory_feedback / memory_replay / memory_invalidate
     |
     v
 Eventloom (immutable JSONL log)  →  Hybrid Extraction  →  Neo4j (temporal KG)
