@@ -6,7 +6,12 @@ import json
 from pathlib import Path
 
 from zaxy.event import EventLog
-from zaxy.memory_status import format_memory_status, inspect_memory_status
+from zaxy.memory_status import (
+    format_memory_log,
+    format_memory_status,
+    inspect_memory_log,
+    inspect_memory_status,
+)
 
 
 def test_inspect_memory_status_reports_integrity_failure(tmp_path: Path) -> None:
@@ -49,3 +54,72 @@ def test_inspect_memory_status_accepts_single_log_file(tmp_path: Path) -> None:
     assert status.session_count == 1
     assert status.sessions[0].session_id == "worker"
     assert status.sessions[0].latest_type == "task.completed"
+
+
+def test_inspect_memory_log_orders_recent_events_across_sessions(tmp_path: Path) -> None:
+    """Memory log should show newest events first across Eventloom sessions."""
+    EventLog(tmp_path / ".eventloom" / "agent-a.jsonl").append(
+        "goal.created",
+        actor="user",
+        payload={"title": "Ship it"},
+        thread="agent-a",
+    )
+    EventLog(tmp_path / ".eventloom" / "agent-b.jsonl").append(
+        "decision.recorded",
+        actor="assistant",
+        payload={"decision": "Use source-aware assembly."},
+        thread="agent-b",
+    )
+
+    log = inspect_memory_log(tmp_path / ".eventloom", limit=2)
+
+    assert [entry.session_id for entry in log.entries] == ["agent-b", "agent-a"]
+    assert log.entries[0].summary == "Use source-aware assembly."
+    assert log.entries[1].summary == "Ship it"
+    assert log.entries[0].integrity_ok is True
+
+
+def test_inspect_memory_log_filters_session_and_limit(tmp_path: Path) -> None:
+    """Memory log should support one-session inspection with a bounded result count."""
+    agent_log = EventLog(tmp_path / ".eventloom" / "agent.jsonl")
+    first = agent_log.append(
+        "transcript.turn",
+        actor="user",
+        payload={"content": "Older turn"},
+        thread="agent",
+    )
+    second = agent_log.append(
+        "task.completed",
+        actor="assistant",
+        payload={"summary": "Finished source-aware status."},
+        thread="agent",
+    )
+    EventLog(tmp_path / ".eventloom" / "other.jsonl").append(
+        "goal.created",
+        actor="user",
+        payload={"title": "Ignore me"},
+        thread="other",
+    )
+
+    log = inspect_memory_log(tmp_path / ".eventloom", session_id="agent", limit=1)
+
+    assert first.seq == 1
+    assert len(log.entries) == 1
+    assert log.entries[0].seq == second.seq
+    assert log.entries[0].summary == "Finished source-aware status."
+
+
+def test_format_memory_log_prints_git_style_lines(tmp_path: Path) -> None:
+    """Human memory log output should be compact and source-oriented."""
+    event = EventLog(tmp_path / "agent.jsonl").append(
+        "decision.recorded",
+        actor="assistant",
+        payload={"decision": "Use Eventloom as source of truth."},
+        thread="agent",
+    )
+
+    output = format_memory_log(inspect_memory_log(tmp_path / "agent.jsonl", limit=10))
+
+    assert f"agent [{event.seq}] {event.hash[:12]}" in output
+    assert "decision.recorded by assistant" in output
+    assert "Use Eventloom as source of truth." in output

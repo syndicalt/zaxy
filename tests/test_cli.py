@@ -79,6 +79,76 @@ def test_memory_status_handles_empty_eventloom_directory(tmp_path: Path) -> None
     assert "Total events: 0" in result.output
 
 
+def test_memory_log_prints_recent_events(tmp_path: Path) -> None:
+    """memory log should print recent events in compact git-style form."""
+    event = EventLog(tmp_path / ".eventloom" / "agent.jsonl").append(
+        "decision.recorded",
+        actor="assistant",
+        payload={"decision": "Use memory log."},
+        thread="agent",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["memory", "log", "--eventloom-path", str(tmp_path / ".eventloom")],
+    )
+
+    assert result.exit_code == 0
+    assert f"agent [{event.seq}] {event.hash[:12]}" in result.output
+    assert "decision.recorded by assistant" in result.output
+    assert "Use memory log." in result.output
+
+
+def test_memory_log_json_filters_session_and_limit(tmp_path: Path) -> None:
+    """memory log --json should expose stable event entries with filtering."""
+    agent_log = EventLog(tmp_path / ".eventloom" / "agent.jsonl")
+    agent_log.append(
+        "goal.created",
+        actor="user",
+        payload={"title": "Older"},
+        thread="agent",
+    )
+    event = agent_log.append(
+        "task.completed",
+        actor="assistant",
+        payload={"summary": "Newest"},
+        thread="agent",
+    )
+    EventLog(tmp_path / ".eventloom" / "other.jsonl").append(
+        "decision.recorded",
+        actor="assistant",
+        payload={"decision": "Skip"},
+        thread="other",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "log",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent",
+            "--limit",
+            "1",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["eventloom_path"] == str((tmp_path / ".eventloom").resolve())
+    assert payload["limit"] == 1
+    assert payload["session_id"] == "agent"
+    assert len(payload["entries"]) == 1
+    assert payload["entries"][0]["seq"] == event.seq
+    assert payload["entries"][0]["hash"] == event.hash
+    assert payload["entries"][0]["summary"] == "Newest"
+
+
 def test_ide_config_command_prints_copyable_mcp_json() -> None:
     runner = CliRunner()
 

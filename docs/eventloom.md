@@ -39,6 +39,7 @@ For local inspection, generate a standalone HTML viewer:
 
 ```bash
 zaxy memory status --eventloom-path .eventloom
+zaxy memory log --eventloom-path .eventloom --limit 20
 zaxy viewer .eventloom --output eventloom-viewer.html
 ```
 
@@ -46,6 +47,10 @@ zaxy viewer .eventloom --output eventloom-viewer.html
 session logs, event counts, latest sequence/hash, latest event type, and
 Eventloom integrity without requiring Neo4j. Use `--json` when scripts need the
 same fields in a stable machine-readable format.
+`zaxy memory log` prints recent memory events in compact reverse-chronological
+form with session ID, sequence, short hash, timestamp, event type, actor, and a
+payload summary. Use `--session-id` to inspect one session and `--json` for
+stable machine-readable entries.
 
 The viewer reads one JSONL log or every `*.jsonl` file in an Eventloom
 directory. It highlights session bootstrap events, lifecycle events, integrity

@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from zaxy.event import EventLog
+from zaxy.event import Event, EventLog
+from zaxy.security import eventlog_path, validate_session_id
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,34 @@ class MemoryStatus:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class MemoryLogEntry:
+    """One Eventloom event rendered for git-style memory log inspection."""
+
+    session_id: str
+    seq: int
+    hash: str
+    timestamp: str
+    type: str
+    actor: str
+    summary: str
+    integrity_ok: bool
+
+
+@dataclass(frozen=True)
+class MemoryLog:
+    """Recent Eventloom events across one or more sessions."""
+
+    eventloom_path: str
+    session_id: str | None
+    limit: int
+    entries: list[MemoryLogEntry]
+
+    def to_dict(self) -> dict[str, object]:
+        """Return a stable JSON-serializable representation."""
+        return asdict(self)
+
+
 def inspect_memory_status(eventloom_path: str | Path) -> MemoryStatus:
     """Inspect Eventloom JSONL session logs without requiring graph services."""
     base = Path(eventloom_path).resolve()
@@ -47,6 +76,31 @@ def inspect_memory_status(eventloom_path: str | Path) -> MemoryStatus:
         session_count=len(sessions),
         total_events=sum(session.event_count for session in sessions),
         sessions=sessions,
+    )
+
+
+def inspect_memory_log(
+    eventloom_path: str | Path,
+    *,
+    session_id: str | None = None,
+    limit: int = 20,
+) -> MemoryLog:
+    """Return recent Eventloom events without requiring graph services."""
+    base = Path(eventloom_path).resolve()
+    paths = [_session_log_path(base, session_id)] if session_id else _eventlog_paths(base)
+    entries: list[MemoryLogEntry] = []
+    for path in paths:
+        log = EventLog(path)
+        integrity = log.verify()
+        for event in log.read_all():
+            entries.append(_log_entry(path.stem, event, integrity_ok=integrity.ok))
+    entries.sort(key=lambda entry: (entry.timestamp, entry.session_id, entry.seq), reverse=True)
+    safe_limit = max(0, limit)
+    return MemoryLog(
+        eventloom_path=str(base),
+        session_id=session_id,
+        limit=safe_limit,
+        entries=entries[:safe_limit],
     )
 
 
@@ -75,12 +129,37 @@ def format_memory_status(status: MemoryStatus) -> str:
     return "\n".join(lines)
 
 
+def format_memory_log(memory_log: MemoryLog) -> str:
+    """Format recent Eventloom events for humans."""
+    if not memory_log.entries:
+        return "No memory events found."
+    lines: list[str] = []
+    for entry in memory_log.entries:
+        lines.append(
+            f"{entry.session_id} [{entry.seq}] {entry.hash[:12]} "
+            f"{entry.timestamp} {entry.type} by {entry.actor}"
+        )
+        if entry.summary:
+            lines.append(f"  {entry.summary}")
+        if not entry.integrity_ok:
+            lines.append("  integrity=FAILED")
+    return "\n".join(lines)
+
+
 def _eventlog_paths(base: Path) -> list[Path]:
     if base.is_file():
         return [base]
     if not base.exists():
         return []
     return sorted(path for path in base.glob("*.jsonl") if path.is_file())
+
+
+def _session_log_path(base: Path, session_id: str | None) -> Path:
+    if base.is_file():
+        return base
+    if session_id is None:
+        raise ValueError("session_id is required")
+    return eventlog_path(base, validate_session_id(session_id))
 
 
 def _inspect_log(path: Path) -> SessionStatus:
@@ -100,3 +179,26 @@ def _inspect_log(path: Path) -> SessionStatus:
         integrity_ok=integrity.ok,
         integrity_reason=integrity.broken_reason,
     )
+
+
+def _log_entry(session_id: str, event: Event, *, integrity_ok: bool) -> MemoryLogEntry:
+    return MemoryLogEntry(
+        session_id=session_id,
+        seq=event.seq,
+        hash=event.hash,
+        timestamp=event.timestamp,
+        type=event.type,
+        actor=event.actor,
+        summary=_event_summary(event),
+        integrity_ok=integrity_ok,
+    )
+
+
+def _event_summary(event: Event) -> str:
+    for key in ("summary", "decision", "title", "content", "text", "task"):
+        value = event.payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return " ".join(value.split())
+    if event.payload:
+        return ", ".join(sorted(str(key) for key in event.payload))
+    return ""

@@ -297,12 +297,13 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Source-aware context assembly with reserved verbatim Eventloom retrieval lane
 - [x] Configurable and observable context assembly source-recall policy
 - [x] Read-only `zaxy memory status` for Eventloom session integrity and latest hashes
+- [x] Read-only `zaxy memory log` for recent Eventloom events with JSON output
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 552 passed |
+| Tests | 557 passed |
 | Coverage | 92.25% |
 | Lint | ruff clean |
 | Types | mypy clean |

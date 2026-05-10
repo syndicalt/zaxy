@@ -494,6 +494,7 @@ zaxy local-profile --check  # Validate deterministic local retrieval providers
 zaxy init-session . --session-id zaxy-default  # Append workspace genesis profile event
 zaxy index-codebase . --session-id zaxy-default  # Append codebase file, symbol, import, dependency, call, and coverage events
 zaxy memory status --eventloom-path .eventloom  # Inspect Eventloom sessions, latest hashes, and integrity
+zaxy memory log --eventloom-path .eventloom --limit 20  # Show recent Eventloom events
 zaxy replay PATH    # Replay Eventloom log
 zaxy compact PATH --audit  # Audit compaction safety without rewriting the log
 zaxy compact PATH   # Compact log + create snapshot

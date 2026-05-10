@@ -76,7 +76,12 @@ from zaxy.live_benchmark import (
 )
 from zaxy.local_profile import check_local_profile, render_local_profile, write_local_profile
 from zaxy.mcp_server import main as mcp_main
-from zaxy.memory_status import format_memory_status, inspect_memory_status
+from zaxy.memory_status import (
+    format_memory_log,
+    format_memory_status,
+    inspect_memory_log,
+    inspect_memory_status,
+)
 from zaxy.onboarding import (
     OnboardingResult,
     apply_onboarding_preset,
@@ -102,6 +107,24 @@ def memory_status(
         typer.echo(json.dumps(status.to_dict(), indent=2, sort_keys=True))
     else:
         typer.echo(format_memory_status(status))
+
+
+@memory_app.command("log")
+def memory_log(
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory or JSONL log"),  # noqa: B008
+    session_id: str | None = typer.Option(None, help="Session ID to inspect"),  # noqa: B008
+    limit: int = typer.Option(20, min=0, help="Maximum events to print"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Show recent Eventloom memory events."""
+    try:
+        memory = inspect_memory_log(eventloom_path, session_id=session_id, limit=limit)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if json_output:
+        typer.echo(json.dumps(memory.to_dict(), indent=2, sort_keys=True))
+    else:
+        typer.echo(format_memory_log(memory))
 
 
 @app.command("ide-config")
