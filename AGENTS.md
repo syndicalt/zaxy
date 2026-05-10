@@ -282,12 +282,13 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Structured onboarding next steps in text and JSON output
 - [x] Pre-MCP CLI install guidance and resolved executable paths in generated MCP config
 - [x] Installed `zaxy` console-script preference for generated MCP executable paths
+- [x] `zaxy init --preset local-claude` shortcut for the explicit local onboarding path
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 523 passed |
+| Tests | 526 passed |
 | Coverage | 92.25% |
 | Lint | ruff clean |
 | Types | mypy clean |
@@ -295,5 +296,5 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 ## Next Steps
 
-1. Add client-specific MCP install target helpers once platform config paths are verified.
+1. Verify client-specific MCP install target paths before adding write-and-merge helpers.
 2. Add optional deeper framework packages once direct templates see usage.

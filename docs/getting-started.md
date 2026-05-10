@@ -68,6 +68,14 @@ doctor, and hook status.
 ```bash
 zaxy init . \
   --domain my-project \
+  --preset local-claude
+```
+
+`--preset local-claude` expands to the explicit local setup:
+
+```bash
+zaxy init . \
+  --domain my-project \
   --mcp-client claude-desktop \
   --mcp-output ./zaxy-mcp.json \
   --hook-client claude-code \

@@ -12,6 +12,7 @@ from zaxy.event import EventLog
 from zaxy.onboarding import (
     OnboardingResult,
     OnboardingStep,
+    apply_onboarding_preset,
     format_onboarding_result,
     run_onboarding,
 )
@@ -32,6 +33,46 @@ class FakeRuntime:
 
     def ensure_available(self) -> None:
         self.started = True
+
+
+def test_apply_onboarding_preset_expands_local_claude_defaults(tmp_path: Path) -> None:
+    """local-claude should expand to the documented non-destructive golden path."""
+    options = apply_onboarding_preset(
+        "local-claude",
+        workspace=tmp_path,
+        mcp_client=None,
+        mcp_output=None,
+        hook_client=None,
+        hook_output=None,
+        local_profile_output=None,
+        infra="none",
+    )
+
+    assert options["mcp_client"] == "claude-desktop"
+    assert options["mcp_output"] == tmp_path / "zaxy-mcp.json"
+    assert options["hook_client"] == "claude-code"
+    assert options["hook_output"] == tmp_path / ".claude" / "settings.local.json"
+    assert options["local_profile_output"] == tmp_path / ".env.local"
+    assert options["infra"] == "check"
+
+
+def test_apply_onboarding_preset_preserves_explicit_overrides(tmp_path: Path) -> None:
+    """Preset expansion should never override explicit user choices."""
+    options = apply_onboarding_preset(
+        "local-claude",
+        workspace=tmp_path,
+        mcp_client="cursor",
+        mcp_output=tmp_path / "cursor.json",
+        hook_client=None,
+        hook_output=None,
+        local_profile_output=None,
+        infra="start",
+    )
+
+    assert options["mcp_client"] == "cursor"
+    assert options["mcp_output"] == tmp_path / "cursor.json"
+    assert options["hook_client"] == "claude-code"
+    assert options["infra"] == "start"
 
 
 @pytest.mark.asyncio

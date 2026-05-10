@@ -66,7 +66,12 @@ from zaxy.live_benchmark import (
 )
 from zaxy.local_profile import check_local_profile, render_local_profile, write_local_profile
 from zaxy.mcp_server import main as mcp_main
-from zaxy.onboarding import OnboardingResult, format_onboarding_result, run_onboarding
+from zaxy.onboarding import (
+    OnboardingResult,
+    apply_onboarding_preset,
+    format_onboarding_result,
+    run_onboarding,
+)
 from zaxy.schema import render_schema_plan
 from zaxy.viewer import write_viewer_html
 
@@ -275,6 +280,7 @@ def init_session(
 @app.command("init")
 def init(
     path: Path = typer.Argument(Path("."), help="Workspace root to initialize"),  # noqa: B008
+    preset: str | None = typer.Option(None, help="Onboarding preset: local-claude"),  # noqa: B008
     eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory for this workspace"),
     domain: str | None = typer.Option(None, help="Project/domain used for default session scoping"),  # noqa: B008
     session_id: str | None = typer.Option(None, help="Explicit session ID; defaults to <domain>-default"),  # noqa: B008
@@ -292,17 +298,27 @@ def init(
     import asyncio
 
     async def _run() -> OnboardingResult:
-        return await run_onboarding(
-            path,
-            eventloom_path=eventloom_path,
-            domain=domain,
-            session_id=session_id,
+        preset_options = apply_onboarding_preset(
+            preset,
+            workspace=path,
             mcp_client=mcp_client,
             mcp_output=mcp_output,
             hook_client=hook_client,
             hook_output=hook_output,
             local_profile_output=local_profile_output,
             infra=infra,
+        )
+        return await run_onboarding(
+            path,
+            eventloom_path=eventloom_path,
+            domain=domain,
+            session_id=session_id,
+            mcp_client=preset_options["mcp_client"],
+            mcp_output=preset_options["mcp_output"],
+            hook_client=preset_options["hook_client"],
+            hook_output=preset_options["hook_output"],
+            local_profile_output=preset_options["local_profile_output"],
+            infra=preset_options["infra"],
             zaxy_executable=zaxy_executable,
             force=force,
         )

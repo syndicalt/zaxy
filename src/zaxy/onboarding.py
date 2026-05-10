@@ -51,6 +51,45 @@ class OnboardingResult:
     hook_status: dict[str, Any] = field(default_factory=dict)
 
 
+def apply_onboarding_preset(
+    preset: str | None,
+    *,
+    workspace: str | Path,
+    mcp_client: str | None,
+    mcp_output: str | Path | None,
+    hook_client: str | None,
+    hook_output: str | Path | None,
+    local_profile_output: str | Path | None,
+    infra: str,
+) -> dict[str, Any]:
+    """Expand a named onboarding preset without overriding explicit options."""
+    if preset is None:
+        return {
+            "mcp_client": mcp_client,
+            "mcp_output": mcp_output,
+            "hook_client": hook_client,
+            "hook_output": hook_output,
+            "local_profile_output": local_profile_output,
+            "infra": infra,
+        }
+    normalized = preset.casefold().strip().replace("_", "-")
+    if normalized != "local-claude":
+        raise ValueError("preset must be one of: local-claude")
+    root = Path(workspace)
+    return {
+        "mcp_client": mcp_client or "claude-desktop",
+        "mcp_output": Path(mcp_output) if mcp_output is not None else root / "zaxy-mcp.json",
+        "hook_client": hook_client or "claude-code",
+        "hook_output": Path(hook_output) if hook_output is not None else root / ".claude" / "settings.local.json",
+        "local_profile_output": (
+            Path(local_profile_output)
+            if local_profile_output is not None
+            else root / ".env.local"
+        ),
+        "infra": infra if infra != "none" else "check",
+    }
+
+
 async def run_onboarding(
     workspace: str | Path,
     *,

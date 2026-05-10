@@ -447,6 +447,26 @@ def test_init_command_passes_infra_action(mock_run_onboarding: AsyncMock, tmp_pa
     assert mock_run_onboarding.await_args.kwargs["infra"] == "check"
 
 
+@patch("zaxy.__main__.run_onboarding")
+def test_init_command_expands_local_claude_preset(mock_run_onboarding: AsyncMock, tmp_path: Path) -> None:
+    """init --preset local-claude should pass expanded explicit options."""
+    result_obj = MagicMock()
+    result_obj.status = "ok"
+    mock_run_onboarding.return_value = result_obj
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["init", str(tmp_path), "--preset", "local-claude"])
+
+    assert result.exit_code == 0
+    kwargs = mock_run_onboarding.await_args.kwargs
+    assert kwargs["mcp_client"] == "claude-desktop"
+    assert kwargs["mcp_output"] == tmp_path / "zaxy-mcp.json"
+    assert kwargs["hook_client"] == "claude-code"
+    assert kwargs["hook_output"] == tmp_path / ".claude" / "settings.local.json"
+    assert kwargs["local_profile_output"] == tmp_path / ".env.local"
+    assert kwargs["infra"] == "check"
+
+
 def test_init_command_json_includes_next_steps(tmp_path: Path) -> None:
     """init --json should expose next_steps for client UIs and automation."""
     workspace = tmp_path / "repo"

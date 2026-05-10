@@ -19,12 +19,7 @@ pipx install zaxy-memory
 # available, so average users do not need to manage a sidecar manually.
 zaxy init . \
   --domain my-project \
-  --mcp-client claude-desktop \
-  --mcp-output ./zaxy-mcp.json \
-  --hook-client claude-code \
-  --hook-output .claude/settings.local.json \
-  --local-profile-output .env.local \
-  --infra check
+  --preset local-claude
 
 # Optional: explicit local development setup if you want shell commands too.
 ./scripts/setup.sh
