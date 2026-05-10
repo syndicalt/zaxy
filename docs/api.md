@@ -165,7 +165,9 @@ await fabric.record_context_feedback(
 
 Positive feedback (`used` or `helpful`) appends `memory.reinforced` events for
 the retrieved entity. Negative feedback (`irrelevant`) appends audit-only
-`memory.feedback` events and does not delete or decay existing memory.
+`memory.feedback` events and does not delete or decay existing memory. Feedback
+for `packet_memory` context preserves the packet projection citation plus source
+packet sequence/hash, provider path, and model when available.
 
 Render first-run integration payloads:
 

@@ -691,6 +691,8 @@ class MemoryFabric:
             }
             if context.metadata and (citation := context.metadata.get("citation")):
                 payload["citation"] = citation
+            if context.metadata:
+                payload.update(_context_feedback_metadata(context.metadata))
             if normalized in {"used", "helpful"}:
                 payload.pop("feedback")
                 if importance is not None:
@@ -876,8 +878,28 @@ def _context_identity(context: Context) -> dict[str, str]:
         name = entity_name.strip()
     else:
         name = _context_content_identity(context.content)
-    kind = entity_type.strip() if isinstance(entity_type, str) and entity_type.strip() else "memory"
+    if isinstance(entity_type, str) and entity_type.strip():
+        kind = entity_type.strip()
+    elif context.source == "packet_memory":
+        kind = "packet_memory"
+    else:
+        kind = "memory"
     return {"entity_name": name, "entity_type": kind}
+
+
+def _context_feedback_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    allowed = {
+        "source_kind",
+        "source_event_seq",
+        "source_event_hash",
+        "provider_path",
+        "model",
+    }
+    return {
+        key: value
+        for key, value in metadata.items()
+        if key in allowed and isinstance(value, str | int | float | bool)
+    }
 
 
 def _context_content_identity(content: str) -> str:

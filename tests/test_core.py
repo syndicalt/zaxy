@@ -319,6 +319,32 @@ class TestContextFeedback:
         assert payload["entity_name"] == "Fallback note"
         assert payload["entity_type"] == "memory"
 
+    async def test_positive_feedback_preserves_packet_memory_provenance(self, fabric: MemoryFabric) -> None:
+        """Packet-memory feedback should preserve source packet identifiers."""
+        context = Context(
+            content="LLM packet /v1/responses status 200. User: Mira owns dashboards.",
+            source="packet_memory",
+            score=0.6,
+            metadata={
+                "citation": "eventloom://agent-1/events/6#ffffffffffff",
+                "source_kind": "packet_projection",
+                "source_event_seq": 5,
+                "source_event_hash": "b" * 64,
+                "provider_path": "/v1/responses",
+                "model": "gpt-test",
+            },
+        )
+
+        await fabric.record_context_feedback([context], feedback="used", session_id="agent-1")
+
+        payload = fabric.session_manager.get.return_value.eventlog.append.call_args_list[-1].kwargs["payload"]
+        assert payload["entity_name"] == "LLM packet /v1/responses status 200. User: Mira owns dashboards."
+        assert payload["entity_type"] == "packet_memory"
+        assert payload["source_event_seq"] == 5
+        assert payload["source_event_hash"] == "b" * 64
+        assert payload["provider_path"] == "/v1/responses"
+        assert payload["model"] == "gpt-test"
+
     async def test_negative_feedback_is_audit_only(self, fabric: MemoryFabric) -> None:
         """Irrelevant context should be recorded without mutating retention metadata."""
         context = Context(

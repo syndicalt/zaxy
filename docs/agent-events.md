@@ -111,6 +111,9 @@ ranking metadata onto the named entity.
 
 Projection: target entity with `last_reinforced_at`, `reinforcement_count`, and
 optional `importance`, linked from the actor with `reinforced_memory`.
+Packet-memory reinforcement may also carry `source_kind=packet_projection`,
+`source_event_seq`, `source_event_hash`, `provider_path`, and `model` so the
+reinforcement remains tied to the captured packet provenance.
 
 Retention fields are intentionally small and typed:
 
