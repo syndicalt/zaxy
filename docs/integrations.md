@@ -32,6 +32,19 @@ The CLI can print the matching command with a starter:
 zaxy integration-template langgraph --install-hint
 ```
 
+To inspect the current framework support registry:
+
+```bash
+zaxy integrations
+zaxy integrations --json
+```
+
+Each entry reports the framework package, optional extra, starter function,
+current maturity, and whether a framework-native adapter package exists. The
+current entries are `template` maturity with `native_adapter=not-yet-packaged`;
+that status is deliberate until real usage identifies which framework runtime
+APIs should become maintained adapters.
+
 The templates all use the same durable flow:
 
 1. Create a `MemoryFabric` with the configured Eventloom path.

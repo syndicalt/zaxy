@@ -2,6 +2,8 @@
 
 from zaxy.core import MemoryFabric
 from zaxy.integrations import (
+    FrameworkIntegrationSpec,
+    list_framework_integration_specs,
     render_agent_integration_template,
     render_framework_install_command,
     render_handoff_adapter,
@@ -9,7 +11,9 @@ from zaxy.integrations import (
 )
 
 __all__ = [
+    "FrameworkIntegrationSpec",
     "MemoryFabric",
+    "list_framework_integration_specs",
     "render_agent_integration_template",
     "render_framework_install_command",
     "render_handoff_adapter",

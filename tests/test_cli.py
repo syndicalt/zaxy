@@ -206,6 +206,29 @@ def test_integration_template_command_can_print_install_hint() -> None:
     assert "async def zaxy_crewai_memory_step" in result.output
 
 
+def test_integrations_command_lists_framework_registry() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["integrations"])
+
+    assert result.exit_code == 0
+    assert "LangGraph" in result.output
+    assert "zaxy-memory[langgraph]" in result.output
+    assert "template" in result.output
+    assert "not-yet-packaged" in result.output
+
+
+def test_integrations_command_can_emit_json() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["integrations", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload[0]["framework"] == "langgraph"
+    assert payload[0]["install"] == "python -m pip install 'zaxy-memory[langgraph]'"
+
+
 def test_hooks_command_prints_claude_code_settings(tmp_path: Path) -> None:
     """hooks should render copyable observer hook config."""
     runner = CliRunner()

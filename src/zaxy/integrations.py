@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -19,6 +19,55 @@ CodexConfigScope = Literal["project", "user"]
 HandoffAdapter = Literal["generic", "langgraph", "crewai", "autogen"]
 AgentFramework = Literal["langgraph", "crewai", "autogen"]
 FrameworkExtra = Literal["langgraph", "crewai", "autogen", "frameworks"]
+
+
+@dataclass(frozen=True)
+class FrameworkIntegrationSpec:
+    """Discovery metadata for a direct framework integration path."""
+
+    framework: AgentFramework
+    display_name: str
+    package: str
+    extra: FrameworkExtra
+    template_function: str
+    maturity: Literal["template", "native"]
+    native_adapter: str
+
+
+_FRAMEWORK_SPECS: tuple[FrameworkIntegrationSpec, ...] = (
+    FrameworkIntegrationSpec(
+        framework="langgraph",
+        display_name="LangGraph",
+        package="langgraph",
+        extra="langgraph",
+        template_function="zaxy_langgraph_memory_node",
+        maturity="template",
+        native_adapter="not-yet-packaged",
+    ),
+    FrameworkIntegrationSpec(
+        framework="crewai",
+        display_name="CrewAI",
+        package="crewai",
+        extra="crewai",
+        template_function="zaxy_crewai_memory_step",
+        maturity="template",
+        native_adapter="not-yet-packaged",
+    ),
+    FrameworkIntegrationSpec(
+        framework="autogen",
+        display_name="AutoGen",
+        package="autogen-agentchat",
+        extra="autogen",
+        template_function="zaxy_autogen_context",
+        maturity="template",
+        native_adapter="not-yet-packaged",
+    ),
+)
+
+
+def list_framework_integration_specs() -> tuple[FrameworkIntegrationSpec, ...]:
+    """Return direct framework integration metadata in display order."""
+    return _FRAMEWORK_SPECS
 
 
 def render_mcp_client_config(
@@ -459,6 +508,7 @@ def _normalize_framework_extra(framework: str) -> FrameworkExtra:
     normalized = framework.casefold().replace("_", "-")
     if normalized in {"all", "framework", "frameworks"}:
         return "frameworks"
-    if normalized in {"langgraph", "crewai", "autogen"}:
-        return normalized  # type: ignore[return-value]
+    for spec in _FRAMEWORK_SPECS:
+        if normalized == spec.framework:
+            return spec.extra
     raise ValueError("framework extra must be one of: langgraph, crewai, autogen, frameworks")

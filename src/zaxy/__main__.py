@@ -45,6 +45,7 @@ from zaxy.hooks import (
     write_hook_config,
 )
 from zaxy.integrations import (
+    list_framework_integration_specs,
     render_agent_integration_template,
     render_codex_mcp_add_command,
     render_framework_install_command,
@@ -190,6 +191,36 @@ def integration_template(
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(template, nl=False)
+
+
+@app.command("integrations")
+def integrations(
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable framework metadata"),
+) -> None:
+    """List direct framework integration support and install extras."""
+    rows = []
+    for spec in list_framework_integration_specs():
+        command = _shell_join(render_framework_install_command(spec.framework))
+        rows.append(
+            {
+                "framework": spec.framework,
+                "display_name": spec.display_name,
+                "package": spec.package,
+                "extra": spec.extra,
+                "install": command,
+                "template_function": spec.template_function,
+                "maturity": spec.maturity,
+                "native_adapter": spec.native_adapter,
+            }
+        )
+    if json_output:
+        typer.echo(json.dumps(rows, indent=2, sort_keys=True))
+        return
+    for row in rows:
+        typer.echo(
+            f"{row['display_name']}: {row['install']} "
+            f"({row['maturity']}, native_adapter={row['native_adapter']})"
+        )
 
 
 @app.command("hooks")

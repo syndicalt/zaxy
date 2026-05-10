@@ -8,6 +8,7 @@ from pathlib import Path
 
 from zaxy.core import Context, HandoffBundle
 from zaxy.integrations import (
+    list_framework_integration_specs,
     render_agent_integration_template,
     render_codex_mcp_add_command,
     render_framework_install_command,
@@ -353,6 +354,20 @@ def test_renders_framework_extra_install_commands() -> None:
     ]
     assert render_framework_install_command("autogen")[-1] == "zaxy-memory[autogen]"
     assert render_framework_install_command("frameworks")[-1] == "zaxy-memory[frameworks]"
+
+
+def test_lists_framework_integration_specs() -> None:
+    """Framework support metadata should have one typed registry."""
+    specs = {spec.framework: spec for spec in list_framework_integration_specs()}
+
+    assert list(specs) == ["langgraph", "crewai", "autogen"]
+    assert specs["langgraph"].display_name == "LangGraph"
+    assert specs["langgraph"].extra == "langgraph"
+    assert specs["langgraph"].package == "langgraph"
+    assert specs["langgraph"].template_function == "zaxy_langgraph_memory_node"
+    assert specs["langgraph"].maturity == "template"
+    assert specs["langgraph"].native_adapter == "not-yet-packaged"
+    assert specs["autogen"].package == "autogen-agentchat"
 
 
 def test_agent_integration_template_rejects_unknown_framework() -> None:
