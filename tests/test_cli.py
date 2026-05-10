@@ -421,8 +421,8 @@ def test_integrations_command_lists_framework_registry() -> None:
     assert result.exit_code == 0
     assert "LangGraph" in result.output
     assert "zaxy-memory[langgraph]" in result.output
-    assert "template" in result.output
-    assert "not-yet-packaged" in result.output
+    assert "native-preview" in result.output
+    assert "zaxy.adapters.langgraph" in result.output
 
 
 def test_integrations_command_can_emit_json() -> None:
@@ -434,6 +434,8 @@ def test_integrations_command_can_emit_json() -> None:
     payload = json.loads(result.output)
     assert payload[0]["framework"] == "langgraph"
     assert payload[0]["install"] == "python -m pip install 'zaxy-memory[langgraph]'"
+    assert payload[0]["maturity"] == "native-preview"
+    assert payload[0]["native_adapter"] == "zaxy.adapters.langgraph"
 
 
 def test_hooks_command_prints_claude_code_settings(tmp_path: Path) -> None:

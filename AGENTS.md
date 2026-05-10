@@ -303,12 +303,15 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Normalized command and file-edit observation capture for hooks
 - [x] Hook and doctor observation coverage reporting for automatic capture gaps
 - [x] Hook-event sinks for tool-call and transcript-turn automatic capture
+- [x] Native-preview LangGraph adapter for context projection, observations, and retrieval feedback
+- [x] Codex in-session `/resume` duplicate MCP process troubleshooting guidance
+- [x] Competitive positioning roadmap against MemPalace-style memory systems
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 578 passed |
+| Tests | 583 passed |
 | Coverage | 92.25% |
 | Lint | ruff clean |
 | Types | mypy clean |
@@ -316,4 +319,5 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 ## Next Steps
 
-1. Add framework-native adapter packages after template usage shows which runtime APIs to support first.
+1. Use LangGraph native-preview feedback to decide whether CrewAI should become the next maintained adapter.
+2. Add reproducible MemPalace-comparable workloads for temporal, source-recall, graph-traversal, and context-collapse behavior.

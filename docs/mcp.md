@@ -109,6 +109,16 @@ only loads project config from trusted projects. User-scoped writes target
 because Codex does not use the JSON config shapes consumed by Claude, Cursor, or
 VS Code.
 
+Codex troubleshooting: prefer launching restored work with terminal-level
+`codex resume ...` rather than calling `/resume` from inside an already running
+Codex session. In-session resume can leave the old MCP child alive and start a
+second identical `zaxy serve` process. If that happens, fully exit Codex and
+start a fresh resume from the terminal, then verify with:
+
+```bash
+ps -ef | awk '/[z]axy serve/ {print}'
+```
+
 Install the `zaxy` CLI before generating MCP config:
 
 ```bash

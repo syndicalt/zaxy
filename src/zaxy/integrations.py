@@ -30,7 +30,7 @@ class FrameworkIntegrationSpec:
     package: str
     extra: FrameworkExtra
     template_function: str
-    maturity: Literal["template", "native"]
+    maturity: Literal["template", "native-preview", "native"]
     native_adapter: str
 
 
@@ -40,9 +40,9 @@ _FRAMEWORK_SPECS: tuple[FrameworkIntegrationSpec, ...] = (
         display_name="LangGraph",
         package="langgraph",
         extra="langgraph",
-        template_function="zaxy_langgraph_memory_node",
-        maturity="template",
-        native_adapter="not-yet-packaged",
+        template_function="create_langgraph_memory_node",
+        maturity="native-preview",
+        native_adapter="zaxy.adapters.langgraph",
     ),
     FrameworkIntegrationSpec(
         framework="crewai",
@@ -51,7 +51,7 @@ _FRAMEWORK_SPECS: tuple[FrameworkIntegrationSpec, ...] = (
         extra="crewai",
         template_function="zaxy_crewai_memory_step",
         maturity="template",
-        native_adapter="not-yet-packaged",
+        native_adapter="planned-next",
     ),
     FrameworkIntegrationSpec(
         framework="autogen",

@@ -364,9 +364,10 @@ def test_lists_framework_integration_specs() -> None:
     assert specs["langgraph"].display_name == "LangGraph"
     assert specs["langgraph"].extra == "langgraph"
     assert specs["langgraph"].package == "langgraph"
-    assert specs["langgraph"].template_function == "zaxy_langgraph_memory_node"
-    assert specs["langgraph"].maturity == "template"
-    assert specs["langgraph"].native_adapter == "not-yet-packaged"
+    assert specs["langgraph"].template_function == "create_langgraph_memory_node"
+    assert specs["langgraph"].maturity == "native-preview"
+    assert specs["langgraph"].native_adapter == "zaxy.adapters.langgraph"
+    assert specs["crewai"].native_adapter == "planned-next"
     assert specs["autogen"].package == "autogen-agentchat"
 
 

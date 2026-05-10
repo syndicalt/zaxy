@@ -1,10 +1,10 @@
 # Integrations
 
-MCP remains Zaxy's primary interface for agent memory, but Python applications
-can also use direct, dependency-light framework starters. These templates do
-not import LangGraph, CrewAI, or AutoGen. They render plain Python functions
-that call `MemoryFabric` lifecycle APIs and can be pasted into an existing
-agent application.
+MCP remains Zaxy's primary integration surface for agent memory, but Python
+applications can also use direct framework helpers. LangGraph now has a
+dependency-light native-preview adapter in `zaxy.adapters.langgraph`. CrewAI
+and AutoGen remain template starters until real usage identifies the right
+runtime hooks to maintain.
 
 Generate a starter:
 
@@ -40,10 +40,38 @@ zaxy integrations --json
 ```
 
 Each entry reports the framework package, optional extra, starter function,
-current maturity, and whether a framework-native adapter package exists. The
-current entries are `template` maturity with `native_adapter=not-yet-packaged`;
-that status is deliberate until real usage identifies which framework runtime
-APIs should become maintained adapters.
+current maturity, and whether a framework-native adapter package exists.
+LangGraph reports `native-preview` with `native_adapter=zaxy.adapters.langgraph`.
+CrewAI is marked `planned-next`; AutoGen remains `not-yet-packaged`.
+
+## LangGraph Native Preview
+
+Use the native-preview adapter when you want Zaxy to behave like a LangGraph
+node without requiring Zaxy to own your graph schema:
+
+```python
+from zaxy.adapters.langgraph import LangGraphMemoryAdapter, create_langgraph_memory_node
+
+memory_node = create_langgraph_memory_node(session_id="my-agent")
+adapter = LangGraphMemoryAdapter(session_id="my-agent")
+```
+
+`create_langgraph_memory_node()` returns an async node that reads the latest
+message from `state["messages"]` or `state["latest_message"]`, records the turn
+as `transcript.turn`, assembles prompt-ready context, and returns the original
+state with:
+
+- `zaxy_context`: prompt text for the next model call;
+- `zaxy_contexts`: the retrieved `Context` objects used for feedback;
+- `zaxy`: metadata including session, replay count, warnings, and citations.
+
+`LangGraphMemoryAdapter.record_tool_call()` records redacted
+`tool.call.completed` observations for tool nodes. `record_assistant_turn()`
+persists assistant output as a transcript turn. `record_context_feedback()`
+reinforces contexts that were actually projected into state.
+
+See [../examples/langgraph_memory.py](../examples/langgraph_memory.py) for a
+smoke example.
 
 The templates all use the same durable flow:
 
@@ -52,10 +80,10 @@ The templates all use the same durable flow:
 3. Build resumable context with `handoff_bundle()`.
 4. Close the fabric client.
 
-LangGraph starters expose `zaxy_langgraph_memory_node(state)`, returning the
-original state plus `zaxy_context` and `zaxy_handoff` prompt strings. CrewAI
-starters expose `zaxy_crewai_memory_step(message)`, returning a combined prompt
-string suitable for task callbacks. AutoGen starters expose
+LangGraph starters expose `zaxy_langgraph_memory_node(state)` for users who want
+a copy-paste template instead of importing the preview adapter. CrewAI starters
+expose `zaxy_crewai_memory_step(message)`, returning a combined prompt string
+suitable for task callbacks. AutoGen starters expose
 `zaxy_autogen_context(message)`, returning a dictionary for agent context
 variables.
 
