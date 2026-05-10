@@ -71,6 +71,7 @@ zaxy ide-config cursor --eventloom-path .eventloom
 zaxy ide-config cursor --install --workspace .
 zaxy ide-config vscode --eventloom-path .eventloom
 zaxy ide-config vscode --install --workspace .
+zaxy ide-config codex --install --domain zaxy
 zaxy ide-config claude-desktop --eventloom-path .eventloom --domain zaxy
 ```
 
@@ -79,7 +80,9 @@ limited to verified project-local JSON targets: `.mcp.json` for Claude Code,
 `.cursor/mcp.json` for Cursor, and `.vscode/mcp.json` for VS Code. Install mode
 merges the `zaxy` server entry into the documented root object, preserves
 unrelated servers, and refuses to replace an existing `zaxy` entry unless
-`--force` is passed.
+`--force` is passed. Codex is CLI-assisted: `zaxy ide-config codex --install`
+prints the official `codex mcp add zaxy ... -- zaxy serve ...` command instead
+of editing `config.toml` directly.
 
 Install the `zaxy` CLI before generating MCP config:
 

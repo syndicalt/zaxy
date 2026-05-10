@@ -75,6 +75,32 @@ def test_ide_config_command_installs_project_cursor_config(tmp_path: Path) -> No
     assert config["mcpServers"]["zaxy"]["command"] == "/opt/zaxy/bin/zaxy"
 
 
+def test_ide_config_command_prints_codex_cli_install_command() -> None:
+    """Codex install should be command-assisted instead of direct config editing."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "ide-config",
+            "codex",
+            "--install",
+            "--eventloom-path",
+            ".eventloom",
+            "--domain",
+            "zaxy",
+            "--zaxy-executable",
+            "/opt/zaxy/bin/zaxy",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Run this Codex MCP install command:" in result.output
+    assert "codex mcp add zaxy" in result.output
+    assert "--env EVENTLOOM_THREAD=zaxy-default" in result.output
+    assert "-- /opt/zaxy/bin/zaxy serve --eventloom-path .eventloom" in result.output
+
+
 def test_integration_template_command_prints_framework_starter() -> None:
     runner = CliRunner()
 

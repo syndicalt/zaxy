@@ -285,6 +285,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] `zaxy init --preset local-claude` shortcut for the explicit local onboarding path
 - [x] MCP client install target verification matrix for Claude Code, Cursor, VS Code, and Codex
 - [x] Safe project-local MCP config write-and-merge helpers for Claude Code, Cursor, and VS Code
+- [x] Codex MCP install command rendering via `codex mcp add`
 
 ## Metrics
 
@@ -298,5 +299,5 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 ## Next Steps
 
-1. Add Codex MCP install as a CLI-assisted target before direct TOML merge support.
+1. Add optional Codex TOML merge support only after scoped trust and malformed-config tests.
 2. Add optional deeper framework packages once direct templates see usage.

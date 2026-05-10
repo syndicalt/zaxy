@@ -8,6 +8,7 @@ from pathlib import Path
 from zaxy.core import Context, HandoffBundle
 from zaxy.integrations import (
     render_agent_integration_template,
+    render_codex_mcp_add_command,
     render_handoff_adapter,
     render_mcp_client_config,
     write_project_mcp_client_config,
@@ -161,6 +162,28 @@ def test_project_mcp_install_force_replaces_existing_zaxy(tmp_path: Path) -> Non
     config = json.loads(target.read_text(encoding="utf-8"))
     assert config["mcpServers"]["zaxy"]["command"] == "/opt/zaxy/bin/zaxy"
     assert config["mcpServers"]["other"]["command"] == "other"
+
+
+def test_renders_codex_mcp_add_command_with_env_and_command_separator() -> None:
+    """Codex install should prefer official CLI command generation over TOML editing."""
+    command = render_codex_mcp_add_command(
+        eventloom_path=".eventloom",
+        domain="zaxy",
+        zaxy_executable="/opt/zaxy/bin/zaxy",
+    )
+
+    assert command[:4] == ["codex", "mcp", "add", "zaxy"]
+    assert "--" in command
+    assert command[command.index("--") + 1 :] == [
+        "/opt/zaxy/bin/zaxy",
+        "serve",
+        "--eventloom-path",
+        ".eventloom",
+    ]
+    assert "--env" in command
+    assert "EVENTLOOM_THREAD=zaxy-default" in command
+    assert "ZAXY_DOMAIN=zaxy" in command
+    assert "NEO4J_AUTO_START=true" in command
 
 
 def test_handoff_adapter_preserves_prompt_context_and_integrity() -> None:

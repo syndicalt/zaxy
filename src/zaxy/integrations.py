@@ -11,7 +11,7 @@ from zaxy.core import HandoffBundle
 from zaxy.domain import derive_domain, domain_default_session, slug_domain
 from zaxy.install import resolve_zaxy_executable
 
-MCPClient = Literal["claude-desktop", "claude-code", "cursor", "vscode"]
+MCPClient = Literal["claude-desktop", "claude-code", "codex", "cursor", "vscode"]
 HandoffAdapter = Literal["generic", "langgraph", "crewai", "autogen"]
 AgentFramework = Literal["langgraph", "crewai", "autogen"]
 
@@ -39,7 +39,35 @@ def render_mcp_client_config(
     )
     if normalized == "vscode":
         return {"servers": {"zaxy": server}}
+    if normalized == "codex":
+        raise ValueError("Codex uses `codex mcp add`; use render_codex_mcp_add_command")
     return {"mcpServers": {"zaxy": server}}
+
+
+def render_codex_mcp_add_command(
+    *,
+    eventloom_path: str = ".eventloom",
+    domain: str | None = None,
+    zaxy_executable: str | None = None,
+) -> list[str]:
+    """Render the official Codex CLI command for adding Zaxy as an MCP server."""
+    resolved_domain = slug_domain(domain) if domain else derive_domain()
+    server = _server_config(
+        eventloom_path=eventloom_path,
+        transport="stdio",
+        host="127.0.0.1",
+        port=8080,
+        domain=resolved_domain,
+        zaxy_executable=resolve_zaxy_executable(zaxy_executable),
+    )
+    env = server["env"]
+    command = ["codex", "mcp", "add", "zaxy"]
+    for key in sorted(env):
+        command.extend(["--env", f"{key}={env[key]}"])
+    command.append("--")
+    command.append(str(server["command"]))
+    command.extend(str(arg) for arg in server["args"])
+    return command
 
 
 def write_project_mcp_client_config(
@@ -56,6 +84,8 @@ def write_project_mcp_client_config(
 ) -> Path:
     """Merge Zaxy into a verified project-local MCP client config."""
     normalized = _normalize_client(client)
+    if normalized == "codex":
+        raise ValueError("Codex install is CLI-assisted; use render_codex_mcp_add_command")
     target = project_mcp_client_config_path(normalized, workspace=workspace)
     rendered = render_mcp_client_config(
         normalized,
@@ -79,6 +109,8 @@ def project_mcp_client_config_path(client: MCPClient | str, *, workspace: str | 
     root = Path(workspace)
     if normalized in {"claude-code", "claude-desktop"}:
         return root / ".mcp.json"
+    if normalized == "codex":
+        raise ValueError("Codex does not have a safe JSON project config target")
     if normalized == "cursor":
         return root / ".cursor" / "mcp.json"
     return root / ".vscode" / "mcp.json"
@@ -272,11 +304,13 @@ def _normalize_client(client: str) -> MCPClient:
         return "claude-desktop"
     if normalized in {"claude-code", "claude-cli"}:
         return "claude-code"
+    if normalized == "codex":
+        return "codex"
     if normalized == "cursor":
         return "cursor"
     if normalized in {"vscode", "vs-code", "visual-studio-code"}:
         return "vscode"
-    raise ValueError("client must be one of: claude-desktop, claude-code, cursor, vscode")
+    raise ValueError("client must be one of: claude-desktop, claude-code, codex, cursor, vscode")
 
 
 def _mcp_root_key(client: MCPClient) -> str:

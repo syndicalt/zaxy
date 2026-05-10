@@ -45,6 +45,7 @@ from zaxy.hooks import (
 )
 from zaxy.integrations import (
     render_agent_integration_template,
+    render_codex_mcp_add_command,
     render_mcp_client_config,
     write_project_mcp_client_config,
 )
@@ -84,7 +85,7 @@ app = typer.Typer(help="Zaxy: Event-sourced temporal knowledge graph fabric")
 
 @app.command("ide-config")
 def ide_config(
-    client: str = typer.Argument(..., help="MCP client: claude-desktop, claude-code, cursor, or vscode"),  # noqa: B008
+    client: str = typer.Argument(..., help="MCP client: claude-desktop, claude-code, codex, cursor, or vscode"),  # noqa: B008
     eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory for this client"),
     transport: str = typer.Option("stdio", help="Transport: stdio or sse"),
     host: str = typer.Option("127.0.0.1", help="SSE host when transport=sse"),
@@ -98,6 +99,15 @@ def ide_config(
     """Print or install a first-run MCP client configuration fragment."""
     try:
         if install:
+            if client.casefold().replace("_", "-") == "codex":
+                command = render_codex_mcp_add_command(
+                    eventloom_path=eventloom_path,
+                    domain=domain,
+                    zaxy_executable=zaxy_executable,
+                )
+                typer.echo("Run this Codex MCP install command:")
+                typer.echo(_shell_join(command))
+                return
             written = write_project_mcp_client_config(
                 client,
                 workspace=workspace,
@@ -123,6 +133,13 @@ def ide_config(
     except (FileExistsError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(config, indent=2, sort_keys=True))
+
+
+def _shell_join(command: list[str]) -> str:
+    """Return a POSIX-shell-safe command string."""
+    import shlex
+
+    return shlex.join(command)
 
 
 @app.command("integration-template")
