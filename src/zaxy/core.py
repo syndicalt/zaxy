@@ -142,6 +142,8 @@ class MemoryFabric:
         self.context_assembly_policy = ContextAssemblyPolicy(
             verbatim_enabled=settings.context_verbatim_enabled,
             verbatim_slots=settings.context_verbatim_slots,
+            packet_memory_enabled=settings.context_packet_memory_enabled,
+            packet_memory_slots=settings.context_packet_memory_slots,
         )
         self._initialized_workspaces: dict[tuple[str, str], WorkspaceProfile] = {}
         self._initialized_instruction_signatures: dict[tuple[str, str], str] = {}
@@ -550,6 +552,42 @@ class MemoryFabric:
         merged.sort(key=lambda item: item.score, reverse=True)
         return merged[:limit]
 
+    def _recent_packet_memory_contexts(self, events: list[Any]) -> list[Context]:
+        """Return newest projected packet memories as proactive context candidates."""
+        contexts: list[Context] = []
+        for event in reversed(events):
+            if getattr(event, "type", "") != "llm.packet.projected":
+                continue
+            payload = getattr(event, "payload", {})
+            if not isinstance(payload, dict):
+                continue
+            summary = payload.get("summary")
+            if not isinstance(summary, str) or not summary.strip():
+                continue
+            metadata: dict[str, Any] = {
+                "citation": _event_citation(event),
+                "source_kind": "packet_projection",
+                "event_seq": getattr(event, "seq", None),
+                "event_type": getattr(event, "type", None),
+                "event_thread": getattr(event, "thread", None),
+                "event_timestamp": getattr(event, "timestamp", None),
+                "source_event_seq": payload.get("source_event_seq"),
+                "source_event_hash": payload.get("source_event_hash"),
+                "provider_path": payload.get("provider_path"),
+                "model": payload.get("model"),
+            }
+            contexts.append(
+                Context(
+                    content=" ".join(summary.split()),
+                    source="packet_memory",
+                    score=0.6,
+                    valid_from=getattr(event, "timestamp", None),
+                    valid_to=None,
+                    metadata={key: value for key, value in metadata.items() if value is not None},
+                )
+            )
+        return contexts
+
     async def _trace_query_best_effort(
         self,
         query: str,
@@ -585,9 +623,11 @@ class MemoryFabric:
             if self.context_assembly_policy.should_query_verbatim(limit=limit)
             else []
         )
+        packet_memory_contexts = self._recent_packet_memory_contexts(list(replay.events))
         contexts = self.context_assembly_policy.assemble(
             graph_contexts,
             verbatim_contexts,
+            packet_memory_contexts,
             limit=limit,
         )
         replay_events = list(replay.events)
@@ -810,6 +850,15 @@ def _event_content(event: Any) -> str:
     if not parts:
         parts = [f"{getattr(event, 'type', 'event')} by {getattr(event, 'actor', 'unknown')}"]
     return " ".join(parts)
+
+
+def _event_citation(event: Any) -> str | None:
+    thread = getattr(event, "thread", None)
+    seq = getattr(event, "seq", None)
+    event_hash = getattr(event, "hash", None)
+    if not isinstance(thread, str) or not isinstance(seq, int) or not isinstance(event_hash, str):
+        return None
+    return f"eventloom://{thread}/events/{seq}#{event_hash[:12]}"
 
 
 def _normalize_context_feedback(feedback: str) -> str:

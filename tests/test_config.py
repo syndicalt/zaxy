@@ -42,6 +42,8 @@ def test_context_assembly_defaults_include_source_recall() -> None:
 
     assert settings.context_verbatim_enabled is True
     assert settings.context_verbatim_slots == 1
+    assert settings.context_packet_memory_enabled is True
+    assert settings.context_packet_memory_slots == 1
 
 
 class TestSecretFiles:

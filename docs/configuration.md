@@ -58,6 +58,9 @@ OpenAI-compatible chat-completions model and `OPENAI_API_KEY`.
 `CONTEXT_VERBATIM_ENABLED=true` reserves exact Eventloom source recall during
 context assembly, and `CONTEXT_VERBATIM_SLOTS` controls how many assembled
 context slots are reserved for those cited source chunks.
+`CONTEXT_PACKET_MEMORY_ENABLED=true` adds a bounded proactive lane for recent
+`llm.packet.projected` memory, and `CONTEXT_PACKET_MEMORY_SLOTS` controls how
+many assembled context slots are reserved for that packet-derived memory.
 
 Supported secret-file variants are `NEO4J_PASSWORD_FILE`,
 `MCP_ADMIN_TOKEN_FILE`, `MCP_REMOTE_AUTH_TOKEN_FILE`,

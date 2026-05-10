@@ -24,6 +24,8 @@ class ContextAssemblyPolicy:
 
     verbatim_enabled: bool = True
     verbatim_slots: int = 1
+    packet_memory_enabled: bool = True
+    packet_memory_slots: int = 1
 
     def should_query_verbatim(self, *, limit: int) -> bool:
         """Return whether assembly should read the verbatim source lane."""
@@ -34,6 +36,8 @@ class ContextAssemblyPolicy:
         return {
             "verbatim_enabled": self.verbatim_enabled,
             "verbatim_slots": self.verbatim_slots,
+            "packet_memory_enabled": self.packet_memory_enabled,
+            "packet_memory_slots": self.packet_memory_slots,
         }
 
     def with_verbatim_enabled(self, enabled: bool) -> ContextAssemblyPolicy:
@@ -41,29 +45,47 @@ class ContextAssemblyPolicy:
         return ContextAssemblyPolicy(
             verbatim_enabled=enabled,
             verbatim_slots=self.verbatim_slots,
+            packet_memory_enabled=self.packet_memory_enabled,
+            packet_memory_slots=self.packet_memory_slots,
         )
 
     def assemble(
         self,
         graph_contexts: list[Context],
         verbatim_contexts: list[Context],
+        packet_memory_contexts: list[Context] | None = None,
         *,
         limit: int,
     ) -> list[Context]:
         """Merge graph and verbatim contexts with a reserved source-recall lane."""
         if limit <= 0:
             return []
+        packet_memory_contexts = packet_memory_contexts or []
         verbatim_limit = (
             min(self.verbatim_slots, limit, len(verbatim_contexts))
             if self.verbatim_enabled
+            else 0
+        )
+        packet_memory_limit = (
+            min(
+                self.packet_memory_slots,
+                limit - verbatim_limit,
+                len(packet_memory_contexts),
+            )
+            if self.packet_memory_enabled
             else 0
         )
         selected_verbatim = [
             _with_assembly_lane(context, "verbatim")
             for context in _dedupe_contexts(verbatim_contexts)[:verbatim_limit]
         ]
+        selected_packet_memory = [
+            _with_assembly_lane(context, "packet_memory")
+            for context in _dedupe_contexts(packet_memory_contexts)[:packet_memory_limit]
+        ]
         selected_keys = {_context_dedupe_key(context) for context in selected_verbatim}
-        graph_limit = limit - len(selected_verbatim)
+        selected_keys.update(_context_dedupe_key(context) for context in selected_packet_memory)
+        graph_limit = limit - len(selected_verbatim) - len(selected_packet_memory)
         selected_graph: list[Context] = []
         for context in _dedupe_contexts(graph_contexts):
             if len(selected_graph) >= graph_limit:
@@ -71,16 +93,18 @@ class ContextAssemblyPolicy:
             if _context_dedupe_key(context) in selected_keys:
                 continue
             selected_graph.append(_with_assembly_lane(context, "graph"))
-        return [*selected_graph, *selected_verbatim]
+        return [*selected_graph, *selected_verbatim, *selected_packet_memory]
 
 
 def context_counts(contexts: list[Context], *, replay_count: int) -> dict[str, int]:
     """Return client-facing counts for assembled context lanes."""
-    counts = {"graph": 0, "verbatim": 0, "replay": replay_count}
+    counts = {"graph": 0, "verbatim": 0, "packet_memory": 0, "replay": replay_count}
     for context in contexts:
         metadata = context.metadata or {}
         if metadata.get("assembly_lane") == "verbatim" or context.source == "verbatim":
             counts["verbatim"] += 1
+        elif metadata.get("assembly_lane") == "packet_memory" or context.source == "packet_memory":
+            counts["packet_memory"] += 1
         else:
             counts["graph"] += 1
     return counts

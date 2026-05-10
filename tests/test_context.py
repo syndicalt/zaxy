@@ -63,3 +63,18 @@ def test_context_assembly_policy_dedupes_graph_and_verbatim_by_citation() -> Non
         "assembly_lane": "verbatim",
         "citation": citation,
     }
+
+
+def test_context_assembly_policy_reserves_packet_memory_lane() -> None:
+    """Recent packet memory should have a bounded proactive assembly lane."""
+    policy = ContextAssemblyPolicy(packet_memory_slots=1)
+
+    contexts = policy.assemble(
+        [Context(content="Graph summary", source="keyword", score=0.9)],
+        [],
+        [Context(content="Packet memory", source="packet_memory", score=0.7)],
+        limit=2,
+    )
+
+    assert [context.source for context in contexts] == ["keyword", "packet_memory"]
+    assert contexts[1].metadata == {"assembly_lane": "packet_memory"}

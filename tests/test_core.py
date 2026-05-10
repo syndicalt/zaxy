@@ -754,10 +754,50 @@ class TestContextAssembly:
         assert assembly.assembly_policy == {
             "verbatim_enabled": True,
             "verbatim_slots": 1,
+            "packet_memory_enabled": True,
+            "packet_memory_slots": 1,
         }
-        assert assembly.context_counts == {"graph": 1, "verbatim": 1, "replay": 0}
+        assert assembly.context_counts == {"graph": 1, "verbatim": 1, "packet_memory": 0, "replay": 0}
         assert assembly.working_set["items"][0]["category"] == "source_anchor"
         assert "# Active Memory Working Set" in assembly.prompt
+
+    async def test_assemble_context_includes_recent_packet_memory_lane(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Recent packet projections should be proactively available as context."""
+        packet_event = MagicMock(
+            seq=6,
+            type="llm.packet.projected",
+            actor="zaxy-packet-projector",
+            payload={
+                "summary": "LLM packet /v1/responses status 200. User: Mira owns dashboards.",
+                "source_event_seq": 5,
+                "source_event_hash": "b" * 64,
+                "provider_path": "/v1/responses",
+            },
+            hash="f" * 64,
+            thread="agent-1",
+            timestamp="2024-01-01T00:00:00Z",
+        )
+        fabric.session_manager.replay.return_value = MagicMock(
+            events=[packet_event],
+            integrity=MagicMock(ok=True),
+        )
+        fabric.query_router.query.return_value = []
+        with patch.object(fabric, "query_verbatim", return_value=[]):
+            assembly = await fabric.assemble_context(
+                "current operating context",
+                session_id="agent-1",
+                limit=1,
+            )
+
+        assert [context.source for context in assembly.contexts] == ["packet_memory"]
+        assert assembly.contexts[0].metadata is not None
+        assert assembly.contexts[0].metadata["assembly_lane"] == "packet_memory"
+        assert assembly.contexts[0].metadata["citation"] == "eventloom://agent-1/events/6#ffffffffffff"
+        assert "Mira owns dashboards" in assembly.prompt
+        assert assembly.context_counts == {"graph": 0, "verbatim": 0, "packet_memory": 1, "replay": 1}
 
     async def test_assemble_context_skips_verbatim_when_policy_disabled(
         self,
@@ -786,8 +826,10 @@ class TestContextAssembly:
         assert assembly.assembly_policy == {
             "verbatim_enabled": False,
             "verbatim_slots": 1,
+            "packet_memory_enabled": True,
+            "packet_memory_slots": 1,
         }
-        assert assembly.context_counts == {"graph": 1, "verbatim": 0, "replay": 0}
+        assert assembly.context_counts == {"graph": 1, "verbatim": 0, "packet_memory": 0, "replay": 0}
 
     async def test_after_turn_appends_turn_and_returns_compacted_context(
         self,

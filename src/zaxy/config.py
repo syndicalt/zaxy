@@ -252,6 +252,15 @@ class Settings(BaseSettings):
         ge=0,
         description="Maximum assembled context slots reserved for verbatim source recall",
     )
+    context_packet_memory_enabled: bool = Field(
+        default=True,
+        description="Include recent projected LLM packet memory in assembled context",
+    )
+    context_packet_memory_slots: int = Field(
+        default=1,
+        ge=0,
+        description="Maximum assembled context slots reserved for recent packet memory",
+    )
 
     # ------------------------------------------------------------------
     # Embeddings
