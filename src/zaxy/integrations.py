@@ -18,6 +18,7 @@ MCPClient = Literal["claude-desktop", "claude-code", "codex", "cursor", "vscode"
 CodexConfigScope = Literal["project", "user"]
 HandoffAdapter = Literal["generic", "langgraph", "crewai", "autogen"]
 AgentFramework = Literal["langgraph", "crewai", "autogen"]
+FrameworkExtra = Literal["langgraph", "crewai", "autogen", "frameworks"]
 
 
 def render_mcp_client_config(
@@ -222,6 +223,16 @@ def render_agent_integration_template(
     if normalized == "crewai":
         return _crewai_template(session_id=session_id, eventloom_path=eventloom_path)
     return _autogen_template(session_id=session_id, eventloom_path=eventloom_path)
+
+
+def render_framework_install_command(
+    framework: FrameworkExtra | str,
+    *,
+    package_name: str = "zaxy-memory",
+) -> list[str]:
+    """Render a pip install command for an optional framework integration extra."""
+    normalized = _normalize_framework_extra(framework)
+    return ["python", "-m", "pip", "install", f"{package_name}[{normalized}]"]
 
 
 def _langgraph_template(*, session_id: str, eventloom_path: str) -> str:
@@ -442,3 +453,12 @@ def _normalize_framework(framework: str) -> AgentFramework:
     if normalized in {"langgraph", "crewai", "autogen"}:
         return normalized  # type: ignore[return-value]
     raise ValueError("framework must be one of: langgraph, crewai, autogen")
+
+
+def _normalize_framework_extra(framework: str) -> FrameworkExtra:
+    normalized = framework.casefold().replace("_", "-")
+    if normalized in {"all", "framework", "frameworks"}:
+        return "frameworks"
+    if normalized in {"langgraph", "crewai", "autogen"}:
+        return normalized  # type: ignore[return-value]
+    raise ValueError("framework extra must be one of: langgraph, crewai, autogen, frameworks")

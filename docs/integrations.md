@@ -14,6 +14,24 @@ zaxy integration-template crewai --session-id zaxy-default
 zaxy integration-template autogen --session-id zaxy-default
 ```
 
+When an application wants Zaxy to install the framework package too, use the
+optional extras. These extras are intentionally separate from the core install
+so MCP users and lightweight template users do not inherit framework dependency
+trees:
+
+```bash
+python -m pip install 'zaxy-memory[langgraph]'
+python -m pip install 'zaxy-memory[crewai]'
+python -m pip install 'zaxy-memory[autogen]'
+python -m pip install 'zaxy-memory[frameworks]'
+```
+
+The CLI can print the matching command with a starter:
+
+```bash
+zaxy integration-template langgraph --install-hint
+```
+
 The templates all use the same durable flow:
 
 1. Create a `MemoryFabric` with the configured Eventloom path.

@@ -193,6 +193,19 @@ def test_integration_template_command_prints_framework_starter() -> None:
     assert "import langgraph" not in result.output.casefold()
 
 
+def test_integration_template_command_can_print_install_hint() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["integration-template", "crewai", "--install-hint"],
+    )
+
+    assert result.exit_code == 0
+    assert "python -m pip install 'zaxy-memory[crewai]'" in result.output
+    assert "async def zaxy_crewai_memory_step" in result.output
+
+
 def test_hooks_command_prints_claude_code_settings(tmp_path: Path) -> None:
     """hooks should render copyable observer hook config."""
     runner = CliRunner()

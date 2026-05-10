@@ -3,6 +3,7 @@
 from zaxy.core import MemoryFabric
 from zaxy.integrations import (
     render_agent_integration_template,
+    render_framework_install_command,
     render_handoff_adapter,
     render_mcp_client_config,
 )
@@ -10,6 +11,7 @@ from zaxy.integrations import (
 __all__ = [
     "MemoryFabric",
     "render_agent_integration_template",
+    "render_framework_install_command",
     "render_handoff_adapter",
     "render_mcp_client_config",
 ]

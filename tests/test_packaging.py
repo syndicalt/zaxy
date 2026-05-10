@@ -28,6 +28,23 @@ def test_pyproject_declares_typed_package_and_release_tools() -> None:
     assert "site" in pyproject["tool"]["hatch"]["build"]["targets"]["sdist"]["include"]
 
 
+def test_pyproject_declares_optional_framework_extras() -> None:
+    """Framework dependencies should be opt-in extras rather than core requirements."""
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+    extras = pyproject["project"]["optional-dependencies"]
+
+    assert extras["langgraph"] == ["langgraph>=0.6"]
+    assert extras["crewai"] == ["crewai>=0.100"]
+    assert extras["autogen"] == ["autogen-agentchat>=0.7"]
+    assert extras["frameworks"] == [
+        "langgraph>=0.6",
+        "crewai>=0.100",
+        "autogen-agentchat>=0.7",
+    ]
+    for dependency in extras["frameworks"]:
+        assert dependency not in pyproject["project"]["dependencies"]
+
+
 def test_build_dist_runs_build_and_twine_check_in_order(tmp_path: Path) -> None:
     """Distribution builds should create both artifacts and validate metadata."""
     log_path = tmp_path / "commands.log"

@@ -47,6 +47,7 @@ from zaxy.hooks import (
 from zaxy.integrations import (
     render_agent_integration_template,
     render_codex_mcp_add_command,
+    render_framework_install_command,
     render_mcp_client_config,
     write_codex_mcp_config,
     write_project_mcp_client_config,
@@ -174,6 +175,7 @@ def integration_template(
     framework: str = typer.Argument(..., help="Agent framework: langgraph, crewai, or autogen"),
     session_id: str = typer.Option("default", help="Session ID used by the template"),
     eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory for the template"),
+    install_hint: bool = typer.Option(False, "--install-hint", help="Print the optional framework extra install command before the template"),  # noqa: B008
 ) -> None:
     """Print a direct Python framework integration starter."""
     try:
@@ -182,6 +184,9 @@ def integration_template(
             session_id=session_id,
             eventloom_path=eventloom_path,
         )
+        if install_hint:
+            typer.echo(_shell_join(render_framework_install_command(framework)))
+            typer.echo()
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(template, nl=False)

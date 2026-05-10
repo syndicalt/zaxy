@@ -10,6 +10,7 @@ from zaxy.core import Context, HandoffBundle
 from zaxy.integrations import (
     render_agent_integration_template,
     render_codex_mcp_add_command,
+    render_framework_install_command,
     render_handoff_adapter,
     render_mcp_client_config,
     write_codex_mcp_config,
@@ -339,6 +340,19 @@ def test_renders_crewai_agent_integration_template() -> None:
     assert "MemoryFabric" in template
     assert "session_id='default'" in template
     assert "await fabric.after_turn" in template
+
+
+def test_renders_framework_extra_install_commands() -> None:
+    """Framework install guidance should map each framework to its optional extra."""
+    assert render_framework_install_command("langgraph") == [
+        "python",
+        "-m",
+        "pip",
+        "install",
+        "zaxy-memory[langgraph]",
+    ]
+    assert render_framework_install_command("autogen")[-1] == "zaxy-memory[autogen]"
+    assert render_framework_install_command("frameworks")[-1] == "zaxy-memory[frameworks]"
 
 
 def test_agent_integration_template_rejects_unknown_framework() -> None:

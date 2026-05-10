@@ -39,6 +39,20 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+langgraph = [
+    "langgraph>=0.6",
+]
+crewai = [
+    "crewai>=0.100",
+]
+autogen = [
+    "autogen-agentchat>=0.7",
+]
+frameworks = [
+    "langgraph>=0.6",
+    "crewai>=0.100",
+    "autogen-agentchat>=0.7",
+]
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
