@@ -10,6 +10,7 @@ API so that Zaxy controls the exact bi-temporal schema and extraction pipeline.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -20,6 +21,7 @@ from zaxy.schema import apply_schema_migrations
 from zaxy.security import validate_limit, validate_session_id, validate_traversal_depth
 
 _Neo4jPropertyValue = str | int | float | bool | list[str] | list[int] | list[float] | list[bool]
+_RELATION_TYPE_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 
 
 @dataclass(frozen=True)
@@ -221,17 +223,18 @@ class GraphStore:
             )
 
         for edge in result.edges:
+            typed_relationship_label = _typed_relationship_label(edge.relation_type)
             await self._driver.execute_query(
-                """
-                MATCH (s:Entity {name: $source})
+                f"""
+                MATCH (s:Entity {{name: $source}})
                 WHERE s.session_id = $session_id
                   AND s.valid_from <= datetime($valid_from)
                   AND (s.valid_to IS NULL OR s.valid_to > datetime($valid_from))
-                MATCH (t:Entity {name: $target})
+                MATCH (t:Entity {{name: $target}})
                 WHERE t.session_id = $session_id
                   AND t.valid_from <= datetime($valid_from)
                   AND (t.valid_to IS NULL OR t.valid_to > datetime($valid_from))
-                MERGE (s)-[r:RELATES {relation_type: $relation_type, valid_from: datetime($valid_from)}]->(t)
+                MERGE (s)-[r:RELATES {{relation_type: $relation_type, valid_from: datetime($valid_from)}}]->(t)
                 ON CREATE SET r.created_at = datetime($valid_from)
                 SET r.session_id = $session_id,
                     r.valid_to = null,
@@ -239,14 +242,23 @@ class GraphStore:
                     r.source_event_hash = $source_event_hash,
                     r.source_event_type = $source_event_type,
                     r.source_thread = $source_thread
-                WITH s, t, r
-                MATCH (ev:Event {session_id: $session_id, seq: $source_event_seq})
-                MERGE (ev)-[pr:PROJECTED_RELATION {
+                MERGE (s)-[typed:{typed_relationship_label} {{valid_from: datetime($valid_from)}}]->(t)
+                ON CREATE SET typed.created_at = datetime($valid_from)
+                SET typed.session_id = $session_id,
+                    typed.relation_type = $relation_type,
+                    typed.valid_to = null,
+                    typed.source_event_seq = $source_event_seq,
+                    typed.source_event_hash = $source_event_hash,
+                    typed.source_event_type = $source_event_type,
+                    typed.source_thread = $source_thread
+                WITH s, t, r, typed
+                MATCH (ev:Event {{session_id: $session_id, seq: $source_event_seq}})
+                MERGE (ev)-[pr:PROJECTED_RELATION {{
                     source: $source,
                     target: $target,
                     relation_type: $relation_type,
                     valid_from: datetime($valid_from)
-                }]->(t)
+                }}]->(t)
                 ON CREATE SET pr.created_at = datetime($valid_from)
                 SET pr.source_event_hash = $source_event_hash,
                     pr.source_event_type = $source_event_type
@@ -519,6 +531,13 @@ def _extraction_observed_at(result: ExtractionResult) -> str | None:
     values = [entity.observed_at for entity in result.entities]
     values.extend(edge.valid_from for edge in result.edges)
     return min(values) if values else None
+
+
+def _typed_relationship_label(relation_type: str) -> str:
+    """Convert a safe extractor relation type into a Neo4j relationship label."""
+    if not _RELATION_TYPE_RE.fullmatch(relation_type):
+        raise ValueError(f"Invalid relation_type for typed relationship label: {relation_type!r}")
+    return relation_type.upper()
 
 
 def _is_neo4j_property_value(value: Any) -> bool:

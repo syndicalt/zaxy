@@ -21,13 +21,16 @@ Projected entities also carry Eventloom provenance: `source_event_seq`,
 `source_event_hash`, `source_event_type`, and `source_thread`. Query results use
 these fields to emit stable citations back to the immutable event log.
 
-Edges represent extracted relations between entities. They are still stored as
-`RELATES` relationships with a typed `relation_type` property for backward
-compatibility. They also carry `session_id`, event provenance, and validity
-windows. This lets query traversal answer multi-hop questions while keeping the
-timeline intact and preventing cross-session expansion. For example, an agent
-can ask about a goal, expand to tasks, expand to decisions, and still know which
-facts were valid at the requested time.
+Edges represent extracted relations between entities. Zaxy stores each edge in
+two forms: a compatibility `RELATES` relationship with a `relation_type`
+property, and a typed relationship label derived from that relation type, such
+as `CALLS_SYMBOL`, `DEFINES_SYMBOL`, or `PROJECTED_LLM_PACKET`. Typed labels are
+generated only from strict snake_case identifiers so the graph remains safe to
+project through Cypher. Both forms carry `session_id`, event provenance, and
+validity windows. This lets query traversal keep using the stable compatibility
+edge while Neo4j Browser and direct Cypher inspection can show semantic labels.
+For example, an agent can ask about a goal, expand to tasks, expand to
+decisions, and still know which facts were valid at the requested time.
 
 Indexes matter for production behavior. Zaxy creates lookup constraints for
 entity versions, full-text indexes for keyword search, and vector indexes for

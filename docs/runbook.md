@@ -199,6 +199,9 @@ MATCH (:Session)-[:HAS_EVENT]->(:Event) RETURN count(*) AS projected_events;
 // Relationship count
 MATCH ()-[r:RELATES]->() RETURN count(r) AS relations;
 
+// Typed relationship label sample
+MATCH p=()-[:CALLS_SYMBOL|DEFINES_SYMBOL|PROJECTED_LLM_PACKET]->() RETURN p LIMIT 25;
+
 // Temporal validity check — entities without valid_to
 MATCH (e:Entity) WHERE e.valid_to IS NULL RETURN count(e) AS active_entities;
 ```

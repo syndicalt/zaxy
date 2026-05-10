@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from zaxy.extract import ExtractedEdge, ExtractedEntity, ExtractionResult
-from zaxy.graph import GraphStore, SearchResult, _record_to_entity
+from zaxy.graph import GraphStore, SearchResult, _record_to_entity, _typed_relationship_label
 
 # ------------------------------------------------------------------
 # Helpers
@@ -306,6 +306,9 @@ class TestIngestion:
         assert "r.session_id = $session_id" in cypher
         assert "r.source_event_seq = $source_event_seq" in cypher
         assert "r.source_event_hash = $source_event_hash" in cypher
+        assert "MERGE (s)-[typed:CREATED_GOAL" in cypher
+        assert "typed.relation_type = $relation_type" in cypher
+        assert "typed.source_event_hash = $source_event_hash" in cypher
         assert "MATCH (ev:Event {session_id: $session_id, seq: $source_event_seq})" in cypher
         assert "MERGE (ev)-[pr:PROJECTED_RELATION" in cypher
         assert kwargs["source"] == "Alice"
@@ -326,6 +329,16 @@ class TestIngestion:
         )
         await store.upsert_extraction(result, session_id="agent-1")
         assert store._driver.execute_query.await_count == 4
+
+    def test_typed_relationship_label_converts_valid_relation_types(self) -> None:
+        """Relation types should become readable Neo4j relationship labels."""
+        assert _typed_relationship_label("calls_symbol") == "CALLS_SYMBOL"
+        assert _typed_relationship_label("projected_llm_packet") == "PROJECTED_LLM_PACKET"
+
+    def test_typed_relationship_label_rejects_unsafe_relation_types(self) -> None:
+        """Dynamic relationship labels must reject Cypher injection characters."""
+        with pytest.raises(ValueError, match="Invalid relation_type"):
+            _typed_relationship_label("calls_symbol`) DELETE r //")
 
     async def test_invalidate_entity(self, store: GraphStore) -> None:
         """invalidate_entity should set valid_to on the live node."""
