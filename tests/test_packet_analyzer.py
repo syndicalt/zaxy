@@ -2,13 +2,28 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+from collections.abc import Iterator
 from pathlib import Path
 
 import httpx
 
 from zaxy.event import EventLog
 from zaxy.packet_analyzer import LlmPacketAnalyzer, PacketAnalyzerConfig
+
+
+class ChunkedStream(httpx.SyncByteStream):
+    """Simple sync stream that exposes chunk boundaries to tests."""
+
+    def __init__(self, chunks: list[bytes], markers: list[str]) -> None:
+        self._chunks = chunks
+        self._markers = markers
+
+    def __iter__(self) -> Iterator[bytes]:
+        for index, chunk in enumerate(self._chunks):
+            self._markers.append(f"yielded-{index}")
+            yield chunk
 
 
 def test_packet_analyzer_forwards_and_captures_completed_packet(tmp_path: Path) -> None:
@@ -101,3 +116,49 @@ def test_packet_analyzer_records_upstream_errors(tmp_path: Path) -> None:
     assert event.type == "llm.packet.completed"
     assert event.payload["status_code"] == 429
     assert event.payload["response"]["body"]["error"]["message"] == "rate limited"
+
+
+def test_packet_analyzer_streams_response_before_finalizing_capture(tmp_path: Path) -> None:
+    """Streaming responses should pass chunks through before packet capture finalizes."""
+    eventloom_path = tmp_path / ".eventloom"
+    markers: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        del request
+        return httpx.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            stream=ChunkedStream([b"data: one\n\n", b"data: two\n\n"], markers),
+        )
+
+    analyzer = LlmPacketAnalyzer(
+        PacketAnalyzerConfig(
+            eventloom_path=eventloom_path,
+            session_id="agent-1",
+            upstream_base_url="https://upstream.example",
+        ),
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    response = analyzer.forward_stream(
+        "POST",
+        "/chat/completions",
+        headers={"content-type": "application/json"},
+        body=b'{"model":"gpt-test","stream":true,"messages":[]}',
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/event-stream"
+    iterator = iter(response.body_chunks)
+    assert next(iterator) == b"data: one\n\n"
+    assert markers == ["yielded-0"]
+    assert not (eventloom_path / "agent-1.jsonl").exists()
+
+    assert list(iterator) == [b"data: two\n\n"]
+    analyzer.close()
+
+    event = EventLog(eventloom_path / "agent-1.jsonl").read_all()[0]
+    assert event.payload["response"]["body"] == {
+        "raw_sha256": hashlib.sha256(b"data: one\n\ndata: two\n\n").hexdigest(),
+        "bytes": 22,
+    }

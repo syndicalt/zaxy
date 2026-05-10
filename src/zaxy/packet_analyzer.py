@@ -10,6 +10,7 @@ import hashlib
 import json
 import queue
 import threading
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -59,6 +60,15 @@ class PacketResponse:
     status_code: int
     headers: dict[str, str]
     body: bytes
+
+
+@dataclass(frozen=True)
+class PacketStreamResponse:
+    """Streaming HTTP response returned by the upstream provider."""
+
+    status_code: int
+    headers: dict[str, str]
+    body_chunks: Iterator[bytes]
 
 
 class EventloomPacketSink:
@@ -122,40 +132,107 @@ class LlmPacketAnalyzer:
         body: bytes,
     ) -> PacketResponse:
         """Forward one HTTP request and enqueue packet provenance."""
-        upstream_response = self._client.request(
+        response = self.forward_stream(
+            method,
+            path,
+            headers=headers,
+            body=body,
+        )
+        response_body = b"".join(response.body_chunks)
+        return PacketResponse(
+            status_code=response.status_code,
+            headers=response.headers,
+            body=response_body,
+        )
+
+    def forward_stream(
+        self,
+        method: str,
+        path: str,
+        *,
+        headers: dict[str, str],
+        body: bytes,
+    ) -> PacketStreamResponse:
+        """Forward one HTTP request and stream the upstream response."""
+        stream_context = self._client.stream(
             method,
             self._upstream_url(path),
             headers=self._forward_headers(headers),
             content=body,
         )
-        response_body = upstream_response.content
+        upstream_response = stream_context.__enter__()
         request_body = _json_body(body)
+        response_chunks: list[bytes] = []
+
+        def body_chunks() -> Iterator[bytes]:
+            exc_type: type[BaseException] | None = None
+            exc_value: BaseException | None = None
+            exc_traceback: Any = None
+            try:
+                for chunk in upstream_response.iter_bytes():
+                    if not chunk:
+                        continue
+                    response_chunks.append(chunk)
+                    yield chunk
+            except BaseException as exc:
+                exc_type = type(exc)
+                exc_value = exc
+                exc_traceback = exc.__traceback__
+                raise
+            finally:
+                response_body = b"".join(response_chunks)
+                self._sink.enqueue(
+                    self._packet_payload(
+                        method=method,
+                        path=path,
+                        headers=headers,
+                        request_body=request_body,
+                        response_status_code=upstream_response.status_code,
+                        response_headers=dict(upstream_response.headers),
+                        response_body=response_body,
+                        raw_request_body=body,
+                    )
+                )
+                stream_context.__exit__(exc_type, exc_value, exc_traceback)
+
+        return PacketStreamResponse(
+            status_code=upstream_response.status_code,
+            headers=_response_headers(upstream_response.headers),
+            body_chunks=body_chunks(),
+        )
+
+    def _packet_payload(
+        self,
+        *,
+        method: str,
+        path: str,
+        headers: dict[str, str],
+        request_body: Any,
+        response_status_code: int,
+        response_headers: dict[str, str],
+        response_body: bytes,
+        raw_request_body: bytes,
+    ) -> dict[str, Any]:
         response_json = _json_body(response_body)
-        payload = {
+        return {
             "source": self._config.source,
             "session_id": self._session_id,
             "method": method.upper(),
             "provider_path": path,
-            "status_code": upstream_response.status_code,
+            "status_code": response_status_code,
             "model": _model_from_packet(request_body, response_json),
             "usage_counts": _usage_counts_from_response(response_json),
-            "request_hash": _stable_hash_bytes(body),
+            "request_hash": _stable_hash_bytes(raw_request_body),
             "response_hash": _stable_hash_bytes(response_body),
             "request": {
                 "headers": _captured_headers(headers),
                 "body": request_body,
             },
             "response": {
-                "headers": _captured_headers(dict(upstream_response.headers)),
+                "headers": _captured_headers(response_headers),
                 "body": response_json,
             },
         }
-        self._sink.enqueue(payload)
-        return PacketResponse(
-            status_code=upstream_response.status_code,
-            headers=_response_headers(upstream_response.headers),
-            body=response_body,
-        )
 
     def close(self) -> None:
         """Close owned resources after flushing queued packet events."""
@@ -245,7 +322,7 @@ def run_packet_analyzer(
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self) -> None:  # noqa: N802
             body = self.rfile.read(int(self.headers.get("content-length", "0")))
-            response = analyzer.forward(
+            response = analyzer.forward_stream(
                 "POST",
                 self.path,
                 headers=dict(self.headers),
@@ -255,7 +332,8 @@ def run_packet_analyzer(
             for key, value in response.headers.items():
                 self.send_header(key, value)
             self.end_headers()
-            self.wfile.write(response.body)
+            for chunk in response.body_chunks:
+                self.wfile.write(chunk)
 
         def log_message(self, format: str, *args: object) -> None:
             return

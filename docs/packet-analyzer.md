@@ -15,16 +15,18 @@ zaxy packet-analyzer \
 ```
 
 Point an OpenAI-compatible client at `http://127.0.0.1:8787/v1`. The analyzer
-forwards the packet, then appends an `llm.packet.completed` event with:
+streams upstream response chunks back to the client, then appends an
+`llm.packet.completed` event with:
 
 - provider path, method, status code, model, and usage counts;
 - request and response hashes;
 - captured request/response JSON bodies;
 - a small allowlist of non-secret headers.
 
-The append is handled by a background Eventloom writer. Expensive work such as
-graph projection, embeddings, consolidation, and memory summarization should run
-from the cold path after packet capture, not in the request forwarding path.
+The append is handled by a background Eventloom writer after the response body is
+observed. Expensive work such as graph projection, embeddings, consolidation,
+and memory summarization should run from the cold path after packet capture, not
+in the request forwarding path.
 
 ## Modes
 
