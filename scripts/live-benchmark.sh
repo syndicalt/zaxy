@@ -16,10 +16,12 @@ WORKLOAD="fixture"
 SUBJECTS="100"
 DOCUMENTS="250"
 SESSIONS="50"
+DATASET=""
+QUESTIONS=""
 
 usage() {
     cat <<USAGE
-Usage: scripts/live-benchmark.sh [--root PATH] [--output-dir PATH] [--runs N] [--limit N] [--embedding-provider openai|hash] [--workload fixture|statistical|frozen|suite|consolidation] [--subjects N] [--documents N] [--sessions N] [--reset-graph]
+Usage: scripts/live-benchmark.sh [--root PATH] [--output-dir PATH] [--runs N] [--limit N] [--embedding-provider openai|hash] [--workload fixture|statistical|frozen|suite|consolidation|longmemeval] [--dataset PATH] [--questions N] [--subjects N] [--documents N] [--sessions N] [--reset-graph]
 
 Runs zaxy benchmark against markdown, BM25, vector, markdown+vector, and live Zaxy retrieval.
 OpenAI mode requires OPENAI_API_KEY or OPENAI_API_KEY_FILE.
@@ -64,6 +66,14 @@ while [[ $# -gt 0 ]]; do
             SESSIONS="$2"
             shift 2
             ;;
+        --dataset)
+            DATASET="$2"
+            shift 2
+            ;;
+        --questions)
+            QUESTIONS="$2"
+            shift 2
+            ;;
         --reset-graph)
             RESET_GRAPH="true"
             shift
@@ -99,6 +109,12 @@ args=(
 
 if [[ "${RESET_GRAPH}" == "true" ]]; then
     args+=(--reset-graph)
+fi
+if [[ -n "${DATASET}" ]]; then
+    args+=(--dataset "${DATASET}")
+fi
+if [[ -n "${QUESTIONS}" ]]; then
+    args+=(--questions "${QUESTIONS}")
 fi
 
 "${args[@]}"

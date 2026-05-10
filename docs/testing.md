@@ -78,6 +78,29 @@ subject count:
 scripts/live-benchmark.sh --embedding-provider openai --workload frozen --runs 1 --reset-graph
 ```
 
+For public memory-benchmark comparisons against systems that report
+LongMemEval recall, download the cleaned LongMemEval JSON and run the
+`longmemeval` workload. This workload preserves answer session identifiers and
+reports identity recall in addition to answer-term recall:
+
+```bash
+mkdir -p /tmp/longmemeval-data
+curl -fsSL -o /tmp/longmemeval-data/longmemeval_s_cleaned.json \
+  https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/main/longmemeval_s_cleaned.json
+
+scripts/live-benchmark.sh \
+  --embedding-provider openai \
+  --workload longmemeval \
+  --dataset /tmp/longmemeval-data/longmemeval_s_cleaned.json \
+  --runs 1 \
+  --limit 5 \
+  --reset-graph
+```
+
+Use `--questions 20` for a smoke run before the full 500-question pass. The
+headline comparison field for this workload is identity recall at the requested
+limit, which corresponds to whether the answer-bearing session was retrieved.
+
 Frozen reports include a workload version, event count, query count, and
 SHA-256 fingerprint so later runs can prove they used the same corpus. External
 systems such as QMD/OpenClaw, Graphiti/Zep, or Mem0 can be included only as

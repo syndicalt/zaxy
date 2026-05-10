@@ -11,6 +11,7 @@ from zaxy.live_benchmark import (
     CONSOLIDATION_WORKLOAD_VERSION,
     FROZEN_WORKLOAD_SUBJECTS,
     FROZEN_WORKLOAD_VERSION,
+    LONGMEMEVAL_WORKLOAD_VERSION,
     SUITE_WORKLOAD_VERSION,
     BenchmarkChunk,
     BM25Retriever,
@@ -23,6 +24,7 @@ from zaxy.live_benchmark import (
     build_benchmark_suite_workload,
     build_consolidation_collapse_workload,
     build_frozen_statistical_workload,
+    build_longmemeval_workload,
     corpus_from_event_log,
     report_to_markdown,
     workload_fingerprint,
@@ -42,11 +44,78 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "build_frozen_statistical_workload" in cli
     assert "build_benchmark_suite_workload" in cli
     assert "build_consolidation_collapse_workload" in cli
+    assert "build_longmemeval_workload" in cli
     assert "--workload" in script
+    assert "--dataset" in script
     assert "--subjects" in script
     assert "--documents" in script
     assert "--sessions" in script
     assert "zaxy benchmark" in script
+
+
+def test_longmemeval_workload_loads_public_memory_dataset(tmp_path: Path) -> None:
+    """LongMemEval loader should convert answer sessions into identity-recall cases."""
+    dataset = tmp_path / "longmemeval.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "question_id": "q1",
+                    "question_type": "single-session-user",
+                    "question": "What degree did I graduate with?",
+                    "answer": "Business Administration",
+                    "answer_session_ids": ["answer-1"],
+                    "haystack_dates": ["2023/05/20 (Sat) 02:21", "2023/05/21 (Sun) 03:24"],
+                    "haystack_session_ids": ["distractor-1", "answer-1"],
+                    "haystack_sessions": [
+                        [{"role": "user", "content": "What is a graph database?"}],
+                        [
+                            {
+                                "role": "user",
+                                "content": "I graduated with a Business Administration degree.",
+                            }
+                        ],
+                    ],
+                },
+                {
+                    "question_id": "q2",
+                    "question_type": "multi-session-assistant",
+                    "question": "Which project did we rename?",
+                    "answer": "Atlas",
+                    "answer_session_ids": ["answer-2"],
+                    "haystack_dates": ["2023/05/22 (Mon) 08:00"],
+                    "haystack_session_ids": ["answer-2"],
+                    "haystack_sessions": [
+                        [{"role": "assistant", "content": "We renamed Project Atlas."}]
+                    ],
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    eventlog, cases, workload = build_longmemeval_workload(
+        tmp_path / "longmemeval.jsonl",
+        dataset,
+        questions=1,
+    )
+    corpus = corpus_from_event_log(eventlog)
+
+    assert workload.version == LONGMEMEVAL_WORKLOAD_VERSION
+    assert workload.subjects == 1
+    assert workload.sessions == 2
+    assert workload.event_count == 2
+    assert workload.case_count == 1
+    assert workload.lanes == ("longmemeval",)
+    assert cases[0].name == "longmemeval-q1"
+    assert cases[0].expected_terms == ("Business Administration",)
+    assert cases[0].identity_terms == ("answer-1",)
+    assert any("longmemeval_session_id=answer-1" in chunk.text for chunk in corpus)
+    assert workload.sha256 == workload_fingerprint(
+        eventlog,
+        cases,
+        LONGMEMEVAL_WORKLOAD_VERSION,
+    )
 
 
 def test_live_benchmark_compares_all_retriever_backends(tmp_path: Path) -> None:

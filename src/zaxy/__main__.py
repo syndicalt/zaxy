@@ -68,6 +68,7 @@ from zaxy.live_benchmark import (
     build_consolidation_collapse_workload,
     build_frozen_statistical_workload,
     build_live_zaxy_retriever,
+    build_longmemeval_workload,
     build_statistical_event_log,
     corpus_from_event_log,
     report_to_markdown,
@@ -755,7 +756,17 @@ def benchmark(
     ),
     workload: str = typer.Option(
         "fixture",
-        help="Workload: fixture, statistical, frozen, suite, or consolidation",
+        help="Workload: fixture, statistical, frozen, suite, consolidation, or longmemeval",
+    ),
+    dataset: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--dataset",
+        help="Public benchmark dataset path, required for workload=longmemeval",
+    ),
+    questions: int | None = typer.Option(  # noqa: B008
+        None,
+        min=1,
+        help="Limit public benchmark questions for smoke runs",
     ),
     subjects: int = typer.Option(
         100,
@@ -840,10 +851,18 @@ def benchmark(
                     Path(tmp) / "bench.jsonl",
                     identities=documents,
                 )
+            elif workload == "longmemeval":
+                if dataset is None:
+                    raise typer.BadParameter("--dataset is required for workload=longmemeval")
+                eventlog, cases, benchmark_workload = build_longmemeval_workload(
+                    Path(tmp) / "bench.jsonl",
+                    dataset,
+                    questions=questions,
+                )
             else:
                 raise typer.BadParameter(
                     "workload must be 'fixture', 'statistical', 'frozen', "
-                    "'suite', or 'consolidation'"
+                    "'suite', 'consolidation', or 'longmemeval'"
                 )
             corpus = corpus_from_event_log(eventlog)
             zaxy_retriever, graph = await build_live_zaxy_retriever(

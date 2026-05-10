@@ -291,12 +291,13 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Focused full-suite integration check helper that starts, requires, or skips Neo4j test services explicitly
 - [x] Optional framework extras and install hints for LangGraph, CrewAI, and AutoGen
 - [x] Framework integration support registry with maturity and native-adapter status discovery
+- [x] LongMemEval public-memory benchmark workload for MemPalace-comparable identity recall
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 527 passed |
+| Tests | 531 passed |
 | Coverage | 92.25% |
 | Lint | ruff clean |
 | Types | mypy clean |

@@ -1,0 +1,2265 @@
+{
+  "category_summaries": [
+    {
+      "backend": "bm25",
+      "category": "longmemeval:single-session-user",
+      "mean_score": 0.7,
+      "miss_count": 6,
+      "query_count": 20
+    },
+    {
+      "backend": "md",
+      "category": "longmemeval:single-session-user",
+      "mean_score": 0.15,
+      "miss_count": 17,
+      "query_count": 20
+    },
+    {
+      "backend": "md+vector",
+      "category": "longmemeval:single-session-user",
+      "mean_score": 0.1,
+      "miss_count": 18,
+      "query_count": 20
+    },
+    {
+      "backend": "vector",
+      "category": "longmemeval:single-session-user",
+      "mean_score": 0.1,
+      "miss_count": 18,
+      "query_count": 20
+    },
+    {
+      "backend": "zaxy",
+      "category": "longmemeval:single-session-user",
+      "mean_score": 0.6,
+      "miss_count": 8,
+      "query_count": 20
+    }
+  ],
+  "comparisons": [
+    {
+      "baseline_backend": "bm25",
+      "ci_high": 0.0,
+      "ci_low": -0.25,
+      "mean_difference": -0.1,
+      "p_value": 0.5,
+      "paired_units": 20,
+      "significant": false,
+      "target_backend": "zaxy"
+    },
+    {
+      "baseline_backend": "md",
+      "ci_high": 0.65,
+      "ci_low": 0.25,
+      "mean_difference": 0.45,
+      "p_value": 0.003906,
+      "paired_units": 20,
+      "significant": true,
+      "target_backend": "zaxy"
+    },
+    {
+      "baseline_backend": "md+vector",
+      "ci_high": 0.7,
+      "ci_low": 0.25,
+      "mean_difference": 0.5,
+      "p_value": 0.001953,
+      "paired_units": 20,
+      "significant": true,
+      "target_backend": "zaxy"
+    },
+    {
+      "baseline_backend": "vector",
+      "ci_high": 0.7,
+      "ci_low": 0.25,
+      "mean_difference": 0.5,
+      "p_value": 0.001953,
+      "paired_units": 20,
+      "significant": true,
+      "target_backend": "zaxy"
+    }
+  ],
+  "embedding_provider": "hash:1536",
+  "external_results": [],
+  "generated_at": "2026-05-10T01:41:31Z",
+  "runs": [
+    {
+      "approx_tokens": 18900,
+      "backend": "md",
+      "case_name": "longmemeval-e47becba",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.1538,
+      "missing_expected": [
+        "Business Administration"
+      ],
+      "missing_identities": [
+        "answer_280352e9"
+      ],
+      "result_count": 5,
+      "returned_bytes": 75600,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 18900,
+      "backend": "md",
+      "case_name": "longmemeval-118b2229",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0331,
+      "missing_expected": [
+        "45 minutes each way"
+      ],
+      "missing_identities": [
+        "answer_40a90d51"
+      ],
+      "result_count": 5,
+      "returned_bytes": 75600,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 22731,
+      "backend": "md",
+      "case_name": "longmemeval-51a45a95",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "Target"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.8665,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_d61669c7"
+      ],
+      "result_count": 5,
+      "returned_bytes": 90924,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 18900,
+      "backend": "md",
+      "case_name": "longmemeval-58bf7951",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0817,
+      "missing_expected": [
+        "The Glass Menagerie"
+      ],
+      "missing_identities": [
+        "answer_355c48bb"
+      ],
+      "result_count": 5,
+      "returned_bytes": 75600,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 18900,
+      "backend": "md",
+      "case_name": "longmemeval-1e043500",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0521,
+      "missing_expected": [
+        "Summer Vibes"
+      ],
+      "missing_identities": [
+        "answer_3e012175"
+      ],
+      "result_count": 5,
+      "returned_bytes": 75600,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 25460,
+      "backend": "md",
+      "case_name": "longmemeval-c5e8278d",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.2505,
+      "missing_expected": [
+        "Johnson"
+      ],
+      "missing_identities": [
+        "answer_f6168136"
+      ],
+      "result_count": 5,
+      "returned_bytes": 101841,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 19204,
+      "backend": "md",
+      "case_name": "longmemeval-6ade9755",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.1001,
+      "missing_expected": [
+        "Serenity Yoga"
+      ],
+      "missing_identities": [
+        "answer_9398da02"
+      ],
+      "result_count": 5,
+      "returned_bytes": 76813,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 25460,
+      "backend": "md",
+      "case_name": "longmemeval-6f9b354f",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.233,
+      "missing_expected": [
+        "a lighter shade of gray"
+      ],
+      "missing_identities": [
+        "answer_feb5200f"
+      ],
+      "result_count": 5,
+      "returned_bytes": 101841,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 18900,
+      "backend": "md",
+      "case_name": "longmemeval-58ef2f1c",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.1342,
+      "missing_expected": [
+        "February 14th"
+      ],
+      "missing_identities": [
+        "answer_59547700"
+      ],
+      "result_count": 5,
+      "returned_bytes": 75600,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 25043,
+      "backend": "md",
+      "case_name": "longmemeval-f8c5f88b",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.2413,
+      "missing_expected": [
+        "the sports store downtown"
+      ],
+      "missing_identities": [
+        "answer_c3567066"
+      ],
+      "result_count": 5,
+      "returned_bytes": 100172,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 25460,
+      "backend": "md",
+      "case_name": "longmemeval-5d3d2817",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.2061,
+      "missing_expected": [
+        "Marketing specialist at a small startup"
+      ],
+      "missing_identities": [
+        "answer_235eb6fb"
+      ],
+      "result_count": 5,
+      "returned_bytes": 101841,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 23268,
+      "backend": "md",
+      "case_name": "longmemeval-7527f7e2",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0463,
+      "missing_expected": [
+        "$800"
+      ],
+      "missing_identities": [
+        "answer_7cb94507"
+      ],
+      "result_count": 5,
+      "returned_bytes": 93070,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 18900,
+      "backend": "md",
+      "case_name": "longmemeval-c960da58",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "20"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0339,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_e05e4612"
+      ],
+      "result_count": 5,
+      "returned_bytes": 75600,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 23543,
+      "backend": "md",
+      "case_name": "longmemeval-3b6f954b",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0822,
+      "missing_expected": [
+        "University of Melbourne in Australia"
+      ],
+      "missing_identities": [
+        "answer_94030872"
+      ],
+      "result_count": 5,
+      "returned_bytes": 94172,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 18900,
+      "backend": "md",
+      "case_name": "longmemeval-726462e0",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0831,
+      "missing_expected": [
+        "10%"
+      ],
+      "missing_identities": [
+        "answer_f38f679b"
+      ],
+      "result_count": 5,
+      "returned_bytes": 75600,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 18900,
+      "backend": "md",
+      "case_name": "longmemeval-94f70d80",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0281,
+      "missing_expected": [
+        "4 hours"
+      ],
+      "missing_identities": [
+        "answer_c63c0458"
+      ],
+      "result_count": 5,
+      "returned_bytes": 75600,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 23543,
+      "backend": "md",
+      "case_name": "longmemeval-66f24dbb",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0901,
+      "missing_expected": [
+        "a yellow dress"
+      ],
+      "missing_identities": [
+        "answer_fea2e4d3"
+      ],
+      "result_count": 5,
+      "returned_bytes": 94172,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 23268,
+      "backend": "md",
+      "case_name": "longmemeval-ad7109d1",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.1109,
+      "missing_expected": [
+        "500 Mbps"
+      ],
+      "missing_identities": [
+        "answer_679840f8"
+      ],
+      "result_count": 5,
+      "returned_bytes": 93070,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 18900,
+      "backend": "md",
+      "case_name": "longmemeval-af8d2e46",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "7"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0406,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_82a04f59"
+      ],
+      "result_count": 5,
+      "returned_bytes": 75600,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 25460,
+      "backend": "md",
+      "case_name": "longmemeval-dccbc061",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.2232,
+      "missing_expected": [
+        "A staunch atheist"
+      ],
+      "missing_identities": [
+        "answer_8f276838"
+      ],
+      "result_count": 5,
+      "returned_bytes": 101841,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 30856,
+      "backend": "bm25",
+      "case_name": "longmemeval-e47becba",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 128.9085,
+      "missing_expected": [
+        "Business Administration"
+      ],
+      "missing_identities": [
+        "answer_280352e9"
+      ],
+      "result_count": 5,
+      "returned_bytes": 123426,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 39056,
+      "backend": "bm25",
+      "case_name": "longmemeval-118b2229",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "45 minutes each way"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_40a90d51"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 107.9823,
+      "missing_expected": [],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 156231,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 28820,
+      "backend": "bm25",
+      "case_name": "longmemeval-51a45a95",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "Target"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_d61669c7"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 108.5529,
+      "missing_expected": [],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 115278,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 34878,
+      "backend": "bm25",
+      "case_name": "longmemeval-58bf7951",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "The Glass Menagerie"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_355c48bb"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 108.5834,
+      "missing_expected": [],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 139523,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 40633,
+      "backend": "bm25",
+      "case_name": "longmemeval-1e043500",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "Summer Vibes"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_3e012175"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 108.6461,
+      "missing_expected": [],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 162566,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 29068,
+      "backend": "bm25",
+      "case_name": "longmemeval-c5e8278d",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "Johnson"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_f6168136"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 111.1937,
+      "missing_expected": [],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 116277,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 31176,
+      "backend": "bm25",
+      "case_name": "longmemeval-6ade9755",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 108.6534,
+      "missing_expected": [
+        "Serenity Yoga"
+      ],
+      "missing_identities": [
+        "answer_9398da02"
+      ],
+      "result_count": 5,
+      "returned_bytes": 124706,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 39061,
+      "backend": "bm25",
+      "case_name": "longmemeval-6f9b354f",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "a lighter shade of gray"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_feb5200f"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 107.7782,
+      "missing_expected": [],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 156248,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 35680,
+      "backend": "bm25",
+      "case_name": "longmemeval-58ef2f1c",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_59547700"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 107.5997,
+      "missing_expected": [
+        "February 14th"
+      ],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 142720,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 31755,
+      "backend": "bm25",
+      "case_name": "longmemeval-f8c5f88b",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_c3567066"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 108.3342,
+      "missing_expected": [
+        "the sports store downtown"
+      ],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 127020,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 26216,
+      "backend": "bm25",
+      "case_name": "longmemeval-5d3d2817",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 107.241,
+      "missing_expected": [
+        "Marketing specialist at a small startup"
+      ],
+      "missing_identities": [
+        "answer_235eb6fb"
+      ],
+      "result_count": 5,
+      "returned_bytes": 104908,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 36268,
+      "backend": "bm25",
+      "case_name": "longmemeval-7527f7e2",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "$800"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_7cb94507"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 108.2052,
+      "missing_expected": [],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 145074,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 39454,
+      "backend": "bm25",
+      "case_name": "longmemeval-c960da58",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "20"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_e05e4612"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 108.3898,
+      "missing_expected": [],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 157837,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 25719,
+      "backend": "bm25",
+      "case_name": "longmemeval-3b6f954b",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_94030872"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 108.4953,
+      "missing_expected": [
+        "University of Melbourne in Australia"
+      ],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 102884,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 33786,
+      "backend": "bm25",
+      "case_name": "longmemeval-726462e0",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "10%"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 108.8363,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_f38f679b"
+      ],
+      "result_count": 5,
+      "returned_bytes": 135143,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 35901,
+      "backend": "bm25",
+      "case_name": "longmemeval-94f70d80",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "4 hours"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_c63c0458"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 109.9728,
+      "missing_expected": [],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 143618,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 24860,
+      "backend": "bm25",
+      "case_name": "longmemeval-66f24dbb",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "a yellow dress"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_fea2e4d3"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 108.9404,
+      "missing_expected": [],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 99438,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 31441,
+      "backend": "bm25",
+      "case_name": "longmemeval-ad7109d1",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "500 Mbps"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_679840f8"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 108.8188,
+      "missing_expected": [],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 125765,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 37080,
+      "backend": "bm25",
+      "case_name": "longmemeval-af8d2e46",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "7"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_82a04f59"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 109.1857,
+      "missing_expected": [],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 148350,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 43518,
+      "backend": "bm25",
+      "case_name": "longmemeval-dccbc061",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "A staunch atheist"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_8f276838"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 109.1516,
+      "missing_expected": [],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 174076,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 16190,
+      "backend": "vector",
+      "case_name": "longmemeval-e47becba",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 111.3997,
+      "missing_expected": [
+        "Business Administration"
+      ],
+      "missing_identities": [
+        "answer_280352e9"
+      ],
+      "result_count": 5,
+      "returned_bytes": 64803,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 18107,
+      "backend": "vector",
+      "case_name": "longmemeval-118b2229",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 111.8239,
+      "missing_expected": [
+        "45 minutes each way"
+      ],
+      "missing_identities": [
+        "answer_40a90d51"
+      ],
+      "result_count": 5,
+      "returned_bytes": 72430,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 24138,
+      "backend": "vector",
+      "case_name": "longmemeval-51a45a95",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 110.792,
+      "missing_expected": [
+        "Target"
+      ],
+      "missing_identities": [
+        "answer_d61669c7"
+      ],
+      "result_count": 5,
+      "returned_bytes": 96550,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 17854,
+      "backend": "vector",
+      "case_name": "longmemeval-58bf7951",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 110.6115,
+      "missing_expected": [
+        "The Glass Menagerie"
+      ],
+      "missing_identities": [
+        "answer_355c48bb"
+      ],
+      "result_count": 5,
+      "returned_bytes": 71422,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 17205,
+      "backend": "vector",
+      "case_name": "longmemeval-1e043500",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 110.4502,
+      "missing_expected": [
+        "Summer Vibes"
+      ],
+      "missing_identities": [
+        "answer_3e012175"
+      ],
+      "result_count": 5,
+      "returned_bytes": 68865,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 7463,
+      "backend": "vector",
+      "case_name": "longmemeval-c5e8278d",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 109.9565,
+      "missing_expected": [
+        "Johnson"
+      ],
+      "missing_identities": [
+        "answer_f6168136"
+      ],
+      "result_count": 5,
+      "returned_bytes": 29896,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 6995,
+      "backend": "vector",
+      "case_name": "longmemeval-6ade9755",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 113.1243,
+      "missing_expected": [
+        "Serenity Yoga"
+      ],
+      "missing_identities": [
+        "answer_9398da02"
+      ],
+      "result_count": 5,
+      "returned_bytes": 28024,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 9646,
+      "backend": "vector",
+      "case_name": "longmemeval-6f9b354f",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 109.6283,
+      "missing_expected": [
+        "a lighter shade of gray"
+      ],
+      "missing_identities": [
+        "answer_feb5200f"
+      ],
+      "result_count": 5,
+      "returned_bytes": 38629,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 19851,
+      "backend": "vector",
+      "case_name": "longmemeval-58ef2f1c",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 110.7434,
+      "missing_expected": [
+        "February 14th"
+      ],
+      "missing_identities": [
+        "answer_59547700"
+      ],
+      "result_count": 5,
+      "returned_bytes": 79420,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 6995,
+      "backend": "vector",
+      "case_name": "longmemeval-f8c5f88b",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 109.6571,
+      "missing_expected": [
+        "the sports store downtown"
+      ],
+      "missing_identities": [
+        "answer_c3567066"
+      ],
+      "result_count": 5,
+      "returned_bytes": 28024,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 7722,
+      "backend": "vector",
+      "case_name": "longmemeval-5d3d2817",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 113.6975,
+      "missing_expected": [
+        "Marketing specialist at a small startup"
+      ],
+      "missing_identities": [
+        "answer_235eb6fb"
+      ],
+      "result_count": 5,
+      "returned_bytes": 30893,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 26847,
+      "backend": "vector",
+      "case_name": "longmemeval-7527f7e2",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 110.221,
+      "missing_expected": [
+        "$800"
+      ],
+      "missing_identities": [
+        "answer_7cb94507"
+      ],
+      "result_count": 5,
+      "returned_bytes": 107433,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 6151,
+      "backend": "vector",
+      "case_name": "longmemeval-c960da58",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "20"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 110.2736,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_e05e4612"
+      ],
+      "result_count": 5,
+      "returned_bytes": 24647,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 11744,
+      "backend": "vector",
+      "case_name": "longmemeval-3b6f954b",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 110.6823,
+      "missing_expected": [
+        "University of Melbourne in Australia"
+      ],
+      "missing_identities": [
+        "answer_94030872"
+      ],
+      "result_count": 5,
+      "returned_bytes": 46973,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 16915,
+      "backend": "vector",
+      "case_name": "longmemeval-726462e0",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 113.1662,
+      "missing_expected": [
+        "10%"
+      ],
+      "missing_identities": [
+        "answer_f38f679b"
+      ],
+      "result_count": 5,
+      "returned_bytes": 67667,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 15884,
+      "backend": "vector",
+      "case_name": "longmemeval-94f70d80",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 111.9995,
+      "missing_expected": [
+        "4 hours"
+      ],
+      "missing_identities": [
+        "answer_c63c0458"
+      ],
+      "result_count": 5,
+      "returned_bytes": 63538,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 12348,
+      "backend": "vector",
+      "case_name": "longmemeval-66f24dbb",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 110.5645,
+      "missing_expected": [
+        "a yellow dress"
+      ],
+      "missing_identities": [
+        "answer_fea2e4d3"
+      ],
+      "result_count": 5,
+      "returned_bytes": 49437,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 19861,
+      "backend": "vector",
+      "case_name": "longmemeval-ad7109d1",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 109.8604,
+      "missing_expected": [
+        "500 Mbps"
+      ],
+      "missing_identities": [
+        "answer_679840f8"
+      ],
+      "result_count": 5,
+      "returned_bytes": 79492,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 14113,
+      "backend": "vector",
+      "case_name": "longmemeval-af8d2e46",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "7"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 109.9267,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_82a04f59"
+      ],
+      "result_count": 5,
+      "returned_bytes": 56494,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 20487,
+      "backend": "vector",
+      "case_name": "longmemeval-dccbc061",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 109.5629,
+      "missing_expected": [
+        "A staunch atheist"
+      ],
+      "missing_identities": [
+        "answer_8f276838"
+      ],
+      "result_count": 5,
+      "returned_bytes": 81948,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 16190,
+      "backend": "md+vector",
+      "case_name": "longmemeval-e47becba",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 151.1732,
+      "missing_expected": [
+        "Business Administration"
+      ],
+      "missing_identities": [
+        "answer_280352e9"
+      ],
+      "result_count": 5,
+      "returned_bytes": 64803,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 18107,
+      "backend": "md+vector",
+      "case_name": "longmemeval-118b2229",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 137.6667,
+      "missing_expected": [
+        "45 minutes each way"
+      ],
+      "missing_identities": [
+        "answer_40a90d51"
+      ],
+      "result_count": 5,
+      "returned_bytes": 72430,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 24138,
+      "backend": "md+vector",
+      "case_name": "longmemeval-51a45a95",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 160.1335,
+      "missing_expected": [
+        "Target"
+      ],
+      "missing_identities": [
+        "answer_d61669c7"
+      ],
+      "result_count": 5,
+      "returned_bytes": 96550,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 17854,
+      "backend": "md+vector",
+      "case_name": "longmemeval-58bf7951",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 151.9357,
+      "missing_expected": [
+        "The Glass Menagerie"
+      ],
+      "missing_identities": [
+        "answer_355c48bb"
+      ],
+      "result_count": 5,
+      "returned_bytes": 71422,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 17205,
+      "backend": "md+vector",
+      "case_name": "longmemeval-1e043500",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 145.2756,
+      "missing_expected": [
+        "Summer Vibes"
+      ],
+      "missing_identities": [
+        "answer_3e012175"
+      ],
+      "result_count": 5,
+      "returned_bytes": 68865,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 7463,
+      "backend": "md+vector",
+      "case_name": "longmemeval-c5e8278d",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 141.589,
+      "missing_expected": [
+        "Johnson"
+      ],
+      "missing_identities": [
+        "answer_f6168136"
+      ],
+      "result_count": 5,
+      "returned_bytes": 29896,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 10103,
+      "backend": "md+vector",
+      "case_name": "longmemeval-6ade9755",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 143.0338,
+      "missing_expected": [
+        "Serenity Yoga"
+      ],
+      "missing_identities": [
+        "answer_9398da02"
+      ],
+      "result_count": 5,
+      "returned_bytes": 40412,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 15647,
+      "backend": "md+vector",
+      "case_name": "longmemeval-6f9b354f",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 137.4942,
+      "missing_expected": [
+        "a lighter shade of gray"
+      ],
+      "missing_identities": [
+        "answer_feb5200f"
+      ],
+      "result_count": 5,
+      "returned_bytes": 62631,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 19851,
+      "backend": "md+vector",
+      "case_name": "longmemeval-58ef2f1c",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 161.9665,
+      "missing_expected": [
+        "February 14th"
+      ],
+      "missing_identities": [
+        "answer_59547700"
+      ],
+      "result_count": 5,
+      "returned_bytes": 79420,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 6995,
+      "backend": "md+vector",
+      "case_name": "longmemeval-f8c5f88b",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 174.9749,
+      "missing_expected": [
+        "the sports store downtown"
+      ],
+      "missing_identities": [
+        "answer_c3567066"
+      ],
+      "result_count": 5,
+      "returned_bytes": 28024,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 9679,
+      "backend": "md+vector",
+      "case_name": "longmemeval-5d3d2817",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 132.4736,
+      "missing_expected": [
+        "Marketing specialist at a small startup"
+      ],
+      "missing_identities": [
+        "answer_235eb6fb"
+      ],
+      "result_count": 5,
+      "returned_bytes": 38722,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 26847,
+      "backend": "md+vector",
+      "case_name": "longmemeval-7527f7e2",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 135.08,
+      "missing_expected": [
+        "$800"
+      ],
+      "missing_identities": [
+        "answer_7cb94507"
+      ],
+      "result_count": 5,
+      "returned_bytes": 107433,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 6151,
+      "backend": "md+vector",
+      "case_name": "longmemeval-c960da58",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "20"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 136.402,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_e05e4612"
+      ],
+      "result_count": 5,
+      "returned_bytes": 24647,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 11744,
+      "backend": "md+vector",
+      "case_name": "longmemeval-3b6f954b",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 173.8222,
+      "missing_expected": [
+        "University of Melbourne in Australia"
+      ],
+      "missing_identities": [
+        "answer_94030872"
+      ],
+      "result_count": 5,
+      "returned_bytes": 46973,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 16915,
+      "backend": "md+vector",
+      "case_name": "longmemeval-726462e0",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 144.5756,
+      "missing_expected": [
+        "10%"
+      ],
+      "missing_identities": [
+        "answer_f38f679b"
+      ],
+      "result_count": 5,
+      "returned_bytes": 67667,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 15884,
+      "backend": "md+vector",
+      "case_name": "longmemeval-94f70d80",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 136.303,
+      "missing_expected": [
+        "4 hours"
+      ],
+      "missing_identities": [
+        "answer_c63c0458"
+      ],
+      "result_count": 5,
+      "returned_bytes": 63538,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 12348,
+      "backend": "md+vector",
+      "case_name": "longmemeval-66f24dbb",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 147.3234,
+      "missing_expected": [
+        "a yellow dress"
+      ],
+      "missing_identities": [
+        "answer_fea2e4d3"
+      ],
+      "result_count": 5,
+      "returned_bytes": 49437,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 19861,
+      "backend": "md+vector",
+      "case_name": "longmemeval-ad7109d1",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 138.8954,
+      "missing_expected": [
+        "500 Mbps"
+      ],
+      "missing_identities": [
+        "answer_679840f8"
+      ],
+      "result_count": 5,
+      "returned_bytes": 79492,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 14113,
+      "backend": "md+vector",
+      "case_name": "longmemeval-af8d2e46",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "7"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 140.32,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_82a04f59"
+      ],
+      "result_count": 5,
+      "returned_bytes": 56494,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 20487,
+      "backend": "md+vector",
+      "case_name": "longmemeval-dccbc061",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 137.1896,
+      "missing_expected": [
+        "A staunch atheist"
+      ],
+      "missing_identities": [
+        "answer_8f276838"
+      ],
+      "result_count": 5,
+      "returned_bytes": 81948,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 11997,
+      "backend": "zaxy",
+      "case_name": "longmemeval-e47becba",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 624.4433,
+      "missing_expected": [
+        "Business Administration"
+      ],
+      "missing_identities": [
+        "answer_280352e9"
+      ],
+      "result_count": 5,
+      "returned_bytes": 48000,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 20256,
+      "backend": "zaxy",
+      "case_name": "longmemeval-118b2229",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "45 minutes each way"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_40a90d51"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 220.5244,
+      "missing_expected": [],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 81041,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 15882,
+      "backend": "zaxy",
+      "case_name": "longmemeval-51a45a95",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "Target"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 164.8312,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_d61669c7"
+      ],
+      "result_count": 5,
+      "returned_bytes": 63537,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 17306,
+      "backend": "zaxy",
+      "case_name": "longmemeval-58bf7951",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "The Glass Menagerie"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_355c48bb"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 146.2938,
+      "missing_expected": [],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 69236,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 17586,
+      "backend": "zaxy",
+      "case_name": "longmemeval-1e043500",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "Summer Vibes"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 158.7308,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_3e012175"
+      ],
+      "result_count": 5,
+      "returned_bytes": 70388,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 16317,
+      "backend": "zaxy",
+      "case_name": "longmemeval-c5e8278d",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "Johnson"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_f6168136"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 112.7398,
+      "missing_expected": [],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 65286,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 16240,
+      "backend": "zaxy",
+      "case_name": "longmemeval-6ade9755",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 135.398,
+      "missing_expected": [
+        "Serenity Yoga"
+      ],
+      "missing_identities": [
+        "answer_9398da02"
+      ],
+      "result_count": 5,
+      "returned_bytes": 64972,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 19335,
+      "backend": "zaxy",
+      "case_name": "longmemeval-6f9b354f",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 165.1176,
+      "missing_expected": [
+        "a lighter shade of gray"
+      ],
+      "missing_identities": [
+        "answer_feb5200f"
+      ],
+      "result_count": 5,
+      "returned_bytes": 77354,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 18457,
+      "backend": "zaxy",
+      "case_name": "longmemeval-58ef2f1c",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_59547700"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 143.9006,
+      "missing_expected": [
+        "February 14th"
+      ],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 73839,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 15654,
+      "backend": "zaxy",
+      "case_name": "longmemeval-f8c5f88b",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_c3567066"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 119.3001,
+      "missing_expected": [
+        "the sports store downtown"
+      ],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 62626,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 10729,
+      "backend": "zaxy",
+      "case_name": "longmemeval-5d3d2817",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 125.4738,
+      "missing_expected": [
+        "Marketing specialist at a small startup"
+      ],
+      "missing_identities": [
+        "answer_235eb6fb"
+      ],
+      "result_count": 5,
+      "returned_bytes": 42961,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 15378,
+      "backend": "zaxy",
+      "case_name": "longmemeval-7527f7e2",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "$800"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_7cb94507"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 156.3911,
+      "missing_expected": [],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 61523,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 20126,
+      "backend": "zaxy",
+      "case_name": "longmemeval-c960da58",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "20"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_e05e4612"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 152.9616,
+      "missing_expected": [],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 80546,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 12815,
+      "backend": "zaxy",
+      "case_name": "longmemeval-3b6f954b",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_94030872"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 117.7233,
+      "missing_expected": [
+        "University of Melbourne in Australia"
+      ],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 51282,
+      "run": 1,
+      "score": 0.0
+    },
+    {
+      "approx_tokens": 15920,
+      "backend": "zaxy",
+      "case_name": "longmemeval-726462e0",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "10%"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 106.9758,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_f38f679b"
+      ],
+      "result_count": 5,
+      "returned_bytes": 63687,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 15873,
+      "backend": "zaxy",
+      "case_name": "longmemeval-94f70d80",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "4 hours"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_c63c0458"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 137.5158,
+      "missing_expected": [],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 63532,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 13168,
+      "backend": "zaxy",
+      "case_name": "longmemeval-66f24dbb",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "a yellow dress"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_fea2e4d3"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 131.3195,
+      "missing_expected": [],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 52682,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 13690,
+      "backend": "zaxy",
+      "case_name": "longmemeval-ad7109d1",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "500 Mbps"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_679840f8"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 129.329,
+      "missing_expected": [],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 54807,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 15886,
+      "backend": "zaxy",
+      "case_name": "longmemeval-af8d2e46",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [
+        "7"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_82a04f59"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 134.8261,
+      "missing_expected": [],
+      "missing_identities": [],
+      "result_count": 5,
+      "returned_bytes": 63590,
+      "run": 1,
+      "score": 1.0
+    },
+    {
+      "approx_tokens": 10840,
+      "backend": "zaxy",
+      "case_name": "longmemeval-dccbc061",
+      "category": "longmemeval:single-session-user",
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 109.0131,
+      "missing_expected": [
+        "A staunch atheist"
+      ],
+      "missing_identities": [
+        "answer_8f276838"
+      ],
+      "result_count": 5,
+      "returned_bytes": 43370,
+      "run": 1,
+      "score": 0.0
+    }
+  ],
+  "summaries": [
+    {
+      "backend": "bm25",
+      "case_count": 20,
+      "latency_ms_mean": 109.6735,
+      "latency_ms_p50": 108.6148,
+      "latency_ms_p95": 112.0794,
+      "latency_ms_p99": 125.5427,
+      "mean_approx_tokens": 33761.3,
+      "mean_identity_recall": 0.8,
+      "mean_returned_bytes": 135054.4,
+      "mean_score": 0.7,
+      "runs": 1
+    },
+    {
+      "backend": "md",
+      "case_count": 20,
+      "latency_ms_mean": 0.1545,
+      "latency_ms_p50": 0.0951,
+      "latency_ms_p95": 0.2813,
+      "latency_ms_p99": 0.7495,
+      "mean_approx_tokens": 21627.0,
+      "mean_identity_recall": 0.0,
+      "mean_returned_bytes": 86507.85,
+      "mean_score": 0.15,
+      "runs": 1
+    },
+    {
+      "backend": "md+vector",
+      "case_count": 20,
+      "latency_ms_mean": 146.3814,
+      "latency_ms_p50": 142.3114,
+      "latency_ms_p95": 173.8798,
+      "latency_ms_p99": 174.7559,
+      "mean_approx_tokens": 15379.1,
+      "mean_identity_recall": 0.0,
+      "mean_returned_bytes": 61540.2,
+      "mean_score": 0.1,
+      "runs": 1
+    },
+    {
+      "backend": "vector",
+      "case_count": 20,
+      "latency_ms_mean": 110.9071,
+      "latency_ms_p50": 110.588,
+      "latency_ms_p95": 113.1928,
+      "latency_ms_p99": 113.5966,
+      "mean_approx_tokens": 14825.8,
+      "mean_identity_recall": 0.0,
+      "mean_returned_bytes": 59329.25,
+      "mean_score": 0.1,
+      "runs": 1
+    },
+    {
+      "backend": "zaxy",
+      "case_count": 20,
+      "latency_ms_mean": 164.6404,
+      "latency_ms_p50": 136.4569,
+      "latency_ms_p95": 240.7203,
+      "latency_ms_p99": 547.6987,
+      "mean_approx_tokens": 15672.75,
+      "mean_identity_recall": 0.6,
+      "mean_returned_bytes": 62712.95,
+      "mean_score": 0.6,
+      "runs": 1
+    }
+  ],
+  "workload": {
+    "case_count": 20,
+    "documents": null,
+    "event_count": 980,
+    "lanes": [
+      "longmemeval"
+    ],
+    "sessions": 980,
+    "sha256": "9328931d5371ad1c2efb281c0c76d292294c8a4af4bacbe7c83685ff488f455d",
+    "subjects": 20,
+    "version": "longmemeval-cleaned-v1"
+  }
+}

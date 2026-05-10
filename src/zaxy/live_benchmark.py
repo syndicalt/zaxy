@@ -27,6 +27,7 @@ FROZEN_WORKLOAD_VERSION = "statistical-v1"
 FROZEN_WORKLOAD_SUBJECTS = 100
 CONSOLIDATION_WORKLOAD_VERSION = "consolidation-v1"
 SUITE_WORKLOAD_VERSION = "suite-v1"
+LONGMEMEVAL_WORKLOAD_VERSION = "longmemeval-cleaned-v1"
 SUITE_WORKLOAD_LANES = (
     "current",
     "temporal",
@@ -700,6 +701,81 @@ def build_benchmark_suite_workload(
     return eventlog, tuple(suite_cases), workload
 
 
+def build_longmemeval_workload(
+    path: str | Path,
+    dataset_path: str | Path,
+    questions: int | None = None,
+) -> tuple[EventLog, tuple[BenchmarkCase, ...], BenchmarkWorkload]:
+    """Build a retrieval workload from the cleaned LongMemEval JSON dataset."""
+    records = json.loads(Path(dataset_path).read_text(encoding="utf-8"))
+    if not isinstance(records, list):
+        raise ValueError("LongMemEval dataset must be a JSON list")
+    if questions is not None and questions <= 0:
+        raise ValueError("questions must be positive when provided")
+
+    selected = records[:questions] if questions is not None else records
+    eventlog = EventLog(path)
+    cases: list[BenchmarkCase] = []
+    session_count = 0
+    for index, record in enumerate(selected):
+        if not isinstance(record, dict):
+            raise ValueError(f"LongMemEval record {index} must be an object")
+        question_id = str(record.get("question_id") or f"question-{index:04d}")
+        question = str(record.get("question") or "")
+        answer = str(record.get("answer") or "").strip()
+        answer_session_ids = tuple(str(item) for item in record.get("answer_session_ids", ()))
+        haystack_session_ids = tuple(str(item) for item in record.get("haystack_session_ids", ()))
+        haystack_dates = tuple(str(item) for item in record.get("haystack_dates", ()))
+        haystack_sessions = record.get("haystack_sessions", ())
+        if not isinstance(haystack_sessions, list):
+            raise ValueError(f"LongMemEval record {question_id} haystack_sessions must be a list")
+
+        for session_index, session in enumerate(haystack_sessions):
+            session_id = (
+                haystack_session_ids[session_index]
+                if session_index < len(haystack_session_ids)
+                else f"{question_id}-session-{session_index:04d}"
+            )
+            session_date = (
+                haystack_dates[session_index]
+                if session_index < len(haystack_dates)
+                else ""
+            )
+            content = _format_longmemeval_session(session_id, session_date, session)
+            eventlog.append(
+                "document.indexed",
+                actor="longmemeval",
+                payload={
+                    "path": f"longmemeval/{question_id}/{session_id}.md",
+                    "start_line": 1,
+                    "end_line": max(1, content.count("\n") + 1),
+                    "content": content,
+                    "sha256": _content_sha256(content),
+                },
+            )
+            session_count += 1
+
+        cases.append(
+            BenchmarkCase(
+                name=f"longmemeval-{question_id}",
+                query=question,
+                expected_terms=(answer,) if answer else (),
+                identity_terms=answer_session_ids,
+                category=f"longmemeval:{record.get('question_type', 'unknown')}",
+            )
+        )
+
+    workload = BenchmarkWorkload.from_event_log(
+        eventlog,
+        tuple(cases),
+        version=LONGMEMEVAL_WORKLOAD_VERSION,
+        subjects=len(cases),
+        sessions=session_count,
+        lanes=("longmemeval",),
+    )
+    return eventlog, tuple(cases), workload
+
+
 def workload_fingerprint(
     eventlog: EventLog,
     cases: tuple[BenchmarkCase, ...],
@@ -1195,6 +1271,24 @@ def _bm25_score(
 
 def _content_sha256(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def _format_longmemeval_session(session_id: str, session_date: str, session: object) -> str:
+    lines = [
+        f"longmemeval_session_id={session_id}",
+        f"longmemeval_session_date={session_date}",
+    ]
+    if isinstance(session, list):
+        for turn_index, turn in enumerate(session, start=1):
+            if isinstance(turn, dict):
+                role = str(turn.get("role", "unknown"))
+                content = str(turn.get("content", ""))
+                lines.append(f"{turn_index}. {role}: {content}")
+            else:
+                lines.append(f"{turn_index}. unknown: {turn}")
+    else:
+        lines.append(str(session))
+    return "\n".join(lines)
 
 
 def _report_payload(report: BenchmarkReport) -> dict[str, object]:
