@@ -47,3 +47,14 @@ def test_testing_docs_describe_integration_check_helper() -> None:
     assert "scripts/integration-check.sh --start" in docs
     assert "scripts/integration-check.sh --skip-if-unavailable" in docs
     assert "scripts/integration-check.sh --require" in docs
+
+
+def test_release_gate_runs_packet_memory_smoke_explicitly() -> None:
+    """The packet-memory workflow should be an explicit release gate item."""
+    script = Path("scripts/release-check.sh").read_text(encoding="utf-8")
+    docs = Path("docs/testing.md").read_text(encoding="utf-8")
+
+    assert "PACKET_SMOKE_CMD" in script
+    assert "tests/test_packet_memory_e2e.py" in script
+    assert "--packet-smoke-cmd" in script
+    assert "tests/test_packet_memory_e2e.py" in docs

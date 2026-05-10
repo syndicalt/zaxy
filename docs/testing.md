@@ -13,6 +13,7 @@ pytest -m integration --no-cov
 scripts/integration-check.sh --start
 ruff check src tests
 mypy src
+pytest tests/test_packet_memory_e2e.py --no-cov -q
 scripts/release-check.sh --root .
 ```
 
@@ -46,6 +47,15 @@ Tests are organized by module: event log integrity, extraction, graph behavior,
 query routing, MCP tools, tracing, configuration, embeddings, operations
 scripts, packaging, and site/docs validation. New modules should get focused
 tests rather than relying only on high-level workflows.
+
+The packet-memory product path has an explicit smoke check:
+
+```bash
+pytest tests/test_packet_memory_e2e.py --no-cov -q
+```
+
+`scripts/release-check.sh` runs this packet smoke after the full pytest suite so
+the analyzer-to-projection-to-context workflow remains a named release gate.
 
 For graph changes, write both mock tests for Cypher behavior and integration
 tests against Neo4j when the real database semantics matter. For security
