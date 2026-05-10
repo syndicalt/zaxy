@@ -72,17 +72,16 @@ surfaced clearly to the user.
 
 ## Implementation Order
 
-1. Add a shared merge engine for JSON object targets with schema-specific root
-   keys: `mcpServers` and `servers`.
-2. Implement project-local write helpers for Cursor, VS Code, and Claude Code
-   project MCP.
-3. Add Claude Code local hook detection/write coverage using the existing hook
+1. Add Claude Code local hook detection/write coverage using the existing hook
    adapter path.
-4. Add Codex as a CLI-assisted target first: print `codex mcp add zaxy -- zaxy
+2. Add Codex as a CLI-assisted target first: print `codex mcp add zaxy -- zaxy
    serve` with the resolved executable path and environment.
-5. Add explicit TOML merge support for Codex only after tests cover user-level
+3. Add explicit TOML merge support for Codex only after tests cover user-level
    and project-level scopes, malformed TOML, existing unrelated servers, and
    disabled server entries.
+
+Completed: the shared JSON merge engine and project-local write helpers now
+cover Cursor, VS Code, and Claude Code project MCP targets.
 
 ## Sources
 

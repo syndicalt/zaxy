@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from zaxy.core import Context, HandoffBundle
 from zaxy.integrations import (
     render_agent_integration_template,
     render_handoff_adapter,
     render_mcp_client_config,
+    write_project_mcp_client_config,
 )
 
 
@@ -62,6 +66,101 @@ def test_renders_sse_config_with_domain_session_header() -> None:
 
     server = config["mcpServers"]["zaxy"]
     assert server["headers"]["x-zaxy-session-id"] == "gallerie-default"
+
+
+def test_writes_cursor_project_mcp_config(tmp_path: Path) -> None:
+    """Cursor project install should create .cursor/mcp.json with mcpServers."""
+    written = write_project_mcp_client_config(
+        "cursor",
+        workspace=tmp_path,
+        eventloom_path=".eventloom",
+        domain="zaxy",
+        zaxy_executable="/opt/zaxy/bin/zaxy",
+    )
+
+    assert written == tmp_path / ".cursor" / "mcp.json"
+    config = written.read_text(encoding="utf-8")
+    assert '"mcpServers"' in config
+    assert '"command": "/opt/zaxy/bin/zaxy"' in config
+
+
+def test_merges_vscode_project_mcp_config_without_removing_existing_servers(tmp_path: Path) -> None:
+    """VS Code project install should preserve unrelated servers."""
+    target = tmp_path / ".vscode" / "mcp.json"
+    target.parent.mkdir()
+    target.write_text(
+        '{"servers": {"playwright": {"command": "npx", "args": ["playwright"]}}}\n',
+        encoding="utf-8",
+    )
+
+    write_project_mcp_client_config(
+        "vscode",
+        workspace=tmp_path,
+        eventloom_path=".eventloom",
+        domain="zaxy",
+        zaxy_executable="/opt/zaxy/bin/zaxy",
+    )
+
+    config = json.loads(target.read_text(encoding="utf-8"))
+    assert config["servers"]["playwright"]["command"] == "npx"
+    assert config["servers"]["zaxy"]["command"] == "/opt/zaxy/bin/zaxy"
+
+
+def test_project_mcp_install_refuses_existing_zaxy_without_force(tmp_path: Path) -> None:
+    """Install should not replace an existing zaxy server unless forced."""
+    target = tmp_path / ".mcp.json"
+    target.write_text('{"mcpServers": {"zaxy": {"command": "old-zaxy"}}}\n', encoding="utf-8")
+
+    try:
+        write_project_mcp_client_config(
+            "claude-code",
+            workspace=tmp_path,
+            eventloom_path=".eventloom",
+            domain="zaxy",
+            zaxy_executable="/opt/zaxy/bin/zaxy",
+        )
+    except FileExistsError as exc:
+        assert "already contains a zaxy MCP server" in str(exc)
+    else:  # pragma: no cover - assertion branch
+        raise AssertionError("existing zaxy server should require force")
+    assert "old-zaxy" in target.read_text(encoding="utf-8")
+
+
+def test_project_mcp_install_rejects_malformed_json(tmp_path: Path) -> None:
+    """Install should fail clearly instead of repairing invalid client config."""
+    target = tmp_path / ".cursor" / "mcp.json"
+    target.parent.mkdir()
+    target.write_text("{not-json", encoding="utf-8")
+
+    try:
+        write_project_mcp_client_config("cursor", workspace=tmp_path)
+    except ValueError as exc:
+        assert "invalid JSON" in str(exc)
+    else:  # pragma: no cover - assertion branch
+        raise AssertionError("malformed JSON should raise ValueError")
+    assert target.read_text(encoding="utf-8") == "{not-json"
+
+
+def test_project_mcp_install_force_replaces_existing_zaxy(tmp_path: Path) -> None:
+    """Force should replace only the zaxy entry while preserving other servers."""
+    target = tmp_path / ".mcp.json"
+    target.write_text(
+        '{"mcpServers": {"zaxy": {"command": "old-zaxy"}, "other": {"command": "other"}}}\n',
+        encoding="utf-8",
+    )
+
+    write_project_mcp_client_config(
+        "claude-code",
+        workspace=tmp_path,
+        eventloom_path=".eventloom",
+        domain="zaxy",
+        zaxy_executable="/opt/zaxy/bin/zaxy",
+        force=True,
+    )
+
+    config = json.loads(target.read_text(encoding="utf-8"))
+    assert config["mcpServers"]["zaxy"]["command"] == "/opt/zaxy/bin/zaxy"
+    assert config["mcpServers"]["other"]["command"] == "other"
 
 
 def test_handoff_adapter_preserves_prompt_context_and_integrity() -> None:

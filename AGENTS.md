@@ -284,6 +284,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Installed `zaxy` console-script preference for generated MCP executable paths
 - [x] `zaxy init --preset local-claude` shortcut for the explicit local onboarding path
 - [x] MCP client install target verification matrix for Claude Code, Cursor, VS Code, and Codex
+- [x] Safe project-local MCP config write-and-merge helpers for Claude Code, Cursor, and VS Code
 
 ## Metrics
 
@@ -297,5 +298,5 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 ## Next Steps
 
-1. Add safe project-local MCP config write-and-merge helpers for verified JSON targets.
+1. Add Codex MCP install as a CLI-assisted target before direct TOML merge support.
 2. Add optional deeper framework packages once direct templates see usage.

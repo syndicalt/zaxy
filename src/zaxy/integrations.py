@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any, Literal
 
 from zaxy.core import HandoffBundle
 from zaxy.domain import derive_domain, domain_default_session, slug_domain
 from zaxy.install import resolve_zaxy_executable
 
-MCPClient = Literal["claude-desktop", "cursor", "vscode"]
+MCPClient = Literal["claude-desktop", "claude-code", "cursor", "vscode"]
 HandoffAdapter = Literal["generic", "langgraph", "crewai", "autogen"]
 AgentFramework = Literal["langgraph", "crewai", "autogen"]
 
@@ -38,6 +40,48 @@ def render_mcp_client_config(
     if normalized == "vscode":
         return {"servers": {"zaxy": server}}
     return {"mcpServers": {"zaxy": server}}
+
+
+def write_project_mcp_client_config(
+    client: MCPClient | str,
+    *,
+    workspace: str | Path,
+    eventloom_path: str = ".eventloom",
+    transport: str = "stdio",
+    host: str = "127.0.0.1",
+    port: int = 8080,
+    domain: str | None = None,
+    zaxy_executable: str | None = None,
+    force: bool = False,
+) -> Path:
+    """Merge Zaxy into a verified project-local MCP client config."""
+    normalized = _normalize_client(client)
+    target = project_mcp_client_config_path(normalized, workspace=workspace)
+    rendered = render_mcp_client_config(
+        normalized,
+        eventloom_path=eventloom_path,
+        transport=transport,
+        host=host,
+        port=port,
+        domain=domain,
+        zaxy_executable=zaxy_executable,
+    )
+    root_key = _mcp_root_key(normalized)
+    merged = _merge_mcp_config(target, root_key=root_key, server=rendered[root_key]["zaxy"], force=force)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(merged, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return target
+
+
+def project_mcp_client_config_path(client: MCPClient | str, *, workspace: str | Path) -> Path:
+    """Return the verified project-local MCP config path for a supported client."""
+    normalized = _normalize_client(client)
+    root = Path(workspace)
+    if normalized in {"claude-code", "claude-desktop"}:
+        return root / ".mcp.json"
+    if normalized == "cursor":
+        return root / ".cursor" / "mcp.json"
+    return root / ".vscode" / "mcp.json"
 
 
 def render_handoff_adapter(
@@ -226,11 +270,46 @@ def _normalize_client(client: str) -> MCPClient:
     normalized = client.casefold().replace("_", "-")
     if normalized in {"claude", "claude-desktop"}:
         return "claude-desktop"
+    if normalized in {"claude-code", "claude-cli"}:
+        return "claude-code"
     if normalized == "cursor":
         return "cursor"
     if normalized in {"vscode", "vs-code", "visual-studio-code"}:
         return "vscode"
-    raise ValueError("client must be one of: claude-desktop, cursor, vscode")
+    raise ValueError("client must be one of: claude-desktop, claude-code, cursor, vscode")
+
+
+def _mcp_root_key(client: MCPClient) -> str:
+    if client == "vscode":
+        return "servers"
+    return "mcpServers"
+
+
+def _merge_mcp_config(
+    path: Path,
+    *,
+    root_key: str,
+    server: dict[str, Any],
+    force: bool,
+) -> dict[str, Any]:
+    config: dict[str, Any]
+    if path.exists():
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{path} contains invalid JSON; repair it before installing Zaxy") from exc
+        if not isinstance(parsed, dict):
+            raise ValueError(f"{path} must contain a JSON object")
+        config = parsed
+    else:
+        config = {}
+    servers = config.setdefault(root_key, {})
+    if not isinstance(servers, dict):
+        raise ValueError(f"{path} field {root_key!r} must contain a JSON object")
+    if "zaxy" in servers and not force:
+        raise FileExistsError(f"{path} already contains a zaxy MCP server; pass --force to replace it")
+    servers["zaxy"] = server
+    return config
 
 
 def _normalize_adapter(adapter: str) -> HandoffAdapter:

@@ -43,7 +43,11 @@ from zaxy.hooks import (
     render_hook_config,
     write_hook_config,
 )
-from zaxy.integrations import render_agent_integration_template, render_mcp_client_config
+from zaxy.integrations import (
+    render_agent_integration_template,
+    render_mcp_client_config,
+    write_project_mcp_client_config,
+)
 from zaxy.lifecycle import build_compaction_completed_event
 from zaxy.live_benchmark import (
     BenchmarkWorkload,
@@ -80,16 +84,33 @@ app = typer.Typer(help="Zaxy: Event-sourced temporal knowledge graph fabric")
 
 @app.command("ide-config")
 def ide_config(
-    client: str = typer.Argument(..., help="MCP client: claude-desktop, cursor, or vscode"),  # noqa: B008
+    client: str = typer.Argument(..., help="MCP client: claude-desktop, claude-code, cursor, or vscode"),  # noqa: B008
     eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory for this client"),
     transport: str = typer.Option("stdio", help="Transport: stdio or sse"),
     host: str = typer.Option("127.0.0.1", help="SSE host when transport=sse"),
     port: int = typer.Option(8080, help="SSE port when transport=sse"),
     domain: str | None = typer.Option(None, help="Project/domain used for default session scoping"),  # noqa: B008
     zaxy_executable: str | None = typer.Option(None, help="Executable path MCP clients should invoke"),  # noqa: B008
+    install: bool = typer.Option(False, "--install", help="Merge into the verified project-local client config"),  # noqa: B008
+    workspace: Path = typer.Option(Path("."), help="Workspace root for --install"),  # noqa: B008
+    force: bool = typer.Option(False, "--force", help="Replace an existing zaxy server during --install"),  # noqa: B008
 ) -> None:
-    """Print a first-run MCP client configuration fragment."""
+    """Print or install a first-run MCP client configuration fragment."""
     try:
+        if install:
+            written = write_project_mcp_client_config(
+                client,
+                workspace=workspace,
+                eventloom_path=eventloom_path,
+                transport=transport,
+                host=host,
+                port=port,
+                domain=domain,
+                zaxy_executable=zaxy_executable,
+                force=force,
+            )
+            typer.echo(f"Installed {client} MCP config to {written}")
+            return
         config = render_mcp_client_config(
             client,
             eventloom_path=eventloom_path,
@@ -99,7 +120,7 @@ def ide_config(
             domain=domain,
             zaxy_executable=zaxy_executable,
         )
-    except ValueError as exc:
+    except (FileExistsError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(config, indent=2, sort_keys=True))
 

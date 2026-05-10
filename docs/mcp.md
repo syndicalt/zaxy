@@ -66,10 +66,20 @@ Generate first-run MCP client config:
 
 ```bash
 zaxy ide-config claude-desktop --eventloom-path .eventloom
+zaxy ide-config claude-code --install --workspace .
 zaxy ide-config cursor --eventloom-path .eventloom
+zaxy ide-config cursor --install --workspace .
 zaxy ide-config vscode --eventloom-path .eventloom
+zaxy ide-config vscode --install --workspace .
 zaxy ide-config claude-desktop --eventloom-path .eventloom --domain zaxy
 ```
+
+By default, `ide-config` prints copyable config. The `--install` flag is
+limited to verified project-local JSON targets: `.mcp.json` for Claude Code,
+`.cursor/mcp.json` for Cursor, and `.vscode/mcp.json` for VS Code. Install mode
+merges the `zaxy` server entry into the documented root object, preserves
+unrelated servers, and refuses to replace an existing `zaxy` entry unless
+`--force` is passed.
 
 Install the `zaxy` CLI before generating MCP config:
 

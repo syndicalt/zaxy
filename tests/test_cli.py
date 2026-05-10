@@ -48,6 +48,33 @@ def test_ide_config_command_prints_copyable_mcp_json() -> None:
     assert "testpassword" not in result.output.casefold()
 
 
+def test_ide_config_command_installs_project_cursor_config(tmp_path: Path) -> None:
+    """ide-config --install should merge into the verified project-local target."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "ide-config",
+            "cursor",
+            "--install",
+            "--workspace",
+            str(tmp_path),
+            "--eventloom-path",
+            ".eventloom",
+            "--domain",
+            "zaxy",
+            "--zaxy-executable",
+            "/opt/zaxy/bin/zaxy",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Installed cursor MCP config" in result.output
+    config = json.loads((tmp_path / ".cursor" / "mcp.json").read_text(encoding="utf-8"))
+    assert config["mcpServers"]["zaxy"]["command"] == "/opt/zaxy/bin/zaxy"
+
+
 def test_integration_template_command_prints_framework_starter() -> None:
     runner = CliRunner()
 
