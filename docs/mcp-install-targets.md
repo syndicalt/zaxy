@@ -35,7 +35,7 @@ Installer helpers must follow these constraints:
 | Claude Code hooks | `.claude/settings.local.json`, `.claude/settings.json`, and `~/.claude/settings.json` | top-level `hooks` | Local project settings are safe for personal observer hooks. Shared project settings should require an explicit shared flag. |
 | Cursor | Project `.cursor/mcp.json`; global `~/.cursor/mcp.json` | top-level `mcpServers` | Project-local `.cursor/mcp.json` is safe. Global config should require an explicit global flag. |
 | VS Code | Workspace `.vscode/mcp.json`; user-profile `mcp.json` opened by command | top-level `servers` | Workspace `.vscode/mcp.json` is safe. User profile writes should prefer VS Code commands or an explicit global flag. |
-| Codex | User `~/.codex/config.toml`; trusted project `.codex/config.toml` | TOML tables under `[mcp_servers.<name>]` | CLI-assisted through `codex mcp add`. Direct TOML merge is acceptable only for explicit user or trusted project scope. |
+| Codex | User `~/.codex/config.toml`; trusted project `.codex/config.toml` | TOML tables under `[mcp_servers.<name>]` | CLI-assisted through `codex mcp add` by default. Direct TOML merge is available only for explicit user or trusted project scope. |
 
 ## Client Notes
 
@@ -65,21 +65,21 @@ JSON fragment.
 Codex supports MCP in the CLI and IDE extension. The documented config file is
 `~/.codex/config.toml`, with trusted projects allowed to use
 `.codex/config.toml`. Codex also exposes `codex mcp add`, so Zaxy supports Codex
-by rendering that command instead of hand-editing global TOML. Direct TOML
-support is still useful for a project-scoped `.codex/config.toml` once the
-project trust requirement is surfaced clearly to the user.
+by rendering that command unless a direct config scope is requested. Direct TOML
+support requires either user scope or project scope with an explicit trusted
+project acknowledgement. The TOML merge preserves unrelated server entries,
+rejects malformed TOML, and refuses to replace an existing `zaxy` entry unless
+`--force` is passed.
 
 ## Implementation Order
 
 1. Add Claude Code local hook detection/write coverage using the existing hook
    adapter path.
-2. Add explicit TOML merge support for Codex only after tests cover user-level
-   and project-level scopes, malformed TOML, existing unrelated servers, and
-   disabled server entries.
 
 Completed: the shared JSON merge engine and project-local write helpers now
 cover Cursor, VS Code, and Claude Code project MCP targets. Codex is now
-supported through CLI-assisted `codex mcp add` command rendering.
+supported through CLI-assisted `codex mcp add` command rendering and explicit
+TOML merge support for user and trusted-project scopes.
 
 ## Sources
 

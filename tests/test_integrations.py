@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import tomllib
 from pathlib import Path
 
 from zaxy.core import Context, HandoffBundle
@@ -11,6 +12,7 @@ from zaxy.integrations import (
     render_codex_mcp_add_command,
     render_handoff_adapter,
     render_mcp_client_config,
+    write_codex_mcp_config,
     write_project_mcp_client_config,
 )
 
@@ -184,6 +186,106 @@ def test_renders_codex_mcp_add_command_with_env_and_command_separator() -> None:
     assert "EVENTLOOM_THREAD=zaxy-default" in command
     assert "ZAXY_DOMAIN=zaxy" in command
     assert "NEO4J_AUTO_START=true" in command
+
+
+def test_writes_trusted_project_codex_config_without_removing_existing_servers(
+    tmp_path: Path,
+) -> None:
+    """Codex project TOML merge should require trust and preserve unrelated servers."""
+    target = tmp_path / ".codex" / "config.toml"
+    target.parent.mkdir()
+    target.write_text(
+        '[mcp_servers.context7]\ncommand = "npx"\nargs = ["-y", "@upstash/context7-mcp"]\n',
+        encoding="utf-8",
+    )
+
+    written = write_codex_mcp_config(
+        scope="project",
+        workspace=tmp_path,
+        trusted_project=True,
+        eventloom_path=".eventloom",
+        domain="zaxy",
+        zaxy_executable="/opt/zaxy/bin/zaxy",
+    )
+
+    config = tomllib.loads(written.read_text(encoding="utf-8"))
+    assert written == target
+    assert config["mcp_servers"]["context7"]["command"] == "npx"
+    assert config["mcp_servers"]["zaxy"]["command"] == "/opt/zaxy/bin/zaxy"
+    assert config["mcp_servers"]["zaxy"]["args"] == ["serve", "--eventloom-path", ".eventloom"]
+    assert config["mcp_servers"]["zaxy"]["env"]["EVENTLOOM_THREAD"] == "zaxy-default"
+
+
+def test_project_codex_config_requires_trusted_project_acknowledgement(tmp_path: Path) -> None:
+    """Project-scoped Codex config should not be written without explicit trust acknowledgement."""
+    try:
+        write_codex_mcp_config(
+            scope="project",
+            workspace=tmp_path,
+            trusted_project=False,
+        )
+    except PermissionError as exc:
+        assert "trusted project" in str(exc)
+    else:  # pragma: no cover - assertion branch
+        raise AssertionError("project Codex config should require trust acknowledgement")
+    assert not (tmp_path / ".codex" / "config.toml").exists()
+
+
+def test_codex_config_rejects_malformed_toml(tmp_path: Path) -> None:
+    """Codex TOML merge should fail clearly and leave malformed config untouched."""
+    target = tmp_path / ".codex" / "config.toml"
+    target.parent.mkdir()
+    target.write_text("[mcp_servers.zaxy\ncommand = 'broken'\n", encoding="utf-8")
+
+    try:
+        write_codex_mcp_config(
+            scope="project",
+            workspace=tmp_path,
+            trusted_project=True,
+        )
+    except ValueError as exc:
+        assert "invalid TOML" in str(exc)
+    else:  # pragma: no cover - assertion branch
+        raise AssertionError("malformed TOML should raise ValueError")
+    assert target.read_text(encoding="utf-8") == "[mcp_servers.zaxy\ncommand = 'broken'\n"
+
+
+def test_codex_config_refuses_existing_zaxy_without_force(tmp_path: Path) -> None:
+    """Codex TOML merge should not replace an existing zaxy server unless forced."""
+    target = tmp_path / ".codex" / "config.toml"
+    target.parent.mkdir()
+    target.write_text('[mcp_servers.zaxy]\ncommand = "old-zaxy"\n', encoding="utf-8")
+
+    try:
+        write_codex_mcp_config(
+            scope="project",
+            workspace=tmp_path,
+            trusted_project=True,
+            zaxy_executable="/opt/zaxy/bin/zaxy",
+        )
+    except FileExistsError as exc:
+        assert "already contains a zaxy MCP server" in str(exc)
+    else:  # pragma: no cover - assertion branch
+        raise AssertionError("existing zaxy server should require force")
+    assert "old-zaxy" in target.read_text(encoding="utf-8")
+
+
+def test_codex_user_config_writes_to_codex_home(tmp_path: Path) -> None:
+    """User-scoped Codex config should target CODEX_HOME/config.toml."""
+    codex_home = tmp_path / "codex-home"
+
+    written = write_codex_mcp_config(
+        scope="user",
+        workspace=tmp_path / "repo",
+        codex_home=codex_home,
+        eventloom_path=".eventloom",
+        domain="zaxy",
+        zaxy_executable="/opt/zaxy/bin/zaxy",
+    )
+
+    config = tomllib.loads(written.read_text(encoding="utf-8"))
+    assert written == codex_home / "config.toml"
+    assert config["mcp_servers"]["zaxy"]["command"] == "/opt/zaxy/bin/zaxy"
 
 
 def test_handoff_adapter_preserves_prompt_context_and_integrity() -> None:

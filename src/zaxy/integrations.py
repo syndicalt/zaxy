@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Literal
+
+import tomlkit
 
 from zaxy.core import HandoffBundle
 from zaxy.domain import derive_domain, domain_default_session, slug_domain
 from zaxy.install import resolve_zaxy_executable
 
 MCPClient = Literal["claude-desktop", "claude-code", "codex", "cursor", "vscode"]
+CodexConfigScope = Literal["project", "user"]
 HandoffAdapter = Literal["generic", "langgraph", "crewai", "autogen"]
 AgentFramework = Literal["langgraph", "crewai", "autogen"]
 
@@ -101,6 +105,70 @@ def write_project_mcp_client_config(
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(merged, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return target
+
+
+def write_codex_mcp_config(
+    *,
+    scope: CodexConfigScope | str,
+    workspace: str | Path,
+    eventloom_path: str = ".eventloom",
+    domain: str | None = None,
+    zaxy_executable: str | None = None,
+    force: bool = False,
+    trusted_project: bool = False,
+    codex_home: str | Path | None = None,
+) -> Path:
+    """Merge Zaxy into an explicit Codex TOML config scope."""
+    normalized_scope = _normalize_codex_scope(scope)
+    if normalized_scope == "project" and not trusted_project:
+        raise PermissionError(
+            "project-scoped Codex config requires an explicit trusted project acknowledgement"
+        )
+    target = codex_mcp_config_path(
+        scope=normalized_scope,
+        workspace=workspace,
+        codex_home=codex_home,
+    )
+    server = _server_config(
+        eventloom_path=eventloom_path,
+        transport="stdio",
+        host="127.0.0.1",
+        port=8080,
+        domain=slug_domain(domain) if domain else derive_domain(),
+        zaxy_executable=resolve_zaxy_executable(zaxy_executable),
+    )
+    document = _read_toml_document(target)
+    mcp_servers = document.setdefault("mcp_servers", tomlkit.table())
+    if not isinstance(mcp_servers, dict):
+        raise ValueError(f"{target} field 'mcp_servers' must contain a TOML table")
+    if "zaxy" in mcp_servers and not force:
+        raise FileExistsError(f"{target} already contains a zaxy MCP server; pass --force to replace it")
+    zaxy = tomlkit.table()
+    zaxy.add("command", server["command"])
+    zaxy.add("args", server["args"])
+    env = tomlkit.table()
+    for key, value in server["env"].items():
+        env.add(key, value)
+    zaxy.add("env", env)
+    zaxy.add("startup_timeout_sec", server["startup_timeout_sec"])
+    mcp_servers["zaxy"] = zaxy
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(tomlkit.dumps(document), encoding="utf-8")
+    return target
+
+
+def codex_mcp_config_path(
+    *,
+    scope: CodexConfigScope | str,
+    workspace: str | Path,
+    codex_home: str | Path | None = None,
+) -> Path:
+    """Return the explicit Codex TOML config path for a scope."""
+    normalized_scope = _normalize_codex_scope(scope)
+    if normalized_scope == "project":
+        return Path(workspace) / ".codex" / "config.toml"
+    home = Path(codex_home) if codex_home is not None else Path(os.environ.get("CODEX_HOME", "~/.codex")).expanduser()
+    return home / "config.toml"
 
 
 def project_mcp_client_config_path(client: MCPClient | str, *, workspace: str | Path) -> Path:
@@ -311,6 +379,22 @@ def _normalize_client(client: str) -> MCPClient:
     if normalized in {"vscode", "vs-code", "visual-studio-code"}:
         return "vscode"
     raise ValueError("client must be one of: claude-desktop, claude-code, codex, cursor, vscode")
+
+
+def _normalize_codex_scope(scope: str) -> CodexConfigScope:
+    normalized = scope.casefold().strip()
+    if normalized in {"project", "user"}:
+        return normalized  # type: ignore[return-value]
+    raise ValueError("Codex config scope must be one of: project, user")
+
+
+def _read_toml_document(path: Path) -> Any:
+    if not path.exists():
+        return tomlkit.document()
+    try:
+        return tomlkit.parse(path.read_text(encoding="utf-8"))
+    except tomlkit.exceptions.TOMLKitError as exc:
+        raise ValueError(f"{path} contains invalid TOML; repair it before installing Zaxy") from exc
 
 
 def _mcp_root_key(client: MCPClient) -> str:

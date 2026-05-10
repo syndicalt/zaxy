@@ -72,6 +72,7 @@ zaxy ide-config cursor --install --workspace .
 zaxy ide-config vscode --eventloom-path .eventloom
 zaxy ide-config vscode --install --workspace .
 zaxy ide-config codex --install --domain zaxy
+zaxy ide-config codex --install --codex-config-scope project --codex-trusted-project --workspace .
 zaxy ide-config claude-desktop --eventloom-path .eventloom --domain zaxy
 ```
 
@@ -80,9 +81,14 @@ limited to verified project-local JSON targets: `.mcp.json` for Claude Code,
 `.cursor/mcp.json` for Cursor, and `.vscode/mcp.json` for VS Code. Install mode
 merges the `zaxy` server entry into the documented root object, preserves
 unrelated servers, and refuses to replace an existing `zaxy` entry unless
-`--force` is passed. Codex is CLI-assisted: `zaxy ide-config codex --install`
-prints the official `codex mcp add zaxy ... -- zaxy serve ...` command instead
-of editing `config.toml` directly.
+`--force` is passed.
+
+Codex is CLI-assisted by default: `zaxy ide-config codex --install` prints the
+official `codex mcp add zaxy ... -- zaxy serve ...` command. Direct TOML writes
+are opt-in through `--codex-config-scope project|user`. Project-scoped writes
+target `.codex/config.toml` and require `--codex-trusted-project` because Codex
+only loads project config from trusted projects. User-scoped writes target
+`CODEX_HOME/config.toml` or `~/.codex/config.toml`.
 
 Install the `zaxy` CLI before generating MCP config:
 

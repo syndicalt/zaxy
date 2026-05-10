@@ -47,6 +47,7 @@ from zaxy.integrations import (
     render_agent_integration_template,
     render_codex_mcp_add_command,
     render_mcp_client_config,
+    write_codex_mcp_config,
     write_project_mcp_client_config,
 )
 from zaxy.lifecycle import build_compaction_completed_event
@@ -95,11 +96,27 @@ def ide_config(
     install: bool = typer.Option(False, "--install", help="Merge into the verified project-local client config"),  # noqa: B008
     workspace: Path = typer.Option(Path("."), help="Workspace root for --install"),  # noqa: B008
     force: bool = typer.Option(False, "--force", help="Replace an existing zaxy server during --install"),  # noqa: B008
+    codex_config_scope: str | None = typer.Option(None, help="Codex direct config scope: project or user"),  # noqa: B008
+    codex_home: Path | None = typer.Option(None, help="CODEX_HOME override for Codex user config"),  # noqa: B008
+    codex_trusted_project: bool = typer.Option(False, "--codex-trusted-project", help="Acknowledge that Codex trusts this project config"),  # noqa: B008
 ) -> None:
     """Print or install a first-run MCP client configuration fragment."""
     try:
         if install:
             if client.casefold().replace("_", "-") == "codex":
+                if codex_config_scope is not None:
+                    written = write_codex_mcp_config(
+                        scope=codex_config_scope,
+                        workspace=workspace,
+                        eventloom_path=eventloom_path,
+                        domain=domain,
+                        zaxy_executable=zaxy_executable,
+                        force=force,
+                        trusted_project=codex_trusted_project,
+                        codex_home=codex_home,
+                    )
+                    typer.echo(f"Wrote Codex MCP config to {written}")
+                    return
                 command = render_codex_mcp_add_command(
                     eventloom_path=eventloom_path,
                     domain=domain,
@@ -130,7 +147,7 @@ def ide_config(
             domain=domain,
             zaxy_executable=zaxy_executable,
         )
-    except (FileExistsError, ValueError) as exc:
+    except (FileExistsError, PermissionError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(json.dumps(config, indent=2, sort_keys=True))
 

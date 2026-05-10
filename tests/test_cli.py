@@ -101,6 +101,60 @@ def test_ide_config_command_prints_codex_cli_install_command() -> None:
     assert "-- /opt/zaxy/bin/zaxy serve --eventloom-path .eventloom" in result.output
 
 
+def test_ide_config_command_writes_trusted_project_codex_config(tmp_path: Path) -> None:
+    """Codex direct config writes should require explicit project trust acknowledgement."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "ide-config",
+            "codex",
+            "--install",
+            "--codex-config-scope",
+            "project",
+            "--codex-trusted-project",
+            "--workspace",
+            str(tmp_path),
+            "--eventloom-path",
+            ".eventloom",
+            "--domain",
+            "zaxy",
+            "--zaxy-executable",
+            "/opt/zaxy/bin/zaxy",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Wrote Codex MCP config" in result.output
+    config = (tmp_path / ".codex" / "config.toml").read_text(encoding="utf-8")
+    assert "[mcp_servers.zaxy]" in config
+    assert 'command = "/opt/zaxy/bin/zaxy"' in config
+
+
+def test_ide_config_command_rejects_project_codex_config_without_trust(tmp_path: Path) -> None:
+    """Project-scoped Codex writes should fail before touching disk without trust acknowledgement."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "ide-config",
+            "codex",
+            "--install",
+            "--codex-config-scope",
+            "project",
+            "--workspace",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "trusted" in result.output
+    assert "project" in result.output
+    assert not (tmp_path / ".codex" / "config.toml").exists()
+
+
 def test_integration_template_command_prints_framework_starter() -> None:
     runner = CliRunner()
 
