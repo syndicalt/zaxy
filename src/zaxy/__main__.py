@@ -97,7 +97,7 @@ from zaxy.onboarding import (
     run_onboarding,
 )
 from zaxy.packet_analyzer import PacketAnalyzerConfig, run_packet_analyzer
-from zaxy.packet_projection import project_packet_events
+from zaxy.packet_projection import project_packet_events, watch_packet_events
 from zaxy.schema import render_schema_plan
 from zaxy.viewer import write_viewer_html
 
@@ -992,8 +992,40 @@ def packet_project(
         min=1,
         help="Maximum completed packet events to inspect",
     ),
+    watch: bool = typer.Option(
+        False,
+        "--watch",
+        help="Continuously poll for new packet captures",
+    ),
+    interval_seconds: float = typer.Option(
+        2.0,
+        "--interval-seconds",
+        min=0.0,
+        help="Seconds between watch-mode projection passes",
+    ),
+    watch_iterations: int | None = typer.Option(
+        None,
+        "--watch-iterations",
+        min=1,
+        help="Optional bounded watch pass count for supervisors and tests",
+    ),
 ) -> None:
     """Project captured LLM packets into compact memory events."""
+    if watch:
+        result = watch_packet_events(
+            eventloom_path=eventloom_path,
+            session_id=session_id,
+            from_seq=from_seq,
+            limit=limit,
+            interval_seconds=interval_seconds,
+            max_iterations=watch_iterations,
+        )
+        noun = "pass" if result.iterations == 1 else "passes"
+        typer.echo(
+            f"Watched {result.iterations} projection {noun} "
+            f"(read={result.read}, projected={result.projected}, skipped={result.skipped})"
+        )
+        return
     result = project_packet_events(
         eventloom_path=eventloom_path,
         session_id=session_id,

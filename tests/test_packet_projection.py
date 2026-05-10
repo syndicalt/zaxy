@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from zaxy.event import EventLog
-from zaxy.packet_projection import project_packet_events
+from zaxy.packet_projection import project_packet_events, watch_packet_events
 
 
 def test_project_packet_events_appends_memory_ready_summary(tmp_path: Path) -> None:
@@ -98,3 +98,36 @@ def test_project_packet_events_is_idempotent_by_source_hash(tmp_path: Path) -> N
         "llm.packet.projected",
     ]
 
+
+def test_watch_packet_events_runs_bounded_projection_passes(tmp_path: Path) -> None:
+    """Watch mode should be testable with bounded iterations."""
+    eventloom_path = tmp_path / ".eventloom"
+    log = EventLog(eventloom_path / "agent-1.jsonl")
+    log.append(
+        "llm.packet.completed",
+        actor="zaxy-packet-analyzer",
+        thread="agent-1",
+        payload={
+            "session_id": "agent-1",
+            "provider_path": "/v1/responses",
+            "status_code": 200,
+            "request": {"body": {"input": "Remember the dashboard owner is Mira."}},
+            "response": {"body": {"output_text": "Dashboard owner Mira recorded."}},
+        },
+    )
+
+    result = watch_packet_events(
+        eventloom_path=eventloom_path,
+        session_id="agent-1",
+        interval_seconds=0,
+        max_iterations=2,
+    )
+
+    assert result.iterations == 2
+    assert result.read == 2
+    assert result.projected == 1
+    assert result.skipped == 1
+    assert [event.type for event in log.read_all()] == [
+        "llm.packet.completed",
+        "llm.packet.projected",
+    ]

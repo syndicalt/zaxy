@@ -39,6 +39,15 @@ zaxy packet-project \
   --session-id zaxy-default
 ```
 
+For a local supervisor or terminal session, run the same worker in watch mode:
+
+```bash
+zaxy packet-project \
+  --eventloom-path .eventloom \
+  --session-id zaxy-default \
+  --watch
+```
+
 Projection is idempotent by source event hash. It extracts bounded request and
 response summaries, preserves the source packet sequence and hash, and leaves the
 raw packet capture available for audit replay.

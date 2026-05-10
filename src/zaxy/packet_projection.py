@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,16 @@ MAX_PACKET_EXCERPT_CHARS = 600
 class PacketProjectionResult:
     """Summary of one packet projection pass."""
 
+    read: int
+    projected: int
+    skipped: int
+
+
+@dataclass(frozen=True)
+class PacketProjectionWatchResult:
+    """Summary of a packet projection watch loop."""
+
+    iterations: int
     read: int
     projected: int
     skipped: int
@@ -62,6 +73,43 @@ def project_packet_events(
         projected += 1
 
     return PacketProjectionResult(read=len(candidates), projected=projected, skipped=skipped)
+
+
+def watch_packet_events(
+    *,
+    eventloom_path: Path,
+    session_id: str,
+    interval_seconds: float = 2.0,
+    from_seq: int = 1,
+    limit: int | None = None,
+    max_iterations: int | None = None,
+) -> PacketProjectionWatchResult:
+    """Continuously project completed packet events until bounded or interrupted."""
+    iterations = 0
+    total_read = 0
+    total_projected = 0
+    total_skipped = 0
+    while max_iterations is None or iterations < max_iterations:
+        result = project_packet_events(
+            eventloom_path=eventloom_path,
+            session_id=session_id,
+            from_seq=from_seq,
+            limit=limit,
+        )
+        iterations += 1
+        total_read += result.read
+        total_projected += result.projected
+        total_skipped += result.skipped
+        if max_iterations is not None and iterations >= max_iterations:
+            break
+        if interval_seconds > 0:
+            time.sleep(interval_seconds)
+    return PacketProjectionWatchResult(
+        iterations=iterations,
+        read=total_read,
+        projected=total_projected,
+        skipped=total_skipped,
+    )
 
 
 def build_packet_projection_payload(event: Event) -> dict[str, Any]:
@@ -221,4 +269,3 @@ def _optional_int(value: Any, *, default: int) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
-

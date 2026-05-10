@@ -121,6 +121,44 @@ def test_packet_project_cli_projects_completed_packets(tmp_path: Path) -> None:
     assert "Atlas" in events[-1].payload["summary"]
 
 
+def test_packet_project_cli_supports_bounded_watch_mode(tmp_path: Path) -> None:
+    """packet-project watch mode should support bounded runs for supervisors/tests."""
+    eventloom_dir = tmp_path / ".eventloom"
+    EventLog(eventloom_dir / "agent-1.jsonl").append(
+        "llm.packet.completed",
+        actor="zaxy-packet-analyzer",
+        thread="agent-1",
+        payload={
+            "session_id": "agent-1",
+            "provider_path": "/v1/responses",
+            "status_code": 200,
+            "request": {"body": {"input": "Remember the on-call is Dev."}},
+            "response": {"body": {"output_text": "On-call Dev recorded."}},
+        },
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "packet-project",
+            "--eventloom-path",
+            str(eventloom_dir),
+            "--session-id",
+            "agent-1",
+            "--watch",
+            "--watch-iterations",
+            "2",
+            "--interval-seconds",
+            "0",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Watched 2 projection pass" in result.output
+    assert "projected=1" in result.output
+
+
 def test_memory_log_prints_recent_events(tmp_path: Path) -> None:
     """memory log should print recent events in compact git-style form."""
     event = EventLog(tmp_path / ".eventloom" / "agent.jsonl").append(
