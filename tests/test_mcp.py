@@ -550,6 +550,8 @@ class TestContextLifecycleTools:
             "verbatim_slots": 1,
         }
         assert output["context_counts"] == {"graph": 1, "verbatim": 1, "replay": 1}
+        assert output["working_set"]["items"][0]["category"] == "source_anchor"
+        assert "# Active Memory Working Set" in output["prompt"]
 
     async def test_context_assemble_uses_configured_default_session(self, server: ZaxyMCPServer) -> None:
         """Omitted session_id should use the configured domain-separated default."""

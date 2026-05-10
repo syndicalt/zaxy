@@ -722,6 +722,8 @@ class TestContextAssembly:
             "verbatim_slots": 1,
         }
         assert assembly.context_counts == {"graph": 1, "verbatim": 1, "replay": 0}
+        assert assembly.working_set["items"][0]["category"] == "source_anchor"
+        assert "# Active Memory Working Set" in assembly.prompt
 
     async def test_assemble_context_skips_verbatim_when_policy_disabled(
         self,

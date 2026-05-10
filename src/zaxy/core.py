@@ -44,6 +44,7 @@ from zaxy.session import SessionManager
 from zaxy.trace import MemoryTracer
 from zaxy.transcripts import collect_transcript_events
 from zaxy.verbatim import VerbatimIndex
+from zaxy.working_set import build_working_set, format_working_set
 from zaxy.workspace import (
     WorkspaceProfile,
     build_session_genesis_event,
@@ -67,6 +68,7 @@ class ContextAssembly:
     warnings: list[str] = field(default_factory=list)
     assembly_policy: dict[str, bool | int] = field(default_factory=dict)
     context_counts: dict[str, int] = field(default_factory=dict)
+    working_set: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -593,7 +595,8 @@ class MemoryFabric:
         if max_recent_events is not None and len(replay_events) > max_recent_events:
             replay_events = replay_events[-max_recent_events:]
             compacted = True
-        lines = ["# Recent Events"]
+        working_set = build_working_set(replay_events, contexts)
+        lines = [format_working_set(working_set), "", "# Recent Events"]
         for event in replay_events:
             lines.append(f"[{event.seq}] {event.type} by {event.actor}")
             content = _event_content(event)
@@ -621,6 +624,7 @@ class MemoryFabric:
             warnings=warnings,
             assembly_policy=self.context_assembly_policy.describe(),
             context_counts=context_counts(contexts, replay_count=len(replay_events)),
+            working_set=working_set.to_dict(),
         )
 
     async def record_context_feedback(

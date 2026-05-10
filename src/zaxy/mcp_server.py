@@ -55,6 +55,7 @@ from zaxy.security import (
 from zaxy.session import SessionManager
 from zaxy.trace import MemoryTracer
 from zaxy.verbatim import VerbatimIndex
+from zaxy.working_set import build_working_set, format_working_set
 from zaxy.workspace import (
     WorkspaceProfile,
     build_session_genesis_event,
@@ -738,15 +739,17 @@ class ZaxyMCPServer:
             verbatim_contexts,
             limit=limit,
         )
+        working_set = build_working_set(recent_events, contexts)
         await self.tracer.trace_query(query, len(results), 0.0, None)
         return {
             "session_id": session_id,
-            "prompt": _format_prompt(recent_events, contexts),
+            "prompt": _format_prompt(recent_events, contexts, working_set=working_set),
             "contexts": [_context_payload(context) for context in contexts],
             "replay_event_count": len(recent_events),
             "compacted": compacted,
             "assembly_policy": self.context_assembly_policy.describe(),
             "context_counts": context_counts(contexts, replay_count=len(recent_events)),
+            "working_set": working_set.to_dict(),
         }
 
     def _require_admin(self, arguments: dict[str, Any]) -> None:
@@ -968,8 +971,11 @@ class RemoteRequestGuard:
         )
 
 
-def _format_prompt(events: list[Any], results: list[Any]) -> str:
-    lines = ["# Recent Events"]
+def _format_prompt(events: list[Any], results: list[Any], *, working_set: Any | None = None) -> str:
+    lines = []
+    if working_set is not None:
+        lines.extend([format_working_set(working_set), ""])
+    lines.append("# Recent Events")
     for event in events:
         lines.append(f"[{event.seq}] {event.type} by {event.actor}")
         content = _event_content(event)

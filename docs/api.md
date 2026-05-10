@@ -113,9 +113,14 @@ for building an LLM context window from durable session history, temporal graph
 memory, and exact cited source chunks. Returned context metadata includes
 `assembly_lane` so clients can distinguish `graph` context from `verbatim`
 source recall.
+The prompt begins with `# Active Memory Working Set`, a bounded deterministic
+projection of goals, decisions, tasks, artifacts, blockers, and cited source
+anchors. This gives the model task-relevant memory structure without injecting
+the whole event log or graph.
 `assembly.assembly_policy` records the policy in force for the call, and
 `assembly.context_counts` records graph, verbatim, and replay counts for
-observability.
+observability. `assembly.working_set` exposes the same working-set items as
+structured data.
 
 Run lifecycle hooks after a turn or subagent handoff:
 

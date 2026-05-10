@@ -51,7 +51,9 @@ source-recall lane by default, and each context item includes `metadata` with an
 `assembly_lane` value such as `graph` or `verbatim`.
 The response also includes `assembly_policy` and `context_counts` fields so
 clients can inspect the active policy and the number of graph, verbatim, and
-replay items returned.
+replay items returned. The prompt begins with an `# Active Memory Working Set`
+section, and the JSON response includes `working_set` items for bounded goals,
+decisions, tasks, artifacts, blockers, and source anchors.
 `context_after_turn(role, content, ...)` first appends a `transcript.turn` event,
 then assembles context for the next model call.
 `subagent_cleanup(parent_session_id, subagent_session_id, summary, ...)` records
