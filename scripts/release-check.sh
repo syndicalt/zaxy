@@ -71,7 +71,7 @@ echo "Running release gate..."
 "${RUFF_CMD}" check src tests
 "${MYPY_CMD}" src
 "${PYTEST_CMD}" --tb=short
-"${PACKET_SMOKE_CMD}"
+bash -c "${PACKET_SMOKE_CMD}"
 "${PACKAGE_CMD}" --root "${ROOT}"
 "${DOCS_CMD}" --root "${ROOT}"
 "${VALIDATE_CMD}" --root "${ROOT}"

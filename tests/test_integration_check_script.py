@@ -57,4 +57,5 @@ def test_release_gate_runs_packet_memory_smoke_explicitly() -> None:
     assert "PACKET_SMOKE_CMD" in script
     assert "tests/test_packet_memory_e2e.py" in script
     assert "--packet-smoke-cmd" in script
+    assert 'bash -c "${PACKET_SMOKE_CMD}"' in script
     assert "tests/test_packet_memory_e2e.py" in docs
