@@ -302,12 +302,13 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Intelligent active memory working-set projection in context assembly
 - [x] Normalized command and file-edit observation capture for hooks
 - [x] Hook and doctor observation coverage reporting for automatic capture gaps
+- [x] Hook-event sinks for tool-call and transcript-turn automatic capture
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 572 passed |
+| Tests | 578 passed |
 | Coverage | 92.25% |
 | Lint | ruff clean |
 | Types | mypy clean |

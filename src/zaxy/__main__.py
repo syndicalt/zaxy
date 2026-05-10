@@ -84,7 +84,12 @@ from zaxy.memory_status import (
     inspect_memory_log,
     inspect_memory_status,
 )
-from zaxy.observation import build_command_observation, build_file_edit_observation
+from zaxy.observation import (
+    build_command_observation,
+    build_file_edit_observation,
+    build_tool_call_observation,
+    build_transcript_turn_observation,
+)
 from zaxy.onboarding import (
     OnboardingResult,
     apply_onboarding_preset,
@@ -336,7 +341,7 @@ def hook_status(
 
 @app.command("hook-event")
 def hook_event(
-    trigger: str = typer.Argument(..., help="Hook trigger: session-start, stop, precompact, checkpoint, heartbeat, command, or file-edit"),  # noqa: B008
+    trigger: str = typer.Argument(..., help="Hook trigger: session-start, stop, precompact, checkpoint, heartbeat, command, file-edit, tool-call, or transcript-turn"),  # noqa: B008
     eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory for hook events"),
     session_id: str = typer.Option("default", help="Session ID to append hook events into"),
     source: str = typer.Option("generic", help="Client or adapter that emitted the hook"),
@@ -353,6 +358,14 @@ def hook_event(
     path: str | None = typer.Option(None, "--path", help="Observed edited file path"),  # noqa: B008
     operation: str = typer.Option("modified", help="Observed file operation"),
     line_count: int | None = typer.Option(None, help="Observed changed line count"),  # noqa: B008
+    tool_name: str | None = typer.Option(None, help="Observed tool name for tool-call hooks"),  # noqa: B008
+    tool_status: str = typer.Option("ok", help="Observed tool-call status"),
+    call_id: str | None = typer.Option(None, help="Observed tool-call identifier"),  # noqa: B008
+    arguments_json: str | None = typer.Option(None, help="Observed tool-call arguments as a JSON object"),  # noqa: B008
+    result_summary: str | None = typer.Option(None, help="Observed tool-call result summary"),  # noqa: B008
+    role: str | None = typer.Option(None, help="Transcript turn role for transcript-turn hooks"),  # noqa: B008
+    content: str | None = typer.Option(None, help="Transcript turn content for transcript-turn hooks"),  # noqa: B008
+    turn_index: int | None = typer.Option(None, help="Transcript turn index"),  # noqa: B008
 ) -> None:
     """Append a lightweight observer hook event without requiring Neo4j."""
     from zaxy.session import SessionManager
@@ -400,6 +413,46 @@ def hook_event(
         )
         typer.echo(f"Recorded observation {event_input['event_type']} seq={event.seq}")
         return
+    if normalized_trigger == "tool-call":
+        if tool_name is None:
+            raise typer.BadParameter("tool-call hooks require --tool-name")
+        arguments = _parse_json_object(arguments_json, option="--arguments-json") if arguments_json else None
+        event_input = build_tool_call_observation(
+            tool_name=tool_name,
+            status=tool_status,
+            session_id=session_id,
+            source=source,
+            workspace=workspace,
+            call_id=call_id,
+            arguments=arguments,
+            result_summary=result_summary,
+        )
+        event = eventlog.append(
+            event_input["event_type"],
+            actor=event_input["actor"],
+            payload=event_input["payload"],
+            thread=session_id,
+        )
+        typer.echo(f"Recorded observation {event_input['event_type']} seq={event.seq}")
+        return
+    if normalized_trigger == "transcript-turn":
+        if role is None or content is None:
+            raise typer.BadParameter("transcript-turn hooks require --role and --content")
+        event_input = build_transcript_turn_observation(
+            role=role,
+            content=content,
+            session_id=session_id,
+            source=source,
+            turn_index=turn_index,
+        )
+        event = eventlog.append(
+            event_input["event_type"],
+            actor=event_input["actor"],
+            payload=event_input["payload"],
+            thread=session_id,
+        )
+        typer.echo(f"Recorded observation {event_input['event_type']} seq={event.seq}")
+        return
     try:
         event_type = hook_event_type(trigger)
     except ValueError as exc:
@@ -415,6 +468,16 @@ def hook_event(
     )
     event = eventlog.append(event_type, actor="zaxy-hook", payload=payload, thread=session_id)
     typer.echo(f"Recorded hook {payload['trigger']} as {event_type} seq={event.seq}")
+
+
+def _parse_json_object(value: str, *, option: str) -> dict[str, object]:
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter(f"{option} must be a JSON object") from exc
+    if not isinstance(parsed, dict):
+        raise typer.BadParameter(f"{option} must be a JSON object")
+    return parsed
 
 
 @app.command("local-profile")

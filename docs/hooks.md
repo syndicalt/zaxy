@@ -93,8 +93,8 @@ zaxy hook-event checkpoint \
 `hook.checkpoint` events are projected into graph `hook_checkpoint` entities so
 future retrieval can find durable session milestones.
 
-Command and file-edit hooks write first-class observation events instead of
-generic `hook.*` checkpoints:
+Command, file-edit, tool-call, and transcript-turn hooks write first-class
+observation events instead of generic `hook.*` checkpoints:
 
 ```bash
 zaxy hook-event command \
@@ -114,11 +114,32 @@ zaxy hook-event file-edit \
   --path src/zaxy/core.py \
   --operation modified \
   --summary "Updated context assembly"
+
+zaxy hook-event tool-call \
+  --eventloom-path .eventloom \
+  --session-id my-project-default \
+  --source codex \
+  --workspace "$PWD" \
+  --tool-name memory_append \
+  --tool-status ok \
+  --arguments-json '{"event_type":"task.completed"}' \
+  --result-summary "seq=42"
+
+zaxy hook-event transcript-turn \
+  --eventloom-path .eventloom \
+  --session-id my-project-default \
+  --source codex \
+  --role assistant \
+  --content "Recorded the implementation decision." \
+  --turn-index 12
 ```
 
 Command observations redact common secret-bearing arguments and bound stdout and
 stderr excerpts. File-edit observations persist path, operation, summary, and
-line count metadata; they do not persist source content.
+line count metadata; they do not persist source content. Tool-call observations
+persist argument keys but not raw argument values. Transcript-turn observations
+sanitize content before append so they can serve as source-recall material
+without storing obvious secrets.
 
 ## Payload
 

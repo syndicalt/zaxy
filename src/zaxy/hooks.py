@@ -85,6 +85,15 @@ def render_hook_config(
             _hook_command("session-start", eventloom_path=eventloom_path, session_id=session_id, source=hook_source),
             _hook_command("stop", eventloom_path=eventloom_path, session_id=session_id, source=hook_source),
             _hook_command("precompact", eventloom_path=eventloom_path, session_id=session_id, source=hook_source),
+            "# Optional first-class observation sinks for richer automatic capture",
+            f"# {_hook_command('command', eventloom_path=eventloom_path, session_id=session_id, source=hook_source)} "
+            "--command '<cmd>' --exit-code 0",
+            f"# {_hook_command('file-edit', eventloom_path=eventloom_path, session_id=session_id, source=hook_source)} "
+            "--path '<path>' --operation modified",
+            f"# {_hook_command('tool-call', eventloom_path=eventloom_path, session_id=session_id, source=hook_source)} "
+            "--tool-name '<tool>' --tool-status ok",
+            f"# {_hook_command('transcript-turn', eventloom_path=eventloom_path, session_id=session_id, source=hook_source)} "
+            "--role assistant --content '<turn>'",
             "",
         ]
     )

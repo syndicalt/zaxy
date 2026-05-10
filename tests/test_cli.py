@@ -619,6 +619,19 @@ def test_hooks_command_refuses_to_overwrite_without_force(tmp_path: Path) -> Non
     assert output.read_text(encoding="utf-8") == "existing\n"
 
 
+def test_hooks_command_generic_output_documents_observation_sinks() -> None:
+    """Generic hook output should advertise every first-class observation sink."""
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["hooks", "generic", "--domain", "zaxy"])
+
+    assert result.exit_code == 0
+    assert "zaxy hook-event command" in result.output
+    assert "zaxy hook-event file-edit" in result.output
+    assert "zaxy hook-event tool-call" in result.output
+    assert "zaxy hook-event transcript-turn" in result.output
+
+
 def test_hooks_command_force_overwrites_output_file(tmp_path: Path) -> None:
     """hooks --force should replace an existing output file."""
     runner = CliRunner()
@@ -797,6 +810,85 @@ def test_hook_event_file_edit_observation_appends_normalized_event(tmp_path: Pat
     assert "content" not in events[0].payload
 
 
+def test_hook_event_tool_call_observation_appends_redacted_event(tmp_path: Path) -> None:
+    """hook-event tool-call should write first-class tool.call.completed observations."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "hook-event",
+            "tool-call",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent-1",
+            "--source",
+            "codex",
+            "--workspace",
+            "/repo",
+            "--tool-name",
+            "functions.exec_command",
+            "--tool-status",
+            "ok",
+            "--call-id",
+            "call-123",
+            "--arguments-json",
+            '{"cmd": "pytest", "token": "secret"}',
+            "--result-summary",
+            "3 passed",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Recorded observation tool.call.completed" in result.output
+    events = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").read_all()
+    assert events[0].type == "tool.call.completed"
+    assert events[0].actor == "zaxy-observer"
+    assert events[0].payload["tool_name"] == "functions.exec_command"
+    assert events[0].payload["argument_keys"] == ["cmd", "token"]
+    assert events[0].payload["arguments_redacted"] is True
+    assert "arguments" not in events[0].payload
+    assert events[0].payload["source"] == "codex"
+    assert events[0].payload["workspace"] == "/repo"
+
+
+def test_hook_event_transcript_turn_observation_appends_sanitized_event(tmp_path: Path) -> None:
+    """hook-event transcript-turn should write sanitized transcript.turn observations."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "hook-event",
+            "transcript-turn",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent-1",
+            "--source",
+            "codex",
+            "--role",
+            "assistant",
+            "--content",
+            "Use token sk-test-secret for the demo.",
+            "--turn-index",
+            "7",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Recorded observation transcript.turn" in result.output
+    events = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").read_all()
+    assert events[0].type == "transcript.turn"
+    assert events[0].actor == "assistant"
+    assert events[0].payload["source"] == "codex"
+    assert events[0].payload["turn_index"] == 7
+    assert events[0].payload["role"] == "assistant"
+    assert "sk-test-secret" not in events[0].payload["content"]
+    assert events[0].payload["redacted_paths"]
+
+
 def test_hook_status_reports_observation_type_coverage(tmp_path: Path) -> None:
     """hook-status should show which automatic capture types are active."""
     log = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl")
@@ -832,6 +924,28 @@ def test_hook_status_reports_observation_type_coverage(tmp_path: Path) -> None:
     assert payload["observation_coverage"]["file.edit.applied"]["count"] == 1
     assert payload["observation_coverage"]["transcript.turn"]["count"] == 0
     assert "transcript.turn" in payload["missing_observation_types"]
+
+
+def test_hook_status_reports_complete_observation_coverage(tmp_path: Path) -> None:
+    """hook-status should clear missing coverage once every high-value type is captured."""
+    log = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl")
+    log.append("hook.heartbeat", actor="zaxy-hook", payload={"source": "codex"}, thread="agent-1")
+    log.append("command.completed", actor="zaxy-observer", payload={"source": "codex"}, thread="agent-1")
+    log.append("file.edit.applied", actor="zaxy-observer", payload={"source": "codex"}, thread="agent-1")
+    log.append("tool.call.completed", actor="zaxy-observer", payload={"source": "codex"}, thread="agent-1")
+    log.append("transcript.turn", actor="assistant", payload={"source": "codex"}, thread="agent-1")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["hook-status", "--eventloom-path", str(tmp_path / ".eventloom"), "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["observation_coverage"]["tool.call.completed"]["count"] == 1
+    assert payload["observation_coverage"]["transcript.turn"]["count"] == 1
+    assert payload["missing_observation_types"] == []
 
 
 def test_hooks_status_reports_installed_clients_and_recent_activity(tmp_path: Path) -> None:

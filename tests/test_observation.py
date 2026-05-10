@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from zaxy.observation import build_command_observation, build_file_edit_observation
+from zaxy.observation import (
+    build_command_observation,
+    build_file_edit_observation,
+    build_tool_call_observation,
+    build_transcript_turn_observation,
+)
 
 
 def test_build_command_observation_redacts_and_bounds_output() -> None:
@@ -56,3 +61,49 @@ def test_build_file_edit_observation_records_metadata_without_content() -> None:
             "line_count": 12,
         },
     }
+
+
+def test_build_tool_call_observation_records_redacted_argument_metadata() -> None:
+    """Tool-call observations should store argument keys but not argument values."""
+    event = build_tool_call_observation(
+        tool_name="memory_append",
+        status="ok",
+        session_id="agent-1",
+        source="codex",
+        workspace="/repo",
+        call_id="call-1",
+        arguments={"event_type": "task.completed", "token": "secret"},
+        result_summary="seq=12",
+    )
+
+    assert event["event_type"] == "tool.call.completed"
+    assert event["actor"] == "zaxy-observer"
+    assert event["payload"]["tool_name"] == "memory_append"
+    assert event["payload"]["status"] == "ok"
+    assert event["payload"]["call_id"] == "call-1"
+    assert event["payload"]["argument_keys"] == ["event_type", "token"]
+    assert event["payload"]["arguments_redacted"] is True
+    assert event["payload"]["result_summary"] == "seq=12"
+    assert event["payload"]["source"] == "codex"
+    assert event["payload"]["workspace"] == "/repo"
+    assert "arguments" not in event["payload"]
+
+
+def test_build_transcript_turn_observation_sanitizes_content() -> None:
+    """Transcript observations should preserve role metadata and redact secrets."""
+    event = build_transcript_turn_observation(
+        role="assistant",
+        content="The key is sk-test-secret.",
+        session_id="agent-1",
+        source="codex",
+        turn_index=2,
+    )
+
+    assert event["event_type"] == "transcript.turn"
+    assert event["actor"] == "assistant"
+    assert event["payload"]["role"] == "assistant"
+    assert event["payload"]["source"] == "codex"
+    assert event["payload"]["session_id"] == "agent-1"
+    assert event["payload"]["turn_index"] == 2
+    assert event["payload"]["content"] == "[REDACTED]"
+    assert event["payload"]["redacted_paths"] == ["content"]
