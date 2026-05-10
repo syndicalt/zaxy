@@ -12,6 +12,7 @@ REQUIRED_DOCS = [
     "docs/architecture.md",
     "docs/configuration.md",
     "docs/mcp.md",
+    "docs/mcp-install-targets.md",
     "docs/eventloom.md",
     "docs/agent-events.md",
     "docs/hooks.md",

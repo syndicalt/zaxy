@@ -102,6 +102,11 @@ These commands print copyable JSON fragments and do not include bearer tokens,
 passwords, or admin secrets. Keep remote SSE credentials in the client secret
 store or environment, not in committed config.
 
+The verified write targets for future client-specific installers are tracked in
+[mcp-install-targets.md](mcp-install-targets.md). That matrix is the guardrail
+for deciding when `zaxy init` may write or merge config directly versus printing
+copyable instructions.
+
 Generated configs include `ZAXY_DOMAIN` and a domain-prefixed
 `EVENTLOOM_THREAD`, such as `zaxy-default`. This prevents clients that omit
 `session_id` from accidentally sharing the global `default` session across

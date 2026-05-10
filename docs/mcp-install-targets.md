@@ -1,0 +1,99 @@
+# MCP Install Targets
+
+This page records the verified MCP client targets that `zaxy init` and future
+write-and-merge helpers may support. The rule is conservative: Zaxy can print a
+config fragment for any compatible client, but it should only write into a
+client-owned file when the path, schema, and merge behavior are verified from
+official client documentation.
+
+The goal is not to hide client differences behind a fragile universal writer.
+Each target has its own config shape, trust model, and scope semantics. A
+professional onboarding path should preserve unrelated user settings, avoid
+silent global writes, and make restart or trust prompts explicit.
+
+## Write Policy
+
+Installer helpers must follow these constraints:
+
+- Default to dry-run or print-only unless the target is listed as safe to write.
+- Merge one `zaxy` server entry without replacing unrelated server entries.
+- Preserve formatting when practical, but prefer a valid config over cosmetic
+  whitespace preservation.
+- Refuse malformed existing config and show a repair-oriented error.
+- Create parent directories only for documented project-local paths.
+- Avoid hardcoding bearer tokens, API keys, or admin secrets.
+- Prefer official client CLI commands when they exist and are less risky than
+  editing user-level config directly.
+- Make global writes explicit through a flag such as `--scope user` or
+  `--global`.
+
+## Target Matrix
+
+| Client | Verified config target | Schema | Safe write posture |
+|--------|------------------------|--------|--------------------|
+| Claude Code MCP | Project `.mcp.json`; local and user scopes live in `~/.claude.json` | top-level `mcpServers` | Project `.mcp.json` is safe with explicit project scope. Local/user scope should prefer `claude mcp add` or `claude mcp add-json`. |
+| Claude Code hooks | `.claude/settings.local.json`, `.claude/settings.json`, and `~/.claude/settings.json` | top-level `hooks` | Local project settings are safe for personal observer hooks. Shared project settings should require an explicit shared flag. |
+| Cursor | Project `.cursor/mcp.json`; global `~/.cursor/mcp.json` | top-level `mcpServers` | Project-local `.cursor/mcp.json` is safe. Global config should require an explicit global flag. |
+| VS Code | Workspace `.vscode/mcp.json`; user-profile `mcp.json` opened by command | top-level `servers` | Workspace `.vscode/mcp.json` is safe. User profile writes should prefer VS Code commands or an explicit global flag. |
+| Codex | User `~/.codex/config.toml`; trusted project `.codex/config.toml` | TOML tables under `[mcp_servers.<name>]` | Prefer `codex mcp add` when available. Direct TOML merge is acceptable only for explicit user or trusted project scope. |
+
+## Client Notes
+
+Claude Code supports MCP scopes directly in its CLI. Its project scope writes
+`.mcp.json` at the project root and uses the standard `mcpServers` JSON shape.
+Local and user scoped MCP servers are stored in `~/.claude.json`, so Zaxy should
+not silently edit that file. For those scopes, the safer generated next step is
+an explicit `claude mcp add zaxy -- zaxy serve` or `claude mcp add-json zaxy ...`
+command.
+
+Claude Code hooks are separate from MCP server installation. They are still part
+of Zaxy onboarding because they provide observer capture for tool calls, session
+events, and compaction events. The documented hook settings locations match the
+existing Zaxy default of `.claude/settings.local.json` for personal project
+setup.
+
+Cursor uses a JSON file named `mcp.json` with a top-level `mcpServers` object.
+The project target is `.cursor/mcp.json`; the global target is
+`~/.cursor/mcp.json`. Zaxy should default to project-local output because that
+matches repository onboarding and avoids surprising cross-project memory wiring.
+
+VS Code uses `mcp.json` too, but its workspace schema uses top-level `servers`,
+not `mcpServers`. The project-local target is `.vscode/mcp.json`. This is why
+Zaxy keeps a separate VS Code renderer instead of reusing the Claude or Cursor
+JSON fragment.
+
+Codex supports MCP in the CLI and IDE extension. The documented config file is
+`~/.codex/config.toml`, with trusted projects allowed to use
+`.codex/config.toml`. Codex also exposes `codex mcp add`, so the first
+write-and-merge implementation should prefer producing or executing that command
+over hand-editing global TOML. Direct TOML support is still useful for a
+project-scoped `.codex/config.toml` once the project trust requirement is
+surfaced clearly to the user.
+
+## Implementation Order
+
+1. Add a shared merge engine for JSON object targets with schema-specific root
+   keys: `mcpServers` and `servers`.
+2. Implement project-local write helpers for Cursor, VS Code, and Claude Code
+   project MCP.
+3. Add Claude Code local hook detection/write coverage using the existing hook
+   adapter path.
+4. Add Codex as a CLI-assisted target first: print `codex mcp add zaxy -- zaxy
+   serve` with the resolved executable path and environment.
+5. Add explicit TOML merge support for Codex only after tests cover user-level
+   and project-level scopes, malformed TOML, existing unrelated servers, and
+   disabled server entries.
+
+## Sources
+
+- [Claude Code MCP](https://docs.anthropic.com/en/docs/claude-code/mcp)
+- [Claude Code hooks](https://docs.anthropic.com/en/docs/claude-code/hooks)
+- [Claude Code settings](https://docs.anthropic.com/en/docs/claude-code/settings)
+- [Cursor MCP](https://docs.cursor.com/advanced/model-context-protocol)
+- [Cursor CLI MCP](https://docs.cursor.com/cli/mcp)
+- [VS Code MCP servers](https://code.visualstudio.com/docs/copilot/customization/mcp-servers)
+- [Codex MCP](https://developers.openai.com/codex/mcp)
+- [Codex config reference](https://developers.openai.com/codex/config-reference)
+
+See [mcp.md](mcp.md), [hooks.md](hooks.md), and [README.md](../README.md) for
+the current generated config and onboarding commands.
