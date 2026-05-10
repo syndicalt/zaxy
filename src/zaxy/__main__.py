@@ -294,7 +294,7 @@ def init(
     force: bool = typer.Option(False, "--force", help="Overwrite generated output files"),  # noqa: B008
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),  # noqa: B008
 ) -> None:
-    """Run first-run onboarding: MCP config, local profile, genesis, heartbeat, doctor."""
+    """Run first-run onboarding: MCP config, hooks, infra, genesis, heartbeat, doctor, hook status."""
     import asyncio
 
     async def _run() -> OnboardingResult:

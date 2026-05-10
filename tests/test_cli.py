@@ -467,6 +467,18 @@ def test_init_command_expands_local_claude_preset(mock_run_onboarding: AsyncMock
     assert kwargs["infra"] == "check"
 
 
+def test_init_command_help_describes_full_onboarding_path() -> None:
+    """init help should describe the full golden-path onboarding behavior."""
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["init", "--help"])
+
+    assert result.exit_code == 0
+    assert "MCP config" in result.output
+    assert "infra" in result.output
+    assert "hook status" in result.output
+
+
 def test_init_command_json_includes_next_steps(tmp_path: Path) -> None:
     """init --json should expose next_steps for client UIs and automation."""
     workspace = tmp_path / "repo"
