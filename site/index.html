@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Zaxy - temporal memory for AI agents</title>
-  <meta name="description" content="Zaxy is an event-sourced temporal knowledge graph fabric for AI agent memory: Eventloom audit logs, Neo4j graph reasoning, hybrid retrieval, MCP tools, and Pathlight observability." />
+  <meta name="description" content="Zaxy is Git for LLM memory: an Eventloom-backed, hash-linked, replayable memory substrate with graph projection, Memory Checkout, deterministic capture, and MCP-native model awareness." />
   <meta property="og:title" content="Zaxy - temporal memory for AI agents" />
   <meta property="og:description" content="Replayable, auditable, graph-native memory for agent systems." />
   <meta property="og:type" content="website" />
@@ -33,12 +33,13 @@
   <main>
     <section class="hero" id="top">
       <div class="hero-copy">
-        <p class="eyebrow">Event-sourced temporal knowledge graph fabric</p>
+        <p class="eyebrow">Git for LLM memory</p>
         <h1>Temporal memory for AI agents.</h1>
         <p class="tagline">
           Zaxy turns agent work into durable memory: an Eventloom log for audit,
-          hybrid extraction for structure, a Neo4j temporal graph for reasoning,
-          and MCP tools for retrieval, replay, and invalidation.
+          hash-linked provenance for replay, a Neo4j temporal graph for reasoning,
+          Memory Checkout for compact context, and MCP tools for model-facing
+          retrieval, capture, and feedback.
         </p>
         <div class="cta-row">
           <a href="#install" class="btn btn-primary">Install locally</a>
@@ -50,16 +51,16 @@
         <div class="visual-title">agent-memory-run</div>
         <div class="visual-row"><span>01</span><strong>Eventloom log</strong><em>append-only JSONL + hash chain</em></div>
         <div class="visual-row"><span>02</span><strong>Hybrid extraction</strong><em>typed rules + fallback extractors</em></div>
-        <div class="visual-row"><span>03</span><strong>Neo4j temporal graph</strong><em>valid_from / valid_to fact versions</em></div>
-        <div class="visual-row"><span>04</span><strong>Hybrid retrieval</strong><em>exact + BM25 + vector + traversal</em></div>
-        <div class="visual-row"><span>05</span><strong>MCP response</strong><em>query, replay, invalidate, append</em></div>
+        <div class="visual-row"><span>03</span><strong>Neo4j temporal graph</strong><em>NEXT_EVENT / PREVIOUS_EVENT provenance</em></div>
+        <div class="visual-row"><span>04</span><strong>Memory Checkout</strong><em>active working set + cited context</em></div>
+        <div class="visual-row"><span>05</span><strong>MCP response</strong><em>capabilities, checkout, capture, feedback</em></div>
         <img class="graph-preview" src="assets/graph.png" alt="Zaxy temporal knowledge graph showing connected agent memory entities and relationships" />
       </div>
     </section>
 
     <section class="proof-strip" aria-label="Project status">
-      <span>350 tests</span>
-      <span>92.41% coverage</span>
+      <span>676 tests</span>
+      <span>91.96% coverage</span>
       <span>ruff clean</span>
       <span>mypy clean</span>
       <span>release gate ready</span>
@@ -72,32 +73,35 @@
         <p>
           Markdown files and chunk RAG flatten history. They can retrieve similar text,
           but they do not preserve causal chains, fact lifetimes, invalidations, or the
-          evidence that led an agent to a decision. Zaxy keeps the raw event stream and
-          projects it into a graph built for multi-hop and temporal reasoning.
+          evidence that led an agent to a decision. Zaxy keeps the raw event stream,
+          seals it with hashes, and projects it into a graph built for multi-hop,
+          temporal, and provenance-aware reasoning.
         </p>
       </div>
       <div class="value-grid">
         <article><h3>Relational</h3><p>Entities and edges preserve actor, task, dependency, and provenance relationships.</p></article>
         <article><h3>Temporal</h3><p>Facts are versioned, so retrieval can ask what was true now or at a previous point.</p></article>
-        <article><h3>Replayable</h3><p>The Eventloom log remains the immutable record behind every graph projection.</p></article>
+        <article><h3>Replayable</h3><p>The Eventloom log remains the immutable record behind every graph projection and checkout.</p></article>
       </div>
     </section>
 
     <section id="architecture" class="section band">
       <div class="section-heading">
         <p class="eyebrow">Architecture</p>
-        <h2>One memory fabric, four layers.</h2>
+        <h2>One memory fabric, five layers.</h2>
       </div>
       <div class="flow">
         <div><strong>Eventloom</strong><span>append, verify, replay</span></div>
         <div><strong>Extract</strong><span>entities, edges, embeddings</span></div>
-        <div><strong>Neo4j</strong><span>bi-temporal knowledge graph</span></div>
+        <div><strong>Neo4j</strong><span>temporal graph + provenance path</span></div>
+        <div><strong>Checkout</strong><span>bounded cited context</span></div>
         <div><strong>MCP</strong><span>agent-native tools</span></div>
       </div>
       <p>
         Pathlight traces memory operations without becoming the storage layer. Neo4j
-        answers graph questions. Eventloom remains the audit trail. MCP gives agent
-        frameworks a stable interface over stdio or SSE.
+        answers graph questions. Eventloom remains the audit trail. The graph projects
+        sealed Eventloom paths through NEXT_EVENT and PREVIOUS_EVENT edges. MCP gives
+        agent frameworks a stable interface over stdio or SSE.
       </p>
     </section>
 
@@ -107,6 +111,8 @@
         <h2>Memory operations agents can call directly.</h2>
       </div>
       <div class="tool-grid">
+        <article><code>memory_capabilities</code><p>Tell the model what Zaxy can do, what capture paths are healthy, and when to checkout memory.</p></article>
+        <article><code>memory_checkout</code><p>Return the current cited prompt state, active working set, provenance, and warnings.</p></article>
         <article><code>memory_append</code><p>Append typed events, extract graph facts, and trace the operation.</p></article>
         <article><code>memory_query</code><p>Fuse exact lookup, keyword search, vector similarity, and traversal.</p></article>
         <article><code>memory_replay</code><p>Rebuild session history from Eventloom, optionally from a sequence number.</p></article>
@@ -121,11 +127,23 @@
       </div>
       <p>
         Zaxy routes queries through exact entity lookup, Neo4j full-text search,
-        vector similarity, and graph traversal. Results are fused into compact
-        context chunks so agents receive connected facts instead of raw transcript
-        piles. Temporal filters let callers retrieve only facts valid at a point in
-        time.
+        vector similarity, graph traversal, and verbatim Eventloom retrieval. Memory
+        Checkout turns those lanes into compact cited context so agents receive
+        connected facts instead of raw transcript piles. Temporal filters let callers
+        retrieve only facts valid at a point in time.
       </p>
+    </section>
+
+    <section id="capture" class="section">
+      <div class="section-heading">
+        <p class="eyebrow">Deterministic capture</p>
+        <h2>Useful by default, explicit when packet capture costs money.</h2>
+      </div>
+      <div class="value-grid">
+        <article><h3>local-codex</h3><p>The Codex preset renders the official MCP install command and avoids unsupported <code>.codex/hooks.json</code> assumptions.</p></article>
+        <article><h3>Observer hooks</h3><p>Stable hook sinks record lifecycle, command, file-edit, tool-call, and transcript observations when the client supports them.</p></article>
+        <article><h3>Packet analyzer</h3><p>Provider packet capture remains opt-in for diagnostics and high-fidelity audit because it can consume API quota.</p></article>
+      </div>
     </section>
 
     <section id="security" class="section">

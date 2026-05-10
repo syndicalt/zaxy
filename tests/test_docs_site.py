@@ -52,9 +52,15 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     assert "<title>Zaxy - temporal memory for AI agents</title>" in html
     assert 'name="description"' in html
     assert 'property="og:image"' in html
+    assert "Git for LLM memory" in html
     assert "Temporal memory for AI agents" in html
     assert "Eventloom log" in html
     assert "Neo4j temporal graph" in html
+    assert "Memory Checkout" in html
+    assert "memory_capabilities" in html
+    assert "deterministic capture" in html
+    assert "local-codex" in html
+    assert "NEXT_EVENT" in html
     assert "Pathlight" in html
     assert "memory_append" in html
     assert "memory_query" in html
