@@ -17,12 +17,22 @@ def test_ide_config_command_prints_copyable_mcp_json() -> None:
 
     result = runner.invoke(
         app,
-        ["ide-config", "claude-desktop", "--eventloom-path", ".eventloom", "--domain", "zaxy"],
+        [
+            "ide-config",
+            "claude-desktop",
+            "--eventloom-path",
+            ".eventloom",
+            "--domain",
+            "zaxy",
+            "--zaxy-executable",
+            "/opt/zaxy/bin/zaxy",
+        ],
     )
 
     assert result.exit_code == 0
     assert '"mcpServers"' in result.output
     assert '"zaxy"' in result.output
+    assert '"command": "/opt/zaxy/bin/zaxy"' in result.output
     assert '"args": [' in result.output
     assert '"EVENTLOOM_THREAD": "zaxy-default"' in result.output
     assert '"ZAXY_DOMAIN": "zaxy"' in result.output

@@ -17,10 +17,11 @@ def test_renders_claude_desktop_mcp_config_without_secrets() -> None:
         eventloom_path='.eventloom',
         transport="stdio",
         domain="zaxy",
+        zaxy_executable="/opt/zaxy/bin/zaxy",
     )
 
     server = config["mcpServers"]["zaxy"]
-    assert server["command"] == "zaxy"
+    assert server["command"] == "/opt/zaxy/bin/zaxy"
     assert server["args"] == ["serve", "--eventloom-path", ".eventloom"]
     assert server["startup_timeout_sec"] == 90
     assert server["env"] == {
@@ -43,10 +44,10 @@ def test_renders_claude_desktop_mcp_config_without_secrets() -> None:
 
 def test_renders_vscode_mcp_config_with_servers_key() -> None:
     """VS Code uses a workspace mcp.json shape rather than mcpServers."""
-    config = render_mcp_client_config("vscode", eventloom_path='.eventloom')
+    config = render_mcp_client_config("vscode", eventloom_path='.eventloom', zaxy_executable="/opt/zaxy/bin/zaxy")
 
     assert "servers" in config
-    assert config["servers"]["zaxy"]["command"] == "zaxy"
+    assert config["servers"]["zaxy"]["command"] == "/opt/zaxy/bin/zaxy"
     assert config["servers"]["zaxy"]["args"][0] == "serve"
 
 

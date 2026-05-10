@@ -71,6 +71,17 @@ zaxy ide-config vscode --eventloom-path .eventloom
 zaxy ide-config claude-desktop --eventloom-path .eventloom --domain zaxy
 ```
 
+Install the `zaxy` CLI before generating MCP config:
+
+```bash
+pipx install zaxy-memory
+# or: pip install zaxy-memory
+```
+
+MCP clients cannot launch a server command that does not exist yet. Generated
+stdio config uses the resolved executable path by default, which is more
+reliable for GUI clients than assuming they inherit your shell `PATH`.
+
 Generate observer hook adapters:
 
 ```bash

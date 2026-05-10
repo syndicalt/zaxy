@@ -19,6 +19,7 @@ from zaxy.hooks import (
     render_hook_config,
     write_hook_config,
 )
+from zaxy.install import resolve_zaxy_executable
 from zaxy.integrations import render_mcp_client_config
 from zaxy.local_profile import write_local_profile
 from zaxy.runtime import LocalNeo4jRuntime
@@ -62,6 +63,7 @@ async def run_onboarding(
     hook_output: str | Path | None = None,
     local_profile_output: str | Path | None = None,
     infra: str = "none",
+    zaxy_executable: str | Path | None = None,
     force: bool = False,
     fabric_factory: Callable[[str], MemoryFabric] = MemoryFabric,
     runtime_factory: Callable[[], Any] | None = None,
@@ -73,6 +75,7 @@ async def run_onboarding(
     resolved_domain = slug_domain(domain) if domain else slug_domain(root.name)
     sid = session_id or domain_default_session(resolved_domain)
     infra_action = _normalize_infra(infra)
+    executable = resolve_zaxy_executable(zaxy_executable)
     _validate_render_requests(
         mcp_client=mcp_client,
         mcp_output=mcp_output,
@@ -97,6 +100,7 @@ async def run_onboarding(
             mcp_client,
             eventloom_path=str(eventloom),
             domain=resolved_domain,
+            zaxy_executable=executable,
         )
         if mcp_output is not None:
             written = _write_json(Path(mcp_output), config, force=force)
@@ -138,7 +142,7 @@ async def run_onboarding(
     steps.append(OnboardingStep("heartbeat", "ok", f"Hook heartbeat recorded seq={heartbeat.seq}"))
 
     settings = _onboarding_settings(eventloom=eventloom, session_id=sid, domain=resolved_domain)
-    doctor = run_doctor(settings=settings, workspace_root=root)
+    doctor = run_doctor(settings=settings, workspace_root=root, zaxy_executable=executable)
     steps.append(OnboardingStep("doctor", doctor["status"], "Doctor checks completed"))
     hook_status = inspect_hook_status(eventloom_path=eventloom, workspace_root=root)
     steps.append(OnboardingStep("hook_status", hook_status["status"], hook_status["message"]))

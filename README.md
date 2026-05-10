@@ -9,9 +9,10 @@ Pathlight tracing.
 ## Quick Start
 
 ```bash
-# Install the public package. The distribution is zaxy-memory; the import and
-# CLI remain zaxy.
-pip install zaxy-memory
+# Install the Zaxy CLI before generating MCP config. The distribution is
+# zaxy-memory; the import package and console command remain zaxy.
+pipx install zaxy-memory
+# or: pip install zaxy-memory
 
 # 1. Initialize local memory, MCP config, hooks, session genesis, and heartbeat.
 # Local stdio MCP auto-starts a localhost Neo4j container when Docker is

@@ -81,6 +81,7 @@ def ide_config(
     host: str = typer.Option("127.0.0.1", help="SSE host when transport=sse"),
     port: int = typer.Option(8080, help="SSE port when transport=sse"),
     domain: str | None = typer.Option(None, help="Project/domain used for default session scoping"),  # noqa: B008
+    zaxy_executable: str | None = typer.Option(None, help="Executable path MCP clients should invoke"),  # noqa: B008
 ) -> None:
     """Print a first-run MCP client configuration fragment."""
     try:
@@ -91,6 +92,7 @@ def ide_config(
             host=host,
             port=port,
             domain=domain,
+            zaxy_executable=zaxy_executable,
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -282,6 +284,7 @@ def init(
     hook_output: Path | None = typer.Option(None, help="Write hook config to this file"),  # noqa: B008
     local_profile_output: Path | None = typer.Option(None, help="Write local retrieval profile to this file"),  # noqa: B008
     infra: str = typer.Option("none", help="Local infra action: none, check, or start"),  # noqa: B008
+    zaxy_executable: str | None = typer.Option(None, help="Executable path MCP clients should invoke"),  # noqa: B008
     force: bool = typer.Option(False, "--force", help="Overwrite generated output files"),  # noqa: B008
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),  # noqa: B008
 ) -> None:
@@ -300,6 +303,7 @@ def init(
             hook_output=hook_output,
             local_profile_output=local_profile_output,
             infra=infra,
+            zaxy_executable=zaxy_executable,
             force=force,
         )
 

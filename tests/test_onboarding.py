@@ -62,6 +62,7 @@ async def test_run_onboarding_writes_requested_configs_and_registers_session(tmp
         hook_client="claude-code",
         hook_output=hook_output,
         local_profile_output=local_profile_output,
+        zaxy_executable="/opt/zaxy/bin/zaxy",
         fabric_factory=lambda eventloom_path: fabric,
     )
 
@@ -78,7 +79,9 @@ async def test_run_onboarding_writes_requested_configs_and_registers_session(tmp
         "doctor",
         "hook_status",
     ]
-    assert json.loads(mcp_output.read_text(encoding="utf-8"))["mcpServers"]["zaxy"]["env"]["EVENTLOOM_THREAD"] == "demo-default"
+    mcp_config = json.loads(mcp_output.read_text(encoding="utf-8"))["mcpServers"]["zaxy"]
+    assert mcp_config["command"] == "/opt/zaxy/bin/zaxy"
+    assert mcp_config["env"]["EVENTLOOM_THREAD"] == "demo-default"
     assert "zaxy hook-event stop" in hook_output.read_text(encoding="utf-8")
     assert "RERANKER_PROVIDER=lexical" in local_profile_output.read_text(encoding="utf-8")
     fabric.ensure_session_initialized.assert_awaited_once_with(workspace, session_id="demo-default")

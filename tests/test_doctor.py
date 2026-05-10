@@ -30,6 +30,7 @@ def test_run_doctor_reports_local_setup_ok(tmp_path: Path) -> None:
         "eventloom": "ok",
         "local_profile": "ok",
         "viewer": "ok",
+        "cli_install": "ok",
         "mcp_defaults": "ok",
         "hooks": "ok",
         "hook_installation": "warning",
@@ -38,6 +39,22 @@ def test_run_doctor_reports_local_setup_ok(tmp_path: Path) -> None:
         "production": "ok",
     }
     assert (tmp_path / ".eventloom").is_dir()
+
+
+def test_run_doctor_reports_resolved_cli_executable(tmp_path: Path) -> None:
+    """Doctor should show the executable path MCP clients should call."""
+    settings = Settings(
+        _env_file=None,
+        eventloom_path=str(tmp_path / ".eventloom"),
+        eventloom_thread="zaxy-default",
+        zaxy_env="development",
+    )
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path, zaxy_executable="/opt/zaxy/bin/zaxy")
+
+    check = next(check for check in report["checks"] if check["name"] == "cli_install")
+    assert check["status"] == "ok"
+    assert "/opt/zaxy/bin/zaxy" in check["message"]
 
 
 def test_run_doctor_warns_on_generic_default_session(tmp_path: Path) -> None:

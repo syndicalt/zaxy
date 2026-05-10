@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from zaxy.core import HandoffBundle
 from zaxy.domain import derive_domain, domain_default_session, slug_domain
+from zaxy.install import resolve_zaxy_executable
 
 MCPClient = Literal["claude-desktop", "cursor", "vscode"]
 HandoffAdapter = Literal["generic", "langgraph", "crewai", "autogen"]
@@ -21,6 +22,7 @@ def render_mcp_client_config(
     host: str = "127.0.0.1",
     port: int = 8080,
     domain: str | None = None,
+    zaxy_executable: str | None = None,
 ) -> dict[str, Any]:
     """Render a copyable MCP client config fragment for a first-run setup."""
     normalized = _normalize_client(client)
@@ -31,6 +33,7 @@ def render_mcp_client_config(
         host=host,
         port=port,
         domain=resolved_domain,
+        zaxy_executable=resolve_zaxy_executable(zaxy_executable),
     )
     if normalized == "vscode":
         return {"servers": {"zaxy": server}}
@@ -175,12 +178,13 @@ def _server_config(
     host: str,
     port: int,
     domain: str,
+    zaxy_executable: str,
 ) -> dict[str, Any]:
     normalized_transport = transport.casefold()
     default_session = domain_default_session(domain)
     if normalized_transport == "stdio":
         return {
-            "command": "zaxy",
+            "command": zaxy_executable,
             "args": ["serve", "--eventloom-path", eventloom_path],
             "startup_timeout_sec": 90,
             "env": {

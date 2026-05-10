@@ -9,9 +9,14 @@ typed events, and query them back.
 Start from the repository root:
 
 ```bash
-pip install zaxy-memory
+pipx install zaxy-memory
+# or: pip install zaxy-memory
 zaxy status
 ```
+
+MCP clients can only launch Zaxy after the `zaxy` CLI is installed on the
+machine. Generated MCP config uses the resolved CLI executable path so GUI
+clients do not have to inherit the same shell `PATH` as your terminal.
 
 For local development from a checkout:
 

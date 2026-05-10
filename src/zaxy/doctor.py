@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 from zaxy.config import Settings, get_settings
 from zaxy.event import EventLog
 from zaxy.hooks import HOOK_CLIENTS, inspect_hook_status, render_hook_config
+from zaxy.install import resolve_zaxy_executable
 from zaxy.local_profile import check_local_profile
 from zaxy.viewer import write_viewer_html
 
@@ -18,6 +19,7 @@ def run_doctor(
     *,
     settings: Settings | None = None,
     workspace_root: str | Path | None = None,
+    zaxy_executable: str | Path | None = None,
 ) -> dict[str, Any]:
     """Run local setup checks without starting external services."""
     active = settings or get_settings()
@@ -27,6 +29,7 @@ def run_doctor(
         _check_eventloom(active),
         _check_local_profile(),
         _check_viewer(root),
+        _check_cli_install(zaxy_executable),
         _check_mcp_defaults(active),
         _check_hooks(active),
         _check_hook_installation(hook_status),
@@ -115,6 +118,15 @@ def _check_viewer(workspace_root: Path) -> dict[str, str]:
         "name": "viewer",
         "status": "ok",
         "message": "static Eventloom viewer generation works",
+    }
+
+
+def _check_cli_install(zaxy_executable: str | Path | None) -> dict[str, str]:
+    executable = resolve_zaxy_executable(zaxy_executable)
+    return {
+        "name": "cli_install",
+        "status": "ok",
+        "message": f"Zaxy CLI executable resolved to {executable}",
     }
 
 
