@@ -65,6 +65,11 @@ Eventloom (immutable JSONL log)  →  Hybrid Extraction  →  Neo4j (temporal KG
                                                     (exact + BM25 + vector + traversal)
 ```
 
+Zaxy also includes an observe-only OpenAI-compatible packet analyzer for model
+call provenance. It forwards packets to one configured upstream endpoint and
+records `llm.packet.completed` events to Eventloom without acting as a router.
+See [LLM Packet Analyzer](docs/packet-analyzer.md).
+
 ## Public Site and Documentation
 
 - Public static site: `site/index.html`
@@ -75,6 +80,7 @@ Eventloom (immutable JSONL log)  →  Hybrid Extraction  →  Neo4j (temporal KG
 - Eventloom contract: `docs/eventloom.md`
 - Graph schema: `docs/graph-schema.md`
 - Retrieval: `docs/retrieval.md`
+- LLM packet analyzer: `docs/packet-analyzer.md`
 - Embeddings: `docs/embeddings.md`
 - Security: `docs/security.md`
 - Operations and deployment: `docs/operations.md`, `docs/deployment.md`, `docs/runbook.md`

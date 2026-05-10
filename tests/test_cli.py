@@ -79,6 +79,19 @@ def test_memory_status_handles_empty_eventloom_directory(tmp_path: Path) -> None
     assert "Total events: 0" in result.output
 
 
+def test_packet_analyzer_cli_help_exposes_observe_only_gateway() -> None:
+    """packet-analyzer should expose the low-latency observe-only gateway."""
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["packet-analyzer", "--help"])
+
+    assert result.exit_code == 0
+    assert "Run an observe-only OpenAI-compatible packet analyzer" in result.output
+    assert "--upstream-base-url" in result.output
+    assert "--eventloom-path" in result.output
+    assert "--session-id" in result.output
+
+
 def test_memory_log_prints_recent_events(tmp_path: Path) -> None:
     """memory log should print recent events in compact git-style form."""
     event = EventLog(tmp_path / ".eventloom" / "agent.jsonl").append(

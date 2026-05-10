@@ -96,6 +96,7 @@ from zaxy.onboarding import (
     format_onboarding_result,
     run_onboarding,
 )
+from zaxy.packet_analyzer import PacketAnalyzerConfig, run_packet_analyzer
 from zaxy.schema import render_schema_plan
 from zaxy.viewer import write_viewer_html
 
@@ -915,6 +916,55 @@ def status(
         raise typer.Exit(0 if ok else 1)
 
     asyncio.run(_check())
+
+
+@app.command()
+def packet_analyzer(
+    upstream_base_url: str = typer.Option(
+        ...,
+        "--upstream-base-url",
+        help="Upstream OpenAI-compatible base URL, for example https://api.openai.com/v1",
+    ),
+    upstream_api_key: str | None = typer.Option(
+        None,
+        "--upstream-api-key",
+        help="Optional upstream bearer token; inbound Authorization is forwarded when omitted",
+    ),
+    eventloom_path: Path = typer.Option(  # noqa: B008
+        Path(".eventloom"),
+        "--eventloom-path",
+        help="Eventloom directory for packet capture events",
+    ),
+    session_id: str = typer.Option(
+        "default",
+        "--session-id",
+        help="Session ID to append packet events into",
+    ),
+    host: str = typer.Option(
+        "127.0.0.1",
+        "--host",
+        help="Local interface for the packet analyzer",
+    ),
+    port: int = typer.Option(
+        8787,
+        "--port",
+        min=1,
+        max=65535,
+        help="Local port for the packet analyzer",
+    ),
+) -> None:
+    """Run an observe-only OpenAI-compatible packet analyzer."""
+    config = PacketAnalyzerConfig(
+        eventloom_path=eventloom_path,
+        session_id=session_id,
+        upstream_base_url=upstream_base_url,
+        upstream_api_key=upstream_api_key,
+    )
+    typer.echo(
+        f"Zaxy packet analyzer listening on http://{host}:{port} "
+        f"-> {upstream_base_url}"
+    )
+    run_packet_analyzer(host=host, port=port, config=config)
 
 
 @app.command()
