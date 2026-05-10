@@ -571,10 +571,17 @@ def packet_status(
         "--session-id",
         help="Session ID to inspect",
     ),
+    analyzer_host: str = typer.Option("127.0.0.1", "--analyzer-host", help="Packet analyzer host to probe"),
+    analyzer_port: int = typer.Option(8787, "--analyzer-port", min=1, max=65535, help="Packet analyzer port to probe"),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """Inspect the LLM packet-memory pipeline for one session."""
-    report = packet_memory_report(eventloom_path=eventloom_path, session_id=session_id)
+    report = packet_memory_report(
+        eventloom_path=eventloom_path,
+        session_id=session_id,
+        analyzer_host=analyzer_host,
+        analyzer_port=analyzer_port,
+    )
     if json_output:
         typer.echo(json.dumps(report, indent=2, sort_keys=True))
     else:
@@ -638,6 +645,9 @@ def init(
     hook_output: Path | None = typer.Option(None, help="Write hook config to this file"),  # noqa: B008
     local_profile_output: Path | None = typer.Option(None, help="Write local retrieval profile to this file"),  # noqa: B008
     infra: str = typer.Option("none", help="Local infra action: none, check, or start"),  # noqa: B008
+    packet_capture: bool = typer.Option(False, "--packet-capture", help="Include packet analyzer/projector activation steps"),  # noqa: B008
+    packet_upstream_base_url: str = typer.Option("https://api.openai.com/v1", help="Packet analyzer upstream OpenAI-compatible base URL"),  # noqa: B008
+    packet_port: int = typer.Option(8787, "--packet-port", min=1, max=65535, help="Local packet analyzer port"),  # noqa: B008
     zaxy_executable: str | None = typer.Option(None, help="Executable path MCP clients should invoke"),  # noqa: B008
     force: bool = typer.Option(False, "--force", help="Overwrite generated output files"),  # noqa: B008
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),  # noqa: B008
@@ -667,6 +677,9 @@ def init(
             hook_output=preset_options["hook_output"],
             local_profile_output=preset_options["local_profile_output"],
             infra=preset_options["infra"],
+            packet_capture=packet_capture,
+            packet_upstream_base_url=packet_upstream_base_url,
+            packet_port=packet_port,
             zaxy_executable=zaxy_executable,
             force=force,
         )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import socket
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ from zaxy.event import EventLog
 from zaxy.hooks import HOOK_CLIENTS, inspect_hook_status, render_hook_config
 from zaxy.install import resolve_zaxy_executable
 from zaxy.local_profile import check_local_profile
+from zaxy.packet_guidance import build_packet_capture_guidance
 from zaxy.security import eventlog_path
 from zaxy.viewer import write_viewer_html
 
@@ -299,11 +301,23 @@ def _check_packet_memory(settings: Settings) -> dict[str, str]:
     }
 
 
-def packet_memory_report(*, eventloom_path: str | Path, session_id: str) -> dict[str, Any]:
+def packet_memory_report(
+    *,
+    eventloom_path: str | Path,
+    session_id: str,
+    analyzer_host: str = "127.0.0.1",
+    analyzer_port: int = 8787,
+) -> dict[str, Any]:
     """Return packet-memory pipeline status for one Eventloom session."""
     log = EventLog(eventlog_path(Path(eventloom_path), session_id))
     status = _packet_memory_status(log.read_all())
     details = status["details"]
+    guidance = build_packet_capture_guidance(
+        eventloom_path=eventloom_path,
+        session_id=session_id,
+        host=analyzer_host,
+        port=analyzer_port,
+    )
     if details["captured"] == 0:
         message = "no LLM packet captures observed for this session"
         state = "warning"
@@ -322,6 +336,13 @@ def packet_memory_report(*, eventloom_path: str | Path, session_id: str) -> dict
         "session_id": session_id,
         "message": message,
         "details": details,
+        "capture": {
+            "analyzer_host": analyzer_host,
+            "analyzer_port": analyzer_port,
+            "analyzer_listening": _tcp_port_open(analyzer_host, analyzer_port),
+            "client_base_url": guidance.client_base_url,
+        },
+        "next_steps": guidance.next_steps() if details["captured"] == 0 else [],
     }
 
 
@@ -329,14 +350,20 @@ def format_packet_memory_report(report: dict[str, Any]) -> str:
     """Format a packet-memory report for operators."""
     details = report["details"]
     rendered = " ".join(f"{key}={value}" for key, value in details.items())
-    return "\n".join(
-        [
-            f"Zaxy packet memory: {report['status']}",
-            f"session: {report['session_id']}",
-            f"message: {report['message']}",
-            f"details: {rendered}",
-        ]
-    )
+    lines = [
+        f"Zaxy packet memory: {report['status']}",
+        f"session: {report['session_id']}",
+        f"message: {report['message']}",
+        f"details: {rendered}",
+    ]
+    if report.get("capture"):
+        capture = report["capture"]
+        state = "listening" if capture["analyzer_listening"] else "inactive"
+        lines.append(f"analyzer: {state} ({capture['client_base_url']})")
+    if report.get("next_steps"):
+        lines.append("Next:")
+        lines.extend(f"- {step}" for step in report["next_steps"])
+    return "\n".join(lines)
 
 
 def _packet_memory_status(events: list[Any]) -> dict[str, Any]:
@@ -364,6 +391,15 @@ def _packet_memory_status(events: list[Any]) -> dict[str, Any]:
             "eligible": len(eligible_hashes),
         }
     }
+
+
+def _tcp_port_open(host: str, port: int) -> bool:
+    """Return whether a local TCP listener accepts connections."""
+    try:
+        with socket.create_connection((host, port), timeout=0.05):
+            return True
+    except OSError:
+        return False
 
 
 def _check_neo4j(settings: Settings) -> dict[str, str]:

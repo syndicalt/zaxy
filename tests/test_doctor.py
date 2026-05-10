@@ -266,3 +266,22 @@ def test_run_doctor_reports_packet_memory_ok_when_projected(tmp_path: Path) -> N
         "reinforced": 1,
         "eligible": 1,
     }
+
+
+def test_packet_status_reports_analyzer_probe_state(tmp_path: Path) -> None:
+    """Packet status should expose whether the analyzer listener is reachable."""
+    from zaxy.doctor import packet_memory_report
+
+    report = packet_memory_report(
+        eventloom_path=tmp_path / ".eventloom",
+        session_id="zaxy-default",
+        analyzer_host="127.0.0.1",
+        analyzer_port=1,
+    )
+
+    assert report["capture"] == {
+        "analyzer_host": "127.0.0.1",
+        "analyzer_port": 1,
+        "analyzer_listening": False,
+        "client_base_url": "http://127.0.0.1:1/v1",
+    }

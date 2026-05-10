@@ -22,6 +22,7 @@ from zaxy.hooks import (
 from zaxy.install import resolve_zaxy_executable
 from zaxy.integrations import render_mcp_client_config
 from zaxy.local_profile import write_local_profile
+from zaxy.packet_guidance import build_packet_capture_guidance
 from zaxy.runtime import LocalNeo4jRuntime
 from zaxy.session import SessionManager
 
@@ -102,6 +103,9 @@ async def run_onboarding(
     hook_output: str | Path | None = None,
     local_profile_output: str | Path | None = None,
     infra: str = "none",
+    packet_capture: bool = False,
+    packet_upstream_base_url: str = "https://api.openai.com/v1",
+    packet_port: int = 8787,
     zaxy_executable: str | Path | None = None,
     force: bool = False,
     fabric_factory: Callable[[str], MemoryFabric] = MemoryFabric,
@@ -199,6 +203,9 @@ async def run_onboarding(
             mcp_client=mcp_client,
             mcp_output=mcp_output,
             infra_action=infra_action,
+            packet_capture=packet_capture,
+            packet_upstream_base_url=packet_upstream_base_url,
+            packet_port=packet_port,
             steps=steps,
         ),
         doctor=doctor,
@@ -287,6 +294,9 @@ def _build_next_steps(
     mcp_client: str | None,
     mcp_output: str | Path | None,
     infra_action: str,
+    packet_capture: bool,
+    packet_upstream_base_url: str,
+    packet_port: int,
     steps: list[OnboardingStep],
 ) -> list[str]:
     next_steps: list[str] = []
@@ -294,15 +304,25 @@ def _build_next_steps(
         next_steps.append(f"Add {Path(mcp_output)} to your {mcp_client} MCP client config.")
         next_steps.append("Restart the MCP client so it loads the Zaxy server config.")
     next_steps.append(f"Run zaxy hook-status --eventloom-path {eventloom}")
-    next_steps.append(
-        "Optional LLM packet capture: run zaxy packet-analyzer "
-        f"--eventloom-path {eventloom} --session-id {session_id} "
-        "--upstream-base-url <provider-v1-url>."
-    )
-    next_steps.append(
-        "Optional packet projection: run zaxy packet-project "
-        f"--eventloom-path {eventloom} --session-id {session_id} --watch."
-    )
+    if packet_capture:
+        next_steps.extend(
+            build_packet_capture_guidance(
+                eventloom_path=eventloom,
+                session_id=session_id,
+                upstream_base_url=packet_upstream_base_url,
+                port=packet_port,
+            ).next_steps()
+        )
+    else:
+        next_steps.append(
+            "Optional LLM packet capture: run zaxy packet-analyzer "
+            f"--eventloom-path {eventloom} --session-id {session_id} "
+            "--upstream-base-url <provider-v1-url>."
+        )
+        next_steps.append(
+            "Optional packet projection: run zaxy packet-project "
+            f"--eventloom-path {eventloom} --session-id {session_id} --watch."
+        )
     infra_step = next((step for step in steps if step.name == "infra"), None)
     if infra_action == "check" and infra_step is not None and infra_step.status != "ok":
         next_steps.append(f"Run zaxy init {workspace} --infra start if you want Zaxy to start local Neo4j now.")

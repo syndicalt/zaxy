@@ -30,6 +30,12 @@ in the request forwarding path.
 
 ## Cold-Path Projection
 
+To include packet capture commands in first-run onboarding output, run:
+
+```bash
+zaxy init . --packet-capture
+```
+
 Run the projection worker separately to turn completed packet captures into
 compact, retrieval-ready `llm.packet.projected` events:
 
@@ -84,6 +90,10 @@ zaxy packet-status \
   --eventloom-path .eventloom \
   --session-id zaxy-default
 ```
+
+When no packets have been captured yet, `packet-status` prints concrete analyzer
+and projector commands plus the local OpenAI-compatible base URL to configure in
+the client.
 
 ## Modes
 

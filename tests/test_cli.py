@@ -1231,6 +1231,31 @@ def test_packet_status_command_reports_text_summary(tmp_path: Path) -> None:
     assert "captured=1 projected=1 unprojected=0 reinforced=0 eligible=1" in result.output
 
 
+def test_packet_status_command_reports_activation_steps_when_inactive(tmp_path: Path) -> None:
+    """packet-status should tell operators how to activate capture when none exists."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "packet-status",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent-1",
+            "--analyzer-port",
+            "1",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Zaxy packet memory: warning" in result.output
+    assert "analyzer: inactive (http://127.0.0.1:1/v1)" in result.output
+    assert "Start packet analyzer: zaxy packet-analyzer" in result.output
+    assert "Start packet projector: zaxy packet-project" in result.output
+    assert "http://127.0.0.1:1/v1" in result.output
+
+
 def test_packet_status_command_reports_json(tmp_path: Path) -> None:
     runner = CliRunner()
     EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").append(
@@ -1374,6 +1399,37 @@ def test_init_command_expands_local_claude_preset(mock_run_onboarding: AsyncMock
     assert kwargs["hook_output"] == tmp_path / ".claude" / "settings.local.json"
     assert kwargs["local_profile_output"] == tmp_path / ".env.local"
     assert kwargs["infra"] == "check"
+
+
+@patch("zaxy.__main__.run_onboarding")
+def test_init_command_passes_packet_capture_options(
+    mock_run_onboarding: AsyncMock,
+    tmp_path: Path,
+) -> None:
+    """init --packet-capture should pass packet activation settings to onboarding."""
+    result_obj = MagicMock()
+    result_obj.status = "ok"
+    mock_run_onboarding.return_value = result_obj
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            str(tmp_path),
+            "--packet-capture",
+            "--packet-upstream-base-url",
+            "https://api.openai.com/v1",
+            "--packet-port",
+            "8788",
+        ],
+    )
+
+    assert result.exit_code == 0
+    kwargs = mock_run_onboarding.await_args.kwargs
+    assert kwargs["packet_capture"] is True
+    assert kwargs["packet_upstream_base_url"] == "https://api.openai.com/v1"
+    assert kwargs["packet_port"] == 8788
 
 
 def test_init_command_help_describes_full_onboarding_path() -> None:

@@ -146,6 +146,43 @@ async def test_run_onboarding_writes_requested_configs_and_registers_session(tmp
 
 
 @pytest.mark.asyncio
+async def test_run_onboarding_can_add_packet_capture_activation_steps(tmp_path: Path) -> None:
+    """Packet capture onboarding should print concrete analyzer and projector commands."""
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    fabric = MagicMock()
+    fabric.ensure_session_initialized = AsyncMock()
+    fabric.ensure_session_initialized.return_value.workspace_type = "codebase"
+    fabric.ensure_session_initialized.return_value.confidence = 0.7
+    fabric.ensure_session_initialized.return_value.signals = ["pyproject.toml"]
+    fabric.ensure_session_initialized.return_value.instructions_profile = "codebase"
+    fabric.close = AsyncMock()
+
+    result = await run_onboarding(
+        workspace,
+        eventloom_path=eventloom_path,
+        domain="demo",
+        session_id="demo-default",
+        packet_capture=True,
+        packet_upstream_base_url="https://api.openai.com/v1",
+        packet_port=8787,
+        fabric_factory=lambda eventloom_path: fabric,
+    )
+
+    assert (
+        f"Start packet analyzer: zaxy packet-analyzer --eventloom-path {eventloom_path} "
+        "--session-id demo-default --upstream-base-url https://api.openai.com/v1 "
+        '--upstream-api-key "$OPENAI_API_KEY" --host 127.0.0.1 --port 8787'
+    ) in result.next_steps
+    assert (
+        f"Start packet projector: zaxy packet-project --eventloom-path {eventloom_path} "
+        "--session-id demo-default --watch --graph"
+    ) in result.next_steps
+    assert "Point OpenAI-compatible clients at http://127.0.0.1:8787/v1." in result.next_steps
+
+
+@pytest.mark.asyncio
 async def test_run_onboarding_is_non_destructive_for_existing_outputs(tmp_path: Path) -> None:
     """Onboarding should refuse to overwrite generated files unless force is explicit."""
     workspace = tmp_path / "repo"
