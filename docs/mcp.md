@@ -79,8 +79,10 @@ pipx install zaxy-memory
 ```
 
 MCP clients cannot launch a server command that does not exist yet. Generated
-stdio config uses the resolved executable path by default, which is more
-reliable for GUI clients than assuming they inherit your shell `PATH`.
+stdio config uses the resolved executable path by default, preferring the
+installed `zaxy` console script and falling back to the current process path.
+This is more reliable for GUI clients than assuming they inherit your shell
+`PATH`.
 
 Generate observer hook adapters:
 

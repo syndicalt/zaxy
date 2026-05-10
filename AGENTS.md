@@ -281,12 +281,13 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Explicit `zaxy init --infra check|start` local Neo4j bootstrap actions
 - [x] Structured onboarding next steps in text and JSON output
 - [x] Pre-MCP CLI install guidance and resolved executable paths in generated MCP config
+- [x] Installed `zaxy` console-script preference for generated MCP executable paths
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 520 passed |
+| Tests | 523 passed |
 | Coverage | 92.25% |
 | Lint | ruff clean |
 | Types | mypy clean |

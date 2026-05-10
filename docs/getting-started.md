@@ -16,7 +16,9 @@ zaxy status
 
 MCP clients can only launch Zaxy after the `zaxy` CLI is installed on the
 machine. Generated MCP config uses the resolved CLI executable path so GUI
-clients do not have to inherit the same shell `PATH` as your terminal.
+clients do not have to inherit the same shell `PATH` as your terminal. Zaxy
+prefers the installed `zaxy` console script and falls back to the current
+process path when no console script is discoverable.
 
 For local development from a checkout:
 
