@@ -134,7 +134,10 @@ normally while hooks append lightweight Eventloom observations through
 `zaxy hook-event`. The sink is intentionally graph-independent so session stop
 and pre-compaction hooks can record provenance even when Neo4j is unavailable.
 Custom clients can implement the same contract by emitting normalized triggers
-such as `session-start`, `stop`, `precompact`, and `checkpoint`.
+such as `session-start`, `stop`, `precompact`, `checkpoint`, `command`, and
+`file-edit`. Command and file-edit triggers become first-class
+`command.completed` and `file.edit.applied` events, which lets automatic capture
+feed retrieval and working-set projection without storing raw file content.
 
 These commands print copyable JSON fragments and do not include bearer tokens,
 passwords, or admin secrets. Keep remote SSE credentials in the client secret

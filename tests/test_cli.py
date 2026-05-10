@@ -721,6 +721,82 @@ def test_hook_event_heartbeat_appends_health_event(tmp_path: Path) -> None:
     assert events[0].payload["source"] == "claude-code"
 
 
+def test_hook_event_command_observation_appends_normalized_event(tmp_path: Path) -> None:
+    """hook-event command should write first-class command.completed observations."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "hook-event",
+            "command",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent-1",
+            "--source",
+            "codex",
+            "--workspace",
+            "/repo",
+            "--command",
+            "pytest --token secret",
+            "--exit-code",
+            "1",
+            "--stdout",
+            "ok",
+            "--stderr",
+            "failed",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Recorded observation command.completed" in result.output
+    events = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").read_all()
+    assert events[0].type == "command.completed"
+    assert events[0].actor == "zaxy-observer"
+    assert events[0].payload["command"] == "pytest [REDACTED]"
+    assert events[0].payload["source"] == "codex"
+    assert events[0].payload["workspace"] == "/repo"
+
+
+def test_hook_event_file_edit_observation_appends_normalized_event(tmp_path: Path) -> None:
+    """hook-event file-edit should write first-class file.edit.applied observations."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "hook-event",
+            "file-edit",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent-1",
+            "--source",
+            "codex",
+            "--workspace",
+            "/repo",
+            "--path",
+            "src/zaxy/core.py",
+            "--operation",
+            "modified",
+            "--summary",
+            "Updated context assembly.",
+            "--line-count",
+            "12",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Recorded observation file.edit.applied" in result.output
+    events = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").read_all()
+    assert events[0].type == "file.edit.applied"
+    assert events[0].actor == "zaxy-observer"
+    assert events[0].payload["path"] == "src/zaxy/core.py"
+    assert events[0].payload["summary"] == "Updated context assembly."
+    assert "content" not in events[0].payload
+
+
 def test_hooks_status_reports_installed_clients_and_recent_activity(tmp_path: Path) -> None:
     """hook-status should answer whether Zaxy is observing this workspace."""
     settings_path = tmp_path / ".claude" / "settings.local.json"

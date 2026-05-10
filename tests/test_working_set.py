@@ -97,3 +97,35 @@ def test_format_working_set_renders_compact_section() -> None:
 
     assert "# Active Memory Working Set" in output
     assert "- goal: Reduce context collapse (eventloom://agent/events/1#ffffffffffff)" in output
+
+
+def test_working_set_projects_observed_commands_and_file_edits() -> None:
+    """Automatic command and file-edit observations should feed the working set."""
+    events = [
+        SimpleNamespace(
+            seq=4,
+            type="command.completed",
+            actor="zaxy-observer",
+            payload={"command": "pytest", "outcome": "passed", "session_id": "agent"},
+            hash="d" * 64,
+            thread="agent",
+        ),
+        SimpleNamespace(
+            seq=5,
+            type="file.edit.applied",
+            actor="zaxy-observer",
+            payload={
+                "path": "src/zaxy/core.py",
+                "operation": "modified",
+                "summary": "Updated assembly.",
+            },
+            hash="e" * 64,
+            thread="agent",
+        ),
+    ]
+
+    working_set = build_working_set(events, [], max_items=5)
+
+    assert [item.category for item in working_set.items] == ["action", "artifact"]
+    assert working_set.items[0].summary == "passed pytest"
+    assert working_set.items[1].summary == "modified src/zaxy/core.py: Updated assembly."

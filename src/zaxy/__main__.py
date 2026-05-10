@@ -84,6 +84,7 @@ from zaxy.memory_status import (
     inspect_memory_log,
     inspect_memory_status,
 )
+from zaxy.observation import build_command_observation, build_file_edit_observation
 from zaxy.onboarding import (
     OnboardingResult,
     apply_onboarding_preset,
@@ -335,7 +336,7 @@ def hook_status(
 
 @app.command("hook-event")
 def hook_event(
-    trigger: str = typer.Argument(..., help="Hook trigger: session-start, stop, precompact, checkpoint, or heartbeat"),  # noqa: B008
+    trigger: str = typer.Argument(..., help="Hook trigger: session-start, stop, precompact, checkpoint, heartbeat, command, or file-edit"),  # noqa: B008
     eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory for hook events"),
     session_id: str = typer.Option("default", help="Session ID to append hook events into"),
     source: str = typer.Option("generic", help="Client or adapter that emitted the hook"),
@@ -344,10 +345,61 @@ def hook_event(
     summary: str | None = typer.Option(None, help="Checkpoint summary for retrieval"),  # noqa: B008
     reason: str | None = typer.Option(None, help="Checkpoint reason, e.g. manual, interval, precompact, shutdown"),  # noqa: B008
     turn_count: int | None = typer.Option(None, help="Turn count associated with the checkpoint"),  # noqa: B008
+    command: str | None = typer.Option(None, help="Observed shell command for command hooks"),  # noqa: B008
+    exit_code: int | None = typer.Option(None, help="Observed shell command exit code"),  # noqa: B008
+    duration_ms: int | None = typer.Option(None, help="Observed command duration in milliseconds"),  # noqa: B008
+    stdout: str = typer.Option("", help="Observed command stdout excerpt"),
+    stderr: str = typer.Option("", help="Observed command stderr excerpt"),
+    path: str | None = typer.Option(None, "--path", help="Observed edited file path"),  # noqa: B008
+    operation: str = typer.Option("modified", help="Observed file operation"),
+    line_count: int | None = typer.Option(None, help="Observed changed line count"),  # noqa: B008
 ) -> None:
     """Append a lightweight observer hook event without requiring Neo4j."""
     from zaxy.session import SessionManager
 
+    eventlog = SessionManager(base_path=eventloom_path).get(session_id).eventlog
+    normalized_trigger = trigger.casefold().strip().replace("_", "-")
+    if normalized_trigger == "command":
+        if command is None or exit_code is None:
+            raise typer.BadParameter("command hooks require --command and --exit-code")
+        event_input = build_command_observation(
+            command=command,
+            exit_code=exit_code,
+            session_id=session_id,
+            source=source,
+            workspace=workspace,
+            duration_ms=duration_ms,
+            stdout=stdout,
+            stderr=stderr,
+        )
+        event = eventlog.append(
+            event_input["event_type"],
+            actor=event_input["actor"],
+            payload=event_input["payload"],
+            thread=session_id,
+        )
+        typer.echo(f"Recorded observation {event_input['event_type']} seq={event.seq}")
+        return
+    if normalized_trigger == "file-edit":
+        if path is None:
+            raise typer.BadParameter("file-edit hooks require --path")
+        event_input = build_file_edit_observation(
+            path=path,
+            operation=operation,
+            session_id=session_id,
+            source=source,
+            workspace=workspace,
+            summary=summary,
+            line_count=line_count,
+        )
+        event = eventlog.append(
+            event_input["event_type"],
+            actor=event_input["actor"],
+            payload=event_input["payload"],
+            thread=session_id,
+        )
+        typer.echo(f"Recorded observation {event_input['event_type']} seq={event.seq}")
+        return
     try:
         event_type = hook_event_type(trigger)
     except ValueError as exc:
@@ -361,7 +413,6 @@ def hook_event(
         reason=reason,
         turn_count=turn_count,
     )
-    eventlog = SessionManager(base_path=eventloom_path).get(session_id).eventlog
     event = eventlog.append(event_type, actor="zaxy-hook", payload=payload, thread=session_id)
     typer.echo(f"Recorded hook {payload['trigger']} as {event_type} seq={event.seq}")
 

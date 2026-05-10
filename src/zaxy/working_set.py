@@ -112,7 +112,9 @@ def _event_category(event_type: str) -> str | None:
         return "decision"
     if event_type.startswith("task."):
         return "task"
-    if event_type in {"document.indexed", "code.file.indexed", "file.edit.completed"}:
+    if event_type == "command.completed":
+        return "action"
+    if event_type in {"document.indexed", "code.file.indexed", "file.edit.applied"}:
         return "artifact"
     if event_type in {"issue.diagnosed", "blocker.created"}:
         return "blocker"
@@ -120,6 +122,16 @@ def _event_category(event_type: str) -> str | None:
 
 
 def _summary(payload: dict[str, Any]) -> str:
+    if isinstance(payload.get("command"), str):
+        outcome = payload.get("outcome")
+        prefix = f"{outcome} " if isinstance(outcome, str) and outcome else ""
+        return f"{prefix}{payload['command']}".strip()
+    if isinstance(payload.get("path"), str):
+        operation = payload.get("operation")
+        prefix = f"{operation} " if isinstance(operation, str) and operation else ""
+        summary = payload.get("summary")
+        suffix = f": {summary}" if isinstance(summary, str) and summary else ""
+        return f"{prefix}{payload['path']}{suffix}".strip()
     for key in ("title", "decision", "summary", "task", "content", "path"):
         value = payload.get(key)
         if isinstance(value, str) and value.strip():

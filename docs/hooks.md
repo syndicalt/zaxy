@@ -69,6 +69,8 @@ Supported triggers are:
 | `precompact` | `hook.precompact` | Record that context compaction is about to happen. |
 | `checkpoint` | `hook.checkpoint` | Record a manual or periodic save/checkpoint. |
 | `heartbeat` | `hook.heartbeat` | Prove the hook write path is healthy. |
+| `command` | `command.completed` | Record a bounded, redacted shell command result. |
+| `file-edit` | `file.edit.applied` | Record file edit metadata without source content. |
 
 Unknown triggers are rejected before writing.
 
@@ -86,6 +88,33 @@ zaxy hook-event checkpoint \
 
 `hook.checkpoint` events are projected into graph `hook_checkpoint` entities so
 future retrieval can find durable session milestones.
+
+Command and file-edit hooks write first-class observation events instead of
+generic `hook.*` checkpoints:
+
+```bash
+zaxy hook-event command \
+  --eventloom-path .eventloom \
+  --session-id my-project-default \
+  --source codex \
+  --workspace "$PWD" \
+  --command "pytest" \
+  --exit-code 0 \
+  --stdout "557 passed"
+
+zaxy hook-event file-edit \
+  --eventloom-path .eventloom \
+  --session-id my-project-default \
+  --source codex \
+  --workspace "$PWD" \
+  --path src/zaxy/core.py \
+  --operation modified \
+  --summary "Updated context assembly"
+```
+
+Command observations redact common secret-bearing arguments and bound stdout and
+stderr excerpts. File-edit observations persist path, operation, summary, and
+line count metadata; they do not persist source content.
 
 ## Payload
 
