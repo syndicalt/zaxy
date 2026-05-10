@@ -45,6 +45,29 @@ different session.
 window for a graph fact without deleting history. This lets agents correct
 memory while preserving provenance.
 
+`memory_capabilities(session_id?, current_task?)` returns the model-facing
+memory contract for the active session. It tells the model what Zaxy is, which
+tools are available, when to refresh context, which capture paths appear
+healthy, and which call should normally happen next. Models should call this at
+session start or whenever tool awareness is unclear, then call
+`memory_checkout` for the current task. The contract explicitly treats memory
+as an ambient loop: session-start awareness is not enough, so models should
+refresh memory before major work, after compaction/resume, and before roadmap or
+architecture decisions.
+
+`memory_checkout(query, session_id?, ref?, replay_from_seq?, limit?, max_recent_events?)`
+returns the high-level contract an agent should condition on before a turn. It
+wraps context assembly with a `# Memory Checkout` prompt, current facts that
+exclude superseded context, cited evidence, provenance parsed from
+`eventloom://...` citations, retention metadata, warnings, the active working
+set, and source lane counts. This is the preferred tool when a model needs a
+bounded, auditable working state rather than a raw list of retrieval hits.
+When `ref` is supplied, checkout resolves a Git-style memory ref such as `HEAD`
+or `refs/heads/main` and filters replay/context to the target event identity.
+MCP clients discover this tool through the standard `tools/list` handshake, so
+an already-running client must reconnect before the new tool appears in the
+model-visible tool registry.
+
 `context_assemble(query, session_id?, replay_from_seq?, limit?, max_recent_events?)`
 returns a prompt-ready bundle containing bounded recent replay plus ranked
 retrieval. The assembled retrieval set includes a reserved verbatim Eventloom
@@ -77,6 +100,18 @@ Run stdio locally:
 ```bash
 zaxy serve
 ```
+
+At session start, clients or agents should bootstrap model awareness:
+
+```bash
+zaxy memory capabilities --session-id zaxy-default
+zaxy memory checkout "current task, project direction, and recent decisions" --session-id zaxy-default
+```
+
+During a long session, repeat checkout before important work and after
+compaction or resume. Capture meaningful completions with `context_after_turn`
+or typed `memory_append`, and reinforce cited context that was actually used
+with `memory_feedback`.
 
 Generate first-run MCP client config:
 
@@ -149,6 +184,10 @@ such as `session-start`, `stop`, `precompact`, `checkpoint`, `command`, and
 `file-edit`. Command and file-edit triggers become first-class
 `command.completed` and `file.edit.applied` events, which lets automatic capture
 feed retrieval and working-set projection without storing raw file content.
+
+This deterministic capture path is the default Zaxy onboarding posture. Packet
+capture is optional and should be enabled only when raw provider request/response
+audit is worth the provider quota and transport-compatibility cost.
 
 These commands print copyable JSON fragments and do not include bearer tokens,
 passwords, or admin secrets. Keep remote SSE credentials in the client secret

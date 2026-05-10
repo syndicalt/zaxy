@@ -35,6 +35,7 @@ def test_render_schema_plan_lists_current_migrations() -> None:
     assert "entity_vector" in plan
     assert "entity_fulltext" in plan
     assert "provenance_backbone" in plan
+    assert "event_hash_chain" in plan
 
 
 async def test_apply_schema_migrations_records_each_migration() -> None:

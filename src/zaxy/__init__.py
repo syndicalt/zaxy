@@ -2,7 +2,7 @@
 
 from zaxy.adapters.langgraph import LangGraphMemoryAdapter, create_langgraph_memory_node
 from zaxy.context import Context, ContextAssemblyPolicy
-from zaxy.core import MemoryFabric
+from zaxy.core import MemoryCheckout, MemoryFabric
 from zaxy.integrations import (
     FrameworkIntegrationSpec,
     list_framework_integration_specs,
@@ -11,6 +11,7 @@ from zaxy.integrations import (
     render_handoff_adapter,
     render_mcp_client_config,
 )
+from zaxy.refs import MemoryRef, MemoryRefStore
 from zaxy.verbatim import VerbatimHit, VerbatimIndex
 
 __all__ = [
@@ -18,7 +19,10 @@ __all__ = [
     "LangGraphMemoryAdapter",
     "Context",
     "ContextAssemblyPolicy",
+    "MemoryCheckout",
     "MemoryFabric",
+    "MemoryRef",
+    "MemoryRefStore",
     "VerbatimHit",
     "VerbatimIndex",
     "create_langgraph_memory_node",

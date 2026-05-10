@@ -1,8 +1,10 @@
 # LLM Packet Analyzer
 
-Zaxy can run an observe-only OpenAI-compatible packet analyzer. The analyzer is
-not a router: it forwards each request to one configured upstream endpoint and
-records request/response provenance to Eventloom.
+Zaxy can run an observe-only OpenAI-compatible packet analyzer. This is optional
+diagnostic/high-fidelity capture, not the default memory path. The analyzer
+forwards each request to one configured upstream endpoint and records
+request/response provenance to Eventloom, so it can consume provider quota and
+requires the runtime and upstream to support the same wire API.
 
 ```bash
 zaxy packet-analyzer \
@@ -30,10 +32,14 @@ in the request forwarding path.
 
 ## Cold-Path Projection
 
-To include packet capture commands in first-run onboarding output, run:
+Default `zaxy init` uses deterministic capture through MCP lifecycle events,
+observer hooks, transcript turns, command/file observations, and
+`memory_checkout`. To include packet capture commands in first-run onboarding
+output, opt in explicitly:
 
 ```bash
-zaxy init . --packet-capture
+zaxy init . --capture-mode packet
+# or: zaxy init . --capture-mode hybrid
 ```
 
 Run the projection worker separately to turn completed packet captures into

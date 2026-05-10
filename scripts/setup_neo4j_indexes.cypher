@@ -21,9 +21,32 @@ OPTIONS {indexConfig: {
 // ------------------------------------------------------------------
 // Constraints
 // ------------------------------------------------------------------
-CREATE CONSTRAINT entity_unique IF NOT EXISTS
+CREATE CONSTRAINT entity_version_id IF NOT EXISTS
 FOR (e:Entity)
-REQUIRE (e.name, e.entity_type) IS NODE KEY;
+REQUIRE (e.session_id, e.name, e.entity_type, e.valid_from) IS UNIQUE;
+
+CREATE CONSTRAINT session_id IF NOT EXISTS
+FOR (s:Session)
+REQUIRE s.id IS UNIQUE;
+
+CREATE CONSTRAINT event_identity IF NOT EXISTS
+FOR (ev:Event)
+REQUIRE (ev.session_id, ev.seq) IS UNIQUE;
+
+// ------------------------------------------------------------------
+// Provenance lookup indexes
+// ------------------------------------------------------------------
+CREATE INDEX entity_lookup IF NOT EXISTS
+FOR (e:Entity)
+ON (e.session_id, e.name, e.entity_type);
+
+CREATE INDEX event_hash IF NOT EXISTS
+FOR (ev:Event)
+ON (ev.session_id, ev.hash);
+
+CREATE INDEX event_prev_hash IF NOT EXISTS
+FOR (ev:Event)
+ON (ev.session_id, ev.prev_hash);
 
 // ------------------------------------------------------------------
 // Verify

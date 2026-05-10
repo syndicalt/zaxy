@@ -12,10 +12,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from zaxy.compaction import build_compaction_projection, write_compaction_projection
-from zaxy.core import Context, HandoffBundle, MemoryFabric
+from zaxy.core import Context, HandoffBundle, MemoryCheckout, MemoryFabric
 from zaxy.embedding import HashEmbeddingProvider
 from zaxy.event import EventLog
 from zaxy.query import ContextChunk
+from zaxy.refs import MemoryRef
 
 
 class BrokenEmbeddingProvider:
@@ -721,6 +722,184 @@ class TestContextAssembly:
         assert assembly.contexts[0].content == "MMR diversity (decision)"
         assert "[3] transcript.turn by assistant" in assembly.prompt
         assert "MMR diversity (decision)" in assembly.prompt
+
+    async def test_checkout_memory_returns_current_cited_working_state(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """checkout_memory() should expose current facts, evidence, and prompt state."""
+        event = MagicMock(
+            seq=4,
+            type="decision.recorded",
+            actor="assistant",
+            payload={"decision": "Memory checkout should be the agent context contract."},
+            hash="d" * 64,
+        )
+        fabric.session_manager.replay.return_value = MagicMock(
+            events=[event],
+            integrity=MagicMock(ok=True),
+        )
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content="Use Memory Checkout as the prompt-ready context contract.",
+                source="keyword",
+                score=0.95,
+                valid_from="2026-05-10T12:00:00Z",
+                valid_to=None,
+                citation="eventloom://agent-1/events/3#cccccccccccc",
+                entity_name="memory checkout",
+                entity_type="decision",
+            ),
+            ContextChunk(
+                content="Use raw replay only for model context.",
+                source="keyword",
+                score=0.7,
+                valid_from="2026-05-09T12:00:00Z",
+                valid_to="2026-05-10T12:00:00Z",
+                citation="eventloom://agent-1/events/2#bbbbbbbbbbbb",
+                entity_name="raw replay",
+                entity_type="decision",
+            ),
+        ]
+
+        with patch.object(fabric, "query_verbatim", return_value=[]):
+            checkout = await fabric.checkout_memory(
+                "What memory contract should the model use?",
+                session_id="agent-1",
+                limit=3,
+            )
+
+        assert isinstance(checkout, MemoryCheckout)
+        assert checkout.session_id == "agent-1"
+        assert checkout.current_facts == [
+            {
+                "content": "Use Memory Checkout as the prompt-ready context contract.",
+                "source": "keyword",
+                "score": 0.95,
+                "citation": "eventloom://agent-1/events/3#cccccccccccc",
+                "valid_from": "2026-05-10T12:00:00Z",
+                "valid_to": None,
+                "entity_name": "memory checkout",
+                "entity_type": "decision",
+            }
+        ]
+        assert checkout.evidence[0]["citation"] == "eventloom://agent-1/events/3#cccccccccccc"
+        assert checkout.provenance[0]["event_seq"] == 3
+        assert "# Memory Checkout" in checkout.prompt
+        assert "Use raw replay only" not in "\n".join(fact["content"] for fact in checkout.current_facts)
+        assert checkout.context_counts["graph"] == 2
+
+    async def test_checkout_memory_prioritizes_exact_recent_task_context(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """checkout_memory() should rank the turn-relevant memory above noisy older context."""
+        fabric.session_manager.replay.return_value = MagicMock(
+            events=[],
+            integrity=MagicMock(ok=True),
+        )
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content="A memory capture gap was recorded during benchmark debugging.",
+                source="keyword",
+                score=0.91,
+                valid_from="2026-05-10T06:42:06Z",
+                valid_to=None,
+                citation="eventloom://agent-1/events/1832#gap",
+                entity_name="memory capture gap",
+                entity_type="event",
+            ),
+            ContextChunk(
+                content="Implemented first-class Memory Checkout for Zaxy.",
+                source="keyword",
+                score=0.8,
+                valid_from="2026-05-10T20:55:40Z",
+                valid_to=None,
+                citation="eventloom://agent-1/events/1882#checkout",
+                entity_name="memory checkout",
+                entity_type="task",
+            ),
+        ]
+
+        with patch.object(fabric, "query_verbatim", return_value=[]):
+            checkout = await fabric.checkout_memory(
+                "memory checkout implementation",
+                session_id="agent-1",
+                limit=2,
+            )
+
+        assert checkout.current_facts[0]["citation"] == "eventloom://agent-1/events/1882#checkout"
+        assert checkout.provenance[0]["event_seq"] == 1882
+
+    async def test_checkout_memory_filters_to_resolved_ref(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """checkout_memory(ref=...) should not surface facts after the ref target."""
+        resolved_ref = MemoryRef(
+            name="refs/heads/main",
+            session_id="agent-1",
+            target_seq=4,
+            target_hash="d" * 64,
+            ref_type="branch",
+            updated_at="2026-05-10T12:00:00Z",
+        )
+        old_event = MagicMock(
+            seq=4,
+            type="task.completed",
+            actor="codex",
+            payload={"summary": "Available at ref."},
+            hash="d" * 64,
+        )
+        future_event = MagicMock(
+            seq=5,
+            type="task.completed",
+            actor="codex",
+            payload={"summary": "Future work."},
+            hash="e" * 64,
+        )
+        fabric.session_manager.replay.return_value = MagicMock(
+            events=[old_event, future_event],
+            integrity=MagicMock(ok=True),
+        )
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content="Available at ref.",
+                source="keyword",
+                score=0.8,
+                valid_from="2026-05-10T12:00:00Z",
+                valid_to=None,
+                citation="eventloom://agent-1/events/4#dddddddddddd",
+                entity_name="available",
+                entity_type="task",
+            ),
+            ContextChunk(
+                content="Future work.",
+                source="keyword",
+                score=0.9,
+                valid_from="2026-05-10T13:00:00Z",
+                valid_to=None,
+                citation="eventloom://agent-1/events/5#eeeeeeeeeeee",
+                entity_name="future",
+                entity_type="task",
+            ),
+        ]
+
+        with (
+            patch.object(fabric.refs, "resolve", return_value=resolved_ref),
+            patch.object(fabric, "query_verbatim", return_value=[]),
+        ):
+            checkout = await fabric.checkout_memory(
+                "what was available",
+                session_id="agent-1",
+                ref="refs/heads/main",
+                limit=2,
+            )
+
+        assert checkout.ref is not None
+        assert checkout.ref["name"] == "refs/heads/main"
+        assert [fact["content"] for fact in checkout.current_facts] == ["Available at ref."]
+        assert "Future work." not in checkout.prompt
 
     async def test_assemble_context_includes_verbatim_source_lane(
         self,

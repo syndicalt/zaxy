@@ -18,6 +18,7 @@ Example::
 
 from __future__ import annotations
 
+import re
 from contextlib import suppress
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -39,6 +40,7 @@ from zaxy.graph import GraphStore
 from zaxy.lifecycle import build_subagent_completed_event
 from zaxy.metrics import get_metrics
 from zaxy.query import QueryRouter, build_reranker, build_retention_policy
+from zaxy.refs import MemoryRef, MemoryRefStore
 from zaxy.security import validate_payload, validate_query, validate_session_id
 from zaxy.session import SessionManager
 from zaxy.trace import MemoryTracer
@@ -72,6 +74,45 @@ class ContextAssembly:
 
 
 @dataclass(frozen=True)
+class MemoryCheckout:
+    """Cited, prompt-ready current memory state for an agent turn."""
+
+    session_id: str
+    query: str
+    prompt: str
+    working_set: dict[str, object]
+    ref: dict[str, object] | None
+    current_facts: list[dict[str, Any]]
+    evidence: list[dict[str, Any]]
+    provenance: list[dict[str, Any]]
+    retention: dict[str, Any]
+    warnings: list[str]
+    context_counts: dict[str, int]
+    replay_event_count: int
+    compacted: bool = False
+    assembly_policy: dict[str, bool | int] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a stable JSON-serializable payload for tools and CLIs."""
+        return {
+            "session_id": self.session_id,
+            "query": self.query,
+            "prompt": self.prompt,
+            "working_set": self.working_set,
+            "ref": self.ref,
+            "current_facts": self.current_facts,
+            "evidence": self.evidence,
+            "provenance": self.provenance,
+            "retention": self.retention,
+            "warnings": self.warnings,
+            "context_counts": self.context_counts,
+            "replay_event_count": self.replay_event_count,
+            "compacted": self.compacted,
+            "assembly_policy": self.assembly_policy,
+        }
+
+
+@dataclass(frozen=True)
 class HandoffBundle:
     """Portable handoff package for resuming a session or subagent."""
 
@@ -96,6 +137,8 @@ class MemoryFabric:
         neo4j_uri: str | None = None,
         neo4j_user: str | None = None,
         neo4j_password: str | None = None,
+        neo4j_ca_cert: str | None = None,
+        neo4j_trust_all: bool | None = None,
         pathlight_url: str | None = None,
         pathlight_project_id: str | None = None,
         tracer_disabled: bool = False,
@@ -114,8 +157,8 @@ class MemoryFabric:
             neo4j_uri or settings.neo4j_uri,
             neo4j_user or settings.neo4j_user,
             neo4j_password or settings.neo4j_password,
-            ca_cert=settings.neo4j_ca_cert,
-            trust_all=settings.neo4j_trust_all,
+            ca_cert=neo4j_ca_cert if neo4j_ca_cert is not None else settings.neo4j_ca_cert,
+            trust_all=neo4j_trust_all if neo4j_trust_all is not None else settings.neo4j_trust_all,
         )
         self.query_router = QueryRouter(
             self.graph,
@@ -132,6 +175,7 @@ class MemoryFabric:
             disabled=tracer_disabled or not settings.pathlight_enabled,
         )
         projection_search_base = Path(eventloom_path or settings.eventloom_path)
+        self.refs = MemoryRefStore(projection_search_base)
         self.projections: tuple[CompactionProjection, ...] = tuple(
             load_compaction_projection(path)
             for path in _compaction_projection_paths(
@@ -626,6 +670,7 @@ class MemoryFabric:
         replay_from_seq: int = 1,
         limit: int = 10,
         max_recent_events: int | None = None,
+        as_of_seq: int | None = None,
     ) -> ContextAssembly:
         """Assemble recent replay plus retrieval into prompt-ready context."""
         sid = validate_session_id(session_id)
@@ -643,7 +688,11 @@ class MemoryFabric:
             packet_memory_contexts,
             limit=limit,
         )
+        if as_of_seq is not None:
+            contexts = _contexts_as_of_seq(contexts, as_of_seq)
         replay_events = list(replay.events)
+        if as_of_seq is not None:
+            replay_events = [event for event in replay_events if event.seq <= as_of_seq]
         compacted = False
         if max_recent_events is not None and len(replay_events) > max_recent_events:
             replay_events = replay_events[-max_recent_events:]
@@ -679,6 +728,56 @@ class MemoryFabric:
             context_counts=context_counts(contexts, replay_count=len(replay_events)),
             working_set=working_set.to_dict(),
         )
+
+    async def checkout_memory(
+        self,
+        query: str,
+        *,
+        session_id: str = "default",
+        replay_from_seq: int = 1,
+        limit: int = 10,
+        max_recent_events: int | None = 20,
+        ref: str | None = None,
+    ) -> MemoryCheckout:
+        """Checkout the current cited memory state an agent should condition on."""
+        resolved_ref = self._resolve_checkout_ref(ref, session_id=session_id)
+        checkout_session_id = resolved_ref.session_id if resolved_ref is not None else session_id
+        as_of_seq = resolved_ref.target_seq if resolved_ref is not None else None
+        assembly = await self.assemble_context(
+            query,
+            session_id=checkout_session_id,
+            replay_from_seq=replay_from_seq,
+            limit=limit,
+            max_recent_events=max_recent_events,
+            as_of_seq=as_of_seq,
+        )
+        return build_memory_checkout(
+            query=query,
+            assembly=assembly,
+            ref=resolved_ref,
+        )
+
+    def _resolve_checkout_ref(self, ref: str | None, *, session_id: str) -> MemoryRef | None:
+        if ref is None:
+            return None
+        if ref == "HEAD":
+            replay = self.session_manager.replay(session_id, from_seq=1)
+            events = list(replay.events)
+            if not events:
+                return None
+            latest = events[-1]
+            return MemoryRef(
+                name="HEAD",
+                session_id=session_id,
+                target_seq=latest.seq,
+                target_hash=latest.hash,
+                ref_type="head",
+                updated_at=latest.timestamp,
+            )
+        resolved = self.refs.resolve(ref)
+        if resolved is None:
+            raise ValueError(f"Unknown memory ref: {ref}")
+        return resolved
 
     async def record_context_feedback(
         self,
@@ -903,6 +1002,171 @@ def _normalize_context_feedback(feedback: str) -> str:
     if normalized not in {"used", "helpful", "irrelevant"}:
         raise ValueError("feedback must be one of: used, helpful, irrelevant")
     return normalized
+
+
+def build_memory_checkout(
+    *,
+    query: str,
+    assembly: ContextAssembly,
+    ref: MemoryRef | None = None,
+) -> MemoryCheckout:
+    """Build the Memory Checkout contract from assembled context."""
+    ranked_contexts = sorted(
+        assembly.contexts,
+        key=lambda context: _checkout_rank(context, query),
+        reverse=True,
+    )
+    current_facts = [_checkout_fact(context) for context in ranked_contexts if context.valid_to is None]
+    evidence = [_checkout_evidence(context) for context in ranked_contexts if _context_citation(context)]
+    provenance = [_checkout_provenance(context) for context in ranked_contexts if _context_citation(context)]
+    warnings = list(assembly.warnings)
+    if assembly.compacted and not any("compacted" in warning for warning in warnings):
+        warnings.append("Recent replay was compacted to fit the checkout budget.")
+    if current_facts and not evidence:
+        warnings.append("Checkout contains current facts without Eventloom citations.")
+    prompt = _format_memory_checkout_prompt(
+        query=query,
+        assembly_prompt=assembly.prompt,
+        current_facts=current_facts,
+        evidence=evidence,
+    )
+    return MemoryCheckout(
+        session_id=assembly.session_id,
+        query=query,
+        prompt=prompt,
+        working_set=assembly.working_set,
+        ref=ref.to_dict() if ref is not None else None,
+        current_facts=current_facts,
+        evidence=evidence,
+        provenance=provenance,
+        retention={
+            "policy": "current_only",
+            "superseded_contexts_excluded": sum(1 for context in assembly.contexts if context.valid_to is not None),
+        },
+        warnings=warnings,
+        context_counts=assembly.context_counts,
+        replay_event_count=assembly.replay_event_count,
+        compacted=assembly.compacted,
+        assembly_policy=assembly.assembly_policy,
+    )
+
+
+def _format_memory_checkout_prompt(
+    *,
+    query: str,
+    assembly_prompt: str,
+    current_facts: list[dict[str, Any]],
+    evidence: list[dict[str, Any]],
+) -> str:
+    lines = [
+        "# Memory Checkout",
+        f"Query: {query}",
+        "",
+        "## Current Facts",
+    ]
+    if current_facts:
+        for fact in current_facts:
+            citation = f" ({fact['citation']})" if fact.get("citation") else ""
+            lines.append(f"- {fact['content']}{citation}")
+    else:
+        lines.append("- No current facts were retrieved.")
+    lines.extend(["", "## Evidence"])
+    if evidence:
+        for item in evidence:
+            lines.append(f"- {item['citation']}: {item['content']}")
+    else:
+        lines.append("- No cited evidence was retrieved.")
+    lines.extend(["", assembly_prompt])
+    return "\n".join(lines).strip()
+
+
+def _checkout_fact(context: Context) -> dict[str, Any]:
+    metadata = context.metadata or {}
+    fact: dict[str, Any] = {
+        "content": context.content,
+        "source": context.source,
+        "score": context.score,
+        "citation": _context_citation(context),
+        "valid_from": context.valid_from,
+        "valid_to": context.valid_to,
+    }
+    for key in ("entity_name", "entity_type"):
+        value = metadata.get(key)
+        if isinstance(value, str) and value:
+            fact[key] = value
+    return fact
+
+
+def _checkout_evidence(context: Context) -> dict[str, Any]:
+    citation = _context_citation(context)
+    seq, event_hash = _citation_event_identity(citation)
+    return {
+        "citation": citation,
+        "content": context.content,
+        "source": context.source,
+        "score": context.score,
+        "event_seq": seq,
+        "event_hash": event_hash,
+    }
+
+
+def _checkout_provenance(context: Context) -> dict[str, Any]:
+    citation = _context_citation(context)
+    seq, event_hash = _citation_event_identity(citation)
+    return {
+        "citation": citation,
+        "event_seq": seq,
+        "event_hash": event_hash,
+        "source": context.source,
+        "valid_from": context.valid_from,
+        "valid_to": context.valid_to,
+    }
+
+
+def _context_citation(context: Context) -> str | None:
+    metadata = context.metadata or {}
+    citation = metadata.get("citation")
+    return citation if isinstance(citation, str) and citation else None
+
+
+def _contexts_as_of_seq(contexts: list[Context], as_of_seq: int) -> list[Context]:
+    filtered = []
+    for context in contexts:
+        citation = _context_citation(context)
+        seq, _event_hash = _citation_event_identity(citation)
+        if seq is None or seq <= as_of_seq:
+            filtered.append(context)
+    return filtered
+
+
+def _checkout_rank(context: Context, query: str) -> tuple[float, int, str, float]:
+    query_tokens = _checkout_tokens(query)
+    content_tokens = _checkout_tokens(context.content)
+    overlap = len(query_tokens & content_tokens) / max(1, len(query_tokens))
+    metadata = context.metadata or {}
+    entity_type = metadata.get("entity_type")
+    type_priority = 1 if entity_type in {"task", "decision", "goal", "memory"} else 0
+    return (overlap, type_priority, context.valid_from or "", context.score)
+
+
+def _checkout_tokens(value: str) -> set[str]:
+    return {token for token in re.findall(r"[a-z0-9]+", value.casefold()) if len(token) > 2}
+
+
+def _citation_event_identity(citation: str | None) -> tuple[int | None, str | None]:
+    if not citation:
+        return None, None
+    event_seq: int | None = None
+    event_hash: str | None = None
+    if "/events/" in citation:
+        tail = citation.split("/events/", 1)[1]
+        seq_text = tail.split("#", 1)[0].split("/", 1)[0]
+        if seq_text.isdigit():
+            event_seq = int(seq_text)
+    if "#" in citation:
+        fragment = citation.rsplit("#", 1)[1]
+        event_hash = fragment or None
+    return event_seq, event_hash
 
 
 def _context_identity(context: Context) -> dict[str, str]:

@@ -24,6 +24,7 @@ from pathlib import Path
 import typer
 
 from zaxy.benchmark import build_competitive_event_log, competitive_cases
+from zaxy.capabilities import build_memory_capabilities, format_memory_capabilities
 from zaxy.compaction import (
     audit_event_log,
     build_compaction_projection,
@@ -110,6 +111,7 @@ from zaxy.packet_projection import (
     project_packet_events_to_graph,
     watch_packet_events,
 )
+from zaxy.refs import MemoryRefStore
 from zaxy.schema import render_schema_plan
 from zaxy.viewer import write_viewer_html
 
@@ -149,13 +151,141 @@ async def _project_packet_result_to_graph(
 def memory_status(
     eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory or JSONL log"),  # noqa: B008
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+    graph: bool = typer.Option(False, "--graph", help="Also inspect Neo4j graph projection integrity"),
+    neo4j_uri: str | None = typer.Option(None, help="Neo4j Bolt URI"),
+    neo4j_user: str | None = typer.Option(None, help="Neo4j username"),
+    neo4j_password: str | None = typer.Option(None, help="Neo4j password"),
 ) -> None:
     """Show read-only Eventloom memory status."""
     status = inspect_memory_status(eventloom_path)
+    graph_sessions: list[dict[str, object]] = []
+    if graph:
+        import asyncio
+
+        from zaxy.config import get_settings
+
+        async def _inspect_graph() -> list[dict[str, object]]:
+            settings = get_settings()
+            store = GraphStore(
+                neo4j_uri or settings.neo4j_uri,
+                neo4j_user or settings.neo4j_user,
+                neo4j_password or settings.neo4j_password,
+            )
+            await store.connect()
+            try:
+                projections = []
+                for session in status.sessions:
+                    projection = await store.inspect_event_projection_status(
+                        session.session_id,
+                        eventloom_latest_seq=session.latest_seq,
+                        eventloom_latest_hash=session.latest_hash,
+                    )
+                    projections.append(projection.to_dict())
+                return projections
+            finally:
+                await store.close()
+
+        graph_sessions = asyncio.run(_inspect_graph())
     if json_output:
-        typer.echo(json.dumps(status.to_dict(), indent=2, sort_keys=True))
+        payload = status.to_dict()
+        if graph:
+            payload["graph"] = {"sessions": graph_sessions}
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
     else:
-        typer.echo(format_memory_status(status))
+        output = format_memory_status(status)
+        if graph:
+            output = "\n".join([output, "", _format_memory_graph_status(graph_sessions)])
+        typer.echo(output)
+
+
+def _format_memory_graph_status(graph_sessions: list[dict[str, object]]) -> str:
+    """Format graph projection status for humans."""
+    lines = ["Graph projection:"]
+    if not graph_sessions:
+        lines.append("  no Eventloom sessions to inspect")
+        return "\n".join(lines)
+    for session in graph_sessions:
+        session_id = session.get("session_id", "-")
+        integrity = "OK" if session.get("integrity_ok") is True else "FAILED"
+        latest = session.get("latest_seq") or "-"
+        lag = session.get("projection_lag")
+        lag_text = "-" if lag is None else str(lag)
+        missing = session.get("missing_chain_links", 0)
+        lines.append(
+            f"  {session_id}: graph_latest={latest} lag={lag_text} "
+            f"missing_chain_links={missing} integrity={integrity}"
+        )
+    return "\n".join(lines)
+
+
+@memory_app.command("capabilities")
+def memory_capabilities(
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    session_id: str = typer.Option("default", help="Session ID to describe"),
+    current_task: str | None = typer.Option(None, help="Current task or question to seed checkout guidance"),  # noqa: B008
+    workspace_root: Path = typer.Option(Path("."), help="Workspace root for hook/status discovery"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Show model-facing Zaxy memory capabilities and usage guidance."""
+    manifest = build_memory_capabilities(
+        eventloom_path=eventloom_path,
+        session_id=session_id,
+        workspace_root=workspace_root,
+        current_task=current_task,
+    )
+    if json_output:
+        typer.echo(json.dumps(manifest, indent=2, sort_keys=True))
+    else:
+        typer.echo(format_memory_capabilities(manifest))
+
+
+@memory_app.command("checkout")
+def memory_checkout(
+    query: str = typer.Argument(..., help="Question or task to checkout memory for"),  # noqa: B008
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    session_id: str = typer.Option("default", help="Session ID to checkout"),
+    ref: str | None = typer.Option(None, help="Memory ref to checkout, e.g. HEAD or refs/heads/main"),
+    replay_from_seq: int = typer.Option(1, min=1, help="Replay start sequence"),
+    limit: int = typer.Option(10, min=1, help="Maximum retrieved context items"),
+    max_recent_events: int = typer.Option(20, min=1, help="Maximum recent replay events"),
+    neo4j_uri: str | None = typer.Option(None, help="Neo4j Bolt URI"),
+    neo4j_user: str | None = typer.Option(None, help="Neo4j username"),
+    neo4j_password: str | None = typer.Option(None, help="Neo4j password"),
+    neo4j_ca_cert: str | None = typer.Option(None, help="Neo4j CA certificate path; pass an empty value to disable TLS CA override"),
+    neo4j_trust_all: bool | None = typer.Option(None, help="Trust all Neo4j TLS certificates"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Checkout current, cited memory state for an agent turn."""
+    import asyncio
+
+    async def _checkout() -> dict[str, object]:
+        fabric = MemoryFabric(
+            eventloom_path=str(eventloom_path),
+            neo4j_uri=neo4j_uri,
+            neo4j_user=neo4j_user,
+            neo4j_password=neo4j_password,
+            neo4j_ca_cert=neo4j_ca_cert,
+            neo4j_trust_all=neo4j_trust_all,
+        )
+        await fabric.connect()
+        try:
+            checkout = await fabric.checkout_memory(
+                query,
+                session_id=session_id,
+                ref=ref,
+                replay_from_seq=replay_from_seq,
+                limit=limit,
+                max_recent_events=max_recent_events,
+            )
+            return checkout.to_dict()
+        finally:
+            await fabric.close()
+
+    payload = asyncio.run(_checkout())
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(payload["prompt"])
 
 
 @memory_app.command("log")
@@ -198,6 +328,62 @@ def memory_diff(
         typer.echo(json.dumps(diff.to_dict(), indent=2, sort_keys=True))
     else:
         typer.echo(format_memory_diff(diff))
+
+
+@memory_app.command("ref")
+def memory_ref_update(
+    name: str = typer.Argument(..., help="Memory ref name, e.g. refs/heads/main"),  # noqa: B008
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    session_id: str = typer.Option(..., help="Session ID the ref points to"),  # noqa: B008
+    target_seq: int = typer.Option(..., min=1, help="Target Eventloom sequence"),
+    target_hash: str = typer.Option(..., help="Target Eventloom hash"),
+    ref_type: str = typer.Option("ref", "--type", help="Ref type, e.g. branch, tag, checkpoint"),
+    actor: str = typer.Option("zaxy", help="Actor writing the ref"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Create or update a durable memory ref."""
+    store = MemoryRefStore(eventloom_path)
+    try:
+        event = store.update_ref(
+            name,
+            session_id=session_id,
+            target_seq=target_seq,
+            target_hash=target_hash,
+            ref_type=ref_type,
+            actor=actor,
+        )
+        ref = store.resolve(name)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    payload = {"event": event.model_dump(), "ref": ref.to_dict() if ref is not None else None}
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(f"{name} -> {session_id}@{target_seq} {target_hash[:12]}")
+
+
+@memory_app.command("refs")
+def memory_refs_list(
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """List durable memory refs."""
+    refs = MemoryRefStore(eventloom_path).list_refs()
+    payload = {
+        "eventloom_path": str(eventloom_path.resolve()),
+        "refs": [ref.to_dict() for ref in refs],
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    elif refs:
+        typer.echo(
+            "\n".join(
+                f"{ref.name} -> {ref.session_id}@{ref.target_seq} {ref.target_hash[:12]}"
+                for ref in refs
+            )
+        )
+    else:
+        typer.echo("No memory refs")
 
 
 @app.command("ide-config")
@@ -635,7 +821,7 @@ def init_session(
 @app.command("init")
 def init(
     path: Path = typer.Argument(Path("."), help="Workspace root to initialize"),  # noqa: B008
-    preset: str | None = typer.Option(None, help="Onboarding preset: local-claude"),  # noqa: B008
+    preset: str | None = typer.Option(None, help="Onboarding preset: local-claude or local-codex"),  # noqa: B008
     eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory for this workspace"),
     domain: str | None = typer.Option(None, help="Project/domain used for default session scoping"),  # noqa: B008
     session_id: str | None = typer.Option(None, help="Explicit session ID; defaults to <domain>-default"),  # noqa: B008
@@ -645,6 +831,7 @@ def init(
     hook_output: Path | None = typer.Option(None, help="Write hook config to this file"),  # noqa: B008
     local_profile_output: Path | None = typer.Option(None, help="Write local retrieval profile to this file"),  # noqa: B008
     infra: str = typer.Option("none", help="Local infra action: none, check, or start"),  # noqa: B008
+    capture_mode: str = typer.Option("deterministic", help="Capture mode: deterministic, packet, or hybrid"),  # noqa: B008
     packet_capture: bool = typer.Option(False, "--packet-capture", help="Include packet analyzer/projector activation steps"),  # noqa: B008
     packet_upstream_base_url: str = typer.Option("https://api.openai.com/v1", help="Packet analyzer upstream OpenAI-compatible base URL"),  # noqa: B008
     packet_port: int = typer.Option(8787, "--packet-port", min=1, max=65535, help="Local packet analyzer port"),  # noqa: B008
@@ -665,6 +852,7 @@ def init(
             hook_output=hook_output,
             local_profile_output=local_profile_output,
             infra=infra,
+            capture_mode="hybrid" if packet_capture else capture_mode,
         )
         return await run_onboarding(
             path,
@@ -677,6 +865,7 @@ def init(
             hook_output=preset_options["hook_output"],
             local_profile_output=preset_options["local_profile_output"],
             infra=preset_options["infra"],
+            capture_mode=preset_options["capture_mode"],
             packet_capture=packet_capture,
             packet_upstream_base_url=packet_upstream_base_url,
             packet_port=packet_port,

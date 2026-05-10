@@ -109,6 +109,16 @@ class TestRegistry:
             "reinforcement_count": 2,
         }
 
+    def test_extract_attaches_previous_event_hash(self) -> None:
+        """Extraction provenance should preserve Eventloom's linear hash-chain link."""
+        ev = _make_event("unknown.event", {"summary": "Project hash-chain edges."})
+        ev = ev.model_copy(update={"prev_hash": "a" * 64, "hash": "b" * 64})
+
+        result = extract(ev)
+
+        assert result.source_event_hash == "b" * 64
+        assert result.source_event_prev_hash == "a" * 64
+
 
 # ------------------------------------------------------------------
 # Built-in extractor tests

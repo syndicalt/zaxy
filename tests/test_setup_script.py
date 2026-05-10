@@ -28,6 +28,16 @@ def test_setup_script_references_secret_files_in_production_env() -> None:
     assert "PATHLIGHT_ACCESS_TOKEN_FILE=secrets/pathlight_access_token.txt" in script
 
 
+def test_setup_script_dev_env_targets_local_plain_bolt() -> None:
+    """Development setup should generate the same local Neo4j posture used by onboarding."""
+    script = Path("scripts/setup.sh").read_text(encoding="utf-8")
+
+    assert 'NEO4J_URI="bolt://localhost:7687"' in script
+    assert 'NEO4J_CA_CERT=""' in script
+    assert "NEO4J_PASSWORD_FILE=" in script
+    assert "NEO4J_TRUST_ALL=false" in script
+
+
 def test_generate_certs_script_writes_neo4j_tls_layout() -> None:
     """Generated certs should match Neo4j's Bolt SSL policy file names."""
     script = Path("scripts/generate-certs.sh").read_text(encoding="utf-8")

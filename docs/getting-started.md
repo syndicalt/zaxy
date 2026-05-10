@@ -31,10 +31,12 @@ zaxy status
 
 `./scripts/setup.sh` creates `.env`, `.eventloom`, and local runtime
 directories. Development mode uses `neo4j/testpassword` and localhost-bound
-ports. Production mode is different: `./scripts/setup.sh --production` writes
-secret files under `./secrets`, configures `ZAXY_ENV=production`, and expects a
-TLS-enabled Neo4j profile. See [deployment.md](deployment.md) before exposing
-remote SSE.
+ports through `bolt://localhost:7687` with no Neo4j TLS override. The Docker
+Compose `zaxy` service still talks to its sibling Neo4j container internally;
+local CLI and MCP onboarding should use localhost. Production mode is
+different: `./scripts/setup.sh --production` writes secret files under
+`./secrets`, configures `ZAXY_ENV=production`, and expects a TLS-enabled Neo4j
+profile. See [deployment.md](deployment.md) before exposing remote SSE.
 
 For an offline retrieval profile with no hosted services or API keys:
 
@@ -44,7 +46,9 @@ zaxy local-profile --check
 ```
 
 This configures deterministic hash embeddings, lexical reranking, and local
-Neo4j auto-start. It is the recommended baseline for local development before
+Neo4j auto-start at `bolt://localhost:7687`. It also clears local Neo4j TLS and
+password-file overrides so stale container or production settings do not leak
+into local CLI use. It is the recommended baseline for local development before
 switching to hosted embeddings or model-backed rerankers.
 
 Check local onboarding prerequisites before wiring an agent:
@@ -61,11 +65,23 @@ posture, and production-mode warnings. It does not start Docker or require a
 live Neo4j connection; use `zaxy status` when you want a live graph connectivity
 test.
 
-For a single first-run flow, use `zaxy init`. It composes the existing
-onboarding primitives rather than replacing them: local profile writing, MCP
-config rendering, hook config writing, workspace genesis, hook heartbeat,
-doctor, hook status, and next-step guidance for optional packet capture and
-projection.
+Before meaningful model work, inspect the memory contract and checkout current
+state:
+
+```bash
+zaxy memory capabilities --session-id my-project-default
+zaxy memory checkout "current task, project direction, and recent decisions" --session-id my-project-default
+```
+
+`memory capabilities` is the model-awareness surface. It explains when to use
+Zaxy tools during a session: checkout at session start, before major work, after
+compaction/resume, and when the user asks what is next; capture meaningful work
+after completion; reinforce cited memories that were useful.
+
+For a single first-run flow, use `zaxy init`. The happy path is deterministic
+capture: local profile writing, MCP config rendering, observer hook config,
+workspace genesis, hook heartbeat, doctor, and hook status. It does not proxy
+model traffic and does not require a provider API key.
 
 ```bash
 zaxy init . \
@@ -86,12 +102,30 @@ zaxy init . \
   --infra check
 ```
 
+For Codex, use the deterministic Codex preset:
+
+```bash
+zaxy init . \
+  --domain my-project \
+  --preset local-codex
+```
+
+`local-codex` renders Codex MCP install guidance and writes the local profile.
+It does not generate `.codex/hooks.json`: Codex parses that file as JSON, and
+Zaxy does not assume a native Codex hook schema unless your Codex version
+documents one. It does not enable packet capture.
+
 Generated output files are non-destructive by default. Pass `--force` only when
 you intentionally want to replace generated config. `--infra check` reports
 local Neo4j and Docker posture without starting containers. Use
 `--infra start` when you explicitly want onboarding to start the local Neo4j
 runtime. The command prints a `Next:` section with the client install and
 verification steps still required after files are generated.
+
+Packet capture is optional diagnostic/high-fidelity mode because it can consume
+provider quota and requires runtime/provider wire compatibility. Opt in with
+`--capture-mode packet` or `--capture-mode hybrid` only when raw provider
+request/response capture is worth that cost.
 
 To start the default stdio MCP server:
 

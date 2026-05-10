@@ -113,6 +113,28 @@ def test_run_doctor_reports_hook_installation_ok_for_claude_settings(tmp_path: P
     assert ".claude/settings.local.json" in check["message"]
 
 
+def test_run_doctor_ignores_non_json_codex_hook_file(tmp_path: Path) -> None:
+    """Doctor should not treat a shell snippet as installed Codex hooks.json."""
+    settings = Settings(
+        _env_file=None,
+        eventloom_path=str(tmp_path / ".eventloom"),
+        eventloom_thread="zaxy-default",
+        zaxy_env="development",
+    )
+    settings_path = tmp_path / ".codex" / "hooks.json"
+    settings_path.parent.mkdir()
+    settings_path.write_text(
+        "# Zaxy observer hook commands\nzaxy hook-event stop --eventloom-path .eventloom\n",
+        encoding="utf-8",
+    )
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    check = next(check for check in report["checks"] if check["name"] == "hook_installation")
+    assert check["status"] == "warning"
+    assert "No installed observer hook config" in check["message"]
+
+
 def test_run_doctor_warns_when_hook_config_not_installed(tmp_path: Path) -> None:
     """Doctor should make missing hook installation actionable."""
     settings = Settings(

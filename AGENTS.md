@@ -299,7 +299,11 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Read-only `zaxy memory status` for Eventloom session integrity and latest hashes
 - [x] Read-only `zaxy memory log` for recent Eventloom events with JSON output
 - [x] Read-only `zaxy memory diff` for Eventloom sequence ranges
+- [x] Hash-linked Eventloom provenance path projected into Neo4j with `NEXT_EVENT`/`PREVIOUS_EVENT`
+- [x] Eventloom-vs-Neo4j graph projection integrity status with lag and chain-link checks
 - [x] Intelligent active memory working-set projection in context assembly
+- [x] First-class Memory Checkout contract for current cited prompt state
+- [x] Eventloom-backed memory refs and checkout-by-ref support
 - [x] Normalized command and file-edit observation capture for hooks
 - [x] Hook and doctor observation coverage reporting for automatic capture gaps
 - [x] Hook-event sinks for tool-call and transcript-turn automatic capture
@@ -308,6 +312,9 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Competitive positioning roadmap against MemPalace-style memory systems
 - [x] LongMemEval workload chunking for hosted embedding input limits
 - [x] Persistent embedding cache and progress output for long-running live benchmarks
+- [x] Local onboarding happy-path infrastructure profile for plain localhost Neo4j with cleared TLS/password-file overrides
+- [x] Model-facing memory capability manifest with ambient checkout/capture/feedback loop guidance
+- [x] Deterministic capture as default onboarding mode with optional packet/hybrid capture and local Codex preset
 
 ## Metrics
 

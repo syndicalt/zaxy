@@ -44,7 +44,7 @@ if [[ ! -f "${ENV_FILE}" ]]; then
         MCP_ADMIN_TOKEN=""
         MCP_REMOTE_AUTH_TOKEN=""
         ZAXY_ENV="development"
-        NEO4J_URI="bolt://neo4j:7687"
+        NEO4J_URI="bolt://localhost:7687"
         NEO4J_CA_CERT=""
         LOG_FORMAT="console"
     fi
@@ -85,6 +85,7 @@ EOF
     if [[ "${MODE}" != "--production" ]]; then
         {
             echo "NEO4J_PASSWORD=${NEO4J_PASSWORD}"
+            echo "NEO4J_PASSWORD_FILE="
             echo "MCP_ADMIN_TOKEN=${MCP_ADMIN_TOKEN}"
             echo "MCP_REMOTE_AUTH_TOKEN=${MCP_REMOTE_AUTH_TOKEN}"
         } >> "${ENV_FILE}"

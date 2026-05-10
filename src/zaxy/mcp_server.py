@@ -18,6 +18,7 @@ import contextvars
 import hmac
 import inspect
 import json
+import re
 from collections.abc import Mapping
 from contextlib import suppress
 from datetime import UTC, datetime
@@ -30,6 +31,7 @@ from mcp.server.sse import SseServerTransport
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
+from zaxy.capabilities import build_memory_capabilities
 from zaxy.config import get_settings
 from zaxy.context import Context, ContextAssemblyPolicy, context_counts
 from zaxy.extract import extract
@@ -42,6 +44,7 @@ from zaxy.lifecycle import (
 from zaxy.log import get_logger, setup_logging
 from zaxy.metrics import get_metrics
 from zaxy.query import QueryRouter, build_retention_policy
+from zaxy.refs import MemoryRef, MemoryRefStore
 from zaxy.remote_security import AuditEventExporter, RemoteAuditEvent, SessionRateLimiter
 from zaxy.runtime import LocalNeo4jRuntime
 from zaxy.security import (
@@ -181,6 +184,36 @@ TOOLS = [
         },
     ),
     Tool(
+        name="memory_capabilities",
+        description="Describe Zaxy's active memory capabilities and ambient usage loop for this session.",
+        inputSchema={
+            "type": "object",
+            "required": [],
+            "properties": {
+                "session_id": {"type": "string"},
+                "current_task": {"type": "string", "description": "Current task or question to seed checkout guidance"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_checkout",
+        description="Checkout current, cited, prompt-ready memory state for a session.",
+        inputSchema={
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+                "query": {"type": "string"},
+                "session_id": {"type": "string"},
+                "ref": {"type": "string", "description": "Memory ref to checkout, e.g. HEAD or refs/heads/main"},
+                "replay_from_seq": {"type": "integer", "default": 1},
+                "limit": {"type": "integer", "default": 10},
+                "max_recent_events": {"type": "integer", "default": 20},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
         name="context_assemble",
         description="Assemble replay plus ranked retrieval into a prompt-ready context bundle.",
         inputSchema={
@@ -262,7 +295,9 @@ class ZaxyMCPServer:
         self._workspace_root = Path(workspace_root or Path.cwd()).resolve()
         self._initialized_workspaces: dict[tuple[str, str], WorkspaceProfile] = {}
         self._initialized_instruction_signatures: dict[tuple[str, str], str] = {}
-        self.session_manager = SessionManager(base_path=eventloom_path or settings.eventloom_path)
+        self._eventloom_path = eventloom_path or settings.eventloom_path
+        self.session_manager = SessionManager(base_path=self._eventloom_path)
+        self.refs = MemoryRefStore(self._eventloom_path)
         self._neo4j_uri = neo4j_uri or settings.neo4j_uri
         self._neo4j_user = neo4j_user or settings.neo4j_user
         self._neo4j_password = neo4j_password or settings.neo4j_password
@@ -599,6 +634,17 @@ class ZaxyMCPServer:
         )
         return [TextContent(type="text", text=json.dumps({"status": "invalidated"}))]
 
+    async def handle_memory_capabilities(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_capabilities tool call."""
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
+        manifest = build_memory_capabilities(
+            eventloom_path=self._eventloom_path,
+            session_id=session_id,
+            workspace_root=self._workspace_root,
+            current_task=_optional_text(arguments.get("current_task")),
+        )
+        return [TextContent(type="text", text=json.dumps(manifest, indent=2))]
+
     async def handle_context_assemble(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle context_assemble tool call."""
         query = validate_query(arguments["query"])
@@ -614,6 +660,28 @@ class ZaxyMCPServer:
             limit=limit,
             max_recent_events=max_recent_events,
         )
+        return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+    async def handle_memory_checkout(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_checkout tool call."""
+        query = validate_query(arguments["query"])
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
+        replay_from_seq = validate_from_seq(arguments.get("replay_from_seq"))
+        limit = validate_limit(arguments.get("limit"), default=10)
+        max_recent_events = validate_limit(arguments.get("max_recent_events"), default=20)
+        ref = _optional_text(arguments.get("ref"))
+        resolved_ref = self._resolve_checkout_ref(ref, session_id=session_id)
+        checkout_session_id = resolved_ref.session_id if resolved_ref is not None else session_id
+
+        assembly = await self._assemble_context_payload(
+            query=query,
+            session_id=checkout_session_id,
+            replay_from_seq=replay_from_seq,
+            limit=limit,
+            max_recent_events=max_recent_events,
+            as_of_seq=resolved_ref.target_seq if resolved_ref is not None else None,
+        )
+        output = _memory_checkout_payload(query=query, assembly=assembly, ref=resolved_ref)
         return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
     async def handle_context_after_turn(self, arguments: dict[str, Any]) -> list[TextContent]:
@@ -702,9 +770,12 @@ class ZaxyMCPServer:
         replay_from_seq: int,
         limit: int,
         max_recent_events: int,
+        as_of_seq: int | None = None,
     ) -> dict[str, Any]:
         replay = self.session_manager.replay(session_id, from_seq=replay_from_seq)
         events = list(replay.events)
+        if as_of_seq is not None:
+            events = [event for event in events if event.seq <= as_of_seq]
         compacted = len(events) > max_recent_events
         recent_events = events[-max_recent_events:] if compacted else events
         router = QueryRouter(
@@ -739,6 +810,8 @@ class ZaxyMCPServer:
             verbatim_contexts,
             limit=limit,
         )
+        if as_of_seq is not None:
+            contexts = _contexts_as_of_seq(contexts, as_of_seq)
         working_set = build_working_set(recent_events, contexts)
         await self.tracer.trace_query(query, len(results), 0.0, None)
         return {
@@ -788,6 +861,28 @@ class ZaxyMCPServer:
             and ("session_id" in arguments or "thread" in arguments)
         ):
             self._session_id_from_arguments(arguments)
+
+    def _resolve_checkout_ref(self, ref: str | None, *, session_id: str) -> MemoryRef | None:
+        if ref is None:
+            return None
+        if ref == "HEAD":
+            replay = self.session_manager.replay(session_id, from_seq=1)
+            events = list(replay.events)
+            if not events:
+                return None
+            latest = events[-1]
+            return MemoryRef(
+                name="HEAD",
+                session_id=session_id,
+                target_seq=latest.seq,
+                target_hash=latest.hash,
+                ref_type="head",
+                updated_at=latest.timestamp,
+            )
+        resolved = self.refs.resolve(ref)
+        if resolved is None:
+            raise ValueError(f"Unknown memory ref: {ref}")
+        return resolved
 
 
 class JWTDecoder(Protocol):
@@ -971,6 +1066,173 @@ class RemoteRequestGuard:
         )
 
 
+def _memory_checkout_payload(
+    *,
+    query: str,
+    assembly: dict[str, Any],
+    ref: MemoryRef | None = None,
+) -> dict[str, Any]:
+    contexts = sorted(
+        [context for context in assembly.get("contexts", []) if isinstance(context, dict)],
+        key=lambda context: _checkout_rank(context, query),
+        reverse=True,
+    )
+    current_facts = [
+        _checkout_fact_payload(context)
+        for context in contexts
+        if context.get("valid_to") is None
+    ]
+    evidence = [
+        _checkout_evidence_payload(context)
+        for context in contexts
+        if context.get("citation")
+    ]
+    provenance = [
+        _checkout_provenance_payload(context)
+        for context in contexts
+        if context.get("citation")
+    ]
+    warnings: list[str] = []
+    if assembly.get("compacted") is True:
+        warnings.append("Recent replay was compacted to fit the checkout budget.")
+    if current_facts and not evidence:
+        warnings.append("Checkout contains current facts without Eventloom citations.")
+    return {
+        **assembly,
+        "query": query,
+        "ref": ref.to_dict() if ref is not None else None,
+        "prompt": _format_memory_checkout_prompt(
+            query=query,
+            assembly_prompt=str(assembly.get("prompt", "")),
+            current_facts=current_facts,
+            evidence=evidence,
+        ),
+        "current_facts": current_facts,
+        "evidence": evidence,
+        "provenance": provenance,
+        "retention": {
+            "policy": "current_only",
+            "superseded_contexts_excluded": sum(
+                1
+                for context in contexts
+                if context.get("valid_to") is not None
+            ),
+        },
+        "warnings": warnings,
+    }
+
+
+def _format_memory_checkout_prompt(
+    *,
+    query: str,
+    assembly_prompt: str,
+    current_facts: list[dict[str, Any]],
+    evidence: list[dict[str, Any]],
+) -> str:
+    lines = ["# Memory Checkout", f"Query: {query}", "", "## Current Facts"]
+    if current_facts:
+        for fact in current_facts:
+            citation = f" ({fact['citation']})" if fact.get("citation") else ""
+            lines.append(f"- {fact['content']}{citation}")
+    else:
+        lines.append("- No current facts were retrieved.")
+    lines.extend(["", "## Evidence"])
+    if evidence:
+        for item in evidence:
+            lines.append(f"- {item['citation']}: {item['content']}")
+    else:
+        lines.append("- No cited evidence was retrieved.")
+    lines.extend(["", assembly_prompt])
+    return "\n".join(lines).strip()
+
+
+def _checkout_fact_payload(context: dict[str, Any]) -> dict[str, Any]:
+    metadata = context.get("metadata")
+    metadata = metadata if isinstance(metadata, dict) else {}
+    fact: dict[str, Any] = {
+        "content": context.get("content"),
+        "source": context.get("source"),
+        "score": context.get("score"),
+        "citation": context.get("citation"),
+        "valid_from": context.get("valid_from"),
+        "valid_to": context.get("valid_to"),
+    }
+    for key in ("entity_name", "entity_type"):
+        value = metadata.get(key)
+        if isinstance(value, str) and value:
+            fact[key] = value
+    return fact
+
+
+def _checkout_evidence_payload(context: dict[str, Any]) -> dict[str, Any]:
+    citation = context.get("citation") if isinstance(context.get("citation"), str) else None
+    seq, event_hash = _citation_event_identity(citation)
+    return {
+        "citation": citation,
+        "content": context.get("content"),
+        "source": context.get("source"),
+        "score": context.get("score"),
+        "event_seq": seq,
+        "event_hash": event_hash,
+    }
+
+
+def _checkout_provenance_payload(context: dict[str, Any]) -> dict[str, Any]:
+    citation = context.get("citation") if isinstance(context.get("citation"), str) else None
+    seq, event_hash = _citation_event_identity(citation)
+    return {
+        "citation": citation,
+        "event_seq": seq,
+        "event_hash": event_hash,
+        "source": context.get("source"),
+        "valid_from": context.get("valid_from"),
+        "valid_to": context.get("valid_to"),
+    }
+
+
+def _checkout_rank(context: dict[str, Any], query: str) -> tuple[float, int, str, float]:
+    query_tokens = _checkout_tokens(query)
+    content_tokens = _checkout_tokens(str(context.get("content") or ""))
+    overlap = len(query_tokens & content_tokens) / max(1, len(query_tokens))
+    metadata = context.get("metadata")
+    metadata = metadata if isinstance(metadata, dict) else {}
+    entity_type = metadata.get("entity_type")
+    type_priority = 1 if entity_type in {"task", "decision", "goal", "memory"} else 0
+    score = context.get("score")
+    numeric_score = float(score) if isinstance(score, int | float) else 0.0
+    return (overlap, type_priority, str(context.get("valid_from") or ""), numeric_score)
+
+
+def _contexts_as_of_seq(contexts: list[Context], as_of_seq: int) -> list[Context]:
+    filtered = []
+    for context in contexts:
+        citation = _result_citation(context)
+        seq, _event_hash = _citation_event_identity(citation)
+        if seq is None or seq <= as_of_seq:
+            filtered.append(context)
+    return filtered
+
+
+def _checkout_tokens(value: str) -> set[str]:
+    return {token for token in re.findall(r"[a-z0-9]+", value.casefold()) if len(token) > 2}
+
+
+def _citation_event_identity(citation: str | None) -> tuple[int | None, str | None]:
+    if not citation:
+        return None, None
+    event_seq: int | None = None
+    event_hash: str | None = None
+    if "/events/" in citation:
+        tail = citation.split("/events/", 1)[1]
+        seq_text = tail.split("#", 1)[0].split("/", 1)[0]
+        if seq_text.isdigit():
+            event_seq = int(seq_text)
+    if "#" in citation:
+        fragment = citation.rsplit("#", 1)[1]
+        event_hash = fragment or None
+    return event_seq, event_hash
+
+
 def _format_prompt(events: list[Any], results: list[Any], *, working_set: Any | None = None) -> str:
     lines = []
     if working_set is not None:
@@ -1025,6 +1287,12 @@ def _context_from_query_result(result: Any) -> Context:
     score_explanation = getattr(result, "score_explanation", None)
     if score_explanation:
         metadata["score_explanation"] = score_explanation
+    entity_name = getattr(result, "entity_name", None)
+    if isinstance(entity_name, str) and entity_name:
+        metadata["entity_name"] = entity_name
+    entity_type = getattr(result, "entity_type", None)
+    if isinstance(entity_type, str) and entity_type:
+        metadata["entity_type"] = entity_type
     return Context(
         content=result.content,
         source=result.source,
@@ -1098,6 +1366,10 @@ async def _dispatch_tool_call(
         return await active_server.handle_memory_replay(arguments)
     if name == "memory_invalidate":
         return await active_server.handle_memory_invalidate(arguments)
+    if name == "memory_capabilities":
+        return await active_server.handle_memory_capabilities(arguments)
+    if name == "memory_checkout":
+        return await active_server.handle_memory_checkout(arguments)
     if name == "context_assemble":
         return await active_server.handle_context_assemble(arguments)
     if name == "context_after_turn":

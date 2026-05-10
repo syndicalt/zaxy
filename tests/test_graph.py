@@ -12,7 +12,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from zaxy.extract import ExtractedEdge, ExtractedEntity, ExtractionResult
-from zaxy.graph import GraphStore, SearchResult, _record_to_entity, _typed_relationship_label
+from zaxy.graph import (
+    GraphStore,
+    SearchResult,
+    _record_to_entity,
+    _typed_relationship_label,
+)
 
 # ------------------------------------------------------------------
 # Helpers
@@ -123,6 +128,7 @@ class TestSchema:
             "FOR (ev:Event) REQUIRE (ev.session_id, ev.seq) IS UNIQUE" in s
             for s in cypher_statements
         )
+        assert any("CREATE INDEX event_prev_hash" in s for s in cypher_statements)
         assert any("CREATE INDEX entity_lookup" in s for s in cypher_statements)
         assert any("CREATE VECTOR INDEX" in s for s in cypher_statements)
         assert any("CREATE FULLTEXT INDEX" in s for s in cypher_statements)
@@ -156,6 +162,7 @@ class TestIngestion:
             edges=[],
             source_event_seq=1,
             source_event_hash="b" * 64,
+            source_event_prev_hash="a" * 64,
             source_event_type="goal.created",
             source_thread="agent-1",
         )
@@ -165,10 +172,20 @@ class TestIngestion:
         cypher, kwargs = call.args[0], call.kwargs
         assert "MERGE (s:Session {id: $session_id})" in cypher
         assert "MERGE (ev:Event {session_id: $session_id, seq: $source_event_seq})" in cypher
+        assert "ev.prev_hash = $source_event_prev_hash" in cypher
         assert "MERGE (s)-[r:HAS_EVENT]->(ev)" in cypher
+        assert "CALL (ev) {" in cypher
+        assert "MATCH (prev:Event {session_id: $session_id, hash: $source_event_prev_hash})" in cypher
+        assert "MERGE (prev)-[next:NEXT_EVENT]->(ev)" in cypher
+        assert "MERGE (ev)-[previous:PREVIOUS_EVENT]->(prev)" in cypher
+        assert "MATCH (next_event:Event {session_id: $session_id, prev_hash: $source_event_hash})" in cypher
+        assert "MERGE (ev)-[next_rel:NEXT_EVENT]->(next_event)" in cypher
+        assert "MERGE (next_event)-[previous_rel:PREVIOUS_EVENT]->(ev)" in cypher
+        assert "RETURN previous_event_links, next_event_links" in cypher
         assert kwargs["session_id"] == "agent-1"
         assert kwargs["source_event_seq"] == 1
         assert kwargs["source_event_hash"] == "b" * 64
+        assert kwargs["source_event_prev_hash"] == "a" * 64
         assert kwargs["source_event_type"] == "goal.created"
         assert kwargs["source_thread"] == "agent-1"
 
@@ -369,6 +386,47 @@ class TestIngestion:
         assert "SET r.valid_to = datetime($invalid_at)" in cypher
         assert kwargs["session_id"] == "agent-1"
         assert kwargs["invalid_at"] == "2024-06-01T00:00:00Z"
+
+
+class TestProjectionStatus:
+    """Tests for graph/Eventloom projection integrity inspection."""
+
+    async def test_inspect_event_projection_status_reports_lag_and_missing_links(
+        self,
+        store: GraphStore,
+    ) -> None:
+        """Projection status should compare graph chain state with Eventloom latest."""
+        store._driver.execute_query.return_value = (
+            [
+                {
+                    "event_count": 2,
+                    "latest_seq": 2,
+                    "latest_hash": "b" * 64,
+                    "next_event_edges": 0,
+                    "previous_event_edges": 1,
+                    "missing_chain_links": 1,
+                }
+            ],
+            None,
+            None,
+        )
+
+        status = await store.inspect_event_projection_status(
+            "agent-1",
+            eventloom_latest_seq=3,
+            eventloom_latest_hash="c" * 64,
+        )
+
+        assert status.session_id == "agent-1"
+        assert status.event_count == 2
+        assert status.latest_seq == 2
+        assert status.latest_hash == "b" * 64
+        assert status.projection_lag == 1
+        assert status.latest_hash_matches is False
+        assert status.next_event_edges == 0
+        assert status.previous_event_edges == 1
+        assert status.missing_chain_links == 1
+        assert status.integrity_ok is False
 
 
 # ------------------------------------------------------------------

@@ -54,6 +54,30 @@ def test_apply_onboarding_preset_expands_local_claude_defaults(tmp_path: Path) -
     assert options["hook_output"] == tmp_path / ".claude" / "settings.local.json"
     assert options["local_profile_output"] == tmp_path / ".env.local"
     assert options["infra"] == "check"
+    assert options["capture_mode"] == "deterministic"
+
+
+def test_apply_onboarding_preset_expands_local_codex_defaults(tmp_path: Path) -> None:
+    """local-codex should expand to deterministic Codex MCP without unsupported hook files."""
+    options = apply_onboarding_preset(
+        "local-codex",
+        workspace=tmp_path,
+        mcp_client=None,
+        mcp_output=None,
+        hook_client=None,
+        hook_output=None,
+        local_profile_output=None,
+        infra="none",
+        capture_mode="deterministic",
+    )
+
+    assert options["mcp_client"] == "codex"
+    assert options["mcp_output"] is None
+    assert options["hook_client"] is None
+    assert options["hook_output"] is None
+    assert options["local_profile_output"] == tmp_path / ".env.local"
+    assert options["infra"] == "check"
+    assert options["capture_mode"] == "deterministic"
 
 
 def test_apply_onboarding_preset_preserves_explicit_overrides(tmp_path: Path) -> None:
@@ -67,12 +91,14 @@ def test_apply_onboarding_preset_preserves_explicit_overrides(tmp_path: Path) ->
         hook_output=None,
         local_profile_output=None,
         infra="start",
+        capture_mode="hybrid",
     )
 
     assert options["mcp_client"] == "cursor"
     assert options["mcp_output"] == tmp_path / "cursor.json"
     assert options["hook_client"] == "claude-code"
     assert options["infra"] == "start"
+    assert options["capture_mode"] == "hybrid"
 
 
 @pytest.mark.asyncio
@@ -135,14 +161,8 @@ async def test_run_onboarding_writes_requested_configs_and_registers_session(tmp
     assert result.next_steps[0] == f"Add {mcp_output} to your claude-desktop MCP client config."
     assert result.next_steps[1] == "Restart the MCP client so it loads the Zaxy server config."
     assert f"Run zaxy hook-status --eventloom-path {eventloom_path}" in result.next_steps
-    assert (
-        f"Optional LLM packet capture: run zaxy packet-analyzer --eventloom-path {eventloom_path} "
-        f"--session-id demo-default --upstream-base-url <provider-v1-url>."
-    ) in result.next_steps
-    assert (
-        f"Optional packet projection: run zaxy packet-project --eventloom-path {eventloom_path} "
-        "--session-id demo-default --watch."
-    ) in result.next_steps
+    assert "Default capture mode: deterministic MCP lifecycle and observer hooks; no provider proxy required." in result.next_steps
+    assert "Optional packet capture is disabled by default because it can consume provider quota." in result.next_steps
 
 
 @pytest.mark.asyncio
@@ -164,7 +184,7 @@ async def test_run_onboarding_can_add_packet_capture_activation_steps(tmp_path: 
         eventloom_path=eventloom_path,
         domain="demo",
         session_id="demo-default",
-        packet_capture=True,
+        capture_mode="packet",
         packet_upstream_base_url="https://api.openai.com/v1",
         packet_port=8787,
         fabric_factory=lambda eventloom_path: fabric,
@@ -180,6 +200,44 @@ async def test_run_onboarding_can_add_packet_capture_activation_steps(tmp_path: 
         "--session-id demo-default --watch --graph"
     ) in result.next_steps
     assert "Point OpenAI-compatible clients at http://127.0.0.1:8787/v1." in result.next_steps
+
+
+@pytest.mark.asyncio
+async def test_run_onboarding_renders_codex_install_command_without_json_config(tmp_path: Path) -> None:
+    """Codex onboarding should use the CLI-assisted MCP path rather than JSON config rendering."""
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    fabric = MagicMock()
+    fabric.ensure_session_initialized = AsyncMock()
+    fabric.ensure_session_initialized.return_value.workspace_type = "codebase"
+    fabric.ensure_session_initialized.return_value.confidence = 0.7
+    fabric.ensure_session_initialized.return_value.signals = ["pyproject.toml"]
+    fabric.ensure_session_initialized.return_value.instructions_profile = "codebase"
+    fabric.close = AsyncMock()
+
+    result = await run_onboarding(
+        workspace,
+        eventloom_path=eventloom_path,
+        domain="demo",
+        session_id="demo-default",
+        mcp_client="codex",
+        zaxy_executable="/opt/zaxy/bin/zaxy",
+        fabric_factory=lambda eventloom_path: fabric,
+    )
+
+    assert result.status == "ok"
+    assert any(
+        step.name == "mcp_config"
+        and step.status == "preview"
+        and step.message == "codex MCP install command rendered"
+        for step in result.steps
+    )
+    assert any(step.startswith("Run this Codex MCP install command: codex mcp add zaxy") for step in result.next_steps)
+    assert "-- /opt/zaxy/bin/zaxy serve" in "\n".join(result.next_steps)
+    assert not (workspace / "zaxy-mcp.json").exists()
+    assert not (workspace / ".codex" / "hooks.json").exists()
+    assert any("Codex native hook config is not installed by default" in step for step in result.next_steps)
 
 
 @pytest.mark.asyncio

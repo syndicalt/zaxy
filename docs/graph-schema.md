@@ -7,8 +7,10 @@ entity, relation, keyword, vector similarity, and temporal validity.
 The provenance backbone starts with `Session` and `Event` nodes. Each projected
 event is linked through `(:Session)-[:HAS_EVENT]->(:Event)`, and the event then
 links to the facts it produced through `PROJECTED_ENTITY` and
-`PROJECTED_RELATION`. This gives Neo4j a visible audit spine without changing
-Eventloom's role as the immutable source of truth.
+`PROJECTED_RELATION`. `Event` nodes also store Eventloom's `hash` and
+`prev_hash` fields and project the sealed linear path through
+`NEXT_EVENT`/`PREVIOUS_EVENT` relationships. This gives Neo4j a visible audit
+spine without changing Eventloom's role as the immutable source of truth.
 
 The central memory fact shape remains `Entity`. Important properties include
 `session_id`, `name`, `entity_type`, `summary`, `valid_from`, `valid_to`,

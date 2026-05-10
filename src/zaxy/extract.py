@@ -48,6 +48,7 @@ class ExtractionResult:
     edges: list[ExtractedEdge]
     source_event_seq: int
     source_event_hash: str | None = None
+    source_event_prev_hash: str | None = None
     source_event_type: str | None = None
     source_thread: str | None = None
 
@@ -113,6 +114,7 @@ def _with_source(event: Event, result: ExtractionResult) -> ExtractionResult:
         result,
         source_event_seq=event.seq,
         source_event_hash=event.hash,
+        source_event_prev_hash=event.prev_hash,
         source_event_type=event.type,
         source_thread=event.thread,
     )

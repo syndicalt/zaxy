@@ -11,7 +11,10 @@ Core Neo4j settings are `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`,
 `NEO4J_AUTO_START`. Development defaults target `bolt://localhost:7687` with
 password `testpassword`. For localhost development MCP startup,
 `NEO4J_AUTO_START=true` lets Zaxy start or reuse a named Docker container,
-`zaxy-neo4j`, when Bolt is not reachable. Production mode rejects the default
+`zaxy-neo4j`, when Bolt is not reachable. The local happy path leaves
+`NEO4J_CA_CERT` and `NEO4J_PASSWORD_FILE` empty and keeps
+`NEO4J_TRUST_ALL=false`; TLS and secret-file settings are deployment concerns,
+not default local onboarding requirements. Production mode rejects the default
 password and requires TLS evidence when using a `bolt://` URI. Use `bolt+s://`
 or set `NEO4J_CA_CERT` to a trusted certificate path.
 

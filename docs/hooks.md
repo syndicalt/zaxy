@@ -50,7 +50,7 @@ path can write without pretending that a real task or compaction happened.
 | Client | Generated Output | Install Detection | Notes |
 |--------|------------------|-------------------|-------|
 | Claude Code | JSON settings fragment | `.claude/settings.local.json`, `.claude/settings.json` | Preferred first target for repository-local hook config. |
-| Codex | Shell snippet | `.codex/hooks.json` when present | Codex hook support exists behind feature/config paths, but project-local interactive hook behavior is still evolving. Use the generic snippet unless your Codex version documents a working `hooks.json` path. |
+| Codex | Shell snippet | Valid `.codex/hooks.json` only | Codex parses `.codex/hooks.json` as JSON. Zaxy does not write that file by default because project-local interactive hook behavior is still evolving. Use MCP plus memory tools, or wire the generic snippet manually if your Codex version documents a hook path. |
 | Generic | Shell snippet | Any explicit file you wire manually | Use for clients that can run lifecycle shell commands. |
 
 The generated commands call the stable sink:

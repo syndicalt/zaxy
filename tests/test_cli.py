@@ -67,6 +67,68 @@ def test_memory_status_json_output(tmp_path: Path) -> None:
     assert payload["sessions"][0]["integrity_ok"] is True
 
 
+@patch("zaxy.__main__.GraphStore")
+def test_memory_status_graph_json_reports_projection_health(
+    mock_graph_store: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """memory status --graph should compare Eventloom and Neo4j projection state."""
+    event = EventLog(tmp_path / ".eventloom" / "agent.jsonl").append(
+        "task.completed",
+        actor="assistant",
+        payload={"summary": "Projected graph chain."},
+        thread="agent",
+    )
+    graph = AsyncMock()
+    projection = MagicMock()
+    projection.to_dict.return_value = {
+        "session_id": "agent",
+        "event_count": 1,
+        "latest_seq": 1,
+        "latest_hash": event.hash,
+        "eventloom_latest_seq": 1,
+        "eventloom_latest_hash": event.hash,
+        "projection_lag": 0,
+        "latest_hash_matches": True,
+        "next_event_edges": 0,
+        "previous_event_edges": 0,
+        "missing_chain_links": 0,
+        "integrity_ok": True,
+    }
+    graph.inspect_event_projection_status.return_value = projection
+    mock_graph_store.return_value = graph
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "status",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--graph",
+            "--json",
+            "--neo4j-uri",
+            "bolt://test:7687",
+            "--neo4j-password",
+            "testpassword",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["graph"]["sessions"][0]["session_id"] == "agent"
+    assert payload["graph"]["sessions"][0]["integrity_ok"] is True
+    mock_graph_store.assert_called_once_with("bolt://test:7687", "neo4j", "testpassword")
+    graph.connect.assert_awaited_once()
+    graph.inspect_event_projection_status.assert_awaited_once_with(
+        "agent",
+        eventloom_latest_seq=event.seq,
+        eventloom_latest_hash=event.hash,
+    )
+    graph.close.assert_awaited_once()
+
+
 def test_memory_status_handles_empty_eventloom_directory(tmp_path: Path) -> None:
     """memory status should be useful before any memory has been written."""
     eventloom_dir = tmp_path / ".eventloom"
@@ -77,6 +139,128 @@ def test_memory_status_handles_empty_eventloom_directory(tmp_path: Path) -> None
     assert result.exit_code == 0
     assert "Sessions: 0" in result.output
     assert "Total events: 0" in result.output
+
+
+def test_memory_capabilities_json_output(tmp_path: Path) -> None:
+    """memory capabilities should expose a session-scoped model contract."""
+    EventLog(tmp_path / ".eventloom" / "agent.jsonl").append(
+        "task.completed",
+        actor="codex",
+        payload={"summary": "Capability manifest target."},
+        thread="agent",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "capabilities",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent",
+            "--current-task",
+            "make zaxy invisible",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["session_id"] == "agent"
+    assert payload["current_task"] == "make zaxy invisible"
+    assert payload["recommended_next_call"]["tool"] == "memory_checkout"
+    assert payload["status"]["eventloom"]["latest_seq"] == 1
+
+
+def test_memory_capabilities_text_output(tmp_path: Path) -> None:
+    """The text form should be prompt-ready for model session bootstrap."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "capabilities",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "# Zaxy Memory Contract" in result.output
+    assert "Session: agent" in result.output
+    assert "memory_checkout" in result.output
+
+
+@patch("zaxy.__main__.MemoryFabric")
+def test_memory_checkout_json_output(mock_fabric_cls: MagicMock, tmp_path: Path) -> None:
+    """memory checkout --json should expose the Memory Checkout contract."""
+    checkout = MagicMock()
+    checkout.to_dict.return_value = {
+        "session_id": "agent-1",
+        "query": "current project direction",
+        "prompt": "# Memory Checkout\nUse Memory Checkout.",
+        "current_facts": [{"content": "Use Memory Checkout.", "citation": "eventloom://agent-1/events/1#abc"}],
+        "evidence": [{"citation": "eventloom://agent-1/events/1#abc"}],
+        "provenance": [{"event_seq": 1, "event_hash": "abc"}],
+        "warnings": [],
+    }
+    fabric = AsyncMock()
+    fabric.checkout_memory.return_value = checkout
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "checkout",
+            "current project direction",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent-1",
+            "--ref",
+            "refs/heads/main",
+            "--neo4j-uri",
+            "bolt://localhost:7687",
+            "--neo4j-user",
+            "neo4j",
+            "--neo4j-password",
+            "testpassword",
+            "--neo4j-ca-cert",
+            "",
+            "--neo4j-trust-all",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["session_id"] == "agent-1"
+    assert payload["current_facts"][0]["citation"] == "eventloom://agent-1/events/1#abc"
+    mock_fabric_cls.assert_called_once_with(
+        eventloom_path=str(tmp_path / ".eventloom"),
+        neo4j_uri="bolt://localhost:7687",
+        neo4j_user="neo4j",
+        neo4j_password="testpassword",
+        neo4j_ca_cert="",
+        neo4j_trust_all=True,
+    )
+    fabric.connect.assert_awaited_once()
+    fabric.checkout_memory.assert_awaited_once_with(
+        "current project direction",
+        session_id="agent-1",
+        ref="refs/heads/main",
+        replay_from_seq=1,
+        limit=10,
+        max_recent_events=20,
+    )
+    fabric.close.assert_awaited_once()
 
 
 def test_packet_analyzer_cli_help_exposes_observe_only_gateway() -> None:
@@ -348,6 +532,47 @@ def test_memory_diff_json_output(tmp_path: Path) -> None:
     assert payload["integrity_ok"] is True
     assert payload["added"][0]["seq"] == event.seq
     assert payload["added"][0]["summary"] == "Added diff CLI."
+
+
+def test_memory_ref_update_and_list(tmp_path: Path) -> None:
+    """memory ref should create durable git-style refs and list latest pointers."""
+    event = EventLog(tmp_path / ".eventloom" / "agent.jsonl").append(
+        "task.completed",
+        actor="codex",
+        payload={"summary": "Ref target."},
+        thread="agent",
+    )
+    runner = CliRunner()
+
+    update = runner.invoke(
+        app,
+        [
+            "memory",
+            "ref",
+            "refs/heads/main",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent",
+            "--target-seq",
+            str(event.seq),
+            "--target-hash",
+            event.hash,
+            "--type",
+            "branch",
+        ],
+    )
+    listed = runner.invoke(
+        app,
+        ["memory", "refs", "--eventloom-path", str(tmp_path / ".eventloom"), "--json"],
+    )
+
+    assert update.exit_code == 0
+    assert "refs/heads/main -> agent@1" in update.output
+    assert listed.exit_code == 0
+    payload = json.loads(listed.output)
+    assert payload["refs"][0]["name"] == "refs/heads/main"
+    assert payload["refs"][0]["target_hash"] == event.hash
 
 
 def test_ide_config_command_prints_copyable_mcp_json() -> None:
@@ -1150,6 +1375,12 @@ def test_local_profile_command_prints_offline_env() -> None:
     assert result.exit_code == 0
     assert "EMBEDDING_PROVIDER=hash" in result.output
     assert "RERANKER_PROVIDER=lexical" in result.output
+    assert "NEO4J_URI=bolt://localhost:7687" in result.output
+    assert "NEO4J_USER=neo4j" in result.output
+    assert "NEO4J_PASSWORD=testpassword" in result.output
+    assert "NEO4J_CA_CERT=" in result.output
+    assert "NEO4J_PASSWORD_FILE=" in result.output
+    assert "NEO4J_TRUST_ALL=false" in result.output
     assert "OPENAI_API_KEY" not in result.output
 
 
@@ -1161,7 +1392,11 @@ def test_local_profile_command_writes_output_file(tmp_path: Path) -> None:
 
     assert result.exit_code == 0
     assert "Wrote local profile" in result.output
-    assert "RERANKER_PROVIDER=lexical" in target.read_text(encoding="utf-8")
+    profile = target.read_text(encoding="utf-8")
+    assert "RERANKER_PROVIDER=lexical" in profile
+    assert "NEO4J_URI=bolt://localhost:7687" in profile
+    assert "NEO4J_CA_CERT=" in profile
+    assert "NEO4J_PASSWORD_FILE=" in profile
 
 
 def test_local_profile_check_reports_success() -> None:
@@ -1353,6 +1588,11 @@ def test_init_command_runs_first_run_onboarding(tmp_path: Path) -> None:
     assert (workspace / "mcp.json").is_file()
     assert (workspace / ".claude" / "settings.local.json").is_file()
     assert (workspace / ".eventloom" / "demo-default.jsonl").is_file()
+    local_profile = (workspace / ".env.local").read_text(encoding="utf-8")
+    assert "NEO4J_URI=bolt://localhost:7687" in local_profile
+    assert "NEO4J_CA_CERT=" in local_profile
+    assert "NEO4J_PASSWORD_FILE=" in local_profile
+    assert "NEO4J_TRUST_ALL=false" in local_profile
 
 
 def test_init_command_rejects_mcp_output_without_client(tmp_path: Path) -> None:
@@ -1399,6 +1639,28 @@ def test_init_command_expands_local_claude_preset(mock_run_onboarding: AsyncMock
     assert kwargs["hook_output"] == tmp_path / ".claude" / "settings.local.json"
     assert kwargs["local_profile_output"] == tmp_path / ".env.local"
     assert kwargs["infra"] == "check"
+    assert kwargs["capture_mode"] == "deterministic"
+
+
+@patch("zaxy.__main__.run_onboarding")
+def test_init_command_expands_local_codex_preset(mock_run_onboarding: AsyncMock, tmp_path: Path) -> None:
+    """init --preset local-codex should avoid unsupported Codex hook config files."""
+    result_obj = MagicMock()
+    result_obj.status = "ok"
+    mock_run_onboarding.return_value = result_obj
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["init", str(tmp_path), "--preset", "local-codex"])
+
+    assert result.exit_code == 0
+    kwargs = mock_run_onboarding.await_args.kwargs
+    assert kwargs["mcp_client"] == "codex"
+    assert kwargs["mcp_output"] is None
+    assert kwargs["hook_client"] is None
+    assert kwargs["hook_output"] is None
+    assert kwargs["local_profile_output"] == tmp_path / ".env.local"
+    assert kwargs["infra"] == "check"
+    assert kwargs["capture_mode"] == "deterministic"
 
 
 @patch("zaxy.__main__.run_onboarding")
@@ -1428,8 +1690,23 @@ def test_init_command_passes_packet_capture_options(
     assert result.exit_code == 0
     kwargs = mock_run_onboarding.await_args.kwargs
     assert kwargs["packet_capture"] is True
+    assert kwargs["capture_mode"] == "hybrid"
     assert kwargs["packet_upstream_base_url"] == "https://api.openai.com/v1"
     assert kwargs["packet_port"] == 8788
+
+
+@patch("zaxy.__main__.run_onboarding")
+def test_init_command_accepts_capture_mode_packet(mock_run_onboarding: AsyncMock, tmp_path: Path) -> None:
+    """init --capture-mode packet should explicitly opt into packet-capture guidance."""
+    result_obj = MagicMock()
+    result_obj.status = "ok"
+    mock_run_onboarding.return_value = result_obj
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["init", str(tmp_path), "--capture-mode", "packet"])
+
+    assert result.exit_code == 0
+    assert mock_run_onboarding.await_args.kwargs["capture_mode"] == "packet"
 
 
 def test_init_command_help_describes_full_onboarding_path() -> None:

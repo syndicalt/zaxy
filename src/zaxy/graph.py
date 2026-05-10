@@ -68,6 +68,41 @@ class SearchResult:
     warnings: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class GraphEventProjectionStatus:
+    """Integrity status for one session's Eventloom graph projection."""
+
+    session_id: str
+    event_count: int
+    latest_seq: int | None
+    latest_hash: str | None
+    eventloom_latest_seq: int | None
+    eventloom_latest_hash: str | None
+    projection_lag: int | None
+    latest_hash_matches: bool
+    next_event_edges: int
+    previous_event_edges: int
+    missing_chain_links: int
+    integrity_ok: bool
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a stable JSON-serializable representation."""
+        return {
+            "session_id": self.session_id,
+            "event_count": self.event_count,
+            "latest_seq": self.latest_seq,
+            "latest_hash": self.latest_hash,
+            "eventloom_latest_seq": self.eventloom_latest_seq,
+            "eventloom_latest_hash": self.eventloom_latest_hash,
+            "projection_lag": self.projection_lag,
+            "latest_hash_matches": self.latest_hash_matches,
+            "next_event_edges": self.next_event_edges,
+            "previous_event_edges": self.previous_event_edges,
+            "missing_chain_links": self.missing_chain_links,
+            "integrity_ok": self.integrity_ok,
+        }
+
+
 class GraphStore:
     """Async Neo4j wrapper for bi-temporal knowledge graph operations.
 
@@ -120,6 +155,88 @@ class GraphStore:
         assert self._driver is not None, "Call connect() first"
         await apply_schema_migrations(self._driver)
 
+    async def inspect_event_projection_status(
+        self,
+        session_id: str,
+        *,
+        eventloom_latest_seq: int | None = None,
+        eventloom_latest_hash: str | None = None,
+    ) -> GraphEventProjectionStatus:
+        """Inspect Event nodes and hash-chain edges for one projected session."""
+        assert self._driver is not None
+        safe_session_id = validate_session_id(session_id)
+        records, _, _ = await self._driver.execute_query(
+            """
+            MATCH (e:Event {session_id: $session_id})
+            WITH count(e) AS event_count, max(e.seq) AS latest_seq
+            OPTIONAL MATCH (latest:Event {session_id: $session_id, seq: latest_seq})
+            WITH event_count, latest_seq, latest.hash AS latest_hash
+            CALL () {
+                MATCH (:Event {session_id: $session_id})-[n:NEXT_EVENT]->(:Event {session_id: $session_id})
+                RETURN count(n) AS next_event_edges
+            }
+            CALL () {
+                MATCH (:Event {session_id: $session_id})-[p:PREVIOUS_EVENT]->(:Event {session_id: $session_id})
+                RETURN count(p) AS previous_event_edges
+            }
+            CALL () {
+                MATCH (e:Event {session_id: $session_id})
+                WHERE e.seq > 1
+                OPTIONAL MATCH (prev:Event {session_id: $session_id, hash: e.prev_hash})
+                OPTIONAL MATCH (prev)-[n:NEXT_EVENT]->(e)
+                OPTIONAL MATCH (e)-[p:PREVIOUS_EVENT]->(prev)
+                WITH e, prev, n, p
+                WHERE prev IS NULL OR n IS NULL OR p IS NULL
+                RETURN count(e) AS missing_chain_links
+            }
+            RETURN event_count,
+                   latest_seq,
+                   latest_hash,
+                   next_event_edges,
+                   previous_event_edges,
+                   missing_chain_links
+            """,
+            session_id=safe_session_id,
+        )
+        record = records[0] if records else {}
+        event_count = _int_record_value(record.get("event_count"))
+        latest_seq = _optional_int_record_value(record.get("latest_seq"))
+        latest_hash = _optional_str_record_value(record.get("latest_hash"))
+        next_event_edges = _int_record_value(record.get("next_event_edges"))
+        previous_event_edges = _int_record_value(record.get("previous_event_edges"))
+        missing_chain_links = _int_record_value(record.get("missing_chain_links"))
+        projection_lag = (
+            max(0, eventloom_latest_seq - (latest_seq or 0))
+            if eventloom_latest_seq is not None
+            else None
+        )
+        latest_hash_matches = (
+            latest_hash == eventloom_latest_hash
+            if eventloom_latest_hash is not None
+            else True
+        )
+        integrity_ok = (
+            missing_chain_links == 0
+            and latest_hash_matches
+            and (projection_lag in (None, 0))
+            and next_event_edges == max(0, event_count - 1)
+            and previous_event_edges == max(0, event_count - 1)
+        )
+        return GraphEventProjectionStatus(
+            session_id=safe_session_id,
+            event_count=event_count,
+            latest_seq=latest_seq,
+            latest_hash=latest_hash,
+            eventloom_latest_seq=eventloom_latest_seq,
+            eventloom_latest_hash=eventloom_latest_hash,
+            projection_lag=projection_lag,
+            latest_hash_matches=latest_hash_matches,
+            next_event_edges=next_event_edges,
+            previous_event_edges=previous_event_edges,
+            missing_chain_links=missing_chain_links,
+            integrity_ok=integrity_ok,
+        )
+
     # ------------------------------------------------------------------
     # Ingestion
     # ------------------------------------------------------------------
@@ -149,6 +266,7 @@ class GraphStore:
             ON CREATE SET ev.created_at = datetime()
             SET ev.updated_at = datetime(),
                 ev.hash = $source_event_hash,
+                ev.prev_hash = $source_event_prev_hash,
                 ev.type = $source_event_type,
                 ev.thread = $source_thread,
                 ev.observed_at = CASE
@@ -158,10 +276,46 @@ class GraphStore:
             MERGE (s)-[r:HAS_EVENT]->(ev)
             ON CREATE SET r.created_at = datetime()
             SET r.updated_at = datetime()
+            WITH ev
+            CALL (ev) {
+                MATCH (prev:Event {session_id: $session_id, hash: $source_event_prev_hash})
+                MERGE (prev)-[next:NEXT_EVENT]->(ev)
+                ON CREATE SET next.created_at = datetime()
+                SET next.updated_at = datetime(),
+                    next.session_id = $session_id,
+                    next.from_hash = $source_event_prev_hash,
+                    next.to_hash = $source_event_hash
+                MERGE (ev)-[previous:PREVIOUS_EVENT]->(prev)
+                ON CREATE SET previous.created_at = datetime()
+                SET previous.updated_at = datetime(),
+                    previous.session_id = $session_id,
+                    previous.from_hash = $source_event_hash,
+                    previous.to_hash = $source_event_prev_hash
+                RETURN count(prev) AS previous_event_links
+            }
+            WITH ev, previous_event_links
+            CALL (ev) {
+                MATCH (next_event:Event {session_id: $session_id, prev_hash: $source_event_hash})
+                MERGE (ev)-[next_rel:NEXT_EVENT]->(next_event)
+                ON CREATE SET next_rel.created_at = datetime()
+                SET next_rel.updated_at = datetime(),
+                    next_rel.session_id = $session_id,
+                    next_rel.from_hash = $source_event_hash,
+                    next_rel.to_hash = next_event.hash
+                MERGE (next_event)-[previous_rel:PREVIOUS_EVENT]->(ev)
+                ON CREATE SET previous_rel.created_at = datetime()
+                SET previous_rel.updated_at = datetime(),
+                    previous_rel.session_id = $session_id,
+                    previous_rel.from_hash = next_event.hash,
+                    previous_rel.to_hash = $source_event_hash
+                RETURN count(next_event) AS next_event_links
+            }
+            RETURN previous_event_links, next_event_links
             """,
             session_id=safe_session_id,
             source_event_seq=result.source_event_seq,
             source_event_hash=result.source_event_hash,
+            source_event_prev_hash=result.source_event_prev_hash,
             source_event_type=result.source_event_type,
             source_thread=result.source_thread,
             observed_at=observed_at,
@@ -513,6 +667,24 @@ def _record_to_entity(node: Any) -> GraphEntity:
             if k not in {"session_id", "name", "entity_type", "valid_from", "valid_to"}
         },
     )
+
+
+def _int_record_value(value: Any) -> int:
+    if isinstance(value, int):
+        return value
+    return 0
+
+
+def _optional_int_record_value(value: Any) -> int | None:
+    if isinstance(value, int):
+        return value
+    return None
+
+
+def _optional_str_record_value(value: Any) -> str | None:
+    if isinstance(value, str):
+        return value
+    return None
 
 
 def _neo4j_properties(properties: dict[str, Any] | None) -> dict[str, _Neo4jPropertyValue]:

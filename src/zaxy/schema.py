@@ -59,6 +59,13 @@ SCHEMA_MIGRATIONS: tuple[SchemaMigration, ...] = (
             "FOR (ev:Event) ON (ev.session_id, ev.hash)",
         ),
     ),
+    SchemaMigration(
+        "005_event_hash_chain",
+        (
+            "CREATE INDEX event_prev_hash IF NOT EXISTS "
+            "FOR (ev:Event) ON (ev.session_id, ev.prev_hash)",
+        ),
+    ),
 )
 
 CURRENT_SCHEMA_VERSION = SCHEMA_MIGRATIONS[-1].name

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -20,7 +21,7 @@ from zaxy.hooks import (
     write_hook_config,
 )
 from zaxy.install import resolve_zaxy_executable
-from zaxy.integrations import render_mcp_client_config
+from zaxy.integrations import render_codex_mcp_add_command, render_mcp_client_config
 from zaxy.local_profile import write_local_profile
 from zaxy.packet_guidance import build_packet_capture_guidance
 from zaxy.runtime import LocalNeo4jRuntime
@@ -62,8 +63,10 @@ def apply_onboarding_preset(
     hook_output: str | Path | None,
     local_profile_output: str | Path | None,
     infra: str,
+    capture_mode: str = "deterministic",
 ) -> dict[str, Any]:
     """Expand a named onboarding preset without overriding explicit options."""
+    normalized_capture_mode = _normalize_capture_mode(capture_mode)
     if preset is None:
         return {
             "mcp_client": mcp_client,
@@ -72,11 +75,26 @@ def apply_onboarding_preset(
             "hook_output": hook_output,
             "local_profile_output": local_profile_output,
             "infra": infra,
+            "capture_mode": normalized_capture_mode,
         }
     normalized = preset.casefold().strip().replace("_", "-")
-    if normalized != "local-claude":
-        raise ValueError("preset must be one of: local-claude")
+    if normalized not in {"local-claude", "local-codex"}:
+        raise ValueError("preset must be one of: local-claude, local-codex")
     root = Path(workspace)
+    if normalized == "local-codex":
+        return {
+            "mcp_client": mcp_client or "codex",
+            "mcp_output": Path(mcp_output) if mcp_output is not None else None,
+            "hook_client": hook_client,
+            "hook_output": Path(hook_output) if hook_output is not None else None,
+            "local_profile_output": (
+                Path(local_profile_output)
+                if local_profile_output is not None
+                else root / ".env.local"
+            ),
+            "infra": infra if infra != "none" else "check",
+            "capture_mode": normalized_capture_mode,
+        }
     return {
         "mcp_client": mcp_client or "claude-desktop",
         "mcp_output": Path(mcp_output) if mcp_output is not None else root / "zaxy-mcp.json",
@@ -88,6 +106,7 @@ def apply_onboarding_preset(
             else root / ".env.local"
         ),
         "infra": infra if infra != "none" else "check",
+        "capture_mode": normalized_capture_mode,
     }
 
 
@@ -103,6 +122,7 @@ async def run_onboarding(
     hook_output: str | Path | None = None,
     local_profile_output: str | Path | None = None,
     infra: str = "none",
+    capture_mode: str = "deterministic",
     packet_capture: bool = False,
     packet_upstream_base_url: str = "https://api.openai.com/v1",
     packet_port: int = 8787,
@@ -118,6 +138,7 @@ async def run_onboarding(
     resolved_domain = slug_domain(domain) if domain else slug_domain(root.name)
     sid = session_id or domain_default_session(resolved_domain)
     infra_action = _normalize_infra(infra)
+    normalized_capture_mode = _normalize_capture_mode("hybrid" if packet_capture else capture_mode)
     executable = resolve_zaxy_executable(zaxy_executable)
     _validate_render_requests(
         mcp_client=mcp_client,
@@ -131,6 +152,7 @@ async def run_onboarding(
     )
 
     steps: list[OnboardingStep] = []
+    mcp_install_command: str | None = None
     eventloom.mkdir(parents=True, exist_ok=True)
     steps.append(OnboardingStep("eventloom", "ok", "Eventloom directory is ready", str(eventloom)))
 
@@ -139,17 +161,29 @@ async def run_onboarding(
         steps.append(OnboardingStep("local_profile", "ok", "Local retrieval profile written", str(written)))
 
     if mcp_client is not None:
-        config = render_mcp_client_config(
-            mcp_client,
-            eventloom_path=str(eventloom),
-            domain=resolved_domain,
-            zaxy_executable=executable,
-        )
-        if mcp_output is not None:
-            written = _write_json(Path(mcp_output), config, force=force)
-            steps.append(OnboardingStep("mcp_config", "ok", f"{mcp_client} MCP config written", str(written)))
+        if _normalize_mcp_client_name(mcp_client) == "codex":
+            if mcp_output is not None:
+                raise ValueError("Codex onboarding renders a CLI install command; do not provide mcp_output")
+            mcp_install_command = shlex.join(
+                render_codex_mcp_add_command(
+                    eventloom_path=str(eventloom),
+                    domain=resolved_domain,
+                    zaxy_executable=executable,
+                )
+            )
+            steps.append(OnboardingStep("mcp_config", "preview", "codex MCP install command rendered"))
         else:
-            steps.append(OnboardingStep("mcp_config", "preview", f"{mcp_client} MCP config rendered"))
+            config = render_mcp_client_config(
+                mcp_client,
+                eventloom_path=str(eventloom),
+                domain=resolved_domain,
+                zaxy_executable=executable,
+            )
+            if mcp_output is not None:
+                written = _write_json(Path(mcp_output), config, force=force)
+                steps.append(OnboardingStep("mcp_config", "ok", f"{mcp_client} MCP config written", str(written)))
+            else:
+                steps.append(OnboardingStep("mcp_config", "preview", f"{mcp_client} MCP config rendered"))
 
     if hook_client is not None:
         hook_config = render_hook_config(
@@ -186,7 +220,13 @@ async def run_onboarding(
 
     settings = _onboarding_settings(eventloom=eventloom, session_id=sid, domain=resolved_domain)
     doctor = run_doctor(settings=settings, workspace_root=root, zaxy_executable=executable)
-    steps.append(OnboardingStep("doctor", _onboarding_doctor_status(doctor), "Doctor checks completed"))
+    steps.append(
+        OnboardingStep(
+            "doctor",
+            _onboarding_doctor_status(doctor, hook_installation_required=hook_client is not None),
+            "Doctor checks completed",
+        )
+    )
     hook_status = inspect_hook_status(eventloom_path=eventloom, workspace_root=root)
     steps.append(OnboardingStep("hook_status", hook_status["status"], hook_status["message"]))
     return OnboardingResult(
@@ -202,7 +242,9 @@ async def run_onboarding(
             session_id=sid,
             mcp_client=mcp_client,
             mcp_output=mcp_output,
+            mcp_install_command=mcp_install_command,
             infra_action=infra_action,
+            capture_mode=normalized_capture_mode,
             packet_capture=packet_capture,
             packet_upstream_base_url=packet_upstream_base_url,
             packet_port=packet_port,
@@ -261,6 +303,17 @@ def _normalize_infra(infra: str) -> str:
     raise ValueError("infra must be one of: none, check, start")
 
 
+def _normalize_capture_mode(capture_mode: str) -> str:
+    normalized = capture_mode.casefold().strip().replace("_", "-")
+    if normalized in {"deterministic", "packet", "hybrid"}:
+        return normalized
+    raise ValueError("capture_mode must be one of: deterministic, packet, hybrid")
+
+
+def _normalize_mcp_client_name(client: str) -> str:
+    return client.casefold().strip().replace("_", "-")
+
+
 def _build_runtime(settings: Settings) -> LocalNeo4jRuntime:
     return LocalNeo4jRuntime(
         uri=settings.neo4j_uri,
@@ -293,7 +346,9 @@ def _build_next_steps(
     session_id: str,
     mcp_client: str | None,
     mcp_output: str | Path | None,
+    mcp_install_command: str | None,
     infra_action: str,
+    capture_mode: str,
     packet_capture: bool,
     packet_upstream_base_url: str,
     packet_port: int,
@@ -303,8 +358,17 @@ def _build_next_steps(
     if mcp_client is not None and mcp_output is not None:
         next_steps.append(f"Add {Path(mcp_output)} to your {mcp_client} MCP client config.")
         next_steps.append("Restart the MCP client so it loads the Zaxy server config.")
+    if mcp_install_command is not None:
+        next_steps.append(f"Run this Codex MCP install command: {mcp_install_command}")
+        next_steps.append("Restart Codex so it loads the Zaxy MCP server.")
+        next_steps.append(
+            "Codex native hook config is not installed by default because no stable hooks.json schema is assumed."
+        )
     next_steps.append(f"Run zaxy hook-status --eventloom-path {eventloom}")
-    if packet_capture:
+    if capture_mode == "deterministic":
+        next_steps.append("Default capture mode: deterministic MCP lifecycle and observer hooks; no provider proxy required.")
+        next_steps.append("Optional packet capture is disabled by default because it can consume provider quota.")
+    if capture_mode in {"packet", "hybrid"}:
         next_steps.extend(
             build_packet_capture_guidance(
                 eventloom_path=eventloom,
@@ -312,16 +376,6 @@ def _build_next_steps(
                 upstream_base_url=packet_upstream_base_url,
                 port=packet_port,
             ).next_steps()
-        )
-    else:
-        next_steps.append(
-            "Optional LLM packet capture: run zaxy packet-analyzer "
-            f"--eventloom-path {eventloom} --session-id {session_id} "
-            "--upstream-base-url <provider-v1-url>."
-        )
-        next_steps.append(
-            "Optional packet projection: run zaxy packet-project "
-            f"--eventloom-path {eventloom} --session-id {session_id} --watch."
         )
     infra_step = next((step for step in steps if step.name == "infra"), None)
     if infra_action == "check" and infra_step is not None and infra_step.status != "ok":
@@ -360,12 +414,11 @@ def _append_heartbeat(eventloom_path: Path, *, session_id: str, source: str, wor
     return eventlog.append(event_type, actor="zaxy-hook", payload=payload, thread=session_id)
 
 
-def _onboarding_doctor_status(doctor: dict[str, Any]) -> str:
-    actionable_statuses = [
-        check["status"]
-        for check in doctor["checks"]
-        if check["name"] not in {"observation_coverage", "packet_memory"}
-    ]
+def _onboarding_doctor_status(doctor: dict[str, Any], *, hook_installation_required: bool = True) -> str:
+    ignored = {"observation_coverage", "packet_memory"}
+    if not hook_installation_required:
+        ignored.add("hook_installation")
+    actionable_statuses = [check["status"] for check in doctor["checks"] if check["name"] not in ignored]
     return _overall_status(actionable_statuses)
 
 

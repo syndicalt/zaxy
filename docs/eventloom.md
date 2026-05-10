@@ -47,7 +47,11 @@ zaxy viewer .eventloom --output eventloom-viewer.html
 `zaxy memory status` is the lightweight terminal inspection path. It summarizes
 session logs, event counts, latest sequence/hash, latest event type, and
 Eventloom integrity without requiring Neo4j. Use `--json` when scripts need the
-same fields in a stable machine-readable format.
+same fields in a stable machine-readable format. Add `--graph` when Neo4j is
+available and you need to compare Eventloom with its projection. Graph status
+reports latest projected sequence/hash, projection lag, missing
+`NEXT_EVENT`/`PREVIOUS_EVENT` chain links, and whether the latest graph hash
+matches the sealed log.
 `zaxy memory log` prints recent memory events in compact reverse-chronological
 form with session ID, sequence, short hash, timestamp, event type, actor, and a
 payload summary. Use `--session-id` to inspect one session and `--json` for

@@ -63,7 +63,7 @@ class TestToolSchema:
 
     def test_tools_list_length(self) -> None:
         """Should expose the memory and context lifecycle tools."""
-        assert len(TOOLS) == 9
+        assert len(TOOLS) == 11
 
     def test_tool_names(self) -> None:
         """Tool names should match the expected contract."""
@@ -75,6 +75,8 @@ class TestToolSchema:
             "memory_feedback",
             "memory_replay",
             "memory_invalidate",
+            "memory_capabilities",
+            "memory_checkout",
             "context_assemble",
             "context_after_turn",
             "subagent_cleanup",
@@ -110,6 +112,21 @@ class TestToolSchema:
         tool = next(t for t in TOOLS if t.name == "context_after_turn")
         assert tool.inputSchema["required"] == ["role", "content"]
 
+    def test_memory_checkout_has_query_schema(self) -> None:
+        """memory_checkout should expose the prompt-ready memory checkout contract."""
+        tool = next(t for t in TOOLS if t.name == "memory_checkout")
+        assert tool.inputSchema["required"] == ["query"]
+        assert "session_id" in tool.inputSchema["properties"]
+        assert "ref" in tool.inputSchema["properties"]
+        assert "max_recent_events" in tool.inputSchema["properties"]
+
+    def test_memory_capabilities_has_optional_query_schema(self) -> None:
+        """memory_capabilities should expose model-facing Zaxy usage guidance."""
+        tool = next(t for t in TOOLS if t.name == "memory_capabilities")
+        assert tool.inputSchema["required"] == []
+        assert "session_id" in tool.inputSchema["properties"]
+        assert "current_task" in tool.inputSchema["properties"]
+
 
 # ------------------------------------------------------------------
 # Handler tests
@@ -134,6 +151,38 @@ class TestMemoryAppend:
         server.tracer.trace_append.assert_awaited_once()
         assert len(result) == 1
         assert "1" in result[0].text
+
+
+class TestMemoryCapabilities:
+    """Tests for the model-facing memory capability manifest."""
+
+    async def test_returns_capability_manifest_for_default_session(
+        self,
+        server: ZaxyMCPServer,
+        tmp_path: Path,
+    ) -> None:
+        """memory_capabilities should make Zaxy's ambient memory loop visible to the model."""
+        eventloom = tmp_path / ".eventloom"
+        EventLog(eventloom / "agent-1.jsonl").append(
+            "task.completed",
+            actor="codex",
+            payload={"summary": "Manifest source."},
+            thread="agent-1",
+        )
+        server._eventloom_path = str(eventloom)
+        server._workspace_root = tmp_path
+
+        result = await server.handle_memory_capabilities(
+            {"session_id": "agent-1", "current_task": "smooth memory UX"}
+        )
+
+        payload = json_loads(result[0].text)
+        assert payload["session_id"] == "agent-1"
+        assert payload["current_task"] == "smooth memory UX"
+        assert payload["recommended_next_call"]["tool"] == "memory_checkout"
+        assert payload["ambient_loop"]["after_compaction_or_resume"]["tool"] == "memory_checkout"
+        assert payload["status"]["eventloom"]["latest_seq"] == 1
+        assert "memory_checkout" in payload["prompt"]
 
     async def test_uses_default_session(self, server: ZaxyMCPServer) -> None:
         """Missing session_id should default to 'default'."""
@@ -491,6 +540,62 @@ class TestContextLifecycleTools:
         assert output["session_id"] == "agent-1"
         assert output["replay_event_count"] == 1
         assert "MMR diversity" in output["prompt"]
+
+    async def test_memory_checkout_returns_current_facts_and_evidence(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_checkout should package assembled context as a cited working state."""
+        event = MagicMock(
+            seq=2,
+            type="decision.recorded",
+            actor="assistant",
+            payload={"decision": "Use memory checkout."},
+            hash="c" * 64,
+        )
+        server.session_manager.replay.return_value = MagicMock(events=[event])
+        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
+            router = AsyncMock()
+            router.query.return_value = [
+                MagicMock(
+                    content="A memory capture gap was recorded during benchmark debugging.",
+                    source="keyword",
+                    score=0.91,
+                    valid_from="2026-05-10T06:42:06Z",
+                    valid_to=None,
+                    citation="eventloom://agent-1/events/1832#gap",
+                    score_explanation=None,
+                    entity_name="memory capture gap",
+                    entity_type="event",
+                ),
+                MagicMock(
+                    content="Memory checkout is the context contract.",
+                    source="keyword",
+                    score=0.8,
+                    valid_from="2026-05-10T20:55:40Z",
+                    valid_to=None,
+                    citation="eventloom://agent-1/events/1882#checkout",
+                    score_explanation=None,
+                    entity_name="memory checkout",
+                    entity_type="task",
+                ),
+            ]
+            mock_router_cls.return_value = router
+
+            result = await server.handle_memory_checkout({
+                "query": "What context contract should the model use?",
+                "session_id": "agent-1",
+                "limit": 3,
+            })
+
+        output = json_loads(result[0].text)
+        assert output["session_id"] == "agent-1"
+        assert output["current_facts"][0]["content"] == "Memory checkout is the context contract."
+        assert output["current_facts"][0]["citation"] == "eventloom://agent-1/events/1882#checkout"
+        assert output["evidence"][0]["citation"] == "eventloom://agent-1/events/1882#checkout"
+        assert output["provenance"][0]["event_seq"] == 1882
+        assert "# Memory Checkout" in output["prompt"]
+        assert all(fact["valid_to"] is None for fact in output["current_facts"])
 
     async def test_context_assemble_includes_verbatim_source_lane(
         self,

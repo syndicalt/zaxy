@@ -11,11 +11,18 @@ from zaxy.query import build_reranker
 
 _LOCAL_PROFILE_VALUES = {
     "ZAXY_ENV": "development",
+    "NEO4J_URI": "bolt://localhost:7687",
+    "NEO4J_USER": "neo4j",
+    "NEO4J_PASSWORD": "testpassword",
+    "NEO4J_DATABASE": "neo4j",
+    "NEO4J_AUTO_START": "true",
+    "NEO4J_CA_CERT": "",
+    "NEO4J_PASSWORD_FILE": "",
+    "NEO4J_TRUST_ALL": "false",
     "EMBEDDING_ENABLED": "true",
     "EMBEDDING_PROVIDER": "hash",
     "EMBEDDING_DIMENSION": "1536",
     "RERANKER_PROVIDER": "lexical",
-    "NEO4J_AUTO_START": "true",
 }
 
 

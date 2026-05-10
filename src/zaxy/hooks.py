@@ -348,11 +348,15 @@ def _summarize_observation_event(event: Event) -> dict[str, Any]:
     }
 
 
-def _looks_like_zaxy_hook_config(path: Path) -> bool:
+def _looks_like_zaxy_hook_config(path: Path, *, allow_text: bool = False) -> bool:
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        content = path.read_text(encoding="utf-8")
     except OSError:
         return False
+    if allow_text and "zaxy hook-event" in content:
+        return True
+    try:
+        payload = json.loads(content)
     except json.JSONDecodeError:
         return False
     return _contains_zaxy_hook_command(payload)
