@@ -45,6 +45,15 @@ def test_pyproject_declares_optional_framework_extras() -> None:
         assert dependency not in pyproject["project"]["dependencies"]
 
 
+def test_pytest_default_options_exclude_docker_integration_tests() -> None:
+    """Plain pytest should not require local Neo4j Docker services."""
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+
+    addopts = pyproject["tool"]["pytest"]["ini_options"]["addopts"]
+
+    assert "not integration" in addopts
+
+
 def test_build_dist_runs_build_and_twine_check_in_order(tmp_path: Path) -> None:
     """Distribution builds should create both artifacts and validate metadata."""
     log_path = tmp_path / "commands.log"

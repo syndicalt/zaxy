@@ -103,7 +103,7 @@ include = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
-addopts = "--cov=zaxy --cov-report=term-missing --cov-fail-under=90"
+addopts = "-m 'not integration' --cov=zaxy --cov-report=term-missing --cov-fail-under=90"
 markers = [
     "integration: marks tests that require Docker services (Neo4j)",
     "unit: marks fast unit tests with no external dependencies",
