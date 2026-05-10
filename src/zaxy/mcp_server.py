@@ -53,6 +53,7 @@ from zaxy.security import (
 )
 from zaxy.session import SessionManager
 from zaxy.trace import MemoryTracer
+from zaxy.verbatim import VerbatimIndex
 from zaxy.workspace import (
     WorkspaceProfile,
     build_session_genesis_event,
@@ -100,6 +101,20 @@ TOOLS = [
             "properties": {
                 "query": {"type": "string", "description": "Natural language query"},
                 "temporal_filter": {"type": "string", "description": "ISO-8601 point-in-time filter"},
+                "limit": {"type": "integer", "description": "Max results", "default": 10},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_verbatim",
+        description="Retrieve exact Eventloom source chunks with citations.",
+        inputSchema={
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+                "query": {"type": "string", "description": "Natural language query"},
+                "session_id": {"type": "string", "description": "Session ID for source recall"},
                 "limit": {"type": "integer", "description": "Max results", "default": 10},
             },
             "additionalProperties": False,
@@ -478,6 +493,27 @@ class ZaxyMCPServer:
                 "score_explanation": r.score_explanation,
             }
             for r in results
+        ]
+        return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+    async def handle_memory_verbatim(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_verbatim source-recall tool call."""
+        query = validate_query(arguments["query"])
+        limit = validate_limit(arguments.get("limit"), default=10)
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
+
+        eventlog = self.session_manager.get(session_id).eventlog
+        hits = VerbatimIndex.from_event_logs([eventlog]).query(query, limit=limit)
+        output = [
+            {
+                "content": hit.content,
+                "source": "verbatim",
+                "score": hit.score,
+                "citation": hit.citation,
+                "source_kind": hit.source_kind,
+                "metadata": hit.metadata,
+            }
+            for hit in hits
         ]
         return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
@@ -983,6 +1019,8 @@ async def _dispatch_tool_call(
         return await active_server.handle_memory_append(arguments)
     if name == "memory_query":
         return await active_server.handle_memory_query(arguments)
+    if name == "memory_verbatim":
+        return await active_server.handle_memory_verbatim(arguments)
     if name == "memory_feedback":
         return await active_server.handle_memory_feedback(arguments)
     if name == "memory_replay":

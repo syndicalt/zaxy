@@ -42,6 +42,7 @@ from zaxy.security import validate_payload, validate_query, validate_session_id
 from zaxy.session import SessionManager
 from zaxy.trace import MemoryTracer
 from zaxy.transcripts import collect_transcript_events
+from zaxy.verbatim import VerbatimIndex
 from zaxy.workspace import (
     WorkspaceProfile,
     build_session_genesis_event,
@@ -452,6 +453,33 @@ class MemoryFabric:
                 )
             )
         return self._merge_projection_contexts(contexts, query, limit)
+
+    async def query_verbatim(
+        self,
+        query: str,
+        *,
+        session_id: str = "default",
+        limit: int = 10,
+    ) -> list[Context]:
+        """Retrieve exact Eventloom source chunks without requiring graph services."""
+        validate_query(query)
+        sid = validate_session_id(session_id)
+        index = VerbatimIndex.from_event_logs([self.session_manager.get(sid).eventlog])
+        contexts: list[Context] = []
+        for hit in index.query(query, limit=limit):
+            contexts.append(
+                Context(
+                    content=hit.content,
+                    source="verbatim",
+                    score=hit.score,
+                    metadata={
+                        "citation": hit.citation,
+                        "source_kind": hit.source_kind,
+                        **hit.metadata,
+                    },
+                )
+            )
+        return contexts
 
     def _query_eventlog_fallback(
         self,

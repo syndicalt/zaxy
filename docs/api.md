@@ -47,6 +47,21 @@ Returned context metadata includes Eventloom citations when available and
 source weights, the matched query, query-expansion weights when applicable, and
 temporal scoring fields for as-of queries.
 
+Query exact source chunks:
+
+```python
+sources = await fabric.query_verbatim(
+    "Which transcript turn mentioned identity-preserving chunks?",
+    session_id="agent-1",
+    limit=5,
+)
+```
+
+`query_verbatim()` reads the Eventloom log directly and does not require Neo4j.
+It returns raw document, transcript, or event payload chunks with
+`eventloom://...` citations and source metadata. Use it when the agent needs
+the exact text that produced a memory rather than a compact graph summary.
+
 Ingest local project documents:
 
 ```python

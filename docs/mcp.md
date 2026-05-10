@@ -20,6 +20,13 @@ from the configured session header. Results include Eventloom citations when
 available so clients can display or replay the source event. Results also
 include `score_explanation` metadata for ranking diagnostics.
 
+`memory_verbatim(query, session_id?, limit?)` returns exact source chunks from
+the Eventloom log without requiring Neo4j. It is the source-recall lane for
+questions that need raw transcript turns, document chunks, identifiers, quoted
+phrases, or file/source citations. Results include the raw content, BM25 score,
+`eventloom://...` citation, source kind, and source metadata such as document
+path/line range or transcript source/turn index.
+
 `memory_feedback(entity_name, entity_type, feedback, ...)` records whether a
 retrieved graph entity was useful. Positive feedback values, `used` and
 `helpful`, append a `memory.reinforced` event with optional `importance`,

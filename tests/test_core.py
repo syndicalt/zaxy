@@ -24,6 +24,43 @@ class BrokenEmbeddingProvider:
     def embed(self, text: str) -> list[float]:
         raise RuntimeError("embedding down")
 
+
+async def test_memory_fabric_queries_verbatim_eventloom_sources(tmp_path: Path) -> None:
+    """Fabric should expose verbatim source recall without requiring Neo4j."""
+    fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+    session = fabric.session_manager.get("agent")
+    event = session.eventlog.append(
+        "transcript.turn",
+        actor="assistant",
+        payload={
+            "source": "codex",
+            "turn_index": 3,
+            "role": "assistant",
+            "content": "The replay adapter uses identity-preserving chunks.",
+        },
+        thread="agent",
+    )
+
+    contexts = await fabric.query_verbatim(
+        "Which adapter uses identity-preserving chunks?",
+        session_id="agent",
+        limit=1,
+    )
+
+    assert contexts[0].source == "verbatim"
+    assert contexts[0].content == "assistant: The replay adapter uses identity-preserving chunks."
+    assert contexts[0].metadata == {
+        "citation": f"eventloom://agent/events/{event.seq}#{event.hash}",
+        "source_kind": "transcript",
+        "event_seq": event.seq,
+        "event_type": "transcript.turn",
+        "event_thread": "agent",
+        "event_timestamp": event.timestamp,
+        "transcript_source": "codex",
+        "transcript_turn_index": 3,
+        "transcript_role": "assistant",
+    }
+
 # ------------------------------------------------------------------
 # Fixtures
 # ------------------------------------------------------------------

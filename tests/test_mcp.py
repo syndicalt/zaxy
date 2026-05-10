@@ -63,7 +63,7 @@ class TestToolSchema:
 
     def test_tools_list_length(self) -> None:
         """Should expose the memory and context lifecycle tools."""
-        assert len(TOOLS) == 8
+        assert len(TOOLS) == 9
 
     def test_tool_names(self) -> None:
         """Tool names should match the expected contract."""
@@ -71,6 +71,7 @@ class TestToolSchema:
         assert names == {
             "memory_append",
             "memory_query",
+            "memory_verbatim",
             "memory_feedback",
             "memory_replay",
             "memory_invalidate",
@@ -78,6 +79,14 @@ class TestToolSchema:
             "context_after_turn",
             "subagent_cleanup",
         }
+
+    def test_memory_verbatim_has_query_and_limit(self) -> None:
+        """memory_verbatim should expose source-recall retrieval."""
+        tool = next(t for t in TOOLS if t.name == "memory_verbatim")
+
+        assert tool.inputSchema["required"] == ["query"]
+        assert "limit" in tool.inputSchema["properties"]
+        assert "session_id" in tool.inputSchema["properties"]
 
     def test_memory_append_has_required_fields(self) -> None:
         """memory_append schema should require event_type, actor, payload."""
@@ -226,6 +235,35 @@ class TestMemoryQuery:
             assert "eventloom://default/events/1#aaaaaaaaaaaa" in data
             assert "score_explanation" in data
             assert "weighted_score" in data
+
+    async def test_memory_verbatim_returns_eventloom_citations(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """memory_verbatim should return exact source chunks without graph retrieval."""
+        server = ZaxyMCPServer(eventloom_path=str(tmp_path / ".eventloom"))
+        eventlog = server.session_manager.get("agent").eventlog
+        event = eventlog.append(
+            "document.indexed",
+            actor="indexer",
+            payload={
+                "path": "docs/design.md",
+                "start_line": 4,
+                "end_line": 8,
+                "content": "Git for agent memory needs verbatim source recall.",
+            },
+            thread="agent",
+        )
+
+        result = await server.handle_memory_verbatim(
+            {"query": "source recall", "session_id": "agent", "limit": 1}
+        )
+
+        payload = json.loads(result[0].text)
+        assert payload[0]["content"] == "Git for agent memory needs verbatim source recall."
+        assert payload[0]["source"] == "verbatim"
+        assert payload[0]["citation"] == f"eventloom://agent/events/{event.seq}#{event.hash}"
+        assert payload[0]["metadata"]["source_path"] == "docs/design.md"
 
     async def test_passes_temporal_filter(self, server: ZaxyMCPServer) -> None:
         """temporal_filter should be forwarded to the router."""

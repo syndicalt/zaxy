@@ -9,10 +9,13 @@ from zaxy.integrations import (
     render_handoff_adapter,
     render_mcp_client_config,
 )
+from zaxy.verbatim import VerbatimHit, VerbatimIndex
 
 __all__ = [
     "FrameworkIntegrationSpec",
     "MemoryFabric",
+    "VerbatimHit",
+    "VerbatimIndex",
     "list_framework_integration_specs",
     "render_agent_integration_template",
     "render_framework_install_command",

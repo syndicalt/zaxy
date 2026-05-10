@@ -293,12 +293,13 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Framework integration support registry with maturity and native-adapter status discovery
 - [x] LongMemEval public-memory benchmark workload for MemPalace-comparable identity recall
 - [x] BM25 lexical fusion for Zaxy LongMemEval benchmark retrieval
+- [x] First-class verbatim Eventloom retrieval with MCP and MemoryFabric access
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 533 passed |
+| Tests | 539 passed |
 | Coverage | 92.25% |
 | Lint | ruff clean |
 | Types | mypy clean |
