@@ -263,14 +263,16 @@ def _check_observation_coverage(hook_status: dict[str, Any]) -> dict[str, str]:
 
 
 def _check_packet_memory(settings: Settings) -> dict[str, str]:
-    log = EventLog(eventlog_path(Path(settings.eventloom_path), settings.eventloom_thread))
-    status = _packet_memory_status(log.read_all())
-    details = status["details"]
+    report = packet_memory_report(
+        eventloom_path=Path(settings.eventloom_path),
+        session_id=settings.eventloom_thread,
+    )
+    details = report["details"]
     if details["captured"] == 0:
         return {
             "name": "packet_memory",
             "status": "warning",
-            "message": "no LLM packet captures observed for this session",
+            "message": report["message"],
             "details": details,
             "action": (
                 "Optional: run zaxy packet-analyzer --eventloom-path "
@@ -279,26 +281,62 @@ def _check_packet_memory(settings: Settings) -> dict[str, str]:
             ),
         }
     if details["unprojected"]:
-        count = details["unprojected"]
-        noun = "event has" if count == 1 else "events have"
         return {
             "name": "packet_memory",
             "status": "warning",
-            "message": f"{count} captured packet {noun} not been projected",
+            "message": report["message"],
             "details": details,
             "action": (
                 "Run zaxy packet-project --watch --eventloom-path "
                 f"{settings.eventloom_path} --session-id {settings.eventloom_thread}."
             ),
         }
-    count = details["captured"]
-    noun = "capture has" if count == 1 else "captures have"
     return {
         "name": "packet_memory",
         "status": "ok",
-        "message": f"{count} packet {noun} projected memory",
+        "message": report["message"],
         "details": details,
     }
+
+
+def packet_memory_report(*, eventloom_path: str | Path, session_id: str) -> dict[str, Any]:
+    """Return packet-memory pipeline status for one Eventloom session."""
+    log = EventLog(eventlog_path(Path(eventloom_path), session_id))
+    status = _packet_memory_status(log.read_all())
+    details = status["details"]
+    if details["captured"] == 0:
+        message = "no LLM packet captures observed for this session"
+        state = "warning"
+    elif details["unprojected"]:
+        count = details["unprojected"]
+        noun = "event has" if count == 1 else "events have"
+        message = f"{count} captured packet {noun} not been projected"
+        state = "warning"
+    else:
+        count = details["captured"]
+        noun = "capture has" if count == 1 else "captures have"
+        message = f"{count} packet {noun} projected memory"
+        state = "ok"
+    return {
+        "status": state,
+        "session_id": session_id,
+        "message": message,
+        "details": details,
+    }
+
+
+def format_packet_memory_report(report: dict[str, Any]) -> str:
+    """Format a packet-memory report for operators."""
+    details = report["details"]
+    rendered = " ".join(f"{key}={value}" for key, value in details.items())
+    return "\n".join(
+        [
+            f"Zaxy packet memory: {report['status']}",
+            f"session: {report['session_id']}",
+            f"message: {report['message']}",
+            f"details: {rendered}",
+        ]
+    )
 
 
 def _packet_memory_status(events: list[Any]) -> dict[str, Any]:

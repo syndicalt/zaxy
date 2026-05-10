@@ -1154,6 +1154,58 @@ def test_doctor_command_reports_json(tmp_path: Path) -> None:
     assert '"name": "eventloom"' in result.output
 
 
+def test_packet_status_command_reports_text_summary(tmp_path: Path) -> None:
+    runner = CliRunner()
+    log = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl")
+    packet = log.append(
+        "llm.packet.completed",
+        actor="zaxy-packet-analyzer",
+        payload={"session_id": "agent-1"},
+        thread="agent-1",
+    )
+    log.append(
+        "llm.packet.projected",
+        actor="zaxy-packet-projector",
+        payload={"source_event_hash": packet.hash, "source_event_seq": packet.seq},
+        thread="agent-1",
+    )
+
+    result = runner.invoke(
+        app,
+        ["packet-status", "--eventloom-path", str(tmp_path / ".eventloom"), "--session-id", "agent-1"],
+    )
+
+    assert result.exit_code == 0
+    assert "Zaxy packet memory: ok" in result.output
+    assert "captured=1 projected=1 unprojected=0 reinforced=0 eligible=1" in result.output
+
+
+def test_packet_status_command_reports_json(tmp_path: Path) -> None:
+    runner = CliRunner()
+    EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").append(
+        "llm.packet.completed",
+        actor="zaxy-packet-analyzer",
+        payload={"session_id": "agent-1"},
+        thread="agent-1",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "packet-status",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent-1",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert '"status": "warning"' in result.output
+    assert '"unprojected": 1' in result.output
+
+
 @patch("zaxy.__main__.MemoryFabric")
 def test_index_codebase_command_reports_indexed_count(mock_fabric_cls: MagicMock, tmp_path: Path) -> None:
     """index-codebase should append codebase mapping events through MemoryFabric."""

@@ -67,6 +67,14 @@ next steps for starting both the analyzer and projector. The doctor report also
 prints counters for `captured`, `projected`, `unprojected`, `reinforced`, and
 currently `eligible` packet memories.
 
+For focused inspection without the full doctor report:
+
+```bash
+zaxy packet-status \
+  --eventloom-path .eventloom \
+  --session-id zaxy-default
+```
+
 ## Modes
 
 The first implementation is observe-only. It does not inject memory, choose a

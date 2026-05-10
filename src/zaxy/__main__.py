@@ -29,7 +29,12 @@ from zaxy.compaction import (
     write_compaction_projection,
 )
 from zaxy.core import MemoryFabric
-from zaxy.doctor import format_doctor_report, run_doctor
+from zaxy.doctor import (
+    format_doctor_report,
+    format_packet_memory_report,
+    packet_memory_report,
+    run_doctor,
+)
 from zaxy.embedding import EmbeddingProvider, HashEmbeddingProvider, OpenAIEmbeddingProvider
 from zaxy.event import EventLog
 from zaxy.extract import extract
@@ -518,6 +523,28 @@ def doctor(
         typer.echo(json.dumps(report, indent=2, sort_keys=True))
     else:
         typer.echo(format_doctor_report(report))
+
+
+@app.command("packet-status")
+def packet_status(
+    eventloom_path: Path = typer.Option(  # noqa: B008
+        Path(".eventloom"),
+        "--eventloom-path",
+        help="Eventloom directory containing packet memory events",
+    ),
+    session_id: str = typer.Option(
+        "default",
+        "--session-id",
+        help="Session ID to inspect",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Inspect the LLM packet-memory pipeline for one session."""
+    report = packet_memory_report(eventloom_path=eventloom_path, session_id=session_id)
+    if json_output:
+        typer.echo(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        typer.echo(format_packet_memory_report(report))
 
 
 @app.command("index-codebase")
@@ -1012,7 +1039,7 @@ def packet_project(
 ) -> None:
     """Project captured LLM packets into compact memory events."""
     if watch:
-        result = watch_packet_events(
+        watch_result = watch_packet_events(
             eventloom_path=eventloom_path,
             session_id=session_id,
             from_seq=from_seq,
@@ -1020,22 +1047,22 @@ def packet_project(
             interval_seconds=interval_seconds,
             max_iterations=watch_iterations,
         )
-        noun = "pass" if result.iterations == 1 else "passes"
+        noun = "pass" if watch_result.iterations == 1 else "passes"
         typer.echo(
-            f"Watched {result.iterations} projection {noun} "
-            f"(read={result.read}, projected={result.projected}, skipped={result.skipped})"
+            f"Watched {watch_result.iterations} projection {noun} "
+            f"(read={watch_result.read}, projected={watch_result.projected}, skipped={watch_result.skipped})"
         )
         return
-    result = project_packet_events(
+    project_result = project_packet_events(
         eventloom_path=eventloom_path,
         session_id=session_id,
         from_seq=from_seq,
         limit=limit,
     )
-    noun = "event" if result.projected == 1 else "events"
+    noun = "event" if project_result.projected == 1 else "events"
     typer.echo(
-        f"Projected {result.projected} packet {noun} "
-        f"(read={result.read}, skipped={result.skipped})"
+        f"Projected {project_result.projected} packet {noun} "
+        f"(read={project_result.read}, skipped={project_result.skipped})"
     )
 
 
