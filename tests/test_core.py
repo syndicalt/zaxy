@@ -717,6 +717,41 @@ class TestContextAssembly:
         assert assembly.contexts[1].metadata["assembly_lane"] == "verbatim"
         assert "Exact source mentions identity-code-0042" in assembly.prompt
         assert "eventloom://agent-1/events/3#cccccccccccc" in assembly.prompt
+        assert assembly.assembly_policy == {
+            "verbatim_enabled": True,
+            "verbatim_slots": 1,
+        }
+        assert assembly.context_counts == {"graph": 1, "verbatim": 1, "replay": 0}
+
+    async def test_assemble_context_skips_verbatim_when_policy_disabled(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Disabled source recall should not read Eventloom verbatim hits."""
+        fabric.session_manager.replay.return_value = MagicMock(
+            events=[],
+            integrity=MagicMock(ok=True),
+        )
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content="Graph summary",
+                source="keyword",
+                score=0.8,
+                valid_from=None,
+                valid_to=None,
+            )
+        ]
+        fabric.context_assembly_policy = fabric.context_assembly_policy.with_verbatim_enabled(False)
+        with patch.object(fabric, "query_verbatim") as mock_query_verbatim:
+            assembly = await fabric.assemble_context("identity", session_id="agent-1", limit=2)
+
+        mock_query_verbatim.assert_not_called()
+        assert [context.source for context in assembly.contexts] == ["keyword"]
+        assert assembly.assembly_policy == {
+            "verbatim_enabled": False,
+            "verbatim_slots": 1,
+        }
+        assert assembly.context_counts == {"graph": 1, "verbatim": 0, "replay": 0}
 
     async def test_after_turn_appends_turn_and_returns_compacted_context(
         self,

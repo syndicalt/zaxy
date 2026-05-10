@@ -243,6 +243,15 @@ class Settings(BaseSettings):
         default=0.0,
         description="Score multiplier for expired results under decay policy",
     )
+    context_verbatim_enabled: bool = Field(
+        default=True,
+        description="Include exact Eventloom source recall in assembled context",
+    )
+    context_verbatim_slots: int = Field(
+        default=1,
+        ge=0,
+        description="Maximum assembled context slots reserved for verbatim source recall",
+    )
 
     # ------------------------------------------------------------------
     # Embeddings

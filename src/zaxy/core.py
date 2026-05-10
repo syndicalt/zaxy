@@ -30,7 +30,7 @@ from zaxy.compaction import (
     search_compaction_projections,
 )
 from zaxy.config import get_settings
-from zaxy.context import Context, ContextAssemblyPolicy
+from zaxy.context import Context, ContextAssemblyPolicy, context_counts
 from zaxy.documents import collect_document_events
 from zaxy.embedding import build_embedding_provider, embed_extraction
 from zaxy.event import EventLog, ReplayResult  # noqa: F401 - compatibility for existing tests
@@ -65,6 +65,8 @@ class ContextAssembly:
     replay_event_count: int
     compacted: bool = False
     warnings: list[str] = field(default_factory=list)
+    assembly_policy: dict[str, bool | int] = field(default_factory=dict)
+    context_counts: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -134,6 +136,10 @@ class MemoryFabric:
                 projection_search_base,
                 projection_paths,
             )
+        )
+        self.context_assembly_policy = ContextAssemblyPolicy(
+            verbatim_enabled=settings.context_verbatim_enabled,
+            verbatim_slots=settings.context_verbatim_slots,
         )
         self._initialized_workspaces: dict[tuple[str, str], WorkspaceProfile] = {}
         self._initialized_instruction_signatures: dict[tuple[str, str], str] = {}
@@ -572,8 +578,12 @@ class MemoryFabric:
         sid = validate_session_id(session_id)
         replay = await self.replay(from_seq=replay_from_seq, session_id=sid)
         graph_contexts = await self.query(query, limit=limit, session_id=sid)
-        verbatim_contexts = await self.query_verbatim(query, limit=limit, session_id=sid)
-        contexts = ContextAssemblyPolicy().assemble(
+        verbatim_contexts = (
+            await self.query_verbatim(query, limit=limit, session_id=sid)
+            if self.context_assembly_policy.should_query_verbatim(limit=limit)
+            else []
+        )
+        contexts = self.context_assembly_policy.assemble(
             graph_contexts,
             verbatim_contexts,
             limit=limit,
@@ -609,6 +619,8 @@ class MemoryFabric:
             replay_event_count=len(replay_events),
             compacted=compacted,
             warnings=warnings,
+            assembly_policy=self.context_assembly_policy.describe(),
+            context_counts=context_counts(contexts, replay_count=len(replay_events)),
         )
 
     async def record_context_feedback(

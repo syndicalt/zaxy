@@ -49,6 +49,9 @@ returns a prompt-ready bundle containing bounded recent replay plus ranked
 retrieval. The assembled retrieval set includes a reserved verbatim Eventloom
 source-recall lane by default, and each context item includes `metadata` with an
 `assembly_lane` value such as `graph` or `verbatim`.
+The response also includes `assembly_policy` and `context_counts` fields so
+clients can inspect the active policy and the number of graph, verbatim, and
+replay items returned.
 `context_after_turn(role, content, ...)` first appends a `transcript.turn` event,
 then assembles context for the next model call.
 `subagent_cleanup(parent_session_id, subagent_session_id, summary, ...)` records

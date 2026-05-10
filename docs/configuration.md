@@ -45,7 +45,8 @@ similarity quality matters. See [embeddings.md](embeddings.md).
 
 Retrieval settings include `QUERY_DEFAULT_LIMIT`, `QUERY_SCORING_PROFILE`,
 `RETENTION_POLICY`, `RETENTION_DECAY_HALF_LIFE_DAYS`,
-`RETENTION_EXPIRED_WEIGHT`, `RERANKER_PROVIDER`, `RERANKER_URL`,
+`RETENTION_EXPIRED_WEIGHT`, `CONTEXT_VERBATIM_ENABLED`,
+`CONTEXT_VERBATIM_SLOTS`, `RERANKER_PROVIDER`, `RERANKER_URL`,
 `RERANKER_API_KEY`, `OPENAI_RERANK_MODEL`, and `OPENAI_BASE_URL`.
 `RETENTION_POLICY=none` is the default and preserves current retrieval
 behavior. `filter_expired` removes expired candidates at query time, while
@@ -54,6 +55,9 @@ mutating Eventloom or Neo4j facts. `RERANKER_PROVIDER=lexical` enables
 deterministic local reranking. `RERANKER_PROVIDER=http` sends fused candidates
 to a local/self-hosted endpoint. `RERANKER_PROVIDER=openai` uses an
 OpenAI-compatible chat-completions model and `OPENAI_API_KEY`.
+`CONTEXT_VERBATIM_ENABLED=true` reserves exact Eventloom source recall during
+context assembly, and `CONTEXT_VERBATIM_SLOTS` controls how many assembled
+context slots are reserved for those cited source chunks.
 
 Supported secret-file variants are `NEO4J_PASSWORD_FILE`,
 `MCP_ADMIN_TOKEN_FILE`, `MCP_REMOTE_AUTH_TOKEN_FILE`,

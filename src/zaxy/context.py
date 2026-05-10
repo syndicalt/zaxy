@@ -22,7 +22,26 @@ class Context:
 class ContextAssemblyPolicy:
     """Budget and merge retrieved context from source-aware assembly lanes."""
 
+    verbatim_enabled: bool = True
     verbatim_slots: int = 1
+
+    def should_query_verbatim(self, *, limit: int) -> bool:
+        """Return whether assembly should read the verbatim source lane."""
+        return self.verbatim_enabled and self.verbatim_slots > 0 and limit > 0
+
+    def describe(self) -> dict[str, bool | int]:
+        """Return a stable client-facing policy description."""
+        return {
+            "verbatim_enabled": self.verbatim_enabled,
+            "verbatim_slots": self.verbatim_slots,
+        }
+
+    def with_verbatim_enabled(self, enabled: bool) -> ContextAssemblyPolicy:
+        """Return a copy with the verbatim lane enabled or disabled."""
+        return ContextAssemblyPolicy(
+            verbatim_enabled=enabled,
+            verbatim_slots=self.verbatim_slots,
+        )
 
     def assemble(
         self,
@@ -34,7 +53,11 @@ class ContextAssemblyPolicy:
         """Merge graph and verbatim contexts with a reserved source-recall lane."""
         if limit <= 0:
             return []
-        verbatim_limit = min(self.verbatim_slots, limit, len(verbatim_contexts))
+        verbatim_limit = (
+            min(self.verbatim_slots, limit, len(verbatim_contexts))
+            if self.verbatim_enabled
+            else 0
+        )
         selected_verbatim = [
             _with_assembly_lane(context, "verbatim")
             for context in _dedupe_contexts(verbatim_contexts)[:verbatim_limit]
@@ -49,6 +72,18 @@ class ContextAssemblyPolicy:
                 continue
             selected_graph.append(_with_assembly_lane(context, "graph"))
         return [*selected_graph, *selected_verbatim]
+
+
+def context_counts(contexts: list[Context], *, replay_count: int) -> dict[str, int]:
+    """Return client-facing counts for assembled context lanes."""
+    counts = {"graph": 0, "verbatim": 0, "replay": replay_count}
+    for context in contexts:
+        metadata = context.metadata or {}
+        if metadata.get("assembly_lane") == "verbatim" or context.source == "verbatim":
+            counts["verbatim"] += 1
+        else:
+            counts["graph"] += 1
+    return counts
 
 
 def _dedupe_contexts(contexts: list[Context]) -> list[Context]:

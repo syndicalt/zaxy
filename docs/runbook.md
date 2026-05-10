@@ -473,6 +473,8 @@ groups:
 | `MCP_AUDIT_ENABLED` | `false` | Export remote MCP/SSE request audit JSONL |
 | `MCP_AUDIT_PATH` | `.eventloom/remote_audit.jsonl` | Remote MCP/SSE request audit JSONL path |
 | `QUERY_DEFAULT_LIMIT` | `10` | Default query result limit |
+| `CONTEXT_VERBATIM_ENABLED` | `true` | Include exact Eventloom source recall in assembled context |
+| `CONTEXT_VERBATIM_SLOTS` | `1` | Assembled context slots reserved for verbatim source recall |
 | `EMBEDDING_ENABLED` | `true` | Generate embeddings for vector search |
 | `EMBEDDING_PROVIDER` | `hash` | Embedding provider: `hash` or `openai` |
 | `EMBEDDING_DIMENSION` | `1536` | Vector dimension; must match the Neo4j vector index |

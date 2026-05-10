@@ -31,7 +31,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 from zaxy.config import get_settings
-from zaxy.context import Context, ContextAssemblyPolicy
+from zaxy.context import Context, ContextAssemblyPolicy, context_counts
 from zaxy.extract import extract
 from zaxy.graph import GraphStore
 from zaxy.lifecycle import (
@@ -286,6 +286,10 @@ class ZaxyMCPServer:
             disabled=not settings.pathlight_enabled,
         )
         self._retention_policy = build_retention_policy(settings)
+        self.context_assembly_policy = ContextAssemblyPolicy(
+            verbatim_enabled=settings.context_verbatim_enabled,
+            verbatim_slots=settings.context_verbatim_slots,
+        )
 
     async def setup(self) -> None:
         """Connect to Neo4j and initialize schema."""
@@ -709,9 +713,13 @@ class ZaxyMCPServer:
         )
         results = await router.query(query, limit=limit)
         graph_contexts = [_context_from_query_result(result) for result in results]
-        verbatim_hits = VerbatimIndex.from_event_logs(
-            [self.session_manager.get(session_id).eventlog]
-        ).query(query, limit=limit)
+        verbatim_hits = (
+            VerbatimIndex.from_event_logs(
+                [self.session_manager.get(session_id).eventlog]
+            ).query(query, limit=limit)
+            if self.context_assembly_policy.should_query_verbatim(limit=limit)
+            else []
+        )
         verbatim_contexts = [
             Context(
                 content=hit.content,
@@ -725,7 +733,7 @@ class ZaxyMCPServer:
             )
             for hit in verbatim_hits
         ]
-        contexts = ContextAssemblyPolicy().assemble(
+        contexts = self.context_assembly_policy.assemble(
             graph_contexts,
             verbatim_contexts,
             limit=limit,
@@ -737,6 +745,8 @@ class ZaxyMCPServer:
             "contexts": [_context_payload(context) for context in contexts],
             "replay_event_count": len(recent_events),
             "compacted": compacted,
+            "assembly_policy": self.context_assembly_policy.describe(),
+            "context_counts": context_counts(contexts, replay_count=len(recent_events)),
         }
 
     def _require_admin(self, arguments: dict[str, Any]) -> None:

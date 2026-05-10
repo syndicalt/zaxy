@@ -37,6 +37,13 @@ def test_retention_policy_defaults_are_non_destructive() -> None:
     assert settings.retention_expired_weight == 0.0
 
 
+def test_context_assembly_defaults_include_source_recall() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.context_verbatim_enabled is True
+    assert settings.context_verbatim_slots == 1
+
+
 class TestSecretFiles:
     """Docker/Kubernetes secret file loading."""
 

@@ -545,6 +545,11 @@ class TestContextLifecycleTools:
         assert output["contexts"][1]["metadata"]["assembly_lane"] == "verbatim"
         assert output["contexts"][1]["citation"] == f"eventloom://agent-1/events/{event.seq}#{event.hash}"
         assert "identity-code-0042" in output["prompt"]
+        assert output["assembly_policy"] == {
+            "verbatim_enabled": True,
+            "verbatim_slots": 1,
+        }
+        assert output["context_counts"] == {"graph": 1, "verbatim": 1, "replay": 1}
 
     async def test_context_assemble_uses_configured_default_session(self, server: ZaxyMCPServer) -> None:
         """Omitted session_id should use the configured domain-separated default."""

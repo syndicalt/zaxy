@@ -113,6 +113,9 @@ for building an LLM context window from durable session history, temporal graph
 memory, and exact cited source chunks. Returned context metadata includes
 `assembly_lane` so clients can distinguish `graph` context from `verbatim`
 source recall.
+`assembly.assembly_policy` records the policy in force for the call, and
+`assembly.context_counts` records graph, verbatim, and replay counts for
+observability.
 
 Run lifecycle hooks after a turn or subagent handoff:
 
