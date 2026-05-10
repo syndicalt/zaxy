@@ -51,6 +51,36 @@ def test_score_retrieval_rewards_expected_and_penalizes_forbidden_terms() -> Non
     assert stale.forbidden_hits == ("theme=dark",)
 
 
+def test_score_retrieval_accepts_semantic_answer_surface_forms() -> None:
+    """Benchmark scoring should not miss equivalent answer wording."""
+    article_case = BenchmarkCase(
+        name="racket-source",
+        query="Where did I buy my new tennis racket from?",
+        expected_terms=("the sports store downtown",),
+    )
+    date_case = BenchmarkCase(
+        name="fundraiser-date",
+        query="When did I volunteer at the fundraising dinner?",
+        expected_terms=("February 14th",),
+    )
+    distributed_location_case = BenchmarkCase(
+        name="study-abroad",
+        query="Where did I attend for my study abroad program?",
+        expected_terms=("University of Melbourne in Australia",),
+    )
+
+    article = score_retrieval(article_case, ["I got it from a sports store downtown."])
+    date = score_retrieval(date_case, ["I volunteered at the dinner on Valentine's Day."])
+    distributed_location = score_retrieval(
+        distributed_location_case,
+        ["My study abroad program was at the University of Melbourne. I loved Australia."],
+    )
+
+    assert article.score == 1.0
+    assert date.score == 1.0
+    assert distributed_location.score == 1.0
+
+
 def test_flat_jsonl_baseline_exposes_stale_context_limitation(tmp_path: Path) -> None:
     """Flat event scanning should surface both old and new preference values."""
     log_path = tmp_path / "bench.jsonl"

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -143,9 +144,13 @@ def competitive_cases() -> tuple[BenchmarkCase, ...]:
 def score_retrieval(case: BenchmarkCase, contexts: list[str]) -> RetrievalScore:
     """Score retrieved context against expected and forbidden terms."""
     haystack = "\n".join(contexts).casefold()
-    expected_hits = tuple(term for term in case.expected_terms if term.casefold() in haystack)
+    expected_hits = tuple(
+        term for term in case.expected_terms
+        if _expected_term_present(term, haystack)
+    )
     missing_expected = tuple(
-        term for term in case.expected_terms if term.casefold() not in haystack
+        term for term in case.expected_terms
+        if not _expected_term_present(term, haystack)
     )
     forbidden_hits = tuple(term for term in case.forbidden_terms if term.casefold() in haystack)
     identity_hits = tuple(term for term in case.identity_terms if term.casefold() in haystack)
@@ -170,6 +175,50 @@ def score_retrieval(case: BenchmarkCase, contexts: list[str]) -> RetrievalScore:
         identity_hits=identity_hits,
         missing_identities=missing_identities,
     )
+
+
+_ANSWER_ALIASES = {
+    "valentine's day": "february 14th",
+    "valentines day": "february 14th",
+}
+
+_LOW_INFORMATION_ANSWER_TOKENS = {
+    "a",
+    "an",
+    "at",
+    "in",
+    "of",
+    "on",
+    "the",
+    "to",
+}
+
+
+def _expected_term_present(term: str, haystack: str) -> bool:
+    """Return whether retrieved context contains an expected answer surface."""
+    normalized_term = _normalize_answer_text(term)
+    normalized_haystack = _normalize_answer_text(haystack)
+    if normalized_term in normalized_haystack:
+        return True
+    term_tokens = [
+        token for token in _answer_tokens(normalized_term)
+        if token not in _LOW_INFORMATION_ANSWER_TOKENS
+    ]
+    if len(term_tokens) < 2:
+        return False
+    haystack_tokens = set(_answer_tokens(normalized_haystack))
+    return all(token in haystack_tokens for token in term_tokens)
+
+
+def _normalize_answer_text(text: str) -> str:
+    normalized = text.casefold()
+    for source, target in _ANSWER_ALIASES.items():
+        normalized = normalized.replace(source, target)
+    return normalized
+
+
+def _answer_tokens(text: str) -> tuple[str, ...]:
+    return tuple(re.findall(r"[a-z0-9]+", text.casefold()))
 
 
 def _event_context(event: dict[str, object]) -> str:

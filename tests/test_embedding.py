@@ -261,3 +261,102 @@ class TestOpenAIEmbeddingProvider:
 
         assert provider.embed("Ship MVP") == [0.1, 0.2, 0.3]
         assert calls == 2
+
+    def test_embed_honors_retry_after_for_rate_limits(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        calls = 0
+        sleeps: list[float] = []
+
+        class FakeResponse:
+            def __init__(self, status_code: int) -> None:
+                self.status_code = status_code
+                self.request = httpx.Request("POST", "https://api.openai.com/v1/embeddings")
+                self.headers = {"retry-after": "2"}
+
+            def raise_for_status(self) -> None:
+                if self.status_code >= 400:
+                    raise httpx.HTTPStatusError(
+                        "rate limited",
+                        request=self.request,
+                        response=httpx.Response(
+                            self.status_code,
+                            headers=self.headers,
+                            request=self.request,
+                        ),
+                    )
+
+            def json(self) -> dict[str, object]:
+                return {"data": [{"embedding": [0.1, 0.2, 0.3]}]}
+
+        class FakeClient:
+            def post(
+                self,
+                url: str,
+                *,
+                headers: dict[str, str],
+                json: dict[str, object],
+            ) -> FakeResponse:
+                nonlocal calls
+                del url, headers, json
+                calls += 1
+                return FakeResponse(429 if calls == 1 else 200)
+
+        monkeypatch.setattr("zaxy.embedding.time.sleep", sleeps.append)
+        provider = OpenAIEmbeddingProvider(
+            api_key="test-key",
+            dimension=3,
+            client=FakeClient(),
+            retry_backoff_seconds=0.1,
+        )
+
+        assert provider.embed("Ship MVP") == [0.1, 0.2, 0.3]
+        assert sleeps == [2.0]
+
+    def test_embed_uses_longer_default_rate_limit_backoff(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        calls = 0
+        sleeps: list[float] = []
+
+        class FakeResponse:
+            def __init__(self, status_code: int) -> None:
+                self.status_code = status_code
+                self.request = httpx.Request("POST", "https://api.openai.com/v1/embeddings")
+
+            def raise_for_status(self) -> None:
+                if self.status_code >= 400:
+                    raise httpx.HTTPStatusError(
+                        "rate limited",
+                        request=self.request,
+                        response=httpx.Response(self.status_code, request=self.request),
+                    )
+
+            def json(self) -> dict[str, object]:
+                return {"data": [{"embedding": [0.1, 0.2, 0.3]}]}
+
+        class FakeClient:
+            def post(
+                self,
+                url: str,
+                *,
+                headers: dict[str, str],
+                json: dict[str, object],
+            ) -> FakeResponse:
+                nonlocal calls
+                del url, headers, json
+                calls += 1
+                return FakeResponse(429 if calls == 1 else 200)
+
+        monkeypatch.setattr("zaxy.embedding.time.sleep", sleeps.append)
+        provider = OpenAIEmbeddingProvider(
+            api_key="test-key",
+            dimension=3,
+            client=FakeClient(),
+            rate_limit_backoff_seconds=7,
+        )
+
+        assert provider.embed("Ship MVP") == [0.1, 0.2, 0.3]
+        assert sleeps == [7]

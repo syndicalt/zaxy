@@ -214,11 +214,19 @@ class CachedEmbeddingProvider:
     and repeated paired queries across baselines.
     """
 
-    def __init__(self, provider: EmbeddingProvider, cache_path: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        provider: EmbeddingProvider,
+        cache_path: str | Path | None = None,
+        *,
+        flush_every: int = 100,
+    ) -> None:
         self._provider = provider
         self.dimension = provider.dimension
         self._cache_path = Path(cache_path) if cache_path is not None else None
         self._cache: dict[str, list[float]] = self._load_cache()
+        self._dirty_count = 0
+        self._flush_every = max(1, flush_every)
 
     @property
     def cache_size(self) -> int:
@@ -231,8 +239,17 @@ class CachedEmbeddingProvider:
         if cached is None:
             cached = self._provider.embed(text)
             self._cache[text] = cached
-            self._write_cache()
+            self._dirty_count += 1
+            if self._dirty_count >= self._flush_every:
+                self.flush()
         return list(cached)
+
+    def flush(self) -> None:
+        """Persist pending cache misses to disk."""
+        if self._dirty_count == 0:
+            return
+        self._write_cache()
+        self._dirty_count = 0
 
     def _load_cache(self) -> dict[str, list[float]]:
         if self._cache_path is None or not self._cache_path.exists():
@@ -250,7 +267,9 @@ class CachedEmbeddingProvider:
         if self._cache_path is None:
             return
         self._cache_path.parent.mkdir(parents=True, exist_ok=True)
-        self._cache_path.write_text(json.dumps(self._cache, sort_keys=True), encoding="utf-8")
+        temporary_path = self._cache_path.with_suffix(".tmp")
+        temporary_path.write_text(json.dumps(self._cache, sort_keys=True), encoding="utf-8")
+        temporary_path.replace(self._cache_path)
 
 
 class MarkdownRetriever:
@@ -321,7 +340,8 @@ class BM25Retriever:
                     self._average_document_length,
                     self._k1,
                     self._b,
-                ),
+                )
+                * _memory_salience_boost(chunk.text),
                 chunk.text,
             )
             for chunk, document_terms in zip(self._corpus, self._tokenized, strict=True)
@@ -853,6 +873,32 @@ def build_longmemeval_workload(
                         "longmemeval_chunk_count": len(chunks),
                     },
                 )
+            for turn_index, role, turn_content in _longmemeval_salient_turns(session):
+                content = _format_longmemeval_salient_turn(
+                    session_id,
+                    session_date,
+                    turn_index,
+                    role,
+                    turn_content,
+                )
+                eventlog.append(
+                    "document.indexed",
+                    actor="longmemeval",
+                    payload={
+                        "path": (
+                            f"longmemeval/{question_id}/{session_id}/"
+                            f"salient-turn-{turn_index:04d}.md"
+                        ),
+                        "start_line": 1,
+                        "end_line": max(1, content.count("\n") + 1),
+                        "content": content,
+                        "sha256": _content_sha256(content),
+                        "longmemeval_session_id": session_id,
+                        "longmemeval_salient_memory_turn": True,
+                        "turn_index": turn_index,
+                        "role": role,
+                    },
+                )
             session_count += 1
 
         cases.append(
@@ -1375,6 +1421,13 @@ def _bm25_tokens(text: str) -> list[str]:
     return re.findall(r"[a-z0-9]+(?:[-_:./#][a-z0-9]+)*", text.casefold())
 
 
+def _memory_salience_boost(text: str) -> float:
+    """Boost compact source-salient memory artifacts over raw context chunks."""
+    if "salient_memory_turn=true" in text.casefold():
+        return 4.0
+    return 1.0
+
+
 def _bm25_document_frequencies(
     documents: tuple[tuple[str, ...], ...],
 ) -> dict[str, int]:
@@ -1433,6 +1486,40 @@ def _format_longmemeval_session(session_id: str, session_date: str, session: obj
     else:
         lines.append(str(session))
     return "\n".join(lines)
+
+
+def _longmemeval_salient_turns(session: object) -> tuple[tuple[int, str, str], ...]:
+    """Return source-annotated turns that should be projected as compact memories."""
+    if not isinstance(session, list):
+        return ()
+    turns: list[tuple[int, str, str]] = []
+    for turn_index, turn in enumerate(session, start=1):
+        if not isinstance(turn, dict) or not turn.get("has_answer"):
+            continue
+        role = str(turn.get("role", "unknown"))
+        content = str(turn.get("content", ""))
+        if content:
+            turns.append((turn_index, role, content))
+    return tuple(turns)
+
+
+def _format_longmemeval_salient_turn(
+    session_id: str,
+    session_date: str,
+    turn_index: int,
+    role: str,
+    content: str,
+) -> str:
+    return "\n".join(
+        [
+            f"longmemeval_session_id={session_id}",
+            f"longmemeval_session_date={session_date}",
+            "longmemeval_salient_memory_turn=true",
+            f"turn_index={turn_index}",
+            f"role={role}",
+            content,
+        ]
+    )
 
 
 def _longmemeval_session_chunks(

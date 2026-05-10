@@ -1099,7 +1099,10 @@ def benchmark(
         typer.echo(f"Wrote JSON report: {written.json_path}")
         typer.echo(f"Wrote Markdown report: {written.markdown_path}")
 
-    asyncio.run(_run())
+    try:
+        asyncio.run(_run())
+    finally:
+        provider.flush()
 
 
 def _load_external_results(path: Path | None) -> tuple[ExternalBenchmarkResult, ...]:

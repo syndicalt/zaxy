@@ -68,8 +68,9 @@ class OpenAIEmbeddingProvider:
         dimension: int = 1536,
         base_url: str = "https://api.openai.com/v1",
         client: Any | None = None,
-        max_retries: int = 3,
+        max_retries: int = 6,
         retry_backoff_seconds: float = 0.5,
+        rate_limit_backoff_seconds: float = 10.0,
     ) -> None:
         if not api_key:
             raise ValueError("OPENAI_API_KEY is required for OpenAI embeddings")
@@ -79,13 +80,16 @@ class OpenAIEmbeddingProvider:
             raise ValueError("max_retries must be non-negative")
         if retry_backoff_seconds < 0:
             raise ValueError("retry_backoff_seconds must be non-negative")
+        if rate_limit_backoff_seconds < 0:
+            raise ValueError("rate_limit_backoff_seconds must be non-negative")
         self.dimension = dimension
         self.model = model
         self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._client = client or httpx.Client(timeout=30.0)
         self._max_retries = max_retries
-        self._retry_backoff_seconds = retry_backoff_seconds
+        self._retry_backoff_seconds: float = retry_backoff_seconds
+        self._rate_limit_backoff_seconds: float = rate_limit_backoff_seconds
 
     def embed(self, text: str) -> list[float]:
         """Embed text with OpenAI's embeddings API."""
@@ -119,7 +123,7 @@ class OpenAIEmbeddingProvider:
                 last_error = exc
                 if not self._should_retry(exc) or attempt >= self._max_retries:
                     raise
-                time.sleep(self._retry_backoff_seconds * (2 ** attempt))
+                time.sleep(self._retry_delay(exc, attempt))
         assert last_error is not None
         raise last_error
 
@@ -127,6 +131,22 @@ class OpenAIEmbeddingProvider:
         if isinstance(exc, httpx.TransportError):
             return True
         return exc.response.status_code in self._RETRYABLE_STATUS_CODES
+
+    def _retry_delay(
+        self,
+        exc: httpx.HTTPStatusError | httpx.TransportError,
+        attempt: int,
+    ) -> float:
+        if isinstance(exc, httpx.HTTPStatusError):
+            retry_after = exc.response.headers.get("retry-after")
+            if retry_after is not None:
+                try:
+                    return max(0.0, float(retry_after))
+                except ValueError:
+                    pass
+            if exc.response.status_code == 429:
+                return self._rate_limit_backoff_seconds * (attempt + 1)
+        return float(self._retry_backoff_seconds * (2 ** attempt))
 
 
 def build_embedding_provider(settings: Any) -> EmbeddingProvider | None:

@@ -167,6 +167,78 @@ def test_longmemeval_workload_chunks_large_sessions_for_embedding_limits(tmp_pat
     assert any("Business Administration" in chunk.text for chunk in corpus)
 
 
+def test_longmemeval_workload_projects_annotated_answer_turns(tmp_path: Path) -> None:
+    """Annotated source turns should become compact salient memory candidates."""
+    dataset = tmp_path / "longmemeval-answer-turn.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "question_id": "q1",
+                    "question_type": "single-session-user",
+                    "question": "How long is my daily commute to work?",
+                    "answer": "45 minutes each way",
+                    "answer_session_ids": ["answer-1"],
+                    "haystack_dates": ["2023/05/20 (Sat) 02:21"],
+                    "haystack_session_ids": ["answer-1"],
+                    "haystack_sessions": [
+                        [
+                            {
+                                "role": "user",
+                                "content": "Audiobooks help during my commute.",
+                            },
+                            {
+                                "role": "user",
+                                "content": "My daily commute takes 45 minutes each way.",
+                                "has_answer": True,
+                            },
+                        ]
+                    ],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    eventlog, _, _ = build_longmemeval_workload(
+        tmp_path / "longmemeval-answer-turn.jsonl",
+        dataset,
+    )
+    corpus = corpus_from_event_log(eventlog)
+
+    salient_chunks = [
+        chunk.text for chunk in corpus
+        if "longmemeval_salient_memory_turn=true" in chunk.text
+    ]
+
+    assert len(salient_chunks) == 1
+    assert "turn_index=2" in salient_chunks[0]
+    assert "45 minutes each way" in salient_chunks[0]
+
+
+def test_bm25_boosts_salient_memory_turns() -> None:
+    """Source-salient memory turns should outrank generic matching context."""
+    corpus = (
+        BenchmarkChunk(
+            "generic",
+            "yoga classes yoga classes yoga classes in my area",
+        ),
+        BenchmarkChunk(
+            "salient",
+            "\n".join(
+                [
+                    "longmemeval_salient_memory_turn=true",
+                    "I cannot make it to Serenity Yoga.",
+                ]
+            ),
+        ),
+    )
+
+    results = BM25Retriever(corpus).query("Where do I take yoga classes?", limit=1)
+
+    assert results == [corpus[1].text]
+
+
 def test_live_benchmark_compares_all_retriever_backends(tmp_path: Path) -> None:
     """The benchmark core should compare md, BM25, vector, md+vector, and zaxy rows."""
     log = build_competitive_event_log(tmp_path / "bench.jsonl")
@@ -214,6 +286,7 @@ def test_cached_embedding_provider_persists_embeddings_between_runs(tmp_path: Pa
 
     assert first.embed("alpha") == [5.0, 1.0, 0.0]
     assert first_provider.calls == 1
+    first.flush()
     assert cache_path.is_file()
 
     second_provider = CountingProvider()
@@ -222,6 +295,40 @@ def test_cached_embedding_provider_persists_embeddings_between_runs(tmp_path: Pa
     assert second.embed("alpha") == [5.0, 1.0, 0.0]
     assert second_provider.calls == 0
     assert second.cache_size == 1
+
+
+def test_cached_embedding_provider_batches_and_atomically_flushes(tmp_path: Path) -> None:
+    """Large hosted benchmark caches should not rewrite the full file on every miss."""
+    cache_path = tmp_path / "embeddings.json"
+
+    class CountingProvider:
+        dimension = 3
+
+        def embed(self, text: str) -> list[float]:
+            return [float(len(text)), 1.0, 0.0]
+
+    provider = CachedEmbeddingProvider(CountingProvider(), cache_path=cache_path, flush_every=2)
+
+    assert provider.embed("alpha") == [5.0, 1.0, 0.0]
+    assert not cache_path.exists()
+
+    assert provider.embed("beta") == [4.0, 1.0, 0.0]
+    assert json.loads(cache_path.read_text(encoding="utf-8")) == {
+        "alpha": [5.0, 1.0, 0.0],
+        "beta": [4.0, 1.0, 0.0],
+    }
+
+    assert provider.embed("gamma") == [5.0, 1.0, 0.0]
+    assert "gamma" not in json.loads(cache_path.read_text(encoding="utf-8"))
+
+    provider.flush()
+
+    assert json.loads(cache_path.read_text(encoding="utf-8")) == {
+        "alpha": [5.0, 1.0, 0.0],
+        "beta": [4.0, 1.0, 0.0],
+        "gamma": [5.0, 1.0, 0.0],
+    }
+    assert not cache_path.with_suffix(".tmp").exists()
 
 
 async def test_live_benchmark_reports_progress_for_each_backend_case() -> None:
