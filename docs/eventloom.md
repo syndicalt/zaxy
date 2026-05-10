@@ -40,6 +40,7 @@ For local inspection, generate a standalone HTML viewer:
 ```bash
 zaxy memory status --eventloom-path .eventloom
 zaxy memory log --eventloom-path .eventloom --limit 20
+zaxy memory diff --eventloom-path .eventloom --session-id default --from-seq 10 --to-seq 20
 zaxy viewer .eventloom --output eventloom-viewer.html
 ```
 
@@ -51,6 +52,9 @@ same fields in a stable machine-readable format.
 form with session ID, sequence, short hash, timestamp, event type, actor, and a
 payload summary. Use `--session-id` to inspect one session and `--json` for
 stable machine-readable entries.
+`zaxy memory diff` prints the immutable events added in an inclusive sequence
+range for one session. The first version is deliberately event-level; it does
+not claim semantic graph/fact diffs.
 
 The viewer reads one JSONL log or every `*.jsonl` file in an Eventloom
 directory. It highlights session bootstrap events, lifecycle events, integrity

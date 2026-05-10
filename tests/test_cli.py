@@ -149,6 +149,76 @@ def test_memory_log_json_filters_session_and_limit(tmp_path: Path) -> None:
     assert payload["entries"][0]["summary"] == "Newest"
 
 
+def test_memory_diff_prints_event_range(tmp_path: Path) -> None:
+    """memory diff should print added events in the requested sequence range."""
+    log = EventLog(tmp_path / ".eventloom" / "agent.jsonl")
+    log.append("goal.created", actor="user", payload={"title": "Older"}, thread="agent")
+    event = log.append(
+        "decision.recorded",
+        actor="assistant",
+        payload={"decision": "Add diff."},
+        thread="agent",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "diff",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent",
+            "--from-seq",
+            "2",
+            "--to-seq",
+            "2",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert f"agent +[{event.seq}] {event.hash[:12]} decision.recorded by assistant" in result.output
+    assert "Add diff." in result.output
+
+
+def test_memory_diff_json_output(tmp_path: Path) -> None:
+    """memory diff --json should expose stable added event entries."""
+    event = EventLog(tmp_path / ".eventloom" / "agent.jsonl").append(
+        "task.completed",
+        actor="codex",
+        payload={"summary": "Added diff CLI."},
+        thread="agent",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "diff",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent",
+            "--from-seq",
+            "1",
+            "--to-seq",
+            "1",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["session_id"] == "agent"
+    assert payload["from_seq"] == 1
+    assert payload["to_seq"] == 1
+    assert payload["integrity_ok"] is True
+    assert payload["added"][0]["seq"] == event.seq
+    assert payload["added"][0]["summary"] == "Added diff CLI."
+
+
 def test_ide_config_command_prints_copyable_mcp_json() -> None:
     runner = CliRunner()
 

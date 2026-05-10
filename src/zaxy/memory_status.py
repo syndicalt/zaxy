@@ -67,6 +67,23 @@ class MemoryLog:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class MemoryDiff:
+    """Event-level diff for one Eventloom session/log range."""
+
+    eventloom_path: str
+    session_id: str | None
+    from_seq: int
+    to_seq: int
+    integrity_ok: bool
+    integrity_reason: str | None
+    added: list[MemoryLogEntry]
+
+    def to_dict(self) -> dict[str, object]:
+        """Return a stable JSON-serializable representation."""
+        return asdict(self)
+
+
 def inspect_memory_status(eventloom_path: str | Path) -> MemoryStatus:
     """Inspect Eventloom JSONL session logs without requiring graph services."""
     base = Path(eventloom_path).resolve()
@@ -104,6 +121,40 @@ def inspect_memory_log(
     )
 
 
+def inspect_memory_diff(
+    eventloom_path: str | Path,
+    *,
+    session_id: str | None,
+    from_seq: int,
+    to_seq: int,
+) -> MemoryDiff:
+    """Return Eventloom events added in an inclusive sequence range."""
+    if from_seq < 1:
+        raise ValueError("from_seq must be >= 1")
+    if to_seq < 1:
+        raise ValueError("to_seq must be >= 1")
+    if from_seq > to_seq:
+        raise ValueError("from_seq must be <= to_seq")
+    base = Path(eventloom_path).resolve()
+    path = _session_log_path(base, session_id)
+    log = EventLog(path)
+    integrity = log.verify()
+    added = [
+        _log_entry(path.stem, event, integrity_ok=integrity.ok)
+        for event in log.read_all()
+        if from_seq <= event.seq <= to_seq
+    ]
+    return MemoryDiff(
+        eventloom_path=str(base),
+        session_id=session_id or path.stem,
+        from_seq=from_seq,
+        to_seq=to_seq,
+        integrity_ok=integrity.ok,
+        integrity_reason=integrity.broken_reason,
+        added=added,
+    )
+
+
 def format_memory_status(status: MemoryStatus) -> str:
     """Format memory status for humans."""
     lines = [
@@ -126,6 +177,25 @@ def format_memory_status(status: MemoryStatus) -> str:
         )
         if session.integrity_reason:
             lines.append(f"    reason={session.integrity_reason}")
+    return "\n".join(lines)
+
+
+def format_memory_diff(diff: MemoryDiff) -> str:
+    """Format an event-level memory diff for humans."""
+    if not diff.added:
+        return "No memory events in range."
+    lines: list[str] = []
+    for entry in diff.added:
+        lines.append(
+            f"{entry.session_id} +[{entry.seq}] {entry.hash[:12]} "
+            f"{entry.type} by {entry.actor}"
+        )
+        if entry.summary:
+            lines.append(f"  {entry.summary}")
+    if not diff.integrity_ok:
+        lines.append("integrity=FAILED")
+        if diff.integrity_reason:
+            lines.append(f"reason={diff.integrity_reason}")
     return "\n".join(lines)
 
 

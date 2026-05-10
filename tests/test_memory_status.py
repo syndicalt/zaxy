@@ -7,8 +7,10 @@ from pathlib import Path
 
 from zaxy.event import EventLog
 from zaxy.memory_status import (
+    format_memory_diff,
     format_memory_log,
     format_memory_status,
+    inspect_memory_diff,
     inspect_memory_log,
     inspect_memory_status,
 )
@@ -123,3 +125,62 @@ def test_format_memory_log_prints_git_style_lines(tmp_path: Path) -> None:
     assert f"agent [{event.seq}] {event.hash[:12]}" in output
     assert "decision.recorded by assistant" in output
     assert "Use Eventloom as source of truth." in output
+
+
+def test_inspect_memory_diff_returns_events_in_sequence_range(tmp_path: Path) -> None:
+    """Memory diff should expose added Eventloom events in a seq range."""
+    log = EventLog(tmp_path / ".eventloom" / "agent.jsonl")
+    log.append("goal.created", actor="user", payload={"title": "Older"}, thread="agent")
+    decision = log.append(
+        "decision.recorded",
+        actor="assistant",
+        payload={"decision": "Use event-level diff."},
+        thread="agent",
+    )
+    task = log.append(
+        "task.completed",
+        actor="codex",
+        payload={"summary": "Added memory diff."},
+        thread="agent",
+    )
+
+    diff = inspect_memory_diff(
+        tmp_path / ".eventloom",
+        session_id="agent",
+        from_seq=2,
+        to_seq=3,
+    )
+
+    assert diff.session_id == "agent"
+    assert diff.from_seq == 2
+    assert diff.to_seq == 3
+    assert diff.integrity_ok is True
+    assert [entry.seq for entry in diff.added] == [decision.seq, task.seq]
+    assert diff.added[0].summary == "Use event-level diff."
+
+
+def test_format_memory_diff_prints_added_events(tmp_path: Path) -> None:
+    """Human diff output should mark events as added without semantic overclaiming."""
+    event = EventLog(tmp_path / "agent.jsonl").append(
+        "decision.recorded",
+        actor="assistant",
+        payload={"decision": "Diff immutable events."},
+        thread="agent",
+    )
+
+    output = format_memory_diff(
+        inspect_memory_diff(tmp_path / "agent.jsonl", session_id=None, from_seq=1, to_seq=1)
+    )
+
+    assert f"agent +[{event.seq}] {event.hash[:12]} decision.recorded by assistant" in output
+    assert "Diff immutable events." in output
+
+
+def test_inspect_memory_diff_rejects_invalid_ranges(tmp_path: Path) -> None:
+    """Diff ranges should be explicit and ordered."""
+    try:
+        inspect_memory_diff(tmp_path / ".eventloom", session_id="agent", from_seq=3, to_seq=2)
+    except ValueError as exc:
+        assert "from_seq must be <= to_seq" in str(exc)
+    else:
+        raise AssertionError("expected invalid range to fail")

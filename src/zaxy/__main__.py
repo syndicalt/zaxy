@@ -77,8 +77,10 @@ from zaxy.live_benchmark import (
 from zaxy.local_profile import check_local_profile, render_local_profile, write_local_profile
 from zaxy.mcp_server import main as mcp_main
 from zaxy.memory_status import (
+    format_memory_diff,
     format_memory_log,
     format_memory_status,
+    inspect_memory_diff,
     inspect_memory_log,
     inspect_memory_status,
 )
@@ -125,6 +127,30 @@ def memory_log(
         typer.echo(json.dumps(memory.to_dict(), indent=2, sort_keys=True))
     else:
         typer.echo(format_memory_log(memory))
+
+
+@memory_app.command("diff")
+def memory_diff(
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory or JSONL log"),  # noqa: B008
+    session_id: str | None = typer.Option(None, help="Session ID to inspect"),  # noqa: B008
+    from_seq: int = typer.Option(..., "--from-seq", min=1, help="First sequence number"),
+    to_seq: int = typer.Option(..., "--to-seq", min=1, help="Last sequence number"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Show event-level Eventloom changes in an inclusive sequence range."""
+    try:
+        diff = inspect_memory_diff(
+            eventloom_path,
+            session_id=session_id,
+            from_seq=from_seq,
+            to_seq=to_seq,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if json_output:
+        typer.echo(json.dumps(diff.to_dict(), indent=2, sort_keys=True))
+    else:
+        typer.echo(format_memory_diff(diff))
 
 
 @app.command("ide-config")

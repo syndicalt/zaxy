@@ -495,6 +495,7 @@ zaxy init-session . --session-id zaxy-default  # Append workspace genesis profil
 zaxy index-codebase . --session-id zaxy-default  # Append codebase file, symbol, import, dependency, call, and coverage events
 zaxy memory status --eventloom-path .eventloom  # Inspect Eventloom sessions, latest hashes, and integrity
 zaxy memory log --eventloom-path .eventloom --limit 20  # Show recent Eventloom events
+zaxy memory diff --eventloom-path .eventloom --session-id zaxy-default --from-seq 10 --to-seq 20  # Show added events in a sequence range
 zaxy replay PATH    # Replay Eventloom log
 zaxy compact PATH --audit  # Audit compaction safety without rewriting the log
 zaxy compact PATH   # Compact log + create snapshot
