@@ -92,6 +92,27 @@ def write_hook_config(
     return target
 
 
+def write_claude_code_hook_config(
+    path: str | Path,
+    content: str,
+    *,
+    force: bool = False,
+) -> Path:
+    """Merge Claude Code hook settings without disturbing unrelated settings."""
+    target = Path(path)
+    if not target.exists():
+        return write_hook_config(target, content, force=force)
+    generated = _parse_json_object(content, source="generated Claude Code hook config")
+    existing = _parse_json_object(target.read_text(encoding="utf-8"), source=str(target))
+    if _contains_zaxy_hook_command(existing) and not force:
+        raise FileExistsError(f"{target} already contains Zaxy hook handlers; pass --force to replace them")
+    if force:
+        _remove_zaxy_hook_handlers(existing)
+    _merge_claude_hook_settings(existing, generated, path=target)
+    target.write_text(json.dumps(existing, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return target
+
+
 def hook_event_type(trigger: str) -> str:
     """Return the normalized Eventloom type for a hook trigger."""
     normalized = trigger.casefold().strip().replace("_", "-")
@@ -238,10 +259,76 @@ def _latest_hook_event(eventloom_path: Path) -> dict[str, Any] | None:
 
 def _looks_like_zaxy_hook_config(path: Path) -> bool:
     try:
-        text = path.read_text(encoding="utf-8")
+        payload = json.loads(path.read_text(encoding="utf-8"))
     except OSError:
         return False
-    return "zaxy hook-event" in text
+    except json.JSONDecodeError:
+        return False
+    return _contains_zaxy_hook_command(payload)
+
+
+def _parse_json_object(text: str, *, source: str) -> dict[str, Any]:
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{source} contains invalid JSON; repair it before installing Zaxy hooks") from exc
+    if not isinstance(payload, dict):
+        raise ValueError(f"{source} must contain a JSON object")
+    return payload
+
+
+def _merge_claude_hook_settings(existing: dict[str, Any], generated: dict[str, Any], *, path: Path) -> None:
+    existing_hooks = existing.setdefault("hooks", {})
+    generated_hooks = generated.get("hooks", {})
+    if not isinstance(existing_hooks, dict):
+        raise ValueError(f"{path} field 'hooks' must contain a JSON object")
+    if not isinstance(generated_hooks, dict):
+        raise ValueError("generated Claude Code hook config field 'hooks' must contain a JSON object")
+    for event_name, groups in generated_hooks.items():
+        if not isinstance(groups, list):
+            raise ValueError(f"generated Claude Code hook event {event_name!r} must contain a list")
+        existing_event = existing_hooks.setdefault(event_name, [])
+        if not isinstance(existing_event, list):
+            raise ValueError(f"{path} hook event {event_name!r} must contain a list")
+        existing_event.extend(groups)
+
+
+def _contains_zaxy_hook_command(value: Any) -> bool:
+    if isinstance(value, dict):
+        command = value.get("command")
+        if isinstance(command, str) and "zaxy hook-event" in command:
+            return True
+        return any(_contains_zaxy_hook_command(child) for child in value.values())
+    if isinstance(value, list):
+        return any(_contains_zaxy_hook_command(child) for child in value)
+    return False
+
+
+def _remove_zaxy_hook_handlers(settings: dict[str, Any]) -> None:
+    hooks = settings.get("hooks")
+    if not isinstance(hooks, dict):
+        return
+    for event_name, groups in list(hooks.items()):
+        if not isinstance(groups, list):
+            continue
+        kept_groups = []
+        for group in groups:
+            if not isinstance(group, dict):
+                kept_groups.append(group)
+                continue
+            handlers = group.get("hooks")
+            if not isinstance(handlers, list):
+                kept_groups.append(group)
+                continue
+            kept_handlers = [handler for handler in handlers if not _contains_zaxy_hook_command(handler)]
+            if kept_handlers:
+                updated = dict(group)
+                updated["hooks"] = kept_handlers
+                kept_groups.append(updated)
+        if kept_groups:
+            hooks[event_name] = kept_groups
+        else:
+            hooks.pop(event_name, None)
 
 
 def _hook_command(

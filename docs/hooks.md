@@ -22,7 +22,11 @@ zaxy hooks claude-code \
 ```
 
 `--output` creates parent directories and refuses to overwrite existing files.
-Pass `--force` when replacing a generated hook config intentionally.
+For Claude Code JSON settings, `--output` merges Zaxy's hook groups into the
+existing settings file and preserves unrelated settings and hook handlers. It
+refuses to add duplicate Zaxy handlers unless `--force` is passed, in which
+case only existing Zaxy hook handlers are replaced. Generic hook outputs remain
+whole-file writes and keep the no-overwrite default.
 
 Inspect the current observer posture:
 
@@ -32,7 +36,9 @@ zaxy hook-event heartbeat --eventloom-path .eventloom --session-id my-project-de
 ```
 
 `hook-status` reports supported client install detection and the latest observed
-hook event. `heartbeat` is a health probe: it proves the Eventloom observer
+hook event. Claude Code detection parses JSON hook command handlers rather than
+matching arbitrary text, so comments or unrelated string fields do not count as
+an installation. `heartbeat` is a health probe: it proves the Eventloom observer
 path can write without pretending that a real task or compaction happened.
 
 ## Supported Clients

@@ -41,6 +41,7 @@ from zaxy.hooks import (
     hook_event_type,
     inspect_hook_status,
     render_hook_config,
+    write_claude_code_hook_config,
     write_hook_config,
 )
 from zaxy.integrations import (
@@ -138,6 +139,15 @@ def ide_config(
             )
             typer.echo(f"Installed {client} MCP config to {written}")
             return
+        if client.casefold().replace("_", "-") == "codex":
+            command = render_codex_mcp_add_command(
+                eventloom_path=eventloom_path,
+                domain=domain,
+                zaxy_executable=zaxy_executable,
+            )
+            typer.echo("Run this Codex MCP install command:")
+            typer.echo(_shell_join(command))
+            return
         config = render_mcp_client_config(
             client,
             eventloom_path=eventloom_path,
@@ -195,7 +205,11 @@ def hooks(
             source=source,
         )
         if output is not None:
-            written = write_hook_config(output, config, force=force)
+            normalized_client = client.casefold().strip().replace("_", "-")
+            if normalized_client in {"claude", "claude-code"}:
+                written = write_claude_code_hook_config(output, config, force=force)
+            else:
+                written = write_hook_config(output, config, force=force)
             typer.echo(f"Wrote hook config to {written}")
             return
         typer.echo(config, nl=False)

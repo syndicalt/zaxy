@@ -90,6 +90,10 @@ target `.codex/config.toml` and require `--codex-trusted-project` because Codex
 only loads project config from trusted projects. User-scoped writes target
 `CODEX_HOME/config.toml` or `~/.codex/config.toml`.
 
+`zaxy ide-config codex` without `--install` also prints the Codex CLI command,
+because Codex does not use the JSON config shapes consumed by Claude, Cursor, or
+VS Code.
+
 Install the `zaxy` CLI before generating MCP config:
 
 ```bash

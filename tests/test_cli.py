@@ -101,6 +101,29 @@ def test_ide_config_command_prints_codex_cli_install_command() -> None:
     assert "-- /opt/zaxy/bin/zaxy serve --eventloom-path .eventloom" in result.output
 
 
+def test_ide_config_command_prints_codex_cli_command_without_install_flag() -> None:
+    """Codex print mode should be useful and should not expose internal helper names."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "ide-config",
+            "codex",
+            "--eventloom-path",
+            ".eventloom",
+            "--domain",
+            "zaxy",
+            "--zaxy-executable",
+            "/opt/zaxy/bin/zaxy",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "codex mcp add zaxy" in result.output
+    assert "render_codex_mcp_add_command" not in result.output
+
+
 def test_ide_config_command_writes_trusted_project_codex_config(tmp_path: Path) -> None:
     """Codex direct config writes should require explicit project trust acknowledgement."""
     runner = CliRunner()
@@ -219,6 +242,122 @@ def test_hooks_command_writes_output_file(tmp_path: Path) -> None:
     assert output.is_file()
     assert '"PreCompact"' in output.read_text(encoding="utf-8")
     assert '"hooks"' not in result.output
+
+
+def test_hooks_command_merges_claude_local_settings(tmp_path: Path) -> None:
+    """Claude hook install should preserve unrelated local settings and hooks."""
+    runner = CliRunner()
+    output = tmp_path / ".claude" / "settings.local.json"
+    output.parent.mkdir()
+    output.write_text(
+        json.dumps(
+            {
+                "permissions": {"allow": ["Bash(pytest)"]},
+                "hooks": {
+                    "PostToolUse": [
+                        {
+                            "matcher": "Edit",
+                            "hooks": [{"type": "command", "command": "ruff check ."}],
+                        }
+                    ]
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "hooks",
+            "claude-code",
+            "--eventloom-path",
+            ".eventloom",
+            "--domain",
+            "zaxy",
+            "--output",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0
+    settings = json.loads(output.read_text(encoding="utf-8"))
+    assert settings["permissions"]["allow"] == ["Bash(pytest)"]
+    assert settings["hooks"]["PostToolUse"][0]["hooks"][0]["command"] == "ruff check ."
+    assert "zaxy hook-event stop" in json.dumps(settings["hooks"]["Stop"])
+    assert "zaxy hook-event precompact" in json.dumps(settings["hooks"]["PreCompact"])
+
+
+def test_hooks_command_refuses_duplicate_claude_zaxy_hooks_without_force(tmp_path: Path) -> None:
+    """Claude hook install should not duplicate existing Zaxy hook handlers."""
+    runner = CliRunner()
+    output = tmp_path / ".claude" / "settings.local.json"
+    output.parent.mkdir()
+    output.write_text(
+        '{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "zaxy hook-event stop"}]}]}}\n',
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        ["hooks", "claude-code", "--output", str(output)],
+    )
+
+    assert result.exit_code != 0
+    assert "already contains Zaxy hook handlers" in result.output
+    assert output.read_text(encoding="utf-8").count("zaxy hook-event") == 1
+
+
+def test_hooks_command_force_replaces_claude_zaxy_hooks(tmp_path: Path) -> None:
+    """Claude --force should replace Zaxy handlers while preserving unrelated settings."""
+    runner = CliRunner()
+    output = tmp_path / ".claude" / "settings.local.json"
+    output.parent.mkdir()
+    output.write_text(
+        json.dumps(
+            {
+                "env": {"KEEP": "1"},
+                "hooks": {
+                    "Stop": [
+                        {"hooks": [{"type": "command", "command": "zaxy hook-event stop --source old"}]},
+                        {"hooks": [{"type": "command", "command": "echo keep"}]},
+                    ]
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        ["hooks", "claude-code", "--domain", "zaxy", "--output", str(output), "--force"],
+    )
+
+    assert result.exit_code == 0
+    settings = json.loads(output.read_text(encoding="utf-8"))
+    assert settings["env"] == {"KEEP": "1"}
+    serialized = json.dumps(settings)
+    assert "--source old" not in serialized
+    assert "echo keep" in serialized
+    assert "zaxy hook-event stop" in serialized
+
+
+def test_hook_status_ignores_non_hook_text_in_claude_settings(tmp_path: Path) -> None:
+    """Hook detection should inspect command handlers, not arbitrary JSON text."""
+    settings_path = tmp_path / ".claude" / "settings.local.json"
+    settings_path.parent.mkdir()
+    settings_path.write_text('{"notes": "zaxy hook-event is mentioned here"}\n', encoding="utf-8")
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["hook-status", "--eventloom-path", str(tmp_path / ".eventloom"), "--workspace-root", str(tmp_path)],
+    )
+
+    assert result.exit_code == 0
+    assert "claude-code: not installed" in result.output
 
 
 def test_hooks_command_refuses_to_overwrite_without_force(tmp_path: Path) -> None:
