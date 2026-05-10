@@ -57,7 +57,9 @@ Projected packets participate in source-aware retrieval as
 to Eventloom and include it in the active memory working set as `memory`.
 By default, one recent projected packet memory can be selected proactively during
 context assembly via `CONTEXT_PACKET_MEMORY_ENABLED=true` and
-`CONTEXT_PACKET_MEMORY_SLOTS=1`.
+`CONTEXT_PACKET_MEMORY_SLOTS=1`. Packet memories reinforced through context
+feedback receive a deterministic selection boost over merely recent packet
+memories while keeping the original packet and projection events immutable.
 
 `zaxy doctor` reports packet-memory status for the active session. It warns when
 captured packets have not been projected yet, and `zaxy init` includes optional

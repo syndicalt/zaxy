@@ -825,6 +825,65 @@ class TestContextAssembly:
         assert "Mira owns dashboards" in assembly.prompt
         assert assembly.context_counts == {"graph": 0, "verbatim": 0, "packet_memory": 1, "replay": 1}
 
+    async def test_assemble_context_prioritizes_reinforced_packet_memory(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Reinforced packet memories should outrank merely recent packet memories."""
+        reinforced_packet = MagicMock(
+            seq=4,
+            type="llm.packet.projected",
+            actor="zaxy-packet-projector",
+            payload={
+                "summary": "LLM packet /v1/responses status 200. User: Mira owns dashboards.",
+                "source_event_seq": 3,
+                "source_event_hash": "b" * 64,
+            },
+            hash="d" * 64,
+            thread="agent-1",
+            timestamp="2024-01-01T00:00:00Z",
+        )
+        newer_packet = MagicMock(
+            seq=6,
+            type="llm.packet.projected",
+            actor="zaxy-packet-projector",
+            payload={
+                "summary": "LLM packet /v1/responses status 200. User: Alex owns billing.",
+                "source_event_seq": 5,
+                "source_event_hash": "c" * 64,
+            },
+            hash="f" * 64,
+            thread="agent-1",
+            timestamp="2024-01-01T00:05:00Z",
+        )
+        reinforcement = MagicMock(
+            seq=7,
+            type="memory.reinforced",
+            actor="assistant",
+            payload={
+                "entity_type": "packet_memory",
+                "source_event_hash": "b" * 64,
+                "importance": 0.9,
+            },
+            hash="g" * 64,
+            thread="agent-1",
+            timestamp="2024-01-01T00:06:00Z",
+        )
+        fabric.session_manager.replay.return_value = MagicMock(
+            events=[reinforced_packet, newer_packet, reinforcement],
+            integrity=MagicMock(ok=True),
+        )
+        fabric.query_router.query.return_value = []
+        with patch.object(fabric, "query_verbatim", return_value=[]):
+            assembly = await fabric.assemble_context("owner context", session_id="agent-1", limit=1)
+
+        assert len(assembly.contexts) == 1
+        assert "Mira owns dashboards" in assembly.contexts[0].content
+        assert assembly.contexts[0].score > 0.6
+        assert assembly.contexts[0].metadata is not None
+        assert assembly.contexts[0].metadata["reinforcement_count"] == 1
+        assert assembly.contexts[0].metadata["importance"] == 0.9
+
     async def test_assemble_context_skips_verbatim_when_policy_disabled(
         self,
         fabric: MemoryFabric,

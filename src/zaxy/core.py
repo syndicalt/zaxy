@@ -554,6 +554,7 @@ class MemoryFabric:
 
     def _recent_packet_memory_contexts(self, events: list[Any]) -> list[Context]:
         """Return newest projected packet memories as proactive context candidates."""
+        reinforcements = _packet_memory_reinforcements(events)
         contexts: list[Context] = []
         for event in reversed(events):
             if getattr(event, "type", "") != "llm.packet.projected":
@@ -576,17 +577,29 @@ class MemoryFabric:
                 "provider_path": payload.get("provider_path"),
                 "model": payload.get("model"),
             }
+            source_hash = payload.get("source_event_hash")
+            reinforcement = (
+                reinforcements.get(source_hash)
+                if isinstance(source_hash, str)
+                else None
+            )
+            score = 0.6
+            if reinforcement is not None:
+                metadata["reinforcement_count"] = reinforcement["count"]
+                metadata["importance"] = reinforcement["importance"]
+                score += min(0.3, 0.1 * reinforcement["count"])
+                score += min(0.1, 0.1 * reinforcement["importance"])
             contexts.append(
                 Context(
                     content=" ".join(summary.split()),
                     source="packet_memory",
-                    score=0.6,
+                    score=round(score, 4),
                     valid_from=getattr(event, "timestamp", None),
                     valid_to=None,
                     metadata={key: value for key, value in metadata.items() if value is not None},
                 )
             )
-        return contexts
+        return sorted(contexts, key=lambda context: context.score, reverse=True)
 
     async def _trace_query_best_effort(
         self,
@@ -861,6 +874,28 @@ def _event_citation(event: Any) -> str | None:
     if not isinstance(thread, str) or not isinstance(seq, int) or not isinstance(event_hash, str):
         return None
     return f"eventloom://{thread}/events/{seq}#{event_hash[:12]}"
+
+
+def _packet_memory_reinforcements(events: list[Any]) -> dict[str, dict[str, float | int]]:
+    reinforcements: dict[str, dict[str, float | int]] = {}
+    for event in events:
+        if getattr(event, "type", "") != "memory.reinforced":
+            continue
+        payload = getattr(event, "payload", {})
+        if not isinstance(payload, dict) or payload.get("entity_type") != "packet_memory":
+            continue
+        source_event_hash = payload.get("source_event_hash")
+        if not isinstance(source_event_hash, str) or not source_event_hash:
+            continue
+        existing = reinforcements.setdefault(
+            source_event_hash,
+            {"count": 0, "importance": 0.0},
+        )
+        existing["count"] = int(existing["count"]) + 1
+        importance = payload.get("importance")
+        if isinstance(importance, int | float) and not isinstance(importance, bool):
+            existing["importance"] = max(float(existing["importance"]), float(importance))
+    return reinforcements
 
 
 def _normalize_context_feedback(feedback: str) -> str:
