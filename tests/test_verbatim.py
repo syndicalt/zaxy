@@ -88,3 +88,21 @@ def test_verbatim_index_prefers_exact_identity_terms(tmp_path) -> None:
     hits = VerbatimIndex.from_event_logs([log]).query("release planning identity-code-0042", limit=1)
 
     assert hits[0].metadata["source_path"] == "docs/b.md"
+
+
+def test_verbatim_index_matches_identifiers_next_to_punctuation(tmp_path) -> None:
+    """Identifier lookup should not depend on sentence punctuation."""
+    log = EventLog(tmp_path / "agent.jsonl")
+    log.append(
+        "transcript.turn",
+        actor="assistant",
+        payload={
+            "role": "assistant",
+            "content": "The audit trail uses identity-code-0042.",
+        },
+        thread="agent",
+    )
+
+    hits = VerbatimIndex.from_event_logs([log]).query("identity-code-0042", limit=1)
+
+    assert hits[0].content == "assistant: The audit trail uses identity-code-0042."

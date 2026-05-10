@@ -1,5 +1,6 @@
 """Zaxy: Event-sourced temporal knowledge graph fabric for AI agent memory."""
 
+from zaxy.context import Context, ContextAssemblyPolicy
 from zaxy.core import MemoryFabric
 from zaxy.integrations import (
     FrameworkIntegrationSpec,
@@ -13,6 +14,8 @@ from zaxy.verbatim import VerbatimHit, VerbatimIndex
 
 __all__ = [
     "FrameworkIntegrationSpec",
+    "Context",
+    "ContextAssemblyPolicy",
     "MemoryFabric",
     "VerbatimHit",
     "VerbatimIndex",

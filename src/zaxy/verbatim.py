@@ -187,7 +187,12 @@ def _int(value: object) -> int | None:
 
 
 def _tokens(text: str) -> tuple[str, ...]:
-    return tuple(token.casefold() for token in re.findall(r"[a-zA-Z0-9_$./:-]+", text))
+    tokens = []
+    for token in re.findall(r"[a-zA-Z0-9_$./:-]+", text):
+        normalized = token.strip(".,;!?()[]{}\"'`").casefold()
+        if normalized:
+            tokens.append(normalized)
+    return tuple(tokens)
 
 
 def _document_frequencies(documents: tuple[tuple[str, ...], ...]) -> Counter[str]:

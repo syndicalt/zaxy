@@ -492,6 +492,60 @@ class TestContextLifecycleTools:
         assert output["replay_event_count"] == 1
         assert "MMR diversity" in output["prompt"]
 
+    async def test_context_assemble_includes_verbatim_source_lane(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """context_assemble should include exact Eventloom source hits by default."""
+        server = ZaxyMCPServer(eventloom_path=str(tmp_path / ".eventloom"))
+        event = server.session_manager.get("agent-1").eventlog.append(
+            "transcript.turn",
+            actor="assistant",
+            payload={
+                "source": "codex",
+                "turn_index": 9,
+                "role": "assistant",
+                "content": "The audit trail uses identity-code-0042.",
+            },
+            thread="agent-1",
+        )
+        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
+            router = AsyncMock()
+            router.query.return_value = [
+                MagicMock(
+                    content="Graph summary of audit trail",
+                    source="keyword",
+                    score=0.7,
+                    valid_from=None,
+                    valid_to=None,
+                    citation="eventloom://agent-1/events/1#graph",
+                    score_explanation=None,
+                ),
+                MagicMock(
+                    content="Lower-priority graph context",
+                    source="traversal",
+                    score=0.4,
+                    valid_from=None,
+                    valid_to=None,
+                    citation="eventloom://agent-1/events/2#graph",
+                    score_explanation=None,
+                ),
+            ]
+            mock_router_cls.return_value = router
+
+            result = await server.handle_context_assemble({
+                "query": "identity-code-0042",
+                "session_id": "agent-1",
+                "limit": 2,
+            })
+
+        output = json_loads(result[0].text)
+        assert [context["source"] for context in output["contexts"]] == ["keyword", "verbatim"]
+        assert output["contexts"][0]["metadata"]["assembly_lane"] == "graph"
+        assert output["contexts"][1]["metadata"]["assembly_lane"] == "verbatim"
+        assert output["contexts"][1]["citation"] == f"eventloom://agent-1/events/{event.seq}#{event.hash}"
+        assert "identity-code-0042" in output["prompt"]
+
     async def test_context_assemble_uses_configured_default_session(self, server: ZaxyMCPServer) -> None:
         """Omitted session_id should use the configured domain-separated default."""
         server._default_session_id = "zaxy-default"

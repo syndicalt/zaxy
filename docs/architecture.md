@@ -18,13 +18,15 @@ search, keyword search, vector similarity, traversal expansion, fusion, and
 compact context chunk rendering.
 
 Context lifecycle APIs sit above replay and retrieval. `MemoryFabric.assemble_context`
-replays recent session events, queries ranked graph memory, and formats both
-into a prompt-ready bundle. `after_turn` appends the completed turn and returns
-bounded context for the next turn. `handoff_bundle` packages summary, replay,
-integrity status, and retrieval into a portable resume object. `cleanup_subagent`
-finalizes a subagent session with a cleanup event and emits a handoff bundle.
-These APIs use Eventloom as the recovery anchor and the graph as the relevance
-layer instead of creating a separate context cache.
+replays recent session events, queries ranked graph memory, reserves a small
+verbatim Eventloom source-recall lane, and formats the result into a
+prompt-ready bundle. `after_turn` appends the completed turn and returns bounded
+context for the next turn. `handoff_bundle` packages summary, replay, integrity
+status, and retrieval into a portable resume object. `cleanup_subagent` finalizes
+a subagent session with a cleanup event and emits a handoff bundle. These APIs
+use Eventloom as the recovery anchor, the graph as the relevance layer, and
+verbatim retrieval as the exact-source lane instead of creating a separate
+context cache.
 
 Eventloom is deliberately the bottom layer. It must remain useful even if Neo4j
 is unavailable or a projection bug is discovered. If the graph needs to be

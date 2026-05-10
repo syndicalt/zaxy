@@ -662,6 +662,62 @@ class TestContextAssembly:
         assert "[3] transcript.turn by assistant" in assembly.prompt
         assert "MMR diversity (decision)" in assembly.prompt
 
+    async def test_assemble_context_includes_verbatim_source_lane(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """assemble_context() should reserve room for exact Eventloom source recall."""
+        fabric.session_manager.replay.return_value = MagicMock(
+            events=[],
+            integrity=MagicMock(ok=True),
+        )
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content="Graph summary of identity decision",
+                source="keyword",
+                score=0.8,
+                valid_from=None,
+                valid_to=None,
+                citation="eventloom://agent-1/events/1#aaaaaaaaaaaa",
+            ),
+            ContextChunk(
+                content="Lower-priority graph context",
+                source="traversal",
+                score=0.5,
+                valid_from=None,
+                valid_to=None,
+                citation="eventloom://agent-1/events/2#bbbbbbbbbbbb",
+            ),
+        ]
+        with patch.object(
+            fabric,
+            "query_verbatim",
+            return_value=[
+                Context(
+                    content="assistant: Exact source mentions identity-code-0042.",
+                    source="verbatim",
+                    score=1.2,
+                    metadata={
+                        "citation": "eventloom://agent-1/events/3#cccccccccccc",
+                        "source_kind": "transcript",
+                    },
+                )
+            ],
+        ):
+            assembly = await fabric.assemble_context(
+                "identity-code-0042",
+                session_id="agent-1",
+                limit=2,
+            )
+
+        assert [context.source for context in assembly.contexts] == ["keyword", "verbatim"]
+        assert assembly.contexts[0].metadata is not None
+        assert assembly.contexts[0].metadata["assembly_lane"] == "graph"
+        assert assembly.contexts[1].metadata is not None
+        assert assembly.contexts[1].metadata["assembly_lane"] == "verbatim"
+        assert "Exact source mentions identity-code-0042" in assembly.prompt
+        assert "eventloom://agent-1/events/3#cccccccccccc" in assembly.prompt
+
     async def test_after_turn_appends_turn_and_returns_compacted_context(
         self,
         fabric: MemoryFabric,

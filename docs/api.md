@@ -107,9 +107,12 @@ assembly = await fabric.assemble_context(
 print(assembly.prompt)
 ```
 
-Context assembly combines recent replayed events with graph retrieval. It is the
-first lifecycle API for building an LLM context window from both durable session
-history and ranked memory.
+Context assembly combines recent replayed events, ranked graph retrieval, and a
+reserved verbatim Eventloom source-recall lane. It is the first lifecycle API
+for building an LLM context window from durable session history, temporal graph
+memory, and exact cited source chunks. Returned context metadata includes
+`assembly_lane` so clients can distinguish `graph` context from `verbatim`
+source recall.
 
 Run lifecycle hooks after a turn or subagent handoff:
 

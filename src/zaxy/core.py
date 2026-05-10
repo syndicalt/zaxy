@@ -30,6 +30,7 @@ from zaxy.compaction import (
     search_compaction_projections,
 )
 from zaxy.config import get_settings
+from zaxy.context import Context, ContextAssemblyPolicy
 from zaxy.documents import collect_document_events
 from zaxy.embedding import build_embedding_provider, embed_extraction
 from zaxy.event import EventLog, ReplayResult  # noqa: F401 - compatibility for existing tests
@@ -52,18 +53,6 @@ from zaxy.workspace import (
     mark_workspace_instruction_event_updated,
     workspace_profile_from_payload,
 )
-
-
-@dataclass(frozen=True)
-class Context:
-    """A piece of retrieved context for injection into an agent prompt."""
-
-    content: str
-    source: str  # e.g. "graphiti", "eventloom", "cache"
-    score: float
-    valid_from: str | None = None
-    valid_to: str | None = None
-    metadata: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -582,7 +571,13 @@ class MemoryFabric:
         """Assemble recent replay plus retrieval into prompt-ready context."""
         sid = validate_session_id(session_id)
         replay = await self.replay(from_seq=replay_from_seq, session_id=sid)
-        contexts = await self.query(query, limit=limit, session_id=sid)
+        graph_contexts = await self.query(query, limit=limit, session_id=sid)
+        verbatim_contexts = await self.query_verbatim(query, limit=limit, session_id=sid)
+        contexts = ContextAssemblyPolicy().assemble(
+            graph_contexts,
+            verbatim_contexts,
+            limit=limit,
+        )
         replay_events = list(replay.events)
         compacted = False
         if max_recent_events is not None and len(replay_events) > max_recent_events:

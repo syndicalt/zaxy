@@ -31,6 +31,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 from zaxy.config import get_settings
+from zaxy.context import Context, ContextAssemblyPolicy
 from zaxy.extract import extract
 from zaxy.graph import GraphStore
 from zaxy.lifecycle import (
@@ -707,11 +708,33 @@ class ZaxyMCPServer:
             retention_policy=self._retention_policy,
         )
         results = await router.query(query, limit=limit)
+        graph_contexts = [_context_from_query_result(result) for result in results]
+        verbatim_hits = VerbatimIndex.from_event_logs(
+            [self.session_manager.get(session_id).eventlog]
+        ).query(query, limit=limit)
+        verbatim_contexts = [
+            Context(
+                content=hit.content,
+                source="verbatim",
+                score=hit.score,
+                metadata={
+                    "citation": hit.citation,
+                    "source_kind": hit.source_kind,
+                    **hit.metadata,
+                },
+            )
+            for hit in verbatim_hits
+        ]
+        contexts = ContextAssemblyPolicy().assemble(
+            graph_contexts,
+            verbatim_contexts,
+            limit=limit,
+        )
         await self.tracer.trace_query(query, len(results), 0.0, None)
         return {
             "session_id": session_id,
-            "prompt": _format_prompt(recent_events, results),
-            "contexts": [_context_payload(result) for result in results],
+            "prompt": _format_prompt(recent_events, contexts),
+            "contexts": [_context_payload(context) for context in contexts],
             "replay_event_count": len(recent_events),
             "compacted": compacted,
         }
@@ -945,7 +968,8 @@ def _format_prompt(events: list[Any], results: list[Any]) -> str:
     lines.append("")
     lines.append("# Retrieved Context")
     for result in results:
-        citation = f" ({result.citation})" if getattr(result, "citation", None) else ""
+        citation_value = _result_citation(result)
+        citation = f" ({citation_value})" if citation_value else ""
         lines.append(f"- {result.content}{citation}")
     return "\n".join(lines).strip()
 
@@ -963,15 +987,46 @@ def _event_content(event: Any) -> str:
 
 
 def _context_payload(result: Any) -> dict[str, Any]:
+    metadata = getattr(result, "metadata", None) or {}
     return {
         "content": result.content,
         "source": result.source,
         "score": result.score,
         "valid_from": result.valid_from,
         "valid_to": result.valid_to,
-        "citation": result.citation,
-        "score_explanation": result.score_explanation,
+        "citation": _result_citation(result),
+        "score_explanation": metadata.get("score_explanation")
+        or getattr(result, "score_explanation", None),
+        "metadata": metadata,
     }
+
+
+def _context_from_query_result(result: Any) -> Context:
+    metadata: dict[str, Any] = {}
+    citation = getattr(result, "citation", None)
+    if citation:
+        metadata["citation"] = citation
+    score_explanation = getattr(result, "score_explanation", None)
+    if score_explanation:
+        metadata["score_explanation"] = score_explanation
+    return Context(
+        content=result.content,
+        source=result.source,
+        score=result.score,
+        valid_from=result.valid_from,
+        valid_to=result.valid_to,
+        metadata=metadata or None,
+    )
+
+
+def _result_citation(result: Any) -> str | None:
+    metadata = getattr(result, "metadata", None)
+    if isinstance(metadata, dict):
+        metadata_citation = metadata.get("citation")
+        if isinstance(metadata_citation, str):
+            return metadata_citation
+    citation = getattr(result, "citation", None)
+    return citation if isinstance(citation, str) else None
 
 
 def _claim_values(value: Any) -> set[str]:
