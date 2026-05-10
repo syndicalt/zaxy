@@ -546,10 +546,17 @@ class TestContextLifecycleTools:
         assert output["contexts"][1]["citation"] == f"eventloom://agent-1/events/{event.seq}#{event.hash}"
         assert "identity-code-0042" in output["prompt"]
         assert output["assembly_policy"] == {
+            "packet_memory_enabled": True,
+            "packet_memory_slots": 1,
             "verbatim_enabled": True,
             "verbatim_slots": 1,
         }
-        assert output["context_counts"] == {"graph": 1, "verbatim": 1, "replay": 1}
+        assert output["context_counts"] == {
+            "graph": 1,
+            "packet_memory": 0,
+            "replay": 1,
+            "verbatim": 1,
+        }
         assert output["working_set"]["items"][0]["category"] == "source_anchor"
         assert "# Active Memory Working Set" in output["prompt"]
 

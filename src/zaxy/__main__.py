@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+from contextlib import suppress
 from dataclasses import asdict
 from pathlib import Path
 
@@ -102,13 +103,46 @@ from zaxy.onboarding import (
     run_onboarding,
 )
 from zaxy.packet_analyzer import PacketAnalyzerConfig, run_packet_analyzer
-from zaxy.packet_projection import project_packet_events, watch_packet_events
+from zaxy.packet_projection import (
+    PacketGraphProjectionResult,
+    PacketProjectionResult,
+    project_packet_events,
+    project_packet_events_to_graph,
+    watch_packet_events,
+)
 from zaxy.schema import render_schema_plan
 from zaxy.viewer import write_viewer_html
 
 app = typer.Typer(help="Zaxy: Event-sourced temporal knowledge graph fabric")
 memory_app = typer.Typer(help="Inspect Eventloom-backed agent memory")
 app.add_typer(memory_app, name="memory")
+
+
+async def _project_packet_result_to_graph(
+    result: PacketProjectionResult,
+    *,
+    session_id: str,
+    neo4j_uri: str,
+    neo4j_user: str,
+    neo4j_password: str,
+) -> PacketGraphProjectionResult:
+    """Best-effort graph projection for newly appended packet memory events."""
+    if not result.projected_events:
+        return PacketGraphProjectionResult(projected=0, failed=0)
+    graph = GraphStore(neo4j_uri, neo4j_user, neo4j_password)
+    try:
+        await graph.connect()
+        await graph.init_schema()
+        return await project_packet_events_to_graph(
+            result.projected_events,
+            graph=graph,
+            session_id=session_id,
+        )
+    except Exception:
+        return PacketGraphProjectionResult(projected=0, failed=len(result.projected_events))
+    finally:
+        with suppress(Exception):
+            await graph.close()
 
 
 @memory_app.command("status")
@@ -1036,8 +1070,35 @@ def packet_project(
         min=1,
         help="Optional bounded watch pass count for supervisors and tests",
     ),
+    graph: bool = typer.Option(
+        False,
+        "--graph",
+        help="Best-effort upsert newly projected packet memory into Neo4j",
+    ),
+    neo4j_uri: str = typer.Option("bolt://localhost:7687", help="Neo4j Bolt URI"),
+    neo4j_user: str = typer.Option("neo4j", help="Neo4j username"),
+    neo4j_password: str = typer.Option("testpassword", help="Neo4j password"),
 ) -> None:
     """Project captured LLM packets into compact memory events."""
+    import asyncio
+
+    graph_projected = 0
+    graph_failed = 0
+
+    def project_watch_result_to_graph(result: PacketProjectionResult) -> None:
+        nonlocal graph_projected, graph_failed
+        graph_result = asyncio.run(
+            _project_packet_result_to_graph(
+                result,
+                session_id=session_id,
+                neo4j_uri=neo4j_uri,
+                neo4j_user=neo4j_user,
+                neo4j_password=neo4j_password,
+            )
+        )
+        graph_projected += graph_result.projected
+        graph_failed += graph_result.failed
+
     if watch:
         watch_result = watch_packet_events(
             eventloom_path=eventloom_path,
@@ -1046,11 +1107,16 @@ def packet_project(
             limit=limit,
             interval_seconds=interval_seconds,
             max_iterations=watch_iterations,
+            on_projected=project_watch_result_to_graph if graph else None,
         )
         noun = "pass" if watch_result.iterations == 1 else "passes"
+        graph_text = (
+            f", graph_projected={graph_projected}, graph_failed={graph_failed}" if graph else ""
+        )
         typer.echo(
             f"Watched {watch_result.iterations} projection {noun} "
-            f"(read={watch_result.read}, projected={watch_result.projected}, skipped={watch_result.skipped})"
+            f"(read={watch_result.read}, projected={watch_result.projected}, "
+            f"skipped={watch_result.skipped}{graph_text})"
         )
         return
     project_result = project_packet_events(
@@ -1059,10 +1125,25 @@ def packet_project(
         from_seq=from_seq,
         limit=limit,
     )
+    if graph:
+        graph_result = asyncio.run(
+            _project_packet_result_to_graph(
+                project_result,
+                session_id=session_id,
+                neo4j_uri=neo4j_uri,
+                neo4j_user=neo4j_user,
+                neo4j_password=neo4j_password,
+            )
+        )
+        graph_projected = graph_result.projected
+        graph_failed = graph_result.failed
     noun = "event" if project_result.projected == 1 else "events"
+    graph_text = (
+        f", graph_projected={graph_projected}, graph_failed={graph_failed}" if graph else ""
+    )
     typer.echo(
         f"Projected {project_result.projected} packet {noun} "
-        f"(read={project_result.read}, skipped={project_result.skipped})"
+        f"(read={project_result.read}, skipped={project_result.skipped}{graph_text})"
     )
 
 

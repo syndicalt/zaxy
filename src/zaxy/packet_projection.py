@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from zaxy.event import Event, EventLog
+from zaxy.extract import extract
 from zaxy.security import eventlog_path, validate_session_id
 
 MAX_PACKET_EXCERPT_CHARS = 600
@@ -20,6 +22,15 @@ class PacketProjectionResult:
     read: int
     projected: int
     skipped: int
+    projected_events: tuple[Event, ...] = field(default_factory=tuple)
+
+
+@dataclass(frozen=True)
+class PacketGraphProjectionResult:
+    """Summary of graph ingestion for packet projection events."""
+
+    projected: int
+    failed: int
 
 
 @dataclass(frozen=True)
@@ -58,21 +69,48 @@ def project_packet_events(
 
     projected = 0
     skipped = 0
+    projected_events: list[Event] = []
     for event in candidates:
         if event.hash in projected_hashes:
             skipped += 1
             continue
         payload = build_packet_projection_payload(event)
-        log.append(
+        projection = log.append(
             "llm.packet.projected",
             actor="zaxy-packet-projector",
             payload=payload,
             thread=validated_session_id,
         )
         projected_hashes.add(event.hash)
+        projected_events.append(projection)
         projected += 1
 
-    return PacketProjectionResult(read=len(candidates), projected=projected, skipped=skipped)
+    return PacketProjectionResult(
+        read=len(candidates),
+        projected=projected,
+        skipped=skipped,
+        projected_events=tuple(projected_events),
+    )
+
+
+async def project_packet_events_to_graph(
+    events: Iterable[Event],
+    *,
+    graph: Any,
+    session_id: str,
+) -> PacketGraphProjectionResult:
+    """Project packet memory events into an already-connected graph store."""
+    validated_session_id = validate_session_id(session_id)
+    projected = 0
+    failed = 0
+    for event in events:
+        try:
+            await graph.upsert_extraction(extract(event), session_id=validated_session_id)
+        except Exception:
+            failed += 1
+        else:
+            projected += 1
+    return PacketGraphProjectionResult(projected=projected, failed=failed)
 
 
 def watch_packet_events(
@@ -83,6 +121,7 @@ def watch_packet_events(
     from_seq: int = 1,
     limit: int | None = None,
     max_iterations: int | None = None,
+    on_projected: Callable[[PacketProjectionResult], None] | None = None,
 ) -> PacketProjectionWatchResult:
     """Continuously project completed packet events until bounded or interrupted."""
     iterations = 0
@@ -100,6 +139,8 @@ def watch_packet_events(
         total_read += result.read
         total_projected += result.projected
         total_skipped += result.skipped
+        if on_projected is not None and result.projected_events:
+            on_projected(result)
         if max_iterations is not None and iterations >= max_iterations:
             break
         if interval_seconds > 0:

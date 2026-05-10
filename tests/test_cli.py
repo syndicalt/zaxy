@@ -121,6 +121,57 @@ def test_packet_project_cli_projects_completed_packets(tmp_path: Path) -> None:
     assert "Atlas" in events[-1].payload["summary"]
 
 
+@patch("zaxy.__main__.GraphStore")
+def test_packet_project_cli_can_project_new_packets_to_graph(
+    mock_graph_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """packet-project --graph should upsert newly projected packets into Neo4j."""
+    eventloom_dir = tmp_path / ".eventloom"
+    EventLog(eventloom_dir / "agent-1.jsonl").append(
+        "llm.packet.completed",
+        actor="zaxy-packet-analyzer",
+        thread="agent-1",
+        payload={
+            "session_id": "agent-1",
+            "provider_path": "/v1/responses",
+            "status_code": 200,
+            "request": {"body": {"input": "Remember the product owner is Nia."}},
+            "response": {"body": {"output_text": "Product owner Nia recorded."}},
+        },
+    )
+    mock_graph = AsyncMock()
+    mock_graph_cls.return_value = mock_graph
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "packet-project",
+            "--eventloom-path",
+            str(eventloom_dir),
+            "--session-id",
+            "agent-1",
+            "--graph",
+            "--neo4j-uri",
+            "bolt://localhost:7687",
+            "--neo4j-user",
+            "neo4j",
+            "--neo4j-password",
+            "testpassword",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Projected 1 packet event" in result.output
+    assert "graph_projected=1" in result.output
+    assert "graph_failed=0" in result.output
+    mock_graph.connect.assert_awaited_once()
+    mock_graph.init_schema.assert_awaited_once()
+    mock_graph.upsert_extraction.assert_awaited_once()
+    mock_graph.close.assert_awaited_once()
+
+
 def test_packet_project_cli_supports_bounded_watch_mode(tmp_path: Path) -> None:
     """packet-project watch mode should support bounded runs for supervisors/tests."""
     eventloom_dir = tmp_path / ".eventloom"

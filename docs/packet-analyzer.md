@@ -48,6 +48,16 @@ zaxy packet-project \
   --watch
 ```
 
+Add `--graph` when Neo4j is available and the worker should upsert each newly
+projected packet immediately:
+
+```bash
+zaxy packet-project \
+  --eventloom-path .eventloom \
+  --session-id zaxy-default \
+  --graph
+```
+
 Projection is idempotent by source event hash. It extracts bounded request and
 response summaries, preserves the source packet sequence and hash, and leaves the
 raw packet capture available for audit replay.

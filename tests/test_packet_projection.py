@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 from zaxy.event import EventLog
-from zaxy.packet_projection import project_packet_events, watch_packet_events
+from zaxy.packet_projection import (
+    project_packet_events,
+    project_packet_events_to_graph,
+    watch_packet_events,
+)
 
 
 def test_project_packet_events_appends_memory_ready_summary(tmp_path: Path) -> None:
@@ -63,6 +68,7 @@ def test_project_packet_events_appends_memory_ready_summary(tmp_path: Path) -> N
     assert projection.payload["response_summary"] == {
         "assistant_message": "I will remember quartz.",
     }
+    assert result.projected_events == (projection,)
 
 
 def test_project_packet_events_is_idempotent_by_source_hash(tmp_path: Path) -> None:
@@ -93,6 +99,79 @@ def test_project_packet_events_is_idempotent_by_source_hash(tmp_path: Path) -> N
     assert result.read == 1
     assert result.projected == 0
     assert result.skipped == 1
+    assert result.projected_events == ()
+    assert [event.type for event in log.read_all()] == [
+        "llm.packet.completed",
+        "llm.packet.projected",
+    ]
+
+
+async def test_project_packet_events_to_graph_upserts_projected_events(tmp_path: Path) -> None:
+    """New packet projections should be ingestible into Neo4j without replay."""
+    eventloom_path = tmp_path / ".eventloom"
+    log = EventLog(eventloom_path / "agent-1.jsonl")
+    log.append(
+        "llm.packet.completed",
+        actor="zaxy-packet-analyzer",
+        thread="agent-1",
+        payload={
+            "session_id": "agent-1",
+            "provider_path": "/v1/responses",
+            "status_code": 200,
+            "request": {"body": {"input": "Remember the reviewer is Sam."}},
+            "response": {"body": {"output_text": "Reviewer Sam recorded."}},
+        },
+    )
+    projection = project_packet_events(eventloom_path=eventloom_path, session_id="agent-1")
+    graph = AsyncMock()
+
+    result = await project_packet_events_to_graph(
+        projection.projected_events,
+        graph=graph,
+        session_id="agent-1",
+    )
+
+    assert result.projected == 1
+    assert result.failed == 0
+    graph.upsert_extraction.assert_awaited_once()
+    extraction = graph.upsert_extraction.await_args.args[0]
+    assert {entity.entity_type for entity in extraction.entities} >= {
+        "session",
+        "llm_packet_projection",
+    }
+    assert graph.upsert_extraction.await_args.kwargs == {"session_id": "agent-1"}
+
+
+async def test_project_packet_events_to_graph_degrades_when_upsert_fails(
+    tmp_path: Path,
+) -> None:
+    """Graph failures should not undo Eventloom packet projection."""
+    eventloom_path = tmp_path / ".eventloom"
+    log = EventLog(eventloom_path / "agent-1.jsonl")
+    log.append(
+        "llm.packet.completed",
+        actor="zaxy-packet-analyzer",
+        thread="agent-1",
+        payload={
+            "session_id": "agent-1",
+            "provider_path": "/v1/responses",
+            "status_code": 200,
+            "request": {"body": {"input": "Remember the lane is alpha."}},
+            "response": {"body": {"output_text": "Lane alpha recorded."}},
+        },
+    )
+    projection = project_packet_events(eventloom_path=eventloom_path, session_id="agent-1")
+    graph = AsyncMock()
+    graph.upsert_extraction.side_effect = RuntimeError("neo4j unavailable")
+
+    result = await project_packet_events_to_graph(
+        projection.projected_events,
+        graph=graph,
+        session_id="agent-1",
+    )
+
+    assert result.projected == 0
+    assert result.failed == 1
     assert [event.type for event in log.read_all()] == [
         "llm.packet.completed",
         "llm.packet.projected",
