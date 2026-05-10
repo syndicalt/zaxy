@@ -193,6 +193,9 @@ SHOW CONSTRAINTS;
 // Entity count
 MATCH (e:Entity) RETURN count(e) AS entities;
 
+// Provenance backbone count
+MATCH (:Session)-[:HAS_EVENT]->(:Event) RETURN count(*) AS projected_events;
+
 // Relationship count
 MATCH ()-[r:RELATES]->() RETURN count(r) AS relations;
 

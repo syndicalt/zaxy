@@ -4,23 +4,30 @@ Neo4j is Zaxy's structured reasoning layer. It is not the source of truth; the
 Eventloom log is. The graph stores projections that make memory queryable by
 entity, relation, keyword, vector similarity, and temporal validity.
 
-The central node shape is `Entity`. Important properties include `session_id`,
-`name`, `entity_type`, `summary`, `valid_from`, `valid_to`, `event_id`, and
-`embedding`. Zaxy creates a stable version identity from session, name, type,
-and `valid_from`. Reasserting a fact creates a new temporal version instead of
-overwriting the existing one. The previous current version in the same session
-is closed by setting `valid_to`.
+The provenance backbone starts with `Session` and `Event` nodes. Each projected
+event is linked through `(:Session)-[:HAS_EVENT]->(:Event)`, and the event then
+links to the facts it produced through `PROJECTED_ENTITY` and
+`PROJECTED_RELATION`. This gives Neo4j a visible audit spine without changing
+Eventloom's role as the immutable source of truth.
+
+The central memory fact shape remains `Entity`. Important properties include
+`session_id`, `name`, `entity_type`, `summary`, `valid_from`, `valid_to`,
+`event_id`, and `embedding`. Zaxy creates a stable version identity from
+session, name, type, and `valid_from`. Reasserting a fact creates a new temporal
+version instead of overwriting the existing one. The previous current version in
+the same session is closed by setting `valid_to`.
 
 Projected entities also carry Eventloom provenance: `source_event_seq`,
 `source_event_hash`, `source_event_type`, and `source_thread`. Query results use
 these fields to emit stable citations back to the immutable event log.
 
-Edges represent extracted relations between entities. They carry
-`session_id`, `relation_type`, event provenance, and validity windows. This
-lets query traversal answer multi-hop questions while keeping the timeline
-intact and preventing cross-session expansion. For example, an agent can ask
-about a goal, expand to tasks, expand to decisions, and still know which facts
-were valid at the requested time.
+Edges represent extracted relations between entities. They are still stored as
+`RELATES` relationships with a typed `relation_type` property for backward
+compatibility. They also carry `session_id`, event provenance, and validity
+windows. This lets query traversal answer multi-hop questions while keeping the
+timeline intact and preventing cross-session expansion. For example, an agent
+can ask about a goal, expand to tasks, expand to decisions, and still know which
+facts were valid at the requested time.
 
 Indexes matter for production behavior. Zaxy creates lookup constraints for
 entity versions, full-text indexes for keyword search, and vector indexes for

@@ -116,6 +116,13 @@ class TestSchema:
             "REQUIRE (e.session_id, e.name, e.entity_type, e.valid_from) IS UNIQUE" in s
             for s in cypher_statements
         )
+        assert any(
+            "FOR (s:Session) REQUIRE s.id IS UNIQUE" in s for s in cypher_statements
+        )
+        assert any(
+            "FOR (ev:Event) REQUIRE (ev.session_id, ev.seq) IS UNIQUE" in s
+            for s in cypher_statements
+        )
         assert any("CREATE INDEX entity_lookup" in s for s in cypher_statements)
         assert any("CREATE VECTOR INDEX" in s for s in cypher_statements)
         assert any("CREATE FULLTEXT INDEX" in s for s in cypher_statements)
@@ -156,6 +163,17 @@ class TestIngestion:
 
         call = store._driver.execute_query.await_args_list[0]
         cypher, kwargs = call.args[0], call.kwargs
+        assert "MERGE (s:Session {id: $session_id})" in cypher
+        assert "MERGE (ev:Event {session_id: $session_id, seq: $source_event_seq})" in cypher
+        assert "MERGE (s)-[r:HAS_EVENT]->(ev)" in cypher
+        assert kwargs["session_id"] == "agent-1"
+        assert kwargs["source_event_seq"] == 1
+        assert kwargs["source_event_hash"] == "b" * 64
+        assert kwargs["source_event_type"] == "goal.created"
+        assert kwargs["source_thread"] == "agent-1"
+
+        call = store._driver.execute_query.await_args_list[1]
+        cypher, kwargs = call.args[0], call.kwargs
         assert "MERGE (e:Entity" in cypher
         assert "session_id: $session_id" in cypher
         assert "valid_from: datetime($observed_at)" in cypher
@@ -165,6 +183,8 @@ class TestIngestion:
         assert "e.embedding = coalesce($embedding, e.embedding)" in cypher
         assert "e.source_event_seq = $source_event_seq" in cypher
         assert "e.source_event_hash = $source_event_hash" in cypher
+        assert "MATCH (ev:Event {session_id: $session_id, seq: $source_event_seq})" in cypher
+        assert "MERGE (ev)-[pe:PROJECTED_ENTITY" in cypher
         assert kwargs["name"] == "Alice"
         assert kwargs["entity_type"] == "user"
         assert kwargs["session_id"] == "agent-1"
@@ -198,7 +218,7 @@ class TestIngestion:
 
         await store.upsert_extraction(result, session_id="agent-1")
 
-        call = store._driver.execute_query.await_args_list[0]
+        call = store._driver.execute_query.await_args_list[1]
         cypher, kwargs = call.args[0], call.kwargs
         assert "SET e += $properties" in cypher
         assert kwargs["properties"] == {
@@ -229,7 +249,7 @@ class TestIngestion:
 
         await store.upsert_extraction(result, session_id="agent-1")
 
-        call = store._driver.execute_query.await_args_list[0]
+        call = store._driver.execute_query.await_args_list[1]
         assert call.kwargs["properties"] == {
             "root": "/repo",
             "file_paths": ["AGENTS.md"],
@@ -244,7 +264,7 @@ class TestIngestion:
         )
         await store.upsert_extraction(result, session_id="agent-1")
 
-        cypher = store._driver.execute_query.await_args_list[0].args[0]
+        cypher = store._driver.execute_query.await_args_list[1].args[0]
         assert "MERGE (e:Entity" in cypher
         assert "prev.session_id = $session_id" in cypher
         assert "valid_from: datetime($observed_at)" in cypher
@@ -272,9 +292,9 @@ class TestIngestion:
         )
         await store.upsert_extraction(result, session_id="agent-1")
 
-        # Entities are upserted first (2 calls), then edges (1 call)
-        assert store._driver.execute_query.await_count == 3
-        call = store._driver.execute_query.await_args_list[2]
+        # Backbone is upserted first, then entities (2 calls), then edges (1 call).
+        assert store._driver.execute_query.await_count == 4
+        call = store._driver.execute_query.await_args_list[3]
         cypher, kwargs = call.args[0], call.kwargs
         assert "MATCH (s:Entity" in cypher
         assert "MATCH (t:Entity" in cypher
@@ -286,6 +306,8 @@ class TestIngestion:
         assert "r.session_id = $session_id" in cypher
         assert "r.source_event_seq = $source_event_seq" in cypher
         assert "r.source_event_hash = $source_event_hash" in cypher
+        assert "MATCH (ev:Event {session_id: $session_id, seq: $source_event_seq})" in cypher
+        assert "MERGE (ev)-[pr:PROJECTED_RELATION" in cypher
         assert kwargs["source"] == "Alice"
         assert kwargs["target"] == "Goal1"
         assert kwargs["session_id"] == "agent-1"
@@ -303,7 +325,7 @@ class TestIngestion:
             source_event_seq=1,
         )
         await store.upsert_extraction(result, session_id="agent-1")
-        assert store._driver.execute_query.await_count == 3
+        assert store._driver.execute_query.await_count == 4
 
     async def test_invalidate_entity(self, store: GraphStore) -> None:
         """invalidate_entity should set valid_to on the live node."""

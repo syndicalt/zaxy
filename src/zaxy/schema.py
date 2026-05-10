@@ -48,6 +48,17 @@ SCHEMA_MIGRATIONS: tuple[SchemaMigration, ...] = (
             "FOR (e:Entity) ON EACH [e.name, e.summary]",
         ),
     ),
+    SchemaMigration(
+        "004_provenance_backbone",
+        (
+            "CREATE CONSTRAINT session_id IF NOT EXISTS "
+            "FOR (s:Session) REQUIRE s.id IS UNIQUE",
+            "CREATE CONSTRAINT event_identity IF NOT EXISTS "
+            "FOR (ev:Event) REQUIRE (ev.session_id, ev.seq) IS UNIQUE",
+            "CREATE INDEX event_hash IF NOT EXISTS "
+            "FOR (ev:Event) ON (ev.session_id, ev.hash)",
+        ),
+    ),
 )
 
 CURRENT_SCHEMA_VERSION = SCHEMA_MIGRATIONS[-1].name

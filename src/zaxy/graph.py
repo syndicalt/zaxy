@@ -136,6 +136,34 @@ class GraphStore:
         """
         assert self._driver is not None
         safe_session_id = validate_session_id(session_id)
+        observed_at = _extraction_observed_at(result)
+
+        await self._driver.execute_query(
+            """
+            MERGE (s:Session {id: $session_id})
+            ON CREATE SET s.created_at = datetime()
+            SET s.updated_at = datetime()
+            MERGE (ev:Event {session_id: $session_id, seq: $source_event_seq})
+            ON CREATE SET ev.created_at = datetime()
+            SET ev.updated_at = datetime(),
+                ev.hash = $source_event_hash,
+                ev.type = $source_event_type,
+                ev.thread = $source_thread,
+                ev.observed_at = CASE
+                    WHEN $observed_at IS NULL THEN ev.observed_at
+                    ELSE datetime($observed_at)
+                END
+            MERGE (s)-[r:HAS_EVENT]->(ev)
+            ON CREATE SET r.created_at = datetime()
+            SET r.updated_at = datetime()
+            """,
+            session_id=safe_session_id,
+            source_event_seq=result.source_event_seq,
+            source_event_hash=result.source_event_hash,
+            source_event_type=result.source_event_type,
+            source_thread=result.source_thread,
+            observed_at=observed_at,
+        )
 
         for ent in result.entities:
             await self._driver.execute_query(
@@ -168,6 +196,16 @@ class GraphStore:
                   AND next.valid_from > e.valid_from
                 WITH e, min(next.valid_from) AS next_valid_from
                 SET e.valid_to = next_valid_from
+                WITH e
+                MATCH (ev:Event {session_id: $session_id, seq: $source_event_seq})
+                MERGE (ev)-[pe:PROJECTED_ENTITY {
+                    name: $name,
+                    entity_type: $entity_type,
+                    valid_from: datetime($observed_at)
+                }]->(e)
+                ON CREATE SET pe.created_at = datetime($observed_at)
+                SET pe.source_event_hash = $source_event_hash,
+                    pe.source_event_type = $source_event_type
                 """,
                 session_id=safe_session_id,
                 name=ent.name,
@@ -201,6 +239,17 @@ class GraphStore:
                     r.source_event_hash = $source_event_hash,
                     r.source_event_type = $source_event_type,
                     r.source_thread = $source_thread
+                WITH s, t, r
+                MATCH (ev:Event {session_id: $session_id, seq: $source_event_seq})
+                MERGE (ev)-[pr:PROJECTED_RELATION {
+                    source: $source,
+                    target: $target,
+                    relation_type: $relation_type,
+                    valid_from: datetime($valid_from)
+                }]->(t)
+                ON CREATE SET pr.created_at = datetime($valid_from)
+                SET pr.source_event_hash = $source_event_hash,
+                    pr.source_event_type = $source_event_type
                 """,
                 session_id=safe_session_id,
                 source=edge.source,
@@ -463,6 +512,13 @@ def _neo4j_properties(properties: dict[str, Any] | None) -> dict[str, _Neo4jProp
         for key, value in properties.items()
         if _is_neo4j_property_value(value)
     }
+
+
+def _extraction_observed_at(result: ExtractionResult) -> str | None:
+    """Return the earliest available event timestamp carried by an extraction."""
+    values = [entity.observed_at for entity in result.entities]
+    values.extend(edge.valid_from for edge in result.edges)
+    return min(values) if values else None
 
 
 def _is_neo4j_property_value(value: Any) -> bool:
