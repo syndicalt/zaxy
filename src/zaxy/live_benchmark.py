@@ -28,6 +28,7 @@ FROZEN_WORKLOAD_SUBJECTS = 100
 CONSOLIDATION_WORKLOAD_VERSION = "consolidation-v1"
 SUITE_WORKLOAD_VERSION = "suite-v1"
 LONGMEMEVAL_WORKLOAD_VERSION = "longmemeval-cleaned-v1"
+LONGMEMEVAL_MAX_CHUNK_CHARS = 3_500
 SUITE_WORKLOAD_LANES = (
     "current",
     "temporal",
@@ -815,17 +816,22 @@ def build_longmemeval_workload(
                 else ""
             )
             content = _format_longmemeval_session(session_id, session_date, session)
-            eventlog.append(
-                "document.indexed",
-                actor="longmemeval",
-                payload={
-                    "path": f"longmemeval/{question_id}/{session_id}.md",
-                    "start_line": 1,
-                    "end_line": max(1, content.count("\n") + 1),
-                    "content": content,
-                    "sha256": _content_sha256(content),
-                },
-            )
+            chunks = _longmemeval_session_chunks(session_id, session_date, content)
+            for chunk_index, chunk in enumerate(chunks, start=1):
+                eventlog.append(
+                    "document.indexed",
+                    actor="longmemeval",
+                    payload={
+                        "path": f"longmemeval/{question_id}/{session_id}/chunk-{chunk_index:04d}.md",
+                        "start_line": 1,
+                        "end_line": max(1, chunk.count("\n") + 1),
+                        "content": chunk,
+                        "sha256": _content_sha256(chunk),
+                        "longmemeval_session_id": session_id,
+                        "longmemeval_chunk_index": chunk_index,
+                        "longmemeval_chunk_count": len(chunks),
+                    },
+                )
             session_count += 1
 
         cases.append(
@@ -1363,6 +1369,54 @@ def _format_longmemeval_session(session_id: str, session_date: str, session: obj
     else:
         lines.append(str(session))
     return "\n".join(lines)
+
+
+def _longmemeval_session_chunks(
+    session_id: str,
+    session_date: str,
+    content: str,
+    *,
+    max_chars: int = LONGMEMEVAL_MAX_CHUNK_CHARS,
+) -> tuple[str, ...]:
+    """Split large sessions into embedding-safe chunks with repeated identity headers."""
+    header = "\n".join(
+        [
+            f"longmemeval_session_id={session_id}",
+            f"longmemeval_session_date={session_date}",
+        ]
+    )
+    body_lines = content.splitlines()[2:] if content.startswith("longmemeval_session_id=") else content.splitlines()
+    chunks: list[str] = []
+    current: list[str] = []
+
+    def flush() -> None:
+        if not current:
+            return
+        chunks.append("\n".join([header, *current]))
+        current.clear()
+
+    def current_size_with(line: str) -> int:
+        return len("\n".join([header, *current, line]))
+
+    for line in body_lines:
+        if len("\n".join([header, line])) > max_chars:
+            flush()
+            prefix = ""
+            remaining = line
+            while remaining:
+                budget = max_chars - len(header) - len(prefix) - 2
+                piece = remaining[: max(1, budget)]
+                chunks.append("\n".join([header, f"{prefix}{piece}"]))
+                remaining = remaining[len(piece) :]
+                prefix = "continued: "
+            continue
+        if current and current_size_with(line) > max_chars:
+            flush()
+        current.append(line)
+    flush()
+    if not chunks:
+        chunks.append(header)
+    return tuple(chunks)
 
 
 def _report_payload(report: BenchmarkReport) -> dict[str, object]:

@@ -306,12 +306,13 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Native-preview LangGraph adapter for context projection, observations, and retrieval feedback
 - [x] Codex in-session `/resume` duplicate MCP process troubleshooting guidance
 - [x] Competitive positioning roadmap against MemPalace-style memory systems
+- [x] LongMemEval workload chunking for hosted embedding input limits
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 583 passed |
+| Tests | 584 passed |
 | Coverage | 92.25% |
 | Lint | ruff clean |
 | Types | mypy clean |

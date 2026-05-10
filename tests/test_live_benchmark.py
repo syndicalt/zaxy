@@ -122,6 +122,45 @@ def test_longmemeval_workload_loads_public_memory_dataset(tmp_path: Path) -> Non
     )
 
 
+def test_longmemeval_workload_chunks_large_sessions_for_embedding_limits(tmp_path: Path) -> None:
+    """LongMemEval sessions should be bounded before vector baseline embedding."""
+    dataset = tmp_path / "longmemeval-large.json"
+    long_content = "alpha " * 3000 + "Business Administration " + "omega " * 3000
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "question_id": "q1",
+                    "question_type": "single-session-user",
+                    "question": "What degree did I graduate with?",
+                    "answer": "Business Administration",
+                    "answer_session_ids": ["answer-1"],
+                    "haystack_dates": ["2023/05/20 (Sat) 02:21"],
+                    "haystack_session_ids": ["answer-1"],
+                    "haystack_sessions": [[{"role": "user", "content": long_content}]],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    eventlog, cases, workload = build_longmemeval_workload(
+        tmp_path / "longmemeval-large.jsonl",
+        dataset,
+    )
+    events = eventlog.read_all()
+    corpus = corpus_from_event_log(eventlog)
+
+    assert cases[0].identity_terms == ("answer-1",)
+    assert workload.sessions == 1
+    assert workload.event_count == len(events)
+    assert len(events) > 1
+    assert all(event.payload["longmemeval_session_id"] == "answer-1" for event in events)
+    assert all("longmemeval_session_id=answer-1" in chunk.text for chunk in corpus)
+    assert max(len(chunk.text) for chunk in corpus) < 9000
+    assert any("Business Administration" in chunk.text for chunk in corpus)
+
+
 def test_live_benchmark_compares_all_retriever_backends(tmp_path: Path) -> None:
     """The benchmark core should compare md, BM25, vector, md+vector, and zaxy rows."""
     log = build_competitive_event_log(tmp_path / "bench.jsonl")
