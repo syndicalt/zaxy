@@ -966,6 +966,12 @@ def benchmark(
         None,
         help="Optional JSON file with operator-supplied external comparison rows",
     ),
+    embedding_cache: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--embedding-cache",
+        help="Optional JSON cache for benchmark embeddings across runs",
+    ),
+    progress: bool = typer.Option(False, "--progress", help="Print benchmark progress to stderr"),
 ) -> None:
     """Run live retrieval benchmarks against md/BM25/vector/md+vector/Zaxy."""
     import asyncio
@@ -990,7 +996,7 @@ def benchmark(
         provider_label = f"hash:{settings.embedding_dimension}"
     else:
         raise typer.BadParameter("embedding provider must be 'openai' or 'hash'")
-    provider = CachedEmbeddingProvider(provider)
+    provider = CachedEmbeddingProvider(provider, cache_path=embedding_cache)
 
     async def _run() -> None:
         with tempfile.TemporaryDirectory(prefix="zaxy-live-benchmark-") as tmp:
@@ -1073,6 +1079,17 @@ def benchmark(
                     embedding_provider=provider_label,
                     workload=benchmark_workload,
                     external_results=_load_external_results(external_results),
+                    progress_callback=(
+                        lambda item: typer.echo(
+                            (
+                                f"progress {item['completed']}/{item['total']} "
+                                f"{item['backend']} {item['case']} run={item['run']}"
+                            ),
+                            err=True,
+                        )
+                        if progress
+                        else None
+                    ),
                 )
             finally:
                 await graph.close()

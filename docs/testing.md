@@ -90,6 +90,8 @@ curl -fsSL -o /tmp/longmemeval-data/longmemeval_s_cleaned.json \
 
 scripts/live-benchmark.sh \
   --embedding-provider openai \
+  --embedding-cache .cache/zaxy/longmemeval-embeddings.json \
+  --progress \
   --workload longmemeval \
   --dataset /tmp/longmemeval-data/longmemeval_s_cleaned.json \
   --runs 1 \
@@ -97,9 +99,14 @@ scripts/live-benchmark.sh \
   --reset-graph
 ```
 
-Use `--questions 20` for a smoke run before the full 500-question pass. The
-headline comparison field for this workload is identity recall at the requested
-limit, which corresponds to whether the answer-bearing session was retrieved.
+Use `--questions 1` to validate credentials and service wiring, then
+`--questions 20` for a larger smoke run before the full 500-question pass. Keep
+`--embedding-cache` enabled for hosted embedding runs; LongMemEval contains many
+haystack chunks and reusable corpus embeddings make interrupted or repeated runs
+much cheaper. `--progress` prints backend/case counters to stderr so long runs
+do not appear stalled. The headline comparison field for this workload is
+identity recall at the requested limit, which corresponds to whether the
+answer-bearing session was retrieved.
 
 Frozen reports include a workload version, event count, query count, and
 SHA-256 fingerprint so later runs can prove they used the same corpus. External

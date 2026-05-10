@@ -11,6 +11,7 @@ import re
 import statistics
 import time
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -213,10 +214,11 @@ class CachedEmbeddingProvider:
     and repeated paired queries across baselines.
     """
 
-    def __init__(self, provider: EmbeddingProvider) -> None:
+    def __init__(self, provider: EmbeddingProvider, cache_path: str | Path | None = None) -> None:
         self._provider = provider
         self.dimension = provider.dimension
-        self._cache: dict[str, list[float]] = {}
+        self._cache_path = Path(cache_path) if cache_path is not None else None
+        self._cache: dict[str, list[float]] = self._load_cache()
 
     @property
     def cache_size(self) -> int:
@@ -229,7 +231,26 @@ class CachedEmbeddingProvider:
         if cached is None:
             cached = self._provider.embed(text)
             self._cache[text] = cached
+            self._write_cache()
         return list(cached)
+
+    def _load_cache(self) -> dict[str, list[float]]:
+        if self._cache_path is None or not self._cache_path.exists():
+            return {}
+        payload = json.loads(self._cache_path.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            return {}
+        cache: dict[str, list[float]] = {}
+        for key, value in payload.items():
+            if isinstance(key, str) and isinstance(value, list):
+                cache[key] = [float(item) for item in value]
+        return cache
+
+    def _write_cache(self) -> None:
+        if self._cache_path is None:
+            return
+        self._cache_path.parent.mkdir(parents=True, exist_ok=True)
+        self._cache_path.write_text(json.dumps(self._cache, sort_keys=True), encoding="utf-8")
 
 
 class MarkdownRetriever:
@@ -929,11 +950,14 @@ async def benchmark_live_retrievers(
     embedding_provider: str = "unknown",
     workload: BenchmarkWorkload | None = None,
     external_results: tuple[ExternalBenchmarkResult, ...] = (),
+    progress_callback: Callable[[dict[str, object]], None] | None = None,
 ) -> BenchmarkReport:
     """Benchmark sync baselines and live Zaxy retrieval in one event loop."""
     if runs <= 0:
         raise ValueError("runs must be positive")
     measurements: list[BenchmarkRun] = []
+    total = (len(retrievers) + 1) * len(cases) * runs
+    completed = 0
     for backend, retriever in retrievers.items():
         for case in cases:
             for run in range(1, runs + 1):
@@ -954,6 +978,15 @@ async def benchmark_live_retrievers(
                         contexts=contexts,
                         latency_ms=latency_ms,
                     )
+                )
+                completed += 1
+                _emit_progress(
+                    progress_callback,
+                    backend=backend,
+                    case=case,
+                    run=run,
+                    completed=completed,
+                    total=total,
                 )
 
     for case in cases:
@@ -976,6 +1009,15 @@ async def benchmark_live_retrievers(
                     latency_ms=latency_ms,
                 )
             )
+            completed += 1
+            _emit_progress(
+                progress_callback,
+                backend="zaxy",
+                case=case,
+                run=run,
+                completed=completed,
+                total=total,
+            )
 
     report = BenchmarkReport(
         generated_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -987,6 +1029,28 @@ async def benchmark_live_retrievers(
         external_results=external_results,
     )
     return _with_comparisons(report)
+
+
+def _emit_progress(
+    progress_callback: Callable[[dict[str, object]], None] | None,
+    *,
+    backend: str,
+    case: BenchmarkCase,
+    run: int,
+    completed: int,
+    total: int,
+) -> None:
+    if progress_callback is None:
+        return
+    progress_callback(
+        {
+            "backend": backend,
+            "case": case.name,
+            "run": run,
+            "completed": completed,
+            "total": total,
+        }
+    )
 
 
 async def build_live_zaxy_retriever(

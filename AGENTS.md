@@ -307,12 +307,13 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Codex in-session `/resume` duplicate MCP process troubleshooting guidance
 - [x] Competitive positioning roadmap against MemPalace-style memory systems
 - [x] LongMemEval workload chunking for hosted embedding input limits
+- [x] Persistent embedding cache and progress output for long-running live benchmarks
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 584 passed |
+| Tests | 586 passed |
 | Coverage | 92.25% |
 | Lint | ruff clean |
 | Types | mypy clean |

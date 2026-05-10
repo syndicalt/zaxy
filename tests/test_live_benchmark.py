@@ -14,6 +14,7 @@ from zaxy.live_benchmark import (
     FROZEN_WORKLOAD_VERSION,
     LONGMEMEVAL_WORKLOAD_VERSION,
     SUITE_WORKLOAD_VERSION,
+    BenchmarkCase,
     BenchmarkChunk,
     BM25Retriever,
     CachedEmbeddingProvider,
@@ -23,6 +24,7 @@ from zaxy.live_benchmark import (
     RankFusionRetriever,
     VectorRetriever,
     ZaxyRetriever,
+    benchmark_live_retrievers,
     benchmark_retrievers,
     build_benchmark_suite_workload,
     build_consolidation_collapse_workload,
@@ -49,11 +51,15 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "build_consolidation_collapse_workload" in cli
     assert "build_longmemeval_workload" in cli
     assert "lexical_retriever=BM25Retriever(corpus)" in cli
+    assert "--embedding-cache" in cli
+    assert "--progress" in cli
     assert "--workload" in script
     assert "--dataset" in script
     assert "--subjects" in script
     assert "--documents" in script
     assert "--sessions" in script
+    assert "--embedding-cache" in script
+    assert "--progress" in script
     assert "zaxy benchmark" in script
 
 
@@ -187,6 +193,65 @@ def test_live_benchmark_compares_all_retriever_backends(tmp_path: Path) -> None:
     assert all(summary.runs == 2 for summary in report.summaries)
     assert all(summary.case_count == len(competitive_cases()) for summary in report.summaries)
     assert all(summary.latency_ms_p95 >= summary.latency_ms_p50 for summary in report.summaries)
+
+
+def test_cached_embedding_provider_persists_embeddings_between_runs(tmp_path: Path) -> None:
+    """Hosted benchmark embeddings should be reusable across process runs."""
+    cache_path = tmp_path / "embeddings.json"
+
+    class CountingProvider:
+        dimension = 3
+
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def embed(self, text: str) -> list[float]:
+            self.calls += 1
+            return [float(len(text)), 1.0, 0.0]
+
+    first_provider = CountingProvider()
+    first = CachedEmbeddingProvider(first_provider, cache_path=cache_path)
+
+    assert first.embed("alpha") == [5.0, 1.0, 0.0]
+    assert first_provider.calls == 1
+    assert cache_path.is_file()
+
+    second_provider = CountingProvider()
+    second = CachedEmbeddingProvider(second_provider, cache_path=cache_path)
+
+    assert second.embed("alpha") == [5.0, 1.0, 0.0]
+    assert second_provider.calls == 0
+    assert second.cache_size == 1
+
+
+async def test_live_benchmark_reports_progress_for_each_backend_case() -> None:
+    """Long-running live benchmarks should emit progress events before completion."""
+    case = BenchmarkCase(name="case-1", query="alpha", expected_terms=("alpha",))
+    corpus = (BenchmarkChunk("alpha", "alpha context"),)
+    progress: list[dict[str, object]] = []
+
+    class FakeZaxy:
+        async def query_async(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return ["alpha context"]
+
+    report = await benchmark_live_retrievers(
+        {"md": MarkdownRetriever(corpus)},
+        FakeZaxy(),  # type: ignore[arg-type]
+        (case,),
+        runs=1,
+        limit=1,
+        progress_callback=progress.append,
+    )
+
+    assert report.summaries
+    assert [item["backend"] for item in progress] == ["md", "zaxy"]
+    assert all(item["completed"] <= item["total"] for item in progress)
 
 
 def test_bm25_retriever_ranks_specific_identifier_above_generic_overlap() -> None:

@@ -18,10 +18,12 @@ DOCUMENTS="250"
 SESSIONS="50"
 DATASET=""
 QUESTIONS=""
+EMBEDDING_CACHE=""
+PROGRESS="false"
 
 usage() {
     cat <<USAGE
-Usage: scripts/live-benchmark.sh [--root PATH] [--output-dir PATH] [--runs N] [--limit N] [--embedding-provider openai|hash] [--workload fixture|statistical|frozen|suite|consolidation|longmemeval] [--dataset PATH] [--questions N] [--subjects N] [--documents N] [--sessions N] [--reset-graph]
+Usage: scripts/live-benchmark.sh [--root PATH] [--output-dir PATH] [--runs N] [--limit N] [--embedding-provider openai|hash] [--embedding-cache PATH] [--progress] [--workload fixture|statistical|frozen|suite|consolidation|longmemeval] [--dataset PATH] [--questions N] [--subjects N] [--documents N] [--sessions N] [--reset-graph]
 
 Runs zaxy benchmark against markdown, BM25, vector, markdown+vector, and live Zaxy retrieval.
 OpenAI mode requires OPENAI_API_KEY or OPENAI_API_KEY_FILE.
@@ -49,6 +51,14 @@ while [[ $# -gt 0 ]]; do
         --embedding-provider)
             EMBEDDING_PROVIDER="$2"
             shift 2
+            ;;
+        --embedding-cache)
+            EMBEDDING_CACHE="$2"
+            shift 2
+            ;;
+        --progress)
+            PROGRESS="true"
+            shift
             ;;
         --workload)
             WORKLOAD="$2"
@@ -115,6 +125,12 @@ if [[ -n "${DATASET}" ]]; then
 fi
 if [[ -n "${QUESTIONS}" ]]; then
     args+=(--questions "${QUESTIONS}")
+fi
+if [[ -n "${EMBEDDING_CACHE}" ]]; then
+    args+=(--embedding-cache "${EMBEDDING_CACHE}")
+fi
+if [[ "${PROGRESS}" == "true" ]]; then
+    args+=(--progress)
 fi
 
 "${args[@]}"
