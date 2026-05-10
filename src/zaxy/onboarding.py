@@ -182,7 +182,7 @@ async def run_onboarding(
 
     settings = _onboarding_settings(eventloom=eventloom, session_id=sid, domain=resolved_domain)
     doctor = run_doctor(settings=settings, workspace_root=root, zaxy_executable=executable)
-    steps.append(OnboardingStep("doctor", doctor["status"], "Doctor checks completed"))
+    steps.append(OnboardingStep("doctor", _onboarding_doctor_status(doctor), "Doctor checks completed"))
     hook_status = inspect_hook_status(eventloom_path=eventloom, workspace_root=root)
     steps.append(OnboardingStep("hook_status", hook_status["status"], hook_status["message"]))
     return OnboardingResult(
@@ -327,6 +327,15 @@ def _append_heartbeat(eventloom_path: Path, *, session_id: str, source: str, wor
     )
     eventlog = SessionManager(base_path=str(eventloom_path)).get(session_id).eventlog
     return eventlog.append(event_type, actor="zaxy-hook", payload=payload, thread=session_id)
+
+
+def _onboarding_doctor_status(doctor: dict[str, Any]) -> str:
+    actionable_statuses = [
+        check["status"]
+        for check in doctor["checks"]
+        if check["name"] != "observation_coverage"
+    ]
+    return _overall_status(actionable_statuses)
 
 
 def _overall_status(statuses: Any) -> str:

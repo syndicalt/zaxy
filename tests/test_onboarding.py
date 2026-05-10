@@ -110,6 +110,8 @@ async def test_run_onboarding_writes_requested_configs_and_registers_session(tmp
     assert result.status == "ok"
     assert result.session_id == "demo-default"
     assert result.profile["workspace_type"] == "codebase"
+    assert result.doctor["status"] == "warning"
+    assert any(check["name"] == "observation_coverage" for check in result.doctor["checks"])
     assert [step.name for step in result.steps] == [
         "eventloom",
         "local_profile",

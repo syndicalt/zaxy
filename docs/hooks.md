@@ -35,10 +35,14 @@ zaxy hook-status --eventloom-path .eventloom
 zaxy hook-event heartbeat --eventloom-path .eventloom --session-id my-project-default --source manual
 ```
 
-`hook-status` reports supported client install detection and the latest observed
-hook event. Claude Code detection parses JSON hook command handlers rather than
-matching arbitrary text, so comments or unrelated string fields do not count as
-an installation. `heartbeat` is a health probe: it proves the Eventloom observer
+`hook-status` reports supported client install detection, the latest observed
+hook event, and observation coverage by high-value capture type. Missing
+`command.completed`, `file.edit.applied`, `tool.call.completed`, or
+`transcript.turn` coverage means Zaxy can see lifecycle checkpoints but is not
+yet seeing the richer activity needed for durable session reconstruction.
+Claude Code detection parses JSON hook command handlers rather than matching
+arbitrary text, so comments or unrelated string fields do not count as an
+installation. `heartbeat` is a health probe: it proves the Eventloom observer
 path can write without pretending that a real task or compaction happened.
 
 ## Supported Clients

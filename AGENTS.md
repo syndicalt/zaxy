@@ -301,12 +301,13 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Read-only `zaxy memory diff` for Eventloom sequence ranges
 - [x] Intelligent active memory working-set projection in context assembly
 - [x] Normalized command and file-edit observation capture for hooks
+- [x] Hook and doctor observation coverage reporting for automatic capture gaps
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 570 passed |
+| Tests | 572 passed |
 | Coverage | 92.25% |
 | Lint | ruff clean |
 | Types | mypy clean |

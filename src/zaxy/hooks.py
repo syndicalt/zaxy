@@ -12,6 +12,19 @@ from zaxy.event import Event, EventLog
 
 HookClient = Literal["claude-code", "codex", "generic"]
 HOOK_CLIENTS = ("claude-code", "codex", "generic")
+OBSERVATION_COVERAGE_TYPES = (
+    "hook",
+    "command.completed",
+    "file.edit.applied",
+    "tool.call.completed",
+    "transcript.turn",
+)
+HIGH_VALUE_OBSERVATION_TYPES = (
+    "command.completed",
+    "file.edit.applied",
+    "tool.call.completed",
+    "transcript.turn",
+)
 
 
 def render_hook_config(
@@ -168,6 +181,8 @@ def inspect_hook_status(
     eventloom = Path(eventloom_path)
     installations = _detect_hook_installations(root)
     latest = _latest_hook_event(eventloom)
+    coverage = _observation_coverage(eventloom)
+    missing = [event_type for event_type in HIGH_VALUE_OBSERVATION_TYPES if coverage[event_type]["count"] == 0]
     installed_any = any(client["installed"] for client in installations.values())
     status = "ok" if latest is not None else "warning"
     if not installed_any and latest is None:
@@ -182,6 +197,8 @@ def inspect_hook_status(
         "eventloom_path": str(eventloom),
         "clients": installations,
         "latest_event": latest,
+        "observation_coverage": coverage,
+        "missing_observation_types": missing,
     }
 
 
@@ -199,6 +216,22 @@ def format_hook_status(report: dict[str, Any]) -> str:
             f"- last event: {latest['type']} seq={latest['seq']} "
             f"session={latest['thread']} source={latest['source']}"
         )
+    coverage = report.get("observation_coverage", {})
+    if coverage:
+        lines.append("- observation coverage:")
+        for event_type in OBSERVATION_COVERAGE_TYPES:
+            entry = coverage.get(event_type, {})
+            count = entry.get("count", 0)
+            latest_observation = entry.get("latest")
+            label = "hook.*" if event_type == "hook" else event_type
+            if latest_observation:
+                lines.append(
+                    f"  {label}: count={count} latest={latest_observation['type']} "
+                    f"seq={latest_observation['seq']} session={latest_observation['thread']} "
+                    f"source={latest_observation['source']}"
+                )
+            else:
+                lines.append(f"  {label}: missing")
     return "\n".join(lines)
 
 
@@ -227,13 +260,7 @@ def _detect_hook_installations(workspace_root: Path) -> dict[str, dict[str, Any]
 
 def _latest_hook_event(eventloom_path: Path) -> dict[str, Any] | None:
     latest: Event | None = None
-    if eventloom_path.is_file():
-        paths = [eventloom_path]
-    elif eventloom_path.is_dir():
-        paths = sorted(eventloom_path.glob("*.jsonl"))
-    else:
-        paths = []
-    for path in paths:
+    for path in _eventlog_paths(eventloom_path):
         try:
             events = EventLog(path).read_all()
         except Exception:
@@ -254,6 +281,61 @@ def _latest_hook_event(eventloom_path: Path) -> dict[str, Any] | None:
         "thread": latest.thread,
         "source": latest.payload.get("source", "unknown"),
         "trigger": latest.payload.get("trigger", latest.type.removeprefix("hook.")),
+    }
+
+
+def _observation_coverage(eventloom_path: Path) -> dict[str, dict[str, Any]]:
+    coverage: dict[str, dict[str, Any]] = {
+        event_type: {"count": 0, "latest": None} for event_type in OBSERVATION_COVERAGE_TYPES
+    }
+    for path in _eventlog_paths(eventloom_path):
+        try:
+            events = EventLog(path).read_all()
+        except Exception:
+            continue
+        for event in events:
+            event_type = _observation_coverage_type(event.type)
+            if event_type is None:
+                continue
+            entry = coverage[event_type]
+            entry["count"] += 1
+            latest = entry["latest"]
+            if latest is None or _event_is_newer(event, latest):
+                entry["latest"] = _summarize_observation_event(event)
+    return coverage
+
+
+def _eventlog_paths(eventloom_path: Path) -> list[Path]:
+    if eventloom_path.is_file():
+        return [eventloom_path]
+    if eventloom_path.is_dir():
+        return sorted(eventloom_path.glob("*.jsonl"))
+    return []
+
+
+def _observation_coverage_type(event_type: str) -> str | None:
+    if event_type.startswith("hook."):
+        return "hook"
+    if event_type in OBSERVATION_COVERAGE_TYPES:
+        return event_type
+    return None
+
+
+def _event_is_newer(event: Event, latest: dict[str, Any]) -> bool:
+    latest_timestamp = str(latest["timestamp"])
+    latest_seq = int(latest["seq"])
+    return event.timestamp > latest_timestamp or (
+        event.timestamp == latest_timestamp and event.seq > latest_seq
+    )
+
+
+def _summarize_observation_event(event: Event) -> dict[str, Any]:
+    return {
+        "seq": event.seq,
+        "timestamp": event.timestamp,
+        "type": event.type,
+        "thread": event.thread,
+        "source": event.payload.get("source", "unknown"),
     }
 
 

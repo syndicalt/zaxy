@@ -797,6 +797,43 @@ def test_hook_event_file_edit_observation_appends_normalized_event(tmp_path: Pat
     assert "content" not in events[0].payload
 
 
+def test_hook_status_reports_observation_type_coverage(tmp_path: Path) -> None:
+    """hook-status should show which automatic capture types are active."""
+    log = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl")
+    log.append(
+        "hook.heartbeat",
+        actor="zaxy-hook",
+        payload={"trigger": "heartbeat", "source": "codex"},
+        thread="agent-1",
+    )
+    command = log.append(
+        "command.completed",
+        actor="zaxy-observer",
+        payload={"source": "codex", "command": "pytest", "exit_code": 0},
+        thread="agent-1",
+    )
+    log.append(
+        "file.edit.applied",
+        actor="zaxy-observer",
+        payload={"source": "codex", "path": "src/zaxy/core.py", "operation": "modified"},
+        thread="agent-1",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["hook-status", "--eventloom-path", str(tmp_path / ".eventloom"), "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["observation_coverage"]["command.completed"]["count"] == 1
+    assert payload["observation_coverage"]["command.completed"]["latest"]["seq"] == command.seq
+    assert payload["observation_coverage"]["file.edit.applied"]["count"] == 1
+    assert payload["observation_coverage"]["transcript.turn"]["count"] == 0
+    assert "transcript.turn" in payload["missing_observation_types"]
+
+
 def test_hooks_status_reports_installed_clients_and_recent_activity(tmp_path: Path) -> None:
     """hook-status should answer whether Zaxy is observing this workspace."""
     settings_path = tmp_path / ".claude" / "settings.local.json"
@@ -820,6 +857,7 @@ def test_hooks_status_reports_installed_clients_and_recent_activity(tmp_path: Pa
     assert "claude-code: installed" in result.output
     assert "codex: not installed" in result.output
     assert "last event: hook.heartbeat" in result.output
+    assert "command.completed: missing" in result.output
     assert "agent-1" in result.output
 
 

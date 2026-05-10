@@ -34,6 +34,7 @@ def run_doctor(
         _check_hooks(active),
         _check_hook_installation(hook_status),
         _check_hook_activity(active, hook_status),
+        _check_observation_coverage(hook_status),
         _check_neo4j(active),
         _check_production(active),
     ]
@@ -235,6 +236,23 @@ def _check_hook_activity(settings: Settings, hook_status: dict[str, Any]) -> dic
             "--domain <project> --output .claude/settings.local.json, then run "
             "zaxy hook-event heartbeat."
         ),
+    }
+
+
+def _check_observation_coverage(hook_status: dict[str, Any]) -> dict[str, str]:
+    missing = hook_status.get("missing_observation_types", [])
+    if not missing:
+        return {
+            "name": "observation_coverage",
+            "status": "ok",
+            "message": "high-value automatic observation types have been captured",
+        }
+    missing_types = ", ".join(str(event_type) for event_type in missing)
+    return {
+        "name": "observation_coverage",
+        "status": "warning",
+        "message": f"missing high-value automatic observation types: {missing_types}",
+        "action": "Confirm hooks emit command, file-edit, tool-call, and transcript observations for this client.",
     }
 
 
