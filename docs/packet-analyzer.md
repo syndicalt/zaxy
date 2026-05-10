@@ -28,6 +28,21 @@ observed. Expensive work such as graph projection, embeddings, consolidation,
 and memory summarization should run from the cold path after packet capture, not
 in the request forwarding path.
 
+## Cold-Path Projection
+
+Run the projection worker separately to turn completed packet captures into
+compact, retrieval-ready `llm.packet.projected` events:
+
+```bash
+zaxy packet-project \
+  --eventloom-path .eventloom \
+  --session-id zaxy-default
+```
+
+Projection is idempotent by source event hash. It extracts bounded request and
+response summaries, preserves the source packet sequence and hash, and leaves the
+raw packet capture available for audit replay.
+
 ## Modes
 
 The first implementation is observe-only. It does not inject memory, choose a

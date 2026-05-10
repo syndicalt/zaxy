@@ -92,6 +92,35 @@ def test_packet_analyzer_cli_help_exposes_observe_only_gateway() -> None:
     assert "--session-id" in result.output
 
 
+def test_packet_project_cli_projects_completed_packets(tmp_path: Path) -> None:
+    """packet-project should run the cold-path packet projection worker."""
+    eventloom_dir = tmp_path / ".eventloom"
+    EventLog(eventloom_dir / "agent-1.jsonl").append(
+        "llm.packet.completed",
+        actor="zaxy-packet-analyzer",
+        thread="agent-1",
+        payload={
+            "session_id": "agent-1",
+            "provider_path": "/v1/responses",
+            "status_code": 200,
+            "request": {"body": {"input": "Remember the codename is Atlas."}},
+            "response": {"body": {"output_text": "I will remember Atlas."}},
+        },
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["packet-project", "--eventloom-path", str(eventloom_dir), "--session-id", "agent-1"],
+    )
+
+    assert result.exit_code == 0
+    assert "Projected 1 packet event" in result.output
+    events = EventLog(eventloom_dir / "agent-1.jsonl").read_all()
+    assert events[-1].type == "llm.packet.projected"
+    assert "Atlas" in events[-1].payload["summary"]
+
+
 def test_memory_log_prints_recent_events(tmp_path: Path) -> None:
     """memory log should print recent events in compact git-style form."""
     event = EventLog(tmp_path / ".eventloom" / "agent.jsonl").append(

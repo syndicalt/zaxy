@@ -97,6 +97,7 @@ from zaxy.onboarding import (
     run_onboarding,
 )
 from zaxy.packet_analyzer import PacketAnalyzerConfig, run_packet_analyzer
+from zaxy.packet_projection import project_packet_events
 from zaxy.schema import render_schema_plan
 from zaxy.viewer import write_viewer_html
 
@@ -965,6 +966,45 @@ def packet_analyzer(
         f"-> {upstream_base_url}"
     )
     run_packet_analyzer(host=host, port=port, config=config)
+
+
+@app.command("packet-project")
+def packet_project(
+    eventloom_path: Path = typer.Option(  # noqa: B008
+        Path(".eventloom"),
+        "--eventloom-path",
+        help="Eventloom directory containing captured packet events",
+    ),
+    session_id: str = typer.Option(
+        "default",
+        "--session-id",
+        help="Session ID containing packet events",
+    ),
+    from_seq: int = typer.Option(
+        1,
+        "--from-seq",
+        min=1,
+        help="First Eventloom sequence number to inspect",
+    ),
+    limit: int | None = typer.Option(
+        None,
+        "--limit",
+        min=1,
+        help="Maximum completed packet events to inspect",
+    ),
+) -> None:
+    """Project captured LLM packets into compact memory events."""
+    result = project_packet_events(
+        eventloom_path=eventloom_path,
+        session_id=session_id,
+        from_seq=from_seq,
+        limit=limit,
+    )
+    noun = "event" if result.projected == 1 else "events"
+    typer.echo(
+        f"Projected {result.projected} packet {noun} "
+        f"(read={result.read}, skipped={result.skipped})"
+    )
 
 
 @app.command()

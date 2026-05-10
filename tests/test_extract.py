@@ -1007,6 +1007,50 @@ class TestTranscriptTurn:
         }
 
 
+class TestLlmPacketProjection:
+    """Tests for llm.packet.projected extractor."""
+
+    def test_extracts_packet_projection_with_source_properties(self) -> None:
+        ev = _make_event(
+            "llm.packet.projected",
+            {
+                "session_id": "agent-1",
+                "source_event_seq": 12,
+                "source_event_hash": "b" * 64,
+                "provider_path": "/v1/chat/completions",
+                "status_code": 200,
+                "model": "gpt-test",
+                "usage_counts": {"prompt": 3, "completion": 2, "total": 5},
+                "summary": "LLM packet /v1/chat/completions gpt-test status 200.",
+            },
+            actor="zaxy-packet-projector",
+        )
+
+        result = extract(ev)
+
+        assert len(result.entities) == 2
+        packet = next(e for e in result.entities if e.entity_type == "llm_packet_projection")
+        assert packet.name == "agent-1:llm-packet:12"
+        assert packet.summary == "LLM packet /v1/chat/completions gpt-test status 200."
+        assert packet.properties == {
+            "session_id": "agent-1",
+            "source_event_seq": 12,
+            "source_event_hash": "b" * 64,
+            "provider_path": "/v1/chat/completions",
+            "status_code": 200,
+            "model": "gpt-test",
+            "prompt_tokens": 3,
+            "completion_tokens": 2,
+            "total_tokens": 5,
+        }
+        assert any(
+            edge.source == "agent-1"
+            and edge.target == "agent-1:llm-packet:12"
+            and edge.relation_type == "projected_llm_packet"
+            for edge in result.edges
+        )
+
+
 # ------------------------------------------------------------------
 # Integration / sanity tests
 # ------------------------------------------------------------------

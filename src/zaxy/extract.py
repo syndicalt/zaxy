@@ -1224,6 +1224,53 @@ def _extract_transcript_turn(event: Event) -> ExtractionResult:
     )
 
 
+@register("llm.packet.projected")
+def _extract_llm_packet_projected(event: Event) -> ExtractionResult:
+    """Extract a cold-path LLM packet projection."""
+    session_id = _optional_text(event.payload.get("session_id")) or event.thread
+    source_event_seq = _positive_int(event.payload.get("source_event_seq"), default=event.seq)
+    source_event_hash = _optional_text(event.payload.get("source_event_hash"))
+    provider_path = _optional_text(event.payload.get("provider_path")) or "unknown-provider-path"
+    status_code = _positive_int(event.payload.get("status_code"), default=0)
+    model = _optional_text(event.payload.get("model"))
+    usage_counts = event.payload.get("usage_counts")
+    if not isinstance(usage_counts, dict):
+        usage_counts = {}
+    packet = ExtractedEntity(
+        name=f"{session_id}:llm-packet:{source_event_seq}",
+        entity_type="llm_packet_projection",
+        observed_at=event.timestamp,
+        summary=_optional_text(event.payload.get("summary")),
+        properties={
+            "session_id": session_id,
+            "source_event_seq": source_event_seq,
+            "source_event_hash": source_event_hash,
+            "provider_path": provider_path,
+            "status_code": status_code,
+            "model": model,
+            "prompt_tokens": usage_counts.get("prompt"),
+            "completion_tokens": usage_counts.get("completion"),
+            "total_tokens": usage_counts.get("total"),
+        },
+    )
+    session = ExtractedEntity(
+        name=session_id,
+        entity_type="session",
+        observed_at=event.timestamp,
+    )
+    edge = ExtractedEdge(
+        source=session.name,
+        target=packet.name,
+        relation_type="projected_llm_packet",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(
+        entities=[session, packet],
+        edges=[edge],
+        source_event_seq=event.seq,
+    )
+
+
 def _optional_text(value: object) -> str | None:
     """Return non-empty text for extracted summaries."""
     if value is None:
