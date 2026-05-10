@@ -146,6 +146,30 @@ def _chunk_from_event(event: Event) -> VerbatimChunk | None:
             metadata={key: value for key, value in metadata.items() if value is not None},
         )
 
+    if event.type == "llm.packet.projected":
+        content = _text(event.payload.get("summary"))
+        if not content:
+            return None
+        metadata = {
+            "event_seq": event.seq,
+            "event_type": event.type,
+            "event_thread": event.thread,
+            "event_timestamp": event.timestamp,
+            "session_id": _text(event.payload.get("session_id")),
+            "source_event_seq": _int(event.payload.get("source_event_seq")),
+            "source_event_hash": _text(event.payload.get("source_event_hash")),
+            "provider_path": _text(event.payload.get("provider_path")),
+            "status_code": _int(event.payload.get("status_code")),
+            "model": _text(event.payload.get("model")),
+        }
+        return VerbatimChunk(
+            chunk_id=f"{event.thread}:{event.seq}",
+            content=content,
+            citation=_event_citation(event),
+            source_kind="packet_projection",
+            metadata={key: value for key, value in metadata.items() if value is not None},
+        )
+
     content = _payload_text(event.payload)
     if not content:
         return None

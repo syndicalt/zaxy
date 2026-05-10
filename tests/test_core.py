@@ -61,6 +61,40 @@ async def test_memory_fabric_queries_verbatim_eventloom_sources(tmp_path: Path) 
         "transcript_role": "assistant",
     }
 
+
+async def test_memory_fabric_queries_packet_projection_sources(tmp_path: Path) -> None:
+    """Packet projections should enter source-aware context retrieval."""
+    fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+    session = fabric.session_manager.get("agent")
+    event = session.eventlog.append(
+        "llm.packet.projected",
+        actor="zaxy-packet-projector",
+        payload={
+            "session_id": "agent",
+            "source_event_seq": 2,
+            "source_event_hash": "b" * 64,
+            "provider_path": "/v1/responses",
+            "summary": "LLM packet /v1/responses status 200. User: Mira owns dashboards.",
+        },
+        thread="agent",
+    )
+
+    contexts = await fabric.query_verbatim("Who owns dashboards?", session_id="agent", limit=1)
+
+    assert contexts[0].content == "LLM packet /v1/responses status 200. User: Mira owns dashboards."
+    assert contexts[0].metadata == {
+        "citation": f"eventloom://agent/events/{event.seq}#{event.hash}",
+        "source_kind": "packet_projection",
+        "event_seq": event.seq,
+        "event_type": "llm.packet.projected",
+        "event_thread": "agent",
+        "event_timestamp": event.timestamp,
+        "session_id": "agent",
+        "source_event_seq": 2,
+        "source_event_hash": "b" * 64,
+        "provider_path": "/v1/responses",
+    }
+
 # ------------------------------------------------------------------
 # Fixtures
 # ------------------------------------------------------------------

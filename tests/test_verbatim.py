@@ -59,6 +59,37 @@ def test_verbatim_index_retrieves_transcript_turn_identity(tmp_path) -> None:
     assert hits[0].metadata["transcript_role"] == "assistant"
 
 
+def test_verbatim_index_retrieves_packet_projection_as_memory(tmp_path) -> None:
+    """Projected LLM packets should be retrievable as clean memory, not raw JSON."""
+    log = EventLog(tmp_path / "agent.jsonl")
+    event = log.append(
+        "llm.packet.projected",
+        actor="zaxy-packet-projector",
+        payload={
+            "session_id": "agent",
+            "source_event_seq": 3,
+            "source_event_hash": "b" * 64,
+            "provider_path": "/v1/responses",
+            "status_code": 200,
+            "model": "gpt-test",
+            "summary": "LLM packet /v1/responses gpt-test status 200. User: Remember Mira owns dashboards.",
+        },
+        thread="agent",
+    )
+
+    hits = VerbatimIndex.from_event_logs([log]).query("Who owns dashboards?", limit=1)
+
+    assert hits[0].content == (
+        "LLM packet /v1/responses gpt-test status 200. User: Remember Mira owns dashboards."
+    )
+    assert hits[0].citation == f"eventloom://agent/events/{event.seq}#{event.hash}"
+    assert hits[0].source_kind == "packet_projection"
+    assert hits[0].metadata["source_event_seq"] == 3
+    assert hits[0].metadata["source_event_hash"] == "b" * 64
+    assert hits[0].metadata["provider_path"] == "/v1/responses"
+    assert hits[0].metadata["model"] == "gpt-test"
+
+
 def test_verbatim_index_prefers_exact_identity_terms(tmp_path) -> None:
     """Rare identifiers should outrank broad lexical overlap."""
     log = EventLog(tmp_path / "agent.jsonl")

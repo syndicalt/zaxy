@@ -129,3 +129,26 @@ def test_working_set_projects_observed_commands_and_file_edits() -> None:
     assert [item.category for item in working_set.items] == ["action", "artifact"]
     assert working_set.items[0].summary == "passed pytest"
     assert working_set.items[1].summary == "modified src/zaxy/core.py: Updated assembly."
+
+
+def test_working_set_projects_packet_memory_events() -> None:
+    """Packet projections should become compact memory items in prompt assembly."""
+    event = SimpleNamespace(
+        seq=6,
+        type="llm.packet.projected",
+        actor="zaxy-packet-projector",
+        payload={
+            "summary": "LLM packet /v1/responses status 200. User: Mira owns dashboards.",
+            "source_event_seq": 5,
+        },
+        hash="f" * 64,
+        thread="agent",
+    )
+
+    working_set = build_working_set([event], [], max_items=5)
+
+    assert [item.category for item in working_set.items] == ["memory"]
+    assert working_set.items[0].summary == (
+        "LLM packet /v1/responses status 200. User: Mira owns dashboards."
+    )
+    assert working_set.items[0].citation == "eventloom://agent/events/6#ffffffffffff"

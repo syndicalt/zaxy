@@ -116,6 +116,8 @@ def _event_category(event_type: str) -> str | None:
         return "action"
     if event_type in {"document.indexed", "code.file.indexed", "file.edit.applied"}:
         return "artifact"
+    if event_type == "llm.packet.projected":
+        return "memory"
     if event_type in {"issue.diagnosed", "blocker.created"}:
         return "blocker"
     return None
