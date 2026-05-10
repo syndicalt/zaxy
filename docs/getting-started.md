@@ -55,15 +55,17 @@ zaxy doctor --json
 ```
 
 The doctor command verifies Eventloom writeability, local embedding/reranker
-construction, static viewer generation, MCP default-session posture, Neo4j
-configuration posture, and production-mode warnings. It does not start Docker
-or require a live Neo4j connection; use `zaxy status` when you want a live graph
-connectivity test.
+construction, static viewer generation, MCP default-session posture, observer
+hook coverage, optional LLM packet memory projection, Neo4j configuration
+posture, and production-mode warnings. It does not start Docker or require a
+live Neo4j connection; use `zaxy status` when you want a live graph connectivity
+test.
 
 For a single first-run flow, use `zaxy init`. It composes the existing
 onboarding primitives rather than replacing them: local profile writing, MCP
 config rendering, hook config writing, workspace genesis, hook heartbeat,
-doctor, and hook status.
+doctor, hook status, and next-step guidance for optional packet capture and
+projection.
 
 ```bash
 zaxy init . \

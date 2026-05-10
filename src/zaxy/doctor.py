@@ -12,6 +12,7 @@ from zaxy.event import EventLog
 from zaxy.hooks import HOOK_CLIENTS, inspect_hook_status, render_hook_config
 from zaxy.install import resolve_zaxy_executable
 from zaxy.local_profile import check_local_profile
+from zaxy.security import eventlog_path
 from zaxy.viewer import write_viewer_html
 
 
@@ -35,6 +36,7 @@ def run_doctor(
         _check_hook_installation(hook_status),
         _check_hook_activity(active, hook_status),
         _check_observation_coverage(hook_status),
+        _check_packet_memory(active),
         _check_neo4j(active),
         _check_production(active),
     ]
@@ -253,6 +255,48 @@ def _check_observation_coverage(hook_status: dict[str, Any]) -> dict[str, str]:
         "status": "warning",
         "message": f"missing high-value automatic observation types: {missing_types}",
         "action": "Confirm hooks emit command, file-edit, tool-call, and transcript observations for this client.",
+    }
+
+
+def _check_packet_memory(settings: Settings) -> dict[str, str]:
+    log = EventLog(eventlog_path(Path(settings.eventloom_path), settings.eventloom_thread))
+    events = log.read_all()
+    completed = [event for event in events if event.type == "llm.packet.completed"]
+    projected_hashes = {
+        event.payload.get("source_event_hash")
+        for event in events
+        if event.type == "llm.packet.projected"
+    }
+    unprojected = [event for event in completed if event.hash not in projected_hashes]
+    if not completed:
+        return {
+            "name": "packet_memory",
+            "status": "warning",
+            "message": "no LLM packet captures observed for this session",
+            "action": (
+                "Optional: run zaxy packet-analyzer --eventloom-path "
+                f"{settings.eventloom_path} --session-id {settings.eventloom_thread} "
+                "--upstream-base-url <provider-v1-url>, then run zaxy packet-project --watch."
+            ),
+        }
+    if unprojected:
+        count = len(unprojected)
+        noun = "event has" if count == 1 else "events have"
+        return {
+            "name": "packet_memory",
+            "status": "warning",
+            "message": f"{count} captured packet {noun} not been projected",
+            "action": (
+                "Run zaxy packet-project --watch --eventloom-path "
+                f"{settings.eventloom_path} --session-id {settings.eventloom_thread}."
+            ),
+        }
+    count = len(completed)
+    noun = "capture has" if count == 1 else "captures have"
+    return {
+        "name": "packet_memory",
+        "status": "ok",
+        "message": f"{count} packet {noun} projected memory",
     }
 
 

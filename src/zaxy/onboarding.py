@@ -195,6 +195,7 @@ async def run_onboarding(
         next_steps=_build_next_steps(
             workspace=root,
             eventloom=eventloom,
+            session_id=sid,
             mcp_client=mcp_client,
             mcp_output=mcp_output,
             infra_action=infra_action,
@@ -282,6 +283,7 @@ def _build_next_steps(
     *,
     workspace: Path,
     eventloom: Path,
+    session_id: str,
     mcp_client: str | None,
     mcp_output: str | Path | None,
     infra_action: str,
@@ -292,6 +294,15 @@ def _build_next_steps(
         next_steps.append(f"Add {Path(mcp_output)} to your {mcp_client} MCP client config.")
         next_steps.append("Restart the MCP client so it loads the Zaxy server config.")
     next_steps.append(f"Run zaxy hook-status --eventloom-path {eventloom}")
+    next_steps.append(
+        "Optional LLM packet capture: run zaxy packet-analyzer "
+        f"--eventloom-path {eventloom} --session-id {session_id} "
+        "--upstream-base-url <provider-v1-url>."
+    )
+    next_steps.append(
+        "Optional packet projection: run zaxy packet-project "
+        f"--eventloom-path {eventloom} --session-id {session_id} --watch."
+    )
     infra_step = next((step for step in steps if step.name == "infra"), None)
     if infra_action == "check" and infra_step is not None and infra_step.status != "ok":
         next_steps.append(f"Run zaxy init {workspace} --infra start if you want Zaxy to start local Neo4j now.")
@@ -333,7 +344,7 @@ def _onboarding_doctor_status(doctor: dict[str, Any]) -> str:
     actionable_statuses = [
         check["status"]
         for check in doctor["checks"]
-        if check["name"] != "observation_coverage"
+        if check["name"] not in {"observation_coverage", "packet_memory"}
     ]
     return _overall_status(actionable_statuses)
 

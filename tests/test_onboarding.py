@@ -135,6 +135,14 @@ async def test_run_onboarding_writes_requested_configs_and_registers_session(tmp
     assert result.next_steps[0] == f"Add {mcp_output} to your claude-desktop MCP client config."
     assert result.next_steps[1] == "Restart the MCP client so it loads the Zaxy server config."
     assert f"Run zaxy hook-status --eventloom-path {eventloom_path}" in result.next_steps
+    assert (
+        f"Optional LLM packet capture: run zaxy packet-analyzer --eventloom-path {eventloom_path} "
+        f"--session-id demo-default --upstream-base-url <provider-v1-url>."
+    ) in result.next_steps
+    assert (
+        f"Optional packet projection: run zaxy packet-project --eventloom-path {eventloom_path} "
+        "--session-id demo-default --watch."
+    ) in result.next_steps
 
 
 @pytest.mark.asyncio

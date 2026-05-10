@@ -52,6 +52,10 @@ Projection is idempotent by source event hash. It extracts bounded request and
 response summaries, preserves the source packet sequence and hash, and leaves the
 raw packet capture available for audit replay.
 
+`zaxy doctor` reports packet-memory status for the active session. It warns when
+captured packets have not been projected yet, and `zaxy init` includes optional
+next steps for starting both the analyzer and projector.
+
 ## Modes
 
 The first implementation is observe-only. It does not inject memory, choose a
