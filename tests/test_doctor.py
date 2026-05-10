@@ -216,6 +216,13 @@ def test_run_doctor_warns_when_packets_are_not_projected(tmp_path: Path) -> None
     check = next(check for check in report["checks"] if check["name"] == "packet_memory")
     assert check["status"] == "warning"
     assert "1 captured packet event has not been projected" in check["message"]
+    assert check["details"] == {
+        "captured": 1,
+        "projected": 0,
+        "unprojected": 1,
+        "reinforced": 0,
+        "eligible": 0,
+    }
     assert "zaxy packet-project --watch" in check["action"]
 
 
@@ -240,9 +247,22 @@ def test_run_doctor_reports_packet_memory_ok_when_projected(tmp_path: Path) -> N
         payload={"source_event_hash": packet.hash, "source_event_seq": packet.seq},
         thread="zaxy-default",
     )
+    log.append(
+        "memory.reinforced",
+        actor="assistant",
+        payload={"entity_type": "packet_memory", "source_event_hash": packet.hash},
+        thread="zaxy-default",
+    )
 
     report = run_doctor(settings=settings, workspace_root=tmp_path)
 
     check = next(check for check in report["checks"] if check["name"] == "packet_memory")
     assert check["status"] == "ok"
     assert "1 packet capture has projected memory" in check["message"]
+    assert check["details"] == {
+        "captured": 1,
+        "projected": 1,
+        "unprojected": 0,
+        "reinforced": 1,
+        "eligible": 1,
+    }

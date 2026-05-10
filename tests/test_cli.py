@@ -1125,6 +1125,12 @@ def test_local_profile_check_reports_success() -> None:
 
 def test_doctor_command_reports_text_summary(tmp_path: Path) -> None:
     runner = CliRunner()
+    EventLog(tmp_path / ".eventloom" / "default.jsonl").append(
+        "llm.packet.completed",
+        actor="zaxy-packet-analyzer",
+        payload={"session_id": "default"},
+        thread="default",
+    )
 
     result = runner.invoke(app, ["doctor", "--eventloom-path", str(tmp_path / ".eventloom")])
 
@@ -1132,6 +1138,7 @@ def test_doctor_command_reports_text_summary(tmp_path: Path) -> None:
     assert "Zaxy doctor:" in result.output
     assert "eventloom: ok" in result.output
     assert "viewer: ok" in result.output
+    assert "captured=1 projected=0 unprojected=1 reinforced=0 eligible=0" in result.output
 
 
 def test_doctor_command_reports_json(tmp_path: Path) -> None:

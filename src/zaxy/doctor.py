@@ -51,6 +51,10 @@ def format_doctor_report(report: dict[str, Any]) -> str:
     lines = [f"Zaxy doctor: {report['status']}"]
     for check in report["checks"]:
         lines.append(f"- {check['name']}: {check['status']} - {check['message']}")
+        details = check.get("details")
+        if isinstance(details, dict) and details:
+            rendered = " ".join(f"{key}={value}" for key, value in details.items())
+            lines.append(f"  details: {rendered}")
         action = check.get("action")
         if action:
             lines.append(f"  action: {action}")
@@ -260,43 +264,67 @@ def _check_observation_coverage(hook_status: dict[str, Any]) -> dict[str, str]:
 
 def _check_packet_memory(settings: Settings) -> dict[str, str]:
     log = EventLog(eventlog_path(Path(settings.eventloom_path), settings.eventloom_thread))
-    events = log.read_all()
-    completed = [event for event in events if event.type == "llm.packet.completed"]
-    projected_hashes = {
-        event.payload.get("source_event_hash")
-        for event in events
-        if event.type == "llm.packet.projected"
-    }
-    unprojected = [event for event in completed if event.hash not in projected_hashes]
-    if not completed:
+    status = _packet_memory_status(log.read_all())
+    details = status["details"]
+    if details["captured"] == 0:
         return {
             "name": "packet_memory",
             "status": "warning",
             "message": "no LLM packet captures observed for this session",
+            "details": details,
             "action": (
                 "Optional: run zaxy packet-analyzer --eventloom-path "
                 f"{settings.eventloom_path} --session-id {settings.eventloom_thread} "
                 "--upstream-base-url <provider-v1-url>, then run zaxy packet-project --watch."
             ),
         }
-    if unprojected:
-        count = len(unprojected)
+    if details["unprojected"]:
+        count = details["unprojected"]
         noun = "event has" if count == 1 else "events have"
         return {
             "name": "packet_memory",
             "status": "warning",
             "message": f"{count} captured packet {noun} not been projected",
+            "details": details,
             "action": (
                 "Run zaxy packet-project --watch --eventloom-path "
                 f"{settings.eventloom_path} --session-id {settings.eventloom_thread}."
             ),
         }
-    count = len(completed)
+    count = details["captured"]
     noun = "capture has" if count == 1 else "captures have"
     return {
         "name": "packet_memory",
         "status": "ok",
         "message": f"{count} packet {noun} projected memory",
+        "details": details,
+    }
+
+
+def _packet_memory_status(events: list[Any]) -> dict[str, Any]:
+    completed = [event for event in events if event.type == "llm.packet.completed"]
+    projected_hashes = {
+        event.payload.get("source_event_hash")
+        for event in events
+        if event.type == "llm.packet.projected"
+    }
+    reinforced_hashes = {
+        event.payload.get("source_event_hash")
+        for event in events
+        if event.type == "memory.reinforced"
+        and event.payload.get("entity_type") == "packet_memory"
+        and event.payload.get("source_event_hash")
+    }
+    unprojected = [event for event in completed if event.hash not in projected_hashes]
+    eligible_hashes = {event.hash for event in completed if event.hash in projected_hashes}
+    return {
+        "details": {
+            "captured": len(completed),
+            "projected": len(projected_hashes),
+            "unprojected": len(unprojected),
+            "reinforced": len(reinforced_hashes),
+            "eligible": len(eligible_hashes),
+        }
     }
 
 

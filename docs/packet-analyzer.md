@@ -63,7 +63,9 @@ memories while keeping the original packet and projection events immutable.
 
 `zaxy doctor` reports packet-memory status for the active session. It warns when
 captured packets have not been projected yet, and `zaxy init` includes optional
-next steps for starting both the analyzer and projector.
+next steps for starting both the analyzer and projector. The doctor report also
+prints counters for `captured`, `projected`, `unprojected`, `reinforced`, and
+currently `eligible` packet memories.
 
 ## Modes
 
