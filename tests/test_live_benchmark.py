@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from zaxy.benchmark import build_competitive_event_log, competitive_cases
 from zaxy.embedding import HashEmbeddingProvider
@@ -19,7 +20,9 @@ from zaxy.live_benchmark import (
     CentroidConsolidationRetriever,
     MarkdownRetriever,
     MarkdownVectorRetriever,
+    RankFusionRetriever,
     VectorRetriever,
+    ZaxyRetriever,
     benchmark_retrievers,
     build_benchmark_suite_workload,
     build_consolidation_collapse_workload,
@@ -45,6 +48,7 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "build_benchmark_suite_workload" in cli
     assert "build_consolidation_collapse_workload" in cli
     assert "build_longmemeval_workload" in cli
+    assert "lexical_retriever=BM25Retriever(corpus)" in cli
     assert "--workload" in script
     assert "--dataset" in script
     assert "--subjects" in script
@@ -162,6 +166,55 @@ def test_bm25_retriever_ranks_specific_identifier_above_generic_overlap() -> Non
     results = BM25Retriever(corpus).query("cache rollback doc-code-0001", limit=1)
 
     assert results == [corpus[1].text]
+
+
+def test_rank_fusion_retriever_preserves_complementary_hits() -> None:
+    """Fusion should keep lexical hits when another retriever misses them."""
+    corpus = (
+        BenchmarkChunk("answer", "longmemeval_session_id=answer-1 degree Business Administration"),
+        BenchmarkChunk("distractor", "degree graph-shaped context about unrelated project planning"),
+    )
+
+    fused = RankFusionRetriever(
+        {
+            "graph": MarkdownRetriever((corpus[1],)),
+            "bm25": BM25Retriever(corpus),
+        }
+    )
+
+    results = fused.query("What degree did I graduate with?", limit=2)
+
+    assert any("answer-1" in result for result in results)
+    assert len(results) == 2
+
+
+async def test_zaxy_retriever_can_fuse_graph_and_lexical_results() -> None:
+    """Live Zaxy benchmark retrieval should support lexical fusion."""
+    corpus = (
+        BenchmarkChunk("answer", "longmemeval_session_id=answer-1 degree Business Administration"),
+    )
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, limit, embedding
+            return [SimpleNamespace(content="graph context about the user degree")]
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=BM25Retriever(corpus),
+    )
+
+    results = await retriever.query_async("What degree did I graduate with?", limit=2)
+
+    assert any("graph context" in result for result in results)
+    assert any("answer-1" in result for result in results)
 
 
 def test_live_benchmark_outputs_machine_and_markdown_reports(tmp_path: Path) -> None:

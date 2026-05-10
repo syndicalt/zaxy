@@ -193,6 +193,18 @@ class Retriever(Protocol):
         """Return context strings for a query."""
 
 
+class AsyncRetriever(Protocol):
+    """Protocol for benchmark retrievers that run inside an event loop."""
+
+    async def query_async(
+        self,
+        query: str,
+        temporal_point: str | None = None,
+        limit: int = 10,
+    ) -> list[str]:
+        """Return context strings for a query."""
+
+
 class CachedEmbeddingProvider:
     """In-memory embedding cache for benchmark runs.
 
@@ -355,6 +367,42 @@ class MarkdownVectorRetriever:
         return [text for _, text in scored[:limit]]
 
 
+class RankFusionRetriever:
+    """Fuse ranked outputs from complementary retrievers with RRF scoring."""
+
+    def __init__(
+        self,
+        retrievers: dict[str, Retriever],
+        *,
+        weights: dict[str, float] | None = None,
+        rank_constant: int = 60,
+    ) -> None:
+        self._retrievers = retrievers
+        self._weights = weights or {}
+        self._rank_constant = rank_constant
+
+    def query(
+        self,
+        query: str,
+        temporal_point: str | None = None,
+        limit: int = 10,
+    ) -> list[str]:
+        """Return fused, de-duplicated contexts from all retrievers."""
+        scored: dict[str, float] = {}
+        order: dict[str, int] = {}
+        for retriever_name, retriever in self._retrievers.items():
+            weight = self._weights.get(retriever_name, 1.0)
+            for rank, text in enumerate(
+                retriever.query(query, temporal_point=temporal_point, limit=limit),
+                start=1,
+            ):
+                if text not in order:
+                    order[text] = len(order)
+                scored[text] = scored.get(text, 0.0) + (weight / (self._rank_constant + rank))
+        ranked = sorted(scored, key=lambda text: (-scored[text], order[text]))
+        return ranked[:limit]
+
+
 class CentroidConsolidationRetriever:
     """Centroid-style consolidation baseline that keeps one representative text.
 
@@ -387,9 +435,15 @@ class CentroidConsolidationRetriever:
 class ZaxyRetriever:
     """Synchronous wrapper around Zaxy's live graph retrieval path."""
 
-    def __init__(self, router: QueryRouter, provider: EmbeddingProvider) -> None:
+    def __init__(
+        self,
+        router: QueryRouter,
+        provider: EmbeddingProvider,
+        lexical_retriever: Retriever | None = None,
+    ) -> None:
         self._router = router
         self._provider = provider
+        self._lexical_retriever = lexical_retriever
 
     def query(
         self,
@@ -398,16 +452,8 @@ class ZaxyRetriever:
         limit: int = 10,
     ) -> list[str]:
         """Return Zaxy graph contexts for a query."""
-        embedding = self._provider.embed(query)
-
         async def _query() -> list[str]:
-            chunks = await self._router.query(
-                query,
-                temporal_point=temporal_point,
-                limit=limit,
-                embedding=embedding,
-            )
-            return [chunk.content for chunk in chunks]
+            return await self.query_async(query, temporal_point=temporal_point, limit=limit)
 
         return asyncio.run(_query())
 
@@ -425,7 +471,34 @@ class ZaxyRetriever:
             limit=limit,
             embedding=embedding,
         )
-        return [chunk.content for chunk in chunks]
+        graph_results = [chunk.content for chunk in chunks]
+        if self._lexical_retriever is None:
+            return graph_results
+        fused = RankFusionRetriever(
+            {
+                "graph": _StaticRetriever(tuple(graph_results)),
+                "lexical": self._lexical_retriever,
+            },
+            weights={"graph": 1.0, "lexical": 2.0},
+        )
+        return fused.query(query, temporal_point=temporal_point, limit=limit)
+
+
+class _StaticRetriever:
+    """Return precomputed contexts using the Retriever protocol."""
+
+    def __init__(self, contexts: tuple[str, ...]) -> None:
+        self._contexts = contexts
+
+    def query(
+        self,
+        query: str,
+        temporal_point: str | None = None,
+        limit: int = 10,
+    ) -> list[str]:
+        """Return stored contexts."""
+        del query, temporal_point
+        return list(self._contexts[:limit])
 
 
 def corpus_from_event_log(eventlog: EventLog) -> tuple[BenchmarkChunk, ...]:
@@ -917,6 +990,7 @@ async def build_live_zaxy_retriever(
     neo4j_user: str = "neo4j",
     neo4j_password: str = "testpassword",
     reset_graph: bool = False,
+    lexical_retriever: Retriever | None = None,
 ) -> tuple[ZaxyRetriever, GraphStore]:
     """Ingest the benchmark event log into Neo4j and return a live retriever.
 
@@ -931,7 +1005,7 @@ async def build_live_zaxy_retriever(
     for event in eventlog.read_all():
         extraction = embed_extraction(extract(event), provider)
         await graph.upsert_extraction(extraction)
-    return ZaxyRetriever(QueryRouter(graph), provider), graph
+    return ZaxyRetriever(QueryRouter(graph), provider, lexical_retriever=lexical_retriever), graph
 
 
 def write_benchmark_report(

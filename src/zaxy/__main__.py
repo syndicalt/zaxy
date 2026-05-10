@@ -872,6 +872,7 @@ def benchmark(
                 neo4j_user=neo4j_user,
                 neo4j_password=neo4j_password,
                 reset_graph=reset_graph,
+                lexical_retriever=BM25Retriever(corpus),
             )
             try:
                 report = await benchmark_live_retrievers(

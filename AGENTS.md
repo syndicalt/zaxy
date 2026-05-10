@@ -292,12 +292,13 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Optional framework extras and install hints for LangGraph, CrewAI, and AutoGen
 - [x] Framework integration support registry with maturity and native-adapter status discovery
 - [x] LongMemEval public-memory benchmark workload for MemPalace-comparable identity recall
+- [x] BM25 lexical fusion for Zaxy LongMemEval benchmark retrieval
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 531 passed |
+| Tests | 533 passed |
 | Coverage | 92.25% |
 | Lint | ruff clean |
 | Types | mypy clean |

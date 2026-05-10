@@ -31,8 +31,8 @@
     {
       "backend": "zaxy",
       "category": "longmemeval:single-session-user",
-      "mean_score": 0.6,
-      "miss_count": 8,
+      "mean_score": 0.7,
+      "miss_count": 6,
       "query_count": 20
     }
   ],
@@ -40,39 +40,39 @@
     {
       "baseline_backend": "bm25",
       "ci_high": 0.0,
-      "ci_low": -0.25,
-      "mean_difference": -0.1,
-      "p_value": 0.5,
+      "ci_low": 0.0,
+      "mean_difference": 0.0,
+      "p_value": 1.0,
       "paired_units": 20,
       "significant": false,
       "target_backend": "zaxy"
     },
     {
       "baseline_backend": "md",
-      "ci_high": 0.65,
-      "ci_low": 0.25,
-      "mean_difference": 0.45,
-      "p_value": 0.003906,
+      "ci_high": 0.75,
+      "ci_low": 0.35,
+      "mean_difference": 0.55,
+      "p_value": 0.000977,
       "paired_units": 20,
       "significant": true,
       "target_backend": "zaxy"
     },
     {
       "baseline_backend": "md+vector",
-      "ci_high": 0.7,
-      "ci_low": 0.25,
-      "mean_difference": 0.5,
-      "p_value": 0.001953,
+      "ci_high": 0.8,
+      "ci_low": 0.4,
+      "mean_difference": 0.6,
+      "p_value": 0.000488,
       "paired_units": 20,
       "significant": true,
       "target_backend": "zaxy"
     },
     {
       "baseline_backend": "vector",
-      "ci_high": 0.7,
-      "ci_low": 0.25,
-      "mean_difference": 0.5,
-      "p_value": 0.001953,
+      "ci_high": 0.8,
+      "ci_low": 0.4,
+      "mean_difference": 0.6,
+      "p_value": 0.000488,
       "paired_units": 20,
       "significant": true,
       "target_backend": "zaxy"
@@ -80,7 +80,7 @@
   ],
   "embedding_provider": "hash:1536",
   "external_results": [],
-  "generated_at": "2026-05-10T01:41:31Z",
+  "generated_at": "2026-05-10T01:52:21Z",
   "runs": [
     {
       "approx_tokens": 18900,
@@ -91,7 +91,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 0.1538,
+      "latency_ms": 0.1477,
       "missing_expected": [
         "Business Administration"
       ],
@@ -112,7 +112,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 0.0331,
+      "latency_ms": 0.0343,
       "missing_expected": [
         "45 minutes each way"
       ],
@@ -135,7 +135,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 0.8665,
+      "latency_ms": 0.824,
       "missing_expected": [],
       "missing_identities": [
         "answer_d61669c7"
@@ -154,7 +154,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 0.0817,
+      "latency_ms": 0.079,
       "missing_expected": [
         "The Glass Menagerie"
       ],
@@ -175,7 +175,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 0.0521,
+      "latency_ms": 0.054,
       "missing_expected": [
         "Summer Vibes"
       ],
@@ -196,7 +196,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 0.2505,
+      "latency_ms": 0.2555,
       "missing_expected": [
         "Johnson"
       ],
@@ -217,7 +217,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 0.1001,
+      "latency_ms": 0.0942,
       "missing_expected": [
         "Serenity Yoga"
       ],
@@ -238,7 +238,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 0.233,
+      "latency_ms": 0.2318,
       "missing_expected": [
         "a lighter shade of gray"
       ],
@@ -259,7 +259,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 0.1342,
+      "latency_ms": 0.1416,
       "missing_expected": [
         "February 14th"
       ],
@@ -280,7 +280,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 0.2413,
+      "latency_ms": 0.2501,
       "missing_expected": [
         "the sports store downtown"
       ],
@@ -301,7 +301,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 0.2061,
+      "latency_ms": 0.2113,
       "missing_expected": [
         "Marketing specialist at a small startup"
       ],
@@ -322,7 +322,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 0.0463,
+      "latency_ms": 0.0472,
       "missing_expected": [
         "$800"
       ],
@@ -345,7 +345,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 0.0339,
+      "latency_ms": 0.035,
       "missing_expected": [],
       "missing_identities": [
         "answer_e05e4612"
@@ -364,7 +364,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 0.0822,
+      "latency_ms": 0.0852,
       "missing_expected": [
         "University of Melbourne in Australia"
       ],
@@ -385,7 +385,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 0.0831,
+      "latency_ms": 0.0818,
       "missing_expected": [
         "10%"
       ],
@@ -406,7 +406,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 0.0281,
+      "latency_ms": 0.0296,
       "missing_expected": [
         "4 hours"
       ],
@@ -427,7 +427,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 0.0901,
+      "latency_ms": 0.0981,
       "missing_expected": [
         "a yellow dress"
       ],
@@ -448,7 +448,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 0.1109,
+      "latency_ms": 0.1157,
       "missing_expected": [
         "500 Mbps"
       ],
@@ -471,7 +471,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 0.0406,
+      "latency_ms": 0.0404,
       "missing_expected": [],
       "missing_identities": [
         "answer_82a04f59"
@@ -490,7 +490,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 0.2232,
+      "latency_ms": 0.2389,
       "missing_expected": [
         "A staunch atheist"
       ],
@@ -511,7 +511,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 128.9085,
+      "latency_ms": 125.8903,
       "missing_expected": [
         "Business Administration"
       ],
@@ -536,7 +536,7 @@
         "answer_40a90d51"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 107.9823,
+      "latency_ms": 117.7924,
       "missing_expected": [],
       "missing_identities": [],
       "result_count": 5,
@@ -557,7 +557,7 @@
         "answer_d61669c7"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 108.5529,
+      "latency_ms": 119.543,
       "missing_expected": [],
       "missing_identities": [],
       "result_count": 5,
@@ -578,7 +578,7 @@
         "answer_355c48bb"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 108.5834,
+      "latency_ms": 120.8667,
       "missing_expected": [],
       "missing_identities": [],
       "result_count": 5,
@@ -599,7 +599,7 @@
         "answer_3e012175"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 108.6461,
+      "latency_ms": 122.9469,
       "missing_expected": [],
       "missing_identities": [],
       "result_count": 5,
@@ -620,7 +620,7 @@
         "answer_f6168136"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 111.1937,
+      "latency_ms": 120.6289,
       "missing_expected": [],
       "missing_identities": [],
       "result_count": 5,
@@ -637,7 +637,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 108.6534,
+      "latency_ms": 118.6649,
       "missing_expected": [
         "Serenity Yoga"
       ],
@@ -662,7 +662,7 @@
         "answer_feb5200f"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 107.7782,
+      "latency_ms": 120.2228,
       "missing_expected": [],
       "missing_identities": [],
       "result_count": 5,
@@ -681,7 +681,7 @@
         "answer_59547700"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 107.5997,
+      "latency_ms": 127.5253,
       "missing_expected": [
         "February 14th"
       ],
@@ -702,7 +702,7 @@
         "answer_c3567066"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 108.3342,
+      "latency_ms": 120.1442,
       "missing_expected": [
         "the sports store downtown"
       ],
@@ -721,7 +721,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 107.241,
+      "latency_ms": 123.3415,
       "missing_expected": [
         "Marketing specialist at a small startup"
       ],
@@ -746,7 +746,7 @@
         "answer_7cb94507"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 108.2052,
+      "latency_ms": 124.2244,
       "missing_expected": [],
       "missing_identities": [],
       "result_count": 5,
@@ -767,7 +767,7 @@
         "answer_e05e4612"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 108.3898,
+      "latency_ms": 124.0536,
       "missing_expected": [],
       "missing_identities": [],
       "result_count": 5,
@@ -786,7 +786,7 @@
         "answer_94030872"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 108.4953,
+      "latency_ms": 122.0802,
       "missing_expected": [
         "University of Melbourne in Australia"
       ],
@@ -807,7 +807,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 108.8363,
+      "latency_ms": 124.4178,
       "missing_expected": [],
       "missing_identities": [
         "answer_f38f679b"
@@ -830,7 +830,7 @@
         "answer_c63c0458"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 109.9728,
+      "latency_ms": 124.9318,
       "missing_expected": [],
       "missing_identities": [],
       "result_count": 5,
@@ -851,7 +851,7 @@
         "answer_fea2e4d3"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 108.9404,
+      "latency_ms": 124.0105,
       "missing_expected": [],
       "missing_identities": [],
       "result_count": 5,
@@ -872,7 +872,7 @@
         "answer_679840f8"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 108.8188,
+      "latency_ms": 126.8046,
       "missing_expected": [],
       "missing_identities": [],
       "result_count": 5,
@@ -893,7 +893,7 @@
         "answer_82a04f59"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 109.1857,
+      "latency_ms": 126.4217,
       "missing_expected": [],
       "missing_identities": [],
       "result_count": 5,
@@ -914,7 +914,7 @@
         "answer_8f276838"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 109.1516,
+      "latency_ms": 124.5761,
       "missing_expected": [],
       "missing_identities": [],
       "result_count": 5,
@@ -931,7 +931,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 111.3997,
+      "latency_ms": 125.835,
       "missing_expected": [
         "Business Administration"
       ],
@@ -952,7 +952,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 111.8239,
+      "latency_ms": 122.9271,
       "missing_expected": [
         "45 minutes each way"
       ],
@@ -973,7 +973,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 110.792,
+      "latency_ms": 126.5658,
       "missing_expected": [
         "Target"
       ],
@@ -994,7 +994,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 110.6115,
+      "latency_ms": 129.1397,
       "missing_expected": [
         "The Glass Menagerie"
       ],
@@ -1015,7 +1015,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 110.4502,
+      "latency_ms": 130.2338,
       "missing_expected": [
         "Summer Vibes"
       ],
@@ -1036,7 +1036,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 109.9565,
+      "latency_ms": 129.575,
       "missing_expected": [
         "Johnson"
       ],
@@ -1057,7 +1057,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 113.1243,
+      "latency_ms": 130.9024,
       "missing_expected": [
         "Serenity Yoga"
       ],
@@ -1078,7 +1078,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 109.6283,
+      "latency_ms": 125.7799,
       "missing_expected": [
         "a lighter shade of gray"
       ],
@@ -1099,7 +1099,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 110.7434,
+      "latency_ms": 125.7955,
       "missing_expected": [
         "February 14th"
       ],
@@ -1120,7 +1120,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 109.6571,
+      "latency_ms": 125.0127,
       "missing_expected": [
         "the sports store downtown"
       ],
@@ -1141,7 +1141,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 113.6975,
+      "latency_ms": 130.6462,
       "missing_expected": [
         "Marketing specialist at a small startup"
       ],
@@ -1162,7 +1162,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 110.221,
+      "latency_ms": 126.6873,
       "missing_expected": [
         "$800"
       ],
@@ -1185,7 +1185,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 110.2736,
+      "latency_ms": 125.3196,
       "missing_expected": [],
       "missing_identities": [
         "answer_e05e4612"
@@ -1204,7 +1204,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 110.6823,
+      "latency_ms": 123.8857,
       "missing_expected": [
         "University of Melbourne in Australia"
       ],
@@ -1225,7 +1225,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 113.1662,
+      "latency_ms": 125.7916,
       "missing_expected": [
         "10%"
       ],
@@ -1246,7 +1246,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 111.9995,
+      "latency_ms": 121.8852,
       "missing_expected": [
         "4 hours"
       ],
@@ -1267,7 +1267,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 110.5645,
+      "latency_ms": 119.1075,
       "missing_expected": [
         "a yellow dress"
       ],
@@ -1288,7 +1288,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 109.8604,
+      "latency_ms": 118.5933,
       "missing_expected": [
         "500 Mbps"
       ],
@@ -1311,7 +1311,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 109.9267,
+      "latency_ms": 113.3907,
       "missing_expected": [],
       "missing_identities": [
         "answer_82a04f59"
@@ -1330,7 +1330,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 109.5629,
+      "latency_ms": 112.78,
       "missing_expected": [
         "A staunch atheist"
       ],
@@ -1351,7 +1351,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 151.1732,
+      "latency_ms": 154.0033,
       "missing_expected": [
         "Business Administration"
       ],
@@ -1372,7 +1372,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 137.6667,
+      "latency_ms": 139.6451,
       "missing_expected": [
         "45 minutes each way"
       ],
@@ -1393,7 +1393,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 160.1335,
+      "latency_ms": 161.6871,
       "missing_expected": [
         "Target"
       ],
@@ -1414,7 +1414,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 151.9357,
+      "latency_ms": 150.4641,
       "missing_expected": [
         "The Glass Menagerie"
       ],
@@ -1435,7 +1435,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 145.2756,
+      "latency_ms": 141.6192,
       "missing_expected": [
         "Summer Vibes"
       ],
@@ -1456,7 +1456,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 141.589,
+      "latency_ms": 142.6161,
       "missing_expected": [
         "Johnson"
       ],
@@ -1477,7 +1477,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 143.0338,
+      "latency_ms": 142.2769,
       "missing_expected": [
         "Serenity Yoga"
       ],
@@ -1498,7 +1498,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 137.4942,
+      "latency_ms": 139.756,
       "missing_expected": [
         "a lighter shade of gray"
       ],
@@ -1519,7 +1519,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 161.9665,
+      "latency_ms": 166.7938,
       "missing_expected": [
         "February 14th"
       ],
@@ -1540,7 +1540,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 174.9749,
+      "latency_ms": 179.5861,
       "missing_expected": [
         "the sports store downtown"
       ],
@@ -1561,7 +1561,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 132.4736,
+      "latency_ms": 132.9438,
       "missing_expected": [
         "Marketing specialist at a small startup"
       ],
@@ -1582,7 +1582,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 135.08,
+      "latency_ms": 136.379,
       "missing_expected": [
         "$800"
       ],
@@ -1605,7 +1605,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 136.402,
+      "latency_ms": 137.6167,
       "missing_expected": [],
       "missing_identities": [
         "answer_e05e4612"
@@ -1624,7 +1624,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 173.8222,
+      "latency_ms": 174.3231,
       "missing_expected": [
         "University of Melbourne in Australia"
       ],
@@ -1645,7 +1645,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 144.5756,
+      "latency_ms": 146.4389,
       "missing_expected": [
         "10%"
       ],
@@ -1666,7 +1666,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 136.303,
+      "latency_ms": 140.0886,
       "missing_expected": [
         "4 hours"
       ],
@@ -1687,7 +1687,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 147.3234,
+      "latency_ms": 148.1137,
       "missing_expected": [
         "a yellow dress"
       ],
@@ -1708,7 +1708,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 138.8954,
+      "latency_ms": 141.0994,
       "missing_expected": [
         "500 Mbps"
       ],
@@ -1731,7 +1731,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 140.32,
+      "latency_ms": 140.1516,
       "missing_expected": [],
       "missing_identities": [
         "answer_82a04f59"
@@ -1750,7 +1750,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 137.1896,
+      "latency_ms": 142.3829,
       "missing_expected": [
         "A staunch atheist"
       ],
@@ -1763,7 +1763,7 @@
       "score": 0.0
     },
     {
-      "approx_tokens": 11997,
+      "approx_tokens": 30856,
       "backend": "zaxy",
       "case_name": "longmemeval-e47becba",
       "category": "longmemeval:single-session-user",
@@ -1771,7 +1771,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 624.4433,
+      "latency_ms": 310.3301,
       "missing_expected": [
         "Business Administration"
       ],
@@ -1779,12 +1779,12 @@
         "answer_280352e9"
       ],
       "result_count": 5,
-      "returned_bytes": 48000,
+      "returned_bytes": 123426,
       "run": 1,
       "score": 0.0
     },
     {
-      "approx_tokens": 20256,
+      "approx_tokens": 39056,
       "backend": "zaxy",
       "case_name": "longmemeval-118b2229",
       "category": "longmemeval:single-session-user",
@@ -1796,16 +1796,16 @@
         "answer_40a90d51"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 220.5244,
+      "latency_ms": 288.8492,
       "missing_expected": [],
       "missing_identities": [],
       "result_count": 5,
-      "returned_bytes": 81041,
+      "returned_bytes": 156231,
       "run": 1,
       "score": 1.0
     },
     {
-      "approx_tokens": 15882,
+      "approx_tokens": 28820,
       "backend": "zaxy",
       "case_name": "longmemeval-51a45a95",
       "category": "longmemeval:single-session-user",
@@ -1813,20 +1813,20 @@
         "Target"
       ],
       "forbidden_hits": [],
-      "identity_hits": [],
-      "identity_recall": 0.0,
-      "latency_ms": 164.8312,
-      "missing_expected": [],
-      "missing_identities": [
+      "identity_hits": [
         "answer_d61669c7"
       ],
+      "identity_recall": 1.0,
+      "latency_ms": 257.2424,
+      "missing_expected": [],
+      "missing_identities": [],
       "result_count": 5,
-      "returned_bytes": 63537,
+      "returned_bytes": 115278,
       "run": 1,
       "score": 1.0
     },
     {
-      "approx_tokens": 17306,
+      "approx_tokens": 34878,
       "backend": "zaxy",
       "case_name": "longmemeval-58bf7951",
       "category": "longmemeval:single-session-user",
@@ -1838,16 +1838,16 @@
         "answer_355c48bb"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 146.2938,
+      "latency_ms": 247.4764,
       "missing_expected": [],
       "missing_identities": [],
       "result_count": 5,
-      "returned_bytes": 69236,
+      "returned_bytes": 139523,
       "run": 1,
       "score": 1.0
     },
     {
-      "approx_tokens": 17586,
+      "approx_tokens": 40633,
       "backend": "zaxy",
       "case_name": "longmemeval-1e043500",
       "category": "longmemeval:single-session-user",
@@ -1855,20 +1855,20 @@
         "Summer Vibes"
       ],
       "forbidden_hits": [],
-      "identity_hits": [],
-      "identity_recall": 0.0,
-      "latency_ms": 158.7308,
-      "missing_expected": [],
-      "missing_identities": [
+      "identity_hits": [
         "answer_3e012175"
       ],
+      "identity_recall": 1.0,
+      "latency_ms": 256.5218,
+      "missing_expected": [],
+      "missing_identities": [],
       "result_count": 5,
-      "returned_bytes": 70388,
+      "returned_bytes": 162566,
       "run": 1,
       "score": 1.0
     },
     {
-      "approx_tokens": 16317,
+      "approx_tokens": 29068,
       "backend": "zaxy",
       "case_name": "longmemeval-c5e8278d",
       "category": "longmemeval:single-session-user",
@@ -1880,16 +1880,16 @@
         "answer_f6168136"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 112.7398,
+      "latency_ms": 224.7574,
       "missing_expected": [],
       "missing_identities": [],
       "result_count": 5,
-      "returned_bytes": 65286,
+      "returned_bytes": 116277,
       "run": 1,
       "score": 1.0
     },
     {
-      "approx_tokens": 16240,
+      "approx_tokens": 31176,
       "backend": "zaxy",
       "case_name": "longmemeval-6ade9755",
       "category": "longmemeval:single-session-user",
@@ -1897,7 +1897,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 135.398,
+      "latency_ms": 239.3721,
       "missing_expected": [
         "Serenity Yoga"
       ],
@@ -1905,33 +1905,33 @@
         "answer_9398da02"
       ],
       "result_count": 5,
-      "returned_bytes": 64972,
+      "returned_bytes": 124706,
       "run": 1,
       "score": 0.0
     },
     {
-      "approx_tokens": 19335,
+      "approx_tokens": 39061,
       "backend": "zaxy",
       "case_name": "longmemeval-6f9b354f",
       "category": "longmemeval:single-session-user",
-      "expected_hits": [],
-      "forbidden_hits": [],
-      "identity_hits": [],
-      "identity_recall": 0.0,
-      "latency_ms": 165.1176,
-      "missing_expected": [
+      "expected_hits": [
         "a lighter shade of gray"
       ],
-      "missing_identities": [
+      "forbidden_hits": [],
+      "identity_hits": [
         "answer_feb5200f"
       ],
+      "identity_recall": 1.0,
+      "latency_ms": 287.8143,
+      "missing_expected": [],
+      "missing_identities": [],
       "result_count": 5,
-      "returned_bytes": 77354,
+      "returned_bytes": 156248,
       "run": 1,
-      "score": 0.0
+      "score": 1.0
     },
     {
-      "approx_tokens": 18457,
+      "approx_tokens": 35680,
       "backend": "zaxy",
       "case_name": "longmemeval-58ef2f1c",
       "category": "longmemeval:single-session-user",
@@ -1941,18 +1941,18 @@
         "answer_59547700"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 143.9006,
+      "latency_ms": 256.3689,
       "missing_expected": [
         "February 14th"
       ],
       "missing_identities": [],
       "result_count": 5,
-      "returned_bytes": 73839,
+      "returned_bytes": 142720,
       "run": 1,
       "score": 0.0
     },
     {
-      "approx_tokens": 15654,
+      "approx_tokens": 31755,
       "backend": "zaxy",
       "case_name": "longmemeval-f8c5f88b",
       "category": "longmemeval:single-session-user",
@@ -1962,18 +1962,18 @@
         "answer_c3567066"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 119.3001,
+      "latency_ms": 231.8316,
       "missing_expected": [
         "the sports store downtown"
       ],
       "missing_identities": [],
       "result_count": 5,
-      "returned_bytes": 62626,
+      "returned_bytes": 127020,
       "run": 1,
       "score": 0.0
     },
     {
-      "approx_tokens": 10729,
+      "approx_tokens": 26216,
       "backend": "zaxy",
       "case_name": "longmemeval-5d3d2817",
       "category": "longmemeval:single-session-user",
@@ -1981,7 +1981,7 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 125.4738,
+      "latency_ms": 233.095,
       "missing_expected": [
         "Marketing specialist at a small startup"
       ],
@@ -1989,12 +1989,12 @@
         "answer_235eb6fb"
       ],
       "result_count": 5,
-      "returned_bytes": 42961,
+      "returned_bytes": 104908,
       "run": 1,
       "score": 0.0
     },
     {
-      "approx_tokens": 15378,
+      "approx_tokens": 36268,
       "backend": "zaxy",
       "case_name": "longmemeval-7527f7e2",
       "category": "longmemeval:single-session-user",
@@ -2006,16 +2006,16 @@
         "answer_7cb94507"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 156.3911,
+      "latency_ms": 262.7147,
       "missing_expected": [],
       "missing_identities": [],
       "result_count": 5,
-      "returned_bytes": 61523,
+      "returned_bytes": 145074,
       "run": 1,
       "score": 1.0
     },
     {
-      "approx_tokens": 20126,
+      "approx_tokens": 39454,
       "backend": "zaxy",
       "case_name": "longmemeval-c960da58",
       "category": "longmemeval:single-session-user",
@@ -2027,16 +2027,16 @@
         "answer_e05e4612"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 152.9616,
+      "latency_ms": 262.1023,
       "missing_expected": [],
       "missing_identities": [],
       "result_count": 5,
-      "returned_bytes": 80546,
+      "returned_bytes": 157837,
       "run": 1,
       "score": 1.0
     },
     {
-      "approx_tokens": 12815,
+      "approx_tokens": 25719,
       "backend": "zaxy",
       "case_name": "longmemeval-3b6f954b",
       "category": "longmemeval:single-session-user",
@@ -2046,18 +2046,18 @@
         "answer_94030872"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 117.7233,
+      "latency_ms": 227.1531,
       "missing_expected": [
         "University of Melbourne in Australia"
       ],
       "missing_identities": [],
       "result_count": 5,
-      "returned_bytes": 51282,
+      "returned_bytes": 102884,
       "run": 1,
       "score": 0.0
     },
     {
-      "approx_tokens": 15920,
+      "approx_tokens": 33786,
       "backend": "zaxy",
       "case_name": "longmemeval-726462e0",
       "category": "longmemeval:single-session-user",
@@ -2067,18 +2067,18 @@
       "forbidden_hits": [],
       "identity_hits": [],
       "identity_recall": 0.0,
-      "latency_ms": 106.9758,
+      "latency_ms": 214.1476,
       "missing_expected": [],
       "missing_identities": [
         "answer_f38f679b"
       ],
       "result_count": 5,
-      "returned_bytes": 63687,
+      "returned_bytes": 135143,
       "run": 1,
       "score": 1.0
     },
     {
-      "approx_tokens": 15873,
+      "approx_tokens": 35901,
       "backend": "zaxy",
       "case_name": "longmemeval-94f70d80",
       "category": "longmemeval:single-session-user",
@@ -2090,16 +2090,16 @@
         "answer_c63c0458"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 137.5158,
+      "latency_ms": 238.8195,
       "missing_expected": [],
       "missing_identities": [],
       "result_count": 5,
-      "returned_bytes": 63532,
+      "returned_bytes": 143618,
       "run": 1,
       "score": 1.0
     },
     {
-      "approx_tokens": 13168,
+      "approx_tokens": 24860,
       "backend": "zaxy",
       "case_name": "longmemeval-66f24dbb",
       "category": "longmemeval:single-session-user",
@@ -2111,16 +2111,16 @@
         "answer_fea2e4d3"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 131.3195,
+      "latency_ms": 244.4275,
       "missing_expected": [],
       "missing_identities": [],
       "result_count": 5,
-      "returned_bytes": 52682,
+      "returned_bytes": 99438,
       "run": 1,
       "score": 1.0
     },
     {
-      "approx_tokens": 13690,
+      "approx_tokens": 31441,
       "backend": "zaxy",
       "case_name": "longmemeval-ad7109d1",
       "category": "longmemeval:single-session-user",
@@ -2132,16 +2132,16 @@
         "answer_679840f8"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 129.329,
+      "latency_ms": 238.2767,
       "missing_expected": [],
       "missing_identities": [],
       "result_count": 5,
-      "returned_bytes": 54807,
+      "returned_bytes": 125765,
       "run": 1,
       "score": 1.0
     },
     {
-      "approx_tokens": 15886,
+      "approx_tokens": 37080,
       "backend": "zaxy",
       "case_name": "longmemeval-af8d2e46",
       "category": "longmemeval:single-session-user",
@@ -2153,44 +2153,44 @@
         "answer_82a04f59"
       ],
       "identity_recall": 1.0,
-      "latency_ms": 134.8261,
+      "latency_ms": 250.3833,
       "missing_expected": [],
       "missing_identities": [],
       "result_count": 5,
-      "returned_bytes": 63590,
+      "returned_bytes": 148350,
       "run": 1,
       "score": 1.0
     },
     {
-      "approx_tokens": 10840,
+      "approx_tokens": 43518,
       "backend": "zaxy",
       "case_name": "longmemeval-dccbc061",
       "category": "longmemeval:single-session-user",
-      "expected_hits": [],
-      "forbidden_hits": [],
-      "identity_hits": [],
-      "identity_recall": 0.0,
-      "latency_ms": 109.0131,
-      "missing_expected": [
+      "expected_hits": [
         "A staunch atheist"
       ],
-      "missing_identities": [
+      "forbidden_hits": [],
+      "identity_hits": [
         "answer_8f276838"
       ],
+      "identity_recall": 1.0,
+      "latency_ms": 211.4968,
+      "missing_expected": [],
+      "missing_identities": [],
       "result_count": 5,
-      "returned_bytes": 43370,
+      "returned_bytes": 174076,
       "run": 1,
-      "score": 0.0
+      "score": 1.0
     }
   ],
   "summaries": [
     {
       "backend": "bm25",
       "case_count": 20,
-      "latency_ms_mean": 109.6735,
-      "latency_ms_p50": 108.6148,
-      "latency_ms_p95": 112.0794,
-      "latency_ms_p99": 125.5427,
+      "latency_ms_mean": 122.9544,
+      "latency_ms_p50": 123.676,
+      "latency_ms_p95": 126.8406,
+      "latency_ms_p99": 127.3884,
       "mean_approx_tokens": 33761.3,
       "mean_identity_recall": 0.8,
       "mean_returned_bytes": 135054.4,
@@ -2200,10 +2200,10 @@
     {
       "backend": "md",
       "case_count": 20,
-      "latency_ms_mean": 0.1545,
-      "latency_ms_p50": 0.0951,
-      "latency_ms_p95": 0.2813,
-      "latency_ms_p99": 0.7495,
+      "latency_ms_mean": 0.1548,
+      "latency_ms_p50": 0.0962,
+      "latency_ms_p95": 0.2839,
+      "latency_ms_p99": 0.716,
       "mean_approx_tokens": 21627.0,
       "mean_identity_recall": 0.0,
       "mean_returned_bytes": 86507.85,
@@ -2213,10 +2213,10 @@
     {
       "backend": "md+vector",
       "case_count": 20,
-      "latency_ms_mean": 146.3814,
-      "latency_ms_p50": 142.3114,
-      "latency_ms_p95": 173.8798,
-      "latency_ms_p99": 174.7559,
+      "latency_ms_mean": 147.8993,
+      "latency_ms_p50": 142.3299,
+      "latency_ms_p95": 174.5863,
+      "latency_ms_p99": 178.5861,
       "mean_approx_tokens": 15379.1,
       "mean_identity_recall": 0.0,
       "mean_returned_bytes": 61540.2,
@@ -2226,10 +2226,10 @@
     {
       "backend": "vector",
       "case_count": 20,
-      "latency_ms_mean": 110.9071,
-      "latency_ms_p50": 110.588,
-      "latency_ms_p95": 113.1928,
-      "latency_ms_p99": 113.5966,
+      "latency_ms_mean": 124.4927,
+      "latency_ms_p50": 125.7858,
+      "latency_ms_p95": 130.659,
+      "latency_ms_p99": 130.8537,
       "mean_approx_tokens": 14825.8,
       "mean_identity_recall": 0.0,
       "mean_returned_bytes": 59329.25,
@@ -2239,14 +2239,14 @@
     {
       "backend": "zaxy",
       "case_count": 20,
-      "latency_ms_mean": 164.6404,
-      "latency_ms_p50": 136.4569,
-      "latency_ms_p95": 240.7203,
-      "latency_ms_p99": 547.6987,
-      "mean_approx_tokens": 15672.75,
-      "mean_identity_recall": 0.6,
-      "mean_returned_bytes": 62712.95,
-      "mean_score": 0.6,
+      "latency_ms_mean": 249.159,
+      "latency_ms_p50": 245.952,
+      "latency_ms_p95": 289.9232,
+      "latency_ms_p99": 306.2487,
+      "mean_approx_tokens": 33761.3,
+      "mean_identity_recall": 0.8,
+      "mean_returned_bytes": 135054.4,
+      "mean_score": 0.7,
       "runs": 1
     }
   ],
@@ -2258,7 +2258,7 @@
       "longmemeval"
     ],
     "sessions": 980,
-    "sha256": "9328931d5371ad1c2efb281c0c76d292294c8a4af4bacbe7c83685ff488f455d",
+    "sha256": "63e0be12c95da6f61653d41c7b53904cddd81c168b191b32bc632688239f93ca",
     "subjects": 20,
     "version": "longmemeval-cleaned-v1"
   }
