@@ -10,6 +10,7 @@ Common commands:
 ```bash
 pytest
 pytest -m integration --no-cov
+scripts/integration-check.sh --start
 ruff check src tests
 mypy src
 scripts/release-check.sh --root .
@@ -24,6 +25,22 @@ integration tests, start the Neo4j services:
 ./scripts/generate-certs.sh .certs
 docker compose up -d neo4j-test neo4j-tls
 ```
+
+For local full-suite checks, prefer the integration helper so the Neo4j
+dependency is explicit:
+
+```bash
+scripts/integration-check.sh --start
+scripts/integration-check.sh --require
+scripts/integration-check.sh --skip-if-unavailable
+```
+
+Use `--start` when Docker is available and the helper should generate TLS
+certs, boot `neo4j-test` and `neo4j-tls`, then run pytest. Use `--require`
+when services should already be running and absence should fail fast. Use
+`--skip-if-unavailable` for development loops where graph integration tests
+should be omitted only after the helper verifies the Neo4j test ports are not
+reachable.
 
 Tests are organized by module: event log integrity, extraction, graph behavior,
 query routing, MCP tools, tracing, configuration, embeddings, operations

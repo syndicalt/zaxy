@@ -288,6 +288,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Codex MCP install command rendering via `codex mcp add`
 - [x] Explicit Codex TOML merge support for user and trusted-project config scopes
 - [x] Claude Code local hook merge and parsed install detection coverage
+- [x] Focused full-suite integration check helper that starts, requires, or skips Neo4j test services explicitly
 
 ## Metrics
 
@@ -302,4 +303,3 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 ## Next Steps
 
 1. Add optional deeper framework packages once direct templates see usage.
-2. Add a focused full-suite integration check helper that starts or skips Neo4j services explicitly.
