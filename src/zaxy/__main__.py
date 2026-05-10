@@ -76,6 +76,7 @@ from zaxy.live_benchmark import (
 )
 from zaxy.local_profile import check_local_profile, render_local_profile, write_local_profile
 from zaxy.mcp_server import main as mcp_main
+from zaxy.memory_status import format_memory_status, inspect_memory_status
 from zaxy.onboarding import (
     OnboardingResult,
     apply_onboarding_preset,
@@ -86,6 +87,21 @@ from zaxy.schema import render_schema_plan
 from zaxy.viewer import write_viewer_html
 
 app = typer.Typer(help="Zaxy: Event-sourced temporal knowledge graph fabric")
+memory_app = typer.Typer(help="Inspect Eventloom-backed agent memory")
+app.add_typer(memory_app, name="memory")
+
+
+@memory_app.command("status")
+def memory_status(
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory or JSONL log"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Show read-only Eventloom memory status."""
+    status = inspect_memory_status(eventloom_path)
+    if json_output:
+        typer.echo(json.dumps(status.to_dict(), indent=2, sort_keys=True))
+    else:
+        typer.echo(format_memory_status(status))
 
 
 @app.command("ide-config")

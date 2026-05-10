@@ -12,6 +12,73 @@ from zaxy.__main__ import app
 from zaxy.event import EventLog
 
 
+def test_memory_status_prints_eventloom_sessions(tmp_path: Path) -> None:
+    """memory status should summarize Eventloom sessions without Neo4j."""
+    log = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl")
+    first = log.append("goal.created", actor="user", payload={"title": "Ship it"}, thread="agent-1")
+    second = log.append(
+        "decision.recorded",
+        actor="assistant",
+        payload={"decision": "Use source-aware assembly."},
+        thread="agent-1",
+    )
+    assert first.seq == 1
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["memory", "status", "--eventloom-path", str(tmp_path / ".eventloom")],
+    )
+
+    assert result.exit_code == 0
+    assert "Eventloom: " in result.output
+    assert "Sessions: 1" in result.output
+    assert "Total events: 2" in result.output
+    assert "agent-1" in result.output
+    assert "events=2" in result.output
+    assert "latest=2" in result.output
+    assert second.hash[:12] in result.output
+    assert "integrity=OK" in result.output
+
+
+def test_memory_status_json_output(tmp_path: Path) -> None:
+    """memory status --json should expose stable machine-readable fields."""
+    event = EventLog(tmp_path / ".eventloom" / "agent.jsonl").append(
+        "transcript.turn",
+        actor="assistant",
+        payload={"content": "Recorded source recall."},
+        thread="agent",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["memory", "status", "--eventloom-path", str(tmp_path / ".eventloom"), "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["eventloom_path"] == str((tmp_path / ".eventloom").resolve())
+    assert payload["session_count"] == 1
+    assert payload["total_events"] == 1
+    assert payload["sessions"][0]["session_id"] == "agent"
+    assert payload["sessions"][0]["latest_seq"] == event.seq
+    assert payload["sessions"][0]["latest_hash"] == event.hash
+    assert payload["sessions"][0]["integrity_ok"] is True
+
+
+def test_memory_status_handles_empty_eventloom_directory(tmp_path: Path) -> None:
+    """memory status should be useful before any memory has been written."""
+    eventloom_dir = tmp_path / ".eventloom"
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["memory", "status", "--eventloom-path", str(eventloom_dir)])
+
+    assert result.exit_code == 0
+    assert "Sessions: 0" in result.output
+    assert "Total events: 0" in result.output
+
+
 def test_ide_config_command_prints_copyable_mcp_json() -> None:
     runner = CliRunner()
 

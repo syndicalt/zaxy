@@ -38,8 +38,14 @@ extractors and are intended to keep future `memory_query` calls useful.
 For local inspection, generate a standalone HTML viewer:
 
 ```bash
+zaxy memory status --eventloom-path .eventloom
 zaxy viewer .eventloom --output eventloom-viewer.html
 ```
+
+`zaxy memory status` is the lightweight terminal inspection path. It summarizes
+session logs, event counts, latest sequence/hash, latest event type, and
+Eventloom integrity without requiring Neo4j. Use `--json` when scripts need the
+same fields in a stable machine-readable format.
 
 The viewer reads one JSONL log or every `*.jsonl` file in an Eventloom
 directory. It highlights session bootstrap events, lifecycle events, integrity

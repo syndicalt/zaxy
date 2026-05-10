@@ -34,6 +34,7 @@ docker compose up -d
 
 # 3. Verify
 zaxy status
+zaxy memory status --eventloom-path .eventloom
 pytest
 
 # Integration-only runs need --no-cov because the project-level coverage gate
