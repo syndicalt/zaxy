@@ -263,6 +263,7 @@ def _check_clean_repo_uat(root: Path) -> dict[str, str]:
         "zaxy doctor",
         "zaxy hook-status",
         "zaxy capture status",
+        "zaxy capture-soak",
         "zaxy memory status",
     ]
     missing = [item for item in required if item not in script]
@@ -325,6 +326,7 @@ def _check_capture_happy_path(root: Path) -> dict[str, str]:
         "deterministic",
         "zaxy capture start",
         "zaxy capture status",
+        "zaxy capture-soak",
         "zaxy hook-status",
         "observation coverage",
     ]

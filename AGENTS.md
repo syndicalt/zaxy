@@ -332,18 +332,19 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Beta readiness inventory with clean-repo UAT script and doctor gate
 - [x] Maintained beta roadmap with post-UAT product work, release criteria, and doctor coverage
 - [x] Benchmark guardrail comparison CLI for quality floors, latency budgets, and regression checks
+- [x] Deterministic capture soak report with beta pass/fail criteria, latest seq/hash evidence, stale lane detection, and remediation steps
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 768 passed, 6 deselected |
-| Coverage | 92.24% |
+| Tests | 773 passed, 6 deselected |
+| Coverage | 92.27% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
 
 ## Next Steps
 
-1. Run and document a deterministic capture soak for transcript, tool-call, command, and file-edit observation coverage over a long session.
-2. Use LangGraph and CrewAI native-preview usage to choose the next maintained adapter or model-facing UX hardening target.
+1. Use LangGraph and CrewAI native-preview usage to choose the next maintained adapter or model-facing UX hardening target.
+2. Improve graph traversal density with principled typed relation, source citation, temporal successor, and inferred-edge layers.

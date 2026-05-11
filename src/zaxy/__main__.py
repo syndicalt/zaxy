@@ -33,6 +33,7 @@ from zaxy.capabilities import (
     format_memory_capabilities,
 )
 from zaxy.capture_manager import inspect_codex_capture, start_codex_capture, stop_codex_capture
+from zaxy.capture_soak import build_capture_soak_report, format_capture_soak_report
 from zaxy.codex_capture import capture_codex_sessions
 from zaxy.compaction import (
     audit_event_log,
@@ -624,6 +625,29 @@ def hook_status(
         typer.echo(json.dumps(report, indent=2, sort_keys=True))
     else:
         typer.echo(format_hook_status(report))
+
+
+@app.command("capture-soak")
+def capture_soak(
+    eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory or JSONL log to inspect"),
+    workspace_root: Path = typer.Option(Path("."), help="Workspace root to scan for capture config"),  # noqa: B008
+    session_id: str | None = typer.Option(None, help="Session ID to inspect when eventloom path is a directory"),  # noqa: B008
+    max_stale_minutes: int = typer.Option(30, help="Maximum allowed age for active capture lanes"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Report whether deterministic capture satisfies beta soak criteria."""
+    report = build_capture_soak_report(
+        eventloom_path=eventloom_path,
+        workspace_root=workspace_root,
+        session_id=session_id,
+        max_stale_minutes=max_stale_minutes,
+    )
+    if json_output:
+        typer.echo(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        typer.echo(format_capture_soak_report(report))
+    if report["beta_criteria"]["status"] != "pass":
+        raise typer.Exit(1)
 
 
 @app.command("hook-event")

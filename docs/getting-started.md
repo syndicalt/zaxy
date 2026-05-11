@@ -202,6 +202,7 @@ mypy src
 pytest
 zaxy doctor --release-smoke
 zaxy doctor --beta-readiness
+zaxy capture-soak --eventloom-path .eventloom --session-id my-project-default
 scripts/release-check.sh --root .
 scripts/beta-uat.sh
 ```
@@ -217,7 +218,7 @@ validation, and deployment preflight checks. `scripts/beta-uat.sh` creates a
 throwaway workspace, installs Zaxy into a fresh virtual environment, runs
 `zaxy init`, starts deterministic capture, runs `zaxy memory bootstrap`,
 performs a cited `zaxy memory checkout`, and checks doctor, hook, capture, and
-memory status. The current public overview is
+memory status plus the `zaxy capture-soak` beta evidence report. The current public overview is
 [site/index.html](../site/index.html), and the operational checklist remains in
 [runbook.md](runbook.md). The [README.md](../README.md) is intentionally short;
 these docs are the detailed operator and integrator reference.

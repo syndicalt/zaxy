@@ -447,6 +447,7 @@ def _latest_hook_event(eventloom_path: Path) -> dict[str, Any] | None:
         return None
     return {
         "seq": latest.seq,
+        "hash": latest.hash,
         "timestamp": latest.timestamp,
         "type": latest.type,
         "thread": latest.thread,
@@ -503,6 +504,7 @@ def _event_is_newer(event: Event, latest: dict[str, Any]) -> bool:
 def _summarize_observation_event(event: Event) -> dict[str, Any]:
     return {
         "seq": event.seq,
+        "hash": event.hash,
         "timestamp": event.timestamp,
         "type": event.type,
         "thread": event.thread,

@@ -24,8 +24,8 @@ Zaxy's beta goal is to prove the product thesis: **Git for LLM memory**. A sessi
    - Use LangGraph and CrewAI adapter usage to decide whether AutoGen or model-facing Codex/Claude Code UX is the next maintained path.
 
 3. **Capture soak**
-   - Run long local sessions with deterministic capture enabled.
-   - Track transcript, tool-call, command, and file-edit observation coverage over time.
+   - `zaxy capture-soak` reports deterministic capture coverage, latest seq/hash, stale lanes, missing lanes, and beta pass/fail status.
+   - Run long local sessions with deterministic capture enabled and archive capture-soak output as release evidence.
    - Turn repeated capture gaps into concrete doctor or hook-status checks.
 
 4. **Memory quality hardening**

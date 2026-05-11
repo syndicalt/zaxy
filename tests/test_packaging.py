@@ -143,6 +143,7 @@ def test_beta_uat_script_exercises_clean_repo_happy_path() -> None:
     assert "zaxy doctor" in script
     assert "zaxy hook-status" in script
     assert "zaxy capture status" in script
+    assert "zaxy capture-soak" in script
     assert "zaxy memory status" in script
 
 
@@ -198,6 +199,7 @@ def test_beta_roadmap_tracks_post_uat_product_work() -> None:
     assert "context-collapse" in roadmap
     assert "CrewAI" in roadmap
     assert "capture soak" in roadmap
+    assert "zaxy capture-soak" in roadmap
     assert "release criteria" in roadmap
 
 
@@ -295,6 +297,7 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
         "zaxy doctor\n"
         "zaxy hook-status\n"
         "zaxy capture status\n"
+        "zaxy capture-soak\n"
         "zaxy memory status\n",
         encoding="utf-8",
     )
@@ -308,6 +311,7 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
         "deterministic\n"
         "zaxy capture start\n"
         "zaxy capture status\n"
+        "zaxy capture-soak\n"
         "zaxy hook-status\n"
         "observation coverage\n"
     )

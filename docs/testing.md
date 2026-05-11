@@ -71,7 +71,10 @@ coverage, clean-repo UAT coverage, documentation, and deterministic capture
 posture. `scripts/beta-uat.sh` performs a clean first-run exercise in a
 throwaway workspace: install, `zaxy init`, deterministic capture startup,
 `zaxy memory bootstrap`, `zaxy memory checkout`, doctor, hook status, capture
-status, and memory status.
+status, capture soak, and memory status. `zaxy capture-soak` is the beta
+evidence command for deterministic capture: it checks transcript, tool-call,
+command, and file-edit observation coverage, freshness, latest seq/hash, and
+remediation steps.
 
 For graph changes, write both mock tests for Cypher behavior and integration
 tests against Neo4j when the real database semantics matter. For security

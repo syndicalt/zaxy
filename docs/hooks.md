@@ -47,6 +47,7 @@ Inspect the current observer posture:
 zaxy hook-status --eventloom-path .eventloom
 zaxy hook-status --json
 zaxy hook-status --eventloom-path .eventloom --json
+zaxy capture-soak --eventloom-path .eventloom --session-id my-project-default
 zaxy hook-event heartbeat --eventloom-path .eventloom --session-id my-project-default --source manual
 ```
 
@@ -68,6 +69,9 @@ which adapter sinks still need to be wired.
 `zaxy doctor` also surfaces the same signal as `capture_health`, making it the
 single first-run health row for whether deterministic capture is installed,
 running when needed, and producing usable observations.
+For beta evidence, `zaxy capture-soak` turns the same observation data into a
+release-gate report with latest seq/hash, stale lane detection, missing lane
+remediation, and a pass/fail `beta_criteria` field.
 Claude Code detection parses JSON hook command handlers rather than matching
 arbitrary text, so comments or unrelated string fields do not count as an
 installation. `heartbeat` is a health probe: it proves the Eventloom observer

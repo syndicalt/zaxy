@@ -50,6 +50,7 @@ grep -Eq "Citations: [1-9]" <<<"${CHECKOUT_OUTPUT}"
 zaxy doctor --eventloom-path .eventloom
 zaxy hook-status --eventloom-path .eventloom
 zaxy capture status --workspace .
+zaxy capture-soak --eventloom-path .eventloom --session-id "${SESSION_ID}"
 zaxy memory status --eventloom-path .eventloom
 zaxy doctor --beta-readiness --project-root "${ROOT}"
 zaxy capture stop --workspace .
