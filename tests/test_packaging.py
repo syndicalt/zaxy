@@ -166,14 +166,16 @@ def test_ci_disables_benchmark_timing_for_correctness_matrix() -> None:
 
 
 def test_publish_workflow_publishes_release_artifacts_to_pypi() -> None:
-    """Published releases should build artifacts and upload them to PyPI."""
+    """Published releases should build artifacts and upload them via trusted publishing."""
     workflow = Path(".github/workflows/publish.yml").read_text(encoding="utf-8")
 
     assert "release:" in workflow
     assert "types: [published]" in workflow
     assert "workflow_dispatch:" in workflow
+    assert "id-token: write" in workflow
     assert "python -m build --sdist --wheel" in workflow
     assert "python -m twine check dist/*" in workflow
     assert "pypa/gh-action-pypi-publish@release/v1" in workflow
-    assert "password: ${{ secrets.PYPI_API_TOKEN }}" in workflow
+    assert "PYPI_API_TOKEN" not in workflow
+    assert "password:" not in workflow
     assert "https://pypi.org/project/zaxy-memory/" in workflow
