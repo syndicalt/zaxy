@@ -87,6 +87,7 @@ class MemoryCheckout:
     provenance: list[dict[str, Any]]
     retention: dict[str, Any]
     warnings: list[str]
+    diagnostics: dict[str, Any]
     context_counts: dict[str, int]
     replay_event_count: int
     compacted: bool = False
@@ -105,6 +106,7 @@ class MemoryCheckout:
             "provenance": self.provenance,
             "retention": self.retention,
             "warnings": self.warnings,
+            "diagnostics": self.diagnostics,
             "context_counts": self.context_counts,
             "replay_event_count": self.replay_event_count,
             "compacted": self.compacted,
@@ -1024,11 +1026,23 @@ def build_memory_checkout(
         warnings.append("Recent replay was compacted to fit the checkout budget.")
     if current_facts and not evidence:
         warnings.append("Checkout contains current facts without Eventloom citations.")
+    retention = {
+        "policy": "current_only",
+        "superseded_contexts_excluded": sum(1 for context in assembly.contexts if context.valid_to is not None),
+    }
+    diagnostics = _checkout_diagnostics(
+        contexts=ranked_contexts,
+        current_facts=current_facts,
+        evidence=evidence,
+        retention=retention,
+        warnings=warnings,
+    )
     prompt = _format_memory_checkout_prompt(
         query=query,
         assembly_prompt=assembly.prompt,
         current_facts=current_facts,
         evidence=evidence,
+        diagnostics=diagnostics,
     )
     return MemoryCheckout(
         session_id=assembly.session_id,
@@ -1039,11 +1053,9 @@ def build_memory_checkout(
         current_facts=current_facts,
         evidence=evidence,
         provenance=provenance,
-        retention={
-            "policy": "current_only",
-            "superseded_contexts_excluded": sum(1 for context in assembly.contexts if context.valid_to is not None),
-        },
+        retention=retention,
         warnings=warnings,
+        diagnostics=diagnostics,
         context_counts=assembly.context_counts,
         replay_event_count=assembly.replay_event_count,
         compacted=assembly.compacted,
@@ -1057,6 +1069,7 @@ def _format_memory_checkout_prompt(
     assembly_prompt: str,
     current_facts: list[dict[str, Any]],
     evidence: list[dict[str, Any]],
+    diagnostics: dict[str, Any],
 ) -> str:
     lines = [
         "# Memory Checkout",
@@ -1076,6 +1089,19 @@ def _format_memory_checkout_prompt(
             lines.append(f"- {item['citation']}: {item['content']}")
     else:
         lines.append("- No cited evidence was retrieved.")
+    source_lanes = diagnostics.get("source_lanes")
+    lines.extend(["", "## Checkout Diagnostics"])
+    lines.append(f"- Source lanes: {_format_source_lanes(source_lanes)}")
+    lines.append(f"- Citations: {diagnostics.get('citation_count', 0)}")
+    lines.append(f"- Current facts: {diagnostics.get('current_fact_count', 0)}")
+    lines.append(
+        f"- Superseded contexts excluded: {diagnostics.get('superseded_contexts_excluded', 0)}"
+    )
+    if diagnostics.get("feedback_recommended"):
+        lines.append(
+            "- Feedback: call "
+            f"{diagnostics.get('feedback_tool', 'memory_feedback')} after using cited context."
+        )
     lines.extend(["", assembly_prompt])
     return "\n".join(lines).strip()
 
@@ -1089,6 +1115,7 @@ def _checkout_fact(context: Context) -> dict[str, Any]:
         "citation": _context_citation(context),
         "valid_from": context.valid_from,
         "valid_to": context.valid_to,
+        "source_lane": _checkout_source_lane(context),
     }
     for key in ("entity_name", "entity_type"):
         value = metadata.get(key)
@@ -1104,6 +1131,7 @@ def _checkout_evidence(context: Context) -> dict[str, Any]:
         "citation": citation,
         "content": context.content,
         "source": context.source,
+        "source_lane": _checkout_source_lane(context),
         "score": context.score,
         "event_seq": seq,
         "event_hash": event_hash,
@@ -1118,9 +1146,50 @@ def _checkout_provenance(context: Context) -> dict[str, Any]:
         "event_seq": seq,
         "event_hash": event_hash,
         "source": context.source,
+        "source_lane": _checkout_source_lane(context),
         "valid_from": context.valid_from,
         "valid_to": context.valid_to,
     }
+
+
+def _checkout_diagnostics(
+    *,
+    contexts: list[Context],
+    current_facts: list[dict[str, Any]],
+    evidence: list[dict[str, Any]],
+    retention: dict[str, Any],
+    warnings: list[str],
+) -> dict[str, Any]:
+    source_lanes: dict[str, int] = {}
+    for context in contexts:
+        lane = _checkout_source_lane(context)
+        source_lanes[lane] = source_lanes.get(lane, 0) + 1
+    return {
+        "source_lanes": source_lanes,
+        "citation_count": len(evidence),
+        "current_fact_count": len(current_facts),
+        "superseded_contexts_excluded": retention.get("superseded_contexts_excluded", 0),
+        "warning_count": len(warnings),
+        "feedback_recommended": bool(evidence),
+        "feedback_tool": "memory_feedback",
+        "feedback_reason": "Reinforce cited context if it materially informed the next response.",
+    }
+
+
+def _checkout_source_lane(context: Context) -> str:
+    metadata = context.metadata or {}
+    lane = metadata.get("assembly_lane")
+    if isinstance(lane, str) and lane:
+        return lane
+    if context.source in {"verbatim", "packet_memory", "projection", "eventloom"}:
+        return context.source
+    return "graph"
+
+
+def _format_source_lanes(source_lanes: Any) -> str:
+    if not isinstance(source_lanes, dict) or not source_lanes:
+        return "none"
+    return ", ".join(f"{lane}={count}" for lane, count in source_lanes.items())
 
 
 def _context_citation(context: Context) -> str | None:

@@ -1097,6 +1097,21 @@ def _memory_checkout_payload(
         warnings.append("Recent replay was compacted to fit the checkout budget.")
     if current_facts and not evidence:
         warnings.append("Checkout contains current facts without Eventloom citations.")
+    retention = {
+        "policy": "current_only",
+        "superseded_contexts_excluded": sum(
+            1
+            for context in contexts
+            if context.get("valid_to") is not None
+        ),
+    }
+    diagnostics = _checkout_diagnostics_payload(
+        contexts=contexts,
+        current_facts=current_facts,
+        evidence=evidence,
+        retention=retention,
+        warnings=warnings,
+    )
     return {
         **assembly,
         "query": query,
@@ -1106,19 +1121,14 @@ def _memory_checkout_payload(
             assembly_prompt=str(assembly.get("prompt", "")),
             current_facts=current_facts,
             evidence=evidence,
+            diagnostics=diagnostics,
         ),
         "current_facts": current_facts,
         "evidence": evidence,
         "provenance": provenance,
-        "retention": {
-            "policy": "current_only",
-            "superseded_contexts_excluded": sum(
-                1
-                for context in contexts
-                if context.get("valid_to") is not None
-            ),
-        },
+        "retention": retention,
         "warnings": warnings,
+        "diagnostics": diagnostics,
     }
 
 
@@ -1128,6 +1138,7 @@ def _format_memory_checkout_prompt(
     assembly_prompt: str,
     current_facts: list[dict[str, Any]],
     evidence: list[dict[str, Any]],
+    diagnostics: dict[str, Any],
 ) -> str:
     lines = ["# Memory Checkout", f"Query: {query}", "", "## Current Facts"]
     if current_facts:
@@ -1142,6 +1153,19 @@ def _format_memory_checkout_prompt(
             lines.append(f"- {item['citation']}: {item['content']}")
     else:
         lines.append("- No cited evidence was retrieved.")
+    source_lanes = diagnostics.get("source_lanes")
+    lines.extend(["", "## Checkout Diagnostics"])
+    lines.append(f"- Source lanes: {_format_source_lanes(source_lanes)}")
+    lines.append(f"- Citations: {diagnostics.get('citation_count', 0)}")
+    lines.append(f"- Current facts: {diagnostics.get('current_fact_count', 0)}")
+    lines.append(
+        f"- Superseded contexts excluded: {diagnostics.get('superseded_contexts_excluded', 0)}"
+    )
+    if diagnostics.get("feedback_recommended"):
+        lines.append(
+            "- Feedback: call "
+            f"{diagnostics.get('feedback_tool', 'memory_feedback')} after using cited context."
+        )
     lines.extend(["", assembly_prompt])
     return "\n".join(lines).strip()
 
@@ -1156,6 +1180,7 @@ def _checkout_fact_payload(context: dict[str, Any]) -> dict[str, Any]:
         "citation": context.get("citation"),
         "valid_from": context.get("valid_from"),
         "valid_to": context.get("valid_to"),
+        "source_lane": _checkout_source_lane_payload(context),
     }
     for key in ("entity_name", "entity_type"):
         value = metadata.get(key)
@@ -1171,6 +1196,7 @@ def _checkout_evidence_payload(context: dict[str, Any]) -> dict[str, Any]:
         "citation": citation,
         "content": context.get("content"),
         "source": context.get("source"),
+        "source_lane": _checkout_source_lane_payload(context),
         "score": context.get("score"),
         "event_seq": seq,
         "event_hash": event_hash,
@@ -1185,9 +1211,52 @@ def _checkout_provenance_payload(context: dict[str, Any]) -> dict[str, Any]:
         "event_seq": seq,
         "event_hash": event_hash,
         "source": context.get("source"),
+        "source_lane": _checkout_source_lane_payload(context),
         "valid_from": context.get("valid_from"),
         "valid_to": context.get("valid_to"),
     }
+
+
+def _checkout_diagnostics_payload(
+    *,
+    contexts: list[dict[str, Any]],
+    current_facts: list[dict[str, Any]],
+    evidence: list[dict[str, Any]],
+    retention: dict[str, Any],
+    warnings: list[str],
+) -> dict[str, Any]:
+    source_lanes: dict[str, int] = {}
+    for context in contexts:
+        lane = _checkout_source_lane_payload(context)
+        source_lanes[lane] = source_lanes.get(lane, 0) + 1
+    return {
+        "source_lanes": source_lanes,
+        "citation_count": len(evidence),
+        "current_fact_count": len(current_facts),
+        "superseded_contexts_excluded": retention.get("superseded_contexts_excluded", 0),
+        "warning_count": len(warnings),
+        "feedback_recommended": bool(evidence),
+        "feedback_tool": "memory_feedback",
+        "feedback_reason": "Reinforce cited context if it materially informed the next response.",
+    }
+
+
+def _checkout_source_lane_payload(context: dict[str, Any]) -> str:
+    metadata = context.get("metadata")
+    metadata = metadata if isinstance(metadata, dict) else {}
+    lane = metadata.get("assembly_lane")
+    if isinstance(lane, str) and lane:
+        return lane
+    source = context.get("source")
+    if source in {"verbatim", "packet_memory", "projection", "eventloom"}:
+        return str(source)
+    return "graph"
+
+
+def _format_source_lanes(source_lanes: Any) -> str:
+    if not isinstance(source_lanes, dict) or not source_lanes:
+        return "none"
+    return ", ".join(f"{lane}={count}" for lane, count in source_lanes.items())
 
 
 def _checkout_rank(context: dict[str, Any], query: str) -> tuple[float, int, str, float]:

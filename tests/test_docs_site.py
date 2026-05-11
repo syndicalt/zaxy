@@ -57,6 +57,7 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     assert "Eventloom log" in html
     assert "Neo4j temporal graph" in html
     assert "Memory Checkout" in html
+    assert "Checkout diagnostics" in html
     assert "memory_capabilities" in html
     assert "deterministic capture" in html
     assert "local-codex" in html

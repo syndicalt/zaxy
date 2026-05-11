@@ -112,7 +112,7 @@
       </div>
       <div class="tool-grid">
         <article><code>memory_capabilities</code><p>Tell the model what Zaxy can do, what capture paths are healthy, and when to checkout memory.</p></article>
-        <article><code>memory_checkout</code><p>Return the current cited prompt state, active working set, provenance, and warnings.</p></article>
+        <article><code>memory_checkout</code><p>Return the current cited prompt state, active working set, provenance, Checkout diagnostics, and warnings.</p></article>
         <article><code>memory_append</code><p>Append typed events, extract graph facts, and trace the operation.</p></article>
         <article><code>memory_query</code><p>Fuse exact lookup, keyword search, vector similarity, and traversal.</p></article>
         <article><code>memory_replay</code><p>Rebuild session history from Eventloom, optionally from a sequence number.</p></article>
@@ -129,8 +129,10 @@
         Zaxy routes queries through exact entity lookup, Neo4j full-text search,
         vector similarity, graph traversal, and verbatim Eventloom retrieval. Memory
         Checkout turns those lanes into compact cited context so agents receive
-        connected facts instead of raw transcript piles. Temporal filters let callers
-        retrieve only facts valid at a point in time.
+        connected facts instead of raw transcript piles. Checkout diagnostics show
+        source lane mix, citation coverage, excluded superseded context, and feedback
+        guidance. Temporal filters let callers retrieve only facts valid at a point
+        in time.
       </p>
     </section>
 

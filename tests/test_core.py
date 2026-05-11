@@ -781,11 +781,25 @@ class TestContextAssembly:
                 "valid_to": None,
                 "entity_name": "memory checkout",
                 "entity_type": "decision",
+                "source_lane": "graph",
             }
         ]
         assert checkout.evidence[0]["citation"] == "eventloom://agent-1/events/3#cccccccccccc"
+        assert checkout.evidence[0]["source_lane"] == "graph"
         assert checkout.provenance[0]["event_seq"] == 3
+        assert checkout.diagnostics == {
+            "source_lanes": {"graph": 2},
+            "citation_count": 2,
+            "current_fact_count": 1,
+            "superseded_contexts_excluded": 1,
+            "warning_count": 0,
+            "feedback_recommended": True,
+            "feedback_tool": "memory_feedback",
+            "feedback_reason": "Reinforce cited context if it materially informed the next response.",
+        }
         assert "# Memory Checkout" in checkout.prompt
+        assert "## Checkout Diagnostics" in checkout.prompt
+        assert "memory_feedback" in checkout.prompt
         assert "Use raw replay only" not in "\n".join(fact["content"] for fact in checkout.current_facts)
         assert checkout.context_counts["graph"] == 2
 

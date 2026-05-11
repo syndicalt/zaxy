@@ -315,13 +315,14 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Local onboarding happy-path infrastructure profile for plain localhost Neo4j with cleared TLS/password-file overrides
 - [x] Model-facing memory capability manifest with ambient checkout/capture/feedback loop guidance
 - [x] Deterministic capture as default onboarding mode with optional packet/hybrid capture and local Codex preset
+- [x] Memory Checkout diagnostics for source lanes, citation coverage, retention exclusions, warnings, and feedback guidance
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 586 passed |
-| Coverage | 92.25% |
+| Tests | 681 passed |
+| Coverage | 91.78% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |

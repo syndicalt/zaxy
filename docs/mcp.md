@@ -60,8 +60,11 @@ returns the high-level contract an agent should condition on before a turn. It
 wraps context assembly with a `# Memory Checkout` prompt, current facts that
 exclude superseded context, cited evidence, provenance parsed from
 `eventloom://...` citations, retention metadata, warnings, the active working
-set, and source lane counts. This is the preferred tool when a model needs a
-bounded, auditable working state rather than a raw list of retrieval hits.
+set, and Checkout diagnostics. Diagnostics include source lane counts, citation
+count, current fact count, excluded superseded context count, warning count, and
+a `memory_feedback` recommendation when cited context is returned. This is the
+preferred tool when a model needs a bounded, auditable working state rather than
+a raw list of retrieval hits.
 When `ref` is supplied, checkout resolves a Git-style memory ref such as `HEAD`
 or `refs/heads/main` and filters replay/context to the target event identity.
 MCP clients discover this tool through the standard `tools/list` handshake, so

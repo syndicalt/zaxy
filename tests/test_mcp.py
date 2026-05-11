@@ -592,9 +592,23 @@ class TestContextLifecycleTools:
         assert output["session_id"] == "agent-1"
         assert output["current_facts"][0]["content"] == "Memory checkout is the context contract."
         assert output["current_facts"][0]["citation"] == "eventloom://agent-1/events/1882#checkout"
+        assert output["current_facts"][0]["source_lane"] == "graph"
         assert output["evidence"][0]["citation"] == "eventloom://agent-1/events/1882#checkout"
+        assert output["evidence"][0]["source_lane"] == "graph"
         assert output["provenance"][0]["event_seq"] == 1882
+        assert output["diagnostics"] == {
+            "source_lanes": {"graph": 2},
+            "citation_count": 2,
+            "current_fact_count": 2,
+            "superseded_contexts_excluded": 0,
+            "warning_count": 0,
+            "feedback_recommended": True,
+            "feedback_tool": "memory_feedback",
+            "feedback_reason": "Reinforce cited context if it materially informed the next response.",
+        }
         assert "# Memory Checkout" in output["prompt"]
+        assert "## Checkout Diagnostics" in output["prompt"]
+        assert "memory_feedback" in output["prompt"]
         assert all(fact["valid_to"] is None for fact in output["current_facts"])
 
     async def test_context_assemble_includes_verbatim_source_lane(
