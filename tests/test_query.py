@@ -13,6 +13,7 @@ from zaxy.query import (
     LexicalReranker,
     OpenAICompatibleReranker,
     QueryRouter,
+    _mmr_rank,
     build_reranker,
     build_retention_policy,
 )
@@ -273,6 +274,51 @@ class TestQueryRouting:
         assert results[0].content.startswith("session-0001:turn-2")
         keyword_queries = [call.args[0] for call in mock_store.search_keyword.await_args_list]
         assert "session-0001" in keyword_queries
+
+    async def test_identifier_keyword_hits_limit_traversal_seeds(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Identifier-pinned keyword hits should prevent noisy traversal fan-out."""
+        correct_turn = SearchResult(
+            entity=GraphEntity(
+                name="session-0001:turn-2",
+                entity_type="transcript_turn",
+                valid_from="2024-09-01T00:01:00Z",
+                valid_to=None,
+                properties={
+                    "summary": "assistant: We decided decision-code-0001 for workstream 0001.",
+                },
+            ),
+            score=0.5,
+            source="keyword",
+        )
+        generic_agent = SearchResult(
+            entity=GraphEntity(
+                name="agent",
+                entity_type="actor",
+                valid_from="2024-01-01T00:00:00Z",
+                valid_to=None,
+                properties={"summary": "Generic actor attached to many memories."},
+            ),
+            score=0.99,
+            source="vector",
+        )
+        mock_store.search_vector.return_value = [generic_agent]
+        mock_store.search_keyword.return_value = [correct_turn]
+
+        await router.query(
+            "What decision code was recorded in session-0001?",
+            embedding=[0.1, 0.2],
+            limit=2,
+        )
+
+        traversal_names = [
+            call.args[0]
+            for call in mock_store.search_traversal.await_args_list
+        ]
+        assert traversal_names == ["session-0001:turn-2"]
 
     async def test_structured_entity_names_seed_traversal(
         self,
@@ -621,6 +667,34 @@ class TestQueryRouting:
             "Alpha API design",
             "Billing rollout task",
         ]
+
+    def test_mmr_ranking_tokenizes_each_candidate_once(self) -> None:
+        """MMR should not repeatedly retokenize the same graph entities."""
+        results = [
+            SearchResult(
+                entity=GraphEntity(
+                    name=f"memory-{index:04d}",
+                    entity_type="document",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={"summary": f"memory {index} shared context"},
+                ),
+                score=1.0 - (index * 0.01),
+                source="keyword",
+            )
+            for index in range(20)
+        ]
+        tokenized_names: list[str] = []
+
+        def _tokens(entity: GraphEntity) -> set[str]:
+            tokenized_names.append(entity.name)
+            return {entity.name, entity.entity_type}
+
+        with patch("zaxy.query._entity_tokens", side_effect=_tokens):
+            ranked = _mmr_rank(results, limit=5)
+
+        assert len(ranked) == 5
+        assert len(tokenized_names) == len(results)
 
     async def test_keyword_query_expansion_adds_domain_synonyms(
         self,

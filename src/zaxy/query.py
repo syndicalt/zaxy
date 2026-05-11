@@ -397,7 +397,13 @@ class QueryRouter:
         # 4. Traversal from exact anchors, or from top keyword + vector hits
         # when no durable exact anchor is available.
         seen = {r.entity.name for r in results}
-        traversal_seeds = exact_hits or (results[:3] + (vector_hits + keyword_hits)[:3])
+        traversal_seeds = _traversal_seeds(
+            exact_hits=exact_hits,
+            results=results,
+            vector_hits=vector_hits,
+            keyword_hits=keyword_hits,
+            identifier_terms=identifier_terms,
+        )
         for hit in traversal_seeds:
             try:
                 neighbors = await self.store.search_traversal(
@@ -663,6 +669,45 @@ def _traversal_raw_score(query: str, seed: SearchResult, neighbor: GraphEntity) 
     return max(0.1, score)
 
 
+def _traversal_seeds(
+    *,
+    exact_hits: list[SearchResult],
+    results: list[SearchResult],
+    vector_hits: list[SearchResult],
+    keyword_hits: list[SearchResult],
+    identifier_terms: tuple[str, ...],
+) -> list[SearchResult]:
+    """Choose bounded graph traversal anchors for the query."""
+    if exact_hits:
+        return exact_hits
+    if identifier_terms:
+        focused = [
+            result
+            for result in results
+            if _entity_matches_identifier(result.entity, identifier_terms)
+        ]
+        if focused:
+            return _unique_search_results(focused)[:3]
+    return _unique_search_results([*results[:3], *(vector_hits + keyword_hits)[:3]])
+
+
+def _entity_matches_identifier(entity: GraphEntity, identifiers: tuple[str, ...]) -> bool:
+    searchable = _entity_identifier_text(entity).casefold()
+    return any(identifier.casefold() in searchable for identifier in identifiers)
+
+
+def _unique_search_results(results: list[SearchResult]) -> list[SearchResult]:
+    seen: set[tuple[str, str]] = set()
+    unique: list[SearchResult] = []
+    for result in results:
+        key = (result.entity.name, result.entity.entity_type)
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(result)
+    return unique
+
+
 def _auth_headers(api_key: str | None) -> dict[str, str]:
     if not api_key:
         return {}
@@ -765,6 +810,10 @@ def _mmr_rank(
     candidates = sorted(results, key=lambda x: x.score, reverse=True)
     selected: list[SearchResult] = []
     source_bonus = {"traversal": traversal_bonus}
+    token_cache = {
+        (result.entity.name, result.entity.entity_type, result.entity.valid_from): _entity_tokens(result.entity)
+        for result in results
+    }
 
     while candidates and len(selected) < limit:
         if not selected:
@@ -775,7 +824,10 @@ def _mmr_rank(
         best_index = 0
         best_score = float("-inf")
         for index, candidate in enumerate(candidates):
-            similarity = max(_entity_similarity(candidate.entity, hit.entity) for hit in selected)
+            similarity = max(
+                _entity_similarity(candidate.entity, hit.entity, token_cache)
+                for hit in selected
+            )
             ranking_score = (
                 lambda_score * candidate.score
                 - (1.0 - lambda_score) * similarity
@@ -790,10 +842,18 @@ def _mmr_rank(
     return selected
 
 
-def _entity_similarity(left: GraphEntity, right: GraphEntity) -> float:
+def _entity_similarity(
+    left: GraphEntity,
+    right: GraphEntity,
+    token_cache: dict[tuple[str, str, str], set[str]] | None = None,
+) -> float:
     """Return token Jaccard similarity between two entities."""
-    left_tokens = _entity_tokens(left)
-    right_tokens = _entity_tokens(right)
+    if token_cache is None:
+        left_tokens = _entity_tokens(left)
+        right_tokens = _entity_tokens(right)
+    else:
+        left_tokens = token_cache[(left.name, left.entity_type, left.valid_from)]
+        right_tokens = token_cache[(right.name, right.entity_type, right.valid_from)]
     if not left_tokens or not right_tokens:
         return 0.0
     return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)

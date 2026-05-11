@@ -335,8 +335,8 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 | Metric | Value |
 |--------|-------|
-| Tests | 758 passed, 6 deselected |
-| Coverage | 92.30% |
+| Tests | 760 passed, 6 deselected |
+| Coverage | 92.28% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
