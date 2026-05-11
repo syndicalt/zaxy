@@ -1177,10 +1177,14 @@ def _format_memory_checkout_prompt(
         lines.append(f"- Reason: {reason}")
     required_action = quality.get("required_action")
     if isinstance(required_action, dict):
-        lines.append(
-            "- Required action: "
-            f"{required_action.get('tool')}({required_action.get('query')!r})"
-        )
+        action_type = required_action.get("type")
+        if action_type == "ask_user":
+            lines.append(f"- Required action: ask_user: {required_action.get('reason')}")
+        else:
+            lines.append(
+                "- Required action: "
+                f"{required_action.get('tool')}({required_action.get('query')!r})"
+            )
     else:
         lines.append("- Required action: none")
     lines.extend(["", "## Checkout Guidance"])
@@ -1201,6 +1205,7 @@ def _format_memory_checkout_prompt(
     lines.extend(["", "## Checkout Diagnostics"])
     lines.append(f"- Source lanes: {_format_source_lanes(source_lanes)}")
     lines.append(f"- Citations: {diagnostics.get('citation_count', 0)}")
+    lines.append(f"- Current citations: {diagnostics.get('current_citation_count', 0)}")
     lines.append(f"- Current facts: {diagnostics.get('current_fact_count', 0)}")
     lines.append(
         f"- Superseded contexts excluded: {diagnostics.get('superseded_contexts_excluded', 0)}"
@@ -1283,11 +1288,11 @@ def _checkout_quality_payload(
     warnings: list[str],
 ) -> dict[str, Any]:
     current_fact_count = _int_metric(diagnostics.get("current_fact_count"))
-    citation_count = _int_metric(diagnostics.get("citation_count"))
+    current_citation_count = _int_metric(diagnostics.get("current_citation_count"))
     superseded_excluded = _int_metric(diagnostics.get("superseded_contexts_excluded"))
     warning_count = _int_metric(diagnostics.get("warning_count"))
     reasons: list[str] = []
-    if current_fact_count and citation_count:
+    if current_fact_count and current_citation_count:
         reasons.append("Retrieved current facts with Eventloom citations.")
     elif current_fact_count:
         reasons.append("Retrieved current facts, but they lack Eventloom citations.")
@@ -1298,21 +1303,29 @@ def _checkout_quality_payload(
     if warning_count:
         reasons.append("Checkout contains warnings that reduce confidence.")
     confidence = 0.25
-    confidence += min(current_fact_count, 2) * 0.2
-    confidence += min(citation_count, 2) * 0.15
-    if superseded_excluded:
+    confidence += min(current_fact_count, 2) * 0.22
+    confidence += min(current_citation_count, 2) * 0.28
+    if superseded_excluded and current_fact_count:
         confidence += 0.07
-    confidence -= min(0.25, warning_count * 0.12)
-    confidence = round(max(0.0, min(0.95, confidence)), 2)
+    confidence = min(0.95, confidence)
+    confidence -= min(0.35, warning_count * 0.18)
+    confidence = round(max(0.0, confidence), 2)
     recommended_next_call = guidance.get("recommended_next_call")
     required_action = recommended_next_call if isinstance(recommended_next_call, dict) else None
-    if current_fact_count and citation_count and confidence >= 0.75:
+    if not current_fact_count:
+        answerability = "ask_user"
+        required_action = {
+            "type": "ask_user",
+            "reason": (
+                "No current facts were retrieved; ask the user for the missing context "
+                "before answering from memory."
+            ),
+        }
+    elif current_citation_count and not warning_count and confidence >= 0.75:
         answerability = "answer_from_memory"
         required_action = None
-    elif current_fact_count or citation_count:
-        answerability = "refresh_recommended"
     else:
-        answerability = "ask_user"
+        answerability = "refresh_recommended"
     return {
         "answerability": answerability,
         "confidence": confidence,
@@ -1388,6 +1401,7 @@ def _checkout_diagnostics_payload(
     return {
         "source_lanes": source_lanes,
         "citation_count": len(evidence),
+        "current_citation_count": sum(1 for fact in current_facts if fact.get("citation")),
         "current_fact_count": len(current_facts),
         "superseded_contexts_excluded": retention.get("superseded_contexts_excluded", 0),
         "warning_count": len(warnings),

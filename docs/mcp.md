@@ -60,16 +60,21 @@ returns the high-level contract an agent should condition on before a turn. It
 wraps context assembly with a `# Memory Checkout` prompt, current facts that
 exclude superseded context, cited evidence, provenance parsed from
 `eventloom://...` citations, retention metadata, warnings, the active working
-set, and Checkout diagnostics. Diagnostics include source lane counts, citation
-count, current fact count, excluded superseded context count, warning count, and
-a `memory_feedback` recommendation when cited context is returned. This is the
-preferred tool when a model needs a bounded, auditable working state rather than
-a raw list of retrieval hits. The response also includes `guidance` with
+set, and Checkout diagnostics. Diagnostics include source lane counts, total
+citation count, current-fact citation count, current fact count, excluded
+superseded context count, warning count, and a `memory_feedback` recommendation
+when cited context is returned. This is the preferred tool when a model needs a
+bounded, auditable working state rather than a raw list of retrieval hits. The
+response also includes `guidance` with
 model-facing trust and ignore instructions, a recommended follow-up
 `memory_checkout` call, and concrete `memory_feedback` payload templates for
 cited facts that materially influence the next response. The `quality` block
 adds an answerability decision (`answer_from_memory`, `refresh_recommended`, or
 `ask_user`), a bounded confidence score, reasons, and any required next action.
+Checkout only returns `answer_from_memory` when current facts have current
+Eventloom citations and the checkout has no warnings; missing, superseded-only,
+uncited, or compacted checkout states ask the model to refresh memory or ask the
+user instead of answering from stale context.
 When `ref` is supplied, checkout resolves a Git-style memory ref such as `HEAD`
 or `refs/heads/main` and filters replay/context to the target event identity.
 MCP clients discover this tool through the standard `tools/list` handshake, so

@@ -12,7 +12,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from zaxy.compaction import build_compaction_projection, write_compaction_projection
-from zaxy.core import Context, HandoffBundle, MemoryCheckout, MemoryFabric
+from zaxy.core import (
+    Context,
+    ContextAssembly,
+    HandoffBundle,
+    MemoryCheckout,
+    MemoryFabric,
+    build_memory_checkout,
+)
 from zaxy.embedding import HashEmbeddingProvider
 from zaxy.event import EventLog
 from zaxy.query import ContextChunk
@@ -790,6 +797,7 @@ class TestContextAssembly:
         assert checkout.diagnostics == {
             "source_lanes": {"graph": 2},
             "citation_count": 2,
+            "current_citation_count": 1,
             "current_fact_count": 1,
             "superseded_contexts_excluded": 1,
             "warning_count": 0,
@@ -835,6 +843,156 @@ class TestContextAssembly:
         assert "memory_feedback" in checkout.prompt
         assert "Use raw replay only" not in "\n".join(fact["content"] for fact in checkout.current_facts)
         assert checkout.context_counts["graph"] == 2
+
+    async def test_checkout_memory_asks_user_when_no_current_facts(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """checkout_memory() should not imply answerability when retrieval is empty."""
+        fabric.session_manager.replay.return_value = MagicMock(
+            events=[],
+            integrity=MagicMock(ok=True),
+        )
+        fabric.query_router.query.return_value = []
+
+        with patch.object(fabric, "query_verbatim", return_value=[]):
+            checkout = await fabric.checkout_memory(
+                "What did we decide about missing memory?",
+                session_id="agent-1",
+                limit=3,
+            )
+
+        assert checkout.current_facts == []
+        assert checkout.diagnostics["current_fact_count"] == 0
+        assert checkout.diagnostics["current_citation_count"] == 0
+        assert checkout.quality["answerability"] == "ask_user"
+        assert checkout.quality["confidence"] == 0.25
+        assert checkout.quality["required_action"] == {
+            "type": "ask_user",
+            "reason": "No current facts were retrieved; ask the user for the missing context before answering from memory.",
+        }
+        assert "No current facts were retrieved." in checkout.prompt
+        assert "ask_user" in checkout.prompt
+
+    async def test_checkout_memory_asks_user_when_only_superseded_context_is_retrieved(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """checkout_memory() should keep superseded evidence auditable but not answerable."""
+        fabric.session_manager.replay.return_value = MagicMock(
+            events=[],
+            integrity=MagicMock(ok=True),
+        )
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content="Raw replay used to be the model context contract.",
+                source="keyword",
+                score=0.8,
+                valid_from="2026-05-09T12:00:00Z",
+                valid_to="2026-05-10T12:00:00Z",
+                citation="eventloom://agent-1/events/2#bbbbbbbbbbbb",
+                entity_name="raw replay",
+                entity_type="decision",
+            )
+        ]
+
+        with patch.object(fabric, "query_verbatim", return_value=[]):
+            checkout = await fabric.checkout_memory(
+                "What memory contract should the model use?",
+                session_id="agent-1",
+                limit=3,
+            )
+
+        assert checkout.current_facts == []
+        assert checkout.evidence[0]["citation"] == "eventloom://agent-1/events/2#bbbbbbbbbbbb"
+        assert checkout.diagnostics["citation_count"] == 1
+        assert checkout.diagnostics["current_citation_count"] == 0
+        assert checkout.retention["superseded_contexts_excluded"] == 1
+        assert checkout.quality["answerability"] == "ask_user"
+        assert checkout.quality["confidence"] == 0.25
+        assert "Superseded contexts were excluded from current facts." in checkout.quality["reasons"]
+
+    async def test_checkout_memory_refreshes_when_current_facts_lack_citations(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """checkout_memory() should request refresh before relying on uncited current facts."""
+        fabric.session_manager.replay.return_value = MagicMock(
+            events=[],
+            integrity=MagicMock(ok=True),
+        )
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content="The model should use Memory Checkout.",
+                source="keyword",
+                score=0.74,
+                valid_from="2026-05-10T12:00:00Z",
+                valid_to=None,
+                citation=None,
+                entity_name="memory checkout",
+                entity_type="decision",
+            )
+        ]
+
+        with patch.object(fabric, "query_verbatim", return_value=[]):
+            checkout = await fabric.checkout_memory(
+                "What memory contract should the model use?",
+                session_id="agent-1",
+                limit=3,
+            )
+
+        assert checkout.current_facts[0]["citation"] is None
+        assert checkout.diagnostics["citation_count"] == 0
+        assert checkout.diagnostics["current_citation_count"] == 0
+        assert checkout.warnings == ["Checkout contains current facts without Eventloom citations."]
+        assert checkout.quality["answerability"] == "refresh_recommended"
+        assert checkout.quality["confidence"] == 0.29
+        assert checkout.quality["required_action"] == checkout.guidance["recommended_next_call"]
+        assert "Retrieved current facts, but they lack Eventloom citations." in checkout.quality["reasons"]
+
+    def test_checkout_memory_refreshes_when_checkout_has_warnings(self) -> None:
+        """build_memory_checkout() should force refresh when compaction or warnings reduce confidence."""
+        assembly = ContextAssembly(
+            session_id="agent-1",
+            prompt="# Active Memory Working Set\n- Memory checkout is current.",
+            contexts=[
+                Context(
+                    content="Memory checkout is the current contract.",
+                    source="keyword",
+                    score=0.91,
+                    metadata={"citation": "eventloom://agent-1/events/8#hhhhhhhhhhhh"},
+                    valid_from="2026-05-10T12:00:00Z",
+                    valid_to=None,
+                ),
+                Context(
+                    content="The feedback loop should reinforce used checkout context.",
+                    source="keyword",
+                    score=0.9,
+                    metadata={"citation": "eventloom://agent-1/events/9#iiiiiiiiiiii"},
+                    valid_from="2026-05-10T12:05:00Z",
+                    valid_to=None,
+                ),
+            ],
+            working_set={"items": []},
+            context_counts={"graph": 2},
+            replay_event_count=12,
+            compacted=True,
+            warnings=[],
+            assembly_policy={},
+        )
+
+        checkout = build_memory_checkout(
+            query="What is the current memory contract?",
+            assembly=assembly,
+        )
+
+        assert checkout.diagnostics["current_fact_count"] == 2
+        assert checkout.diagnostics["current_citation_count"] == 2
+        assert checkout.warnings == ["Recent replay was compacted to fit the checkout budget."]
+        assert checkout.quality["answerability"] == "refresh_recommended"
+        assert checkout.quality["confidence"] == 0.77
+        assert checkout.quality["required_action"] == checkout.guidance["recommended_next_call"]
+        assert "Checkout contains warnings that reduce confidence." in checkout.quality["reasons"]
 
     async def test_checkout_memory_prioritizes_exact_recent_task_context(
         self,

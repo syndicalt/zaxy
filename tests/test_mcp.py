@@ -599,6 +599,7 @@ class TestContextLifecycleTools:
         assert output["diagnostics"] == {
             "source_lanes": {"graph": 2},
             "citation_count": 2,
+            "current_citation_count": 2,
             "current_fact_count": 2,
             "superseded_contexts_excluded": 0,
             "warning_count": 0,
@@ -639,6 +640,47 @@ class TestContextLifecycleTools:
         assert "current decisions, blockers, and next actions" in output["prompt"]
         assert "memory_feedback" in output["prompt"]
         assert all(fact["valid_to"] is None for fact in output["current_facts"])
+
+    async def test_memory_checkout_asks_user_when_only_superseded_context_is_retrieved(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """memory_checkout should not treat superseded-only context as answerable."""
+        server = ZaxyMCPServer(eventloom_path=str(tmp_path / ".eventloom"))
+        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
+            router = AsyncMock()
+            router.query.return_value = [
+                MagicMock(
+                    content="Raw replay used to be the model context contract.",
+                    source="keyword",
+                    score=0.8,
+                    valid_from="2026-05-09T12:00:00Z",
+                    valid_to="2026-05-10T12:00:00Z",
+                    citation="eventloom://agent-1/events/2#bbbbbbbbbbbb",
+                    score_explanation=None,
+                    entity_name="raw replay",
+                    entity_type="decision",
+                )
+            ]
+            mock_router_cls.return_value = router
+
+            result = await server.handle_memory_checkout({
+                "query": "What memory contract should the model use?",
+                "session_id": "agent-1",
+                "limit": 3,
+            })
+
+        output = json_loads(result[0].text)
+        assert output["current_facts"] == []
+        assert output["diagnostics"]["citation_count"] == 1
+        assert output["diagnostics"]["current_citation_count"] == 0
+        assert output["quality"]["answerability"] == "ask_user"
+        assert output["quality"]["confidence"] == 0.25
+        assert output["quality"]["required_action"] == {
+            "type": "ask_user",
+            "reason": "No current facts were retrieved; ask the user for the missing context before answering from memory.",
+        }
+        assert "ask_user" in output["prompt"]
 
     async def test_context_assemble_includes_verbatim_source_lane(
         self,
