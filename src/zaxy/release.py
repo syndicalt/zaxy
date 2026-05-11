@@ -16,7 +16,11 @@ def package_version(*, project_root: Path | None = None) -> str:
     try:
         return metadata.version(PACKAGE_NAME)
     except metadata.PackageNotFoundError:
-        root = project_root or Path.cwd()
+        if project_root is not None:
+            return pyproject_version(project_root)
+        root = _source_project_root()
+        if root is None:
+            return "0+unknown"
         return pyproject_version(root)
 
 
@@ -27,6 +31,22 @@ def pyproject_version(project_root: Path) -> str:
     if not isinstance(version, str) or not version:
         raise ValueError("pyproject.toml project.version must be a non-empty string")
     return version
+
+
+def _source_project_root() -> Path | None:
+    """Find the package source-tree root without depending on the caller cwd."""
+    for candidate in Path(__file__).resolve().parents:
+        pyproject_path = candidate / "pyproject.toml"
+        if not pyproject_path.is_file():
+            continue
+        try:
+            pyproject = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError):
+            continue
+        project = pyproject.get("project")
+        if isinstance(project, dict) and project.get("name") == PACKAGE_NAME:
+            return candidate
+    return None
 
 
 def run_release_smoke(*, project_root: str | Path | None = None) -> dict[str, Any]:

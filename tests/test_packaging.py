@@ -6,6 +6,8 @@ import subprocess
 import tomllib
 from pathlib import Path
 
+from zaxy.release import package_version
+
 
 def test_pyproject_declares_typed_package_and_release_tools() -> None:
     """The wheel should advertise typing and include build/check tooling."""
@@ -26,6 +28,22 @@ def test_pyproject_declares_typed_package_and_release_tools() -> None:
         "src/zaxy/py.typed"
     ]
     assert "site" in pyproject["tool"]["hatch"]["build"]["targets"]["sdist"]["include"]
+
+
+def test_package_version_source_fallback_is_independent_of_cwd(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Source-tree version fallback should not read pyproject.toml from the caller cwd."""
+    from zaxy import release
+
+    def missing_distribution(_name: str) -> str:
+        raise release.metadata.PackageNotFoundError("zaxy-memory")
+
+    monkeypatch.setattr(release.metadata, "version", missing_distribution)
+    monkeypatch.chdir(tmp_path)
+
+    assert package_version() == "0.1.0"
 
 
 def test_changelog_records_initial_pypi_release() -> None:
