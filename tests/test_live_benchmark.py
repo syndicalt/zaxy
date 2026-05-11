@@ -14,6 +14,7 @@ from zaxy.live_benchmark import (
     FROZEN_WORKLOAD_VERSION,
     LONGMEMEVAL_WORKLOAD_VERSION,
     SUITE_WORKLOAD_VERSION,
+    TEMPORAL_RECALL_WORKLOAD_VERSION,
     BenchmarkCase,
     BenchmarkChunk,
     BM25Retriever,
@@ -30,6 +31,7 @@ from zaxy.live_benchmark import (
     build_consolidation_collapse_workload,
     build_frozen_statistical_workload,
     build_longmemeval_workload,
+    build_temporal_recall_workload,
     corpus_from_event_log,
     report_to_markdown,
     workload_fingerprint,
@@ -50,6 +52,7 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "build_benchmark_suite_workload" in cli
     assert "build_consolidation_collapse_workload" in cli
     assert "build_longmemeval_workload" in cli
+    assert "build_temporal_recall_workload" in cli
     assert "lexical_retriever=BM25Retriever(corpus)" in cli
     assert "--embedding-cache" in cli
     assert "--progress" in cli
@@ -60,7 +63,74 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "--sessions" in script
     assert "--embedding-cache" in script
     assert "--progress" in script
+    assert "temporal-recall" in script
     assert "zaxy benchmark" in script
+
+
+def test_temporal_recall_workload_is_frozen_and_source_cited(tmp_path: Path) -> None:
+    """MemPalace-comparable temporal recall should be reproducible and cited."""
+    eventlog, cases, workload = build_temporal_recall_workload(
+        tmp_path / "temporal-recall.jsonl",
+        subjects=3,
+    )
+    events = eventlog.read_all()
+    corpus = corpus_from_event_log(eventlog)
+
+    assert workload.version == TEMPORAL_RECALL_WORKLOAD_VERSION
+    assert workload.subjects == 3
+    assert workload.event_count == 9
+    assert workload.case_count == 9
+    assert workload.lanes == ("temporal-recall",)
+    assert {case.category for case in cases} == {"temporal-recall"}
+    assert all(case.temporal_point for case in cases)
+    assert any(case.expected_terms == ("workspace=workspace-alpha-0000",) for case in cases)
+    assert any(case.expected_terms == ("workspace=workspace-beta-0000",) for case in cases)
+    assert any(case.expected_terms == ("workspace=workspace-gamma-0000",) for case in cases)
+    assert all("source_path" in event.payload for event in events)
+    assert all("eventloom://benchmark/events/" in chunk.text for chunk in corpus)
+    assert workload.sha256 == workload_fingerprint(
+        eventlog,
+        cases,
+        TEMPORAL_RECALL_WORKLOAD_VERSION,
+    )
+
+
+def test_benchmark_report_tracks_successful_citation_coverage() -> None:
+    """A correct answer should disclose whether it carried a provenance citation."""
+    case = BenchmarkCase(
+        name="temporal-1",
+        query="What workspace was active?",
+        expected_terms=("workspace-alpha",),
+        category="temporal-recall",
+    )
+
+    report = benchmark_retrievers(
+        {
+            "cited": MarkdownRetriever(
+                (BenchmarkChunk("cited", "workspace-alpha eventloom://benchmark/events/1#abc"),)
+            ),
+            "uncited": MarkdownRetriever((BenchmarkChunk("uncited", "workspace-alpha"),)),
+        },
+        (case,),
+        runs=1,
+        limit=1,
+    )
+
+    runs = {run.backend: run for run in report.runs}
+    summaries = {summary.backend: summary for summary in report.summaries}
+    category_summaries = {
+        summary.backend: summary for summary in report.category_summaries
+    }
+    markdown = report_to_markdown(report)
+
+    assert runs["cited"].citation_count == 1
+    assert runs["cited"].citation_coverage == 1.0
+    assert runs["uncited"].citation_count == 0
+    assert runs["uncited"].citation_coverage == 0.0
+    assert summaries["cited"].mean_citation_coverage == 1.0
+    assert summaries["uncited"].mean_citation_coverage == 0.0
+    assert category_summaries["cited"].mean_citation_coverage == 1.0
+    assert "Citation coverage" in markdown
 
 
 def test_longmemeval_workload_loads_public_memory_dataset(tmp_path: Path) -> None:
@@ -451,7 +521,7 @@ def test_live_benchmark_outputs_machine_and_markdown_reports(tmp_path: Path) -> 
     assert output.markdown_path.name == "live-benchmark.md"
     assert payload["summaries"][0]["backend"] in {"md", "vector"}
     assert payload["workload"]["version"] == "ad-hoc"
-    assert "| Backend | Mean score | Identity recall | p50 ms | p95 ms |" in markdown
+    assert "| Backend | Mean score | Identity recall | Citation coverage | p50 ms |" in markdown
     assert "Approx tokens" in markdown
 
 

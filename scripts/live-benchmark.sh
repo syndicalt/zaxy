@@ -23,7 +23,7 @@ PROGRESS="false"
 
 usage() {
     cat <<USAGE
-Usage: scripts/live-benchmark.sh [--root PATH] [--output-dir PATH] [--runs N] [--limit N] [--embedding-provider openai|hash] [--embedding-cache PATH] [--progress] [--workload fixture|statistical|frozen|suite|consolidation|longmemeval] [--dataset PATH] [--questions N] [--subjects N] [--documents N] [--sessions N] [--reset-graph]
+Usage: scripts/live-benchmark.sh [--root PATH] [--output-dir PATH] [--runs N] [--limit N] [--embedding-provider openai|hash] [--embedding-cache PATH] [--progress] [--workload fixture|statistical|frozen|suite|consolidation|temporal-recall|longmemeval] [--dataset PATH] [--questions N] [--subjects N] [--documents N] [--sessions N] [--reset-graph]
 
 Runs zaxy benchmark against markdown, BM25, vector, markdown+vector, and live Zaxy retrieval.
 OpenAI mode requires OPENAI_API_KEY or OPENAI_API_KEY_FILE.

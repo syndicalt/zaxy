@@ -122,11 +122,13 @@ Benchmark coverage lives in `src/zaxy/benchmark.py`, `src/zaxy/live_benchmark.py
 `tests/test_competitive_benchmarks.py`, and `tests/test_live_benchmark.py`. The
 current live benchmark compares markdown, BM25, vector, markdown+vector, and Zaxy
 retrieval on generated paired workloads. Use `--workload frozen` for publishable
-temporal-memory runs; use `--workload suite` for representative runs that add
-indexed documents, sanitized transcripts, and mixed cross-lane queries. Reports
-include workload versions and SHA-256 fingerprints so results remain comparable
-over time. Treat these as workload-specific signals, not universal claims
-against every production-grade vector RAG or file memory system.
+statistical temporal-memory runs, `--workload temporal-recall` for the narrower
+MemPalace-comparable as-of recall lane, and `--workload suite` for representative
+runs that add indexed documents, sanitized transcripts, and mixed cross-lane
+queries. Reports include workload versions, citation coverage, and SHA-256
+fingerprints so results remain comparable over time. Treat these as
+workload-specific signals, not universal claims against every production-grade
+vector RAG or file memory system.
 
 The next retrieval-quality work should close the practical ergonomics gap with
 QMD-style search sidecars: richer assembly lifecycle hooks, stronger local

@@ -28,6 +28,7 @@ FROZEN_WORKLOAD_VERSION = "statistical-v1"
 FROZEN_WORKLOAD_SUBJECTS = 100
 CONSOLIDATION_WORKLOAD_VERSION = "consolidation-v1"
 SUITE_WORKLOAD_VERSION = "suite-v1"
+TEMPORAL_RECALL_WORKLOAD_VERSION = "mempalace-temporal-recall-v1"
 LONGMEMEVAL_WORKLOAD_VERSION = "longmemeval-cleaned-v1"
 LONGMEMEVAL_MAX_CHUNK_CHARS = 3_500
 SUITE_WORKLOAD_LANES = (
@@ -67,6 +68,8 @@ class BenchmarkRun:
     identity_recall: float | None
     identity_hits: tuple[str, ...]
     missing_identities: tuple[str, ...]
+    citation_count: int
+    citation_coverage: float | None
 
 
 @dataclass(frozen=True)
@@ -84,6 +87,7 @@ class BenchmarkSummary:
     mean_returned_bytes: float
     mean_approx_tokens: float
     mean_identity_recall: float | None = None
+    mean_citation_coverage: float | None = None
 
 
 @dataclass(frozen=True)
@@ -109,6 +113,7 @@ class CategorySummary:
     query_count: int
     mean_score: float
     miss_count: int
+    mean_citation_coverage: float | None = None
 
 
 @dataclass(frozen=True)
@@ -548,7 +553,11 @@ def corpus_from_event_log(eventlog: EventLog) -> tuple[BenchmarkChunk, ...]:
     return tuple(
         BenchmarkChunk(
             chunk_id=f"event-{event.seq}",
-            text=f"# Event {event.seq}\n\n{_event_context(event.model_dump())}",
+            text=(
+                f"# Event {event.seq}\n\n"
+                f"citation=eventloom://benchmark/events/{event.seq}#{event.hash}\n\n"
+                f"{_event_context(event.model_dump())}"
+            ),
         )
         for event in eventlog.read_all()
     )
@@ -647,6 +656,87 @@ def build_frozen_statistical_workload(
         subjects=FROZEN_WORKLOAD_SUBJECTS,
     )
     return eventlog, cases, workload
+
+
+def build_temporal_recall_workload(
+    path: str | Path,
+    subjects: int = 100,
+) -> tuple[EventLog, tuple[BenchmarkCase, ...], BenchmarkWorkload]:
+    """Build a frozen temporal recall lane for as-of memory evaluation."""
+    if subjects <= 0:
+        raise ValueError("subjects must be positive")
+
+    eventlog = EventLog(path)
+    cases: list[BenchmarkCase] = []
+    checkpoints = (
+        (
+            "alpha",
+            datetime(2024, 1, 15, tzinfo=UTC),
+            "2024-03-01T00:00:00Z",
+        ),
+        (
+            "beta",
+            datetime(2024, 5, 15, tzinfo=UTC),
+            "2024-07-01T00:00:00Z",
+        ),
+        (
+            "gamma",
+            datetime(2024, 9, 15, tzinfo=UTC),
+            "2024-11-01T00:00:00Z",
+        ),
+    )
+    for idx in range(subjects):
+        user_id = f"user-{idx:04d}"
+        values: list[str] = []
+        for label, timestamp, _ in checkpoints:
+            value = f"workspace-{label}-{idx:04d}"
+            values.append(value)
+            source_path = f"temporal-recall/{user_id}/workspace.md"
+            eventlog.append(
+                "user.preference_changed",
+                actor="user",
+                payload={
+                    "userId": user_id,
+                    "key": "workspace",
+                    "value": value,
+                    "source_path": source_path,
+                    "source_line": len(values),
+                    "source_summary": (
+                        f"{user_id} workspace preference changed to {value}"
+                    ),
+                },
+                timestamp=timestamp,
+            )
+
+        for position, (label, _, temporal_point) in enumerate(checkpoints):
+            expected = values[position]
+            forbidden = tuple(
+                f"workspace={value}" for value in values
+                if value != expected
+            )
+            cases.append(
+                BenchmarkCase(
+                    name=f"temporal-recall-{label}-{idx:04d}",
+                    query=(
+                        f"What workspace preference was active for {user_id} "
+                        f"at {temporal_point}?"
+                    ),
+                    expected_terms=(f"workspace={expected}",),
+                    forbidden_terms=forbidden,
+                    category="temporal-recall",
+                    temporal_point=temporal_point,
+                    identity_terms=(user_id,),
+                )
+            )
+
+    workload = BenchmarkWorkload.from_event_log(
+        eventlog,
+        tuple(cases),
+        version=TEMPORAL_RECALL_WORKLOAD_VERSION,
+        subjects=subjects,
+        lanes=("temporal-recall",),
+    )
+    return eventlog, tuple(cases), workload
 
 
 def build_consolidation_collapse_workload(
@@ -1164,8 +1254,8 @@ def report_to_markdown(report: BenchmarkReport) -> str:
     lines.extend(
         [
         "",
-        "| Backend | Mean score | Identity recall | p50 ms | p95 ms | p99 ms | Returned bytes | Approx tokens |",
-        "|---------|------------|-----------------|--------|--------|--------|----------------|---------------|",
+        "| Backend | Mean score | Identity recall | Citation coverage | p50 ms | p95 ms | p99 ms | Returned bytes | Approx tokens |",
+        "|---------|------------|-----------------|-------------------|--------|--------|--------|----------------|---------------|",
         ]
     )
     for backend_summary in report.summaries:
@@ -1174,11 +1264,17 @@ def report_to_markdown(report: BenchmarkReport) -> str:
             if backend_summary.mean_identity_recall is None
             else f"{backend_summary.mean_identity_recall:.3f}"
         )
+        citation_coverage = (
+            ""
+            if backend_summary.mean_citation_coverage is None
+            else f"{backend_summary.mean_citation_coverage:.3f}"
+        )
         lines.append(
             "| "
             f"{backend_summary.backend} | "
             f"{backend_summary.mean_score:.3f} | "
             f"{identity_recall} | "
+            f"{citation_coverage} | "
             f"{backend_summary.latency_ms_p50:.2f} | "
             f"{backend_summary.latency_ms_p95:.2f} | "
             f"{backend_summary.latency_ms_p99:.2f} | "
@@ -1191,18 +1287,24 @@ def report_to_markdown(report: BenchmarkReport) -> str:
                 "",
                 "## Category summaries",
                 "",
-                "| Backend | Category | Queries | Mean score | Misses |",
-                "|---------|----------|---------|------------|--------|",
+                "| Backend | Category | Queries | Mean score | Misses | Citation coverage |",
+                "|---------|----------|---------|------------|--------|-------------------|",
             ]
         )
         for category_summary in report.category_summaries:
+            citation_coverage = (
+                ""
+                if category_summary.mean_citation_coverage is None
+                else f"{category_summary.mean_citation_coverage:.3f}"
+            )
             lines.append(
                 "| "
                 f"{category_summary.backend} | "
                 f"{category_summary.category} | "
                 f"{category_summary.query_count} | "
                 f"{category_summary.mean_score:.3f} | "
-                f"{category_summary.miss_count} |"
+                f"{category_summary.miss_count} | "
+                f"{citation_coverage} |"
             )
     if report.comparisons:
         lines.extend(
@@ -1292,6 +1394,7 @@ def _measurement(
 ) -> BenchmarkRun:
     returned_text = "\n".join(contexts)
     returned_bytes = len(returned_text.encode("utf-8"))
+    citation_count = _citation_count(contexts)
     return BenchmarkRun(
         backend=backend,
         case_name=case.name,
@@ -1308,6 +1411,8 @@ def _measurement(
         identity_recall=score.identity_recall,
         identity_hits=score.identity_hits,
         missing_identities=score.missing_identities,
+        citation_count=citation_count,
+        citation_coverage=_citation_coverage(score, citation_count),
     )
 
 
@@ -1325,6 +1430,11 @@ def _summaries(
             row.identity_recall
             for row in rows
             if row.identity_recall is not None
+        ]
+        citation_coverages = [
+            row.citation_coverage
+            for row in rows
+            if row.citation_coverage is not None
         ]
         summaries.append(
             BenchmarkSummary(
@@ -1347,6 +1457,11 @@ def _summaries(
                     if identity_recalls
                     else None
                 ),
+                mean_citation_coverage=(
+                    round(statistics.fmean(citation_coverages), 4)
+                    if citation_coverages
+                    else None
+                ),
             )
         )
     return summaries
@@ -1360,6 +1475,11 @@ def _category_summaries(measurements: list[BenchmarkRun]) -> list[CategorySummar
             row for row in measurements
             if row.backend == backend and row.category == category
         ]
+        citation_coverages = [
+            row.citation_coverage
+            for row in rows
+            if row.citation_coverage is not None
+        ]
         summaries.append(
             CategorySummary(
                 backend=backend,
@@ -1369,6 +1489,11 @@ def _category_summaries(measurements: list[BenchmarkRun]) -> list[CategorySummar
                 miss_count=sum(
                     1 for row in rows
                     if row.missing_expected or row.forbidden_hits
+                ),
+                mean_citation_coverage=(
+                    round(statistics.fmean(citation_coverages), 4)
+                    if citation_coverages
+                    else None
                 ),
             )
         )
@@ -1426,6 +1551,29 @@ def _memory_salience_boost(text: str) -> float:
     if "salient_memory_turn=true" in text.casefold():
         return 4.0
     return 1.0
+
+
+def _citation_count(contexts: list[str]) -> int:
+    """Count returned contexts that carry an inspectable source citation."""
+    return sum(1 for context in contexts if _has_source_citation(context))
+
+
+def _citation_coverage(score: RetrievalScore, citation_count: int) -> float | None:
+    """Return citation coverage for otherwise successful retrieval runs."""
+    if score.missing_expected or score.forbidden_hits or not score.expected_hits:
+        return None
+    return 1.0 if citation_count > 0 else 0.0
+
+
+def _has_source_citation(context: str) -> bool:
+    text = context.casefold()
+    return (
+        "eventloom://" in text
+        or "file://" in text
+        or "citation=" in text
+        or "source_path=" in text
+        or re.search(r"^# event \d+", text, flags=re.MULTILINE) is not None
+    )
 
 
 def _bm25_document_frequencies(
