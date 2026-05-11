@@ -113,6 +113,15 @@ and reports citation coverage for otherwise successful retrievals:
 scripts/live-benchmark.sh --embedding-provider openai --workload temporal-recall --subjects 100 --runs 1 --reset-graph
 ```
 
+For MemPalace-comparable source recall, use the dedicated source workload. It
+creates a target document and a near-miss distractor per case, then reports
+whether retrieval returned the exact expected source path as a separate source
+recall metric:
+
+```bash
+scripts/live-benchmark.sh --embedding-provider openai --workload source-recall --documents 100 --runs 1 --reset-graph
+```
+
 For public memory-benchmark comparisons against systems that report
 LongMemEval recall, download the cleaned LongMemEval JSON and run the
 `longmemeval` workload. This workload preserves answer session identifiers and
@@ -143,12 +152,12 @@ do not appear stalled. The headline comparison field for this workload is
 identity recall at the requested limit, which corresponds to whether the
 answer-bearing session was retrieved.
 
-Frozen reports include a workload version, event count, query count, citation
-coverage, and SHA-256 fingerprint so later runs can prove they used the same
-corpus. External systems such as QMD/OpenClaw, Graphiti/Zep, MemPalace, or Mem0
-can be included only as operator-supplied disclosure rows via the Python CLI's
-`--external-results` JSON option; those rows are not treated as harness-verified
-results.
+Frozen reports include a workload version, event count, query count, source
+recall, citation coverage, and SHA-256 fingerprint so later runs can prove they
+used the same corpus. External systems such as QMD/OpenClaw, Graphiti/Zep,
+MemPalace, or Mem0 can be included only as operator-supplied disclosure rows via
+the Python CLI's `--external-results` JSON option; those rows are not treated as
+harness-verified results.
 
 For production-scale representative evaluation, use the suite workload. It keeps
 the same paired backends but expands the corpus to current facts, historical

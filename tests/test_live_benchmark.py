@@ -13,6 +13,7 @@ from zaxy.live_benchmark import (
     FROZEN_WORKLOAD_SUBJECTS,
     FROZEN_WORKLOAD_VERSION,
     LONGMEMEVAL_WORKLOAD_VERSION,
+    SOURCE_RECALL_WORKLOAD_VERSION,
     SUITE_WORKLOAD_VERSION,
     TEMPORAL_RECALL_WORKLOAD_VERSION,
     BenchmarkCase,
@@ -31,6 +32,7 @@ from zaxy.live_benchmark import (
     build_consolidation_collapse_workload,
     build_frozen_statistical_workload,
     build_longmemeval_workload,
+    build_source_recall_workload,
     build_temporal_recall_workload,
     corpus_from_event_log,
     report_to_markdown,
@@ -52,6 +54,7 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "build_benchmark_suite_workload" in cli
     assert "build_consolidation_collapse_workload" in cli
     assert "build_longmemeval_workload" in cli
+    assert "build_source_recall_workload" in cli
     assert "build_temporal_recall_workload" in cli
     assert "lexical_retriever=BM25Retriever(corpus)" in cli
     assert "--embedding-cache" in cli
@@ -63,8 +66,99 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "--sessions" in script
     assert "--embedding-cache" in script
     assert "--progress" in script
+    assert "source-recall" in script
     assert "temporal-recall" in script
     assert "zaxy benchmark" in script
+
+
+def test_source_recall_workload_is_frozen_and_cited(tmp_path: Path) -> None:
+    """MemPalace-comparable source recall should target exact cited sources."""
+    eventlog, cases, workload = build_source_recall_workload(
+        tmp_path / "source-recall.jsonl",
+        documents=4,
+    )
+    events = eventlog.read_all()
+    corpus = corpus_from_event_log(eventlog)
+
+    assert workload.version == SOURCE_RECALL_WORKLOAD_VERSION
+    assert workload.documents == 4
+    assert workload.event_count == 8
+    assert workload.case_count == 4
+    assert workload.lanes == ("source-recall",)
+    assert {case.category for case in cases} == {"source-recall"}
+    assert all(case.source_terms for case in cases)
+    assert any(
+        case.source_terms == ("source-recall/target/service-0000.md",)
+        for case in cases
+    )
+    assert any("source_recall_answer_code" in event.payload for event in events)
+    assert all("eventloom://benchmark/events/" in chunk.text for chunk in corpus)
+    assert workload.sha256 == workload_fingerprint(
+        eventlog,
+        cases,
+        SOURCE_RECALL_WORKLOAD_VERSION,
+    )
+
+
+def test_benchmark_report_tracks_source_recall() -> None:
+    """A correct answer should separately report whether the cited source matched."""
+    case = BenchmarkCase(
+        name="source-1",
+        query="Which runbook records source-answer-0001?",
+        expected_terms=("source-answer-0001",),
+        source_terms=("source-recall/target/service-0001.md",),
+        category="source-recall",
+    )
+
+    report = benchmark_retrievers(
+        {
+            "target-source": MarkdownRetriever(
+                (
+                    BenchmarkChunk(
+                        "target",
+                        (
+                            "source-answer-0001 "
+                            "source-recall/target/service-0001.md "
+                            "eventloom://benchmark/events/1#abc"
+                        ),
+                    ),
+                )
+            ),
+            "wrong-source": MarkdownRetriever(
+                (
+                    BenchmarkChunk(
+                        "wrong",
+                        (
+                            "source-answer-0001 "
+                            "source-recall/distractor/service-0001.md "
+                            "eventloom://benchmark/events/2#def"
+                        ),
+                    ),
+                )
+            ),
+        },
+        (case,),
+        runs=1,
+        limit=1,
+    )
+
+    runs = {run.backend: run for run in report.runs}
+    summaries = {summary.backend: summary for summary in report.summaries}
+    category_summaries = {
+        summary.backend: summary for summary in report.category_summaries
+    }
+    markdown = report_to_markdown(report)
+
+    assert runs["target-source"].source_recall == 1.0
+    assert runs["target-source"].source_hits == ("source-recall/target/service-0001.md",)
+    assert runs["wrong-source"].source_recall == 0.0
+    assert runs["wrong-source"].missing_sources == (
+        "source-recall/target/service-0001.md",
+    )
+    assert summaries["target-source"].mean_source_recall == 1.0
+    assert summaries["wrong-source"].mean_source_recall == 0.0
+    assert category_summaries["target-source"].mean_source_recall == 1.0
+    assert "Source recall" in markdown
 
 
 def test_temporal_recall_workload_is_frozen_and_source_cited(tmp_path: Path) -> None:
@@ -521,7 +615,7 @@ def test_live_benchmark_outputs_machine_and_markdown_reports(tmp_path: Path) -> 
     assert output.markdown_path.name == "live-benchmark.md"
     assert payload["summaries"][0]["backend"] in {"md", "vector"}
     assert payload["workload"]["version"] == "ad-hoc"
-    assert "| Backend | Mean score | Identity recall | Citation coverage | p50 ms |" in markdown
+    assert "| Backend | Mean score | Identity recall | Source recall | Citation coverage |" in markdown
     assert "Approx tokens" in markdown
 
 

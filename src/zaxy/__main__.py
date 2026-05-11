@@ -86,6 +86,7 @@ from zaxy.live_benchmark import (
     build_frozen_statistical_workload,
     build_live_zaxy_retriever,
     build_longmemeval_workload,
+    build_source_recall_workload,
     build_statistical_event_log,
     build_temporal_recall_workload,
     corpus_from_event_log,
@@ -1614,7 +1615,7 @@ def benchmark(
         "fixture",
         help=(
             "Workload: fixture, statistical, frozen, suite, consolidation, "
-            "temporal-recall, or longmemeval"
+            "source-recall, temporal-recall, or longmemeval"
         ),
     ),
     dataset: Path | None = typer.Option(  # noqa: B008
@@ -1716,6 +1717,11 @@ def benchmark(
                     Path(tmp) / "bench.jsonl",
                     identities=documents,
                 )
+            elif workload == "source-recall":
+                eventlog, cases, benchmark_workload = build_source_recall_workload(
+                    Path(tmp) / "bench.jsonl",
+                    documents=documents,
+                )
             elif workload == "temporal-recall":
                 eventlog, cases, benchmark_workload = build_temporal_recall_workload(
                     Path(tmp) / "bench.jsonl",
@@ -1732,7 +1738,8 @@ def benchmark(
             else:
                 raise typer.BadParameter(
                     "workload must be 'fixture', 'statistical', 'frozen', "
-                    "'suite', 'consolidation', 'temporal-recall', or 'longmemeval'"
+                    "'suite', 'consolidation', 'source-recall', "
+                    "'temporal-recall', or 'longmemeval'"
                 )
             corpus = corpus_from_event_log(eventlog)
             zaxy_retriever, graph = await build_live_zaxy_retriever(

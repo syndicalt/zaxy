@@ -28,6 +28,7 @@ FROZEN_WORKLOAD_VERSION = "statistical-v1"
 FROZEN_WORKLOAD_SUBJECTS = 100
 CONSOLIDATION_WORKLOAD_VERSION = "consolidation-v1"
 SUITE_WORKLOAD_VERSION = "suite-v1"
+SOURCE_RECALL_WORKLOAD_VERSION = "mempalace-source-recall-v1"
 TEMPORAL_RECALL_WORKLOAD_VERSION = "mempalace-temporal-recall-v1"
 LONGMEMEVAL_WORKLOAD_VERSION = "longmemeval-cleaned-v1"
 LONGMEMEVAL_MAX_CHUNK_CHARS = 3_500
@@ -68,6 +69,9 @@ class BenchmarkRun:
     identity_recall: float | None
     identity_hits: tuple[str, ...]
     missing_identities: tuple[str, ...]
+    source_recall: float | None
+    source_hits: tuple[str, ...]
+    missing_sources: tuple[str, ...]
     citation_count: int
     citation_coverage: float | None
 
@@ -87,6 +91,7 @@ class BenchmarkSummary:
     mean_returned_bytes: float
     mean_approx_tokens: float
     mean_identity_recall: float | None = None
+    mean_source_recall: float | None = None
     mean_citation_coverage: float | None = None
 
 
@@ -113,6 +118,7 @@ class CategorySummary:
     query_count: int
     mean_score: float
     miss_count: int
+    mean_source_recall: float | None = None
     mean_citation_coverage: float | None = None
 
 
@@ -656,6 +662,78 @@ def build_frozen_statistical_workload(
         subjects=FROZEN_WORKLOAD_SUBJECTS,
     )
     return eventlog, cases, workload
+
+
+def build_source_recall_workload(
+    path: str | Path,
+    documents: int = 100,
+) -> tuple[EventLog, tuple[BenchmarkCase, ...], BenchmarkWorkload]:
+    """Build a frozen source recall lane for cited-source retrieval evaluation."""
+    if documents <= 0:
+        raise ValueError("documents must be positive")
+
+    eventlog = EventLog(path)
+    cases: list[BenchmarkCase] = []
+    for idx in range(documents):
+        answer_code = f"source-answer-{idx:04d}"
+        target_path = f"source-recall/target/service-{idx:04d}.md"
+        distractor_path = f"source-recall/distractor/service-{idx:04d}.md"
+        target_content = (
+            f"{target_path} records source_recall_answer_code={answer_code}. "
+            f"The canonical owner is source-owner-{idx % 11} and the cited "
+            f"runbook section is source-section-{idx % 7}."
+        )
+        distractor_content = (
+            f"{distractor_path} discusses a nearby source recall incident for "
+            f"service-{idx:04d}, but it does not carry the canonical answer code."
+        )
+        eventlog.append(
+            "document.indexed",
+            actor="source-recall",
+            payload={
+                "path": target_path,
+                "start_line": 10 + idx,
+                "end_line": 14 + idx,
+                "content": target_content,
+                "sha256": _content_sha256(target_content),
+                "source_recall_answer_code": answer_code,
+                "source_recall_role": "target",
+            },
+            timestamp=datetime(2024, 4, 1, tzinfo=UTC),
+        )
+        eventlog.append(
+            "document.indexed",
+            actor="source-recall",
+            payload={
+                "path": distractor_path,
+                "start_line": 20 + idx,
+                "end_line": 24 + idx,
+                "content": distractor_content,
+                "sha256": _content_sha256(distractor_content),
+                "source_recall_near_miss": f"service-{idx:04d}",
+                "source_recall_role": "distractor",
+            },
+            timestamp=datetime(2024, 4, 1, 0, 1, tzinfo=UTC),
+        )
+        cases.append(
+            BenchmarkCase(
+                name=f"source-recall-{idx:04d}",
+                query=f"Which cited source records {answer_code}?",
+                expected_terms=(answer_code,),
+                forbidden_terms=(distractor_path,),
+                category="source-recall",
+                source_terms=(target_path,),
+            )
+        )
+
+    workload = BenchmarkWorkload.from_event_log(
+        eventlog,
+        tuple(cases),
+        version=SOURCE_RECALL_WORKLOAD_VERSION,
+        documents=documents,
+        lanes=("source-recall",),
+    )
+    return eventlog, tuple(cases), workload
 
 
 def build_temporal_recall_workload(
@@ -1254,8 +1332,8 @@ def report_to_markdown(report: BenchmarkReport) -> str:
     lines.extend(
         [
         "",
-        "| Backend | Mean score | Identity recall | Citation coverage | p50 ms | p95 ms | p99 ms | Returned bytes | Approx tokens |",
-        "|---------|------------|-----------------|-------------------|--------|--------|--------|----------------|---------------|",
+        "| Backend | Mean score | Identity recall | Source recall | Citation coverage | p50 ms | p95 ms | p99 ms | Returned bytes | Approx tokens |",
+        "|---------|------------|-----------------|---------------|-------------------|--------|--------|--------|----------------|---------------|",
         ]
     )
     for backend_summary in report.summaries:
@@ -1269,11 +1347,17 @@ def report_to_markdown(report: BenchmarkReport) -> str:
             if backend_summary.mean_citation_coverage is None
             else f"{backend_summary.mean_citation_coverage:.3f}"
         )
+        source_recall = (
+            ""
+            if backend_summary.mean_source_recall is None
+            else f"{backend_summary.mean_source_recall:.3f}"
+        )
         lines.append(
             "| "
             f"{backend_summary.backend} | "
             f"{backend_summary.mean_score:.3f} | "
             f"{identity_recall} | "
+            f"{source_recall} | "
             f"{citation_coverage} | "
             f"{backend_summary.latency_ms_p50:.2f} | "
             f"{backend_summary.latency_ms_p95:.2f} | "
@@ -1287,8 +1371,8 @@ def report_to_markdown(report: BenchmarkReport) -> str:
                 "",
                 "## Category summaries",
                 "",
-                "| Backend | Category | Queries | Mean score | Misses | Citation coverage |",
-                "|---------|----------|---------|------------|--------|-------------------|",
+                "| Backend | Category | Queries | Mean score | Misses | Source recall | Citation coverage |",
+                "|---------|----------|---------|------------|--------|---------------|-------------------|",
             ]
         )
         for category_summary in report.category_summaries:
@@ -1297,6 +1381,11 @@ def report_to_markdown(report: BenchmarkReport) -> str:
                 if category_summary.mean_citation_coverage is None
                 else f"{category_summary.mean_citation_coverage:.3f}"
             )
+            source_recall = (
+                ""
+                if category_summary.mean_source_recall is None
+                else f"{category_summary.mean_source_recall:.3f}"
+            )
             lines.append(
                 "| "
                 f"{category_summary.backend} | "
@@ -1304,6 +1393,7 @@ def report_to_markdown(report: BenchmarkReport) -> str:
                 f"{category_summary.query_count} | "
                 f"{category_summary.mean_score:.3f} | "
                 f"{category_summary.miss_count} | "
+                f"{source_recall} | "
                 f"{citation_coverage} |"
             )
     if report.comparisons:
@@ -1411,6 +1501,9 @@ def _measurement(
         identity_recall=score.identity_recall,
         identity_hits=score.identity_hits,
         missing_identities=score.missing_identities,
+        source_recall=score.source_recall,
+        source_hits=score.source_hits,
+        missing_sources=score.missing_sources,
         citation_count=citation_count,
         citation_coverage=_citation_coverage(score, citation_count),
     )
@@ -1436,6 +1529,11 @@ def _summaries(
             for row in rows
             if row.citation_coverage is not None
         ]
+        source_recalls = [
+            row.source_recall
+            for row in rows
+            if row.source_recall is not None
+        ]
         summaries.append(
             BenchmarkSummary(
                 backend=backend,
@@ -1455,6 +1553,11 @@ def _summaries(
                 mean_identity_recall=(
                     round(statistics.fmean(identity_recalls), 4)
                     if identity_recalls
+                    else None
+                ),
+                mean_source_recall=(
+                    round(statistics.fmean(source_recalls), 4)
+                    if source_recalls
                     else None
                 ),
                 mean_citation_coverage=(
@@ -1480,6 +1583,11 @@ def _category_summaries(measurements: list[BenchmarkRun]) -> list[CategorySummar
             for row in rows
             if row.citation_coverage is not None
         ]
+        source_recalls = [
+            row.source_recall
+            for row in rows
+            if row.source_recall is not None
+        ]
         summaries.append(
             CategorySummary(
                 backend=backend,
@@ -1489,6 +1597,11 @@ def _category_summaries(measurements: list[BenchmarkRun]) -> list[CategorySummar
                 miss_count=sum(
                     1 for row in rows
                     if row.missing_expected or row.forbidden_hits
+                ),
+                mean_source_recall=(
+                    round(statistics.fmean(source_recalls), 4)
+                    if source_recalls
+                    else None
                 ),
                 mean_citation_coverage=(
                     round(statistics.fmean(citation_coverages), 4)

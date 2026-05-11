@@ -22,6 +22,7 @@ class BenchmarkCase:
     category: str = "general"
     temporal_point: str | None = None
     identity_terms: tuple[str, ...] = ()
+    source_terms: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,9 @@ class RetrievalScore:
     identity_recall: float | None = None
     identity_hits: tuple[str, ...] = ()
     missing_identities: tuple[str, ...] = ()
+    source_recall: float | None = None
+    source_hits: tuple[str, ...] = ()
+    missing_sources: tuple[str, ...] = ()
 
 
 class FlatJsonlRetriever:
@@ -157,6 +161,8 @@ def score_retrieval(case: BenchmarkCase, contexts: list[str]) -> RetrievalScore:
     missing_identities = tuple(
         term for term in case.identity_terms if term.casefold() not in haystack
     )
+    source_hits = tuple(term for term in case.source_terms if term.casefold() in haystack)
+    missing_sources = tuple(term for term in case.source_terms if term.casefold() not in haystack)
 
     expected_score = len(expected_hits) / len(case.expected_terms) if case.expected_terms else 1.0
     penalty = len(forbidden_hits) / max(len(case.forbidden_terms), 1)
@@ -164,6 +170,11 @@ def score_retrieval(case: BenchmarkCase, contexts: list[str]) -> RetrievalScore:
     identity_recall = (
         len(identity_hits) / len(case.identity_terms)
         if case.identity_terms
+        else None
+    )
+    source_recall = (
+        len(source_hits) / len(case.source_terms)
+        if case.source_terms
         else None
     )
     return RetrievalScore(
@@ -174,6 +185,9 @@ def score_retrieval(case: BenchmarkCase, contexts: list[str]) -> RetrievalScore:
         identity_recall=round(identity_recall, 4) if identity_recall is not None else None,
         identity_hits=identity_hits,
         missing_identities=missing_identities,
+        source_recall=round(source_recall, 4) if source_recall is not None else None,
+        source_hits=source_hits,
+        missing_sources=missing_sources,
     )
 
 
