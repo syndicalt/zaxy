@@ -245,6 +245,40 @@ class TestIngestion:
             "source_start_line": 4,
         }
 
+    async def test_upsert_entity_namespaces_storage_reserved_properties(
+        self,
+        store: GraphStore,
+    ) -> None:
+        """Extractor properties must not overwrite graph storage identity."""
+        result = ExtractionResult(
+            entities=[
+                ExtractedEntity(
+                    name="agent-1:checkpoint:7",
+                    entity_type="hook_checkpoint",
+                    observed_at="2024-01-01T00:00:00Z",
+                    properties={
+                        "session_id": "agent-1",
+                        "source_event_seq": 7,
+                        "summary": "Payload summary should remain payload metadata",
+                        "reason": "checkpoint",
+                    },
+                )
+            ],
+            edges=[],
+            source_event_seq=7,
+        )
+
+        await store.upsert_extraction(result, session_id="graph-scope")
+
+        call = store._driver.execute_query.await_args_list[1]
+        assert call.kwargs["session_id"] == "graph-scope"
+        assert call.kwargs["properties"] == {
+            "payload_session_id": "agent-1",
+            "payload_source_event_seq": 7,
+            "payload_summary": "Payload summary should remain payload metadata",
+            "reason": "checkpoint",
+        }
+
     async def test_upsert_entity_drops_neo4j_unsafe_nested_properties(self, store: GraphStore) -> None:
         """Nested extracted properties should not reach Neo4j node projection."""
         result = ExtractionResult(

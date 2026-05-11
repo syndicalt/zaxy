@@ -296,6 +296,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] MemPalace-comparable temporal recall benchmark lane with citation coverage reporting
 - [x] MemPalace-comparable source recall benchmark lane with target/distractor source scoring
 - [x] MemPalace-comparable graph traversal benchmark lane with goal-task-completion path scoring
+- [x] MemPalace-comparable context-collapse benchmark lane with noisy transcript and checkpoint recovery scoring
 - [x] First-class verbatim Eventloom retrieval with MCP and MemoryFabric access
 - [x] Source-aware context assembly with reserved verbatim Eventloom retrieval lane
 - [x] Configurable and observable context assembly source-recall policy
@@ -334,14 +335,13 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 | Metric | Value |
 |--------|-------|
-| Tests | 744 passed, 5 deselected |
-| Coverage | 92.17% |
+| Tests | 758 passed, 6 deselected |
+| Coverage | 92.30% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
 
 ## Next Steps
 
-1. Add a reproducible MemPalace-comparable workload for context-collapse behavior.
-2. Promote the next maintained adapter path beyond LangGraph native-preview, with CrewAI as the first candidate unless Codex or Claude Code usage proves more urgent.
-3. Run and document a deterministic capture soak for transcript, tool-call, command, and file-edit observation coverage over a long session.
+1. Promote the next maintained adapter path beyond LangGraph native-preview, with CrewAI as the first candidate unless Codex or Claude Code usage proves more urgent.
+2. Run and document a deterministic capture soak for transcript, tool-call, command, and file-edit observation coverage over a long session.

@@ -27,6 +27,7 @@ from zaxy.query import QueryRouter
 FROZEN_WORKLOAD_VERSION = "statistical-v1"
 FROZEN_WORKLOAD_SUBJECTS = 100
 CONSOLIDATION_WORKLOAD_VERSION = "consolidation-v1"
+CONTEXT_COLLAPSE_WORKLOAD_VERSION = "mempalace-context-collapse-v1"
 GRAPH_TRAVERSAL_WORKLOAD_VERSION = "mempalace-graph-traversal-v1"
 SUITE_WORKLOAD_VERSION = "suite-v1"
 SOURCE_RECALL_WORKLOAD_VERSION = "mempalace-source-recall-v1"
@@ -749,6 +750,77 @@ def build_graph_traversal_workload(
         version=GRAPH_TRAVERSAL_WORKLOAD_VERSION,
         subjects=subjects,
         lanes=("graph-traversal",),
+    )
+    return eventlog, tuple(cases), workload
+
+
+def build_context_collapse_workload(
+    path: str | Path,
+    sessions: int = 100,
+    turns_per_session: int = 40,
+) -> tuple[EventLog, tuple[BenchmarkCase, ...], BenchmarkWorkload]:
+    """Build a frozen lane for long-session context-collapse recovery."""
+    if sessions <= 0:
+        raise ValueError("sessions must be positive")
+    if turns_per_session <= 0:
+        raise ValueError("turns_per_session must be positive")
+
+    eventlog = EventLog(path)
+    cases: list[BenchmarkCase] = []
+    for idx in range(sessions):
+        session_id = f"collapse-session-{idx:04d}"
+        answer = f"collapseanswer{idx:04d}"
+        for turn_index in range(1, turns_per_session + 1):
+            eventlog.append(
+                "transcript.turn",
+                actor="assistant" if turn_index % 2 == 0 else "user",
+                payload={
+                    "source": session_id,
+                    "turn_index": turn_index,
+                    "role": "assistant" if turn_index % 2 == 0 else "user",
+                    "content": (
+                        f"{session_id} context collapse distractor turn {turn_index:04d}. "
+                        "The team recorded preserved decision handoff details, "
+                        "but this turn intentionally omits the durable answer code."
+                    ),
+                    "redacted_paths": [],
+                },
+                thread=session_id,
+                timestamp=datetime(2024, 11, 1, 0, turn_index % 60, tzinfo=UTC),
+            )
+        eventlog.append(
+            "hook.checkpoint",
+            actor="zaxy",
+            payload={
+                "trigger": "checkpoint",
+                "session_id": session_id,
+                "source": "context-collapse",
+                "reason": "long-session-memory",
+                "turn_count": turns_per_session,
+                "summary": (
+                    f"{session_id} preserved decision survived context collapse: {answer}. "
+                    "Use this compact checkpoint instead of replaying noisy turns."
+                ),
+            },
+            thread=session_id,
+            timestamp=datetime(2024, 11, 1, 1, idx % 60, tzinfo=UTC),
+        )
+        cases.append(
+            BenchmarkCase(
+                name=f"context-collapse-{idx:04d}",
+                query=f"What preserved decision is recorded for {session_id}?",
+                expected_terms=(answer,),
+                category="context-collapse",
+                identity_terms=(session_id, answer),
+            )
+        )
+
+    workload = BenchmarkWorkload.from_event_log(
+        eventlog,
+        tuple(cases),
+        version=CONTEXT_COLLAPSE_WORKLOAD_VERSION,
+        sessions=sessions,
+        lanes=("context-collapse",),
     )
     return eventlog, tuple(cases), workload
 

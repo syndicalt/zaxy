@@ -130,6 +130,15 @@ actor who completed the task connected to the goal:
 scripts/live-benchmark.sh --embedding-provider openai --workload graph-traversal --subjects 100 --runs 1 --reset-graph
 ```
 
+For MemPalace-comparable context-collapse behavior, use the dedicated
+context-collapse workload. It creates noisy same-session transcript turns before
+a compact checkpoint, then asks for the preserved decision that should survive a
+small context window:
+
+```bash
+scripts/live-benchmark.sh --embedding-provider openai --workload context-collapse --sessions 100 --runs 1 --reset-graph
+```
+
 For public memory-benchmark comparisons against systems that report
 LongMemEval recall, download the cleaned LongMemEval JSON and run the
 `longmemeval` workload. This workload preserves answer session identifiers and

@@ -721,6 +721,25 @@ class GraphStore:
 # Helpers
 # ------------------------------------------------------------------
 
+_ENTITY_STORAGE_PROPERTIES = frozenset(
+    {
+        "created_at",
+        "embedding",
+        "entity_type",
+        "name",
+        "session_id",
+        "source_event_hash",
+        "source_event_seq",
+        "source_event_type",
+        "source_thread",
+        "summary",
+        "updated_at",
+        "valid_from",
+        "valid_to",
+    }
+)
+
+
 def _record_to_entity(node: Any) -> GraphEntity:
     """Convert a Neo4j node record to a GraphEntity."""
     props = dict(node)
@@ -760,11 +779,13 @@ def _neo4j_properties(properties: dict[str, Any] | None) -> dict[str, _Neo4jProp
     """Filter extracted properties to values accepted by Neo4j node properties."""
     if not properties:
         return {}
-    return {
-        key: value
-        for key, value in properties.items()
-        if _is_neo4j_property_value(value)
-    }
+    safe_properties: dict[str, _Neo4jPropertyValue] = {}
+    for key, value in properties.items():
+        if not _is_neo4j_property_value(value):
+            continue
+        safe_key = f"payload_{key}" if key in _ENTITY_STORAGE_PROPERTIES else key
+        safe_properties[safe_key] = value
+    return safe_properties
 
 
 def _extraction_observed_at(result: ExtractionResult) -> str | None:

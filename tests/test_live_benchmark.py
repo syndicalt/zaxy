@@ -10,6 +10,7 @@ from zaxy.benchmark import build_competitive_event_log, competitive_cases
 from zaxy.embedding import HashEmbeddingProvider
 from zaxy.live_benchmark import (
     CONSOLIDATION_WORKLOAD_VERSION,
+    CONTEXT_COLLAPSE_WORKLOAD_VERSION,
     FROZEN_WORKLOAD_SUBJECTS,
     FROZEN_WORKLOAD_VERSION,
     GRAPH_TRAVERSAL_WORKLOAD_VERSION,
@@ -31,6 +32,7 @@ from zaxy.live_benchmark import (
     benchmark_retrievers,
     build_benchmark_suite_workload,
     build_consolidation_collapse_workload,
+    build_context_collapse_workload,
     build_frozen_statistical_workload,
     build_graph_traversal_workload,
     build_longmemeval_workload,
@@ -55,6 +57,7 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "build_frozen_statistical_workload" in cli
     assert "build_benchmark_suite_workload" in cli
     assert "build_consolidation_collapse_workload" in cli
+    assert "build_context_collapse_workload" in cli
     assert "build_graph_traversal_workload" in cli
     assert "build_longmemeval_workload" in cli
     assert "build_source_recall_workload" in cli
@@ -69,6 +72,7 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "--sessions" in script
     assert "--embedding-cache" in script
     assert "--progress" in script
+    assert "context-collapse" in script
     assert "graph-traversal" in script
     assert "source-recall" in script
     assert "temporal-recall" in script
@@ -138,6 +142,61 @@ def test_source_recall_workload_is_frozen_and_cited(tmp_path: Path) -> None:
         cases,
         SOURCE_RECALL_WORKLOAD_VERSION,
     )
+
+
+def test_context_collapse_workload_is_frozen_and_checkpoint_backed(tmp_path: Path) -> None:
+    """Context collapse should require recovering compact memory after noisy turns."""
+    eventlog, cases, workload = build_context_collapse_workload(
+        tmp_path / "context-collapse.jsonl",
+        sessions=3,
+        turns_per_session=5,
+    )
+    events = eventlog.read_all()
+
+    assert workload.version == CONTEXT_COLLAPSE_WORKLOAD_VERSION
+    assert workload.sessions == 3
+    assert workload.event_count == 18
+    assert workload.case_count == 3
+    assert workload.lanes == ("context-collapse",)
+    assert {case.category for case in cases} == {"context-collapse"}
+    assert all(case.identity_terms for case in cases)
+    assert any(case.expected_terms == ("collapseanswer0000",) for case in cases)
+    assert [event.type for event in events[:5]] == ["transcript.turn"] * 5
+    assert events[5].type == "hook.checkpoint"
+    assert "collapseanswer0000" in events[5].payload["summary"]
+    assert all(
+        "collapseanswer0000" not in event.payload.get("content", "")
+        for event in events[:5]
+    )
+    assert workload.sha256 == workload_fingerprint(
+        eventlog,
+        cases,
+        CONTEXT_COLLAPSE_WORKLOAD_VERSION,
+    )
+
+
+def test_context_collapse_markdown_baseline_loses_late_checkpoint(
+    tmp_path: Path,
+) -> None:
+    """Flat context windows should expose context-collapse misses."""
+    eventlog, cases, workload = build_context_collapse_workload(
+        tmp_path / "context-collapse.jsonl",
+        sessions=1,
+        turns_per_session=6,
+    )
+    corpus = corpus_from_event_log(eventlog)
+    report = benchmark_retrievers(
+        {"md": MarkdownRetriever(corpus)},
+        cases,
+        runs=1,
+        limit=3,
+        workload=workload,
+    )
+
+    run = report.runs[0]
+    assert run.missing_expected == ("collapseanswer0000",)
+    assert run.identity_recall is not None
+    assert run.identity_recall < 1.0
 
 
 def test_benchmark_report_tracks_source_recall() -> None:
