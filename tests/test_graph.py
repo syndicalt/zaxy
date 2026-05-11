@@ -436,6 +436,53 @@ class TestIngestion:
         assert kwargs["session_id"] == "agent-1"
         assert kwargs["source_event_hash"] == "c" * 64
 
+    async def test_upsert_inferred_edge_persists_audit_metadata(self, store: GraphStore) -> None:
+        """Inferred edges should be explicitly marked with confidence and method metadata."""
+        result = ExtractionResult(
+            entities=[
+                ExtractedEntity(name="Task1", entity_type="task", observed_at="2024-01-01T00:00:00Z"),
+                ExtractedEntity(name="Decision1", entity_type="decision", observed_at="2024-01-01T00:00:00Z"),
+            ],
+            edges=[
+                ExtractedEdge(
+                    source="Task1",
+                    target="Decision1",
+                    relation_type="likely_informed",
+                    valid_from="2024-01-01T00:00:00Z",
+                    inferred=True,
+                    confidence=0.82,
+                    inference_method="lexical_overlap_v1",
+                    evidence={"source": "checkpoint:7", "reason": "shared terms"},
+                )
+            ],
+            source_event_seq=7,
+            source_event_hash="d" * 64,
+            source_event_type="inference.generated",
+        )
+
+        await store.upsert_extraction(result, session_id="agent-1")
+
+        call = store._driver.execute_query.await_args_list[3]
+        cypher, kwargs = call.args[0], call.kwargs
+        assert "r.inferred = $inferred" in cypher
+        assert "r.confidence = $confidence" in cypher
+        assert "r.inference_method = $inference_method" in cypher
+        assert "r += $edge_properties" in cypher
+        assert "typed.inferred = $inferred" in cypher
+        assert "typed.confidence = $confidence" in cypher
+        assert "typed.inference_method = $inference_method" in cypher
+        assert "typed += $edge_properties" in cypher
+        assert "pr.inferred = $inferred" in cypher
+        assert "pr.confidence = $confidence" in cypher
+        assert "pr.inference_method = $inference_method" in cypher
+        assert kwargs["inferred"] is True
+        assert kwargs["confidence"] == 0.82
+        assert kwargs["inference_method"] == "lexical_overlap_v1"
+        assert kwargs["edge_properties"] == {
+            "evidence_source": "checkpoint:7",
+            "evidence_reason": "shared terms",
+        }
+
     async def test_upsert_multiple_entities(self, store: GraphStore) -> None:
         """Multiple entities should produce multiple MERGE calls."""
         result = ExtractionResult(

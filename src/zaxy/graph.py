@@ -22,6 +22,7 @@ from zaxy.security import validate_limit, validate_session_id, validate_traversa
 
 _Neo4jPropertyValue = str | int | float | bool | list[str] | list[int] | list[float] | list[bool]
 _RELATION_TYPE_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_PROPERTY_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
 
 
 @dataclass(frozen=True)
@@ -424,6 +425,9 @@ class GraphStore:
                         new_in.source_event_hash = old_in.source_event_hash,
                         new_in.source_event_type = old_in.source_event_type,
                         new_in.source_thread = old_in.source_thread
+                    SET new_in.inferred = coalesce(old_in.inferred, false),
+                        new_in.confidence = coalesce(old_in.confidence, 1.0),
+                        new_in.inference_method = old_in.inference_method
                     RETURN count(new_in) AS copied_incoming_relationships
                 }
                 WITH e
@@ -446,6 +450,9 @@ class GraphStore:
                         new_out.source_event_hash = old_out.source_event_hash,
                         new_out.source_event_type = old_out.source_event_type,
                         new_out.source_thread = old_out.source_thread
+                    SET new_out.inferred = coalesce(old_out.inferred, false),
+                        new_out.confidence = coalesce(old_out.confidence, 1.0),
+                        new_out.inference_method = old_out.inference_method
                     RETURN count(new_out) AS copied_outgoing_relationships
                 }
                 WITH e
@@ -521,7 +528,11 @@ class GraphStore:
                     r.source_event_seq = $source_event_seq,
                     r.source_event_hash = $source_event_hash,
                     r.source_event_type = $source_event_type,
-                    r.source_thread = $source_thread
+                    r.source_thread = $source_thread,
+                    r.inferred = $inferred,
+                    r.confidence = $confidence,
+                    r.inference_method = $inference_method
+                SET r += $edge_properties
                 MERGE (s)-[typed:{typed_relationship_label} {{valid_from: datetime($valid_from)}}]->(t)
                 ON CREATE SET typed.created_at = datetime($valid_from)
                 SET typed.session_id = $session_id,
@@ -530,7 +541,11 @@ class GraphStore:
                     typed.source_event_seq = $source_event_seq,
                     typed.source_event_hash = $source_event_hash,
                     typed.source_event_type = $source_event_type,
-                    typed.source_thread = $source_thread
+                    typed.source_thread = $source_thread,
+                    typed.inferred = $inferred,
+                    typed.confidence = $confidence,
+                    typed.inference_method = $inference_method
+                SET typed += $edge_properties
                 WITH s, t, r, typed
                 MATCH (ev:Event {{session_id: $session_id, seq: $source_event_seq}})
                 MERGE (ev)-[pr:PROJECTED_RELATION {{
@@ -541,7 +556,11 @@ class GraphStore:
                 }}]->(t)
                 ON CREATE SET pr.created_at = datetime($valid_from)
                 SET pr.source_event_hash = $source_event_hash,
-                    pr.source_event_type = $source_event_type
+                    pr.source_event_type = $source_event_type,
+                    pr.inferred = $inferred,
+                    pr.confidence = $confidence,
+                    pr.inference_method = $inference_method
+                SET pr += $edge_properties
                 """,
                 session_id=safe_session_id,
                 source=edge.source,
@@ -552,6 +571,10 @@ class GraphStore:
                 source_event_hash=result.source_event_hash,
                 source_event_type=result.source_event_type,
                 source_thread=result.source_thread,
+                inferred=edge.inferred,
+                confidence=edge.confidence,
+                inference_method=edge.inference_method,
+                edge_properties=_edge_evidence_properties(edge.evidence),
             )
 
     async def invalidate_entity(
@@ -867,6 +890,20 @@ def _neo4j_properties(properties: dict[str, Any] | None) -> dict[str, _Neo4jProp
             continue
         safe_key = f"payload_{key}" if key in _ENTITY_STORAGE_PROPERTIES else key
         safe_properties[safe_key] = value
+    return safe_properties
+
+
+def _edge_evidence_properties(evidence: dict[str, Any] | None) -> dict[str, _Neo4jPropertyValue]:
+    """Normalize flat inferred-edge evidence into namespaced relationship properties."""
+    if not evidence:
+        return {}
+    safe_properties: dict[str, _Neo4jPropertyValue] = {}
+    for key, value in evidence.items():
+        if not _PROPERTY_KEY_RE.fullmatch(key):
+            continue
+        if not _is_neo4j_property_value(value):
+            continue
+        safe_properties[f"evidence_{key}"] = value
     return safe_properties
 
 

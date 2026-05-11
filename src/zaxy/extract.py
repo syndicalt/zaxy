@@ -11,7 +11,7 @@ structured event types.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from zaxy.event import Event
@@ -38,6 +38,19 @@ class ExtractedEdge:
     relation_type: str
     valid_from: str
     valid_to: str | None = None
+    inferred: bool = False
+    confidence: float = 1.0
+    inference_method: str | None = None
+    evidence: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        """Validate edge audit metadata at construction time."""
+        if not 0.0 <= self.confidence <= 1.0:
+            raise ValueError("ExtractedEdge confidence must be between 0.0 and 1.0")
+        if self.inferred and not self.inference_method:
+            raise ValueError("Inferred ExtractedEdge values require inference_method")
+        if not self.inferred and self.inference_method:
+            raise ValueError("Deterministic ExtractedEdge values cannot set inference_method")
 
 
 @dataclass(frozen=True)

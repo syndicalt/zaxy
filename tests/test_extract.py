@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from zaxy.event import Event
 from zaxy.extract import (
+    ExtractedEdge,
     ExtractionResult,
     extract,
     register,
@@ -26,6 +27,28 @@ def _make_event(event_type: str, payload: dict, actor: str = "test") -> Event:
         payload=payload,
         hash="a" * 64,
     )
+
+
+# ------------------------------------------------------------------
+# Edge model tests
+# ------------------------------------------------------------------
+
+class TestExtractedEdge:
+    """Tests for edge provenance metadata."""
+
+    def test_defaults_to_deterministic(self) -> None:
+        """Edges should be deterministic unless an extractor marks them inferred."""
+        edge = ExtractedEdge(
+            source="Alice",
+            target="Goal1",
+            relation_type="created_goal",
+            valid_from="2024-01-01T00:00:00Z",
+        )
+
+        assert edge.inferred is False
+        assert edge.confidence == 1.0
+        assert edge.inference_method is None
+        assert edge.evidence == {}
 
 
 # ------------------------------------------------------------------

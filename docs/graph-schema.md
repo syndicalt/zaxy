@@ -41,10 +41,16 @@ property, and a typed relationship label derived from that relation type, such
 as `CALLS_SYMBOL`, `DEFINES_SYMBOL`, or `PROJECTED_LLM_PACKET`. Typed labels are
 generated only from strict snake_case identifiers so the graph remains safe to
 project through Cypher. Both forms carry `session_id`, event provenance, and
-validity windows. This lets query traversal keep using the stable compatibility
-edge while Neo4j Browser and direct Cypher inspection can show semantic labels.
-For example, an agent can ask about a goal, expand to tasks, expand to
-decisions, and still know which facts were valid at the requested time.
+validity windows. Edges also carry an explicit audit classification:
+deterministic edges use `inferred=false` and `confidence=1.0`; future inferred
+edges must use `inferred=true`, a bounded `confidence`, an `inference_method`,
+and optional namespaced `evidence_*` properties. Zaxy writes that metadata to
+the `RELATES` edge, the typed relationship edge, and the `PROJECTED_RELATION`
+provenance edge so audit and traversal views do not disagree. This lets query
+traversal keep using the stable compatibility edge while Neo4j Browser and
+direct Cypher inspection can show semantic labels. For example, an agent can
+ask about a goal, expand to tasks, expand to decisions, and still know which
+facts were valid at the requested time.
 Lifecycle observation events can also link back to tasks when they carry an
 explicit `task_id` or `taskId`. In those cases Zaxy projects task-to-observation
 edges such as `OBSERVED_COMMAND`, `OBSERVED_FILE_EDIT`, `OBSERVED_TOOL_CALL`,
@@ -81,6 +87,11 @@ LIMIT 25;
 MATCH p=(:Entity {entity_type: "task"})-->(observation:Entity)
 WHERE observation.entity_type IN ["command_run", "file_edit", "tool_call", "hook_checkpoint"]
 RETURN p
+LIMIT 25;
+
+MATCH p=()-[r:RELATES {inferred: true}]->()
+RETURN p, r.confidence, r.inference_method
+ORDER BY r.confidence DESC
 LIMIT 25;
 ```
 
