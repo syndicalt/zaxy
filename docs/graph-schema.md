@@ -23,6 +23,15 @@ Projected entities also carry Eventloom provenance: `source_event_seq`,
 `source_event_hash`, `source_event_type`, and `source_thread`. Query results use
 these fields to emit stable citations back to the immutable event log.
 
+Source-backed entities additionally project a first-class `Source` node keyed by
+`session_id` and source path. Document chunks, code files, symbols, imports,
+dependencies, calls, and coverage records already carry `source_path` metadata;
+when that metadata is present, Zaxy links both the projected entity and its
+originating `Event` to the source through `CITES_SOURCE`. Those relationships
+carry line range, checksum, and Eventloom provenance where available. This gives
+Neo4j an inspectable citation layer while Eventloom remains the authority for
+the original event payload.
+
 Edges represent extracted relations between entities. Zaxy stores each edge in
 two forms: a compatibility `RELATES` relationship with a `relation_type`
 property, and a typed relationship label derived from that relation type, such
@@ -43,6 +52,18 @@ Operators can inspect the current plan without opening a database connection:
 
 ```bash
 zaxy schema-plan
+```
+
+Useful inspection queries:
+
+```cypher
+MATCH p=(:Session)-[:HAS_EVENT]->(:Event)-[:CITES_SOURCE]->(:Source)
+RETURN p
+LIMIT 25;
+
+MATCH p=(:Entity)-[:CITES_SOURCE]->(:Source)
+RETURN p
+LIMIT 25;
 ```
 
 The manual Cypher file under `scripts/setup_neo4j_indexes.cypher` documents the

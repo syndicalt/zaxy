@@ -406,6 +406,35 @@ class GraphStore:
                 ON CREATE SET pe.created_at = datetime($observed_at)
                 SET pe.source_event_hash = $source_event_hash,
                     pe.source_event_type = $source_event_type
+                WITH e, ev
+                CALL (e, ev) {
+                    WITH e, ev
+                    WITH e, ev WHERE $source_path IS NOT NULL
+                    MERGE (src:Source {session_id: $session_id, path: $source_path})
+                    ON CREATE SET src.created_at = datetime($observed_at)
+                    SET src.updated_at = datetime($observed_at),
+                        src.sha256 = coalesce($source_sha256, src.sha256)
+                    MERGE (e)-[cs:CITES_SOURCE]->(src)
+                    ON CREATE SET cs.created_at = datetime($observed_at)
+                    SET cs.updated_at = datetime($observed_at),
+                        cs.source_start_line = $source_start_line,
+                        cs.source_end_line = $source_end_line,
+                        cs.source_sha256 = $source_sha256,
+                        cs.source_event_seq = $source_event_seq,
+                        cs.source_event_hash = $source_event_hash,
+                        cs.source_event_type = $source_event_type
+                    MERGE (ev)-[ecs:CITES_SOURCE]->(src)
+                    ON CREATE SET ecs.created_at = datetime($observed_at)
+                    SET ecs.updated_at = datetime($observed_at),
+                        ecs.source_start_line = $source_start_line,
+                        ecs.source_end_line = $source_end_line,
+                        ecs.source_sha256 = $source_sha256,
+                        ecs.source_event_seq = $source_event_seq,
+                        ecs.source_event_hash = $source_event_hash,
+                        ecs.source_event_type = $source_event_type
+                    RETURN count(src) AS cited_sources
+                }
+                RETURN count(e) AS projected_entities, sum(cited_sources) AS cited_sources
                 """,
                 session_id=safe_session_id,
                 name=ent.name,
@@ -418,6 +447,7 @@ class GraphStore:
                 source_event_type=result.source_event_type,
                 source_thread=result.source_thread,
                 properties=_neo4j_properties(ent.properties),
+                **_source_citation_properties(ent.properties),
             )
 
         for edge in result.edges:
@@ -786,6 +816,39 @@ def _neo4j_properties(properties: dict[str, Any] | None) -> dict[str, _Neo4jProp
         safe_key = f"payload_{key}" if key in _ENTITY_STORAGE_PROPERTIES else key
         safe_properties[safe_key] = value
     return safe_properties
+
+
+def _source_citation_properties(properties: dict[str, Any] | None) -> dict[str, Any]:
+    """Normalize source citation fields for first-class graph projections."""
+    if not properties:
+        return {
+            "source_path": None,
+            "source_start_line": None,
+            "source_end_line": None,
+            "source_sha256": None,
+        }
+    source_path = properties.get("source_path")
+    return {
+        "source_path": source_path if isinstance(source_path, str) and source_path else None,
+        "source_start_line": _optional_positive_int(properties.get("source_start_line")),
+        "source_end_line": _optional_positive_int(properties.get("source_end_line")),
+        "source_sha256": _optional_text_property(properties.get("source_sha256")),
+    }
+
+
+def _optional_positive_int(value: Any) -> int | None:
+    """Return a positive integer property, otherwise None."""
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
+    return None
+
+
+def _optional_text_property(value: Any) -> str | None:
+    """Return non-empty string property, otherwise None."""
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    return text or None
 
 
 def _extraction_observed_at(result: ExtractionResult) -> str | None:

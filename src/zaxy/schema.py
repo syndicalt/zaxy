@@ -66,6 +66,13 @@ SCHEMA_MIGRATIONS: tuple[SchemaMigration, ...] = (
             "FOR (ev:Event) ON (ev.session_id, ev.prev_hash)",
         ),
     ),
+    SchemaMigration(
+        "006_source_citation_identity",
+        (
+            "CREATE CONSTRAINT source_identity IF NOT EXISTS "
+            "FOR (src:Source) REQUIRE (src.session_id, src.path) IS UNIQUE",
+        ),
+    ),
 )
 
 CURRENT_SCHEMA_VERSION = SCHEMA_MIGRATIONS[-1].name

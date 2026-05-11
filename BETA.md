@@ -29,7 +29,8 @@ Zaxy's beta goal is to prove the product thesis: **Git for LLM memory**. A sessi
    - Turn repeated capture gaps into concrete doctor or hook-status checks.
 
 4. **Memory quality hardening**
-   - Improve graph traversal density with typed relation layers, source citation edges, temporal successor edges, and clearly marked inferred edges.
+   - Source-backed graph projection now creates `Source` nodes and deterministic `CITES_SOURCE` edges from projected entities and Eventloom events.
+   - Continue improving graph traversal density with typed relation layers, temporal successor edges, and clearly marked inferred edges.
    - Keep Eventloom provenance as the source of truth; do not fake graph density.
 
 5. **Beta documentation pass**

@@ -130,6 +130,10 @@ class TestSchema:
         )
         assert any("CREATE INDEX event_prev_hash" in s for s in cypher_statements)
         assert any("CREATE INDEX entity_lookup" in s for s in cypher_statements)
+        assert any(
+            "FOR (src:Source) REQUIRE (src.session_id, src.path) IS UNIQUE" in s
+            for s in cypher_statements
+        )
         assert any("CREATE VECTOR INDEX" in s for s in cypher_statements)
         assert any("CREATE FULLTEXT INDEX" in s for s in cypher_statements)
 
@@ -244,6 +248,43 @@ class TestIngestion:
             "source_path": "docs/guide.md",
             "source_start_line": 4,
         }
+
+    async def test_upsert_entity_projects_source_citation_edges(self, store: GraphStore) -> None:
+        """Source-backed entities should create traversable citation nodes and edges."""
+        result = ExtractionResult(
+            entities=[
+                ExtractedEntity(
+                    name="docs/guide.md:4-8",
+                    entity_type="document",
+                    observed_at="2024-01-01T00:00:00Z",
+                    summary="Document chunk",
+                    properties={
+                        "source_path": "docs/guide.md",
+                        "source_start_line": 4,
+                        "source_end_line": 8,
+                        "source_sha256": "abc123",
+                    },
+                )
+            ],
+            edges=[],
+            source_event_seq=11,
+            source_event_hash="d" * 64,
+            source_event_type="document.indexed",
+        )
+
+        await store.upsert_extraction(result, session_id="agent-1")
+
+        call = store._driver.execute_query.await_args_list[1]
+        cypher, kwargs = call.args[0], call.kwargs
+        assert "MERGE (src:Source {session_id: $session_id, path: $source_path})" in cypher
+        assert "MERGE (e)-[cs:CITES_SOURCE]->(src)" in cypher
+        assert "MERGE (ev)-[ecs:CITES_SOURCE]->(src)" in cypher
+        assert "cs.source_start_line = $source_start_line" in cypher
+        assert "ecs.source_event_hash = $source_event_hash" in cypher
+        assert kwargs["source_path"] == "docs/guide.md"
+        assert kwargs["source_start_line"] == 4
+        assert kwargs["source_end_line"] == 8
+        assert kwargs["source_sha256"] == "abc123"
 
     async def test_upsert_entity_namespaces_storage_reserved_properties(
         self,
@@ -707,6 +748,54 @@ class TestIntegration:
         assert len(found) == 1
         assert found[0].name == "TestUser"
         assert found[0].entity_type == "user"
+
+    async def test_source_citation_projection(self, real_store: GraphStore) -> None:
+        """Source-backed entities should be inspectable through CITES_SOURCE paths."""
+        result = ExtractionResult(
+            entities=[
+                ExtractedEntity(
+                    name="docs/guide.md:4-8",
+                    entity_type="document",
+                    observed_at="2024-01-01T00:00:00Z",
+                    summary="Document chunk",
+                    properties={
+                        "source_path": "docs/guide.md",
+                        "source_start_line": 4,
+                        "source_end_line": 8,
+                        "source_sha256": "abc123",
+                    },
+                )
+            ],
+            edges=[],
+            source_event_seq=11,
+            source_event_hash="d" * 64,
+            source_event_type="document.indexed",
+        )
+
+        await real_store.upsert_extraction(result, session_id="agent-1")
+
+        records, _, _ = await real_store._driver.execute_query(
+            """
+            MATCH (:Event {session_id: $session_id, seq: $seq})-[:CITES_SOURCE]->(src:Source)
+            MATCH (:Entity {session_id: $session_id, name: $name})-[citation:CITES_SOURCE]->(src)
+            RETURN src.path AS path,
+                   src.sha256 AS sha256,
+                   citation.source_start_line AS source_start_line,
+                   citation.source_end_line AS source_end_line
+            """,
+            session_id="agent-1",
+            seq=11,
+            name="docs/guide.md:4-8",
+        )
+
+        assert records == [
+            {
+                "path": "docs/guide.md",
+                "sha256": "abc123",
+                "source_start_line": 4,
+                "source_end_line": 8,
+            }
+        ]
 
     async def test_temporal_invalidation(self, real_store: GraphStore) -> None:
         """Invalidating an entity should hide it from temporal queries."""

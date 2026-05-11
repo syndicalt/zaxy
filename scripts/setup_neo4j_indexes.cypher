@@ -33,6 +33,10 @@ CREATE CONSTRAINT event_identity IF NOT EXISTS
 FOR (ev:Event)
 REQUIRE (ev.session_id, ev.seq) IS UNIQUE;
 
+CREATE CONSTRAINT source_identity IF NOT EXISTS
+FOR (src:Source)
+REQUIRE (src.session_id, src.path) IS UNIQUE;
+
 // ------------------------------------------------------------------
 // Provenance lookup indexes
 // ------------------------------------------------------------------
