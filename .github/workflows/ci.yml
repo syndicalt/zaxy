@@ -51,6 +51,10 @@ jobs:
       - name: Run unit tests
         run: pytest -m "not integration" --benchmark-disable --cov --cov-report=xml
 
+      - name: Check coverage ratchet
+        if: matrix.python-version == '3.13'
+        run: python scripts/check-coverage.py --root . --coverage-xml coverage.xml
+
       - name: Upload coverage
         if: matrix.python-version == '3.13'
         uses: codecov/codecov-action@v4

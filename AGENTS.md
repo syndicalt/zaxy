@@ -320,12 +320,13 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Memory Checkout quality scoring with answerability, confidence, reasons, and required actions
 - [x] Memory Checkout degraded-state handling for missing, superseded-only, uncited, and warning-bearing context
 - [x] Shared Memory Checkout policy module used by core and MCP interfaces
+- [x] Coverage ratchet enforced in CI and release checks from generated coverage XML
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 691 passed |
+| Tests | 696 passed |
 | Coverage | >=91.95% |
 | Lint | ruff clean |
 | Types | mypy clean |

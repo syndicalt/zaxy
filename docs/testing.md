@@ -1,9 +1,11 @@
 # Testing
 
 Zaxy follows test-first development. Public behavior should have a test before
-implementation, and the full suite must remain above the 90 percent coverage
-gate. Unit tests mock external dependencies such as Neo4j and Pathlight.
-Integration tests use Docker services and are marked with `integration`.
+implementation. The full suite has a broad 90 percent pytest coverage gate plus
+a coverage ratchet that currently requires at least 91.95% total line coverage
+from `coverage.xml`. Unit tests mock external dependencies such as Neo4j and
+Pathlight. Integration tests use Docker services and are marked with
+`integration`.
 
 Common commands:
 
@@ -18,9 +20,12 @@ scripts/release-check.sh --root .
 ```
 
 The default pytest command includes coverage reporting and `--cov-fail-under=90`
-from `pyproject.toml`. Integration-only runs use `--no-cov` because the
-project-level coverage gate is intended for the full suite. Before running
-integration tests, start the Neo4j services:
+from `pyproject.toml`. CI and `scripts/release-check.sh` also run
+`scripts/check-coverage.py` against the generated XML report. The ratchet floor
+lives in `[tool.zaxy.coverage]` so it can be intentionally raised after coverage
+improvements. Integration-only runs use `--no-cov` because the project-level
+coverage gate is intended for the full suite. Before running integration tests,
+start the Neo4j services:
 
 ```bash
 ./scripts/generate-certs.sh .certs

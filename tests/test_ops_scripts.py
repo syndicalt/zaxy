@@ -415,6 +415,8 @@ def test_release_check_runs_quality_gates_in_order(tmp_path: Path) -> None:
             str(stub),
             "--pytest-cmd",
             str(stub),
+            "--coverage-cmd",
+            str(stub),
             "--packet-smoke-cmd",
             str(stub),
             "--package-cmd",
@@ -436,7 +438,8 @@ def test_release_check_runs_quality_gates_in_order(tmp_path: Path) -> None:
     assert lines == [
         f"{stub} check src tests",
         f"{stub} src",
-        f"{stub} --tb=short",
+        f"{stub} --tb=short --cov-report=xml",
+        f"{stub} --root {root} --coverage-xml coverage.xml",
         f"{stub} ",
         f"{stub} --root {root}",
         f"{stub} --root {root}",
