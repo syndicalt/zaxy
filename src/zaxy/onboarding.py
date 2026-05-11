@@ -365,6 +365,10 @@ def _build_next_steps(
             "Codex native hook config is not installed by default because no stable hooks.json schema is assumed."
         )
     next_steps.append(f"Run zaxy hook-status --eventloom-path {eventloom}")
+    next_steps.append(
+        "Inspect model-facing memory capabilities: "
+        f"zaxy memory capabilities --eventloom-path {eventloom} --session-id {session_id}"
+    )
     if capture_mode == "deterministic":
         next_steps.append("Default capture mode: deterministic MCP lifecycle and observer hooks; no provider proxy required.")
         next_steps.append("Optional packet capture is disabled by default because it can consume provider quota.")

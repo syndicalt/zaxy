@@ -161,6 +161,10 @@ async def test_run_onboarding_writes_requested_configs_and_registers_session(tmp
     assert result.next_steps[0] == f"Add {mcp_output} to your claude-desktop MCP client config."
     assert result.next_steps[1] == "Restart the MCP client so it loads the Zaxy server config."
     assert f"Run zaxy hook-status --eventloom-path {eventloom_path}" in result.next_steps
+    assert (
+        f"Inspect model-facing memory capabilities: zaxy memory capabilities "
+        f"--eventloom-path {eventloom_path} --session-id demo-default"
+    ) in result.next_steps
     assert "Default capture mode: deterministic MCP lifecycle and observer hooks; no provider proxy required." in result.next_steps
     assert "Optional packet capture is disabled by default because it can consume provider quota." in result.next_steps
 
