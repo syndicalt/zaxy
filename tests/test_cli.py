@@ -1642,6 +1642,56 @@ def test_codex_capture_watch_mode_supports_bounded_iterations(
     mock_sleep.assert_called_once_with(0.25)
 
 
+@patch("zaxy.__main__.GraphStore")
+@patch("zaxy.__main__.capture_codex_sessions")
+def test_codex_capture_can_project_captured_events_to_graph(
+    mock_capture: MagicMock,
+    mock_graph_store: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """codex-capture --graph should project only events captured in that pass."""
+    event = EventLog(tmp_path / ".eventloom" / "repo-default.jsonl").append(
+        "transcript.turn",
+        actor="assistant",
+        payload={"content": "Remember bounded capture."},
+        thread="repo-default",
+    )
+    mock_capture.return_value.imported = 1
+    mock_capture.return_value.scanned_files = 1
+    mock_capture.return_value.skipped = 0
+    mock_capture.return_value.events = (event,)
+    store = AsyncMock()
+    mock_graph_store.return_value = store
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "codex-capture",
+            "--workspace",
+            str(tmp_path),
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "repo-default",
+            "--graph",
+            "--neo4j-uri",
+            "bolt://test:7687",
+            "--neo4j-password",
+            "testpassword",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Projected 1 captured observations into graph" in result.output
+    mock_graph_store.assert_called_once_with("bolt://test:7687", "neo4j", "testpassword")
+    store.connect.assert_awaited_once()
+    store.init_schema.assert_awaited_once()
+    store.upsert_extraction.assert_awaited_once()
+    assert store.upsert_extraction.await_args.kwargs == {"session_id": "repo-default"}
+    store.close.assert_awaited_once()
+
+
 @patch("zaxy.__main__.MemoryFabric")
 def test_index_codebase_command_reports_indexed_count(mock_fabric_cls: MagicMock, tmp_path: Path) -> None:
     """index-codebase should append codebase mapping events through MemoryFabric."""

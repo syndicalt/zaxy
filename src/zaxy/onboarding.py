@@ -383,6 +383,7 @@ def _build_next_steps(
             f"Start deterministic Codex capture: zaxy codex-capture --workspace {workspace} "
             f"--eventloom-path {eventloom} --session-id {session_id} --watch"
         )
+        next_steps.append("Add --graph to the Codex capture command when Neo4j should receive live projections.")
     next_steps.append(f"Run zaxy hook-status --eventloom-path {eventloom}")
     next_steps.append(
         "Inspect model-facing memory capabilities: "

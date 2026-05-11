@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from zaxy.event import EventLog
+from zaxy.event import Event, EventLog
 from zaxy.observation import (
     build_command_observation,
     build_file_edit_observation,
@@ -32,6 +32,7 @@ class CodexCaptureResult:
     imported: int
     scanned_files: int
     skipped: int
+    events: tuple[Event, ...] = ()
 
 
 def write_codex_capture_config(
@@ -113,7 +114,7 @@ def capture_codex_sessions(
         event_inputs.append(event_input)
         existing_refs.add(event_input["payload"]["codex_source_ref"])
         imported += 1
-    eventlog.append_many(
+    events = eventlog.append_many(
         [
             {
                 "event_type": event_input["event_type"],
@@ -124,7 +125,12 @@ def capture_codex_sessions(
             for event_input in event_inputs
         ]
     )
-    return CodexCaptureResult(imported=imported, scanned_files=scanned_files, skipped=skipped)
+    return CodexCaptureResult(
+        imported=imported,
+        scanned_files=scanned_files,
+        skipped=skipped,
+        events=tuple(events),
+    )
 
 
 def _default_codex_home() -> Path:

@@ -40,7 +40,7 @@ from zaxy.doctor import (
     run_doctor,
 )
 from zaxy.embedding import EmbeddingProvider, HashEmbeddingProvider, OpenAIEmbeddingProvider
-from zaxy.event import EventLog
+from zaxy.event import Event, EventLog
 from zaxy.extract import extract
 from zaxy.extract_templates import ExtractorTemplateSpec, render_extractor_template
 from zaxy.graph import GraphStore
@@ -732,6 +732,10 @@ def codex_capture(
         min=1,
         help="Maximum recent records to scan from each Codex session log per pass",
     ),
+    graph: bool = typer.Option(False, "--graph", help="Project captured observations into Neo4j"),
+    neo4j_uri: str | None = typer.Option(None, help="Neo4j Bolt URI"),
+    neo4j_user: str | None = typer.Option(None, help="Neo4j username"),
+    neo4j_password: str | None = typer.Option(None, help="Neo4j password"),
     watch: bool = typer.Option(False, "--watch", help="Continuously poll Codex session logs"),
     interval_seconds: float = typer.Option(2.0, "--interval-seconds", min=0.25, help="Watch poll interval"),
     watch_iterations: int | None = typer.Option(
@@ -742,6 +746,27 @@ def codex_capture(
     ),
 ) -> None:
     """Capture local Codex session JSONL records into Eventloom without proxying model traffic."""
+    import asyncio
+
+    from zaxy.config import get_settings
+
+    async def project_events(events: tuple[Event, ...]) -> int:
+        if not events:
+            return 0
+        settings = get_settings()
+        store = GraphStore(
+            neo4j_uri or settings.neo4j_uri,
+            neo4j_user or settings.neo4j_user,
+            neo4j_password or settings.neo4j_password,
+        )
+        await store.connect()
+        try:
+            await store.init_schema()
+            for event in events:
+                await store.upsert_extraction(extract(event), session_id=session_id)
+            return len(events)
+        finally:
+            await store.close()
 
     def run_once() -> None:
         result = capture_codex_sessions(
@@ -757,6 +782,9 @@ def codex_capture(
             f"Imported {result.imported} Codex observations from "
             f"{result.scanned_files} session log{plural} ({result.skipped} skipped)"
         )
+        if graph:
+            projected = asyncio.run(project_events(result.events))
+            typer.echo(f"Projected {projected} captured observations into graph")
 
     if not watch:
         run_once()

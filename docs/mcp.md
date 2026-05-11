@@ -284,6 +284,8 @@ local session JSONL and appends normalized Eventloom observations. It does not
 proxy provider traffic or require an OpenAI API key.
 For supervised checks, add `--watch-iterations <n>` to run a bounded number of
 capture passes.
+When Neo4j is reachable, add `--graph` so newly captured observations are also
+projected into the graph during the same pass.
 
 Hook adapters do not proxy tool execution. Agents and tools continue to execute
 normally while hooks append lightweight Eventloom observations through

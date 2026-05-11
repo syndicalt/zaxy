@@ -19,6 +19,8 @@ Codex's own local session JSONL into Eventloom as normalized transcript,
 tool-call, command, and file-edit observations. This keeps capture local,
 idempotent, and out of the model request path.
 Use `--watch-iterations <n>` for bounded supervisor health checks and tests.
+Add `--graph` when Neo4j is reachable and the capture pass should project newly
+captured observations immediately.
 
 Write config directly during onboarding:
 
