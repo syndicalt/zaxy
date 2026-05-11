@@ -306,10 +306,11 @@ class ZaxyMCPServer:
         neo4j_user: str | None = None,
         neo4j_password: str | None = None,
         workspace_root: str | Path | None = None,
+        default_session_id: str | None = None,
     ) -> None:
         settings = get_settings()
         self._admin_token = settings.mcp_admin_token
-        self._default_session_id = validate_session_id(settings.eventloom_thread)
+        self._default_session_id = validate_session_id(default_session_id or settings.eventloom_thread)
         self._lifecycle_capture_enabled = settings.mcp_lifecycle_capture_enabled
         self._workspace_root = Path(workspace_root or Path.cwd()).resolve()
         self._initialized_workspaces: dict[tuple[str, str], WorkspaceProfile] = {}

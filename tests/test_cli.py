@@ -709,7 +709,7 @@ def test_ide_config_command_installs_project_cursor_config(tmp_path: Path) -> No
 
 
 def test_ide_config_command_prints_codex_cli_install_command() -> None:
-    """Codex install should be command-assisted instead of direct config editing."""
+    """Codex install should keep workspace state out of global MCP config."""
     runner = CliRunner()
 
     result = runner.invoke(
@@ -730,8 +730,10 @@ def test_ide_config_command_prints_codex_cli_install_command() -> None:
     assert result.exit_code == 0
     assert "Run this Codex MCP install command:" in result.output
     assert "codex mcp add zaxy" in result.output
-    assert "--env EVENTLOOM_THREAD=zaxy-default" in result.output
-    assert "-- /opt/zaxy/bin/zaxy serve --eventloom-path .eventloom" in result.output
+    assert "--env EVENTLOOM_THREAD" not in result.output
+    assert "ZAXY_DOMAIN" not in result.output
+    assert "-- /opt/zaxy/bin/zaxy serve" in result.output
+    assert "--eventloom-path" not in result.output
 
 
 def test_ide_config_command_prints_codex_cli_command_without_install_flag() -> None:
@@ -786,6 +788,8 @@ def test_ide_config_command_writes_trusted_project_codex_config(tmp_path: Path) 
     config = (tmp_path / ".codex" / "config.toml").read_text(encoding="utf-8")
     assert "[mcp_servers.zaxy]" in config
     assert 'command = "/opt/zaxy/bin/zaxy"' in config
+    assert 'args = ["serve"]' in config
+    assert "EVENTLOOM_PATH" not in config
 
 
 def test_ide_config_command_rejects_project_codex_config_without_trust(tmp_path: Path) -> None:
@@ -809,6 +813,36 @@ def test_ide_config_command_rejects_project_codex_config_without_trust(tmp_path:
     assert "trusted" in result.output
     assert "project" in result.output
     assert not (tmp_path / ".codex" / "config.toml").exists()
+
+
+@patch("zaxy.__main__.mcp_main", new_callable=AsyncMock)
+@patch("zaxy.mcp_server.ZaxyMCPServer")
+def test_serve_derives_workspace_defaults_when_not_overridden(
+    mock_server_cls: MagicMock,
+    mock_mcp_main: AsyncMock,
+    monkeypatch,
+) -> None:
+    """A bare `zaxy serve` should scope memory to the process workspace."""
+    monkeypatch.setattr("zaxy.mcp_server.server", None)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["serve"],
+        catch_exceptions=False,
+        obj=None,
+        env={},
+        color=False,
+        prog_name="zaxy",
+    )
+
+    assert result.exit_code == 0
+    mock_mcp_main.assert_awaited_once()
+    mock_server_cls.assert_called_once()
+    kwargs = mock_server_cls.call_args.kwargs
+    assert kwargs["eventloom_path"] == str(Path.cwd() / ".eventloom")
+    assert kwargs["workspace_root"] == Path.cwd()
+    assert kwargs["default_session_id"] == "zaxy-default"
 
 
 def test_integration_template_command_prints_framework_starter() -> None:

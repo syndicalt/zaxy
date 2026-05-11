@@ -65,11 +65,13 @@ JSON fragment.
 Codex supports MCP in the CLI and IDE extension. The documented config file is
 `~/.codex/config.toml`, with trusted projects allowed to use
 `.codex/config.toml`. Codex also exposes `codex mcp add`, so Zaxy supports Codex
-by rendering that command unless a direct config scope is requested. Direct TOML
-support requires either user scope or project scope with an explicit trusted
-project acknowledgement. The TOML merge preserves unrelated server entries,
-rejects malformed TOML, and refuses to replace an existing `zaxy` entry unless
-`--force` is passed.
+by rendering a workspace-neutral `codex mcp add zaxy -- zaxy serve` command
+unless a direct config scope is requested. Direct TOML support requires either
+user scope or project scope with an explicit trusted project acknowledgement.
+The TOML merge preserves unrelated server entries, rejects malformed TOML, and
+refuses to replace an existing `zaxy` entry unless `--force` is passed. It does
+not write repo-specific Eventloom environment into Codex config; `zaxy serve`
+derives the active workspace at startup.
 
 ## Implementation Order
 

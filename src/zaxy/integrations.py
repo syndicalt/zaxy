@@ -105,19 +105,8 @@ def render_codex_mcp_add_command(
     zaxy_executable: str | None = None,
 ) -> list[str]:
     """Render the official Codex CLI command for adding Zaxy as an MCP server."""
-    resolved_domain = slug_domain(domain) if domain else derive_domain()
-    server = _server_config(
-        eventloom_path=eventloom_path,
-        transport="stdio",
-        host="127.0.0.1",
-        port=8080,
-        domain=resolved_domain,
-        zaxy_executable=resolve_zaxy_executable(zaxy_executable),
-    )
-    env = server["env"]
+    server = _codex_server_config(zaxy_executable=resolve_zaxy_executable(zaxy_executable))
     command = ["codex", "mcp", "add", "zaxy"]
-    for key in sorted(env):
-        command.extend(["--env", f"{key}={env[key]}"])
     command.append("--")
     command.append(str(server["command"]))
     command.extend(str(arg) for arg in server["args"])
@@ -179,14 +168,7 @@ def write_codex_mcp_config(
         workspace=workspace,
         codex_home=codex_home,
     )
-    server = _server_config(
-        eventloom_path=eventloom_path,
-        transport="stdio",
-        host="127.0.0.1",
-        port=8080,
-        domain=slug_domain(domain) if domain else derive_domain(),
-        zaxy_executable=resolve_zaxy_executable(zaxy_executable),
-    )
+    server = _codex_server_config(zaxy_executable=resolve_zaxy_executable(zaxy_executable))
     document = _read_toml_document(target)
     mcp_servers = document.setdefault("mcp_servers", tomlkit.table())
     if not isinstance(mcp_servers, dict):
@@ -196,10 +178,6 @@ def write_codex_mcp_config(
     zaxy = tomlkit.table()
     zaxy.add("command", server["command"])
     zaxy.add("args", server["args"])
-    env = tomlkit.table()
-    for key, value in server["env"].items():
-        env.add(key, value)
-    zaxy.add("env", env)
     zaxy.add("startup_timeout_sec", server["startup_timeout_sec"])
     mcp_servers["zaxy"] = zaxy
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -413,6 +391,19 @@ def _server_config(
             "headers": {"x-zaxy-session-id": default_session},
         }
     raise ValueError("transport must be 'stdio' or 'sse'")
+
+
+def _codex_server_config(*, zaxy_executable: str) -> dict[str, Any]:
+    """Return a workspace-neutral Codex MCP server config.
+
+    Codex MCP config can be global; repo-specific Eventloom/session state must
+    be resolved by `zaxy serve` from the process workspace at runtime.
+    """
+    return {
+        "command": zaxy_executable,
+        "args": ["serve"],
+        "startup_timeout_sec": 90,
+    }
 
 
 def _bundle_payload(bundle: HandoffBundle) -> dict[str, Any]:

@@ -169,7 +169,7 @@ def test_project_mcp_install_force_replaces_existing_zaxy(tmp_path: Path) -> Non
 
 
 def test_renders_codex_mcp_add_command_with_env_and_command_separator() -> None:
-    """Codex install should prefer official CLI command generation over TOML editing."""
+    """Codex install should not bake one repo's Eventloom scope into global config."""
     command = render_codex_mcp_add_command(
         eventloom_path=".eventloom",
         domain="zaxy",
@@ -181,13 +181,9 @@ def test_renders_codex_mcp_add_command_with_env_and_command_separator() -> None:
     assert command[command.index("--") + 1 :] == [
         "/opt/zaxy/bin/zaxy",
         "serve",
-        "--eventloom-path",
-        ".eventloom",
     ]
-    assert "--env" in command
-    assert "EVENTLOOM_THREAD=zaxy-default" in command
-    assert "ZAXY_DOMAIN=zaxy" in command
-    assert "NEO4J_AUTO_START=true" in command
+    assert "--env" not in command
+    assert not any("EVENTLOOM_" in part or "ZAXY_DOMAIN" in part for part in command)
 
 
 def test_writes_trusted_project_codex_config_without_removing_existing_servers(
@@ -214,8 +210,8 @@ def test_writes_trusted_project_codex_config_without_removing_existing_servers(
     assert written == target
     assert config["mcp_servers"]["context7"]["command"] == "npx"
     assert config["mcp_servers"]["zaxy"]["command"] == "/opt/zaxy/bin/zaxy"
-    assert config["mcp_servers"]["zaxy"]["args"] == ["serve", "--eventloom-path", ".eventloom"]
-    assert config["mcp_servers"]["zaxy"]["env"]["EVENTLOOM_THREAD"] == "zaxy-default"
+    assert config["mcp_servers"]["zaxy"]["args"] == ["serve"]
+    assert "env" not in config["mcp_servers"]["zaxy"]
 
 
 def test_project_codex_config_requires_trusted_project_acknowledgement(tmp_path: Path) -> None:

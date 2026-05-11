@@ -245,10 +245,13 @@ unrelated servers, and refuses to replace an existing `zaxy` entry unless
 `--force` is passed.
 
 Codex is CLI-assisted by default: `zaxy ide-config codex --install` prints the
-official `codex mcp add zaxy ... -- zaxy serve ...` command. Direct TOML writes
-are opt-in through `--codex-config-scope project|user`. Project-scoped writes
-target `.codex/config.toml` and require `--codex-trusted-project` because Codex
-only loads project config from trusted projects. User-scoped writes target
+official `codex mcp add zaxy -- zaxy serve` command. Codex config is kept
+workspace-neutral because user-level Codex MCP servers can be reused across
+repositories. A bare `zaxy serve` resolves `.eventloom` and the domain-prefixed
+default session from the process workspace at startup. Direct TOML writes are
+opt-in through `--codex-config-scope project|user`. Project-scoped writes target
+`.codex/config.toml` and require `--codex-trusted-project` because Codex only
+loads project config from trusted projects. User-scoped writes target
 `CODEX_HOME/config.toml` or `~/.codex/config.toml`.
 
 `zaxy ide-config codex` without `--install` also prints the Codex CLI command,
@@ -317,10 +320,12 @@ The verified write targets for future client-specific installers are tracked in
 for deciding when `zaxy init` may write or merge config directly versus printing
 copyable instructions.
 
-Generated configs include `ZAXY_DOMAIN` and a domain-prefixed
-`EVENTLOOM_THREAD`, such as `zaxy-default`. This prevents clients that omit
-`session_id` from accidentally sharing the global `default` session across
-different projects. For remote SSE configs, the same default is sent through the
+Generated project-local stdio configs include `ZAXY_DOMAIN` and a
+domain-prefixed `EVENTLOOM_THREAD`, such as `zaxy-default`. This prevents
+clients that omit `session_id` from accidentally sharing the global `default`
+session across different projects. Codex user-level config is the exception: it
+must stay workspace-neutral and let `zaxy serve` derive the same values from the
+active project. For remote SSE configs, the same default is sent through the
 session header.
 
 For local stdio clients, the generated config is intentionally self-contained:

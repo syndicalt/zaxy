@@ -16,6 +16,7 @@ Example::
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import time
 from contextlib import suppress
@@ -45,6 +46,7 @@ from zaxy.doctor import (
     packet_memory_report,
     run_doctor,
 )
+from zaxy.domain import derive_domain, domain_default_session
 from zaxy.embedding import EmbeddingProvider, HashEmbeddingProvider, OpenAIEmbeddingProvider
 from zaxy.event import Event, EventLog
 from zaxy.extract import extract
@@ -1151,12 +1153,18 @@ def serve(
 
     from zaxy import mcp_server
 
+    workspace_root = Path.cwd()
+    resolved_eventloom_path = eventloom_path or os.getenv("EVENTLOOM_PATH") or str(workspace_root / ".eventloom")
+    resolved_session_id = os.getenv("EVENTLOOM_THREAD") or domain_default_session(derive_domain(workspace_root))
+
     # Configure the module-level server instance from CLI overrides
     mcp_server.server = mcp_server.ZaxyMCPServer(
-        eventloom_path=eventloom_path,
+        eventloom_path=resolved_eventloom_path,
         neo4j_uri=neo4j_uri,
         neo4j_user=neo4j_user,
         neo4j_password=neo4j_password,
+        workspace_root=workspace_root,
+        default_session_id=resolved_session_id,
     )
 
     if transport == "sse":

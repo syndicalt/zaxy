@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import socket
 import tempfile
+import tomllib
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -34,6 +36,7 @@ def run_doctor(
         _check_viewer(root),
         _check_cli_install(zaxy_executable),
         _check_mcp_defaults(active),
+        _check_codex_mcp_scope(root),
         _check_hooks(active),
         _check_hook_installation(hook_status),
         _check_hook_activity(active, hook_status),
@@ -159,6 +162,53 @@ def _check_mcp_defaults(settings: Settings) -> dict[str, str]:
         "name": "mcp_defaults",
         "status": "ok",
         "message": f"default session is {settings.eventloom_thread}",
+    }
+
+
+def _check_codex_mcp_scope(workspace_root: Path) -> dict[str, Any]:
+    """Warn when global Codex MCP config contains repo-specific Zaxy state."""
+    config_path = Path(os.environ.get("CODEX_HOME", "~/.codex")).expanduser() / "config.toml"
+    if not config_path.exists():
+        return {
+            "name": "codex_mcp_scope",
+            "status": "ok",
+            "message": "no Codex user MCP config found",
+        }
+    try:
+        document = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    except tomllib.TOMLDecodeError as exc:
+        return {
+            "name": "codex_mcp_scope",
+            "status": "warning",
+            "message": f"Codex user config is invalid TOML: {exc}",
+            "action": f"Fix or remove malformed Codex config at {config_path}.",
+        }
+    zaxy = document.get("mcp_servers", {}).get("zaxy")
+    if not isinstance(zaxy, dict):
+        return {
+            "name": "codex_mcp_scope",
+            "status": "ok",
+            "message": "Codex user config has no global zaxy MCP server",
+        }
+    args = [str(arg) for arg in zaxy.get("args", [])] if isinstance(zaxy.get("args", []), list) else []
+    env = zaxy.get("env", {})
+    env_keys = set(env) if isinstance(env, dict) else set()
+    repo_scoped = "--eventloom-path" in args or bool({"EVENTLOOM_PATH", "EVENTLOOM_THREAD", "ZAXY_DOMAIN"} & env_keys)
+    if repo_scoped:
+        return {
+            "name": "codex_mcp_scope",
+            "status": "warning",
+            "message": "Codex user-level zaxy MCP config contains repo-specific Eventloom/session state",
+            "details": {
+                "config": str(config_path),
+                "workspace": str(workspace_root.resolve()),
+            },
+            "action": "Replace it with: codex mcp add zaxy -- zaxy serve",
+        }
+    return {
+        "name": "codex_mcp_scope",
+        "status": "ok",
+        "message": "Codex user-level zaxy MCP config is workspace-neutral",
     }
 
 

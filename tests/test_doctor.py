@@ -9,8 +9,9 @@ from zaxy.doctor import run_doctor
 from zaxy.event import EventLog
 
 
-def test_run_doctor_reports_local_setup_ok(tmp_path: Path) -> None:
+def test_run_doctor_reports_local_setup_ok(tmp_path: Path, monkeypatch) -> None:
     """Doctor should validate local-only setup without requiring live Neo4j."""
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
     settings = Settings(
         _env_file=None,
         eventloom_path=str(tmp_path / ".eventloom"),
@@ -32,6 +33,7 @@ def test_run_doctor_reports_local_setup_ok(tmp_path: Path) -> None:
         "viewer": "ok",
         "cli_install": "ok",
         "mcp_defaults": "ok",
+        "codex_mcp_scope": "ok",
         "hooks": "ok",
         "hook_installation": "warning",
         "hook_activity": "warning",
@@ -75,6 +77,44 @@ def test_run_doctor_warns_on_generic_default_session(tmp_path: Path) -> None:
     assert report["status"] == "warning"
     assert check["status"] == "warning"
     assert "EVENTLOOM_THREAD" in check["message"]
+
+
+def test_run_doctor_warns_on_user_codex_config_with_repo_scoped_zaxy(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Doctor should flag the global Codex MCP leak mode before sessions drift."""
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    (codex_home / "config.toml").write_text(
+        "\n".join(
+            [
+                "[mcp_servers.zaxy]",
+                'command = "zaxy"',
+                'args = ["serve", "--eventloom-path", "/repos/zaxyhub/.eventloom"]',
+                "",
+                "[mcp_servers.zaxy.env]",
+                'EVENTLOOM_PATH = "/repos/zaxyhub/.eventloom"',
+                'EVENTLOOM_THREAD = "zaxyhub-default"',
+                'ZAXY_DOMAIN = "zaxyhub"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CODEX_HOME", str(codex_home))
+    settings = Settings(
+        _env_file=None,
+        eventloom_path=str(tmp_path / ".eventloom"),
+        eventloom_thread="zaxy-default",
+        zaxy_env="development",
+    )
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path / "zaxy")
+
+    check = next(check for check in report["checks"] if check["name"] == "codex_mcp_scope")
+    assert check["status"] == "warning"
+    assert "repo-specific Eventloom" in check["message"]
+    assert "codex mcp add zaxy -- zaxy serve" in check["action"]
 
 
 def test_run_doctor_reports_hook_adapter_guidance(tmp_path: Path) -> None:
