@@ -366,6 +366,8 @@ PATHLIGHT_ACCESS_TOKEN_FILE=/run/secrets/pathlight_access_token
   `scripts/live-benchmark.sh --embedding-provider openai --workload frozen --runs 1 --reset-graph`
 - Representative retrieval benchmark suite:
   `scripts/live-benchmark.sh --embedding-provider openai --workload suite --subjects 100 --documents 250 --sessions 50 --runs 1 --reset-graph`
+- Benchmark guardrail check:
+  `zaxy benchmark-compare reports/benchmarks/live-benchmark.json --baseline reports/benchmarks/baseline-live-benchmark.json --max-p95-ms 500 --max-p99-ms 750`
 - Capacity planning review
 - Security audit (dependency updates, key rotation)
 

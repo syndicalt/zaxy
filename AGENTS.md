@@ -330,13 +330,14 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Workspace-neutral Codex MCP config with runtime workspace/Eventloom resolution and doctor leak detection
 - [x] Beta readiness inventory with clean-repo UAT script and doctor gate
 - [x] Maintained beta roadmap with post-UAT product work, release criteria, and doctor coverage
+- [x] Benchmark guardrail comparison CLI for quality floors, latency budgets, and regression checks
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 760 passed, 6 deselected |
-| Coverage | 92.28% |
+| Tests | 762 passed, 6 deselected |
+| Coverage | 92.24% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |

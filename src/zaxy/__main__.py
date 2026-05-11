@@ -91,7 +91,10 @@ from zaxy.live_benchmark import (
     build_source_recall_workload,
     build_statistical_event_log,
     build_temporal_recall_workload,
+    compare_benchmark_reports,
     corpus_from_event_log,
+    format_benchmark_comparison,
+    load_benchmark_report,
     report_to_markdown,
     write_benchmark_report,
 )
@@ -1826,6 +1829,51 @@ def _load_external_results(path: Path | None) -> tuple[ExternalBenchmarkResult, 
         except TypeError as exc:
             raise typer.BadParameter(f"invalid external result {idx}: {exc}") from exc
     return tuple(results)
+
+
+@app.command("benchmark-compare")
+def benchmark_compare(
+    candidate: Path = typer.Argument(..., help="Candidate live-benchmark.json report"),  # noqa: B008
+    baseline: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--baseline",
+        help="Optional baseline live-benchmark.json report for regression checks",
+    ),
+    backend: str = typer.Option("zaxy", help="Backend to guard, usually zaxy"),
+    min_mean_score: float = typer.Option(0.95, help="Minimum acceptable mean score"),
+    min_citation_coverage: float = typer.Option(
+        0.95,
+        help="Minimum acceptable citation coverage when reported",
+    ),
+    max_p95_ms: float = typer.Option(500.0, help="Maximum acceptable p95 latency in ms"),
+    max_p99_ms: float = typer.Option(750.0, help="Maximum acceptable p99 latency in ms"),
+    max_latency_regression_ratio: float = typer.Option(
+        0.25,
+        help="Allowed latency regression ratio versus the baseline report",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
+) -> None:
+    """Compare benchmark reports against beta quality and latency guardrails."""
+    baseline_report = load_benchmark_report(baseline) if baseline is not None else None
+    candidate_report = load_benchmark_report(candidate)
+    comparison = compare_benchmark_reports(
+        baseline_report,
+        candidate_report,
+        backend=backend,
+        min_mean_score=min_mean_score,
+        min_citation_coverage=min_citation_coverage,
+        max_p95_ms=max_p95_ms,
+        max_p99_ms=max_p99_ms,
+        max_latency_regression_ratio=max_latency_regression_ratio,
+    )
+    if json_output:
+        from dataclasses import asdict
+
+        typer.echo(json.dumps(asdict(comparison), indent=2, sort_keys=True))
+    else:
+        typer.echo(format_benchmark_comparison(comparison))
+    if not comparison.passed:
+        raise typer.Exit(code=1)
 
 
 def main() -> None:

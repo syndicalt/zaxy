@@ -189,6 +189,19 @@ Suite reports disclose subject, document, session, lane, event, query, and
 SHA-256 workload metadata. Increase `--subjects`, `--documents`, and
 `--sessions` for capacity tests after the smoke run is stable.
 
+Use `zaxy benchmark-compare` to enforce beta guardrails on a completed report.
+The command exits non-zero when quality drops below the configured floors, p95
+or p99 exceed latency budgets, or latency regresses too far from a baseline:
+
+```bash
+zaxy benchmark-compare reports/benchmarks/live-benchmark.json \
+  --baseline reports/benchmarks/baseline-live-benchmark.json \
+  --min-mean-score 0.95 \
+  --min-citation-coverage 0.95 \
+  --max-p95-ms 500 \
+  --max-p99-ms 750
+```
+
 For consolidation safety checks, use the identity-collapse workload. It creates
 near-duplicate source records with distinct durable identifiers and adds an
 identity-recall metric to the report. The `centroid` baseline intentionally

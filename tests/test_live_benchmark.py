@@ -20,6 +20,8 @@ from zaxy.live_benchmark import (
     TEMPORAL_RECALL_WORKLOAD_VERSION,
     BenchmarkCase,
     BenchmarkChunk,
+    BenchmarkReport,
+    BenchmarkSummary,
     BM25Retriever,
     CachedEmbeddingProvider,
     CentroidConsolidationRetriever,
@@ -38,7 +40,9 @@ from zaxy.live_benchmark import (
     build_longmemeval_workload,
     build_source_recall_workload,
     build_temporal_recall_workload,
+    compare_benchmark_reports,
     corpus_from_event_log,
+    format_benchmark_comparison,
     report_to_markdown,
     workload_fingerprint,
     write_benchmark_report,
@@ -51,6 +55,8 @@ def test_cli_exposes_live_benchmark_command() -> None:
     script = Path("scripts/live-benchmark.sh").read_text(encoding="utf-8")
 
     assert "def benchmark(" in cli
+    assert "def benchmark_compare(" in cli
+    assert "compare_benchmark_reports" in cli
     assert 'embedding_provider: str = typer.Option("openai"' in cli
     assert "build_live_zaxy_retriever" in cli
     assert "build_statistical_event_log" in cli
@@ -779,6 +785,97 @@ def test_live_benchmark_outputs_machine_and_markdown_reports(tmp_path: Path) -> 
     assert payload["workload"]["version"] == "ad-hoc"
     assert "| Backend | Mean score | Identity recall | Source recall | Citation coverage |" in markdown
     assert "Approx tokens" in markdown
+
+
+def _report_with_zaxy_summary(
+    *,
+    mean_score: float,
+    citation_coverage: float,
+    p95_ms: float,
+    p99_ms: float,
+) -> BenchmarkReport:
+    return BenchmarkReport(
+        generated_at="2026-05-11T00:00:00Z",
+        embedding_provider="hash:1536",
+        runs=(),
+        summaries=(
+            BenchmarkSummary(
+                backend="zaxy",
+                case_count=650,
+                runs=1,
+                mean_score=mean_score,
+                latency_ms_mean=100.0,
+                latency_ms_p50=40.0,
+                latency_ms_p95=p95_ms,
+                latency_ms_p99=p99_ms,
+                mean_returned_bytes=950.0,
+                mean_approx_tokens=236.0,
+                mean_citation_coverage=citation_coverage,
+            ),
+        ),
+    )
+
+
+def test_benchmark_compare_flags_latency_regression() -> None:
+    """Benchmark guardrails should catch tail-latency regressions."""
+    baseline = _report_with_zaxy_summary(
+        mean_score=1.0,
+        citation_coverage=1.0,
+        p95_ms=250.0,
+        p99_ms=300.0,
+    )
+    candidate = _report_with_zaxy_summary(
+        mean_score=1.0,
+        citation_coverage=1.0,
+        p95_ms=900.0,
+        p99_ms=1200.0,
+    )
+
+    comparison = compare_benchmark_reports(
+        baseline,
+        candidate,
+        backend="zaxy",
+        max_p95_ms=500.0,
+        max_p99_ms=750.0,
+        max_latency_regression_ratio=0.5,
+    )
+
+    assert comparison.passed is False
+    assert any(check.name == "p95_latency_regression" for check in comparison.checks)
+    assert any(check.name == "p99_latency_budget" for check in comparison.checks)
+    markdown = format_benchmark_comparison(comparison)
+    assert "FAIL" in markdown
+    assert "p95_latency_regression" in markdown
+
+
+def test_benchmark_compare_passes_latency_improvement() -> None:
+    """Improved latency with stable quality should satisfy beta guardrails."""
+    baseline = _report_with_zaxy_summary(
+        mean_score=1.0,
+        citation_coverage=1.0,
+        p95_ms=2844.62,
+        p99_ms=3031.60,
+    )
+    candidate = _report_with_zaxy_summary(
+        mean_score=1.0,
+        citation_coverage=1.0,
+        p95_ms=257.58,
+        p99_ms=274.41,
+    )
+
+    comparison = compare_benchmark_reports(
+        baseline,
+        candidate,
+        backend="zaxy",
+        min_mean_score=0.95,
+        min_citation_coverage=0.95,
+        max_p95_ms=500.0,
+        max_p99_ms=750.0,
+    )
+
+    assert comparison.passed is True
+    assert all(check.passed for check in comparison.checks)
+    assert "PASS" in format_benchmark_comparison(comparison)
 
 
 def test_frozen_statistical_workload_has_stable_identity(tmp_path: Path) -> None:

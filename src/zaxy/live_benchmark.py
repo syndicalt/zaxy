@@ -112,6 +112,28 @@ class BackendComparison:
 
 
 @dataclass(frozen=True)
+class BenchmarkGuardrailCheck:
+    """One benchmark quality or latency guardrail result."""
+
+    name: str
+    passed: bool
+    observed: float | None
+    threshold: float
+    message: str
+
+
+@dataclass(frozen=True)
+class BenchmarkGuardrailReport:
+    """Comparison of a candidate benchmark report against guardrails."""
+
+    backend: str
+    passed: bool
+    baseline: BenchmarkSummary | None
+    candidate: BenchmarkSummary
+    checks: tuple[BenchmarkGuardrailCheck, ...]
+
+
+@dataclass(frozen=True)
 class CategorySummary:
     """Aggregate score for one backend/category pair."""
 
@@ -1469,6 +1491,39 @@ def write_benchmark_report(
     return WrittenBenchmarkReport(json_path=json_path, markdown_path=markdown_path)
 
 
+def load_benchmark_report(path: str | Path) -> BenchmarkReport:
+    """Load a machine-readable benchmark report from JSON."""
+    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("benchmark report JSON must be an object")
+    workload_payload = payload.get("workload")
+    workload = (
+        BenchmarkWorkload(**workload_payload)
+        if isinstance(workload_payload, dict)
+        else None
+    )
+    return BenchmarkReport(
+        generated_at=str(payload.get("generated_at", "")),
+        embedding_provider=str(payload.get("embedding_provider", "")),
+        runs=tuple(BenchmarkRun(**item) for item in payload.get("runs", [])),
+        summaries=tuple(
+            BenchmarkSummary(**item) for item in payload.get("summaries", [])
+        ),
+        category_summaries=tuple(
+            CategorySummary(**item)
+            for item in payload.get("category_summaries", [])
+        ),
+        comparisons=tuple(
+            BackendComparison(**item) for item in payload.get("comparisons", [])
+        ),
+        workload=workload,
+        external_results=tuple(
+            ExternalBenchmarkResult(**item)
+            for item in payload.get("external_results", [])
+        ),
+    )
+
+
 def report_to_markdown(report: BenchmarkReport) -> str:
     """Render benchmark summaries as Markdown."""
     workload = report.workload or _ad_hoc_workload(report)
@@ -1635,6 +1690,118 @@ def compare_target_to_baselines(
     return tuple(comparisons)
 
 
+def compare_benchmark_reports(
+    baseline: BenchmarkReport | None,
+    candidate: BenchmarkReport,
+    *,
+    backend: str = "zaxy",
+    min_mean_score: float = 0.95,
+    min_citation_coverage: float = 0.95,
+    max_p95_ms: float = 500.0,
+    max_p99_ms: float = 750.0,
+    max_latency_regression_ratio: float = 0.25,
+) -> BenchmarkGuardrailReport:
+    """Compare a candidate report against beta retrieval guardrails."""
+    if max_latency_regression_ratio < 0.0:
+        raise ValueError("max_latency_regression_ratio must be non-negative")
+    candidate_summary = _summary_for_backend(candidate, backend)
+    assert candidate_summary is not None
+    baseline_summary = _summary_for_backend(baseline, backend) if baseline is not None else None
+    checks = [
+        _min_check(
+            "mean_score_floor",
+            candidate_summary.mean_score,
+            min_mean_score,
+            "mean score must stay above the beta floor",
+        ),
+        _min_check(
+            "citation_coverage_floor",
+            candidate_summary.mean_citation_coverage,
+            min_citation_coverage,
+            "citation coverage must stay above the beta floor",
+        ),
+        _max_check(
+            "p95_latency_budget",
+            candidate_summary.latency_ms_p95,
+            max_p95_ms,
+            "p95 latency must stay within the beta budget",
+        ),
+        _max_check(
+            "p99_latency_budget",
+            candidate_summary.latency_ms_p99,
+            max_p99_ms,
+            "p99 latency must stay within the beta budget",
+        ),
+    ]
+    if baseline_summary is not None:
+        checks.extend(
+            [
+                _regression_check(
+                    "p95_latency_regression",
+                    baseline_summary.latency_ms_p95,
+                    candidate_summary.latency_ms_p95,
+                    max_latency_regression_ratio,
+                ),
+                _regression_check(
+                    "p99_latency_regression",
+                    baseline_summary.latency_ms_p99,
+                    candidate_summary.latency_ms_p99,
+                    max_latency_regression_ratio,
+                ),
+            ]
+        )
+    return BenchmarkGuardrailReport(
+        backend=backend,
+        passed=all(check.passed for check in checks),
+        baseline=baseline_summary,
+        candidate=candidate_summary,
+        checks=tuple(checks),
+    )
+
+
+def format_benchmark_comparison(report: BenchmarkGuardrailReport) -> str:
+    """Render benchmark guardrails as Markdown."""
+    status = "PASS" if report.passed else "FAIL"
+    lines = [
+        "# Benchmark Guardrail Comparison",
+        "",
+        f"- Status: `{status}`",
+        f"- Backend: `{report.backend}`",
+        f"- Candidate mean score: `{report.candidate.mean_score:.3f}`",
+        f"- Candidate p95 ms: `{report.candidate.latency_ms_p95:.2f}`",
+        f"- Candidate p99 ms: `{report.candidate.latency_ms_p99:.2f}`",
+    ]
+    if report.candidate.mean_citation_coverage is not None:
+        lines.append(
+            f"- Candidate citation coverage: `{report.candidate.mean_citation_coverage:.3f}`"
+        )
+    if report.baseline is not None:
+        lines.extend(
+            [
+                f"- Baseline p95 ms: `{report.baseline.latency_ms_p95:.2f}`",
+                f"- Baseline p99 ms: `{report.baseline.latency_ms_p99:.2f}`",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "| Check | Status | Observed | Threshold | Message |",
+            "|-------|--------|----------|-----------|---------|",
+        ]
+    )
+    for check in report.checks:
+        observed = "" if check.observed is None else f"{check.observed:.4f}"
+        lines.append(
+            "| "
+            f"{check.name} | "
+            f"{'PASS' if check.passed else 'FAIL'} | "
+            f"{observed} | "
+            f"{check.threshold:.4f} | "
+            f"{check.message} |"
+        )
+    return "\n".join(lines) + "\n"
+
+
 def _measurement(
     backend: str,
     case: BenchmarkCase,
@@ -1772,6 +1939,64 @@ def _category_summaries(measurements: list[BenchmarkRun]) -> list[CategorySummar
             )
         )
     return summaries
+
+
+def _summary_for_backend(report: BenchmarkReport | None, backend: str) -> BenchmarkSummary | None:
+    if report is None:
+        return None
+    for summary in report.summaries:
+        if summary.backend == backend:
+            return summary
+    raise ValueError(f"benchmark report does not contain backend: {backend}")
+
+
+def _min_check(
+    name: str,
+    observed: float | None,
+    threshold: float,
+    message: str,
+) -> BenchmarkGuardrailCheck:
+    return BenchmarkGuardrailCheck(
+        name=name,
+        passed=observed is not None and observed >= threshold,
+        observed=observed,
+        threshold=threshold,
+        message=message,
+    )
+
+
+def _max_check(
+    name: str,
+    observed: float,
+    threshold: float,
+    message: str,
+) -> BenchmarkGuardrailCheck:
+    return BenchmarkGuardrailCheck(
+        name=name,
+        passed=observed <= threshold,
+        observed=observed,
+        threshold=threshold,
+        message=message,
+    )
+
+
+def _regression_check(
+    name: str,
+    baseline: float,
+    candidate: float,
+    max_regression_ratio: float,
+) -> BenchmarkGuardrailCheck:
+    allowed = baseline * (1.0 + max_regression_ratio)
+    return BenchmarkGuardrailCheck(
+        name=name,
+        passed=candidate <= allowed,
+        observed=candidate,
+        threshold=round(allowed, 4),
+        message=(
+            f"candidate must not exceed baseline {baseline:.4f} by more than "
+            f"{max_regression_ratio:.1%}"
+        ),
+    )
 
 
 def _percentile(values: list[float], percentile: int) -> float:

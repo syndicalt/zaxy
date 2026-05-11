@@ -16,6 +16,7 @@ Zaxy's beta goal is to prove the product thesis: **Git for LLM memory**. A sessi
    - The source recall lane is implemented as `--workload source-recall` with target/distractor source paths and source-recall reporting.
    - The graph traversal lane is implemented as `--workload graph-traversal` with goal-task-completion path cases.
    - The context-collapse lane is implemented as `--workload context-collapse` with noisy transcript turns plus compact checkpoint recovery cases.
+   - Benchmark guardrails are implemented with `zaxy benchmark-compare` for mean score, citation coverage, p95, p99, and baseline latency regressions.
    - Keep workload fingerprints frozen and disclose where synthetic workloads do or do not compare to external systems.
 
 2. **Maintained adapter expansion**
