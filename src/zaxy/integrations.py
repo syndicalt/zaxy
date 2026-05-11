@@ -106,7 +106,10 @@ def render_codex_mcp_add_command(
 ) -> list[str]:
     """Render the official Codex CLI command for adding Zaxy as an MCP server."""
     server = _codex_server_config(zaxy_executable=resolve_zaxy_executable(zaxy_executable))
+    env = server["env"]
     command = ["codex", "mcp", "add", "zaxy"]
+    for key in sorted(env):
+        command.extend(["--env", f"{key}={env[key]}"])
     command.append("--")
     command.append(str(server["command"]))
     command.extend(str(arg) for arg in server["args"])
@@ -178,6 +181,10 @@ def write_codex_mcp_config(
     zaxy = tomlkit.table()
     zaxy.add("command", server["command"])
     zaxy.add("args", server["args"])
+    env = tomlkit.table()
+    for key, value in server["env"].items():
+        env.add(key, value)
+    zaxy.add("env", env)
     zaxy.add("startup_timeout_sec", server["startup_timeout_sec"])
     mcp_servers["zaxy"] = zaxy
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -403,6 +410,18 @@ def _codex_server_config(*, zaxy_executable: str) -> dict[str, Any]:
         "command": zaxy_executable,
         "args": ["serve"],
         "startup_timeout_sec": 90,
+        "env": {
+            "LOG_LEVEL": "ERROR",
+            "MCP_ADMIN_TOKEN_FILE": "",
+            "MCP_REMOTE_AUTH_TOKEN_FILE": "",
+            "NEO4J_AUTO_START": "true",
+            "NEO4J_CA_CERT": "",
+            "NEO4J_PASSWORD_FILE": "",
+            "NEO4J_URI": "bolt://localhost:7687",
+            "OPENAI_API_KEY_FILE": "",
+            "PATHLIGHT_ACCESS_TOKEN_FILE": "",
+            "ZAXY_ENV": "development",
+        },
     }
 
 

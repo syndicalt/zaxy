@@ -732,6 +732,9 @@ def test_ide_config_command_prints_codex_cli_install_command() -> None:
     assert "codex mcp add zaxy" in result.output
     assert "--env EVENTLOOM_THREAD" not in result.output
     assert "ZAXY_DOMAIN" not in result.output
+    assert "--env NEO4J_URI=bolt://localhost:7687" in result.output
+    assert "--env NEO4J_CA_CERT=" in result.output
+    assert "--env NEO4J_PASSWORD_FILE=" in result.output
     assert "-- /opt/zaxy/bin/zaxy serve" in result.output
     assert "--eventloom-path" not in result.output
 
@@ -790,6 +793,9 @@ def test_ide_config_command_writes_trusted_project_codex_config(tmp_path: Path) 
     assert 'command = "/opt/zaxy/bin/zaxy"' in config
     assert 'args = ["serve"]' in config
     assert "EVENTLOOM_PATH" not in config
+    assert 'NEO4J_URI = "bolt://localhost:7687"' in config
+    assert 'NEO4J_CA_CERT = ""' in config
+    assert 'NEO4J_PASSWORD_FILE = ""' in config
 
 
 def test_ide_config_command_rejects_project_codex_config_without_trust(tmp_path: Path) -> None:

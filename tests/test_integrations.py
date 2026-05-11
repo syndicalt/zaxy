@@ -182,7 +182,11 @@ def test_renders_codex_mcp_add_command_with_env_and_command_separator() -> None:
         "/opt/zaxy/bin/zaxy",
         "serve",
     ]
-    assert "--env" not in command
+    assert "--env" in command
+    assert "NEO4J_URI=bolt://localhost:7687" in command
+    assert "NEO4J_CA_CERT=" in command
+    assert "NEO4J_PASSWORD_FILE=" in command
+    assert "ZAXY_ENV=development" in command
     assert not any("EVENTLOOM_" in part or "ZAXY_DOMAIN" in part for part in command)
 
 
@@ -211,7 +215,12 @@ def test_writes_trusted_project_codex_config_without_removing_existing_servers(
     assert config["mcp_servers"]["context7"]["command"] == "npx"
     assert config["mcp_servers"]["zaxy"]["command"] == "/opt/zaxy/bin/zaxy"
     assert config["mcp_servers"]["zaxy"]["args"] == ["serve"]
-    assert "env" not in config["mcp_servers"]["zaxy"]
+    assert config["mcp_servers"]["zaxy"]["env"]["NEO4J_URI"] == "bolt://localhost:7687"
+    assert config["mcp_servers"]["zaxy"]["env"]["NEO4J_CA_CERT"] == ""
+    assert config["mcp_servers"]["zaxy"]["env"]["NEO4J_PASSWORD_FILE"] == ""
+    assert "EVENTLOOM_PATH" not in config["mcp_servers"]["zaxy"]["env"]
+    assert "EVENTLOOM_THREAD" not in config["mcp_servers"]["zaxy"]["env"]
+    assert "ZAXY_DOMAIN" not in config["mcp_servers"]["zaxy"]["env"]
 
 
 def test_project_codex_config_requires_trusted_project_acknowledgement(tmp_path: Path) -> None:

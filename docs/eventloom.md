@@ -73,10 +73,10 @@ while preserving provenance.
 Project domains separate default sessions across repositories. Project-local MCP
 configs set `ZAXY_DOMAIN` and `EVENTLOOM_THREAD` together, for example
 `ZAXY_DOMAIN=zaxy` and `EVENTLOOM_THREAD=zaxy-default`. Codex user-level config
-is workspace-neutral; `zaxy serve` derives the domain default from the process
-workspace when no explicit Eventloom environment is supplied. A session ID may
-still change per run or per agent, but the domain should stay stable for a
-project.
+is workspace-neutral for Eventloom/session/domain values; `zaxy serve` derives
+the domain default from the process workspace when no explicit Eventloom
+environment is supplied. A session ID may still change per run or per agent,
+but the domain should stay stable for a project.
 
 Codebase inventory is represented as typed events, not as direct graph writes.
 `code.file.indexed` records preserve relative path, language, hash, byte count,
