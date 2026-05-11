@@ -242,7 +242,13 @@ async def run_onboarding(
         )
     )
     hook_status = inspect_hook_status(eventloom_path=eventloom, workspace_root=root)
-    steps.append(OnboardingStep("hook_status", hook_status["status"], hook_status["message"]))
+    steps.append(
+        OnboardingStep(
+            "hook_status",
+            _onboarding_hook_status(hook_status, hook_client=hook_client),
+            hook_status["message"],
+        )
+    )
     return OnboardingResult(
         status=_overall_status(step.status for step in steps),
         workspace=str(root),
@@ -444,6 +450,19 @@ def _onboarding_doctor_status(doctor: dict[str, Any], *, hook_installation_requi
         ignored.add("hook_installation")
     actionable_statuses = [check["status"] for check in doctor["checks"] if check["name"] not in ignored]
     return _overall_status(actionable_statuses)
+
+
+def _onboarding_hook_status(report: dict[str, Any], *, hook_client: str | None) -> str:
+    status = str(report["status"])
+    if status == "ok":
+        return "ok"
+    if hook_client is None or _normalize_hook_client_name(hook_client) != "codex":
+        return status
+    codex = report.get("clients", {}).get("codex", {})
+    runtime = codex.get("runtime", {})
+    if codex.get("installed") and not runtime.get("running", False):
+        return "ok"
+    return status
 
 
 def _overall_status(statuses: Any) -> str:

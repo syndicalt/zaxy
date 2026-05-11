@@ -1286,7 +1286,14 @@ def test_hook_status_reports_observation_type_coverage(tmp_path: Path) -> None:
     runner = CliRunner()
     result = runner.invoke(
         app,
-        ["hook-status", "--eventloom-path", str(tmp_path / ".eventloom"), "--json"],
+        [
+            "hook-status",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--workspace-root",
+            str(tmp_path),
+            "--json",
+        ],
     )
 
     assert result.exit_code == 0
@@ -1319,7 +1326,14 @@ def test_hook_status_reports_complete_observation_coverage(tmp_path: Path) -> No
     runner = CliRunner()
     result = runner.invoke(
         app,
-        ["hook-status", "--eventloom-path", str(tmp_path / ".eventloom"), "--json"],
+        [
+            "hook-status",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--workspace-root",
+            str(tmp_path),
+            "--json",
+        ],
     )
 
     assert result.exit_code == 0
@@ -1339,6 +1353,135 @@ def test_hook_status_reports_complete_observation_coverage(tmp_path: Path) -> No
         "missing_observation_types": [],
         "actions": [],
     }
+
+
+@patch("zaxy.hooks._iter_process_cmdlines")
+def test_hook_status_reports_codex_capture_watcher_runtime(
+    mock_processes: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """hook-status should distinguish installed Codex capture config from a running watcher."""
+    capture_config = tmp_path / ".codex" / "zaxy-capture.json"
+    capture_config.parent.mkdir()
+    capture_config.write_text(
+        json.dumps(
+            {
+                "capture": "local-session-jsonl",
+                "client": "codex",
+                "workspace": str(tmp_path),
+                "eventloom_path": str(tmp_path / ".eventloom"),
+                "session_id": "agent-1",
+            }
+        ),
+        encoding="utf-8",
+    )
+    mock_processes.return_value = [
+        (
+            123,
+            [
+                "python",
+                "-m",
+                "zaxy",
+                "codex-capture",
+                "--workspace",
+                str(tmp_path),
+                "--eventloom-path",
+                str(tmp_path / ".eventloom"),
+                "--session-id",
+                "agent-1",
+                "--watch",
+            ],
+        )
+    ]
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "hook-status",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--workspace-root",
+            str(tmp_path),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["clients"]["codex"]["installed"] is True
+    assert payload["clients"]["codex"]["runtime"] == {
+        "running": True,
+        "pids": [123],
+        "message": "Codex capture watcher is running",
+    }
+
+    text = runner.invoke(
+        app,
+        [
+            "hook-status",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--workspace-root",
+            str(tmp_path),
+        ],
+    )
+
+    assert text.exit_code == 0
+    assert "codex: installed (.codex/zaxy-capture.json)" in text.output
+    assert "codex capture: running pid=123" in text.output
+
+
+@patch("zaxy.hooks._iter_process_cmdlines")
+def test_hook_status_warns_when_codex_capture_configured_but_not_running(
+    mock_processes: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """hook-status should not treat stale Codex coverage as an active watcher."""
+    capture_config = tmp_path / ".codex" / "zaxy-capture.json"
+    capture_config.parent.mkdir()
+    capture_config.write_text(
+        json.dumps(
+            {
+                "capture": "local-session-jsonl",
+                "client": "codex",
+                "workspace": str(tmp_path),
+                "eventloom_path": str(tmp_path / ".eventloom"),
+                "session_id": "agent-1",
+            }
+        ),
+        encoding="utf-8",
+    )
+    log = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl")
+    log.append("hook.heartbeat", actor="zaxy-hook", payload={"source": "codex"}, thread="agent-1")
+    log.append("command.completed", actor="zaxy-observer", payload={"source": "codex"}, thread="agent-1")
+    log.append("file.edit.applied", actor="zaxy-observer", payload={"source": "codex"}, thread="agent-1")
+    log.append("tool.call.completed", actor="zaxy-observer", payload={"source": "codex"}, thread="agent-1")
+    log.append("transcript.turn", actor="assistant", payload={"source": "codex"}, thread="agent-1")
+    mock_processes.return_value = []
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "hook-status",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--workspace-root",
+            str(tmp_path),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["status"] == "warning"
+    assert payload["clients"]["codex"]["runtime"]["running"] is False
+    assert payload["capture_readiness"]["status"] == "warning"
+    assert payload["capture_readiness"]["actions"] == [
+        "Start deterministic Codex capture: zaxy codex-capture --workspace "
+        f"{tmp_path} --eventloom-path {tmp_path / '.eventloom'} --session-id agent-1 --watch."
+    ]
 
 
 def test_hooks_status_reports_installed_clients_and_recent_activity(tmp_path: Path) -> None:

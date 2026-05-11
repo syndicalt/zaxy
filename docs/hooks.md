@@ -52,6 +52,11 @@ hook event, and observation coverage by high-value capture type. Missing
 `command.completed`, `file.edit.applied`, `tool.call.completed`, or
 `transcript.turn` coverage means Zaxy can see lifecycle checkpoints but is not
 yet seeing the richer activity needed for durable session reconstruction.
+For Codex, install detection and live capture are separate signals:
+`.codex/zaxy-capture.json` means local capture is configured, while a running
+`zaxy codex-capture --watch` process means this session is actively importing
+new observations. If Codex capture is configured but the watcher is stopped,
+`hook-status` reports a warning and prints the command needed to resume it.
 The same report includes a capture readiness summary. In JSON output, inspect
 `capture_readiness.status`, `active_observation_types`, and
 `missing_observation_types` to decide whether automatic capture is healthy or

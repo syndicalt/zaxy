@@ -189,12 +189,16 @@ def inspect_hook_status(
     root = Path(workspace_root or Path.cwd())
     eventloom = Path(eventloom_path)
     installations = _detect_hook_installations(root)
+    installations["codex"]["runtime"] = _detect_codex_capture_runtime(root, eventloom)
     latest = _latest_hook_event(eventloom)
     coverage = _observation_coverage(eventloom)
     missing = [event_type for event_type in HIGH_VALUE_OBSERVATION_TYPES if coverage[event_type]["count"] == 0]
-    readiness = _capture_readiness(coverage)
+    readiness = _capture_readiness(coverage, installations=installations, workspace_root=root, eventloom_path=eventloom)
     installed_any = any(client["installed"] for client in installations.values())
     status = "ok" if latest is not None else "warning"
+    codex_runtime = installations["codex"].get("runtime", {})
+    if installations["codex"]["installed"] and not codex_runtime.get("running", False):
+        status = "warning"
     if not installed_any and latest is None:
         message = "No installed observer hook config or hook lifecycle events found"
     elif latest is None:
@@ -221,6 +225,13 @@ def format_hook_status(report: dict[str, Any]) -> str:
         installed = "installed" if info["installed"] else "not installed"
         suffix = f" ({', '.join(info['paths'])})" if info["paths"] else ""
         lines.append(f"- {client}: {installed}{suffix}")
+        runtime = info.get("runtime")
+        if runtime:
+            if runtime.get("running"):
+                pids = ", ".join(str(pid) for pid in runtime.get("pids", []))
+                lines.append(f"  {client} capture: running pid={pids}")
+            else:
+                lines.append(f"  {client} capture: not running")
     latest = report.get("latest_event")
     if latest:
         lines.append(
@@ -252,7 +263,13 @@ def format_hook_status(report: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _capture_readiness(coverage: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def _capture_readiness(
+    coverage: dict[str, dict[str, Any]],
+    *,
+    installations: dict[str, dict[str, Any]] | None = None,
+    workspace_root: Path | None = None,
+    eventloom_path: Path | None = None,
+) -> dict[str, Any]:
     active = [
         event_type
         for event_type in HIGH_VALUE_OBSERVATION_TYPES
@@ -269,6 +286,12 @@ def _capture_readiness(coverage: dict[str, dict[str, Any]]) -> dict[str, Any]:
     actions = []
     if missing:
         actions.append("Wire hooks or adapter sinks for: " + ", ".join(missing) + ".")
+    codex = installations.get("codex") if installations else None
+    codex_runtime = codex.get("runtime") if codex else None
+    if codex and codex.get("installed") and codex_runtime and not codex_runtime.get("running"):
+        status = "warning"
+        if workspace_root is not None and eventloom_path is not None:
+            actions.append(_codex_capture_start_action(workspace_root, eventloom_path))
     return {
         "status": status,
         "message": f"{active_count} of {total} high-value automatic capture lanes are active",
@@ -276,6 +299,22 @@ def _capture_readiness(coverage: dict[str, dict[str, Any]]) -> dict[str, Any]:
         "missing_observation_types": missing,
         "actions": actions,
     }
+
+
+def _codex_capture_start_action(workspace_root: Path, eventloom_path: Path) -> str:
+    config_path = workspace_root / ".codex" / "zaxy-capture.json"
+    session_id = "default"
+    try:
+        payload = json.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        payload = {}
+    if isinstance(payload, dict) and isinstance(payload.get("session_id"), str):
+        session_id = payload["session_id"]
+    return (
+        "Start deterministic Codex capture: zaxy codex-capture "
+        f"--workspace {workspace_root} --eventloom-path {eventloom_path} "
+        f"--session-id {session_id} --watch."
+    )
 
 
 def _detect_hook_installations(workspace_root: Path) -> dict[str, dict[str, Any]]:
@@ -302,6 +341,79 @@ def _detect_hook_installations(workspace_root: Path) -> dict[str, dict[str, Any]
             "paths": installed,
         }
     return installations
+
+
+def _detect_codex_capture_runtime(workspace_root: Path, eventloom_path: Path) -> dict[str, Any]:
+    expected_workspace = workspace_root.resolve()
+    expected_eventloom = _resolve_against(eventloom_path, expected_workspace)
+    pids = [
+        pid
+        for pid, cmdline in _iter_process_cmdlines()
+        if _is_matching_codex_capture_process(
+            cmdline,
+            workspace_root=expected_workspace,
+            eventloom_path=expected_eventloom,
+        )
+    ]
+    if pids:
+        return {
+            "running": True,
+            "pids": sorted(pids),
+            "message": "Codex capture watcher is running",
+        }
+    return {
+        "running": False,
+        "pids": [],
+        "message": "Codex capture watcher is not running",
+    }
+
+
+def _iter_process_cmdlines() -> list[tuple[int, list[str]]]:
+    proc = Path("/proc")
+    if not proc.is_dir():
+        return []
+    processes: list[tuple[int, list[str]]] = []
+    for entry in proc.iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            raw = (entry / "cmdline").read_bytes()
+        except OSError:
+            continue
+        if not raw:
+            continue
+        cmdline = [part.decode("utf-8", errors="replace") for part in raw.split(b"\0") if part]
+        if cmdline:
+            processes.append((int(entry.name), cmdline))
+    return processes
+
+
+def _is_matching_codex_capture_process(
+    cmdline: list[str],
+    *,
+    workspace_root: Path,
+    eventloom_path: Path,
+) -> bool:
+    if "codex-capture" not in cmdline or "--watch" not in cmdline:
+        return False
+    process_workspace = _option_path(cmdline, "--workspace", default=workspace_root)
+    process_eventloom = _option_path(cmdline, "--eventloom-path", default=process_workspace / ".eventloom")
+    return process_workspace == workspace_root and process_eventloom == eventloom_path
+
+
+def _option_path(cmdline: list[str], option: str, *, default: Path) -> Path:
+    try:
+        value = cmdline[cmdline.index(option) + 1]
+    except (ValueError, IndexError):
+        return default.resolve()
+    return Path(value).expanduser().resolve()
+
+
+def _resolve_against(path: Path, base: Path) -> Path:
+    expanded = path.expanduser()
+    if expanded.is_absolute():
+        return expanded.resolve()
+    return (base / expanded).resolve()
 
 
 def _latest_hook_event(eventloom_path: Path) -> dict[str, Any] | None:
