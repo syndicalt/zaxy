@@ -13,6 +13,7 @@ import pytest
 
 from zaxy.extract import ExtractedEdge, ExtractedEntity, ExtractionResult
 from zaxy.graph import (
+    GraphInferredEdgeMethodStatus,
     GraphStore,
     SearchResult,
     _record_to_entity,
@@ -577,6 +578,91 @@ class TestProjectionStatus:
         assert status.previous_event_edges == 1
         assert status.missing_chain_links == 1
         assert status.integrity_ok is False
+
+
+class TestInferredEdgeStatus:
+    """Tests for inferred-edge graph audit inspection."""
+
+    async def test_inspect_inferred_edge_status_reports_method_and_evidence_coverage(
+        self,
+        store: GraphStore,
+    ) -> None:
+        """Inferred-edge status should summarize confidence and evidence by method."""
+        store._driver.execute_query.side_effect = [
+            (
+                [
+                    {
+                        "method": "task_completed_decision_citation_v1",
+                        "edge_count": 2,
+                        "relation_types": ["likely_implemented_decision"],
+                        "average_confidence": 0.85,
+                        "minimum_confidence": 0.8,
+                        "evidence_count": 1,
+                        "missing_evidence_count": 1,
+                        "missing_source_event_count": 0,
+                    },
+                    {
+                        "method": "unknown",
+                        "edge_count": 1,
+                        "relation_types": ["likely_informed"],
+                        "average_confidence": None,
+                        "minimum_confidence": None,
+                        "evidence_count": 0,
+                        "missing_evidence_count": 1,
+                        "missing_source_event_count": 1,
+                    },
+                ],
+                None,
+                None,
+            ),
+            (
+                [
+                    {
+                        "source": "task-7",
+                        "target": "decision:Use graph audit",
+                        "relation_type": "likely_implemented_decision",
+                        "confidence": 0.86,
+                        "method": "task_completed_decision_citation_v1",
+                        "source_event_seq": 12,
+                        "source_event_hash": "a" * 64,
+                        "evidence_keys": ["evidence_source_event_seq", "evidence_reason"],
+                    }
+                ],
+                None,
+                None,
+            ),
+        ]
+
+        status = await store.inspect_inferred_edge_status("agent-1", limit=5)
+
+        assert status.session_id == "agent-1"
+        assert status.total_edges == 3
+        assert status.method_count == 2
+        assert status.evidence_count == 1
+        assert status.missing_evidence_count == 2
+        assert status.missing_source_event_count == 1
+        assert status.evidence_coverage == pytest.approx(1 / 3)
+        assert status.methods[0] == GraphInferredEdgeMethodStatus(
+            method="task_completed_decision_citation_v1",
+            edge_count=2,
+            relation_types=("likely_implemented_decision",),
+            average_confidence=0.85,
+            minimum_confidence=0.8,
+            evidence_count=1,
+            missing_evidence_count=1,
+            missing_source_event_count=0,
+        )
+        assert status.samples[0].source == "task-7"
+        assert status.samples[0].evidence_keys == (
+            "evidence_reason",
+            "evidence_source_event_seq",
+        )
+        first_query = store._driver.execute_query.await_args_list[0]
+        assert "MATCH (:Entity)-[r:RELATES]->(:Entity)" in first_query.args[0]
+        assert "r.inferred = true" in first_query.args[0]
+        assert "key STARTS WITH 'evidence_'" in first_query.args[0]
+        assert first_query.kwargs["session_id"] == "agent-1"
+        assert store._driver.execute_query.await_args_list[1].kwargs["limit"] == 5
 
 
 # ------------------------------------------------------------------

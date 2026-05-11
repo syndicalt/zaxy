@@ -75,6 +75,18 @@ Zaxy's first built-in inferred-edge producer is deliberately narrow. When a
 `task_completed_decision_citation_v1`. Without the decision Eventloom citation,
 the producer emits nothing.
 
+Operators can audit inferred graph density without writing to memory:
+
+```bash
+zaxy memory inferred-status --session-id zaxy-default
+zaxy memory inferred-status --session-id zaxy-default --json
+```
+
+The status command reports total inferred edges, method counts, confidence
+statistics, evidence coverage, missing evidence counts, missing source-event
+provenance, and representative samples. This keeps inferred edges inspectable
+as a trust surface instead of a hidden retrieval heuristic.
+
 Example Eventloom payload:
 
 ```json

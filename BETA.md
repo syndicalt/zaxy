@@ -35,6 +35,7 @@ Zaxy's beta goal is to prove the product thesis: **Git for LLM memory**. A sessi
    - The graph projection contract now has first-class inferred-edge audit metadata: `inferred`, bounded `confidence`, `inference_method`, and namespaced evidence properties.
    - Explicit `inference.edge.generated` events now project auditable inferred edges without free-text relationship guessing.
    - Task completions that explicitly cite a decision Eventloom event now generate `likely_implemented_decision` inferred-edge events.
+   - `zaxy memory inferred-status` now reports inferred-edge totals, method distribution, confidence statistics, evidence coverage, source-event gaps, and representative samples.
    - Continue improving graph traversal density by adding generated inferred edges only when provenance and confidence are defensible.
    - Keep Eventloom provenance as the source of truth; do not fake graph density.
 

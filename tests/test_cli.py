@@ -154,6 +154,134 @@ def test_memory_status_handles_empty_eventloom_directory(tmp_path: Path) -> None
     assert "Total events: 0" in result.output
 
 
+@patch("zaxy.__main__.GraphStore")
+def test_memory_inferred_status_json_reports_graph_audit(
+    mock_graph_store: MagicMock,
+) -> None:
+    """memory inferred-status --json should expose inferred-edge audit metadata."""
+    graph = AsyncMock()
+    status = MagicMock()
+    status.to_dict.return_value = {
+        "session_id": "agent",
+        "total_edges": 3,
+        "method_count": 1,
+        "evidence_count": 2,
+        "missing_evidence_count": 1,
+        "missing_source_event_count": 0,
+        "evidence_coverage": 0.666667,
+        "methods": [
+            {
+                "method": "task_completed_decision_citation_v1",
+                "edge_count": 3,
+                "relation_types": ["likely_implemented_decision"],
+                "average_confidence": 0.86,
+                "minimum_confidence": 0.86,
+                "evidence_count": 2,
+                "missing_evidence_count": 1,
+                "missing_source_event_count": 0,
+            }
+        ],
+        "samples": [],
+    }
+    graph.inspect_inferred_edge_status.return_value = status
+    mock_graph_store.return_value = graph
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "inferred-status",
+            "--session-id",
+            "agent",
+            "--limit",
+            "7",
+            "--json",
+            "--neo4j-uri",
+            "bolt://test:7687",
+            "--neo4j-password",
+            "testpassword",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["session_id"] == "agent"
+    assert payload["total_edges"] == 3
+    assert payload["methods"][0]["method"] == "task_completed_decision_citation_v1"
+    mock_graph_store.assert_called_once_with("bolt://test:7687", "neo4j", "testpassword")
+    graph.connect.assert_awaited_once()
+    graph.inspect_inferred_edge_status.assert_awaited_once_with("agent", limit=7)
+    graph.close.assert_awaited_once()
+
+
+@patch("zaxy.__main__.GraphStore")
+def test_memory_inferred_status_text_reports_evidence_gaps(
+    mock_graph_store: MagicMock,
+) -> None:
+    """The human inferred-edge status should call out evidence coverage and gaps."""
+    graph = AsyncMock()
+    status = MagicMock()
+    status.to_dict.return_value = {
+        "session_id": "agent",
+        "total_edges": 2,
+        "method_count": 1,
+        "evidence_count": 1,
+        "missing_evidence_count": 1,
+        "missing_source_event_count": 0,
+        "evidence_coverage": 0.5,
+        "methods": [
+            {
+                "method": "task_completed_decision_citation_v1",
+                "edge_count": 2,
+                "relation_types": ["likely_implemented_decision"],
+                "average_confidence": 0.86,
+                "minimum_confidence": 0.86,
+                "evidence_count": 1,
+                "missing_evidence_count": 1,
+                "missing_source_event_count": 0,
+            }
+        ],
+        "samples": [
+            {
+                "source": "task-7",
+                "target": "decision:Use graph audit",
+                "relation_type": "likely_implemented_decision",
+                "confidence": 0.86,
+                "method": "task_completed_decision_citation_v1",
+                "source_event_seq": 12,
+                "source_event_hash": "a" * 64,
+                "evidence_keys": ["evidence_source_event_seq", "evidence_reason"],
+            }
+        ],
+    }
+    graph.inspect_inferred_edge_status.return_value = status
+    mock_graph_store.return_value = graph
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "inferred-status",
+            "--session-id",
+            "agent",
+            "--neo4j-uri",
+            "bolt://test:7687",
+            "--neo4j-password",
+            "testpassword",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Inferred edges: agent" in result.output
+    assert "total=2" in result.output
+    assert "evidence_coverage=50.0%" in result.output
+    assert "task_completed_decision_citation_v1" in result.output
+    assert "missing_evidence=1" in result.output
+    assert "task-7 -[likely_implemented_decision]-> decision:Use graph audit" in result.output
+
+
 def test_memory_capabilities_json_output(tmp_path: Path) -> None:
     """memory capabilities should expose a session-scoped model contract."""
     EventLog(tmp_path / ".eventloom" / "agent.jsonl").append(

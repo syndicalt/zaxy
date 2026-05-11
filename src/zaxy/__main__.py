@@ -258,6 +258,123 @@ def _format_memory_graph_status(graph_sessions: list[dict[str, object]]) -> str:
     return "\n".join(lines)
 
 
+@memory_app.command("inferred-status")
+def memory_inferred_status(
+    session_id: str = typer.Option("default", help="Session ID to inspect"),
+    limit: int = typer.Option(10, help="Number of representative inferred edges to show"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+    neo4j_uri: str | None = typer.Option(None, help="Neo4j Bolt URI"),
+    neo4j_user: str | None = typer.Option(None, help="Neo4j username"),
+    neo4j_password: str | None = typer.Option(None, help="Neo4j password"),
+) -> None:
+    """Show read-only graph audit status for inferred relationships."""
+    import asyncio
+
+    from zaxy.config import get_settings
+
+    async def _inspect_graph() -> dict[str, object]:
+        settings = get_settings()
+        store = GraphStore(
+            neo4j_uri or settings.neo4j_uri,
+            neo4j_user or settings.neo4j_user,
+            neo4j_password or settings.neo4j_password,
+        )
+        await store.connect()
+        try:
+            status = await store.inspect_inferred_edge_status(session_id, limit=limit)
+            return status.to_dict()
+        finally:
+            await store.close()
+
+    payload = asyncio.run(_inspect_graph())
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(_format_memory_inferred_status(payload))
+
+
+def _format_memory_inferred_status(status: dict[str, object]) -> str:
+    """Format inferred-edge audit status for humans."""
+    session_id = status.get("session_id", "-")
+    total_edges = _format_int_value(status.get("total_edges"))
+    method_count = _format_int_value(status.get("method_count"))
+    evidence_coverage = _format_float_value(status.get("evidence_coverage"))
+    missing_evidence = _format_int_value(status.get("missing_evidence_count"))
+    missing_source_events = _format_int_value(status.get("missing_source_event_count"))
+    lines = [
+        f"Inferred edges: {session_id}",
+        (
+            f"  total={total_edges} methods={method_count} "
+            f"evidence_coverage={evidence_coverage:.1%} "
+            f"missing_evidence={missing_evidence} "
+            f"missing_source_events={missing_source_events}"
+        ),
+    ]
+    methods = status.get("methods")
+    if isinstance(methods, list) and methods:
+        lines.append("Methods:")
+        for method in methods:
+            if not isinstance(method, dict):
+                continue
+            relation_types = method.get("relation_types")
+            relation_text = ", ".join(str(value) for value in relation_types or [])
+            avg = _format_optional_float(method.get("average_confidence"))
+            minimum = _format_optional_float(method.get("minimum_confidence"))
+            lines.append(
+                "  "
+                f"{method.get('method', 'unknown')}: "
+                f"edges={method.get('edge_count', 0)} "
+                f"avg_confidence={avg} min_confidence={minimum} "
+                f"missing_evidence={method.get('missing_evidence_count', 0)} "
+                f"relations={relation_text or '-'}"
+            )
+    samples = status.get("samples")
+    if isinstance(samples, list) and samples:
+        lines.append("Samples:")
+        for sample in samples:
+            if not isinstance(sample, dict):
+                continue
+            confidence = _format_optional_float(sample.get("confidence"))
+            source_event_seq = sample.get("source_event_seq") or "-"
+            evidence_keys = sample.get("evidence_keys")
+            evidence_text = ", ".join(str(value) for value in evidence_keys or [])
+            lines.append(
+                "  "
+                f"{sample.get('source', '')} -[{sample.get('relation_type', '')}]-> "
+                f"{sample.get('target', '')} "
+                f"confidence={confidence} method={sample.get('method', 'unknown')} "
+                f"event_seq={source_event_seq} evidence={evidence_text or '-'}"
+            )
+    return "\n".join(lines)
+
+
+def _format_optional_float(value: object) -> str:
+    """Format an optional float-ish value for compact CLI output."""
+    if isinstance(value, bool):
+        return "-"
+    if isinstance(value, int | float):
+        return f"{float(value):.3f}"
+    return "-"
+
+
+def _format_int_value(value: object) -> int:
+    """Return an integer value from trusted formatter payloads."""
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int):
+        return value
+    return 0
+
+
+def _format_float_value(value: object) -> float:
+    """Return a float value from trusted formatter payloads."""
+    if isinstance(value, bool):
+        return 0.0
+    if isinstance(value, int | float):
+        return float(value)
+    return 0.0
+
+
 @memory_app.command("capabilities")
 def memory_capabilities(
     eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008

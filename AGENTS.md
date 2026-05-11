@@ -339,13 +339,14 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] First-class inferred-edge audit metadata for graph projection confidence, method, and evidence
 - [x] Explicit `inference.edge.generated` event projection for auditable inferred graph edges
 - [x] Conservative cited-decision inferred-edge producer for task completion events
+- [x] Read-only inferred-edge graph status for method, confidence, evidence, and source-event audit coverage
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 785 passed, 8 deselected |
-| Coverage | 92.25% |
+| Tests | 788 passed, 8 deselected |
+| Coverage | 92.24% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
@@ -353,4 +354,4 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 ## Next Steps
 
 1. Use LangGraph and CrewAI native-preview usage to choose the next maintained adapter or model-facing UX hardening target.
-2. Add inspection and status tooling for generated inferred edges so operators can audit confidence, method, and evidence coverage.
+2. Add source-aware inferred-edge retrieval scoring so high-confidence, well-cited inferred edges can safely improve graph traversal context.
