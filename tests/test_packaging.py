@@ -186,6 +186,15 @@ def test_ci_runs_distribution_artifact_gate() -> None:
     assert "scripts/build-dist.sh --root ." in workflow
 
 
+def test_github_workflows_opt_into_node24_action_runtime() -> None:
+    """JavaScript actions should opt into Node 24 before GitHub removes Node 20."""
+    for workflow_path in Path(".github/workflows").glob("*.yml"):
+        workflow = workflow_path.read_text(encoding="utf-8")
+        if "uses:" not in workflow:
+            continue
+        assert "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true" in workflow, workflow_path
+
+
 def test_ci_disables_benchmark_timing_for_correctness_matrix() -> None:
     """Performance benchmarks should not make the Python matrix flaky."""
     workflow = Path(".github/workflows/ci.yml").read_text(encoding="utf-8")
