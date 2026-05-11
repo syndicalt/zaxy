@@ -64,7 +64,10 @@ set, and Checkout diagnostics. Diagnostics include source lane counts, citation
 count, current fact count, excluded superseded context count, warning count, and
 a `memory_feedback` recommendation when cited context is returned. This is the
 preferred tool when a model needs a bounded, auditable working state rather than
-a raw list of retrieval hits.
+a raw list of retrieval hits. The response also includes `guidance` with
+model-facing trust and ignore instructions, a recommended follow-up
+`memory_checkout` call, and concrete `memory_feedback` payload templates for
+cited facts that materially influence the next response.
 When `ref` is supplied, checkout resolves a Git-style memory ref such as `HEAD`
 or `refs/heads/main` and filters replay/context to the target event identity.
 MCP clients discover this tool through the standard `tools/list` handshake, so

@@ -606,8 +606,27 @@ class TestContextLifecycleTools:
             "feedback_tool": "memory_feedback",
             "feedback_reason": "Reinforce cited context if it materially informed the next response.",
         }
+        assert output["guidance"]["recommended_next_call"] == {
+            "tool": "memory_checkout",
+            "query": "current decisions, blockers, and next actions for: What context contract should the model use?",
+            "reason": "Refresh memory before major follow-up work, after compaction/resume, or when task scope changes.",
+        }
+        assert output["guidance"]["feedback"]["payloads"][0] == {
+            "entity_name": "memory checkout",
+            "entity_type": "task",
+            "feedback": "used",
+            "actor": "assistant",
+            "query": "What context contract should the model use?",
+            "source": "keyword",
+            "score": 0.8,
+            "citation": "eventloom://agent-1/events/1882#checkout",
+            "importance": 0.6,
+        }
+        assert "Do not treat superseded contexts as current facts." in output["guidance"]["ignore"]
         assert "# Memory Checkout" in output["prompt"]
+        assert "## Checkout Guidance" in output["prompt"]
         assert "## Checkout Diagnostics" in output["prompt"]
+        assert "current decisions, blockers, and next actions" in output["prompt"]
         assert "memory_feedback" in output["prompt"]
         assert all(fact["valid_to"] is None for fact in output["current_facts"])
 

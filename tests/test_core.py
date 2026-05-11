@@ -797,8 +797,30 @@ class TestContextAssembly:
             "feedback_tool": "memory_feedback",
             "feedback_reason": "Reinforce cited context if it materially informed the next response.",
         }
+        assert checkout.guidance["recommended_next_call"] == {
+            "tool": "memory_checkout",
+            "query": "current decisions, blockers, and next actions for: What memory contract should the model use?",
+            "reason": "Refresh memory before major follow-up work, after compaction/resume, or when task scope changes.",
+        }
+        assert checkout.guidance["feedback"]["tool"] == "memory_feedback"
+        assert checkout.guidance["feedback"]["payloads"] == [
+            {
+                "entity_name": "memory checkout",
+                "entity_type": "decision",
+                "feedback": "used",
+                "actor": "assistant",
+                "query": "What memory contract should the model use?",
+                "source": "keyword",
+                "score": 0.95,
+                "citation": "eventloom://agent-1/events/3#cccccccccccc",
+                "importance": 0.6,
+            }
+        ]
+        assert "Do not treat superseded contexts as current facts." in checkout.guidance["ignore"]
         assert "# Memory Checkout" in checkout.prompt
+        assert "## Checkout Guidance" in checkout.prompt
         assert "## Checkout Diagnostics" in checkout.prompt
+        assert "current decisions, blockers, and next actions" in checkout.prompt
         assert "memory_feedback" in checkout.prompt
         assert "Use raw replay only" not in "\n".join(fact["content"] for fact in checkout.current_facts)
         assert checkout.context_counts["graph"] == 2

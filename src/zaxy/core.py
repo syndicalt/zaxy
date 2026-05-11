@@ -87,6 +87,7 @@ class MemoryCheckout:
     provenance: list[dict[str, Any]]
     retention: dict[str, Any]
     warnings: list[str]
+    guidance: dict[str, Any]
     diagnostics: dict[str, Any]
     context_counts: dict[str, int]
     replay_event_count: int
@@ -106,6 +107,7 @@ class MemoryCheckout:
             "provenance": self.provenance,
             "retention": self.retention,
             "warnings": self.warnings,
+            "guidance": self.guidance,
             "diagnostics": self.diagnostics,
             "context_counts": self.context_counts,
             "replay_event_count": self.replay_event_count,
@@ -1037,11 +1039,18 @@ def build_memory_checkout(
         retention=retention,
         warnings=warnings,
     )
+    guidance = _checkout_guidance(
+        query=query,
+        current_facts=current_facts,
+        retention=retention,
+        evidence=evidence,
+    )
     prompt = _format_memory_checkout_prompt(
         query=query,
         assembly_prompt=assembly.prompt,
         current_facts=current_facts,
         evidence=evidence,
+        guidance=guidance,
         diagnostics=diagnostics,
     )
     return MemoryCheckout(
@@ -1055,6 +1064,7 @@ def build_memory_checkout(
         provenance=provenance,
         retention=retention,
         warnings=warnings,
+        guidance=guidance,
         diagnostics=diagnostics,
         context_counts=assembly.context_counts,
         replay_event_count=assembly.replay_event_count,
@@ -1069,6 +1079,7 @@ def _format_memory_checkout_prompt(
     assembly_prompt: str,
     current_facts: list[dict[str, Any]],
     evidence: list[dict[str, Any]],
+    guidance: dict[str, Any],
     diagnostics: dict[str, Any],
 ) -> str:
     lines = [
@@ -1089,6 +1100,20 @@ def _format_memory_checkout_prompt(
             lines.append(f"- {item['citation']}: {item['content']}")
     else:
         lines.append("- No cited evidence was retrieved.")
+    lines.extend(["", "## Checkout Guidance"])
+    for item in guidance.get("trust", []):
+        lines.append(f"- Trust: {item}")
+    for item in guidance.get("ignore", []):
+        lines.append(f"- Ignore: {item}")
+    recommended_next_call = guidance.get("recommended_next_call")
+    if isinstance(recommended_next_call, dict):
+        lines.append(
+            "- Suggested next call: "
+            f"{recommended_next_call.get('tool')}({recommended_next_call.get('query')!r})"
+        )
+    feedback = guidance.get("feedback")
+    if isinstance(feedback, dict) and feedback.get("payloads"):
+        lines.append(f"- Feedback: call {feedback.get('tool')} with a listed payload after use.")
     source_lanes = diagnostics.get("source_lanes")
     lines.extend(["", "## Checkout Diagnostics"])
     lines.append(f"- Source lanes: {_format_source_lanes(source_lanes)}")
@@ -1122,6 +1147,69 @@ def _checkout_fact(context: Context) -> dict[str, Any]:
         if isinstance(value, str) and value:
             fact[key] = value
     return fact
+
+
+def _checkout_guidance(
+    *,
+    query: str,
+    current_facts: list[dict[str, Any]],
+    retention: dict[str, Any],
+    evidence: list[dict[str, Any]],
+) -> dict[str, Any]:
+    feedback_payloads = [
+        payload
+        for fact in current_facts
+        if (payload := _checkout_feedback_payload(fact, query)) is not None
+    ][:3]
+    trust = [
+        "Use current_facts as the primary working memory for this turn.",
+        "Use cited evidence and provenance when making claims about remembered context.",
+    ]
+    ignore = [
+        "Do not treat superseded contexts as current facts.",
+        "Do not rely on uncited facts without checking memory again or asking the user.",
+    ]
+    if not evidence:
+        trust.append("Treat this checkout as low-confidence because it has no cited evidence.")
+    if retention.get("superseded_contexts_excluded", 0):
+        ignore.append("Superseded contexts were excluded from current_facts but remain auditable.")
+    return {
+        "trust": trust,
+        "ignore": ignore,
+        "recommended_next_call": {
+            "tool": "memory_checkout",
+            "query": f"current decisions, blockers, and next actions for: {query}",
+            "reason": (
+                "Refresh memory before major follow-up work, after compaction/resume, "
+                "or when task scope changes."
+            ),
+        },
+        "feedback": {
+            "tool": "memory_feedback",
+            "when": "After cited context materially informs a response.",
+            "payloads": feedback_payloads,
+        },
+    }
+
+
+def _checkout_feedback_payload(fact: dict[str, Any], query: str) -> dict[str, Any] | None:
+    citation = fact.get("citation")
+    if not isinstance(citation, str) or not citation:
+        return None
+    entity_name = fact.get("entity_name")
+    entity_type = fact.get("entity_type")
+    payload: dict[str, Any] = {
+        "entity_name": entity_name if isinstance(entity_name, str) and entity_name else fact.get("content"),
+        "entity_type": entity_type if isinstance(entity_type, str) and entity_type else "memory",
+        "feedback": "used",
+        "actor": "assistant",
+        "query": query,
+        "source": fact.get("source"),
+        "score": fact.get("score"),
+        "citation": citation,
+        "importance": 0.6,
+    }
+    return {key: value for key, value in payload.items() if value is not None}
 
 
 def _checkout_evidence(context: Context) -> dict[str, Any]:
