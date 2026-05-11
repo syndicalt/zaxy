@@ -12,6 +12,13 @@ zaxy hooks claude-code --eventloom-path .eventloom --domain my-project
 zaxy hooks codex --eventloom-path .eventloom --domain my-project
 ```
 
+For Codex, the preferred deterministic path is not provider packet capture and
+not an assumed project-local hook schema. `zaxy init --preset local-codex`
+writes `.codex/zaxy-capture.json`, then `zaxy codex-capture --watch` imports
+Codex's own local session JSONL into Eventloom as normalized transcript,
+tool-call, command, and file-edit observations. This keeps capture local,
+idempotent, and out of the model request path.
+
 Write config directly during onboarding:
 
 ```bash
@@ -56,7 +63,7 @@ path can write without pretending that a real task or compaction happened.
 | Client | Generated Output | Install Detection | Notes |
 |--------|------------------|-------------------|-------|
 | Claude Code | JSON settings fragment | `.claude/settings.local.json`, `.claude/settings.json` | Preferred first target for repository-local hook config. |
-| Codex | Shell snippet | Valid `.codex/hooks.json` only | Codex parses `.codex/hooks.json` as JSON. Zaxy does not write that file by default because project-local interactive hook behavior is still evolving. Use MCP plus memory tools, or wire the generic snippet manually if your Codex version documents a hook path. |
+| Codex | Local capture config plus optional shell snippet | `.codex/zaxy-capture.json`, valid `.codex/hooks.json` | Preferred path is `zaxy codex-capture --watch`, which imports Codex local session JSONL without proxying provider traffic. |
 | Generic | Shell snippet | Any explicit file you wire manually | Use for clients that can run lifecycle shell commands. |
 
 The generated commands call the stable sink:

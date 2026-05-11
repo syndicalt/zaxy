@@ -163,14 +163,78 @@ class EventLog:
 
         The sequence number and hash chain are computed automatically.
         """
+        return self.append_many(
+            [
+                {
+                    "event_type": event_type,
+                    "actor": actor,
+                    "payload": payload,
+                    "thread": thread,
+                    "timestamp": timestamp,
+                }
+            ]
+        )[0]
+
+    def append_many(self, items: list[dict[str, Any]]) -> list[Event]:
+        """Append multiple events while reading and locking the log once."""
+        if not items:
+            return []
         events = self.read_all()
         seq = events[-1].seq + 1 if events else 1
         prev_hash = events[-1].hash if events else None
 
+        batch: list[Event] = []
+        for item in items:
+            event = self._build_event(
+                seq=seq,
+                prev_hash=prev_hash,
+                event_type=str(item["event_type"]),
+                actor=str(item["actor"]),
+                payload=item.get("payload") if isinstance(item.get("payload"), dict) else None,
+                thread=str(item.get("thread", "default")),
+                timestamp=item.get("timestamp") if isinstance(item.get("timestamp"), datetime) else None,
+            )
+            batch.append(event)
+            seq = event.seq + 1
+            prev_hash = event.hash
+
+        # Atomic append with exclusive lock
+        lines_to_write = [event.model_dump_json() + "\n" for event in batch]
+        with open(self.path, "a+", encoding="utf-8") as fh:
+            self._lock(fh.fileno(), exclusive=True)
+            try:
+                # Re-read tail to detect races
+                fh.seek(0)
+                lines = fh.readlines()
+                if lines:
+                    last = Event.model_validate_json(lines[-1])
+                    if last.hash != batch[0].prev_hash:
+                        raise RuntimeError(
+                            f"Hash chain race detected: expected {last.hash[:16]}..., "
+                            f"got {batch[0].prev_hash[:16] if batch[0].prev_hash else 'None'}..."
+                        )
+                fh.seek(0, os.SEEK_END)
+                fh.writelines(lines_to_write)
+                fh.flush()
+                os.fsync(fh.fileno())
+            finally:
+                self._unlock(fh.fileno())
+
+        return batch
+
+    def _build_event(
+        self,
+        *,
+        seq: int,
+        prev_hash: str | None,
+        event_type: str,
+        actor: str,
+        payload: dict[str, Any] | None,
+        thread: str,
+        timestamp: datetime | None,
+    ) -> Event:
         ts = (timestamp or datetime.now(UTC)).isoformat().replace("+00:00", "Z")
         secured = secure_payload(payload or {})
-
-        # Build event with dummy hash, compute real hash, then recreate
         raw = {
             "seq": seq,
             "timestamp": ts,
@@ -183,35 +247,11 @@ class EventLog:
                 "redacted_paths": secured.redacted_paths,
             },
             "prev_hash": prev_hash,
-            "hash": "0" * 64,  # placeholder
+            "hash": "0" * 64,
         }
         tmp = Event.model_validate(raw)
         raw["hash"] = hashlib.sha256(tmp.canonical()).hexdigest()
-        event = Event.model_validate(raw)
-
-        # Atomic append with exclusive lock
-        line = event.model_dump_json() + "\n"
-        with open(self.path, "a+", encoding="utf-8") as fh:
-            self._lock(fh.fileno(), exclusive=True)
-            try:
-                # Re-read tail to detect races
-                fh.seek(0)
-                lines = fh.readlines()
-                if lines:
-                    last = Event.model_validate_json(lines[-1])
-                    if last.hash != event.prev_hash:
-                        raise RuntimeError(
-                            f"Hash chain race detected: expected {last.hash[:16]}..., "
-                            f"got {event.prev_hash[:16] if event.prev_hash else 'None'}..."
-                        )
-                fh.seek(0, os.SEEK_END)
-                fh.write(line)
-                fh.flush()
-                os.fsync(fh.fileno())
-            finally:
-                self._unlock(fh.fileno())
-
-        return event
+        return Event.model_validate(raw)
 
     # ------------------------------------------------------------------
     # Integrity & Replay

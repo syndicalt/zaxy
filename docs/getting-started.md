@@ -110,10 +110,12 @@ zaxy init . \
   --preset local-codex
 ```
 
-`local-codex` renders Codex MCP install guidance and writes the local profile.
-It does not generate `.codex/hooks.json`: Codex parses that file as JSON, and
-Zaxy does not assume a native Codex hook schema unless your Codex version
-documents one. It does not enable packet capture.
+`local-codex` renders Codex MCP install guidance, writes the local profile, and
+writes `.codex/zaxy-capture.json` for deterministic local capture. It does not
+generate `.codex/hooks.json`: Codex parses that file as JSON, and Zaxy does not
+assume a native Codex hook schema unless your Codex version documents one.
+Start `zaxy codex-capture --watch` from the printed next steps to import local
+Codex session JSONL into Eventloom. It does not enable packet capture.
 
 Generated output files are non-destructive by default. Pass `--force` only when
 you intentionally want to replace generated config. `--infra check` reports

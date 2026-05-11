@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from zaxy.codex_capture import write_codex_capture_config
 from zaxy.config import Settings
 from zaxy.core import MemoryFabric
 from zaxy.doctor import run_doctor
@@ -85,8 +86,12 @@ def apply_onboarding_preset(
         return {
             "mcp_client": mcp_client or "codex",
             "mcp_output": Path(mcp_output) if mcp_output is not None else None,
-            "hook_client": hook_client,
-            "hook_output": Path(hook_output) if hook_output is not None else None,
+            "hook_client": hook_client or "codex",
+            "hook_output": (
+                Path(hook_output)
+                if hook_output is not None
+                else root / ".codex" / "zaxy-capture.json"
+            ),
             "local_profile_output": (
                 Path(local_profile_output)
                 if local_profile_output is not None
@@ -186,16 +191,25 @@ async def run_onboarding(
                 steps.append(OnboardingStep("mcp_config", "preview", f"{mcp_client} MCP config rendered"))
 
     if hook_client is not None:
-        hook_config = render_hook_config(
-            hook_client,
-            eventloom_path=str(eventloom),
-            domain=resolved_domain,
-        )
-        if hook_output is not None:
-            written = write_hook_config(Path(hook_output), hook_config, force=force)
-            steps.append(OnboardingStep("hook_config", "ok", f"{hook_client} hook config written", str(written)))
+        if _normalize_hook_client_name(hook_client) == "codex" and hook_output is not None:
+            written = write_codex_capture_config(
+                workspace=root,
+                eventloom_path=eventloom,
+                session_id=sid,
+                force=force,
+            )
+            steps.append(OnboardingStep("codex_capture", "ok", "Codex local capture config written", str(written)))
         else:
-            steps.append(OnboardingStep("hook_config", "preview", f"{hook_client} hook config rendered"))
+            hook_config = render_hook_config(
+                hook_client,
+                eventloom_path=str(eventloom),
+                domain=resolved_domain,
+            )
+            if hook_output is not None:
+                written = write_hook_config(Path(hook_output), hook_config, force=force)
+                steps.append(OnboardingStep("hook_config", "ok", f"{hook_client} hook config written", str(written)))
+            else:
+                steps.append(OnboardingStep("hook_config", "preview", f"{hook_client} hook config rendered"))
 
     if infra_action != "none":
         settings = _onboarding_settings(eventloom=eventloom, session_id=sid, domain=resolved_domain)
@@ -314,6 +328,10 @@ def _normalize_mcp_client_name(client: str) -> str:
     return client.casefold().strip().replace("_", "-")
 
 
+def _normalize_hook_client_name(client: str) -> str:
+    return client.casefold().strip().replace("_", "-")
+
+
 def _build_runtime(settings: Settings) -> LocalNeo4jRuntime:
     return LocalNeo4jRuntime(
         uri=settings.neo4j_uri,
@@ -362,7 +380,8 @@ def _build_next_steps(
         next_steps.append(f"Run this Codex MCP install command: {mcp_install_command}")
         next_steps.append("Restart Codex so it loads the Zaxy MCP server.")
         next_steps.append(
-            "Codex native hook config is not installed by default because no stable hooks.json schema is assumed."
+            f"Start deterministic Codex capture: zaxy codex-capture --workspace {workspace} "
+            f"--eventloom-path {eventloom} --session-id {session_id} --watch"
         )
     next_steps.append(f"Run zaxy hook-status --eventloom-path {eventloom}")
     next_steps.append(

@@ -180,6 +180,23 @@ class TestEventLogIO:
         assert e2.prev_hash == e1.hash
         assert e3.prev_hash == e2.hash
 
+    def test_append_many_writes_hash_linked_batch(self, tmp_eventlog: EventLog) -> None:
+        """Batch append should preserve monotonic seq and hash-chain integrity."""
+        first = tmp_eventlog.append("a", actor="x")
+
+        events = tmp_eventlog.append_many(
+            [
+                {"event_type": "b", "actor": "y", "payload": {"n": 2}, "thread": "session-1"},
+                {"event_type": "c", "actor": "z", "payload": {"n": 3}, "thread": "session-1"},
+            ]
+        )
+
+        assert [event.seq for event in events] == [2, 3]
+        assert events[0].prev_hash == first.hash
+        assert events[1].prev_hash == events[0].hash
+        assert [event.type for event in tmp_eventlog.read_all()] == ["a", "b", "c"]
+        assert tmp_eventlog.verify().ok is True
+
     def test_read_roundtrip(self, tmp_eventlog: EventLog) -> None:
         """Events written should be identical when read back."""
         original = tmp_eventlog.append("goal.created", actor="u", payload={"x": 1})

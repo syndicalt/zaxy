@@ -58,7 +58,7 @@ def test_apply_onboarding_preset_expands_local_claude_defaults(tmp_path: Path) -
 
 
 def test_apply_onboarding_preset_expands_local_codex_defaults(tmp_path: Path) -> None:
-    """local-codex should expand to deterministic Codex MCP without unsupported hook files."""
+    """local-codex should expand to deterministic Codex MCP and local capture config."""
     options = apply_onboarding_preset(
         "local-codex",
         workspace=tmp_path,
@@ -73,8 +73,8 @@ def test_apply_onboarding_preset_expands_local_codex_defaults(tmp_path: Path) ->
 
     assert options["mcp_client"] == "codex"
     assert options["mcp_output"] is None
-    assert options["hook_client"] is None
-    assert options["hook_output"] is None
+    assert options["hook_client"] == "codex"
+    assert options["hook_output"] == tmp_path / ".codex" / "zaxy-capture.json"
     assert options["local_profile_output"] == tmp_path / ".env.local"
     assert options["infra"] == "check"
     assert options["capture_mode"] == "deterministic"
@@ -207,8 +207,8 @@ async def test_run_onboarding_can_add_packet_capture_activation_steps(tmp_path: 
 
 
 @pytest.mark.asyncio
-async def test_run_onboarding_renders_codex_install_command_without_json_config(tmp_path: Path) -> None:
-    """Codex onboarding should use the CLI-assisted MCP path rather than JSON config rendering."""
+async def test_run_onboarding_renders_codex_install_command_and_local_capture_config(tmp_path: Path) -> None:
+    """Codex onboarding should use CLI-assisted MCP plus safe local session capture config."""
     workspace = tmp_path / "repo"
     workspace.mkdir()
     eventloom_path = workspace / ".eventloom"
@@ -227,6 +227,8 @@ async def test_run_onboarding_renders_codex_install_command_without_json_config(
         session_id="demo-default",
         mcp_client="codex",
         zaxy_executable="/opt/zaxy/bin/zaxy",
+        hook_client="codex",
+        hook_output=workspace / ".codex" / "zaxy-capture.json",
         fabric_factory=lambda eventloom_path: fabric,
     )
 
@@ -240,8 +242,9 @@ async def test_run_onboarding_renders_codex_install_command_without_json_config(
     assert any(step.startswith("Run this Codex MCP install command: codex mcp add zaxy") for step in result.next_steps)
     assert "-- /opt/zaxy/bin/zaxy serve" in "\n".join(result.next_steps)
     assert not (workspace / "zaxy-mcp.json").exists()
+    assert (workspace / ".codex" / "zaxy-capture.json").is_file()
     assert not (workspace / ".codex" / "hooks.json").exists()
-    assert any("Codex native hook config is not installed by default" in step for step in result.next_steps)
+    assert any("Start deterministic Codex capture: zaxy codex-capture" in step for step in result.next_steps)
 
 
 @pytest.mark.asyncio

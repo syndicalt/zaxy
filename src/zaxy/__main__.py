@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+import time
 from contextlib import suppress
 from dataclasses import asdict
 from pathlib import Path
@@ -25,6 +26,7 @@ import typer
 
 from zaxy.benchmark import build_competitive_event_log, competitive_cases
 from zaxy.capabilities import build_memory_capabilities, format_memory_capabilities
+from zaxy.codex_capture import capture_codex_sessions
 from zaxy.compaction import (
     audit_event_log,
     build_compaction_projection,
@@ -715,6 +717,51 @@ def hook_event(
     )
     event = eventlog.append(event_type, actor="zaxy-hook", payload=payload, thread=session_id)
     typer.echo(f"Recorded hook {payload['trigger']} as {event_type} seq={event.seq}")
+
+
+@app.command("codex-capture")
+def codex_capture(
+    workspace: Path = typer.Option(Path("."), help="Workspace root whose Codex sessions should be captured"),  # noqa: B008
+    codex_home: Path | None = typer.Option(None, help="Codex home directory; defaults to CODEX_HOME or ~/.codex"),  # noqa: B008
+    eventloom_path: Path = typer.Option(Path(".eventloom"), help="Eventloom directory for captured observations"),  # noqa: B008
+    session_id: str = typer.Option("default", help="Zaxy Eventloom session ID to append into"),
+    source: str = typer.Option("codex-local", help="Capture source label"),
+    max_records_per_file: int = typer.Option(
+        1000,
+        "--max-records-per-file",
+        min=1,
+        help="Maximum recent records to scan from each Codex session log per pass",
+    ),
+    watch: bool = typer.Option(False, "--watch", help="Continuously poll Codex session logs"),
+    interval_seconds: float = typer.Option(2.0, "--interval-seconds", min=0.25, help="Watch poll interval"),
+) -> None:
+    """Capture local Codex session JSONL records into Eventloom without proxying model traffic."""
+
+    def run_once() -> None:
+        result = capture_codex_sessions(
+            workspace=workspace,
+            codex_home=codex_home,
+            eventloom_path=eventloom_path,
+            session_id=session_id,
+            source=source,
+            max_records_per_file=max_records_per_file,
+        )
+        plural = "" if result.scanned_files == 1 else "s"
+        typer.echo(
+            f"Imported {result.imported} Codex observations from "
+            f"{result.scanned_files} session log{plural} ({result.skipped} skipped)"
+        )
+
+    if not watch:
+        run_once()
+        return
+    typer.echo("Watching Codex session logs for deterministic Zaxy capture. Press Ctrl-C to stop.")
+    try:
+        while True:
+            run_once()
+            time.sleep(interval_seconds)
+    except KeyboardInterrupt:
+        typer.echo("Stopped Codex capture.")
 
 
 def _parse_json_object(value: str, *, option: str) -> dict[str, object]:

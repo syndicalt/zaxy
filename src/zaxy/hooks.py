@@ -284,7 +284,10 @@ def _detect_hook_installations(workspace_root: Path) -> dict[str, dict[str, Any]
             workspace_root / ".claude" / "settings.local.json",
             workspace_root / ".claude" / "settings.json",
         ],
-        "codex": [workspace_root / ".codex" / "hooks.json"],
+        "codex": [
+            workspace_root / ".codex" / "zaxy-capture.json",
+            workspace_root / ".codex" / "hooks.json",
+        ],
         "generic": [],
     }
     installations: dict[str, dict[str, Any]] = {}
@@ -393,7 +396,19 @@ def _looks_like_zaxy_hook_config(path: Path, *, allow_text: bool = False) -> boo
         payload = json.loads(content)
     except json.JSONDecodeError:
         return False
+    if _looks_like_codex_capture_config(payload):
+        return True
     return _contains_zaxy_hook_command(payload)
+
+
+def _looks_like_codex_capture_config(value: Any) -> bool:
+    return (
+        isinstance(value, dict)
+        and value.get("client") == "codex"
+        and value.get("capture") == "local-session-jsonl"
+        and isinstance(value.get("eventloom_path"), str)
+        and isinstance(value.get("session_id"), str)
+    )
 
 
 def _parse_json_object(text: str, *, source: str) -> dict[str, Any]:

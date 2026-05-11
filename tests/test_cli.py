@@ -1569,6 +1569,41 @@ def test_packet_status_command_reports_json(tmp_path: Path) -> None:
     assert '"unprojected": 1' in result.output
 
 
+@patch("zaxy.__main__.capture_codex_sessions")
+def test_codex_capture_command_imports_local_codex_records(mock_capture: MagicMock, tmp_path: Path) -> None:
+    """codex-capture should expose deterministic local Codex observation import."""
+    mock_capture.return_value.imported = 4
+    mock_capture.return_value.scanned_files = 1
+    mock_capture.return_value.skipped = 2
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "codex-capture",
+            "--workspace",
+            str(tmp_path),
+            "--codex-home",
+            str(tmp_path / "codex-home"),
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "repo-default",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Imported 4 Codex observations from 1 session log" in result.output
+    mock_capture.assert_called_once_with(
+        workspace=tmp_path,
+        codex_home=tmp_path / "codex-home",
+        eventloom_path=tmp_path / ".eventloom",
+        session_id="repo-default",
+        source="codex-local",
+        max_records_per_file=1000,
+    )
+
+
 @patch("zaxy.__main__.MemoryFabric")
 def test_index_codebase_command_reports_indexed_count(mock_fabric_cls: MagicMock, tmp_path: Path) -> None:
     """index-codebase should append codebase mapping events through MemoryFabric."""
@@ -1696,7 +1731,7 @@ def test_init_command_expands_local_claude_preset(mock_run_onboarding: AsyncMock
 
 @patch("zaxy.__main__.run_onboarding")
 def test_init_command_expands_local_codex_preset(mock_run_onboarding: AsyncMock, tmp_path: Path) -> None:
-    """init --preset local-codex should avoid unsupported Codex hook config files."""
+    """init --preset local-codex should install safe repo-local capture config."""
     result_obj = MagicMock()
     result_obj.status = "ok"
     mock_run_onboarding.return_value = result_obj
@@ -1708,8 +1743,8 @@ def test_init_command_expands_local_codex_preset(mock_run_onboarding: AsyncMock,
     kwargs = mock_run_onboarding.await_args.kwargs
     assert kwargs["mcp_client"] == "codex"
     assert kwargs["mcp_output"] is None
-    assert kwargs["hook_client"] is None
-    assert kwargs["hook_output"] is None
+    assert kwargs["hook_client"] == "codex"
+    assert kwargs["hook_output"] == tmp_path / ".codex" / "zaxy-capture.json"
     assert kwargs["local_profile_output"] == tmp_path / ".env.local"
     assert kwargs["infra"] == "check"
     assert kwargs["capture_mode"] == "deterministic"
