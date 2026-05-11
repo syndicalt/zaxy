@@ -59,8 +59,8 @@
     </section>
 
     <section class="proof-strip" aria-label="Project status">
-      <span>676 tests</span>
-      <span>91.96% coverage</span>
+      <span>690 tests</span>
+      <span>91.95% coverage</span>
       <span>ruff clean</span>
       <span>mypy clean</span>
       <span>release gate ready</span>
@@ -117,6 +117,34 @@
         <article><code>memory_query</code><p>Fuse exact lookup, keyword search, vector similarity, and traversal.</p></article>
         <article><code>memory_replay</code><p>Rebuild session history from Eventloom, optionally from a sequence number.</p></article>
         <article><code>memory_invalidate</code><p>Close graph fact validity windows without deleting historical evidence.</p></article>
+      </div>
+      <div class="checkout-example" aria-label="Memory Checkout response example">
+        <div>
+          <h3>Model-facing checkout contract</h3>
+          <p>
+            Models consume <code>answerability</code>, <code>required_action</code>,
+            <code>current_citation_count</code>, and feedback payloads directly.
+            A checkout without current citations or with warnings tells the model
+            to refresh memory or ask the user instead of guessing from stale context.
+          </p>
+        </div>
+        <pre><code>{
+  "quality": {
+    "answerability": "answer_from_memory",
+    "confidence": 0.75,
+    "required_action": null
+  },
+  "diagnostics": {
+    "current_citation_count": 1,
+    "warning_count": 0
+  },
+  "guidance": {
+    "feedback": {
+      "tool": "memory_feedback",
+      "payloads": [{"feedback": "used"}]
+    }
+  }
+}</code></pre>
       </div>
     </section>
 

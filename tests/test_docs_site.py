@@ -58,6 +58,9 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     assert "Neo4j temporal graph" in html
     assert "Memory Checkout" in html
     assert "Checkout diagnostics" in html
+    assert "answerability" in html
+    assert "required_action" in html
+    assert "current_citation_count" in html
     assert "memory_capabilities" in html
     assert "deterministic capture" in html
     assert "local-codex" in html
@@ -77,6 +80,18 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
         "docs",
     ):
         assert f'id="{section_id}"' in html
+
+
+def test_mcp_docs_show_memory_checkout_consumption_contract() -> None:
+    """MCP docs should show how models consume checkout quality and feedback fields."""
+    text = Path("docs/mcp.md").read_text(encoding="utf-8")
+
+    assert '"answerability": "answer_from_memory"' in text
+    assert '"current_citation_count": 1' in text
+    assert '"required_action": null' in text
+    assert '"tool": "memory_feedback"' in text
+    assert '"feedback": "used"' in text
+    assert '"answerability": "refresh_recommended"' in text
 
 
 def test_public_site_benchmark_claim_is_scoped_to_fixture() -> None:

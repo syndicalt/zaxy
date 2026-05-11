@@ -81,6 +81,92 @@ MCP clients discover this tool through the standard `tools/list` handshake, so
 an already-running client must reconnect before the new tool appears in the
 model-visible tool registry.
 
+Example checkout response fragment:
+
+```json
+{
+  "current_facts": [
+    {
+      "content": "Memory Checkout is the model-facing context contract.",
+      "citation": "eventloom://zaxy-default/events/1882#abc123def456",
+      "source_lane": "graph",
+      "entity_name": "memory checkout",
+      "entity_type": "decision"
+    }
+  ],
+  "diagnostics": {
+    "source_lanes": {"graph": 1},
+    "citation_count": 1,
+    "current_citation_count": 1,
+    "current_fact_count": 1,
+    "superseded_contexts_excluded": 0,
+    "warning_count": 0,
+    "feedback_recommended": true,
+    "feedback_tool": "memory_feedback"
+  },
+  "quality": {
+    "answerability": "answer_from_memory",
+    "confidence": 0.75,
+    "reasons": ["Retrieved current facts with Eventloom citations."],
+    "required_action": null
+  },
+  "guidance": {
+    "feedback": {
+      "tool": "memory_feedback",
+      "payloads": [
+        {
+          "entity_name": "memory checkout",
+          "entity_type": "decision",
+          "feedback": "used",
+          "actor": "assistant",
+          "citation": "eventloom://zaxy-default/events/1882#abc123def456"
+        }
+      ]
+    }
+  }
+}
+```
+
+Model consumption rule: answer from memory only when `quality.answerability` is
+`answer_from_memory`. If it is `refresh_recommended`, call the
+`quality.required_action` tool before relying on the checkout. If it is
+`ask_user`, ask for missing context instead of inventing continuity. When cited
+facts materially influence the response, call `memory_feedback` with one of the
+listed payloads so Zaxy can reinforce useful context.
+
+Degraded checkout response fragment:
+
+```json
+{
+  "current_facts": [
+    {
+      "content": "Memory Checkout is current.",
+      "citation": null,
+      "source_lane": "graph"
+    }
+  ],
+  "diagnostics": {
+    "citation_count": 0,
+    "current_citation_count": 0,
+    "current_fact_count": 1,
+    "warning_count": 1
+  },
+  "quality": {
+    "answerability": "refresh_recommended",
+    "confidence": 0.29,
+    "reasons": [
+      "Retrieved current facts, but they lack Eventloom citations.",
+      "Checkout contains warnings that reduce confidence."
+    ],
+    "required_action": {
+      "tool": "memory_checkout",
+      "query": "current decisions, blockers, and next actions for: Memory Checkout is current.",
+      "reason": "Refresh memory before major follow-up work, after compaction/resume, or when task scope changes."
+    }
+  }
+}
+```
+
 `context_assemble(query, session_id?, replay_from_seq?, limit?, max_recent_events?)`
 returns a prompt-ready bundle containing bounded recent replay plus ranked
 retrieval. The assembled retrieval set includes a reserved verbatim Eventloom
