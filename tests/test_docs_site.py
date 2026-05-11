@@ -137,6 +137,16 @@ def test_required_docs_are_substantial_and_cross_linked() -> None:
         assert "README.md" in text or "runbook.md" in text or "site/index.html" in text, doc
 
 
+def test_hooks_docs_explain_capture_readiness() -> None:
+    """Hook docs should explain the automatic-capture readiness signal."""
+    text = Path("docs/hooks.md").read_text(encoding="utf-8")
+
+    assert "capture readiness" in text
+    assert "active_observation_types" in text
+    assert "missing_observation_types" in text
+    assert "zaxy hook-status --json" in text
+
+
 def test_docs_validation_script_checks_site_and_markdown_links(tmp_path: Path) -> None:
     """The docs validation gate should fail fast when a local doc link is broken."""
     root = tmp_path / "project"

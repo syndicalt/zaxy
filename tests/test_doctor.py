@@ -216,6 +216,16 @@ def test_run_doctor_warns_when_high_value_observation_types_are_missing(tmp_path
     assert check["status"] == "warning"
     assert "command.completed" in check["message"]
     assert "file.edit.applied" in check["message"]
+    assert check["details"]["active_observation_types"] == []
+    assert check["details"]["missing_observation_types"] == [
+        "command.completed",
+        "file.edit.applied",
+        "tool.call.completed",
+        "transcript.turn",
+    ]
+    assert check["details"]["actions"] == [
+        "Wire hooks or adapter sinks for: command.completed, file.edit.applied, tool.call.completed, transcript.turn.",
+    ]
 
 
 def test_run_doctor_warns_when_packets_are_not_projected(tmp_path: Path) -> None:

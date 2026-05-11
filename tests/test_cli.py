@@ -1296,6 +1296,15 @@ def test_hook_status_reports_observation_type_coverage(tmp_path: Path) -> None:
     assert payload["observation_coverage"]["file.edit.applied"]["count"] == 1
     assert payload["observation_coverage"]["transcript.turn"]["count"] == 0
     assert "transcript.turn" in payload["missing_observation_types"]
+    assert payload["capture_readiness"] == {
+        "status": "warning",
+        "message": "2 of 4 high-value automatic capture lanes are active",
+        "active_observation_types": ["command.completed", "file.edit.applied"],
+        "missing_observation_types": ["tool.call.completed", "transcript.turn"],
+        "actions": [
+            "Wire hooks or adapter sinks for: tool.call.completed, transcript.turn.",
+        ],
+    }
 
 
 def test_hook_status_reports_complete_observation_coverage(tmp_path: Path) -> None:
@@ -1318,6 +1327,18 @@ def test_hook_status_reports_complete_observation_coverage(tmp_path: Path) -> No
     assert payload["observation_coverage"]["tool.call.completed"]["count"] == 1
     assert payload["observation_coverage"]["transcript.turn"]["count"] == 1
     assert payload["missing_observation_types"] == []
+    assert payload["capture_readiness"] == {
+        "status": "ok",
+        "message": "4 of 4 high-value automatic capture lanes are active",
+        "active_observation_types": [
+            "command.completed",
+            "file.edit.applied",
+            "tool.call.completed",
+            "transcript.turn",
+        ],
+        "missing_observation_types": [],
+        "actions": [],
+    }
 
 
 def test_hooks_status_reports_installed_clients_and_recent_activity(tmp_path: Path) -> None:
@@ -1343,6 +1364,7 @@ def test_hooks_status_reports_installed_clients_and_recent_activity(tmp_path: Pa
     assert "claude-code: installed" in result.output
     assert "codex: not installed" in result.output
     assert "last event: hook.heartbeat" in result.output
+    assert "capture readiness: warning - 0 of 4 high-value automatic capture lanes are active" in result.output
     assert "command.completed: missing" in result.output
     assert "agent-1" in result.output
 

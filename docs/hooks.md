@@ -32,6 +32,8 @@ Inspect the current observer posture:
 
 ```bash
 zaxy hook-status --eventloom-path .eventloom
+zaxy hook-status --json
+zaxy hook-status --eventloom-path .eventloom --json
 zaxy hook-event heartbeat --eventloom-path .eventloom --session-id my-project-default --source manual
 ```
 
@@ -40,6 +42,10 @@ hook event, and observation coverage by high-value capture type. Missing
 `command.completed`, `file.edit.applied`, `tool.call.completed`, or
 `transcript.turn` coverage means Zaxy can see lifecycle checkpoints but is not
 yet seeing the richer activity needed for durable session reconstruction.
+The same report includes a capture readiness summary. In JSON output, inspect
+`capture_readiness.status`, `active_observation_types`, and
+`missing_observation_types` to decide whether automatic capture is healthy or
+which adapter sinks still need to be wired.
 Claude Code detection parses JSON hook command handlers rather than matching
 arbitrary text, so comments or unrelated string fields do not count as an
 installation. `heartbeat` is a health probe: it proves the Eventloom observer

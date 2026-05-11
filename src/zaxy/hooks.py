@@ -192,6 +192,7 @@ def inspect_hook_status(
     latest = _latest_hook_event(eventloom)
     coverage = _observation_coverage(eventloom)
     missing = [event_type for event_type in HIGH_VALUE_OBSERVATION_TYPES if coverage[event_type]["count"] == 0]
+    readiness = _capture_readiness(coverage)
     installed_any = any(client["installed"] for client in installations.values())
     status = "ok" if latest is not None else "warning"
     if not installed_any and latest is None:
@@ -208,6 +209,7 @@ def inspect_hook_status(
         "latest_event": latest,
         "observation_coverage": coverage,
         "missing_observation_types": missing,
+        "capture_readiness": readiness,
     }
 
 
@@ -225,6 +227,12 @@ def format_hook_status(report: dict[str, Any]) -> str:
             f"- last event: {latest['type']} seq={latest['seq']} "
             f"session={latest['thread']} source={latest['source']}"
         )
+    readiness = report.get("capture_readiness")
+    if readiness:
+        lines.append(f"- capture readiness: {readiness['status']} - {readiness['message']}")
+        actions = readiness.get("actions", [])
+        if actions:
+            lines.extend(f"  action: {action}" for action in actions)
     coverage = report.get("observation_coverage", {})
     if coverage:
         lines.append("- observation coverage:")
@@ -242,6 +250,32 @@ def format_hook_status(report: dict[str, Any]) -> str:
             else:
                 lines.append(f"  {label}: missing")
     return "\n".join(lines)
+
+
+def _capture_readiness(coverage: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    active = [
+        event_type
+        for event_type in HIGH_VALUE_OBSERVATION_TYPES
+        if coverage[event_type]["count"] > 0
+    ]
+    missing = [
+        event_type
+        for event_type in HIGH_VALUE_OBSERVATION_TYPES
+        if coverage[event_type]["count"] == 0
+    ]
+    total = len(HIGH_VALUE_OBSERVATION_TYPES)
+    active_count = len(active)
+    status = "ok" if not missing else "warning"
+    actions = []
+    if missing:
+        actions.append("Wire hooks or adapter sinks for: " + ", ".join(missing) + ".")
+    return {
+        "status": status,
+        "message": f"{active_count} of {total} high-value automatic capture lanes are active",
+        "active_observation_types": active,
+        "missing_observation_types": missing,
+        "actions": actions,
+    }
 
 
 def _detect_hook_installations(workspace_root: Path) -> dict[str, dict[str, Any]]:

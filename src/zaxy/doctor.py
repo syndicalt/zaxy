@@ -248,18 +248,21 @@ def _check_hook_activity(settings: Settings, hook_status: dict[str, Any]) -> dic
 
 
 def _check_observation_coverage(hook_status: dict[str, Any]) -> dict[str, str]:
+    readiness = hook_status.get("capture_readiness", {})
     missing = hook_status.get("missing_observation_types", [])
     if not missing:
         return {
             "name": "observation_coverage",
             "status": "ok",
             "message": "high-value automatic observation types have been captured",
+            "details": readiness,
         }
     missing_types = ", ".join(str(event_type) for event_type in missing)
     return {
         "name": "observation_coverage",
         "status": "warning",
         "message": f"missing high-value automatic observation types: {missing_types}",
+        "details": readiness,
         "action": "Confirm hooks emit command, file-edit, tool-call, and transcript observations for this client.",
     }
 
