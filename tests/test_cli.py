@@ -2201,18 +2201,22 @@ def test_init_command_help_describes_full_onboarding_path() -> None:
     assert "hook status" in result.output
 
 
-def test_init_command_json_includes_next_steps(tmp_path: Path) -> None:
-    """init --json should expose next_steps for client UIs and automation."""
+def test_init_command_json_includes_next_steps_and_capture_summary(tmp_path: Path) -> None:
+    """init --json should expose next_steps and capture state for client UIs and automation."""
     workspace = tmp_path / "repo"
     workspace.mkdir()
     runner = CliRunner()
 
-    result = runner.invoke(app, ["init", str(workspace), "--domain", "demo", "--json"])
+    result = runner.invoke(app, ["init", str(workspace), "--domain", "demo", "--preset", "local-codex", "--json"])
 
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["session_id"] == "demo-default"
     assert any(step.startswith("Run zaxy hook-status") for step in payload["next_steps"])
+    assert payload["capture"]["configured"] is True
+    assert payload["capture"]["running"] is False
+    assert payload["capture"]["pids"] == []
+    assert payload["capture"]["doctor_status"] == "warning"
 
 
 @patch("zaxy.__main__.GraphStore")

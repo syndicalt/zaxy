@@ -112,6 +112,14 @@ zaxy init . \
   --preset local-codex
 ```
 
+The one-command local Codex happy path starts the managed watcher during init:
+
+```bash
+zaxy init . --domain my-project --preset local-codex --capture start
+zaxy doctor
+zaxy memory capabilities --session-id my-project-default
+```
+
 `local-codex` renders Codex MCP install guidance, writes the local profile, and
 writes `.codex/zaxy-capture.json` for deterministic local capture. It does not
 generate `.codex/hooks.json`: Codex parses that file as JSON, and Zaxy does not
@@ -121,6 +129,10 @@ managed watcher that imports local Codex session JSONL into Eventloom. To start
 that watcher during onboarding, pass `--capture start`. It does not enable
 packet capture. After startup, `zaxy doctor` should show `capture_health: ok`
 once command, file-edit, tool-call, and transcript observations have appeared.
+`zaxy init` also prints a capture summary showing whether local capture is
+configured, whether the watcher is running, the latest imported observation when
+available, and the doctor capture-health result. The same block is available in
+`zaxy init --json` as `capture`.
 
 Generated output files are non-destructive by default. Pass `--force` only when
 you intentionally want to replace generated config. `--infra check` reports

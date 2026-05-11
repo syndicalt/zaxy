@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from zaxy.capture_manager import start_codex_capture
+from zaxy.capture_manager import inspect_codex_capture, start_codex_capture
 from zaxy.codex_capture import write_codex_capture_config
 from zaxy.config import Settings
 from zaxy.core import MemoryFabric
@@ -53,6 +53,7 @@ class OnboardingResult:
     next_steps: list[str] = field(default_factory=list)
     doctor: dict[str, Any] = field(default_factory=dict)
     hook_status: dict[str, Any] = field(default_factory=dict)
+    capture: dict[str, Any] = field(default_factory=dict)
 
 
 def apply_onboarding_preset(
@@ -247,6 +248,7 @@ async def run_onboarding(
 
     settings = _onboarding_settings(eventloom=eventloom, session_id=sid, domain=resolved_domain)
     doctor = run_doctor(settings=settings, workspace_root=root, zaxy_executable=executable)
+    capture = _build_capture_summary(workspace=root, doctor=doctor)
     steps.append(
         OnboardingStep(
             "doctor",
@@ -285,6 +287,7 @@ async def run_onboarding(
         ),
         doctor=doctor,
         hook_status=hook_status,
+        capture=capture,
     )
 
 
@@ -300,6 +303,8 @@ def format_onboarding_result(result: OnboardingResult) -> str:
     for step in result.steps:
         suffix = f" - {step.path}" if step.path else ""
         lines.append(f"- {step.name}: {step.status} - {step.message}{suffix}")
+    if result.capture:
+        lines.extend(_format_capture_summary(result.capture))
     if result.next_steps:
         lines.append("")
         lines.append("Next:")
@@ -430,6 +435,58 @@ def _build_next_steps(
     if infra_action == "check" and infra_step is not None and infra_step.status != "ok":
         next_steps.append(f"Run zaxy init {workspace} --infra start if you want Zaxy to start local Neo4j now.")
     return next_steps
+
+
+def _build_capture_summary(*, workspace: Path, doctor: dict[str, Any]) -> dict[str, Any]:
+    try:
+        runtime = inspect_codex_capture(workspace=workspace)
+    except (OSError, ValueError) as exc:
+        runtime = {
+            "configured": False,
+            "running": False,
+            "pids": [],
+            "latest_observation": None,
+            "error": str(exc),
+        }
+    health = _doctor_check(doctor, "capture_health")
+    summary = {
+        "configured": bool(runtime.get("configured", False)),
+        "running": bool(runtime.get("running", False)),
+        "pids": list(runtime.get("pids", [])),
+        "latest_observation": runtime.get("latest_observation"),
+        "doctor_status": health.get("status", "unknown") if health else "unknown",
+        "doctor_message": health.get("message", "") if health else "",
+    }
+    if runtime.get("error"):
+        summary["error"] = runtime["error"]
+    return summary
+
+
+def _doctor_check(doctor: dict[str, Any], name: str) -> dict[str, Any] | None:
+    for check in doctor.get("checks", []):
+        if isinstance(check, dict) and check.get("name") == name:
+            return check
+    return None
+
+
+def _format_capture_summary(capture: dict[str, Any]) -> list[str]:
+    configured = "configured" if capture.get("configured") else "not configured"
+    running = "running" if capture.get("running") else "not running"
+    lines = [f"capture: {configured}, {running}"]
+    pids = capture.get("pids") or []
+    if pids:
+        lines.append("capture pids: " + ", ".join(str(pid) for pid in pids))
+    latest = capture.get("latest_observation")
+    if latest:
+        lines.append(
+            f"latest capture: {latest['type']} seq={latest['seq']} "
+            f"session={latest['thread']} source={latest['source']}"
+        )
+    if capture.get("doctor_status"):
+        lines.append(f"capture health: {capture['doctor_status']} - {capture.get('doctor_message', '')}")
+    if capture.get("error"):
+        lines.append(f"capture error: {capture['error']}")
+    return lines
 
 
 def _onboarding_settings(*, eventloom: Path, session_id: str, domain: str) -> Settings:

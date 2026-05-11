@@ -249,11 +249,13 @@ async def test_run_onboarding_renders_codex_install_command_and_local_capture_co
 
 @pytest.mark.asyncio
 @patch("zaxy.onboarding.start_codex_capture")
+@patch("zaxy.onboarding.inspect_codex_capture")
 async def test_run_onboarding_can_start_managed_codex_capture(
+    mock_inspect_capture: MagicMock,
     mock_start_capture: MagicMock,
     tmp_path: Path,
 ) -> None:
-    """Onboarding should optionally start the deterministic capture watcher."""
+    """Onboarding should optionally start and summarize deterministic capture."""
     workspace = tmp_path / "repo"
     workspace.mkdir()
     eventloom_path = workspace / ".eventloom"
@@ -269,6 +271,18 @@ async def test_run_onboarding_can_start_managed_codex_capture(
         "pid": 321,
         "message": "Started Codex capture watcher pid=321",
         "state_file": str(eventloom_path / "runtime" / "codex-capture.json"),
+    }
+    mock_inspect_capture.return_value = {
+        "client": "codex",
+        "configured": True,
+        "running": True,
+        "pids": [321],
+        "latest_observation": {
+            "type": "transcript.turn",
+            "seq": 7,
+            "thread": "demo-default",
+            "source": "codex-local",
+        },
     }
 
     result = await run_onboarding(
@@ -290,7 +304,57 @@ async def test_run_onboarding_can_start_managed_codex_capture(
         and step.message == "Started Codex capture watcher pid=321"
         for step in result.steps
     )
+    assert result.capture == {
+        "configured": True,
+        "running": True,
+        "pids": [321],
+        "latest_observation": {
+            "type": "transcript.turn",
+            "seq": 7,
+            "thread": "demo-default",
+            "source": "codex-local",
+        },
+        "doctor_status": "warning",
+        "doctor_message": "automatic capture is incomplete: 0 of 4 high-value lanes are active",
+    }
     mock_start_capture.assert_called_once_with(workspace=workspace.resolve())
+    mock_inspect_capture.assert_called_once_with(workspace=workspace.resolve())
+
+
+def test_format_onboarding_result_includes_capture_summary() -> None:
+    """Human init output should show capture runtime and doctor health at the end of onboarding."""
+    result = OnboardingResult(
+        status="ok",
+        workspace="/tmp/repo",
+        domain="demo",
+        session_id="demo-default",
+        profile={
+            "workspace_type": "codebase",
+            "confidence": 0.9,
+            "signals": [],
+            "instructions_profile": "codebase",
+        },
+        capture={
+            "configured": True,
+            "running": True,
+            "pids": [321],
+            "latest_observation": {
+                "type": "tool.call.completed",
+                "seq": 9,
+                "thread": "demo-default",
+                "source": "codex-local",
+            },
+            "doctor_status": "ok",
+            "doctor_message": "automatic capture is healthy: 4 of 4 high-value lanes are active",
+        },
+    )
+
+    output = format_onboarding_result(result)
+
+    assert "capture: configured, running" in output
+    assert "capture pids: 321" in output
+    assert "latest capture: tool.call.completed seq=9 session=demo-default source=codex-local" in output
+    assert "capture health: ok - automatic capture is healthy: 4 of 4 high-value lanes are active" in output
 
 
 @pytest.mark.asyncio
