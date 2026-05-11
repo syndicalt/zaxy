@@ -18,6 +18,7 @@ writes `.codex/zaxy-capture.json`, then `zaxy codex-capture --watch` imports
 Codex's own local session JSONL into Eventloom as normalized transcript,
 tool-call, command, and file-edit observations. This keeps capture local,
 idempotent, and out of the model request path.
+Use `--watch-iterations <n>` for bounded supervisor health checks and tests.
 
 Write config directly during onboarding:
 

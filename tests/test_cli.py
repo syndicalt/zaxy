@@ -1604,6 +1604,44 @@ def test_codex_capture_command_imports_local_codex_records(mock_capture: MagicMo
     )
 
 
+@patch("zaxy.__main__.time.sleep")
+@patch("zaxy.__main__.capture_codex_sessions")
+def test_codex_capture_watch_mode_supports_bounded_iterations(
+    mock_capture: MagicMock,
+    mock_sleep: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """codex-capture --watch should support bounded supervisor/test runs."""
+    first = MagicMock(imported=2, scanned_files=1, skipped=0)
+    second = MagicMock(imported=0, scanned_files=1, skipped=2)
+    mock_capture.side_effect = [first, second]
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "codex-capture",
+            "--workspace",
+            str(tmp_path),
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "repo-default",
+            "--watch",
+            "--watch-iterations",
+            "2",
+            "--interval-seconds",
+            "0.25",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Watching Codex session logs" in result.output
+    assert result.output.count("Imported ") == 2
+    assert mock_capture.call_count == 2
+    mock_sleep.assert_called_once_with(0.25)
+
+
 @patch("zaxy.__main__.MemoryFabric")
 def test_index_codebase_command_reports_indexed_count(mock_fabric_cls: MagicMock, tmp_path: Path) -> None:
     """index-codebase should append codebase mapping events through MemoryFabric."""

@@ -282,6 +282,8 @@ For Codex, the default local preset also writes `.codex/zaxy-capture.json` and
 prints a `zaxy codex-capture --watch` command. That observer reads Codex's
 local session JSONL and appends normalized Eventloom observations. It does not
 proxy provider traffic or require an OpenAI API key.
+For supervised checks, add `--watch-iterations <n>` to run a bounded number of
+capture passes.
 
 Hook adapters do not proxy tool execution. Agents and tools continue to execute
 normally while hooks append lightweight Eventloom observations through

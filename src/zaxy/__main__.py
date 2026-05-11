@@ -734,6 +734,12 @@ def codex_capture(
     ),
     watch: bool = typer.Option(False, "--watch", help="Continuously poll Codex session logs"),
     interval_seconds: float = typer.Option(2.0, "--interval-seconds", min=0.25, help="Watch poll interval"),
+    watch_iterations: int | None = typer.Option(
+        None,
+        "--watch-iterations",
+        min=1,
+        help="Optional bounded watch pass count for supervisors and tests",
+    ),
 ) -> None:
     """Capture local Codex session JSONL records into Eventloom without proxying model traffic."""
 
@@ -757,9 +763,12 @@ def codex_capture(
         return
     typer.echo("Watching Codex session logs for deterministic Zaxy capture. Press Ctrl-C to stop.")
     try:
-        while True:
+        iterations = 0
+        while watch_iterations is None or iterations < watch_iterations:
             run_once()
-            time.sleep(interval_seconds)
+            iterations += 1
+            if watch_iterations is None or iterations < watch_iterations:
+                time.sleep(interval_seconds)
     except KeyboardInterrupt:
         typer.echo("Stopped Codex capture.")
 
