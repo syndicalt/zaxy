@@ -197,6 +197,43 @@ class TestEventLogIO:
         assert [event.type for event in tmp_eventlog.read_all()] == ["a", "b", "c"]
         assert tmp_eventlog.verify().ok is True
 
+    def test_append_many_rebases_when_another_writer_appends_before_lock(
+        self, tmp_path
+    ) -> None:
+        """A writer that loses the append race should rebase on the locked tail."""
+
+        class RacingEventLog(EventLog):
+            injected = False
+
+            def _lock(self, fd: int, *, exclusive: bool = False) -> None:
+                if exclusive and not self.injected:
+                    self.injected = True
+                    EventLog(self.path).append("concurrent", actor="watcher")
+                super()._lock(fd, exclusive=exclusive)
+
+        log_path = tmp_path / "events.jsonl"
+        EventLog(log_path).append("first", actor="setup")
+        racing = RacingEventLog(log_path)
+
+        events = racing.append_many(
+            [
+                {"event_type": "manual.one", "actor": "codex"},
+                {"event_type": "manual.two", "actor": "codex"},
+            ]
+        )
+
+        written = EventLog(log_path).read_all()
+        assert [event.type for event in written] == [
+            "first",
+            "concurrent",
+            "manual.one",
+            "manual.two",
+        ]
+        assert [event.seq for event in events] == [3, 4]
+        assert events[0].prev_hash == written[1].hash
+        assert written[-1].hash == events[-1].hash
+        assert EventLog(log_path).verify().ok is True
+
     def test_read_roundtrip(self, tmp_eventlog: EventLog) -> None:
         """Events written should be identical when read back."""
         original = tmp_eventlog.append("goal.created", actor="u", payload={"x": 1})

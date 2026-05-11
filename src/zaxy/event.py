@@ -176,45 +176,44 @@ class EventLog:
         )[0]
 
     def append_many(self, items: list[dict[str, Any]]) -> list[Event]:
-        """Append multiple events while reading and locking the log once."""
+        """Append multiple events while holding the append lock.
+
+        The hash chain must be based on the locked file tail. Building the
+        batch before the exclusive lock leaves a race window where another
+        writer can append and make the precomputed ``prev_hash`` stale.
+        """
         if not items:
             return []
-        events = self.read_all()
-        seq = events[-1].seq + 1 if events else 1
-        prev_hash = events[-1].hash if events else None
 
-        batch: list[Event] = []
-        for item in items:
-            event = self._build_event(
-                seq=seq,
-                prev_hash=prev_hash,
-                event_type=str(item["event_type"]),
-                actor=str(item["actor"]),
-                payload=item.get("payload") if isinstance(item.get("payload"), dict) else None,
-                thread=str(item.get("thread", "default")),
-                timestamp=item.get("timestamp") if isinstance(item.get("timestamp"), datetime) else None,
-            )
-            batch.append(event)
-            seq = event.seq + 1
-            prev_hash = event.hash
-
-        # Atomic append with exclusive lock
-        lines_to_write = [event.model_dump_json() + "\n" for event in batch]
         with open(self.path, "a+", encoding="utf-8") as fh:
             self._lock(fh.fileno(), exclusive=True)
             try:
-                # Re-read tail to detect races
                 fh.seek(0)
                 lines = fh.readlines()
+                seq = 1
+                prev_hash: str | None = None
                 if lines:
                     last = Event.model_validate_json(lines[-1])
-                    if last.hash != batch[0].prev_hash:
-                        raise RuntimeError(
-                            f"Hash chain race detected: expected {last.hash[:16]}..., "
-                            f"got {batch[0].prev_hash[:16] if batch[0].prev_hash else 'None'}..."
-                        )
+                    seq = last.seq + 1
+                    prev_hash = last.hash
+
+                batch: list[Event] = []
+                for item in items:
+                    event = self._build_event(
+                        seq=seq,
+                        prev_hash=prev_hash,
+                        event_type=str(item["event_type"]),
+                        actor=str(item["actor"]),
+                        payload=item.get("payload") if isinstance(item.get("payload"), dict) else None,
+                        thread=str(item.get("thread", "default")),
+                        timestamp=item.get("timestamp") if isinstance(item.get("timestamp"), datetime) else None,
+                    )
+                    batch.append(event)
+                    seq = event.seq + 1
+                    prev_hash = event.hash
+
                 fh.seek(0, os.SEEK_END)
-                fh.writelines(lines_to_write)
+                fh.writelines(event.model_dump_json() + "\n" for event in batch)
                 fh.flush()
                 os.fsync(fh.fileno())
             finally:
