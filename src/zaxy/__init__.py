@@ -12,7 +12,10 @@ from zaxy.integrations import (
     render_mcp_client_config,
 )
 from zaxy.refs import MemoryRef, MemoryRefStore
+from zaxy.release import package_version
 from zaxy.verbatim import VerbatimHit, VerbatimIndex
+
+__version__ = package_version()
 
 __all__ = [
     "FrameworkIntegrationSpec",
@@ -25,6 +28,7 @@ __all__ = [
     "MemoryRefStore",
     "VerbatimHit",
     "VerbatimIndex",
+    "__version__",
     "create_langgraph_memory_node",
     "list_framework_integration_specs",
     "render_agent_integration_template",

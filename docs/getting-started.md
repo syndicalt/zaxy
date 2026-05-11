@@ -181,16 +181,19 @@ For day-to-day validation, run:
 ruff check src tests
 mypy src
 pytest
+zaxy doctor --release-smoke
 scripts/release-check.sh --root .
 ```
 
 The full pytest command enforces the 90 percent coverage gate configured in
 `pyproject.toml`. Integration tests require Docker Neo4j services. The release
-gate adds package artifact checks, documentation link validation, and deployment
-preflight checks. The current public overview is [site/index.html](../site/index.html),
-and the operational checklist remains in [runbook.md](runbook.md). The
-[README.md](../README.md) is intentionally short; these docs are the detailed
-operator and integrator reference.
+smoke check verifies the package version, changelog entry, release workflow,
+and PyPI Trusted Publishing posture without contacting external services. The
+release gate adds package artifact checks, documentation link validation, and
+deployment preflight checks. The current public overview is
+[site/index.html](../site/index.html), and the operational checklist remains in
+[runbook.md](runbook.md). The [README.md](../README.md) is intentionally short;
+these docs are the detailed operator and integrator reference.
 
 The mental model is simple: append operational facts, extract graph facts,
 retrieve connected context, and replay from the original event stream whenever

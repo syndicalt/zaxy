@@ -374,13 +374,15 @@ PATHLIGHT_ACCESS_TOKEN_FILE=/run/secrets/pathlight_access_token
 Before promoting a build, run:
 
 ```bash
+zaxy doctor --release-smoke
 scripts/release-check.sh --root .
 ```
 
-The release gate runs `ruff`, `mypy`, the full coverage-gated pytest suite,
-Python artifact build/metadata validation, public site/documentation validation,
-and deployment validation. A release is not ready until all six gates pass, the
-production `.env` points at
+The release smoke check verifies the package version, changelog entry, publish
+workflow, and PyPI Trusted Publishing posture. The release gate runs `ruff`,
+`mypy`, the full coverage-gated pytest suite, Python artifact build/metadata
+validation, public site/documentation validation, and deployment validation. A
+release is not ready until all six gates pass, the production `.env` points at
 TLS-enabled Neo4j, remote MCP/SSE bearer auth is configured, and secret files
 are not world-readable.
 

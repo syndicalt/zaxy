@@ -13,6 +13,16 @@ from zaxy.__main__ import app
 from zaxy.event import EventLog
 
 
+def test_version_option_reports_project_version() -> None:
+    """The installed CLI should expose the packaged Zaxy version."""
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["--version"])
+
+    assert result.exit_code == 0
+    assert result.output.strip() == "zaxy 0.1.0"
+
+
 def test_memory_status_prints_eventloom_sessions(tmp_path: Path) -> None:
     """memory status should summarize Eventloom sessions without Neo4j."""
     log = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl")
@@ -1442,6 +1452,22 @@ def test_doctor_command_reports_json(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert '"status": "ok"' in result.output
     assert '"name": "eventloom"' in result.output
+
+
+def test_doctor_release_smoke_reports_packaging_readiness() -> None:
+    """Release smoke mode should verify local release metadata without external services."""
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["doctor", "--release-smoke", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["status"] == "ok"
+    checks = {check["name"]: check for check in payload["checks"]}
+    assert checks["package_version"]["status"] == "ok"
+    assert checks["changelog"]["status"] == "ok"
+    assert checks["trusted_publishing"]["status"] == "ok"
+    assert checks["release_workflow"]["status"] == "ok"
 
 
 def test_packet_status_command_reports_text_summary(tmp_path: Path) -> None:

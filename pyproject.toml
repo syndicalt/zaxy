@@ -87,6 +87,7 @@ artifacts = ["src/zaxy/py.typed"]
 [tool.hatch.build.targets.sdist]
 include = [
     "AGENTS.md",
+    "CHANGELOG.md",
     "README.md",
     "docs",
     "examples",

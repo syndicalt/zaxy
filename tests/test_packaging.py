@@ -28,6 +28,16 @@ def test_pyproject_declares_typed_package_and_release_tools() -> None:
     assert "site" in pyproject["tool"]["hatch"]["build"]["targets"]["sdist"]["include"]
 
 
+def test_changelog_records_initial_pypi_release() -> None:
+    """Public releases should have a user-facing changelog entry."""
+    changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+
+    assert "# Changelog" in changelog
+    assert "## 0.1.0 - 2026-05-11" in changelog
+    assert "PyPI" in changelog
+    assert "Trusted Publishing" in changelog
+
+
 def test_pyproject_declares_optional_framework_extras() -> None:
     """Framework dependencies should be opt-in extras rather than core requirements."""
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
@@ -179,3 +189,12 @@ def test_publish_workflow_publishes_release_artifacts_to_pypi() -> None:
     assert "PYPI_API_TOKEN" not in workflow
     assert "password:" not in workflow
     assert "https://pypi.org/project/zaxy-memory/" in workflow
+
+
+def test_readme_documents_trusted_publishing_release_path() -> None:
+    """Public release docs should not instruct maintainers to rely on PyPI tokens."""
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert "PyPI Trusted Publishing" in readme
+    assert "zaxy doctor --release-smoke" in readme
+    assert "PYPI_API_TOKEN" not in readme

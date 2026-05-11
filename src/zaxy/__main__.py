@@ -112,12 +112,32 @@ from zaxy.packet_projection import (
     watch_packet_events,
 )
 from zaxy.refs import MemoryRefStore
+from zaxy.release import package_version, run_release_smoke
 from zaxy.schema import render_schema_plan
 from zaxy.viewer import write_viewer_html
 
 app = typer.Typer(help="Zaxy: Event-sourced temporal knowledge graph fabric")
 memory_app = typer.Typer(help="Inspect Eventloom-backed agent memory")
 app.add_typer(memory_app, name="memory")
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"zaxy {package_version()}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _main_callback(
+    version: bool = typer.Option(  # noqa: B008
+        False,
+        "--version",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show the installed Zaxy version and exit.",
+    ),
+) -> None:
+    """Zaxy command line interface."""
 
 
 async def _project_packet_result_to_graph(
@@ -730,10 +750,23 @@ def local_profile(
 @app.command("doctor")
 def doctor(
     eventloom_path: str | None = typer.Option(None, help="Override Eventloom path for this check"),
+    release_smoke: bool = typer.Option(
+        False,
+        "--release-smoke",
+        help="Run local release metadata checks instead of onboarding checks",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """Run local setup and onboarding checks."""
     from zaxy.config import get_settings
+
+    if release_smoke:
+        report = run_release_smoke()
+        if json_output:
+            typer.echo(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            typer.echo(format_doctor_report(report))
+        return
 
     settings = get_settings()
     if eventloom_path is not None:

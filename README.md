@@ -161,6 +161,9 @@ scripts/validate-deployment.sh --root .
 # Build and validate Python release artifacts
 scripts/build-dist.sh --root .
 
+# Verify local release metadata and PyPI Trusted Publishing configuration
+zaxy doctor --release-smoke
+
 # Validate public site and documentation links
 scripts/validate-docs.sh --root .
 
@@ -174,8 +177,11 @@ The full suite must stay at or above 90% coverage before a sprint is complete.
 
 The PyPI distribution name is `zaxy-memory` because `zaxy` is already occupied
 on PyPI. Published releases build from GitHub Actions and upload to
-<https://pypi.org/project/zaxy-memory/> using the `PYPI_API_TOKEN` repository
-secret. The import package and console command remain `zaxy`.
+<https://pypi.org/project/zaxy-memory/> using PyPI Trusted Publishing with
+GitHub OIDC. The import package and console command remain `zaxy`.
+
+Before publishing, run `zaxy doctor --release-smoke` to verify the package
+version, changelog entry, release workflow, and tokenless publishing posture.
 
 ## License
 
