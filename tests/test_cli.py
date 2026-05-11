@@ -1895,6 +1895,62 @@ def test_doctor_beta_readiness_reports_release_and_uat_gates() -> None:
     assert "scripts/beta-uat.sh" in checks["clean_repo_uat"]["message"]
 
 
+def test_doctor_beta_readiness_fails_nonzero_for_unready_project(tmp_path: Path) -> None:
+    """Beta readiness should be shell-gatable when a project is missing beta gates."""
+    runner = CliRunner()
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "zaxy-memory"\nversion = "0.2.0b1"\n',
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        ["doctor", "--beta-readiness", "--project-root", str(tmp_path), "--json"],
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["status"] == "error"
+    checks = {check["name"]: check for check in payload["checks"]}
+    assert checks["clean_repo_uat"]["status"] == "error"
+
+
+def test_doctor_release_smoke_uses_explicit_project_root(tmp_path: Path) -> None:
+    """Release smoke should support checking a repo root different from cwd."""
+    runner = CliRunner()
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "zaxy-memory"\nversion = "0.2.0b1"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## 0.2.0b1 - 2026-05-11\n\n- Beta release.\n",
+        encoding="utf-8",
+    )
+    (tmp_path / ".github" / "workflows").mkdir(parents=True)
+    (tmp_path / ".github" / "workflows" / "publish.yml").write_text(
+        "on:\n"
+        "  release:\n"
+        "    types: [published]\n"
+        "  workflow_dispatch:\n"
+        "permissions:\n"
+        "  id-token: write\n"
+        "steps:\n"
+        "  - run: python -m build --sdist --wheel\n"
+        "  - run: python -m twine check dist/*\n"
+        "  - uses: pypa/gh-action-pypi-publish@release/v1\n",
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        ["doctor", "--release-smoke", "--project-root", str(tmp_path), "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["status"] == "ok"
+
+
 def test_packet_status_command_reports_text_summary(tmp_path: Path) -> None:
     runner = CliRunner()
     log = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl")

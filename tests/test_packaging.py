@@ -146,6 +146,34 @@ def test_beta_uat_script_exercises_clean_repo_happy_path() -> None:
     assert "zaxy memory status" in script
 
 
+def test_beta_uat_script_uses_unique_default_domain_per_run() -> None:
+    """Repeated UAT runs should not reuse the same Eventloom session in Neo4j."""
+    script = Path("scripts/beta-uat.sh").read_text(encoding="utf-8")
+
+    assert 'basename "${WORKDIR}" | tr' in script
+    assert 'DOMAIN="${ZAXY_BETA_DOMAIN:-zaxy-beta-uat-${RUN_ID}}"' in script
+    assert 'SESSION_ID="${DOMAIN}-default"' in script
+
+
+def test_beta_uat_script_fails_when_checkout_has_no_memory() -> None:
+    """UAT should not pass if checkout cannot retrieve cited first-run memory."""
+    script = Path("scripts/beta-uat.sh").read_text(encoding="utf-8")
+
+    assert "CHECKOUT_OUTPUT=\"$(zaxy memory checkout" in script
+    assert "grep -q \"Answerability: answer_from_memory\"" in script
+    assert "grep -Eq \"Citations: [1-9]\"" in script
+
+
+def test_beta_uat_script_stops_managed_capture_before_cleanup() -> None:
+    """UAT should not leave its managed capture watcher running after success."""
+    script = Path("scripts/beta-uat.sh").read_text(encoding="utf-8")
+
+    assert "zaxy capture stop --workspace \"${PROJECT}\" >/dev/null 2>&1 || true" in script
+    assert script.index("zaxy capture stop --workspace \"${PROJECT}\"") < script.index("rm -rf \"${WORKDIR}\"")
+    assert "zaxy capture stop --workspace ." in script
+    assert script.index("zaxy capture stop --workspace .") < script.index("popd >/dev/null")
+
+
 def test_beta_readiness_reports_missing_clean_repo_uat(tmp_path: Path) -> None:
     """Beta readiness should fail clearly when the clean-repo UAT harness is absent."""
     (tmp_path / "scripts").mkdir()

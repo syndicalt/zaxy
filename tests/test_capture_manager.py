@@ -11,6 +11,7 @@ import pytest
 
 from zaxy.capture_manager import inspect_codex_capture, start_codex_capture, stop_codex_capture
 from zaxy.event import EventLog
+from zaxy.hooks import detect_codex_capture_runtime
 
 
 def _write_codex_config(workspace: Path) -> None:
@@ -86,6 +87,42 @@ def test_start_codex_capture_reuses_existing_watcher(
     assert result["pid"] == 321
     assert "already running" in result["message"]
     mock_popen.assert_not_called()
+
+
+@patch("zaxy.hooks._process_cwd")
+@patch("zaxy.hooks._iter_process_cmdlines")
+def test_codex_capture_runtime_resolves_relative_paths_against_process_cwd(
+    mock_processes: MagicMock,
+    mock_process_cwd: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Relative watcher paths should be resolved against the watched process cwd."""
+    target = tmp_path / "target"
+    other = tmp_path / "other"
+    target.mkdir()
+    other.mkdir()
+    mock_processes.return_value = [
+        (
+            321,
+            [
+                "python",
+                "-m",
+                "zaxy",
+                "codex-capture",
+                "--workspace",
+                ".",
+                "--eventloom-path",
+                ".eventloom",
+                "--watch",
+            ],
+        )
+    ]
+    mock_process_cwd.return_value = other
+
+    report = detect_codex_capture_runtime(target, target / ".eventloom")
+
+    assert report["running"] is False
+    assert report["pids"] == []
 
 
 def test_start_codex_capture_requires_repo_local_config(tmp_path: Path) -> None:

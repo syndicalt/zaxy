@@ -348,6 +348,7 @@ def _detect_codex_capture_runtime(workspace_root: Path, eventloom_path: Path) ->
             cmdline,
             workspace_root=expected_workspace,
             eventloom_path=expected_eventloom,
+            process_cwd=_process_cwd(pid),
         )
     ]
     if pids:
@@ -388,20 +389,37 @@ def _is_matching_codex_capture_process(
     *,
     workspace_root: Path,
     eventloom_path: Path,
+    process_cwd: Path | None = None,
 ) -> bool:
     if "codex-capture" not in cmdline or "--watch" not in cmdline:
         return False
-    process_workspace = _option_path(cmdline, "--workspace", default=workspace_root)
-    process_eventloom = _option_path(cmdline, "--eventloom-path", default=process_workspace / ".eventloom")
+    base = process_cwd or Path.cwd()
+    process_workspace = _option_path(cmdline, "--workspace", default=base, base=base)
+    process_eventloom = _option_path(
+        cmdline,
+        "--eventloom-path",
+        default=process_workspace / ".eventloom",
+        base=process_workspace,
+    )
     return process_workspace == workspace_root and process_eventloom == eventloom_path
 
 
-def _option_path(cmdline: list[str], option: str, *, default: Path) -> Path:
+def _process_cwd(pid: int) -> Path | None:
+    try:
+        return (Path("/proc") / str(pid) / "cwd").resolve()
+    except OSError:
+        return None
+
+
+def _option_path(cmdline: list[str], option: str, *, default: Path, base: Path | None = None) -> Path:
     try:
         value = cmdline[cmdline.index(option) + 1]
     except (ValueError, IndexError):
         return default.resolve()
-    return Path(value).expanduser().resolve()
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return path.resolve()
+    return ((base or Path.cwd()) / path).resolve()
 
 
 def _resolve_against(path: Path, base: Path) -> Path:

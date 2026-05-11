@@ -5,10 +5,11 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORKDIR=""
 INSTALL_SPEC="${ZAXY_BETA_INSTALL_SPEC:-${ROOT}}"
 PYTHON_BIN="${PYTHON_BIN:-python}"
-DOMAIN="${ZAXY_BETA_DOMAIN:-zaxy-beta-uat}"
-SESSION_ID="${DOMAIN}-default"
 
 cleanup() {
+    if [[ -n "${PROJECT:-}" && -d "${PROJECT}" ]]; then
+        zaxy capture stop --workspace "${PROJECT}" >/dev/null 2>&1 || true
+    fi
     if [[ -n "${WORKDIR}" && -d "${WORKDIR}" ]]; then
         rm -rf "${WORKDIR}"
     fi
@@ -16,6 +17,9 @@ cleanup() {
 trap cleanup EXIT
 
 WORKDIR="$(mktemp -d)"
+RUN_ID="$(basename "${WORKDIR}" | tr '[:upper:]' '[:lower:]')"
+DOMAIN="${ZAXY_BETA_DOMAIN:-zaxy-beta-uat-${RUN_ID}}"
+SESSION_ID="${DOMAIN}-default"
 PROJECT="${WORKDIR}/workspace"
 mkdir -p "${PROJECT}"
 cat > "${PROJECT}/README.md" <<'MARKDOWN'
@@ -39,12 +43,16 @@ zaxy init . \
     --infra check
 
 zaxy memory bootstrap --session-id "${SESSION_ID}"
-zaxy memory checkout "current workspace memory state" --session-id "${SESSION_ID}"
+CHECKOUT_OUTPUT="$(zaxy memory checkout "current workspace memory state" --session-id "${SESSION_ID}")"
+echo "${CHECKOUT_OUTPUT}"
+grep -q "Answerability: answer_from_memory" <<<"${CHECKOUT_OUTPUT}"
+grep -Eq "Citations: [1-9]" <<<"${CHECKOUT_OUTPUT}"
 zaxy doctor --eventloom-path .eventloom
 zaxy hook-status --eventloom-path .eventloom
 zaxy capture status --workspace .
 zaxy memory status --eventloom-path .eventloom
-zaxy doctor --beta-readiness
+zaxy doctor --beta-readiness --project-root "${ROOT}"
+zaxy capture stop --workspace .
 
 popd >/dev/null
 

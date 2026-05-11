@@ -928,6 +928,11 @@ def local_profile(
 @app.command("doctor")
 def doctor(
     eventloom_path: str | None = typer.Option(None, help="Override Eventloom path for this check"),
+    project_root: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--project-root",
+        help="Repository root for release and beta readiness checks",
+    ),
     release_smoke: bool = typer.Option(
         False,
         "--release-smoke",
@@ -947,19 +952,23 @@ def doctor(
         raise typer.BadParameter("--release-smoke and --beta-readiness are mutually exclusive")
 
     if release_smoke:
-        report = run_release_smoke()
+        report = run_release_smoke(project_root=project_root)
         if json_output:
             typer.echo(json.dumps(report, indent=2, sort_keys=True))
         else:
             typer.echo(format_doctor_report(report))
+        if report["status"] == "error":
+            raise typer.Exit(1)
         return
 
     if beta_readiness:
-        report = run_beta_readiness()
+        report = run_beta_readiness(project_root=project_root)
         if json_output:
             typer.echo(json.dumps(report, indent=2, sort_keys=True))
         else:
             typer.echo(format_doctor_report(report))
+        if report["status"] == "error":
+            raise typer.Exit(1)
         return
 
     settings = get_settings()
