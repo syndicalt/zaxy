@@ -32,6 +32,12 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 from zaxy.capabilities import build_memory_capabilities
+from zaxy.checkout import (
+    build_checkout_diagnostics,
+    build_checkout_guidance,
+    build_checkout_quality,
+    format_memory_checkout_prompt,
+)
 from zaxy.config import get_settings
 from zaxy.context import Context, ContextAssemblyPolicy, context_counts
 from zaxy.extract import extract
@@ -1105,29 +1111,28 @@ def _memory_checkout_payload(
             if context.get("valid_to") is not None
         ),
     }
-    diagnostics = _checkout_diagnostics_payload(
-        contexts=contexts,
+    diagnostics = build_checkout_diagnostics(
+        source_lanes=_checkout_source_lanes_payload(contexts),
         current_facts=current_facts,
         evidence=evidence,
         retention=retention,
         warnings=warnings,
     )
-    guidance = _checkout_guidance_payload(
+    guidance = build_checkout_guidance(
         query=query,
         current_facts=current_facts,
         retention=retention,
         evidence=evidence,
     )
-    quality = _checkout_quality_payload(
+    quality = build_checkout_quality(
         diagnostics=diagnostics,
         guidance=guidance,
-        warnings=warnings,
     )
     return {
         **assembly,
         "query": query,
         "ref": ref.to_dict() if ref is not None else None,
-        "prompt": _format_memory_checkout_prompt(
+        "prompt": format_memory_checkout_prompt(
             query=query,
             assembly_prompt=str(assembly.get("prompt", "")),
             current_facts=current_facts,
@@ -1147,78 +1152,6 @@ def _memory_checkout_payload(
     }
 
 
-def _format_memory_checkout_prompt(
-    *,
-    query: str,
-    assembly_prompt: str,
-    current_facts: list[dict[str, Any]],
-    evidence: list[dict[str, Any]],
-    quality: dict[str, Any],
-    guidance: dict[str, Any],
-    diagnostics: dict[str, Any],
-) -> str:
-    lines = ["# Memory Checkout", f"Query: {query}", "", "## Current Facts"]
-    if current_facts:
-        for fact in current_facts:
-            citation = f" ({fact['citation']})" if fact.get("citation") else ""
-            lines.append(f"- {fact['content']}{citation}")
-    else:
-        lines.append("- No current facts were retrieved.")
-    lines.extend(["", "## Evidence"])
-    if evidence:
-        for item in evidence:
-            lines.append(f"- {item['citation']}: {item['content']}")
-    else:
-        lines.append("- No cited evidence was retrieved.")
-    lines.extend(["", "## Checkout Quality"])
-    lines.append(f"- Answerability: {quality.get('answerability')}")
-    lines.append(f"- Confidence: {quality.get('confidence')}")
-    for reason in quality.get("reasons", []):
-        lines.append(f"- Reason: {reason}")
-    required_action = quality.get("required_action")
-    if isinstance(required_action, dict):
-        action_type = required_action.get("type")
-        if action_type == "ask_user":
-            lines.append(f"- Required action: ask_user: {required_action.get('reason')}")
-        else:
-            lines.append(
-                "- Required action: "
-                f"{required_action.get('tool')}({required_action.get('query')!r})"
-            )
-    else:
-        lines.append("- Required action: none")
-    lines.extend(["", "## Checkout Guidance"])
-    for item in guidance.get("trust", []):
-        lines.append(f"- Trust: {item}")
-    for item in guidance.get("ignore", []):
-        lines.append(f"- Ignore: {item}")
-    recommended_next_call = guidance.get("recommended_next_call")
-    if isinstance(recommended_next_call, dict):
-        lines.append(
-            "- Suggested next call: "
-            f"{recommended_next_call.get('tool')}({recommended_next_call.get('query')!r})"
-        )
-    feedback = guidance.get("feedback")
-    if isinstance(feedback, dict) and feedback.get("payloads"):
-        lines.append(f"- Feedback: call {feedback.get('tool')} with a listed payload after use.")
-    source_lanes = diagnostics.get("source_lanes")
-    lines.extend(["", "## Checkout Diagnostics"])
-    lines.append(f"- Source lanes: {_format_source_lanes(source_lanes)}")
-    lines.append(f"- Citations: {diagnostics.get('citation_count', 0)}")
-    lines.append(f"- Current citations: {diagnostics.get('current_citation_count', 0)}")
-    lines.append(f"- Current facts: {diagnostics.get('current_fact_count', 0)}")
-    lines.append(
-        f"- Superseded contexts excluded: {diagnostics.get('superseded_contexts_excluded', 0)}"
-    )
-    if diagnostics.get("feedback_recommended"):
-        lines.append(
-            "- Feedback: call "
-            f"{diagnostics.get('feedback_tool', 'memory_feedback')} after using cited context."
-        )
-    lines.extend(["", assembly_prompt])
-    return "\n".join(lines).strip()
-
-
 def _checkout_fact_payload(context: dict[str, Any]) -> dict[str, Any]:
     metadata = context.get("metadata")
     metadata = metadata if isinstance(metadata, dict) else {}
@@ -1236,127 +1169,6 @@ def _checkout_fact_payload(context: dict[str, Any]) -> dict[str, Any]:
         if isinstance(value, str) and value:
             fact[key] = value
     return fact
-
-
-def _checkout_guidance_payload(
-    *,
-    query: str,
-    current_facts: list[dict[str, Any]],
-    retention: dict[str, Any],
-    evidence: list[dict[str, Any]],
-) -> dict[str, Any]:
-    feedback_payloads = [
-        payload
-        for fact in current_facts
-        if (payload := _checkout_feedback_payload(fact, query)) is not None
-    ][:3]
-    trust = [
-        "Use current_facts as the primary working memory for this turn.",
-        "Use cited evidence and provenance when making claims about remembered context.",
-    ]
-    ignore = [
-        "Do not treat superseded contexts as current facts.",
-        "Do not rely on uncited facts without checking memory again or asking the user.",
-    ]
-    if not evidence:
-        trust.append("Treat this checkout as low-confidence because it has no cited evidence.")
-    if retention.get("superseded_contexts_excluded", 0):
-        ignore.append("Superseded contexts were excluded from current_facts but remain auditable.")
-    return {
-        "trust": trust,
-        "ignore": ignore,
-        "recommended_next_call": {
-            "tool": "memory_checkout",
-            "query": f"current decisions, blockers, and next actions for: {query}",
-            "reason": (
-                "Refresh memory before major follow-up work, after compaction/resume, "
-                "or when task scope changes."
-            ),
-        },
-        "feedback": {
-            "tool": "memory_feedback",
-            "when": "After cited context materially informs a response.",
-            "payloads": feedback_payloads,
-        },
-    }
-
-
-def _checkout_quality_payload(
-    *,
-    diagnostics: dict[str, Any],
-    guidance: dict[str, Any],
-    warnings: list[str],
-) -> dict[str, Any]:
-    current_fact_count = _int_metric(diagnostics.get("current_fact_count"))
-    current_citation_count = _int_metric(diagnostics.get("current_citation_count"))
-    superseded_excluded = _int_metric(diagnostics.get("superseded_contexts_excluded"))
-    warning_count = _int_metric(diagnostics.get("warning_count"))
-    reasons: list[str] = []
-    if current_fact_count and current_citation_count:
-        reasons.append("Retrieved current facts with Eventloom citations.")
-    elif current_fact_count:
-        reasons.append("Retrieved current facts, but they lack Eventloom citations.")
-    else:
-        reasons.append("No current facts were retrieved.")
-    if superseded_excluded:
-        reasons.append("Superseded contexts were excluded from current facts.")
-    if warning_count:
-        reasons.append("Checkout contains warnings that reduce confidence.")
-    confidence = 0.25
-    confidence += min(current_fact_count, 2) * 0.22
-    confidence += min(current_citation_count, 2) * 0.28
-    if superseded_excluded and current_fact_count:
-        confidence += 0.07
-    confidence = min(0.95, confidence)
-    confidence -= min(0.35, warning_count * 0.18)
-    confidence = round(max(0.0, confidence), 2)
-    recommended_next_call = guidance.get("recommended_next_call")
-    required_action = recommended_next_call if isinstance(recommended_next_call, dict) else None
-    if not current_fact_count:
-        answerability = "ask_user"
-        required_action = {
-            "type": "ask_user",
-            "reason": (
-                "No current facts were retrieved; ask the user for the missing context "
-                "before answering from memory."
-            ),
-        }
-    elif current_citation_count and not warning_count and confidence >= 0.75:
-        answerability = "answer_from_memory"
-        required_action = None
-    else:
-        answerability = "refresh_recommended"
-    return {
-        "answerability": answerability,
-        "confidence": confidence,
-        "reasons": reasons,
-        "required_action": required_action,
-    }
-
-
-def _int_metric(value: Any) -> int:
-    return value if isinstance(value, int) and not isinstance(value, bool) else 0
-
-
-def _checkout_feedback_payload(fact: dict[str, Any], query: str) -> dict[str, Any] | None:
-    citation = fact.get("citation")
-    if not isinstance(citation, str) or not citation:
-        return None
-    entity_name = fact.get("entity_name")
-    entity_type = fact.get("entity_type")
-    payload: dict[str, Any] = {
-        "entity_name": entity_name if isinstance(entity_name, str) and entity_name else fact.get("content"),
-        "entity_type": entity_type if isinstance(entity_type, str) and entity_type else "memory",
-        "feedback": "used",
-        "actor": "assistant",
-        "query": query,
-        "source": fact.get("source"),
-        "score": fact.get("score"),
-        "citation": citation,
-        "importance": 0.6,
-    }
-    return {key: value for key, value in payload.items() if value is not None}
-
 
 def _checkout_evidence_payload(context: dict[str, Any]) -> dict[str, Any]:
     citation = context.get("citation") if isinstance(context.get("citation"), str) else None
@@ -1386,29 +1198,12 @@ def _checkout_provenance_payload(context: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _checkout_diagnostics_payload(
-    *,
-    contexts: list[dict[str, Any]],
-    current_facts: list[dict[str, Any]],
-    evidence: list[dict[str, Any]],
-    retention: dict[str, Any],
-    warnings: list[str],
-) -> dict[str, Any]:
+def _checkout_source_lanes_payload(contexts: list[dict[str, Any]]) -> dict[str, int]:
     source_lanes: dict[str, int] = {}
     for context in contexts:
         lane = _checkout_source_lane_payload(context)
         source_lanes[lane] = source_lanes.get(lane, 0) + 1
-    return {
-        "source_lanes": source_lanes,
-        "citation_count": len(evidence),
-        "current_citation_count": sum(1 for fact in current_facts if fact.get("citation")),
-        "current_fact_count": len(current_facts),
-        "superseded_contexts_excluded": retention.get("superseded_contexts_excluded", 0),
-        "warning_count": len(warnings),
-        "feedback_recommended": bool(evidence),
-        "feedback_tool": "memory_feedback",
-        "feedback_reason": "Reinforce cited context if it materially informed the next response.",
-    }
+    return source_lanes
 
 
 def _checkout_source_lane_payload(context: dict[str, Any]) -> str:
@@ -1421,12 +1216,6 @@ def _checkout_source_lane_payload(context: dict[str, Any]) -> str:
     if source in {"verbatim", "packet_memory", "projection", "eventloom"}:
         return str(source)
     return "graph"
-
-
-def _format_source_lanes(source_lanes: Any) -> str:
-    if not isinstance(source_lanes, dict) or not source_lanes:
-        return "none"
-    return ", ".join(f"{lane}={count}" for lane, count in source_lanes.items())
 
 
 def _checkout_rank(context: dict[str, Any], query: str) -> tuple[float, int, str, float]:
