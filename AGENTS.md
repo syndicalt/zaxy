@@ -325,18 +325,20 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] First-class model-facing Memory Bootstrap contract for session-start capability, checkout, capture, and trust guidance
 - [x] Workspace-neutral Codex MCP config with runtime workspace/Eventloom resolution and doctor leak detection
 - [x] Beta readiness inventory with clean-repo UAT script and doctor gate
+- [x] Maintained beta roadmap with post-UAT product work, release criteria, and doctor coverage
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 741 passed, 5 deselected |
-| Coverage | 92.19% |
+| Tests | 743 passed, 5 deselected |
+| Coverage | 92.16% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
 
 ## Next Steps
 
-1. Run clean-repo beta UAT with `scripts/beta-uat.sh` from a fresh environment.
-2. Add reproducible MemPalace-comparable workloads for temporal, source-recall, graph-traversal, and context-collapse behavior.
+1. Add reproducible MemPalace-comparable workloads for temporal, source-recall, graph-traversal, and context-collapse behavior.
+2. Promote the next maintained adapter path beyond LangGraph native-preview, with CrewAI as the first candidate unless Codex or Claude Code usage proves more urgent.
+3. Run and document a deterministic capture soak for transcript, tool-call, command, and file-edit observation coverage over a long session.

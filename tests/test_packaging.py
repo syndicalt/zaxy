@@ -174,6 +174,33 @@ def test_beta_uat_script_stops_managed_capture_before_cleanup() -> None:
     assert script.index("zaxy capture stop --workspace .") < script.index("popd >/dev/null")
 
 
+def test_beta_readiness_requires_maintained_beta_roadmap(tmp_path: Path) -> None:
+    """Beta readiness should fail when the repo has no explicit beta roadmap artifact."""
+    _write_minimal_beta_ready_project(tmp_path)
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["beta_roadmap"]["status"] == "error"
+    assert checks["beta_roadmap"]["action"] == "Add BETA.md with beta goals, remaining work, gates, and exit criteria."
+
+
+def test_beta_roadmap_tracks_post_uat_product_work() -> None:
+    """The beta roadmap should point beyond gate plumbing into product-grade memory behavior."""
+    roadmap = Path("BETA.md").read_text(encoding="utf-8")
+
+    assert "Git for LLM memory" in roadmap
+    assert "MemPalace-comparable" in roadmap
+    assert "temporal recall" in roadmap
+    assert "source recall" in roadmap
+    assert "graph traversal" in roadmap
+    assert "context-collapse" in roadmap
+    assert "CrewAI" in roadmap
+    assert "capture soak" in roadmap
+    assert "release criteria" in roadmap
+
+
 def test_beta_readiness_reports_missing_clean_repo_uat(tmp_path: Path) -> None:
     """Beta readiness should fail clearly when the clean-repo UAT harness is absent."""
     (tmp_path / "scripts").mkdir()
@@ -221,6 +248,74 @@ def test_beta_readiness_reports_missing_clean_repo_uat(tmp_path: Path) -> None:
     assert checks["clean_repo_uat"]["action"] == (
         "Add a clean-repo UAT script for install, init, bootstrap, capture, and checkout."
     )
+
+
+def _write_minimal_beta_ready_project(root: Path) -> None:
+    (root / "scripts").mkdir()
+    (root / ".github" / "workflows").mkdir(parents=True)
+    (root / "docs").mkdir()
+    (root / "pyproject.toml").write_text(
+        '[project]\nname = "zaxy-memory"\nversion = "0.2.0b1"\n',
+        encoding="utf-8",
+    )
+    (root / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## 0.2.0b1 - 2026-05-11\n\n- Beta release.\n",
+        encoding="utf-8",
+    )
+    (root / ".github" / "workflows" / "publish.yml").write_text(
+        "on:\n"
+        "  release:\n"
+        "    types: [published]\n"
+        "  workflow_dispatch:\n"
+        "permissions:\n"
+        "  id-token: write\n"
+        "steps:\n"
+        "  - run: python -m build --sdist --wheel\n"
+        "  - run: python -m twine check dist/*\n"
+        "  - uses: pypa/gh-action-pypi-publish@release/v1\n",
+        encoding="utf-8",
+    )
+    (root / "scripts" / "release-check.sh").write_text(
+        'RUFF_CMD="ruff"\n'
+        'MYPY_CMD="mypy"\n'
+        "pytest\n"
+        "scripts/check-coverage.py\n"
+        "tests/test_packet_memory_e2e.py\n"
+        "scripts/build-dist.sh\n"
+        "scripts/validate-docs.sh\n"
+        "scripts/validate-deployment.sh\n",
+        encoding="utf-8",
+    )
+    (root / "scripts" / "beta-uat.sh").write_text(
+        "mktemp -d\n"
+        "python -m pip install\n"
+        "zaxy init --preset local-codex\n"
+        "zaxy memory bootstrap\n"
+        "zaxy memory checkout\n"
+        "zaxy doctor\n"
+        "zaxy hook-status\n"
+        "zaxy capture status\n"
+        "zaxy memory status\n",
+        encoding="utf-8",
+    )
+    docs = (
+        "pipx install zaxy-memory\n"
+        "zaxy init\n"
+        "zaxy memory bootstrap\n"
+        "zaxy memory checkout\n"
+        "scripts/beta-uat.sh\n"
+        "zaxy doctor --beta-readiness\n"
+        "deterministic\n"
+        "zaxy capture start\n"
+        "zaxy capture status\n"
+        "zaxy hook-status\n"
+        "observation coverage\n"
+    )
+    (root / "README.md").write_text(docs, encoding="utf-8")
+    (root / "docs" / "getting-started.md").write_text(docs, encoding="utf-8")
+    (root / "docs" / "testing.md").write_text(docs, encoding="utf-8")
+    (root / "docs" / "hooks.md").write_text(docs, encoding="utf-8")
+    (root / "docs" / "mcp.md").write_text(docs, encoding="utf-8")
 
 
 def test_build_dist_fails_fast_when_build_fails(tmp_path: Path) -> None:

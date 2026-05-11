@@ -73,6 +73,7 @@ def run_beta_readiness(*, project_root: str | Path | None = None) -> dict[str, A
         _check_clean_repo_uat(root),
         _check_docs_happy_path(root),
         _check_capture_happy_path(root),
+        _check_beta_roadmap(root),
     ]
     return {
         "status": _overall_status(checks),
@@ -339,6 +340,42 @@ def _check_capture_happy_path(root: Path) -> dict[str, str]:
         "name": "capture_happy_path",
         "status": "ok",
         "message": "capture docs cover deterministic startup, runtime status, hook status, and observation coverage",
+    }
+
+
+def _check_beta_roadmap(root: Path) -> dict[str, str]:
+    try:
+        roadmap = (root / "BETA.md").read_text(encoding="utf-8")
+    except OSError as exc:
+        return {
+            "name": "beta_roadmap",
+            "status": "error",
+            "message": f"BETA.md is missing or unreadable: {exc}",
+            "action": "Add BETA.md with beta goals, remaining work, gates, and exit criteria.",
+        }
+    required = [
+        "Git for LLM memory",
+        "MemPalace-comparable",
+        "temporal recall",
+        "source recall",
+        "graph traversal",
+        "context-collapse",
+        "CrewAI",
+        "capture soak",
+        "release criteria",
+    ]
+    missing = [item for item in required if item not in roadmap]
+    if missing:
+        return {
+            "name": "beta_roadmap",
+            "status": "error",
+            "message": "BETA.md is missing roadmap items: " + ", ".join(missing),
+            "action": "Update BETA.md so beta work tracks product-grade memory behavior and release criteria.",
+        }
+    return {
+        "name": "beta_roadmap",
+        "status": "ok",
+        "message": "BETA.md tracks beta goals, remaining product work, gates, and release criteria",
     }
 
 
