@@ -43,6 +43,7 @@ from zaxy.embedding import build_embedding_provider, embed_extraction
 from zaxy.event import EventLog, ReplayResult  # noqa: F401 - compatibility for existing tests
 from zaxy.extract import extract
 from zaxy.graph import GraphStore
+from zaxy.inference import build_inferred_edge_events
 from zaxy.lifecycle import build_subagent_completed_event
 from zaxy.metrics import get_metrics
 from zaxy.query import QueryRouter, build_reranker, build_retention_policy
@@ -258,6 +259,11 @@ class MemoryFabric:
             thread=sid,
         )
 
+        await self._project_event(event, session_id=sid)
+        await self._append_generated_inferences(eventlog, source_event=event, session_id=sid)
+
+    async def _project_event(self, event: Any, *, session_id: str) -> None:
+        """Extract, project, trace, and record metrics for one sealed event."""
         extraction = extract(event)
         if self.embedding_provider is not None:
             try:
@@ -265,17 +271,36 @@ class MemoryFabric:
             except Exception:
                 get_metrics().record_degraded_operation("append", "embedding_provider_unavailable")
         try:
-            await self.graph.upsert_extraction(extraction, session_id=sid)
+            await self.graph.upsert_extraction(extraction, session_id=session_id)
         except Exception:
             get_metrics().record_degraded_operation("append", "graph_projection_unavailable")
         with suppress(Exception):
-            await self.tracer.trace_append(event_type, actor, event.seq)
+            await self.tracer.trace_append(event.type, event.actor, event.seq)
 
         # Metrics
         metrics = get_metrics()
-        metrics.record_event_append(event_type)
+        metrics.record_event_append(event.type)
         for ent in extraction.entities:
             metrics.record_upsert(ent.entity_type)
+
+    async def _append_generated_inferences(
+        self,
+        eventlog: EventLog,
+        *,
+        source_event: Any,
+        session_id: str,
+    ) -> None:
+        """Append and project inferred-edge events generated from cited evidence."""
+        if source_event.type == "inference.edge.generated":
+            return
+        for generated in build_inferred_edge_events(source_event):
+            event = eventlog.append(
+                generated["event_type"],
+                actor=generated["actor"],
+                payload=validate_payload(generated["payload"]),
+                thread=session_id,
+            )
+            await self._project_event(event, session_id=session_id)
 
     async def ingest_documents(
         self,

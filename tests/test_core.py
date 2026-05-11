@@ -21,7 +21,7 @@ from zaxy.core import (
     build_memory_checkout,
 )
 from zaxy.embedding import HashEmbeddingProvider
-from zaxy.event import EventLog
+from zaxy.event import Event, EventLog
 from zaxy.query import ContextChunk
 from zaxy.refs import MemoryRef
 
@@ -281,6 +281,74 @@ class TestAppend:
         """append() should auto-connect if not already connected."""
         await fabric.append("x", actor="y")
         fabric.graph.connect.assert_awaited_once()
+
+    async def test_append_projects_generated_inferred_edge_events(self, fabric: MemoryFabric) -> None:
+        """append() should persist high-confidence inferred edges as Eventloom events."""
+        task_event = Event(
+            seq=1,
+            timestamp="2024-01-01T00:00:00Z",
+            type="task.completed",
+            actor="codex",
+            thread="agent-1",
+            payload={
+                "taskId": "task-7",
+                "summary": "Implemented Memory Checkout.",
+                "decision": "Use Memory Checkout as the model-facing state contract",
+                "decision_event_seq": 5,
+                "decision_event_hash": "a" * 64,
+            },
+            hash="b" * 64,
+        )
+        inferred_payload = {
+            "source": {
+                "name": "task-7",
+                "entity_type": "task",
+                "summary": "Implemented Memory Checkout.",
+            },
+            "target": {
+                "name": "Use Memory Checkout as the model-facing state contract",
+                "entity_type": "decision",
+            },
+            "relation_type": "likely_implemented_decision",
+            "confidence": 0.86,
+            "inference_method": "task_completed_decision_citation_v1",
+            "evidence": {
+                "source_event_seq": 1,
+                "source_event_hash": "b" * 64,
+                "decision_event_seq": 5,
+                "decision_event_hash": "a" * 64,
+                "reason": "task.completed explicitly cited a decision Eventloom event",
+            },
+        }
+        inferred_event = Event(
+            seq=2,
+            timestamp="2024-01-01T00:00:01Z",
+            type="inference.edge.generated",
+            actor="zaxy-inference",
+            thread="agent-1",
+            payload=inferred_payload,
+            prev_hash="b" * 64,
+            hash="c" * 64,
+        )
+        log = fabric.session_manager.get.return_value.eventlog
+        log.append.side_effect = [task_event, inferred_event]
+
+        await fabric.append(
+            "task.completed",
+            actor="codex",
+            payload=task_event.payload,
+            session_id="agent-1",
+        )
+
+        assert log.append.call_count == 2
+        inferred_call = log.append.call_args_list[1]
+        assert inferred_call.args == ("inference.edge.generated",)
+        assert inferred_call.kwargs["actor"] == "zaxy-inference"
+        assert inferred_call.kwargs["thread"] == "agent-1"
+        assert inferred_call.kwargs["payload"]["source"]["name"] == "task-7"
+        assert inferred_call.kwargs["payload"]["target"]["entity_type"] == "decision"
+        assert inferred_call.kwargs["payload"]["confidence"] == 0.86
+        assert fabric.graph.upsert_extraction.await_count == 2
 
 
 class TestContextFeedback:

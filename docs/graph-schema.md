@@ -67,6 +67,14 @@ audit metadata on every graph relationship surface. This gives downstream
 generators a safe contract while keeping Eventloom as the durable record of who
 generated the inference and why.
 
+Zaxy's first built-in inferred-edge producer is deliberately narrow. When a
+`task.completed` event explicitly cites a decision with `decision`,
+`decision_event_seq`, and `decision_event_hash`, Zaxy appends an
+`inference.edge.generated` event with relation type
+`likely_implemented_decision`, confidence `0.86`, and method
+`task_completed_decision_citation_v1`. Without the decision Eventloom citation,
+the producer emits nothing.
+
 Example Eventloom payload:
 
 ```json
