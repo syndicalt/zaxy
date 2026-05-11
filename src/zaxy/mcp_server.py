@@ -31,7 +31,7 @@ from mcp.server.sse import SseServerTransport
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-from zaxy.capabilities import build_memory_capabilities
+from zaxy.capabilities import build_memory_bootstrap, build_memory_capabilities
 from zaxy.checkout import (
     build_checkout_diagnostics,
     build_checkout_guidance,
@@ -192,6 +192,19 @@ TOOLS = [
     Tool(
         name="memory_capabilities",
         description="Describe Zaxy's active memory capabilities and ambient usage loop for this session.",
+        inputSchema={
+            "type": "object",
+            "required": [],
+            "properties": {
+                "session_id": {"type": "string"},
+                "current_task": {"type": "string", "description": "Current task or question to seed checkout guidance"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_bootstrap",
+        description="Return compact session-start Zaxy memory guidance for model bootstrap.",
         inputSchema={
             "type": "object",
             "required": [],
@@ -650,6 +663,17 @@ class ZaxyMCPServer:
             current_task=_optional_text(arguments.get("current_task")),
         )
         return [TextContent(type="text", text=json.dumps(manifest, indent=2))]
+
+    async def handle_memory_bootstrap(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_bootstrap tool call."""
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
+        bootstrap = build_memory_bootstrap(
+            eventloom_path=self._eventloom_path,
+            session_id=session_id,
+            workspace_root=self._workspace_root,
+            current_task=_optional_text(arguments.get("current_task")),
+        )
+        return [TextContent(type="text", text=json.dumps(bootstrap, indent=2))]
 
     async def handle_context_assemble(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle context_assemble tool call."""
@@ -1396,6 +1420,8 @@ async def _dispatch_tool_call(
         return await active_server.handle_memory_invalidate(arguments)
     if name == "memory_capabilities":
         return await active_server.handle_memory_capabilities(arguments)
+    if name == "memory_bootstrap":
+        return await active_server.handle_memory_bootstrap(arguments)
     if name == "memory_checkout":
         return await active_server.handle_memory_checkout(arguments)
     if name == "context_assemble":

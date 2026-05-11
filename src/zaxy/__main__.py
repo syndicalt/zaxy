@@ -25,7 +25,12 @@ from pathlib import Path
 import typer
 
 from zaxy.benchmark import build_competitive_event_log, competitive_cases
-from zaxy.capabilities import build_memory_capabilities, format_memory_capabilities
+from zaxy.capabilities import (
+    build_memory_bootstrap,
+    build_memory_capabilities,
+    format_memory_bootstrap,
+    format_memory_capabilities,
+)
 from zaxy.capture_manager import inspect_codex_capture, start_codex_capture, stop_codex_capture
 from zaxy.codex_capture import capture_codex_sessions
 from zaxy.compaction import (
@@ -262,6 +267,27 @@ def memory_capabilities(
         typer.echo(json.dumps(manifest, indent=2, sort_keys=True))
     else:
         typer.echo(format_memory_capabilities(manifest))
+
+
+@memory_app.command("bootstrap")
+def memory_bootstrap(
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    session_id: str = typer.Option("default", help="Session ID to bootstrap"),
+    current_task: str | None = typer.Option(None, help="Current task or question to seed checkout guidance"),  # noqa: B008
+    workspace_root: Path = typer.Option(Path("."), help="Workspace root for capture/status discovery"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Show compact session-start Zaxy memory bootstrap guidance."""
+    bootstrap = build_memory_bootstrap(
+        eventloom_path=eventloom_path,
+        session_id=session_id,
+        workspace_root=workspace_root,
+        current_task=current_task,
+    )
+    if json_output:
+        typer.echo(json.dumps(bootstrap, indent=2, sort_keys=True))
+    else:
+        typer.echo(format_memory_bootstrap(bootstrap))
 
 
 @memory_app.command("checkout")

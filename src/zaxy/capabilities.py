@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from zaxy.capture_manager import inspect_codex_capture
 from zaxy.doctor import packet_memory_report
 from zaxy.hooks import inspect_hook_status
 from zaxy.memory_status import inspect_memory_status
@@ -111,6 +112,85 @@ def format_memory_capabilities(manifest: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def build_memory_bootstrap(
+    *,
+    eventloom_path: str | Path,
+    session_id: str,
+    workspace_root: str | Path | None = None,
+    current_task: str | None = None,
+) -> dict[str, Any]:
+    """Return the compact session-start handoff packet for model-facing memory use."""
+    sid = validate_session_id(session_id)
+    workspace = Path(workspace_root or Path.cwd()).resolve()
+    capabilities = build_memory_capabilities(
+        eventloom_path=eventloom_path,
+        session_id=sid,
+        workspace_root=workspace,
+        current_task=current_task,
+    )
+    checkout_query = current_task or "current task, project direction, and recent decisions"
+    bootstrap: dict[str, Any] = {
+        "mode": "session_start",
+        "session_id": sid,
+        "workspace": str(workspace),
+        "current_task": current_task,
+        "capabilities": capabilities,
+        "startup_sequence": [
+            {
+                "tool": "memory_capabilities",
+                "arguments": {"session_id": sid, "current_task": current_task},
+                "reason": "Confirm active Zaxy memory posture and health.",
+            },
+            {
+                "tool": "memory_checkout",
+                "arguments": {"query": checkout_query, "session_id": sid},
+                "reason": "Load cited current working state before relying on memory.",
+            },
+        ],
+        "capture": _capture_summary(workspace),
+        "trust_policy": {
+            "prefer": "cited current facts from memory_checkout",
+            "ignore": "uncited, superseded, or warning-bearing context until refreshed",
+            "record": "meaningful decisions, completed work, corrections, and retrieval feedback",
+        },
+    }
+    bootstrap["prompt"] = format_memory_bootstrap(bootstrap)
+    return bootstrap
+
+
+def format_memory_bootstrap(bootstrap: dict[str, Any]) -> str:
+    """Format the bootstrap packet as short prompt-ready startup context."""
+    capture = bootstrap["capture"]
+    configured = "configured" if capture.get("configured") else "not configured"
+    running = "running" if capture.get("running") else "not running"
+    next_checkout = bootstrap["startup_sequence"][1]
+    query = next_checkout["arguments"]["query"]
+    lines = [
+        "# Zaxy Session Bootstrap",
+        f"Session: {bootstrap['session_id']}",
+    ]
+    if bootstrap.get("current_task"):
+        lines.append(f"Current task: {bootstrap['current_task']}")
+    lines.extend(
+        [
+            f"Capture: {configured}, {running}",
+            "",
+            "Startup sequence:",
+            "1. memory_capabilities",
+            f"2. memory_checkout(query={query!r})",
+            "",
+            "Trust policy:",
+            f"- Prefer: {bootstrap['trust_policy']['prefer']}",
+            f"- Ignore: {bootstrap['trust_policy']['ignore']}",
+            f"- Record: {bootstrap['trust_policy']['record']}",
+            "",
+            "Call memory_checkout before answering roadmap or implementation questions.",
+            "Call memory_feedback when cited checkout context was used.",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def _ambient_loop() -> dict[str, dict[str, str]]:
     return {
         "session_start": {
@@ -150,6 +230,25 @@ def _tool_guidance() -> list[dict[str, str]]:
         {"name": "memory_verbatim", "use_when": "When exact source text, identifiers, or citations matter."},
         {"name": "memory_replay", "use_when": "For audit, handoff, or reconstructing session history."},
     ]
+
+
+def _capture_summary(workspace: Path) -> dict[str, Any]:
+    try:
+        runtime = inspect_codex_capture(workspace=workspace)
+    except (OSError, ValueError) as exc:
+        return {
+            "configured": False,
+            "running": False,
+            "pids": [],
+            "latest_observation": None,
+            "error": str(exc),
+        }
+    return {
+        "configured": bool(runtime.get("configured", False)),
+        "running": bool(runtime.get("running", False)),
+        "pids": list(runtime.get("pids", [])),
+        "latest_observation": runtime.get("latest_observation"),
+    }
 
 
 def _status_label(value: bool | None) -> str:

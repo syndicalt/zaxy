@@ -67,18 +67,18 @@ whether the high-value automatic lanes are active and includes the managed
 idle. It does not start Docker or require a live Neo4j connection; use
 `zaxy status` when you want a live graph connectivity test.
 
-Before meaningful model work, inspect the memory contract and checkout current
-state:
+Before meaningful model work, inspect the session-start bootstrap packet:
 
 ```bash
-zaxy memory capabilities --session-id my-project-default
-zaxy memory checkout "current task, project direction, and recent decisions" --session-id my-project-default
+zaxy memory bootstrap --session-id my-project-default
 ```
 
-`memory capabilities` is the model-awareness surface. It explains when to use
-Zaxy tools during a session: checkout at session start, before major work, after
-compaction/resume, and when the user asks what is next; capture meaningful work
-after completion; reinforce cited memories that were useful.
+`memory bootstrap` is the compact model-awareness surface for session start. It
+packages the active capability manifest, the recommended first
+`memory_checkout` call, deterministic capture status, and the trust policy for
+what to prefer, ignore, and record. `memory capabilities` remains available when
+you want the fuller manifest, and `memory checkout` loads the cited working
+state before real work begins.
 
 For a single first-run flow, use `zaxy init`. The happy path is deterministic
 capture: local profile writing, MCP config rendering, observer hook config,
@@ -117,7 +117,7 @@ The one-command local Codex happy path starts the managed watcher during init:
 ```bash
 zaxy init . --domain my-project --preset local-codex --capture start
 zaxy doctor
-zaxy memory capabilities --session-id my-project-default
+zaxy memory bootstrap --session-id my-project-default
 ```
 
 `local-codex` renders Codex MCP install guidance, writes the local profile, and

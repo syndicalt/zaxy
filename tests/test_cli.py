@@ -209,6 +209,60 @@ def test_memory_capabilities_text_output(tmp_path: Path) -> None:
     assert "memory_checkout" in result.output
 
 
+def test_memory_bootstrap_json_output(tmp_path: Path) -> None:
+    """memory bootstrap should expose a model-facing session-start handoff."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "bootstrap",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent",
+            "--current-task",
+            "ship the next sprint",
+            "--workspace-root",
+            str(tmp_path),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["mode"] == "session_start"
+    assert payload["session_id"] == "agent"
+    assert payload["startup_sequence"][1]["tool"] == "memory_checkout"
+    assert payload["startup_sequence"][1]["arguments"]["query"] == "ship the next sprint"
+    assert payload["capture"]["configured"] is False
+
+
+def test_memory_bootstrap_text_output(tmp_path: Path) -> None:
+    """The text form should be compact enough to inject into model startup context."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "bootstrap",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent",
+            "--workspace-root",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "# Zaxy Session Bootstrap" in result.output
+    assert "1. memory_capabilities" in result.output
+    assert "2. memory_checkout" in result.output
+
+
 @patch("zaxy.__main__.MemoryFabric")
 def test_memory_checkout_json_output(mock_fabric_cls: MagicMock, tmp_path: Path) -> None:
     """memory checkout --json should expose the Memory Checkout contract."""

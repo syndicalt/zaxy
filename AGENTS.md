@@ -322,13 +322,14 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Memory Checkout degraded-state handling for missing, superseded-only, uncited, and warning-bearing context
 - [x] Shared Memory Checkout policy module used by core and MCP interfaces
 - [x] Coverage ratchet enforced in CI and release checks from generated coverage XML
+- [x] First-class model-facing Memory Bootstrap contract for session-start capability, checkout, capture, and trust guidance
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 708 passed, 5 deselected |
-| Coverage | 92.08% |
+| Tests | 730 passed, 5 deselected |
+| Coverage | 92.09% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |

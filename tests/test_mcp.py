@@ -63,7 +63,7 @@ class TestToolSchema:
 
     def test_tools_list_length(self) -> None:
         """Should expose the memory and context lifecycle tools."""
-        assert len(TOOLS) == 11
+        assert len(TOOLS) == 12
 
     def test_tool_names(self) -> None:
         """Tool names should match the expected contract."""
@@ -76,6 +76,7 @@ class TestToolSchema:
             "memory_replay",
             "memory_invalidate",
             "memory_capabilities",
+            "memory_bootstrap",
             "memory_checkout",
             "context_assemble",
             "context_after_turn",
@@ -123,6 +124,13 @@ class TestToolSchema:
     def test_memory_capabilities_has_optional_query_schema(self) -> None:
         """memory_capabilities should expose model-facing Zaxy usage guidance."""
         tool = next(t for t in TOOLS if t.name == "memory_capabilities")
+        assert tool.inputSchema["required"] == []
+        assert "session_id" in tool.inputSchema["properties"]
+        assert "current_task" in tool.inputSchema["properties"]
+
+    def test_memory_bootstrap_has_optional_query_schema(self) -> None:
+        """memory_bootstrap should expose the session-start model handoff contract."""
+        tool = next(t for t in TOOLS if t.name == "memory_bootstrap")
         assert tool.inputSchema["required"] == []
         assert "session_id" in tool.inputSchema["properties"]
         assert "current_task" in tool.inputSchema["properties"]
@@ -183,6 +191,43 @@ class TestMemoryCapabilities:
         assert payload["ambient_loop"]["after_compaction_or_resume"]["tool"] == "memory_checkout"
         assert payload["status"]["eventloom"]["latest_seq"] == 1
         assert "memory_checkout" in payload["prompt"]
+
+
+class TestMemoryBootstrap:
+    """Tests for the compact session-start memory bootstrap."""
+
+    async def test_returns_bootstrap_packet_for_session_start(
+        self,
+        server: ZaxyMCPServer,
+        tmp_path: Path,
+    ) -> None:
+        """memory_bootstrap should make Zaxy natural to use at session start."""
+        eventloom = tmp_path / ".eventloom"
+        EventLog(eventloom / "agent-1.jsonl").append(
+            "task.completed",
+            actor="codex",
+            payload={"summary": "Bootstrap source."},
+            thread="agent-1",
+        )
+        server._eventloom_path = str(eventloom)
+        server._workspace_root = tmp_path
+
+        result = await server.handle_memory_bootstrap(
+            {"session_id": "agent-1", "current_task": "resume roadmap"}
+        )
+
+        payload = json_loads(result[0].text)
+        assert payload["mode"] == "session_start"
+        assert payload["session_id"] == "agent-1"
+        assert payload["startup_sequence"][0]["tool"] == "memory_capabilities"
+        assert payload["startup_sequence"][1]["tool"] == "memory_checkout"
+        assert payload["startup_sequence"][1]["arguments"]["query"] == "resume roadmap"
+        assert payload["capabilities"]["status"]["eventloom"]["latest_seq"] == 1
+        assert "Call memory_checkout before answering roadmap or implementation questions." in payload["prompt"]
+
+
+class TestSessionDefaults:
+    """Tests for session default behavior."""
 
     async def test_uses_default_session(self, server: ZaxyMCPServer) -> None:
         """Missing session_id should default to 'default'."""

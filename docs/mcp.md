@@ -55,6 +55,11 @@ as an ambient loop: session-start awareness is not enough, so models should
 refresh memory before major work, after compaction/resume, and before roadmap or
 architecture decisions.
 
+`memory_bootstrap(session_id?, current_task?)` is the shorter startup packet for
+clients that want one model-facing handoff. It embeds the capabilities manifest,
+the first recommended checkout call, deterministic capture status, and a trust
+policy for cited current facts, unsupported context, and feedback recording.
+
 `memory_checkout(query, session_id?, ref?, replay_from_seq?, limit?, max_recent_events?)`
 returns the high-level contract an agent should condition on before a turn. It
 wraps context assembly with a `# Memory Checkout` prompt, current facts that
@@ -207,11 +212,13 @@ zaxy serve
 At session start, clients or agents should bootstrap model awareness:
 
 ```bash
-zaxy memory capabilities --session-id zaxy-default
+zaxy memory bootstrap --session-id zaxy-default
 zaxy memory checkout "current task, project direction, and recent decisions" --session-id zaxy-default
 ```
 
-During a long session, repeat checkout before important work and after
+`memory_bootstrap` returns the compact session-start handoff: the active
+capability manifest, recommended first checkout call, capture status, and trust
+policy. During a long session, repeat checkout before important work and after
 compaction or resume. Capture meaningful completions with `context_after_turn`
 or typed `memory_append`, and reinforce cited context that was actually used
 with `memory_feedback`.
