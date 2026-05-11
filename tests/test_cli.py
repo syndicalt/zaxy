@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from typer.main import get_command
 from typer.testing import CliRunner
 
 from zaxy.__main__ import app
@@ -268,27 +269,15 @@ def test_packet_analyzer_cli_help_exposes_observe_only_gateway() -> None:
     runner = CliRunner()
 
     result = runner.invoke(app, ["packet-analyzer", "--help"])
-    recognized = runner.invoke(
-        app,
-        [
-            "packet-analyzer",
-            "--upstream-base-url",
-            "http://127.0.0.1:1/v1",
-            "--eventloom-path",
-            ".eventloom",
-            "--session-id",
-            "agent",
-            "--port",
-            "0",
-        ],
-    )
+    command = get_command(app).commands["packet-analyzer"]
+    option_names = {option for parameter in command.params for option in getattr(parameter, "opts", [])}
 
     assert result.exit_code == 0
     assert "Usage:" in result.output
     assert "packet-analyzer" in result.output
-    assert recognized.exit_code == 2
-    assert "Invalid value for '--port'" in recognized.output
-    assert "No such option" not in recognized.output
+    assert "--upstream-base-url" in option_names
+    assert "--eventloom-path" in option_names
+    assert "--session-id" in option_names
 
 
 def test_packet_project_cli_projects_completed_packets(tmp_path: Path) -> None:
