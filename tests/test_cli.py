@@ -267,13 +267,28 @@ def test_packet_analyzer_cli_help_exposes_observe_only_gateway() -> None:
     """packet-analyzer should expose the low-latency observe-only gateway."""
     runner = CliRunner()
 
-    result = runner.invoke(app, ["packet-analyzer", "--help"], env={"COLUMNS": "120"})
+    result = runner.invoke(app, ["packet-analyzer", "--help"])
+    recognized = runner.invoke(
+        app,
+        [
+            "packet-analyzer",
+            "--upstream-base-url",
+            "http://127.0.0.1:1/v1",
+            "--eventloom-path",
+            ".eventloom",
+            "--session-id",
+            "agent",
+            "--port",
+            "0",
+        ],
+    )
 
     assert result.exit_code == 0
-    assert "Run an observe-only OpenAI-compatible packet analyzer" in result.output
-    assert "--upstream-base-url" in result.output
-    assert "--eventloom-path" in result.output
-    assert "--session-id" in result.output
+    assert "Usage:" in result.output
+    assert "packet-analyzer" in result.output
+    assert recognized.exit_code == 2
+    assert "Invalid value for '--port'" in recognized.output
+    assert "No such option" not in recognized.output
 
 
 def test_packet_project_cli_projects_completed_packets(tmp_path: Path) -> None:
