@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1479,9 +1481,155 @@ def test_hook_status_warns_when_codex_capture_configured_but_not_running(
     assert payload["clients"]["codex"]["runtime"]["running"] is False
     assert payload["capture_readiness"]["status"] == "warning"
     assert payload["capture_readiness"]["actions"] == [
-        "Start deterministic Codex capture: zaxy codex-capture --workspace "
-        f"{tmp_path} --eventloom-path {tmp_path / '.eventloom'} --session-id agent-1 --watch."
+        f"Start managed deterministic Codex capture: zaxy capture start --workspace {tmp_path}."
     ]
+
+
+@patch("zaxy.hooks._iter_process_cmdlines")
+def test_capture_status_reports_configured_codex_watcher_runtime(
+    mock_processes: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """capture status should expose managed deterministic capture posture."""
+    config = tmp_path / ".codex" / "zaxy-capture.json"
+    config.parent.mkdir()
+    config.write_text(
+        json.dumps(
+            {
+                "capture": "local-session-jsonl",
+                "client": "codex",
+                "codex_home": str(tmp_path / ".codex-home"),
+                "eventloom_path": str(tmp_path / ".eventloom"),
+                "session_id": "agent-1",
+                "source": "codex-local",
+                "workspace": str(tmp_path),
+            }
+        ),
+        encoding="utf-8",
+    )
+    mock_processes.return_value = [
+        (
+            321,
+            [
+                "python",
+                "-m",
+                "zaxy",
+                "codex-capture",
+                "--workspace",
+                str(tmp_path),
+                "--eventloom-path",
+                str(tmp_path / ".eventloom"),
+                "--session-id",
+                "agent-1",
+                "--watch",
+            ],
+        )
+    ]
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["capture", "status", "--workspace", str(tmp_path), "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["client"] == "codex"
+    assert payload["configured"] is True
+    assert payload["running"] is True
+    assert payload["pids"] == [321]
+    assert payload["state_file"] == str(tmp_path / ".eventloom" / "runtime" / "codex-capture.json")
+
+
+@patch.object(subprocess, "Popen")
+def test_capture_start_launches_managed_codex_watcher(
+    mock_popen: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """capture start should launch a watcher from repo-local Codex capture config."""
+    config = tmp_path / ".codex" / "zaxy-capture.json"
+    config.parent.mkdir()
+    config.write_text(
+        json.dumps(
+            {
+                "capture": "local-session-jsonl",
+                "client": "codex",
+                "codex_home": str(tmp_path / ".codex-home"),
+                "eventloom_path": str(tmp_path / ".eventloom"),
+                "session_id": "agent-1",
+                "source": "codex-local",
+                "workspace": str(tmp_path),
+            }
+        ),
+        encoding="utf-8",
+    )
+    process = MagicMock()
+    process.pid = 321
+    mock_popen.return_value = process
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["capture", "start", "--workspace", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Started Codex capture watcher pid=321" in result.output
+    command = mock_popen.call_args.args[0]
+    assert command[:3] == [sys.executable, "-m", "zaxy"]
+    assert "codex-capture" in command
+    assert "--watch" in command
+    assert mock_popen.call_args.kwargs["start_new_session"] is True
+    state = json.loads((tmp_path / ".eventloom" / "runtime" / "codex-capture.json").read_text(encoding="utf-8"))
+    assert state["pid"] == 321
+    assert state["client"] == "codex"
+    assert state["workspace"] == str(tmp_path)
+
+
+@patch("os.kill")
+@patch("zaxy.hooks._iter_process_cmdlines")
+def test_capture_stop_only_stops_matching_managed_codex_watcher(
+    mock_processes: MagicMock,
+    mock_kill: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """capture stop should stop the managed watcher without targeting unrelated processes."""
+    runtime = tmp_path / ".eventloom" / "runtime"
+    runtime.mkdir(parents=True)
+    state_file = runtime / "codex-capture.json"
+    state_file.write_text(
+        json.dumps(
+            {
+                "client": "codex",
+                "pid": 321,
+                "workspace": str(tmp_path),
+                "eventloom_path": str(tmp_path / ".eventloom"),
+                "command": ["python", "-m", "zaxy", "codex-capture", "--watch"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    mock_processes.return_value = [
+        (
+            321,
+            [
+                "python",
+                "-m",
+                "zaxy",
+                "codex-capture",
+                "--workspace",
+                str(tmp_path),
+                "--eventloom-path",
+                str(tmp_path / ".eventloom"),
+                "--session-id",
+                "agent-1",
+                "--watch",
+            ],
+        )
+    ]
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["capture", "stop", "--workspace", str(tmp_path)])
+
+    assert result.exit_code == 0
+    assert "Stopped Codex capture watcher pid=321" in result.output
+    mock_kill.assert_called_once()
+    assert mock_kill.call_args.args[0] == 321
+    assert not state_file.exists()
 
 
 def test_hooks_status_reports_installed_clients_and_recent_activity(tmp_path: Path) -> None:
@@ -2025,6 +2173,20 @@ def test_init_command_accepts_capture_mode_packet(mock_run_onboarding: AsyncMock
 
     assert result.exit_code == 0
     assert mock_run_onboarding.await_args.kwargs["capture_mode"] == "packet"
+
+
+@patch("zaxy.__main__.run_onboarding")
+def test_init_command_accepts_capture_start_action(mock_run_onboarding: AsyncMock, tmp_path: Path) -> None:
+    """init --capture start should ask onboarding to start deterministic capture."""
+    result_obj = MagicMock()
+    result_obj.status = "ok"
+    mock_run_onboarding.return_value = result_obj
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["init", str(tmp_path), "--preset", "local-codex", "--capture", "start"])
+
+    assert result.exit_code == 0
+    assert mock_run_onboarding.await_args.kwargs["capture_action"] == "start"
 
 
 def test_init_command_help_describes_full_onboarding_path() -> None:

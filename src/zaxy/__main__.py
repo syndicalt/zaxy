@@ -26,6 +26,7 @@ import typer
 
 from zaxy.benchmark import build_competitive_event_log, competitive_cases
 from zaxy.capabilities import build_memory_capabilities, format_memory_capabilities
+from zaxy.capture_manager import inspect_codex_capture, start_codex_capture, stop_codex_capture
 from zaxy.codex_capture import capture_codex_sessions
 from zaxy.compaction import (
     audit_event_log,
@@ -120,7 +121,9 @@ from zaxy.viewer import write_viewer_html
 
 app = typer.Typer(help="Zaxy: Event-sourced temporal knowledge graph fabric")
 memory_app = typer.Typer(help="Inspect Eventloom-backed agent memory")
+capture_app = typer.Typer(help="Manage deterministic capture watchers")
 app.add_typer(memory_app, name="memory")
+app.add_typer(capture_app, name="capture")
 
 
 def _version_callback(value: bool) -> None:
@@ -801,6 +804,69 @@ def codex_capture(
         typer.echo("Stopped Codex capture.")
 
 
+@capture_app.command("status")
+def capture_status(
+    workspace: Path = typer.Option(Path("."), help="Workspace root with capture config"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Inspect managed deterministic capture runtime state."""
+    report = inspect_codex_capture(workspace=workspace)
+    if json_output:
+        typer.echo(json.dumps(report, indent=2, sort_keys=True))
+        return
+    configured = "configured" if report["configured"] else "not configured"
+    running = "running" if report["running"] else "not running"
+    typer.echo(f"Codex capture: {configured}, {running}")
+    if report["pids"]:
+        typer.echo("pids: " + ", ".join(str(pid) for pid in report["pids"]))
+    typer.echo(f"state: {report['state_file']}")
+    latest = report.get("latest_observation")
+    if latest:
+        typer.echo(
+            f"latest: {latest['type']} seq={latest['seq']} "
+            f"session={latest['thread']} source={latest['source']}"
+        )
+
+
+@capture_app.command("start")
+def capture_start(
+    workspace: Path = typer.Option(Path("."), help="Workspace root with .codex/zaxy-capture.json"),  # noqa: B008
+    graph: bool = typer.Option(False, "--graph", help="Project captured observations into Neo4j"),
+    neo4j_uri: str | None = typer.Option(None, help="Neo4j Bolt URI"),
+    neo4j_user: str | None = typer.Option(None, help="Neo4j username"),
+    neo4j_password: str | None = typer.Option(None, help="Neo4j password"),
+    max_records_per_file: int = typer.Option(
+        500,
+        "--max-records-per-file",
+        min=1,
+        help="Maximum recent records to scan from each Codex session log per pass",
+    ),
+) -> None:
+    """Start a managed deterministic Codex capture watcher."""
+    try:
+        result = start_codex_capture(
+            workspace=workspace,
+            graph=graph,
+            neo4j_uri=neo4j_uri,
+            neo4j_user=neo4j_user,
+            neo4j_password=neo4j_password,
+            max_records_per_file=max_records_per_file,
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(result["message"])
+    typer.echo(f"state: {result['state_file']}")
+
+
+@capture_app.command("stop")
+def capture_stop(
+    workspace: Path = typer.Option(Path("."), help="Workspace root with managed capture state"),  # noqa: B008
+) -> None:
+    """Stop the managed deterministic Codex capture watcher."""
+    result = stop_codex_capture(workspace=workspace)
+    typer.echo(result["message"])
+
+
 def _parse_json_object(value: str, *, option: str) -> dict[str, object]:
     try:
         parsed = json.loads(value)
@@ -949,6 +1015,7 @@ def init(
     local_profile_output: Path | None = typer.Option(None, help="Write local retrieval profile to this file"),  # noqa: B008
     infra: str = typer.Option("none", help="Local infra action: none, check, or start"),  # noqa: B008
     capture_mode: str = typer.Option("deterministic", help="Capture mode: deterministic, packet, or hybrid"),  # noqa: B008
+    capture_action: str = typer.Option("none", "--capture", help="Capture action after init: none or start"),  # noqa: B008
     packet_capture: bool = typer.Option(False, "--packet-capture", help="Include packet analyzer/projector activation steps"),  # noqa: B008
     packet_upstream_base_url: str = typer.Option("https://api.openai.com/v1", help="Packet analyzer upstream OpenAI-compatible base URL"),  # noqa: B008
     packet_port: int = typer.Option(8787, "--packet-port", min=1, max=65535, help="Local packet analyzer port"),  # noqa: B008
@@ -986,6 +1053,7 @@ def init(
             packet_capture=packet_capture,
             packet_upstream_base_url=packet_upstream_base_url,
             packet_port=packet_port,
+            capture_action=capture_action,
             zaxy_executable=zaxy_executable,
             force=force,
         )

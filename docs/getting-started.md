@@ -114,8 +114,10 @@ zaxy init . \
 writes `.codex/zaxy-capture.json` for deterministic local capture. It does not
 generate `.codex/hooks.json`: Codex parses that file as JSON, and Zaxy does not
 assume a native Codex hook schema unless your Codex version documents one.
-Start `zaxy codex-capture --watch` from the printed next steps to import local
-Codex session JSONL into Eventloom. It does not enable packet capture.
+Start `zaxy capture start --workspace .` from the printed next steps to run the
+managed watcher that imports local Codex session JSONL into Eventloom. To start
+that watcher during onboarding, pass `--capture start`. It does not enable
+packet capture.
 
 Generated output files are non-destructive by default. Pass `--force` only when
 you intentionally want to replace generated config. `--infra check` reports

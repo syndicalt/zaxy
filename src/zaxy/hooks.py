@@ -301,19 +301,9 @@ def _capture_readiness(
     }
 
 
-def _codex_capture_start_action(workspace_root: Path, eventloom_path: Path) -> str:
-    config_path = workspace_root / ".codex" / "zaxy-capture.json"
-    session_id = "default"
-    try:
-        payload = json.loads(config_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        payload = {}
-    if isinstance(payload, dict) and isinstance(payload.get("session_id"), str):
-        session_id = payload["session_id"]
+def _codex_capture_start_action(workspace_root: Path, _eventloom_path: Path) -> str:
     return (
-        "Start deterministic Codex capture: zaxy codex-capture "
-        f"--workspace {workspace_root} --eventloom-path {eventloom_path} "
-        f"--session-id {session_id} --watch."
+        f"Start managed deterministic Codex capture: zaxy capture start --workspace {workspace_root}."
     )
 
 
@@ -341,6 +331,11 @@ def _detect_hook_installations(workspace_root: Path) -> dict[str, dict[str, Any]
             "paths": installed,
         }
     return installations
+
+
+def detect_codex_capture_runtime(workspace_root: Path, eventloom_path: Path) -> dict[str, Any]:
+    """Detect whether a Codex capture watcher is running for this workspace."""
+    return _detect_codex_capture_runtime(workspace_root, eventloom_path)
 
 
 def _detect_codex_capture_runtime(workspace_root: Path, eventloom_path: Path) -> dict[str, Any]:

@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from zaxy.capture_manager import start_codex_capture
 from zaxy.codex_capture import write_codex_capture_config
 from zaxy.config import Settings
 from zaxy.core import MemoryFabric
@@ -131,6 +132,7 @@ async def run_onboarding(
     packet_capture: bool = False,
     packet_upstream_base_url: str = "https://api.openai.com/v1",
     packet_port: int = 8787,
+    capture_action: str = "none",
     zaxy_executable: str | Path | None = None,
     force: bool = False,
     fabric_factory: Callable[[str], MemoryFabric] = MemoryFabric,
@@ -232,6 +234,17 @@ async def run_onboarding(
     heartbeat = _append_heartbeat(eventloom, session_id=sid, source="zaxy-init", workspace=root)
     steps.append(OnboardingStep("heartbeat", "ok", f"Hook heartbeat recorded seq={heartbeat.seq}"))
 
+    normalized_capture_action = _normalize_capture_action(capture_action)
+    if normalized_capture_action == "start":
+        if _normalize_hook_client_name(hook_client or "") != "codex":
+            steps.append(OnboardingStep("capture_runtime", "warning", "Capture start requires Codex local capture config"))
+        else:
+            try:
+                capture_result = start_codex_capture(workspace=root)
+                steps.append(OnboardingStep("capture_runtime", "ok", str(capture_result["message"])))
+            except (FileNotFoundError, ValueError) as exc:
+                steps.append(OnboardingStep("capture_runtime", "error", str(exc)))
+
     settings = _onboarding_settings(eventloom=eventloom, session_id=sid, domain=resolved_domain)
     doctor = run_doctor(settings=settings, workspace_root=root, zaxy_executable=executable)
     steps.append(
@@ -330,6 +343,13 @@ def _normalize_capture_mode(capture_mode: str) -> str:
     raise ValueError("capture_mode must be one of: deterministic, packet, hybrid")
 
 
+def _normalize_capture_action(capture_action: str) -> str:
+    normalized = capture_action.casefold().strip().replace("_", "-")
+    if normalized in {"none", "start"}:
+        return normalized
+    raise ValueError("capture action must be one of: none, start")
+
+
 def _normalize_mcp_client_name(client: str) -> str:
     return client.casefold().strip().replace("_", "-")
 
@@ -386,10 +406,9 @@ def _build_next_steps(
         next_steps.append(f"Run this Codex MCP install command: {mcp_install_command}")
         next_steps.append("Restart Codex so it loads the Zaxy MCP server.")
         next_steps.append(
-            f"Start deterministic Codex capture: zaxy codex-capture --workspace {workspace} "
-            f"--eventloom-path {eventloom} --session-id {session_id} --watch"
+            f"Start managed deterministic Codex capture: zaxy capture start --workspace {workspace}"
         )
-        next_steps.append("Add --graph to the Codex capture command when Neo4j should receive live projections.")
+        next_steps.append("Add --graph to the capture start command when Neo4j should receive live projections.")
     next_steps.append(f"Run zaxy hook-status --eventloom-path {eventloom}")
     next_steps.append(
         "Inspect model-facing memory capabilities: "

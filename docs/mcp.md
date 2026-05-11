@@ -279,13 +279,13 @@ zaxy hooks codex --eventloom-path .eventloom --domain zaxy
 ```
 
 For Codex, the default local preset also writes `.codex/zaxy-capture.json` and
-prints a `zaxy codex-capture --watch` command. That observer reads Codex's
-local session JSONL and appends normalized Eventloom observations. It does not
-proxy provider traffic or require an OpenAI API key.
+prints a `zaxy capture start --workspace .` command. That managed watcher reads
+Codex's local session JSONL and appends normalized Eventloom observations. It
+does not proxy provider traffic or require an OpenAI API key.
 For supervised checks, add `--watch-iterations <n>` to run a bounded number of
-capture passes.
-When Neo4j is reachable, add `--graph` so newly captured observations are also
-projected into the graph during the same pass.
+capture passes to the underlying `zaxy codex-capture --watch` command. When
+Neo4j is reachable, add `--graph` to `zaxy capture start` so newly captured
+observations are also projected into the graph during the same pass.
 
 Hook adapters do not proxy tool execution. Agents and tools continue to execute
 normally while hooks append lightweight Eventloom observations through

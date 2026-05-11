@@ -21,6 +21,12 @@ zaxy init . \
   --domain my-project \
   --preset local-claude
 
+# Codex local capture can use the managed deterministic watcher.
+zaxy init . \
+  --domain my-project \
+  --preset local-codex \
+  --capture start
+
 # Optional: explicit local development setup if you want shell commands too.
 ./scripts/setup.sh
 

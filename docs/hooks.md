@@ -14,13 +14,16 @@ zaxy hooks codex --eventloom-path .eventloom --domain my-project
 
 For Codex, the preferred deterministic path is not provider packet capture and
 not an assumed project-local hook schema. `zaxy init --preset local-codex`
-writes `.codex/zaxy-capture.json`, then `zaxy codex-capture --watch` imports
-Codex's own local session JSONL into Eventloom as normalized transcript,
-tool-call, command, and file-edit observations. This keeps capture local,
-idempotent, and out of the model request path.
-Use `--watch-iterations <n>` for bounded supervisor health checks and tests.
-Add `--graph` when Neo4j is reachable and the capture pass should project newly
-captured observations immediately.
+writes `.codex/zaxy-capture.json`, then `zaxy capture start --workspace .`
+starts a managed watcher that imports Codex's own local session JSONL into
+Eventloom as normalized transcript, tool-call, command, and file-edit
+observations. This keeps capture local, idempotent, and out of the model
+request path. Use `zaxy capture status` and `zaxy capture stop` to inspect or
+stop the managed watcher. Add `--graph` to `capture start` when Neo4j is
+reachable and newly captured observations should be projected immediately.
+The underlying `zaxy codex-capture --watch` command remains available for
+supervisors that need direct control; use `--watch-iterations <n>` for bounded
+health checks and tests.
 
 Write config directly during onboarding:
 
@@ -54,9 +57,10 @@ hook event, and observation coverage by high-value capture type. Missing
 yet seeing the richer activity needed for durable session reconstruction.
 For Codex, install detection and live capture are separate signals:
 `.codex/zaxy-capture.json` means local capture is configured, while a running
-`zaxy codex-capture --watch` process means this session is actively importing
+managed `zaxy capture start` watcher means this session is actively importing
 new observations. If Codex capture is configured but the watcher is stopped,
-`hook-status` reports a warning and prints the command needed to resume it.
+`hook-status` reports a warning and prints the managed command needed to resume
+it.
 The same report includes a capture readiness summary. In JSON output, inspect
 `capture_readiness.status`, `active_observation_types`, and
 `missing_observation_types` to decide whether automatic capture is healthy or
@@ -71,7 +75,7 @@ path can write without pretending that a real task or compaction happened.
 | Client | Generated Output | Install Detection | Notes |
 |--------|------------------|-------------------|-------|
 | Claude Code | JSON settings fragment | `.claude/settings.local.json`, `.claude/settings.json` | Preferred first target for repository-local hook config. |
-| Codex | Local capture config plus optional shell snippet | `.codex/zaxy-capture.json`, valid `.codex/hooks.json` | Preferred path is `zaxy codex-capture --watch`, which imports Codex local session JSONL without proxying provider traffic. |
+| Codex | Local capture config plus optional shell snippet | `.codex/zaxy-capture.json`, valid `.codex/hooks.json` | Preferred path is `zaxy capture start`, which manages a local watcher without proxying provider traffic. |
 | Generic | Shell snippet | Any explicit file you wire manually | Use for clients that can run lifecycle shell commands. |
 
 The generated commands call the stable sink:

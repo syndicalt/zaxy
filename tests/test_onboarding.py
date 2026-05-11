@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -244,7 +244,53 @@ async def test_run_onboarding_renders_codex_install_command_and_local_capture_co
     assert not (workspace / "zaxy-mcp.json").exists()
     assert (workspace / ".codex" / "zaxy-capture.json").is_file()
     assert not (workspace / ".codex" / "hooks.json").exists()
-    assert any("Start deterministic Codex capture: zaxy codex-capture" in step for step in result.next_steps)
+    assert any("Start managed deterministic Codex capture: zaxy capture start" in step for step in result.next_steps)
+
+
+@pytest.mark.asyncio
+@patch("zaxy.onboarding.start_codex_capture")
+async def test_run_onboarding_can_start_managed_codex_capture(
+    mock_start_capture: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Onboarding should optionally start the deterministic capture watcher."""
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    fabric = MagicMock()
+    fabric.ensure_session_initialized = AsyncMock()
+    fabric.ensure_session_initialized.return_value.workspace_type = "codebase"
+    fabric.ensure_session_initialized.return_value.confidence = 0.7
+    fabric.ensure_session_initialized.return_value.signals = []
+    fabric.ensure_session_initialized.return_value.instructions_profile = "codebase"
+    fabric.close = AsyncMock()
+    mock_start_capture.return_value = {
+        "started": True,
+        "pid": 321,
+        "message": "Started Codex capture watcher pid=321",
+        "state_file": str(eventloom_path / "runtime" / "codex-capture.json"),
+    }
+
+    result = await run_onboarding(
+        workspace,
+        eventloom_path=eventloom_path,
+        domain="demo",
+        session_id="demo-default",
+        mcp_client="codex",
+        hook_client="codex",
+        hook_output=workspace / ".codex" / "zaxy-capture.json",
+        capture_action="start",
+        fabric_factory=lambda eventloom_path: fabric,
+    )
+
+    assert result.status == "ok"
+    assert any(
+        step.name == "capture_runtime"
+        and step.status == "ok"
+        and step.message == "Started Codex capture watcher pid=321"
+        for step in result.steps
+    )
+    mock_start_capture.assert_called_once_with(workspace=workspace.resolve())
 
 
 @pytest.mark.asyncio
