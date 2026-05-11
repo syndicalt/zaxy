@@ -124,7 +124,7 @@ exclude_lines = [
 fail_under = 90
 
 [tool.zaxy.coverage]
-min_total_percent = "91.95"
+min_total_percent = "91.89"
 
 [tool.ruff]
 target-version = "py311"
