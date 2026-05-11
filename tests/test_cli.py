@@ -267,7 +267,7 @@ def test_packet_analyzer_cli_help_exposes_observe_only_gateway() -> None:
     """packet-analyzer should expose the low-latency observe-only gateway."""
     runner = CliRunner()
 
-    result = runner.invoke(app, ["packet-analyzer", "--help"])
+    result = runner.invoke(app, ["packet-analyzer", "--help"], env={"COLUMNS": "120"})
 
     assert result.exit_code == 0
     assert "Run an observe-only OpenAI-compatible packet analyzer" in result.output
