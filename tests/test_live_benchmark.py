@@ -12,6 +12,7 @@ from zaxy.live_benchmark import (
     CONSOLIDATION_WORKLOAD_VERSION,
     FROZEN_WORKLOAD_SUBJECTS,
     FROZEN_WORKLOAD_VERSION,
+    GRAPH_TRAVERSAL_WORKLOAD_VERSION,
     LONGMEMEVAL_WORKLOAD_VERSION,
     SOURCE_RECALL_WORKLOAD_VERSION,
     SUITE_WORKLOAD_VERSION,
@@ -31,6 +32,7 @@ from zaxy.live_benchmark import (
     build_benchmark_suite_workload,
     build_consolidation_collapse_workload,
     build_frozen_statistical_workload,
+    build_graph_traversal_workload,
     build_longmemeval_workload,
     build_source_recall_workload,
     build_temporal_recall_workload,
@@ -53,6 +55,7 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "build_frozen_statistical_workload" in cli
     assert "build_benchmark_suite_workload" in cli
     assert "build_consolidation_collapse_workload" in cli
+    assert "build_graph_traversal_workload" in cli
     assert "build_longmemeval_workload" in cli
     assert "build_source_recall_workload" in cli
     assert "build_temporal_recall_workload" in cli
@@ -66,9 +69,46 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "--sessions" in script
     assert "--embedding-cache" in script
     assert "--progress" in script
+    assert "graph-traversal" in script
     assert "source-recall" in script
     assert "temporal-recall" in script
     assert "zaxy benchmark" in script
+
+
+def test_graph_traversal_workload_is_frozen_and_requires_linked_events(tmp_path: Path) -> None:
+    """Graph traversal should require crossing goal-task-completion edges."""
+    eventlog, cases, workload = build_graph_traversal_workload(
+        tmp_path / "graph-traversal.jsonl",
+        subjects=4,
+    )
+    events = eventlog.read_all()
+
+    assert workload.version == GRAPH_TRAVERSAL_WORKLOAD_VERSION
+    assert workload.subjects == 4
+    assert workload.event_count == 16
+    assert workload.case_count == 4
+    assert workload.lanes == ("graph-traversal",)
+    assert {case.category for case in cases} == {"graph-traversal"}
+    assert [event.type for event in events[:3]] == [
+        "goal.created",
+        "task.proposed",
+        "task.completed",
+    ]
+    assert "graph-finisher-0000" not in events[1].payload["summary"]
+    assert "graph-finisher-distractor-0000" not in events[1].payload["summary"]
+    assert "graph-finisher-0000" not in events[2].payload["summary"]
+    assert any(event.actor == "graph-finisher-distractor-0000" for event in events)
+    assert all(case.identity_terms for case in cases)
+    assert any(
+        case.expected_terms == ("graph-finisher-0000", "graph-task-0000")
+        for case in cases
+    )
+    assert any("goalTitle" in event.payload for event in events)
+    assert workload.sha256 == workload_fingerprint(
+        eventlog,
+        cases,
+        GRAPH_TRAVERSAL_WORKLOAD_VERSION,
+    )
 
 
 def test_source_recall_workload_is_frozen_and_cited(tmp_path: Path) -> None:
@@ -590,6 +630,69 @@ async def test_zaxy_retriever_can_fuse_graph_and_lexical_results() -> None:
 
     assert any("graph context" in result for result in results)
     assert any("answer-1" in result for result in results)
+
+
+async def test_zaxy_retriever_prioritizes_graph_evidence_over_lexical_sidecar() -> None:
+    """Lexical fusion should not outrank graph evidence when both return hits."""
+    corpus = (
+        BenchmarkChunk("distractor", "graph-finisher-distractor-0001 completed unrelated task"),
+    )
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, limit, embedding
+            return [SimpleNamespace(content="graph-finisher-0001 completed graph-task-0001")]
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=BM25Retriever(corpus),
+    )
+
+    results = await retriever.query_async(
+        "Which actor completed graph-task-0001?",
+        limit=1,
+    )
+
+    assert results == ["graph-finisher-0001 completed graph-task-0001"]
+
+
+async def test_zaxy_retriever_preserves_graph_citations() -> None:
+    """Benchmark contexts should retain graph citations for audit reporting."""
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, limit, embedding
+            return [
+                SimpleNamespace(
+                    content="graph-finisher-0001 completed graph-task-0001",
+                    citation="eventloom://benchmark/events/3#abc123",
+                )
+            ]
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+    )
+
+    results = await retriever.query_async("Which actor completed graph-task-0001?", limit=1)
+
+    assert results == [
+        "graph-finisher-0001 completed graph-task-0001\n"
+        "citation=eventloom://benchmark/events/3#abc123"
+    ]
 
 
 def test_live_benchmark_outputs_machine_and_markdown_reports(tmp_path: Path) -> None:

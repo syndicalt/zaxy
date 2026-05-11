@@ -124,12 +124,13 @@ current live benchmark compares markdown, BM25, vector, markdown+vector, and Zax
 retrieval on generated paired workloads. Use `--workload frozen` for publishable
 statistical temporal-memory runs, `--workload temporal-recall` for the narrower
 MemPalace-comparable as-of recall lane, `--workload source-recall` for exact
-cited-source recall against target and distractor documents, and `--workload
-suite` for representative runs that add indexed documents, sanitized
-transcripts, and mixed cross-lane queries. Reports include workload versions,
-source recall, citation coverage, and SHA-256 fingerprints so results remain
-comparable over time. Treat these as workload-specific signals, not universal
-claims against every production-grade vector RAG or file memory system.
+cited-source recall against target and distractor documents, `--workload
+graph-traversal` for goal-task-completion path recall, and `--workload suite`
+for representative runs that add indexed documents, sanitized transcripts, and
+mixed cross-lane queries. Reports include workload versions, source recall,
+citation coverage, and SHA-256 fingerprints so results remain comparable over
+time. Treat these as workload-specific signals, not universal claims against
+every production-grade vector RAG or file memory system.
 
 The next retrieval-quality work should close the practical ergonomics gap with
 QMD-style search sidecars: richer assembly lifecycle hooks, stronger local

@@ -27,6 +27,7 @@ from zaxy.query import QueryRouter
 FROZEN_WORKLOAD_VERSION = "statistical-v1"
 FROZEN_WORKLOAD_SUBJECTS = 100
 CONSOLIDATION_WORKLOAD_VERSION = "consolidation-v1"
+GRAPH_TRAVERSAL_WORKLOAD_VERSION = "mempalace-graph-traversal-v1"
 SUITE_WORKLOAD_VERSION = "suite-v1"
 SOURCE_RECALL_WORKLOAD_VERSION = "mempalace-source-recall-v1"
 TEMPORAL_RECALL_WORKLOAD_VERSION = "mempalace-temporal-recall-v1"
@@ -524,7 +525,7 @@ class ZaxyRetriever:
             limit=limit,
             embedding=embedding,
         )
-        graph_results = [chunk.content for chunk in chunks]
+        graph_results = [_benchmark_context_from_chunk(chunk) for chunk in chunks]
         if self._lexical_retriever is None:
             return graph_results
         fused = RankFusionRetriever(
@@ -532,7 +533,7 @@ class ZaxyRetriever:
                 "graph": _StaticRetriever(tuple(graph_results)),
                 "lexical": self._lexical_retriever,
             },
-            weights={"graph": 1.0, "lexical": 2.0},
+            weights={"graph": 3.0, "lexical": 1.0},
         )
         return fused.query(query, temporal_point=temporal_point, limit=limit)
 
@@ -552,6 +553,15 @@ class _StaticRetriever:
         """Return stored contexts."""
         del query, temporal_point
         return list(self._contexts[:limit])
+
+
+def _benchmark_context_from_chunk(chunk: object) -> str:
+    """Format graph context with citation metadata for benchmark scoring."""
+    content = str(getattr(chunk, "content", ""))
+    citation = getattr(chunk, "citation", None)
+    if isinstance(citation, str) and citation:
+        return f"{content}\ncitation={citation}"
+    return content
 
 
 def corpus_from_event_log(eventlog: EventLog) -> tuple[BenchmarkChunk, ...]:
@@ -662,6 +672,85 @@ def build_frozen_statistical_workload(
         subjects=FROZEN_WORKLOAD_SUBJECTS,
     )
     return eventlog, cases, workload
+
+
+def build_graph_traversal_workload(
+    path: str | Path,
+    subjects: int = 100,
+) -> tuple[EventLog, tuple[BenchmarkCase, ...], BenchmarkWorkload]:
+    """Build a frozen lane for multi-hop goal-task-completion traversal."""
+    if subjects <= 0:
+        raise ValueError("subjects must be positive")
+
+    eventlog = EventLog(path)
+    cases: list[BenchmarkCase] = []
+    for idx in range(subjects):
+        goal = f"graph-goal-{idx:04d}"
+        task_id = f"graph-task-{idx:04d}"
+        finisher = f"graph-finisher-{idx:04d}"
+        distractor = f"graph-finisher-distractor-{idx:04d}"
+        eventlog.append(
+            "goal.created",
+            actor="planner",
+            payload={
+                "title": goal,
+                "description": (
+                    f"Graph traversal objective {idx:04d} with no completion actor named here."
+                ),
+            },
+            timestamp=datetime(2024, 3, 1, tzinfo=UTC),
+        )
+        eventlog.append(
+            "task.proposed",
+            actor="planner",
+            payload={
+                "taskId": task_id,
+                "goalTitle": goal,
+                "summary": (
+                    f"{task_id} is the implementation task for {goal}."
+                ),
+            },
+            timestamp=datetime(2024, 3, 2, tzinfo=UTC),
+        )
+        eventlog.append(
+            "task.completed",
+            actor=finisher,
+            payload={
+                "taskId": task_id,
+                "summary": f"Completion recorded for {task_id} after graph traversal review.",
+            },
+            timestamp=datetime(2024, 3, 3, tzinfo=UTC),
+        )
+        eventlog.append(
+            "task.completed",
+            actor=distractor,
+            payload={
+                "taskId": f"graph-distractor-task-{idx:04d}",
+                "summary": (
+                    f"{distractor} completed an unrelated distractor task for graph traversal."
+                ),
+            },
+            timestamp=datetime(2024, 3, 4, tzinfo=UTC),
+        )
+        cases.append(
+            BenchmarkCase(
+                name=f"graph-traversal-{idx:04d}",
+                query=f"Which actor completed the task connected to {goal}?",
+                expected_terms=(finisher, task_id),
+                forbidden_terms=(distractor,),
+                category="graph-traversal",
+                identity_terms=(goal, task_id, finisher),
+            )
+        )
+
+    workload = BenchmarkWorkload.from_event_log(
+        eventlog,
+        tuple(cases),
+        version=GRAPH_TRAVERSAL_WORKLOAD_VERSION,
+        subjects=subjects,
+        lanes=("graph-traversal",),
+    )
+    return eventlog, tuple(cases), workload
 
 
 def build_source_recall_workload(

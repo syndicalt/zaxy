@@ -353,6 +353,50 @@ class GraphStore:
                 WITH e, min(next.valid_from) AS next_valid_from
                 SET e.valid_to = next_valid_from
                 WITH e
+                CALL (e) {
+                    OPTIONAL MATCH (prev:Entity {session_id: $session_id, name: $name, entity_type: $entity_type})
+                    WHERE prev.valid_to = e.valid_from
+                    OPTIONAL MATCH (source:Entity)-[old_in:RELATES]->(prev)
+                    WHERE old_in.session_id = $session_id
+                      AND old_in.valid_to IS NULL
+                    WITH e, source, old_in
+                    WHERE old_in IS NOT NULL
+                    MERGE (source)-[new_in:RELATES {
+                        relation_type: old_in.relation_type,
+                        valid_from: old_in.valid_from
+                    }]->(e)
+                    ON CREATE SET new_in.created_at = datetime($observed_at)
+                    SET new_in.session_id = $session_id,
+                        new_in.valid_to = null,
+                        new_in.source_event_seq = old_in.source_event_seq,
+                        new_in.source_event_hash = old_in.source_event_hash,
+                        new_in.source_event_type = old_in.source_event_type,
+                        new_in.source_thread = old_in.source_thread
+                    RETURN count(new_in) AS copied_incoming_relationships
+                }
+                WITH e
+                CALL (e) {
+                    OPTIONAL MATCH (prev:Entity {session_id: $session_id, name: $name, entity_type: $entity_type})
+                    WHERE prev.valid_to = e.valid_from
+                    OPTIONAL MATCH (prev)-[old_out:RELATES]->(target:Entity)
+                    WHERE old_out.session_id = $session_id
+                      AND old_out.valid_to IS NULL
+                    WITH e, target, old_out
+                    WHERE old_out IS NOT NULL
+                    MERGE (e)-[new_out:RELATES {
+                        relation_type: old_out.relation_type,
+                        valid_from: old_out.valid_from
+                    }]->(target)
+                    ON CREATE SET new_out.created_at = datetime($observed_at)
+                    SET new_out.session_id = $session_id,
+                        new_out.valid_to = null,
+                        new_out.source_event_seq = old_out.source_event_seq,
+                        new_out.source_event_hash = old_out.source_event_hash,
+                        new_out.source_event_type = old_out.source_event_type,
+                        new_out.source_thread = old_out.source_thread
+                    RETURN count(new_out) AS copied_outgoing_relationships
+                }
+                WITH e
                 MATCH (ev:Event {session_id: $session_id, seq: $source_event_seq})
                 MERGE (ev)-[pe:PROJECTED_ENTITY {
                     name: $name,
@@ -533,16 +577,13 @@ class GraphStore:
         assert self._driver is not None
         depth = validate_traversal_depth(depth)
 
-        rel_filter = "{relation_type: $relation_type}" if relation_type else ""
         params: dict[str, Any] = {
             "start_name": start_name,
             "session_id": validate_session_id(session_id),
+            "relation_type": relation_type,
         }
 
-        if relation_type:
-            params["relation_type"] = relation_type
-
-        temporal_checks = " AND rel.valid_to IS NULL"
+        temporal_checks = " AND rel.valid_to IS NULL AND ($relation_type IS NULL OR rel.relation_type = $relation_type)"
         entity_checks = (
             "start.session_id = $session_id"
             " AND neighbor.session_id = $session_id"
@@ -553,6 +594,7 @@ class GraphStore:
             temporal_checks = (
                 " AND rel.valid_from <= datetime($t)"
                 " AND (rel.valid_to IS NULL OR rel.valid_to > datetime($t))"
+                " AND ($relation_type IS NULL OR rel.relation_type = $relation_type)"
             )
             entity_checks = (
                 "start.session_id = $session_id"
@@ -565,14 +607,41 @@ class GraphStore:
             params["t"] = temporal_point
 
         cypher = f"""
-        MATCH path = (start:Entity {{name: $start_name}})-[r:RELATES{rel_filter}*1..{depth}]->(neighbor:Entity)
+        MATCH path = (start:Entity {{name: $start_name}})-[r:RELATES*1..{depth}]-(neighbor:Entity)
         WHERE {entity_checks}
+          AND neighbor <> start
           AND ALL(rel IN relationships(path) WHERE true{temporal_checks})
-        RETURN DISTINCT neighbor
+        RETURN neighbor,
+               [rel IN relationships(path) | rel.relation_type] AS path_relation_types,
+               length(path) AS path_length
+        ORDER BY path_length ASC
         """
 
         records, _, _ = await self._driver.execute_query(cypher, **params)
-        return [_record_to_entity(r["neighbor"]) for r in records]
+        entities: list[GraphEntity] = []
+        seen: set[tuple[str, str]] = set()
+        for record in records:
+            entity = _record_to_entity(record["neighbor"])
+            key = (entity.name, entity.entity_type)
+            if key in seen:
+                continue
+            seen.add(key)
+            properties = {
+                **entity.properties,
+                "_path_relation_types": list(record.get("path_relation_types") or []),
+                "_path_length": int(record.get("path_length") or 0),
+            }
+            entities.append(
+                GraphEntity(
+                    name=entity.name,
+                    entity_type=entity.entity_type,
+                    valid_from=entity.valid_from,
+                    valid_to=entity.valid_to,
+                    properties=properties,
+                    session_id=entity.session_id,
+                )
+            )
+        return entities
 
     async def search_keyword(
         self,

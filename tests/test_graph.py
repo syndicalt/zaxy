@@ -196,6 +196,8 @@ class TestIngestion:
         assert "valid_from: datetime($observed_at)" in cypher
         assert "SET prev.valid_to = e.valid_from" in cypher
         assert "SET e.valid_to = next_valid_from" in cypher
+        assert "copied_incoming_relationships" in cypher
+        assert "copied_outgoing_relationships" in cypher
         assert "e.summary = coalesce($summary, e.summary)" in cypher
         assert "e.embedding = coalesce($embedding, e.embedding)" in cypher
         assert "e.source_event_seq = $source_event_seq" in cypher
@@ -480,6 +482,19 @@ class TestRetrieval:
         assert "neighbor.session_id = $session_id" in call.args[0]
         assert call.kwargs["session_id"] == "agent-1"
 
+    async def test_search_traversal_crosses_incoming_and_outgoing_edges(
+        self,
+        store: GraphStore,
+    ) -> None:
+        """Traversal should support semantic paths like goal -> task <- actor."""
+        store._driver.execute_query.return_value = ([], None, None)
+
+        await store.search_traversal("graph-goal-0001", depth=2, session_id="agent-1")
+
+        call = store._driver.execute_query.await_args
+        assert ")-[r:RELATES*1..2]-(neighbor:Entity)" in call.args[0]
+        assert "neighbor <> start" in call.args[0]
+
     async def test_search_keyword(self, store: GraphStore) -> None:
         """Keyword search should use the full-text index."""
         node = _make_node(name="Goal1", entity_type="goal", valid_from="2024-01-01T00:00:00Z")
@@ -516,10 +531,33 @@ class TestRetrieval:
             session_id="agent-1",
         )
         call = store._driver.execute_query.await_args
-        assert "relation_type: $relation_type" in call.args[0]
+        assert "rel.relation_type = $relation_type" in call.args[0]
         assert call.kwargs["relation_type"] == "created_goal"
         assert len(results) == 1
         assert results[0].name == "Bob"
+
+    async def test_search_traversal_returns_path_metadata(
+        self,
+        store: GraphStore,
+    ) -> None:
+        """Traversal results should expose relation evidence for ranking."""
+        node = _make_node(name="Bob", entity_type="actor", valid_from="2024-01-01T00:00:00Z")
+        store._driver.execute_query.return_value = (
+            [
+                {
+                    "neighbor": node,
+                    "path_relation_types": ["has_task", "completed_task"],
+                    "path_length": 2,
+                }
+            ],
+            None,
+            None,
+        )
+
+        results = await store.search_traversal("Goal", session_id="agent-1")
+
+        assert results[0].properties["_path_relation_types"] == ["has_task", "completed_task"]
+        assert results[0].properties["_path_length"] == 2
 
     async def test_search_traversal_with_temporal_filter(self, store: GraphStore) -> None:
         """Traversal should optionally filter by temporal point."""
@@ -616,6 +654,7 @@ class TestIntegration:
         gs = GraphStore("bolt://localhost:7688", "neo4j", "testpassword")
         await gs.connect()
         await gs.init_schema()
+        await gs._driver.execute_query("MATCH (n) DETACH DELETE n")
         yield gs
         # Clean up
         await gs._driver.execute_query("MATCH (n) DETACH DELETE n")
@@ -700,6 +739,69 @@ class TestIntegration:
         assert before[0].valid_to is not None
         assert len(after) == 1
         assert after[0].properties["summary"] == "new"
+
+    async def test_reasserted_entity_preserves_current_logical_relationships(
+        self,
+        real_store: GraphStore,
+    ) -> None:
+        """Current traversal should cross relationships inherited by a new version."""
+        proposed = ExtractionResult(
+            entities=[
+                ExtractedEntity(
+                    name="graph-goal-0001",
+                    entity_type="goal",
+                    observed_at="2024-03-01T00:00:00Z",
+                ),
+                ExtractedEntity(
+                    name="graph-task-0001",
+                    entity_type="task",
+                    observed_at="2024-03-01T00:00:00Z",
+                    summary="Implementation task for graph-goal-0001.",
+                ),
+            ],
+            edges=[
+                ExtractedEdge(
+                    source="graph-goal-0001",
+                    target="graph-task-0001",
+                    relation_type="has_task",
+                    valid_from="2024-03-01T00:00:00Z",
+                )
+            ],
+            source_event_seq=1,
+        )
+        completed = ExtractionResult(
+            entities=[
+                ExtractedEntity(
+                    name="graph-task-0001",
+                    entity_type="task",
+                    observed_at="2024-03-02T00:00:00Z",
+                    summary="Completion recorded.",
+                ),
+                ExtractedEntity(
+                    name="graph-finisher-0001",
+                    entity_type="actor",
+                    observed_at="2024-03-02T00:00:00Z",
+                ),
+            ],
+            edges=[
+                ExtractedEdge(
+                    source="graph-finisher-0001",
+                    target="graph-task-0001",
+                    relation_type="completed_task",
+                    valid_from="2024-03-02T00:00:00Z",
+                )
+            ],
+            source_event_seq=2,
+        )
+
+        await real_store.upsert_extraction(proposed)
+        await real_store.upsert_extraction(completed)
+
+        results = await real_store.search_traversal("graph-goal-0001", depth=2)
+        names = {entity.name for entity in results}
+
+        assert "graph-task-0001" in names
+        assert "graph-finisher-0001" in names
 
     async def test_full_pipeline_event_to_query(self, real_store: GraphStore) -> None:
         """End-to-end: event -> extract -> upsert -> query -> context chunk."""

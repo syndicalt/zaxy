@@ -14,7 +14,8 @@ Zaxy's beta goal is to prove the product thesis: **Git for LLM memory**. A sessi
 1. **MemPalace-comparable benchmark lanes**
    - The temporal recall lane is implemented as `--workload temporal-recall` with a frozen workload fingerprint and citation-coverage reporting.
    - The source recall lane is implemented as `--workload source-recall` with target/distractor source paths and source-recall reporting.
-   - Add reproducible workloads for graph traversal and context-collapse behavior.
+   - The graph traversal lane is implemented as `--workload graph-traversal` with goal-task-completion path cases.
+   - Add a reproducible workload for context-collapse behavior.
    - Keep workload fingerprints frozen and disclose where synthetic workloads do or do not compare to external systems.
 
 2. **Maintained adapter expansion**

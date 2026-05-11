@@ -308,11 +308,20 @@ class QueryRouter:
         # 1. Exact match attempt against the full query and structured entity
         # names embedded in natural-language questions.
         warnings: list[str] = []
-        exact_entities = []
+        exact_hits: list[SearchResult] = []
         for candidate in _exact_candidates(query):
             try:
-                exact_entities.extend(
-                    await self.store.search_exact(
+                exact_hits.extend(
+                    SearchResult(
+                        entity=ent,
+                        score=1.0 * self.fusion_weights["exact"],
+                        source="exact",
+                        raw_score=1.0,
+                        source_weight=self.fusion_weights["exact"],
+                        matched_query=candidate,
+                        scoring_profile=self.scoring_profile.name,
+                    )
+                    for ent in await self.store.search_exact(
                         candidate,
                         temporal_point=temporal_point,
                         session_id=scope,
@@ -321,18 +330,7 @@ class QueryRouter:
             except Exception:
                 get_metrics().record_degraded_operation("query", "exact_search_unavailable")
                 warnings.append("exact search unavailable")
-        for ent in exact_entities:
-            results.append(
-                SearchResult(
-                    entity=ent,
-                    score=1.0 * self.fusion_weights["exact"],
-                    source="exact",
-                    raw_score=1.0,
-                    source_weight=self.fusion_weights["exact"],
-                    matched_query=candidate,
-                    scoring_profile=self.scoring_profile.name,
-                )
-            )
+        results.extend(exact_hits)
 
         # 2. Vector search (if embedding provided)
         vector_hits: list[SearchResult] = []
@@ -396,9 +394,10 @@ class QueryRouter:
                 keyword_hits.append(hit)
                 results.append(hit)
 
-        # 4. Traversal from top keyword + vector hits (breadth expansion)
+        # 4. Traversal from exact anchors, or from top keyword + vector hits
+        # when no durable exact anchor is available.
         seen = {r.entity.name for r in results}
-        traversal_seeds = results[:3] + (vector_hits + keyword_hits)[:3]
+        traversal_seeds = exact_hits or (results[:3] + (vector_hits + keyword_hits)[:3])
         for hit in traversal_seeds:
             try:
                 neighbors = await self.store.search_traversal(
@@ -414,7 +413,7 @@ class QueryRouter:
             for neighbor in neighbors:
                 if neighbor.name in seen and hit.source != "exact":
                     continue
-                raw_score = 1.5 if hit.source == "exact" else 0.95
+                raw_score = _traversal_raw_score(query, hit, neighbor)
                 results.append(
                     SearchResult(
                         entity=neighbor,
@@ -542,6 +541,7 @@ def _exact_candidates(query: str) -> list[str]:
     ]
     for pattern in patterns:
         candidates.extend(match.group(0) for match in re.finditer(pattern, query))
+    candidates.extend(_identifier_terms(query))
     candidates.extend(_structured_preference_candidates(query))
 
     seen: set[str] = set()
@@ -631,6 +631,36 @@ def _candidate_text(entity: GraphEntity) -> str:
     if isinstance(summary, str) and summary:
         parts.append(summary)
     return " ".join(parts)
+
+
+def _traversal_raw_score(query: str, seed: SearchResult, neighbor: GraphEntity) -> float:
+    """Score graph neighbors by the relation path that supports them."""
+    relations = {
+        str(relation).casefold()
+        for relation in neighbor.properties.get("_path_relation_types", [])
+    }
+    query_tokens = set(_tokens(query))
+    score = 1.45 if seed.source == "exact" else 0.75
+
+    asks_completion = bool(query_tokens & {"complete", "completed", "completion", "finish", "finished"})
+    asks_task = "task" in query_tokens or "tasks" in query_tokens
+
+    if asks_completion and "completed_task" in relations:
+        score += 0.85
+    if asks_completion and "proposed_task" in relations and "completed_task" not in relations:
+        score -= 0.45
+    if asks_task and "has_task" in relations:
+        score += 0.25
+    if neighbor.entity_type == "actor" and "completed_task" in relations:
+        score += 0.35
+    if neighbor.entity_type == "task" and "has_task" in relations:
+        score += 0.15
+
+    path_length = neighbor.properties.get("_path_length")
+    if isinstance(path_length, int) and path_length > 1:
+        score -= min(0.25, 0.05 * (path_length - 1))
+
+    return max(0.1, score)
 
 
 def _auth_headers(api_key: str | None) -> dict[str, str]:

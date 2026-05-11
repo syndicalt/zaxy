@@ -122,6 +122,14 @@ recall metric:
 scripts/live-benchmark.sh --embedding-provider openai --workload source-recall --documents 100 --runs 1 --reset-graph
 ```
 
+For MemPalace-comparable graph traversal, use the dedicated graph workload. It
+creates a goal, linked task, and completion actor per case, then asks for the
+actor who completed the task connected to the goal:
+
+```bash
+scripts/live-benchmark.sh --embedding-provider openai --workload graph-traversal --subjects 100 --runs 1 --reset-graph
+```
+
 For public memory-benchmark comparisons against systems that report
 LongMemEval recall, download the cleaned LongMemEval JSON and run the
 `longmemeval` workload. This workload preserves answer session identifiers and

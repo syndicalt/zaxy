@@ -311,6 +311,130 @@ class TestQueryRouting:
         assert any(result.content.startswith("Goal 0003") for result in results)
         assert any(result.content.startswith("task-0003") for result in results)
 
+    async def test_hyphenated_identifiers_seed_exact_traversal(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Durable ids like graph-goal-0003 should seed exact graph expansion."""
+        goal = GraphEntity(
+            name="graph-goal-0003",
+            entity_type="goal",
+            valid_from="2024-03-01T00:00:00Z",
+            valid_to=None,
+            properties={},
+        )
+        task = GraphEntity(
+            name="graph-task-0003",
+            entity_type="task",
+            valid_from="2024-03-02T00:00:00Z",
+            valid_to=None,
+            properties={"summary": "Implementation task for graph-goal-0003."},
+        )
+        finisher = GraphEntity(
+            name="graph-finisher-0003",
+            entity_type="actor",
+            valid_from="2024-03-03T00:00:00Z",
+            valid_to=None,
+            properties={},
+        )
+
+        async def _search_exact(name: str, **_: object) -> list[GraphEntity]:
+            return [goal] if name == "graph-goal-0003" else []
+
+        mock_store.search_exact.side_effect = _search_exact
+        mock_store.search_traversal.return_value = [task, finisher]
+
+        results = await router.query(
+            "Which actor completed the task connected to graph-goal-0003?",
+            limit=3,
+        )
+
+        exact_names = [call.args[0] for call in mock_store.search_exact.await_args_list]
+        assert "graph-goal-0003" in exact_names
+        assert any(result.content.startswith("graph-task-0003") for result in results)
+        assert any(result.content.startswith("graph-finisher-0003") for result in results)
+
+    async def test_completed_task_paths_outrank_planner_and_distractors(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Completion path evidence should rank above weaker task-neighbor paths."""
+        goal = GraphEntity(
+            name="graph-goal-0003",
+            entity_type="goal",
+            valid_from="2024-03-01T00:00:00Z",
+            valid_to=None,
+            properties={},
+        )
+        task = GraphEntity(
+            name="graph-task-0003",
+            entity_type="task",
+            valid_from="2024-03-02T00:00:00Z",
+            valid_to=None,
+            properties={
+                "summary": "Implementation task for graph-goal-0003.",
+                "_path_relation_types": ["has_task"],
+                "_path_length": 1,
+            },
+        )
+        finisher = GraphEntity(
+            name="graph-finisher-0003",
+            entity_type="actor",
+            valid_from="2024-03-03T00:00:00Z",
+            valid_to=None,
+            properties={
+                "_path_relation_types": ["has_task", "completed_task"],
+                "_path_length": 2,
+            },
+        )
+        planner = GraphEntity(
+            name="planner",
+            entity_type="actor",
+            valid_from="2024-03-02T00:00:00Z",
+            valid_to=None,
+            properties={
+                "_path_relation_types": ["has_task", "proposed_task"],
+                "_path_length": 2,
+            },
+        )
+        distractor = SearchResult(
+            entity=GraphEntity(
+                name="graph-finisher-distractor-0003",
+                entity_type="actor",
+                valid_from="2024-03-04T00:00:00Z",
+                valid_to=None,
+                properties={},
+            ),
+            score=1.0,
+            source="keyword",
+        )
+
+        async def _search_exact(name: str, **_: object) -> list[GraphEntity]:
+            return [goal] if name == "graph-goal-0003" else []
+
+        async def _search_traversal(name: str, **_: object) -> list[GraphEntity]:
+            if name == "graph-goal-0003":
+                return [planner, task, finisher]
+            return []
+
+        mock_store.search_exact.side_effect = _search_exact
+        mock_store.search_traversal.side_effect = _search_traversal
+        mock_store.search_keyword.return_value = [distractor]
+
+        results = await router.query(
+            "Which actor completed the task connected to graph-goal-0003?",
+            limit=3,
+        )
+
+        traversal_names = [call.args[0] for call in mock_store.search_traversal.await_args_list]
+        result_names = [result.entity_name for result in results]
+        assert traversal_names == ["graph-goal-0003"]
+        assert "graph-finisher-0003" in result_names
+        assert "graph-task-0003" in result_names
+        assert "graph-finisher-distractor-0003" not in result_names
+
     async def test_preference_queries_exact_match_structured_preference_entity(
         self,
         router: QueryRouter,
