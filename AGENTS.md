@@ -334,13 +334,14 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Benchmark guardrail comparison CLI for quality floors, latency budgets, and regression checks
 - [x] Deterministic capture soak report with beta pass/fail criteria, latest seq/hash evidence, stale lane detection, and remediation steps
 - [x] Source citation graph projection with `Source` nodes and deterministic `CITES_SOURCE` edges from entities and Eventloom events
+- [x] Temporal entity version graph projection with deterministic `SUPERSEDED_BY` and `PREVIOUS_VERSION` edges
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 774 passed, 7 deselected |
-| Coverage | 92.31% |
+| Tests | 775 passed, 8 deselected |
+| Coverage | 92.29% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
@@ -348,4 +349,4 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 ## Next Steps
 
 1. Use LangGraph and CrewAI native-preview usage to choose the next maintained adapter or model-facing UX hardening target.
-2. Improve graph traversal density with principled typed relation, temporal successor, and inferred-edge layers.
+2. Improve graph traversal density with principled typed relation and inferred-edge layers.

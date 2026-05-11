@@ -356,6 +356,58 @@ class GraphStore:
                 CALL (e) {
                     OPTIONAL MATCH (prev:Entity {session_id: $session_id, name: $name, entity_type: $entity_type})
                     WHERE prev.valid_to = e.valid_from
+                    WITH e, prev
+                    WHERE prev IS NOT NULL
+                    MERGE (prev)-[sb:SUPERSEDED_BY]->(e)
+                    ON CREATE SET sb.created_at = datetime($observed_at)
+                    SET sb.updated_at = datetime($observed_at),
+                        sb.session_id = $session_id,
+                        sb.valid_from = e.valid_from,
+                        sb.source_event_seq = $source_event_seq,
+                        sb.source_event_hash = $source_event_hash,
+                        sb.source_event_type = $source_event_type,
+                        sb.source_thread = $source_thread
+                    MERGE (e)-[pv:PREVIOUS_VERSION]->(prev)
+                    ON CREATE SET pv.created_at = datetime($observed_at)
+                    SET pv.updated_at = datetime($observed_at),
+                        pv.session_id = $session_id,
+                        pv.valid_from = e.valid_from,
+                        pv.source_event_seq = $source_event_seq,
+                        pv.source_event_hash = $source_event_hash,
+                        pv.source_event_type = $source_event_type,
+                        pv.source_thread = $source_thread
+                    RETURN count(prev) AS linked_previous_versions
+                }
+                WITH e
+                CALL (e) {
+                    OPTIONAL MATCH (next:Entity {session_id: $session_id, name: $name, entity_type: $entity_type})
+                    WHERE e.valid_to = next.valid_from
+                    WITH e, next
+                    WHERE next IS NOT NULL
+                    MERGE (e)-[next_sb:SUPERSEDED_BY]->(next)
+                    ON CREATE SET next_sb.created_at = datetime($observed_at)
+                    SET next_sb.updated_at = datetime($observed_at),
+                        next_sb.session_id = $session_id,
+                        next_sb.valid_from = next.valid_from,
+                        next_sb.source_event_seq = $source_event_seq,
+                        next_sb.source_event_hash = $source_event_hash,
+                        next_sb.source_event_type = $source_event_type,
+                        next_sb.source_thread = $source_thread
+                    MERGE (next)-[next_pv:PREVIOUS_VERSION]->(e)
+                    ON CREATE SET next_pv.created_at = datetime($observed_at)
+                    SET next_pv.updated_at = datetime($observed_at),
+                        next_pv.session_id = $session_id,
+                        next_pv.valid_from = next.valid_from,
+                        next_pv.source_event_seq = $source_event_seq,
+                        next_pv.source_event_hash = $source_event_hash,
+                        next_pv.source_event_type = $source_event_type,
+                        next_pv.source_thread = $source_thread
+                    RETURN count(next) AS linked_next_versions
+                }
+                WITH e
+                CALL (e) {
+                    OPTIONAL MATCH (prev:Entity {session_id: $session_id, name: $name, entity_type: $entity_type})
+                    WHERE prev.valid_to = e.valid_from
                     OPTIONAL MATCH (source:Entity)-[old_in:RELATES]->(prev)
                     WHERE old_in.session_id = $session_id
                       AND old_in.valid_to IS NULL

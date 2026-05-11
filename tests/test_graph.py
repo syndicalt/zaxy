@@ -219,6 +219,32 @@ class TestIngestion:
         assert kwargs["embedding"] == [0.1, 0.2]
         assert kwargs["properties"] == {}
 
+    async def test_upsert_entity_projects_temporal_version_edges(self, store: GraphStore) -> None:
+        """Immediate entity versions should be traversable through typed temporal edges."""
+        result = ExtractionResult(
+            entities=[
+                ExtractedEntity(
+                    name="Fact",
+                    entity_type="fact",
+                    observed_at="2024-06-01T00:00:00Z",
+                    summary="new",
+                )
+            ],
+            edges=[],
+            source_event_seq=2,
+            source_event_hash="e" * 64,
+            source_event_type="decision.made",
+        )
+
+        await store.upsert_extraction(result, session_id="agent-1")
+
+        cypher = store._driver.execute_query.await_args_list[1].args[0]
+        assert "MERGE (prev)-[sb:SUPERSEDED_BY]->(e)" in cypher
+        assert "MERGE (e)-[pv:PREVIOUS_VERSION]->(prev)" in cypher
+        assert "MERGE (e)-[next_sb:SUPERSEDED_BY]->(next)" in cypher
+        assert "MERGE (next)-[next_pv:PREVIOUS_VERSION]->(e)" in cypher
+        assert "sb.source_event_hash = $source_event_hash" in cypher
+
     async def test_upsert_entity_applies_extracted_properties(self, store: GraphStore) -> None:
         """Extractor-supplied safe properties should be projected to Neo4j."""
         result = ExtractionResult(
@@ -862,6 +888,62 @@ class TestIntegration:
         assert before[0].valid_to is not None
         assert len(after) == 1
         assert after[0].properties["summary"] == "new"
+
+    async def test_reassertion_projects_temporal_version_edges(self, real_store: GraphStore) -> None:
+        """Reasserted facts should expose deterministic version traversal paths."""
+        first = ExtractionResult(
+            entities=[
+                ExtractedEntity(
+                    name="Fact",
+                    entity_type="fact",
+                    observed_at="2024-01-01T00:00:00Z",
+                    summary="old",
+                )
+            ],
+            edges=[],
+            source_event_seq=1,
+            source_event_hash="a" * 64,
+            source_event_type="decision.made",
+        )
+        second = ExtractionResult(
+            entities=[
+                ExtractedEntity(
+                    name="Fact",
+                    entity_type="fact",
+                    observed_at="2024-06-01T00:00:00Z",
+                    summary="new",
+                )
+            ],
+            edges=[],
+            source_event_seq=2,
+            source_event_hash="b" * 64,
+            source_event_type="decision.made",
+        )
+
+        await real_store.upsert_extraction(first)
+        await real_store.upsert_extraction(second)
+
+        records, _, _ = await real_store._driver.execute_query(
+            """
+            MATCH (old:Entity {name: $name, entity_type: $entity_type})-[sb:SUPERSEDED_BY]->(new:Entity)
+            MATCH (new)-[pv:PREVIOUS_VERSION]->(old)
+            RETURN old.summary AS old_summary,
+                   new.summary AS new_summary,
+                   sb.source_event_hash AS source_event_hash,
+                   pv.source_event_hash AS previous_source_event_hash
+            """,
+            name="Fact",
+            entity_type="fact",
+        )
+
+        assert records == [
+            {
+                "old_summary": "old",
+                "new_summary": "new",
+                "source_event_hash": "b" * 64,
+                "previous_source_event_hash": "b" * 64,
+            }
+        ]
 
     async def test_reasserted_entity_preserves_current_logical_relationships(
         self,

@@ -17,7 +17,10 @@ The central memory fact shape remains `Entity`. Important properties include
 `event_id`, and `embedding`. Zaxy creates a stable version identity from
 session, name, type, and `valid_from`. Reasserting a fact creates a new temporal
 version instead of overwriting the existing one. The previous current version in
-the same session is closed by setting `valid_to`.
+the same session is closed by setting `valid_to`. Immediate entity versions are
+also linked with `SUPERSEDED_BY` and `PREVIOUS_VERSION`, so operators and
+retrieval code can traverse a fact's temporal lineage without guessing from
+timestamps alone.
 
 Projected entities also carry Eventloom provenance: `source_event_seq`,
 `source_event_hash`, `source_event_type`, and `source_thread`. Query results use
@@ -62,6 +65,10 @@ RETURN p
 LIMIT 25;
 
 MATCH p=(:Entity)-[:CITES_SOURCE]->(:Source)
+RETURN p
+LIMIT 25;
+
+MATCH p=(:Entity)-[:SUPERSEDED_BY]->(:Entity)
 RETURN p
 LIMIT 25;
 ```
