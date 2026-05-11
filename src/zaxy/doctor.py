@@ -38,6 +38,7 @@ def run_doctor(
         _check_hook_installation(hook_status),
         _check_hook_activity(active, hook_status),
         _check_observation_coverage(hook_status),
+        _check_capture_health(hook_status),
         _check_packet_memory(active),
         _check_neo4j(active),
         _check_production(active),
@@ -265,6 +266,34 @@ def _check_observation_coverage(hook_status: dict[str, Any]) -> dict[str, str]:
         "details": readiness,
         "action": "Confirm hooks emit command, file-edit, tool-call, and transcript observations for this client.",
     }
+
+
+def _check_capture_health(hook_status: dict[str, Any]) -> dict[str, Any]:
+    readiness = hook_status.get("capture_readiness", {})
+    status = str(readiness.get("status", "warning"))
+    message = str(readiness.get("message", "0 of 4 high-value automatic capture lanes are active")).replace(
+        "high-value automatic capture lanes",
+        "high-value lanes",
+    )
+    if status == "ok":
+        return {
+            "name": "capture_health",
+            "status": "ok",
+            "message": f"automatic capture is healthy: {message}",
+            "details": readiness,
+        }
+    actions = [str(action) for action in readiness.get("actions", [])]
+    check = {
+        "name": "capture_health",
+        "status": "warning",
+        "message": f"automatic capture is incomplete: {message}",
+        "details": readiness,
+    }
+    if actions:
+        check["action"] = " ".join(actions)
+    else:
+        check["action"] = "Run zaxy hook-status --eventloom-path .eventloom to inspect automatic capture coverage."
+    return check
 
 
 def _check_packet_memory(settings: Settings) -> dict[str, str]:

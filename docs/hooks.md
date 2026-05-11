@@ -65,6 +65,9 @@ The same report includes a capture readiness summary. In JSON output, inspect
 `capture_readiness.status`, `active_observation_types`, and
 `missing_observation_types` to decide whether automatic capture is healthy or
 which adapter sinks still need to be wired.
+`zaxy doctor` also surfaces the same signal as `capture_health`, making it the
+single first-run health row for whether deterministic capture is installed,
+running when needed, and producing usable observations.
 Claude Code detection parses JSON hook command handlers rather than matching
 arbitrary text, so comments or unrelated string fields do not count as an
 installation. `heartbeat` is a health probe: it proves the Eventloom observer

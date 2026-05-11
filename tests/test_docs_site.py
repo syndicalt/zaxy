@@ -191,6 +191,7 @@ def test_hooks_docs_explain_capture_readiness() -> None:
     text = Path("docs/hooks.md").read_text(encoding="utf-8")
 
     assert "capture readiness" in text
+    assert "capture_health" in text
     assert "active_observation_types" in text
     assert "missing_observation_types" in text
     assert "zaxy hook-status --json" in text

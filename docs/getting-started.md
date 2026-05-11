@@ -60,10 +60,12 @@ zaxy doctor --json
 
 The doctor command verifies Eventloom writeability, local embedding/reranker
 construction, static viewer generation, MCP default-session posture, observer
-hook coverage, optional LLM packet memory projection, Neo4j configuration
-posture, and production-mode warnings. It does not start Docker or require a
-live Neo4j connection; use `zaxy status` when you want a live graph connectivity
-test.
+hook coverage, capture health, optional LLM packet memory projection, Neo4j
+configuration posture, and production-mode warnings. `capture_health` summarizes
+whether the high-value automatic lanes are active and includes the managed
+`zaxy capture start --workspace ...` action when Codex capture is configured but
+idle. It does not start Docker or require a live Neo4j connection; use
+`zaxy status` when you want a live graph connectivity test.
 
 Before meaningful model work, inspect the memory contract and checkout current
 state:
@@ -117,7 +119,8 @@ assume a native Codex hook schema unless your Codex version documents one.
 Start `zaxy capture start --workspace .` from the printed next steps to run the
 managed watcher that imports local Codex session JSONL into Eventloom. To start
 that watcher during onboarding, pass `--capture start`. It does not enable
-packet capture.
+packet capture. After startup, `zaxy doctor` should show `capture_health: ok`
+once command, file-edit, tool-call, and transcript observations have appeared.
 
 Generated output files are non-destructive by default. Pass `--force` only when
 you intentionally want to replace generated config. `--infra check` reports

@@ -36,6 +36,7 @@ def test_run_doctor_reports_local_setup_ok(tmp_path: Path) -> None:
         "hook_installation": "warning",
         "hook_activity": "warning",
         "observation_coverage": "warning",
+        "capture_health": "warning",
         "packet_memory": "warning",
         "neo4j": "ok",
         "production": "ok",
@@ -225,6 +226,68 @@ def test_run_doctor_warns_when_high_value_observation_types_are_missing(tmp_path
     ]
     assert check["details"]["actions"] == [
         "Wire hooks or adapter sinks for: command.completed, file.edit.applied, tool.call.completed, transcript.turn.",
+    ]
+
+
+def test_run_doctor_reports_capture_health_when_all_lanes_are_active(tmp_path: Path) -> None:
+    """Doctor should summarize whether automatic capture is actually producing memory events."""
+    settings = Settings(
+        _env_file=None,
+        eventloom_path=str(tmp_path / ".eventloom"),
+        eventloom_thread="zaxy-default",
+        zaxy_env="development",
+    )
+    log = EventLog(tmp_path / ".eventloom" / "zaxy-default.jsonl")
+    for event_type in ("command.completed", "file.edit.applied", "tool.call.completed", "transcript.turn"):
+        log.append(event_type, actor="zaxy-capture", payload={"source": "codex-local"}, thread="zaxy-default")
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    check = next(check for check in report["checks"] if check["name"] == "capture_health")
+    assert check["status"] == "ok"
+    assert check["message"] == "automatic capture is healthy: 4 of 4 high-value lanes are active"
+    assert check["details"]["active_observation_types"] == [
+        "command.completed",
+        "file.edit.applied",
+        "tool.call.completed",
+        "transcript.turn",
+    ]
+    assert check["details"]["missing_observation_types"] == []
+
+
+def test_run_doctor_reports_capture_health_with_managed_codex_action(tmp_path: Path) -> None:
+    """Doctor should tell Codex users to start the managed watcher when capture is configured but idle."""
+    settings = Settings(
+        _env_file=None,
+        eventloom_path=str(tmp_path / ".eventloom"),
+        eventloom_thread="zaxy-default",
+        zaxy_env="development",
+    )
+    config = tmp_path / ".codex" / "zaxy-capture.json"
+    config.parent.mkdir()
+    config.write_text(
+        """{
+  "capture": "local-session-jsonl",
+  "client": "codex",
+  "codex_home": ".codex-home",
+  "eventloom_path": ".eventloom",
+  "session_id": "zaxy-default",
+  "source": "codex-local",
+  "workspace": "."
+}
+""",
+        encoding="utf-8",
+    )
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    check = next(check for check in report["checks"] if check["name"] == "capture_health")
+    assert check["status"] == "warning"
+    assert check["message"] == "automatic capture is incomplete: 0 of 4 high-value lanes are active"
+    assert f"zaxy capture start --workspace {tmp_path}" in check["action"]
+    assert check["details"]["actions"] == [
+        "Wire hooks or adapter sinks for: command.completed, file.edit.applied, tool.call.completed, transcript.turn.",
+        f"Start managed deterministic Codex capture: zaxy capture start --workspace {tmp_path}.",
     ]
 
 
