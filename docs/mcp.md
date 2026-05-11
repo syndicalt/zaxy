@@ -67,7 +67,9 @@ preferred tool when a model needs a bounded, auditable working state rather than
 a raw list of retrieval hits. The response also includes `guidance` with
 model-facing trust and ignore instructions, a recommended follow-up
 `memory_checkout` call, and concrete `memory_feedback` payload templates for
-cited facts that materially influence the next response.
+cited facts that materially influence the next response. The `quality` block
+adds an answerability decision (`answer_from_memory`, `refresh_recommended`, or
+`ask_user`), a bounded confidence score, reasons, and any required next action.
 When `ref` is supplied, checkout resolves a Git-style memory ref such as `HEAD`
 or `refs/heads/main` and filters replay/context to the target event identity.
 MCP clients discover this tool through the standard `tools/list` handshake, so

@@ -623,7 +623,17 @@ class TestContextLifecycleTools:
             "importance": 0.6,
         }
         assert "Do not treat superseded contexts as current facts." in output["guidance"]["ignore"]
+        assert output["quality"] == {
+            "answerability": "answer_from_memory",
+            "confidence": 0.95,
+            "reasons": [
+                "Retrieved current facts with Eventloom citations.",
+            ],
+            "required_action": None,
+        }
         assert "# Memory Checkout" in output["prompt"]
+        assert "## Checkout Quality" in output["prompt"]
+        assert "answer_from_memory" in output["prompt"]
         assert "## Checkout Guidance" in output["prompt"]
         assert "## Checkout Diagnostics" in output["prompt"]
         assert "current decisions, blockers, and next actions" in output["prompt"]

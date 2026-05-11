@@ -817,7 +817,18 @@ class TestContextAssembly:
             }
         ]
         assert "Do not treat superseded contexts as current facts." in checkout.guidance["ignore"]
+        assert checkout.quality == {
+            "answerability": "answer_from_memory",
+            "confidence": 0.82,
+            "reasons": [
+                "Retrieved current facts with Eventloom citations.",
+                "Superseded contexts were excluded from current facts.",
+            ],
+            "required_action": None,
+        }
         assert "# Memory Checkout" in checkout.prompt
+        assert "## Checkout Quality" in checkout.prompt
+        assert "answer_from_memory" in checkout.prompt
         assert "## Checkout Guidance" in checkout.prompt
         assert "## Checkout Diagnostics" in checkout.prompt
         assert "current decisions, blockers, and next actions" in checkout.prompt

@@ -1118,6 +1118,11 @@ def _memory_checkout_payload(
         retention=retention,
         evidence=evidence,
     )
+    quality = _checkout_quality_payload(
+        diagnostics=diagnostics,
+        guidance=guidance,
+        warnings=warnings,
+    )
     return {
         **assembly,
         "query": query,
@@ -1127,6 +1132,7 @@ def _memory_checkout_payload(
             assembly_prompt=str(assembly.get("prompt", "")),
             current_facts=current_facts,
             evidence=evidence,
+            quality=quality,
             guidance=guidance,
             diagnostics=diagnostics,
         ),
@@ -1136,6 +1142,7 @@ def _memory_checkout_payload(
         "retention": retention,
         "warnings": warnings,
         "guidance": guidance,
+        "quality": quality,
         "diagnostics": diagnostics,
     }
 
@@ -1146,6 +1153,7 @@ def _format_memory_checkout_prompt(
     assembly_prompt: str,
     current_facts: list[dict[str, Any]],
     evidence: list[dict[str, Any]],
+    quality: dict[str, Any],
     guidance: dict[str, Any],
     diagnostics: dict[str, Any],
 ) -> str:
@@ -1162,6 +1170,19 @@ def _format_memory_checkout_prompt(
             lines.append(f"- {item['citation']}: {item['content']}")
     else:
         lines.append("- No cited evidence was retrieved.")
+    lines.extend(["", "## Checkout Quality"])
+    lines.append(f"- Answerability: {quality.get('answerability')}")
+    lines.append(f"- Confidence: {quality.get('confidence')}")
+    for reason in quality.get("reasons", []):
+        lines.append(f"- Reason: {reason}")
+    required_action = quality.get("required_action")
+    if isinstance(required_action, dict):
+        lines.append(
+            "- Required action: "
+            f"{required_action.get('tool')}({required_action.get('query')!r})"
+        )
+    else:
+        lines.append("- Required action: none")
     lines.extend(["", "## Checkout Guidance"])
     for item in guidance.get("trust", []):
         lines.append(f"- Trust: {item}")
@@ -1253,6 +1274,55 @@ def _checkout_guidance_payload(
             "payloads": feedback_payloads,
         },
     }
+
+
+def _checkout_quality_payload(
+    *,
+    diagnostics: dict[str, Any],
+    guidance: dict[str, Any],
+    warnings: list[str],
+) -> dict[str, Any]:
+    current_fact_count = _int_metric(diagnostics.get("current_fact_count"))
+    citation_count = _int_metric(diagnostics.get("citation_count"))
+    superseded_excluded = _int_metric(diagnostics.get("superseded_contexts_excluded"))
+    warning_count = _int_metric(diagnostics.get("warning_count"))
+    reasons: list[str] = []
+    if current_fact_count and citation_count:
+        reasons.append("Retrieved current facts with Eventloom citations.")
+    elif current_fact_count:
+        reasons.append("Retrieved current facts, but they lack Eventloom citations.")
+    else:
+        reasons.append("No current facts were retrieved.")
+    if superseded_excluded:
+        reasons.append("Superseded contexts were excluded from current facts.")
+    if warning_count:
+        reasons.append("Checkout contains warnings that reduce confidence.")
+    confidence = 0.25
+    confidence += min(current_fact_count, 2) * 0.2
+    confidence += min(citation_count, 2) * 0.15
+    if superseded_excluded:
+        confidence += 0.07
+    confidence -= min(0.25, warning_count * 0.12)
+    confidence = round(max(0.0, min(0.95, confidence)), 2)
+    recommended_next_call = guidance.get("recommended_next_call")
+    required_action = recommended_next_call if isinstance(recommended_next_call, dict) else None
+    if current_fact_count and citation_count and confidence >= 0.75:
+        answerability = "answer_from_memory"
+        required_action = None
+    elif current_fact_count or citation_count:
+        answerability = "refresh_recommended"
+    else:
+        answerability = "ask_user"
+    return {
+        "answerability": answerability,
+        "confidence": confidence,
+        "reasons": reasons,
+        "required_action": required_action,
+    }
+
+
+def _int_metric(value: Any) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
 
 def _checkout_feedback_payload(fact: dict[str, Any], query: str) -> dict[str, Any] | None:
