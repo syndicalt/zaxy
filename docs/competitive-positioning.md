@@ -36,10 +36,9 @@ surface first. The benchmark lane should stay architecture-driven:
 
 ## Near-Term Roadmap
 
-- Keep LangGraph as the first native-preview adapter and use it to learn the
-  maintained adapter interface.
-- Build CrewAI next if LangGraph's adapter shape holds; keep AutoGen template
-  only until the right runtime hooks are clear.
+- Keep LangGraph and CrewAI native-preview adapters dependency-light and use
+  them to learn the maintained adapter interface.
+- Keep AutoGen template-only until the right runtime hooks are clear.
 - Add public comparison workloads that evaluate temporal, source-recall,
   graph-traversal, and context-collapse behavior against MemPalace-style memory.
 - Keep claims reproducible: every comparison should publish workload hashes,

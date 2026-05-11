@@ -53,7 +53,7 @@ def test_langgraph_registry_marks_native_preview() -> None:
 
     assert specs["langgraph"].maturity == "native-preview"
     assert specs["langgraph"].native_adapter == "zaxy.adapters.langgraph"
-    assert specs["crewai"].native_adapter == "planned-next"
+    assert specs["crewai"].native_adapter == "zaxy.adapters.crewai"
 
 
 @pytest.mark.asyncio

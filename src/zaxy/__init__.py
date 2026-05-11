@@ -1,5 +1,6 @@
 """Zaxy: Event-sourced temporal knowledge graph fabric for AI agent memory."""
 
+from zaxy.adapters.crewai import CrewAIMemoryAdapter, create_crewai_memory_step
 from zaxy.adapters.langgraph import LangGraphMemoryAdapter, create_langgraph_memory_node
 from zaxy.context import Context, ContextAssemblyPolicy
 from zaxy.core import MemoryCheckout, MemoryFabric
@@ -19,6 +20,7 @@ __version__ = package_version()
 
 __all__ = [
     "FrameworkIntegrationSpec",
+    "CrewAIMemoryAdapter",
     "LangGraphMemoryAdapter",
     "Context",
     "ContextAssemblyPolicy",
@@ -29,6 +31,7 @@ __all__ = [
     "VerbatimHit",
     "VerbatimIndex",
     "__version__",
+    "create_crewai_memory_step",
     "create_langgraph_memory_node",
     "list_framework_integration_specs",
     "render_agent_integration_template",

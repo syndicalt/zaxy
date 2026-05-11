@@ -312,6 +312,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Hook and doctor observation coverage reporting for automatic capture gaps
 - [x] Hook-event sinks for tool-call and transcript-turn automatic capture
 - [x] Native-preview LangGraph adapter for context projection, observations, and retrieval feedback
+- [x] Native-preview CrewAI adapter for task context projection, task result capture, tool observations, and retrieval feedback
 - [x] Codex in-session `/resume` duplicate MCP process troubleshooting guidance
 - [x] Competitive positioning roadmap against MemPalace-style memory systems
 - [x] LongMemEval workload chunking for hosted embedding input limits
@@ -336,7 +337,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 | Metric | Value |
 |--------|-------|
-| Tests | 762 passed, 6 deselected |
+| Tests | 768 passed, 6 deselected |
 | Coverage | 92.24% |
 | Lint | ruff clean |
 | Types | mypy clean |
@@ -344,5 +345,5 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 ## Next Steps
 
-1. Promote the next maintained adapter path beyond LangGraph native-preview, with CrewAI as the first candidate unless Codex or Claude Code usage proves more urgent.
-2. Run and document a deterministic capture soak for transcript, tool-call, command, and file-edit observation coverage over a long session.
+1. Run and document a deterministic capture soak for transcript, tool-call, command, and file-edit observation coverage over a long session.
+2. Use LangGraph and CrewAI native-preview usage to choose the next maintained adapter or model-facing UX hardening target.

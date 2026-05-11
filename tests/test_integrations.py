@@ -342,10 +342,11 @@ def test_renders_crewai_agent_integration_template() -> None:
     """CrewAI template should expose a dependency-light task helper."""
     template = render_agent_integration_template("crewai")
 
+    assert "from zaxy.adapters.crewai import CrewAIMemoryAdapter" in template
     assert "async def zaxy_crewai_memory_step" in template
-    assert "MemoryFabric" in template
     assert "session_id='default'" in template
-    assert "await fabric.after_turn" in template
+    assert "await adapter.before_task" in template
+    assert "await adapter.after_task" in template
 
 
 def test_renders_framework_extra_install_commands() -> None:
@@ -372,7 +373,9 @@ def test_lists_framework_integration_specs() -> None:
     assert specs["langgraph"].template_function == "create_langgraph_memory_node"
     assert specs["langgraph"].maturity == "native-preview"
     assert specs["langgraph"].native_adapter == "zaxy.adapters.langgraph"
-    assert specs["crewai"].native_adapter == "planned-next"
+    assert specs["crewai"].template_function == "create_crewai_memory_step"
+    assert specs["crewai"].maturity == "native-preview"
+    assert specs["crewai"].native_adapter == "zaxy.adapters.crewai"
     assert specs["autogen"].package == "autogen-agentchat"
 
 

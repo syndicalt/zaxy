@@ -3,8 +3,9 @@
 MCP remains Zaxy's primary integration surface for agent memory, but Python
 applications can also use direct framework helpers. LangGraph now has a
 dependency-light native-preview adapter in `zaxy.adapters.langgraph`. CrewAI
-and AutoGen remain template starters until real usage identifies the right
-runtime hooks to maintain.
+also has a dependency-light native-preview adapter in `zaxy.adapters.crewai`.
+AutoGen remains a template starter until real usage identifies the right runtime
+hooks to maintain.
 
 Generate a starter:
 
@@ -42,7 +43,8 @@ zaxy integrations --json
 Each entry reports the framework package, optional extra, starter function,
 current maturity, and whether a framework-native adapter package exists.
 LangGraph reports `native-preview` with `native_adapter=zaxy.adapters.langgraph`.
-CrewAI is marked `planned-next`; AutoGen remains `not-yet-packaged`.
+CrewAI reports `native-preview` with `native_adapter=zaxy.adapters.crewai`.
+AutoGen remains `not-yet-packaged`.
 
 ## LangGraph Native Preview
 
@@ -73,19 +75,65 @@ reinforces contexts that were actually projected into state.
 See [../examples/langgraph_memory.py](../examples/langgraph_memory.py) for a
 smoke example.
 
-The templates all use the same durable flow:
+## CrewAI Native Preview
+
+Use the CrewAI adapter from task callbacks, custom task wrappers, or any
+application-owned lifecycle point. Zaxy does not import CrewAI or require a
+specific CrewAI object model:
+
+```python
+from zaxy.adapters.crewai import CrewAIMemoryAdapter, create_crewai_memory_step
+
+memory_step = create_crewai_memory_step(session_id="my-crew")
+adapter = CrewAIMemoryAdapter(session_id="my-crew")
+```
+
+`create_crewai_memory_step()` returns an async callable that accepts task input
+and returns prompt-ready memory text. `CrewAIMemoryAdapter.before_task()` returns
+a richer payload containing:
+
+- `memory`: prompt text for the task;
+- `contexts`: retrieved `Context` objects used for feedback;
+- `zaxy`: metadata including session, replay count, warnings, crew, agent, and
+  task identifiers when supplied.
+
+`CrewAIMemoryAdapter.after_task()` persists task output as an assistant turn.
+`record_tool_use()` records redacted `tool.call.completed` observations.
+`record_context_feedback()` reinforces contexts that were actually used by the
+crew task.
+
+```python
+payload = await adapter.before_task(
+    "Draft beta release notes",
+    crew="release",
+    agent="writer",
+    task_id="release-notes",
+)
+
+# Pass payload["memory"] to the CrewAI task context.
+
+await adapter.after_task(
+    "Release notes drafted.",
+    crew="release",
+    agent="writer",
+    task_id="release-notes",
+)
+await adapter.record_context_feedback(payload, feedback="used", importance=0.8)
+```
+
+The templates and native adapters use the same durable flow:
 
 1. Create a `MemoryFabric` with the configured Eventloom path.
 2. Capture the latest turn with `after_turn()`.
-3. Build resumable context with `handoff_bundle()`.
+3. Assemble prompt context or build a resumable handoff bundle.
 4. Close the fabric client.
 
 LangGraph starters expose `zaxy_langgraph_memory_node(state)` for users who want
 a copy-paste template instead of importing the preview adapter. CrewAI starters
-expose `zaxy_crewai_memory_step(message)`, returning a combined prompt string
-suitable for task callbacks. AutoGen starters expose
-`zaxy_autogen_context(message)`, returning a dictionary for agent context
-variables.
+expose `zaxy_crewai_memory_step(message)` and
+`zaxy_crewai_record_result(result)` on top of `CrewAIMemoryAdapter`. AutoGen
+starters expose `zaxy_autogen_context(message)`, returning a dictionary for
+agent context variables.
 
 The same renderer is available from Python:
 

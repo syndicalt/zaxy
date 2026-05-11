@@ -20,8 +20,8 @@ Zaxy's beta goal is to prove the product thesis: **Git for LLM memory**. A sessi
    - Keep workload fingerprints frozen and disclose where synthetic workloads do or do not compare to external systems.
 
 2. **Maintained adapter expansion**
-   - Promote one additional adapter beyond LangGraph native-preview.
-   - CrewAI is the first candidate unless field usage shows Claude Code or Codex model-facing UX is the larger beta blocker.
+   - CrewAI native-preview is implemented as a dependency-light adapter for task lifecycle callbacks.
+   - Use LangGraph and CrewAI adapter usage to decide whether AutoGen or model-facing Codex/Claude Code UX is the next maintained path.
 
 3. **Capture soak**
    - Run long local sessions with deterministic capture enabled.

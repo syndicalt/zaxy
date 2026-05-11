@@ -1,4 +1,4 @@
-"""Dependency-light LangGraph adapter preview for Zaxy memory."""
+"""Dependency-light CrewAI adapter preview for Zaxy memory."""
 
 from __future__ import annotations
 
@@ -11,42 +11,42 @@ from zaxy.context import Context
 from zaxy.core import ContextAssembly
 from zaxy.observation import build_tool_call_observation
 
-LangGraphNode = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
+CrewAIMemoryStep = Callable[[str], Awaitable[str]]
 
 
 @dataclass(frozen=True)
-class LangGraphMemoryAdapter:
-    """Small adapter that fits LangGraph's async node shape.
+class CrewAIMemoryAdapter:
+    """Small adapter for CrewAI task lifecycle callbacks.
 
-    The adapter intentionally avoids importing LangGraph so applications can use
-    it with whichever LangGraph version owns their state schema.
+    The adapter intentionally avoids importing CrewAI. CrewAI applications can
+    call these methods from before/after task hooks, callbacks, or custom task
+    wrappers while keeping ownership of their runtime objects.
     """
 
     session_id: str = "default"
     eventloom_path: str = ".eventloom"
-    source: str = "langgraph"
+    source: str = "crewai"
     max_recent_events: int = 20
     limit: int = 10
-    context_key: str = "zaxy_context"
-    context_list_key: str = "zaxy_contexts"
-    metadata_key: str = "zaxy"
     fabric_factory: FabricFactory = default_fabric_factory
 
-    async def before_model(
+    async def before_task(
         self,
-        state: Mapping[str, Any],
+        task_input: str,
         *,
         query: str | None = None,
+        crew: str | None = None,
+        agent: str | None = None,
+        task_id: str | None = None,
     ) -> dict[str, Any]:
-        """Capture the latest user turn and inject assembled context."""
-        role, content = _latest_message(state)
-        resolved_query = query or content or "langgraph context"
+        """Capture task input and return prompt-ready memory for the task."""
+        resolved_query = query or task_input or "crew context"
         fabric = self.fabric_factory(self.eventloom_path)
         try:
-            if content:
+            if task_input:
                 assembly = await fabric.after_turn(
-                    role=role,
-                    content=content,
+                    role="user",
+                    content=task_input,
                     session_id=self.session_id,
                     query=resolved_query,
                     source=self.source,
@@ -60,33 +60,36 @@ class LangGraphMemoryAdapter:
                     max_recent_events=self.max_recent_events,
                     limit=self.limit,
                 )
-            return self._with_context(state, assembly)
+            return self._task_payload(assembly, crew=crew, agent=agent, task_id=task_id)
         finally:
             await fabric.close()
 
-    async def record_assistant_turn(
+    async def after_task(
         self,
-        content: str,
+        result: str,
         *,
         query: str | None = None,
+        crew: str | None = None,
+        agent: str | None = None,
+        task_id: str | None = None,
     ) -> dict[str, Any]:
-        """Persist an assistant turn and return prompt-ready context metadata."""
+        """Capture task output and return updated prompt-ready memory."""
         fabric = self.fabric_factory(self.eventloom_path)
         try:
             assembly = await fabric.after_turn(
                 role="assistant",
-                content=content,
+                content=result,
                 session_id=self.session_id,
-                query=query or content or "assistant context",
+                query=query or result or "crew result",
                 source=self.source,
                 max_recent_events=self.max_recent_events,
                 limit=self.limit,
             )
-            return assembly_payload(assembly)
+            return self._task_payload(assembly, crew=crew, agent=agent, task_id=task_id)
         finally:
             await fabric.close()
 
-    async def record_tool_call(
+    async def record_tool_use(
         self,
         *,
         tool_name: str,
@@ -95,7 +98,7 @@ class LangGraphMemoryAdapter:
         call_id: str | None = None,
         result_summary: str | None = None,
     ) -> None:
-        """Append a redacted tool-call observation for LangGraph tool nodes."""
+        """Append a redacted tool-call observation for CrewAI tool usage."""
         event = build_tool_call_observation(
             tool_name=tool_name,
             status=status,
@@ -118,13 +121,13 @@ class LangGraphMemoryAdapter:
 
     async def record_context_feedback(
         self,
-        state: Mapping[str, Any],
+        payload: Mapping[str, Any],
         *,
         feedback: str = "used",
         importance: float | None = None,
     ) -> int:
-        """Record retrieval feedback for contexts projected into state."""
-        contexts = [context for context in state.get(self.context_list_key, []) if isinstance(context, Context)]
+        """Record retrieval feedback for contexts returned by before_task."""
+        contexts = [context for context in payload.get("contexts", []) if isinstance(context, Context)]
         if not contexts:
             return 0
         fabric = self.fabric_factory(self.eventloom_path)
@@ -141,29 +144,39 @@ class LangGraphMemoryAdapter:
         finally:
             await fabric.close()
 
-    def _with_context(
+    def _task_payload(
         self,
-        state: Mapping[str, Any],
         assembly: ContextAssembly,
+        *,
+        crew: str | None,
+        agent: str | None,
+        task_id: str | None,
     ) -> dict[str, Any]:
-        updated = dict(state)
-        updated[self.context_key] = assembly.prompt
-        updated[self.context_list_key] = assembly.contexts
-        updated[self.metadata_key] = assembly_payload(assembly)
-        return updated
+        metadata = assembly_payload(assembly)
+        if crew is not None:
+            metadata["crew"] = crew
+        if agent is not None:
+            metadata["agent"] = agent
+        if task_id is not None:
+            metadata["task_id"] = task_id
+        return {
+            "memory": assembly.prompt,
+            "contexts": assembly.contexts,
+            "zaxy": metadata,
+        }
 
 
-def create_langgraph_memory_node(
+def create_crewai_memory_step(
     *,
     session_id: str = "default",
     eventloom_path: str = ".eventloom",
-    source: str = "langgraph",
+    source: str = "crewai",
     max_recent_events: int = 20,
     limit: int = 10,
     fabric_factory: FabricFactory = default_fabric_factory,
-) -> LangGraphNode:
-    """Return an async node that injects Zaxy context into LangGraph state."""
-    adapter = LangGraphMemoryAdapter(
+) -> CrewAIMemoryStep:
+    """Return an async task helper that yields prompt-ready CrewAI memory."""
+    adapter = CrewAIMemoryAdapter(
         session_id=session_id,
         eventloom_path=eventloom_path,
         source=source,
@@ -172,29 +185,8 @@ def create_langgraph_memory_node(
         fabric_factory=fabric_factory,
     )
 
-    async def zaxy_langgraph_memory_node(state: dict[str, Any]) -> dict[str, Any]:
-        return await adapter.before_model(state)
+    async def zaxy_crewai_memory_step(message: str) -> str:
+        payload = await adapter.before_task(message)
+        return str(payload["memory"])
 
-    return zaxy_langgraph_memory_node
-
-
-def _latest_message(state: Mapping[str, Any]) -> tuple[str, str]:
-    latest = state.get("latest_message")
-    if latest is not None:
-        return _message_role_content(latest)
-    messages = state.get("messages")
-    if isinstance(messages, list) and messages:
-        return _message_role_content(messages[-1])
-    return "user", ""
-
-
-def _message_role_content(message: Any) -> tuple[str, str]:
-    if isinstance(message, str):
-        return "user", message
-    if isinstance(message, Mapping):
-        role = str(message.get("role") or "user")
-        content = str(message.get("content") or "")
-        return role, content
-    role = str(getattr(message, "role", "user") or "user")
-    content = str(getattr(message, "content", "") or "")
-    return role, content
+    return zaxy_crewai_memory_step

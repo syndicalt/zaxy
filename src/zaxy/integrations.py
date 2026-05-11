@@ -49,9 +49,9 @@ _FRAMEWORK_SPECS: tuple[FrameworkIntegrationSpec, ...] = (
         display_name="CrewAI",
         package="crewai",
         extra="crewai",
-        template_function="zaxy_crewai_memory_step",
-        maturity="template",
-        native_adapter="planned-next",
+        template_function="create_crewai_memory_step",
+        maturity="native-preview",
+        native_adapter="zaxy.adapters.crewai",
     ),
     FrameworkIntegrationSpec(
         framework="autogen",
@@ -307,26 +307,19 @@ Call `zaxy_crewai_memory_step` inside a task callback or before a task hands
 context to the next crew member.
 """
 
-from zaxy import MemoryFabric
+from zaxy.adapters.crewai import CrewAIMemoryAdapter
 
 
 async def zaxy_crewai_memory_step(message: str) -> str:
-    fabric = MemoryFabric(eventloom_path={eventloom_path!r})
-    await fabric.connect()
-    try:
-        context = await fabric.after_turn(
-            role="assistant",
-            content=message,
-            session_id={session_id!r},
-            query=message or "crew context",
-        )
-        handoff = await fabric.handoff_bundle(
-            session_id={session_id!r},
-            query=message or "crew handoff",
-        )
-        return "\n\n".join([context.prompt, handoff.prompt])
-    finally:
-        await fabric.close()
+    adapter = CrewAIMemoryAdapter(session_id={session_id!r}, eventloom_path={eventloom_path!r})
+    payload = await adapter.before_task(message)
+    return str(payload["memory"])
+
+
+async def zaxy_crewai_record_result(result: str) -> str:
+    adapter = CrewAIMemoryAdapter(session_id={session_id!r}, eventloom_path={eventloom_path!r})
+    payload = await adapter.after_task(result)
+    return str(payload["memory"])
 '''
 
 
