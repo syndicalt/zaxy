@@ -58,6 +58,31 @@ and `HAS_CHECKPOINT`. These edges are deterministic because they require an
 explicit task identifier in the event payload; Zaxy does not infer task linkage
 from free text.
 
+The first inferred-edge inlet is the explicit `inference.edge.generated` event.
+It does not infer from arbitrary text. It accepts a source entity reference, a
+target entity reference, a snake_case `relation_type`, a 0..1 `confidence`, an
+`inference_method`, and optional structured evidence. Projection creates the
+source and target entities if needed, then writes an inferred edge with the same
+audit metadata on every graph relationship surface. This gives downstream
+generators a safe contract while keeping Eventloom as the durable record of who
+generated the inference and why.
+
+Example Eventloom payload:
+
+```json
+{
+  "source": {"name": "task-7", "entity_type": "task"},
+  "target": {"name": "Use Memory Checkout as the model-facing state contract", "entity_type": "decision"},
+  "relation_type": "likely_informed",
+  "confidence": 0.82,
+  "inference_method": "operator_review_v1",
+  "evidence": {
+    "source_event_seq": 6676,
+    "reason": "Operator confirmed the task led to the decision."
+  }
+}
+```
+
 Indexes matter for production behavior. Zaxy creates lookup constraints for
 entity versions, full-text indexes for keyword search, and vector indexes for
 embedding similarity when configured. Schema setup is expressed as named,

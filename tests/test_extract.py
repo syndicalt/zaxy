@@ -418,6 +418,56 @@ class TestHookCheckpoint:
         )
 
 
+class TestInferredEdgeGenerated:
+    """Tests for explicit inferred-edge event projection."""
+
+    def test_projects_auditable_inferred_edge(self) -> None:
+        """Generated inference events should project inferred edges with evidence."""
+        ev = _make_event(
+            "inference.edge.generated",
+            {
+                "source": {
+                    "name": "task-7",
+                    "entity_type": "task",
+                    "summary": "Implement memory checkout",
+                },
+                "target": {
+                    "name": "Use Memory Checkout as the model-facing state contract",
+                    "entity_type": "decision",
+                    "summary": "Checkout is the killer product decision.",
+                },
+                "relation_type": "likely_informed",
+                "confidence": 0.82,
+                "inference_method": "operator_review_v1",
+                "evidence": {
+                    "source_event_seq": 6676,
+                    "reason": "Operator confirmed the task led to the decision.",
+                },
+            },
+            actor="zaxy",
+        )
+
+        result = extract(ev)
+
+        assert [(entity.name, entity.entity_type) for entity in result.entities] == [
+            ("task-7", "task"),
+            ("Use Memory Checkout as the model-facing state contract", "decision"),
+        ]
+        assert result.entities[0].summary == "Implement memory checkout"
+        assert result.entities[1].summary == "Checkout is the killer product decision."
+        edge = result.edges[0]
+        assert edge.source == "task-7"
+        assert edge.target == "Use Memory Checkout as the model-facing state contract"
+        assert edge.relation_type == "likely_informed"
+        assert edge.inferred is True
+        assert edge.confidence == 0.82
+        assert edge.inference_method == "operator_review_v1"
+        assert edge.evidence == {
+            "source_event_seq": 6676,
+            "reason": "Operator confirmed the task led to the decision.",
+        }
+
+
 class TestIssueDiagnosed:
     """Tests for issue.diagnosed extractor."""
 
@@ -1187,6 +1237,16 @@ class TestExtractionSanity:
             ("task.proposed", {"taskId": "t1"}),
             ("task.claimed", {"taskId": "t1"}),
             ("task.completed", {"taskId": "t1"}),
+            (
+                "inference.edge.generated",
+                {
+                    "source": {"name": "t1", "entity_type": "task"},
+                    "target": {"name": "d1", "entity_type": "decision"},
+                    "relation_type": "likely_informed",
+                    "confidence": 0.8,
+                    "inference_method": "operator_review_v1",
+                },
+            ),
             ("user.preference_changed", {"key": "k"}),
             ("document.indexed", {"path": "README.md", "content": "hello"}),
             ("transcript.turn", {"role": "user", "content": "hello"}),

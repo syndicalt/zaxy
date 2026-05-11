@@ -33,7 +33,8 @@ Zaxy's beta goal is to prove the product thesis: **Git for LLM memory**. A sessi
    - Entity reassertions now create deterministic `SUPERSEDED_BY`/`PREVIOUS_VERSION` edges between immediate temporal versions.
    - Lifecycle observations with explicit task ids now create task-to-observation edges for commands, file edits, tool calls, and checkpoints.
    - The graph projection contract now has first-class inferred-edge audit metadata: `inferred`, bounded `confidence`, `inference_method`, and namespaced evidence properties.
-   - Continue improving graph traversal density by adding inferred edges only when provenance and confidence are defensible.
+   - Explicit `inference.edge.generated` events now project auditable inferred edges without free-text relationship guessing.
+   - Continue improving graph traversal density by adding generated inferred edges only when provenance and confidence are defensible.
    - Keep Eventloom provenance as the source of truth; do not fake graph density.
 
 5. **Beta documentation pass**

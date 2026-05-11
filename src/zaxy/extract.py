@@ -1314,12 +1314,104 @@ def _extract_llm_packet_projected(event: Event) -> ExtractionResult:
     )
 
 
+@register("inference.edge.generated")
+def _extract_inference_edge_generated(event: Event) -> ExtractionResult:
+    """Project an explicit, auditable inferred relationship event."""
+    source = _entity_reference(
+        event.payload.get("source"),
+        role="source",
+        event_seq=event.seq,
+        observed_at=event.timestamp,
+    )
+    target = _entity_reference(
+        event.payload.get("target"),
+        role="target",
+        event_seq=event.seq,
+        observed_at=event.timestamp,
+    )
+    relation_type = _required_text(
+        event.payload.get("relation_type"),
+        field="relation_type",
+        event_seq=event.seq,
+    )
+    inference_method = _required_text(
+        event.payload.get("inference_method"),
+        field="inference_method",
+        event_seq=event.seq,
+    )
+    confidence = _required_confidence(event.payload.get("confidence"), event_seq=event.seq)
+    evidence = event.payload.get("evidence")
+    edge = ExtractedEdge(
+        source=source.name,
+        target=target.name,
+        relation_type=relation_type,
+        valid_from=event.timestamp,
+        inferred=True,
+        confidence=confidence,
+        inference_method=inference_method,
+        evidence=evidence if isinstance(evidence, dict) else {},
+    )
+    return ExtractionResult(
+        entities=[source, target],
+        edges=[edge],
+        source_event_seq=event.seq,
+    )
+
+
 def _optional_text(value: object) -> str | None:
     """Return non-empty text for extracted summaries."""
     if value is None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _required_text(value: object, *, field: str, event_seq: int) -> str:
+    """Return required text or raise a precise extraction error."""
+    if text := _optional_text(value):
+        return text
+    raise ValueError(f"inference.edge.generated event {event_seq} missing required {field}")
+
+
+def _required_confidence(value: object, *, event_seq: int) -> float:
+    """Return a required 0..1 confidence value for an inferred edge event."""
+    if value is None or isinstance(value, bool):
+        raise ValueError(f"inference.edge.generated event {event_seq} missing required confidence")
+    try:
+        confidence = float(str(value))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            f"inference.edge.generated event {event_seq} has invalid confidence"
+        ) from exc
+    if not 0.0 <= confidence <= 1.0:
+        raise ValueError(
+            f"inference.edge.generated event {event_seq} confidence must be between 0.0 and 1.0"
+        )
+    return confidence
+
+
+def _entity_reference(
+    value: object,
+    *,
+    role: str,
+    event_seq: int,
+    observed_at: str,
+) -> ExtractedEntity:
+    """Return a source or target entity reference for an inferred-edge event."""
+    if not isinstance(value, dict):
+        raise ValueError(f"inference.edge.generated event {event_seq} missing {role} entity")
+    name = _required_text(value.get("name"), field=f"{role}.name", event_seq=event_seq)
+    entity_type = _required_text(
+        value.get("entity_type"),
+        field=f"{role}.entity_type",
+        event_seq=event_seq,
+    )
+    return ExtractedEntity(
+        name=name,
+        entity_type=entity_type,
+        observed_at=observed_at,
+        summary=_optional_text(value.get("summary")),
+    )
 
 
 def _explicit_task_id(payload: dict[str, Any]) -> str | None:
