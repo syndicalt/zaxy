@@ -83,6 +83,10 @@ model-visible tool registry.
 
 Example checkout response fragment:
 
+The canonical docs/test fixture for this contract is
+`docs/examples/memory-checkout-contract.json`; keep examples aligned with that
+fixture when changing the tool response.
+
 ```json
 {
   "current_facts": [

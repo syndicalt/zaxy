@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from html.parser import HTMLParser
@@ -92,6 +93,38 @@ def test_mcp_docs_show_memory_checkout_consumption_contract() -> None:
     assert '"tool": "memory_feedback"' in text
     assert '"feedback": "used"' in text
     assert '"answerability": "refresh_recommended"' in text
+
+
+def test_memory_checkout_docs_and_site_match_golden_contract_fixture() -> None:
+    """Published checkout examples should stay aligned with the canonical tool contract."""
+    fixture = json.loads(Path("docs/examples/memory-checkout-contract.json").read_text(encoding="utf-8"))
+    answerable = fixture["answerable"]
+    refresh = fixture["refresh_recommended"]
+    docs = Path("docs/mcp.md").read_text(encoding="utf-8")
+    site = Path("site/index.html").read_text(encoding="utf-8")
+
+    assert "docs/examples/memory-checkout-contract.json" in docs
+    assert answerable["quality"]["answerability"] == "answer_from_memory"
+    assert answerable["diagnostics"]["current_citation_count"] == 1
+    assert answerable["quality"]["required_action"] is None
+    assert answerable["guidance"]["feedback"]["tool"] == "memory_feedback"
+    assert answerable["guidance"]["feedback"]["payloads"][0]["feedback"] == "used"
+    assert refresh["quality"]["answerability"] == "refresh_recommended"
+    assert refresh["quality"]["required_action"]["tool"] == "memory_checkout"
+
+    shared_contract_fields = (
+        f'"answerability": "{answerable["quality"]["answerability"]}"',
+        f'"current_citation_count": {answerable["diagnostics"]["current_citation_count"]}',
+        f'"tool": "{answerable["guidance"]["feedback"]["tool"]}"',
+    )
+    docs_only_contract_fields = (
+        f'"answerability": "{refresh["quality"]["answerability"]}"',
+    )
+    for expected in shared_contract_fields:
+        assert expected in docs
+        assert expected in site
+    for expected in docs_only_contract_fields:
+        assert expected in docs
 
 
 def test_public_site_benchmark_claim_is_scoped_to_fixture() -> None:
