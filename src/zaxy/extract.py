@@ -392,9 +392,16 @@ def _extract_hook_checkpoint(event: Event) -> ExtractionResult:
         relation_type="recorded_checkpoint",
         valid_from=event.timestamp,
     )
+    entities, edges = _with_explicit_task_observation(
+        event,
+        [session, checkpoint],
+        [edge],
+        target=checkpoint.name,
+        relation_type="has_checkpoint",
+    )
     return ExtractionResult(
-        entities=[session, checkpoint],
-        edges=[edge],
+        entities=entities,
+        edges=edges,
         source_event_seq=event.seq,
     )
 
@@ -1037,7 +1044,14 @@ def _extract_tool_call_completed(event: Event) -> ExtractionResult:
         relation_type="completed_tool_call",
         valid_from=event.timestamp,
     )
-    return ExtractionResult(entities=[session, tool_call], edges=[edge], source_event_seq=event.seq)
+    entities, edges = _with_explicit_task_observation(
+        event,
+        [session, tool_call],
+        [edge],
+        target=tool_call.name,
+        relation_type="observed_tool_call",
+    )
+    return ExtractionResult(entities=entities, edges=edges, source_event_seq=event.seq)
 
 
 @register("command.completed")
@@ -1065,7 +1079,14 @@ def _extract_command_completed(event: Event) -> ExtractionResult:
         relation_type="completed_command",
         valid_from=event.timestamp,
     )
-    return ExtractionResult(entities=[session, command], edges=[edge], source_event_seq=event.seq)
+    entities, edges = _with_explicit_task_observation(
+        event,
+        [session, command],
+        [edge],
+        target=command.name,
+        relation_type="observed_command",
+    )
+    return ExtractionResult(entities=entities, edges=edges, source_event_seq=event.seq)
 
 
 @register("file.edit.applied")
@@ -1093,7 +1114,14 @@ def _extract_file_edit_applied(event: Event) -> ExtractionResult:
         relation_type="applied_file_edit",
         valid_from=event.timestamp,
     )
-    return ExtractionResult(entities=[session, edit], edges=[edge], source_event_seq=event.seq)
+    entities, edges = _with_explicit_task_observation(
+        event,
+        [session, edit],
+        [edge],
+        target=edit.name,
+        relation_type="observed_file_edit",
+    )
+    return ExtractionResult(entities=entities, edges=edges, source_event_seq=event.seq)
 
 
 @register("compaction.completed")
@@ -1279,6 +1307,40 @@ def _optional_text(value: object) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _explicit_task_id(payload: dict[str, Any]) -> str | None:
+    """Return an explicitly supplied task identifier from common event taxonomies."""
+    return _optional_text(payload.get("task_id") or payload.get("taskId"))
+
+
+def _with_explicit_task_observation(
+    event: Event,
+    entities: list[ExtractedEntity],
+    edges: list[ExtractedEdge],
+    *,
+    target: str,
+    relation_type: str,
+) -> tuple[list[ExtractedEntity], list[ExtractedEdge]]:
+    """Add a deterministic task-observation edge only when a task id is explicit."""
+    task_id = _explicit_task_id(event.payload)
+    if task_id is None:
+        return entities, edges
+    return (
+        [
+            *entities,
+            ExtractedEntity(name=task_id, entity_type="task", observed_at=event.timestamp),
+        ],
+        [
+            *edges,
+            ExtractedEdge(
+                source=task_id,
+                target=target,
+                relation_type=relation_type,
+                valid_from=event.timestamp,
+            ),
+        ],
+    )
 
 
 def _preference_summary(key: object, value: object) -> str | None:

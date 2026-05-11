@@ -45,6 +45,12 @@ validity windows. This lets query traversal keep using the stable compatibility
 edge while Neo4j Browser and direct Cypher inspection can show semantic labels.
 For example, an agent can ask about a goal, expand to tasks, expand to
 decisions, and still know which facts were valid at the requested time.
+Lifecycle observation events can also link back to tasks when they carry an
+explicit `task_id` or `taskId`. In those cases Zaxy projects task-to-observation
+edges such as `OBSERVED_COMMAND`, `OBSERVED_FILE_EDIT`, `OBSERVED_TOOL_CALL`,
+and `HAS_CHECKPOINT`. These edges are deterministic because they require an
+explicit task identifier in the event payload; Zaxy does not infer task linkage
+from free text.
 
 Indexes matter for production behavior. Zaxy creates lookup constraints for
 entity versions, full-text indexes for keyword search, and vector indexes for
@@ -69,6 +75,11 @@ RETURN p
 LIMIT 25;
 
 MATCH p=(:Entity)-[:SUPERSEDED_BY]->(:Entity)
+RETURN p
+LIMIT 25;
+
+MATCH p=(:Entity {entity_type: "task"})-->(observation:Entity)
+WHERE observation.entity_type IN ["command_run", "file_edit", "tool_call", "hook_checkpoint"]
 RETURN p
 LIMIT 25;
 ```

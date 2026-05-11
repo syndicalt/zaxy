@@ -375,6 +375,25 @@ class TestHookCheckpoint:
         assert result.edges[0].target == "agent-1:checkpoint:1"
         assert result.edges[0].relation_type == "recorded_checkpoint"
 
+    def test_checkpoint_links_explicit_task_id(self) -> None:
+        """Checkpoint observations should link to an explicit task id when present."""
+        ev = _make_event(
+            "hook.checkpoint",
+            {"summary": "Task checkpoint.", "task_id": "task-7"},
+            actor="zaxy-hook",
+        )
+        ev = ev.model_copy(update={"thread": "agent-1"})
+
+        result = extract(ev)
+
+        assert any(e.name == "task-7" and e.entity_type == "task" for e in result.entities)
+        assert any(
+            edge.source == "task-7"
+            and edge.target == "agent-1:checkpoint:1"
+            and edge.relation_type == "has_checkpoint"
+            for edge in result.edges
+        )
+
 
 class TestIssueDiagnosed:
     """Tests for issue.diagnosed extractor."""
@@ -887,6 +906,29 @@ class TestLifecycleEvents:
             "call_id": None,
         }
 
+    def test_tool_call_links_explicit_task_id(self) -> None:
+        """Tool observations should link to an explicit task id when present."""
+        ev = _make_event(
+            "tool.call.completed",
+            {
+                "tool_name": "shell",
+                "status": "succeeded",
+                "session_id": "demo",
+                "task_id": "task-7",
+            },
+            actor="zaxy",
+        )
+
+        result = extract(ev)
+
+        assert any(e.name == "task-7" and e.entity_type == "task" for e in result.entities)
+        assert any(
+            edge.source == "task-7"
+            and edge.target == "demo:shell:1"
+            and edge.relation_type == "observed_tool_call"
+            for edge in result.edges
+        )
+
     def test_extracts_command_completed(self) -> None:
         ev = _make_event(
             "command.completed",
@@ -906,6 +948,30 @@ class TestLifecycleEvents:
         assert command.summary == "passed pytest"
         assert command.properties["exit_code"] == 0
 
+    def test_command_links_explicit_task_id(self) -> None:
+        """Command observations should link to an explicit task id when present."""
+        ev = _make_event(
+            "command.completed",
+            {
+                "command": "pytest",
+                "exit_code": 0,
+                "outcome": "passed",
+                "session_id": "demo",
+                "taskId": "task-7",
+            },
+            actor="zaxy",
+        )
+
+        result = extract(ev)
+
+        assert any(e.name == "task-7" and e.entity_type == "task" for e in result.entities)
+        assert any(
+            edge.source == "task-7"
+            and edge.target == "demo:pytest:1"
+            and edge.relation_type == "observed_command"
+            for edge in result.edges
+        )
+
     def test_extracts_file_edit_applied(self) -> None:
         ev = _make_event(
             "file.edit.applied",
@@ -924,6 +990,29 @@ class TestLifecycleEvents:
         assert edit.name == "demo:src/zaxy/core.py:1"
         assert edit.summary == "modified Added lifecycle hook."
         assert edit.properties["path"] == "src/zaxy/core.py"
+
+    def test_file_edit_links_explicit_task_id(self) -> None:
+        """File-edit observations should link to an explicit task id when present."""
+        ev = _make_event(
+            "file.edit.applied",
+            {
+                "path": "src/zaxy/core.py",
+                "operation": "modified",
+                "session_id": "demo",
+                "task_id": "task-7",
+            },
+            actor="zaxy",
+        )
+
+        result = extract(ev)
+
+        assert any(e.name == "task-7" and e.entity_type == "task" for e in result.entities)
+        assert any(
+            edge.source == "task-7"
+            and edge.target == "demo:src/zaxy/core.py:1"
+            and edge.relation_type == "observed_file_edit"
+            for edge in result.edges
+        )
 
     def test_extracts_compaction_completed(self) -> None:
         ev = _make_event(
