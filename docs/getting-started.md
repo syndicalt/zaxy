@@ -201,15 +201,23 @@ ruff check src tests
 mypy src
 pytest
 zaxy doctor --release-smoke
+zaxy doctor --beta-readiness
 scripts/release-check.sh --root .
+scripts/beta-uat.sh
 ```
 
 The full pytest command enforces the 90 percent coverage gate configured in
 `pyproject.toml`. Integration tests require Docker Neo4j services. The release
 smoke check verifies the package version, changelog entry, release workflow,
 and PyPI Trusted Publishing posture without contacting external services. The
-release gate adds package artifact checks, documentation link validation, and
-deployment preflight checks. The current public overview is
+beta readiness check verifies that the release smoke gate, release gate script,
+clean-repo UAT script, docs happy path, and deterministic capture happy path are
+present. The release gate adds package artifact checks, documentation link
+validation, and deployment preflight checks. `scripts/beta-uat.sh` creates a
+throwaway workspace, installs Zaxy into a fresh virtual environment, runs
+`zaxy init`, starts deterministic capture, runs `zaxy memory bootstrap`,
+performs a cited `zaxy memory checkout`, and checks doctor, hook, capture, and
+memory status. The current public overview is
 [site/index.html](../site/index.html), and the operational checklist remains in
 [runbook.md](runbook.md). The [README.md](../README.md) is intentionally short;
 these docs are the detailed operator and integrator reference.

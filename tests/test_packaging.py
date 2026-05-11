@@ -6,7 +6,7 @@ import subprocess
 import tomllib
 from pathlib import Path
 
-from zaxy.release import package_version
+from zaxy.release import package_version, run_beta_readiness
 
 
 def test_pyproject_declares_typed_package_and_release_tools() -> None:
@@ -128,6 +128,71 @@ def test_build_dist_runs_build_and_twine_check_in_order(tmp_path: Path) -> None:
         f"build --sdist --wheel --outdir {dist} {root}",
         f"twine check {dist}/*",
     ]
+
+
+def test_beta_uat_script_exercises_clean_repo_happy_path() -> None:
+    """The beta UAT script should cover install, init, bootstrap, capture, and checkout."""
+    script = Path("scripts/beta-uat.sh").read_text(encoding="utf-8")
+
+    assert "mktemp -d" in script
+    assert "python -m pip install" in script
+    assert "zaxy init" in script
+    assert "--preset local-codex" in script
+    assert "zaxy memory bootstrap" in script
+    assert "zaxy memory checkout" in script
+    assert "zaxy doctor" in script
+    assert "zaxy hook-status" in script
+    assert "zaxy capture status" in script
+    assert "zaxy memory status" in script
+
+
+def test_beta_readiness_reports_missing_clean_repo_uat(tmp_path: Path) -> None:
+    """Beta readiness should fail clearly when the clean-repo UAT harness is absent."""
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / ".github" / "workflows").mkdir(parents=True)
+    (tmp_path / "pyproject.toml").write_text(
+        '[project]\nname = "zaxy-memory"\nversion = "0.2.0b1"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## 0.2.0b1 - 2026-05-11\n\n- Beta release.\n",
+        encoding="utf-8",
+    )
+    (tmp_path / ".github" / "workflows" / "publish.yml").write_text(
+        "on:\n"
+        "  release:\n"
+        "    types: [published]\n"
+        "  workflow_dispatch:\n"
+        "permissions:\n"
+        "  id-token: write\n"
+        "steps:\n"
+        "  - run: python -m build --sdist --wheel\n"
+        "  - run: python -m twine check dist/*\n"
+        "  - uses: pypa/gh-action-pypi-publish@release/v1\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "scripts" / "release-check.sh").write_text(
+        'RUFF_CMD="ruff"\n'
+        'MYPY_CMD="mypy"\n'
+        "pytest\n"
+        "scripts/check-coverage.py\n"
+        "tests/test_packet_memory_e2e.py\n"
+        "scripts/build-dist.sh\n"
+        "scripts/validate-docs.sh\n"
+        "scripts/validate-deployment.sh\n",
+        encoding="utf-8",
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["release_smoke"]["status"] == "ok"
+    assert checks["release_gate"]["status"] == "ok"
+    assert checks["clean_repo_uat"]["status"] == "error"
+    assert checks["clean_repo_uat"]["action"] == (
+        "Add a clean-repo UAT script for install, init, bootstrap, capture, and checkout."
+    )
 
 
 def test_build_dist_fails_fast_when_build_fails(tmp_path: Path) -> None:

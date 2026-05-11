@@ -16,6 +16,8 @@ scripts/integration-check.sh --start
 ruff check src tests
 mypy src
 pytest tests/test_packet_memory_e2e.py --no-cov -q
+zaxy doctor --beta-readiness
+scripts/beta-uat.sh
 scripts/release-check.sh --root .
 ```
 
@@ -62,6 +64,14 @@ pytest tests/test_packet_memory_e2e.py --no-cov -q
 
 `scripts/release-check.sh` runs this packet smoke after the full pytest suite so
 the analyzer-to-projection-to-context workflow remains a named release gate.
+
+The beta hardening path has two additional checks. `zaxy doctor
+--beta-readiness` is a fast local inventory of release metadata, release gate
+coverage, clean-repo UAT coverage, documentation, and deterministic capture
+posture. `scripts/beta-uat.sh` performs a clean first-run exercise in a
+throwaway workspace: install, `zaxy init`, deterministic capture startup,
+`zaxy memory bootstrap`, `zaxy memory checkout`, doctor, hook status, capture
+status, and memory status.
 
 For graph changes, write both mock tests for Cypher behavior and integration
 tests against Neo4j when the real database semantics matter. For security

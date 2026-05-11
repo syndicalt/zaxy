@@ -1877,6 +1877,24 @@ def test_doctor_release_smoke_reports_packaging_readiness() -> None:
     assert checks["release_workflow"]["status"] == "ok"
 
 
+def test_doctor_beta_readiness_reports_release_and_uat_gates() -> None:
+    """Beta readiness should summarize the release, UAT, docs, and capture gates."""
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["doctor", "--beta-readiness", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["status"] == "ok"
+    checks = {check["name"]: check for check in payload["checks"]}
+    assert checks["release_smoke"]["status"] == "ok"
+    assert checks["release_gate"]["status"] == "ok"
+    assert checks["clean_repo_uat"]["status"] == "ok"
+    assert checks["docs_happy_path"]["status"] == "ok"
+    assert checks["capture_happy_path"]["status"] == "ok"
+    assert "scripts/beta-uat.sh" in checks["clean_repo_uat"]["message"]
+
+
 def test_packet_status_command_reports_text_summary(tmp_path: Path) -> None:
     runner = CliRunner()
     log = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl")

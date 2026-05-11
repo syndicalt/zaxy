@@ -324,18 +324,19 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Coverage ratchet enforced in CI and release checks from generated coverage XML
 - [x] First-class model-facing Memory Bootstrap contract for session-start capability, checkout, capture, and trust guidance
 - [x] Workspace-neutral Codex MCP config with runtime workspace/Eventloom resolution and doctor leak detection
+- [x] Beta readiness inventory with clean-repo UAT script and doctor gate
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 732 passed, 5 deselected |
-| Coverage | 92.09% |
+| Tests | 735 passed, 5 deselected |
+| Coverage | 92.06% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
 
 ## Next Steps
 
-1. Use LangGraph native-preview feedback to decide whether CrewAI should become the next maintained adapter.
+1. Run clean-repo beta UAT with `scripts/beta-uat.sh` from a fresh environment.
 2. Add reproducible MemPalace-comparable workloads for temporal, source-recall, graph-traversal, and context-collapse behavior.

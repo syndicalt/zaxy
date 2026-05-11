@@ -122,7 +122,7 @@ from zaxy.packet_projection import (
     watch_packet_events,
 )
 from zaxy.refs import MemoryRefStore
-from zaxy.release import package_version, run_release_smoke
+from zaxy.release import package_version, run_beta_readiness, run_release_smoke
 from zaxy.schema import render_schema_plan
 from zaxy.viewer import write_viewer_html
 
@@ -933,13 +933,29 @@ def doctor(
         "--release-smoke",
         help="Run local release metadata checks instead of onboarding checks",
     ),
+    beta_readiness: bool = typer.Option(
+        False,
+        "--beta-readiness",
+        help="Run beta release readiness checks instead of onboarding checks",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """Run local setup and onboarding checks."""
     from zaxy.config import get_settings
 
+    if release_smoke and beta_readiness:
+        raise typer.BadParameter("--release-smoke and --beta-readiness are mutually exclusive")
+
     if release_smoke:
         report = run_release_smoke()
+        if json_output:
+            typer.echo(json.dumps(report, indent=2, sort_keys=True))
+        else:
+            typer.echo(format_doctor_report(report))
+        return
+
+    if beta_readiness:
+        report = run_beta_readiness()
         if json_output:
             typer.echo(json.dumps(report, indent=2, sort_keys=True))
         else:

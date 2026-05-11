@@ -173,6 +173,13 @@ zaxy doctor --release-smoke
 # Validate public site and documentation links
 scripts/validate-docs.sh --root .
 
+# Clean-repo beta UAT: install into a throwaway workspace and verify init,
+# bootstrap, deterministic capture, doctor, and memory checkout.
+scripts/beta-uat.sh
+
+# Summarize beta readiness gates without external services.
+zaxy doctor --beta-readiness
+
 # Go-live release gate
 scripts/release-check.sh --root .
 ```
