@@ -6,6 +6,9 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+from typer.testing import CliRunner
+
+from zaxy.__main__ import app
 from zaxy.benchmark import build_competitive_event_log, competitive_cases
 from zaxy.embedding import HashEmbeddingProvider
 from zaxy.live_benchmark import (
@@ -38,11 +41,13 @@ from zaxy.live_benchmark import (
     build_frozen_statistical_workload,
     build_graph_traversal_workload,
     build_longmemeval_workload,
+    build_mempalace_workload_inventory,
     build_source_recall_workload,
     build_temporal_recall_workload,
     compare_benchmark_reports,
     corpus_from_event_log,
     format_benchmark_comparison,
+    format_mempalace_workload_inventory,
     report_to_markdown,
     workload_fingerprint,
     write_benchmark_report,
@@ -65,9 +70,11 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "build_consolidation_collapse_workload" in cli
     assert "build_context_collapse_workload" in cli
     assert "build_graph_traversal_workload" in cli
+    assert "build_mempalace_workload_inventory" in cli
     assert "build_longmemeval_workload" in cli
     assert "build_source_recall_workload" in cli
     assert "build_temporal_recall_workload" in cli
+    assert "benchmark-inventory" in cli
     assert "lexical_retriever=BM25Retriever(corpus)" in cli
     assert "--embedding-cache" in cli
     assert "--progress" in cli
@@ -203,6 +210,85 @@ def test_context_collapse_markdown_baseline_loses_late_checkpoint(
     assert run.missing_expected == ("collapseanswer0000",)
     assert run.identity_recall is not None
     assert run.identity_recall < 1.0
+
+
+def test_mempalace_inventory_lists_required_product_proof_lanes(tmp_path: Path) -> None:
+    """The release inventory should name every MemPalace-comparable proof lane."""
+    inventory = build_mempalace_workload_inventory(
+        tmp_path,
+        subjects=2,
+        documents=2,
+        sessions=2,
+    )
+    lanes = {entry.lane: entry for entry in inventory}
+    text = format_mempalace_workload_inventory(inventory)
+
+    assert set(lanes) == {
+        "temporal-recall",
+        "source-recall",
+        "graph-traversal",
+        "context-collapse",
+    }
+    assert lanes["temporal-recall"].required_metrics == (
+        "mean_score",
+        "citation_coverage",
+    )
+    assert lanes["source-recall"].required_metrics == (
+        "mean_score",
+        "source_recall",
+        "citation_coverage",
+    )
+    assert lanes["graph-traversal"].required_metrics == (
+        "mean_score",
+        "identity_recall",
+        "citation_coverage",
+    )
+    assert lanes["context-collapse"].required_metrics == (
+        "mean_score",
+        "identity_recall",
+        "citation_coverage",
+        "approx_tokens",
+    )
+    assert all(entry.sha256 for entry in inventory)
+    assert all(entry.event_count > 0 for entry in inventory)
+    assert all(entry.case_count > 0 for entry in inventory)
+    assert "MemPalace-Comparable Benchmark Inventory" in text
+    assert "| context-collapse |" in text
+    assert "checkpoint recovery after noisy transcript context" in text
+
+
+def test_benchmark_inventory_command_emits_json(tmp_path: Path) -> None:
+    """The CLI inventory should be usable by release automation."""
+    result = CliRunner().invoke(
+        app,
+        [
+            "benchmark-inventory",
+            "--output-dir",
+            str(tmp_path / "inventory"),
+            "--subjects",
+            "1",
+            "--documents",
+            "1",
+            "--sessions",
+            "1",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert [entry["lane"] for entry in payload] == [
+        "temporal-recall",
+        "source-recall",
+        "graph-traversal",
+        "context-collapse",
+    ]
+    assert payload[-1]["required_metrics"] == [
+        "mean_score",
+        "identity_recall",
+        "citation_coverage",
+        "approx_tokens",
+    ]
 
 
 def test_benchmark_report_tracks_source_recall() -> None:

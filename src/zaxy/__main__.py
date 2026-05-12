@@ -89,12 +89,14 @@ from zaxy.live_benchmark import (
     build_graph_traversal_workload,
     build_live_zaxy_retriever,
     build_longmemeval_workload,
+    build_mempalace_workload_inventory,
     build_source_recall_workload,
     build_statistical_event_log,
     build_temporal_recall_workload,
     compare_benchmark_reports,
     corpus_from_event_log,
     format_benchmark_comparison,
+    format_mempalace_workload_inventory,
     load_benchmark_report,
     report_to_markdown,
     write_benchmark_report,
@@ -1970,6 +1972,30 @@ def _load_external_results(path: Path | None) -> tuple[ExternalBenchmarkResult, 
         except TypeError as exc:
             raise typer.BadParameter(f"invalid external result {idx}: {exc}") from exc
     return tuple(results)
+
+
+@app.command("benchmark-inventory")
+def benchmark_inventory(
+    output_dir: Path = typer.Option(  # noqa: B008
+        Path(".zaxy-benchmark-inventory"),
+        help="Directory where reproducible inventory workload logs are written",
+    ),
+    subjects: int = typer.Option(100, min=1, help="Subject count for temporal and graph lanes"),
+    documents: int = typer.Option(100, min=1, help="Document count for source-recall lane"),
+    sessions: int = typer.Option(50, min=1, help="Session count for context-collapse lane"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """List MemPalace-comparable benchmark lanes, fingerprints, and required metrics."""
+    inventory = build_mempalace_workload_inventory(
+        output_dir,
+        subjects=subjects,
+        documents=documents,
+        sessions=sessions,
+    )
+    if json_output:
+        typer.echo(json.dumps([asdict(entry) for entry in inventory], indent=2, sort_keys=True))
+    else:
+        typer.echo(format_mempalace_workload_inventory(inventory), nl=False)
 
 
 @app.command("benchmark-compare")

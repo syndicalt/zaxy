@@ -142,6 +142,15 @@ small context window:
 scripts/live-benchmark.sh --embedding-provider openai --workload context-collapse --sessions 100 --runs 1 --reset-graph
 ```
 
+To inventory the comparable proof lanes without Neo4j or hosted embeddings,
+generate the frozen workload metadata directly. This is useful for release notes
+and CI checks that need versions, SHA-256 fingerprints, event/query counts,
+product claims, and required metrics without running retrieval:
+
+```bash
+zaxy benchmark-inventory --json
+```
+
 For public memory-benchmark comparisons against systems that report
 LongMemEval recall, download the cleaned LongMemEval JSON and run the
 `longmemeval` workload. This workload preserves answer session identifiers and

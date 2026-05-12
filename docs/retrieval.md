@@ -133,6 +133,11 @@ source recall, citation coverage, and SHA-256 fingerprints so results remain
 comparable over time. Treat these as workload-specific signals, not universal
 claims against every production-grade vector RAG or file memory system.
 
+Use `zaxy benchmark-inventory` when the goal is release evidence rather than a
+live retrieval run. It emits the four MemPalace-comparable lanes, frozen
+versions, fingerprints, event/query counts, product claims, and required metrics
+without requiring Neo4j or provider quota.
+
 The next retrieval-quality work should close the practical ergonomics gap with
 QMD-style search sidecars: richer assembly lifecycle hooks, stronger local
 embedding providers, and broader degraded-mode observability. These should

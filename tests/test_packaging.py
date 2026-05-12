@@ -219,6 +219,7 @@ def test_beta_roadmap_tracks_post_uat_product_work() -> None:
     assert "source recall" in roadmap
     assert "graph traversal" in roadmap
     assert "context-collapse" in roadmap
+    assert "zaxy benchmark-inventory" in roadmap
     assert "CrewAI" in roadmap
     assert "capture soak" in roadmap
     assert "zaxy capture-soak" in roadmap

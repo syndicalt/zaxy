@@ -16,6 +16,7 @@ Zaxy's beta goal is to prove the product thesis: **Git for LLM memory**. A sessi
    - The source recall lane is implemented as `--workload source-recall` with target/distractor source paths and source-recall reporting.
    - The graph traversal lane is implemented as `--workload graph-traversal` with goal-task-completion path cases.
    - The context-collapse lane is implemented as `--workload context-collapse` with noisy transcript turns plus compact checkpoint recovery cases.
+   - `zaxy benchmark-inventory` emits the frozen workload versions, SHA-256 fingerprints, event/query counts, product claims, and required metrics for all four lanes without requiring Neo4j or provider quota.
    - Benchmark guardrails are implemented with `zaxy benchmark-compare` for mean score, citation coverage, p95, p99, and baseline latency regressions.
    - Keep workload fingerprints frozen and disclose where synthetic workloads do or do not compare to external systems.
 
@@ -55,7 +56,7 @@ Before beta, all of the following must be true:
 - `zaxy doctor --beta-readiness` reports `ok`.
 - CI is green for Python 3.11, 3.12, and 3.13.
 - Coverage remains above the configured ratchet and above 90%.
-- At least one MemPalace-comparable benchmark lane beyond identity recall is implemented and documented.
+- All four MemPalace-comparable benchmark lanes beyond identity recall are implemented, inventoried with `zaxy benchmark-inventory`, and documented.
 - At least one maintained non-LangGraph adapter path has docs, tests, and a working handoff pattern.
 - A capture soak report shows deterministic capture staying active across a long session or records the exact gaps that remain.
 

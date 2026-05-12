@@ -185,6 +185,19 @@ class BenchmarkWorkload:
 
 
 @dataclass(frozen=True)
+class BenchmarkWorkloadInventoryEntry:
+    """Release-facing proof metadata for one comparable benchmark lane."""
+
+    lane: str
+    version: str
+    sha256: str
+    event_count: int
+    case_count: int
+    required_metrics: tuple[str, ...]
+    product_claim: str
+
+
+@dataclass(frozen=True)
 class ExternalBenchmarkResult:
     """Operator-supplied benchmark row for an external context system."""
 
@@ -917,6 +930,95 @@ def build_source_recall_workload(
         lanes=("source-recall",),
     )
     return eventlog, tuple(cases), workload
+
+
+def build_mempalace_workload_inventory(
+    output_dir: str | Path,
+    *,
+    subjects: int = 100,
+    documents: int = 100,
+    sessions: int = 50,
+) -> tuple[BenchmarkWorkloadInventoryEntry, ...]:
+    """Build reproducible metadata for MemPalace-comparable proof workloads."""
+    root = Path(output_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    workload_specs: list[tuple[str, Callable[[], BenchmarkWorkload], tuple[str, ...], str]] = [
+        (
+            "temporal-recall",
+            lambda: build_temporal_recall_workload(
+                root / "temporal-recall.jsonl",
+                subjects=subjects,
+            )[2],
+            ("mean_score", "citation_coverage"),
+            "as-of retrieval of facts that changed over time",
+        ),
+        (
+            "source-recall",
+            lambda: build_source_recall_workload(
+                root / "source-recall.jsonl",
+                documents=documents,
+            )[2],
+            ("mean_score", "source_recall", "citation_coverage"),
+            "exact source citation recovery among target and distractor documents",
+        ),
+        (
+            "graph-traversal",
+            lambda: build_graph_traversal_workload(
+                root / "graph-traversal.jsonl",
+                subjects=subjects,
+            )[2],
+            ("mean_score", "identity_recall", "citation_coverage"),
+            "multi-hop retrieval across goal, task, actor, and completion edges",
+        ),
+        (
+            "context-collapse",
+            lambda: build_context_collapse_workload(
+                root / "context-collapse.jsonl",
+                sessions=sessions,
+            )[2],
+            ("mean_score", "identity_recall", "citation_coverage", "approx_tokens"),
+            "checkpoint recovery after noisy transcript context",
+        ),
+    ]
+    entries: list[BenchmarkWorkloadInventoryEntry] = []
+    for lane, build_workload, required_metrics, product_claim in workload_specs:
+        workload = build_workload()
+        entries.append(
+            BenchmarkWorkloadInventoryEntry(
+                lane=lane,
+                version=workload.version,
+                sha256=workload.sha256,
+                event_count=workload.event_count,
+                case_count=workload.case_count,
+                required_metrics=required_metrics,
+                product_claim=product_claim,
+            )
+        )
+    return tuple(entries)
+
+
+def format_mempalace_workload_inventory(
+    inventory: tuple[BenchmarkWorkloadInventoryEntry, ...],
+) -> str:
+    """Render workload inventory metadata for release notes and audits."""
+    lines = [
+        "# MemPalace-Comparable Benchmark Inventory",
+        "",
+        "| Lane | Version | Events | Queries | Required metrics | Product claim | SHA-256 |",
+        "|------|---------|--------|---------|------------------|---------------|---------|",
+    ]
+    for entry in inventory:
+        lines.append(
+            "| "
+            f"{entry.lane} | "
+            f"{entry.version} | "
+            f"{entry.event_count} | "
+            f"{entry.case_count} | "
+            f"{', '.join(entry.required_metrics)} | "
+            f"{entry.product_claim} | "
+            f"{entry.sha256} |"
+        )
+    return "\n".join(lines) + "\n"
 
 
 def build_temporal_recall_workload(
