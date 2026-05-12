@@ -1,0 +1,5385 @@
+{
+  "category_summaries": [
+    {
+      "backend": "bm25",
+      "category": "longmemeval:single-session-user",
+      "mean_citation_coverage": 1.0,
+      "mean_score": 0.975,
+      "mean_source_recall": null,
+      "miss_count": 1,
+      "query_count": 40
+    },
+    {
+      "backend": "md",
+      "category": "longmemeval:single-session-user",
+      "mean_citation_coverage": 1.0,
+      "mean_score": 0.3,
+      "mean_source_recall": null,
+      "miss_count": 28,
+      "query_count": 40
+    },
+    {
+      "backend": "md+vector",
+      "category": "longmemeval:single-session-user",
+      "mean_citation_coverage": 1.0,
+      "mean_score": 0.45,
+      "mean_source_recall": null,
+      "miss_count": 22,
+      "query_count": 40
+    },
+    {
+      "backend": "vector",
+      "category": "longmemeval:single-session-user",
+      "mean_citation_coverage": 1.0,
+      "mean_score": 0.475,
+      "mean_source_recall": null,
+      "miss_count": 21,
+      "query_count": 40
+    },
+    {
+      "backend": "zaxy",
+      "category": "longmemeval:single-session-user",
+      "mean_citation_coverage": 1.0,
+      "mean_score": 0.825,
+      "mean_source_recall": null,
+      "miss_count": 7,
+      "query_count": 40
+    }
+  ],
+  "comparisons": [
+    {
+      "baseline_backend": "bm25",
+      "ci_high": -0.05,
+      "ci_low": -0.275,
+      "mean_difference": -0.15,
+      "p_value": 0.031497,
+      "paired_units": 40,
+      "significant": false,
+      "target_backend": "zaxy"
+    },
+    {
+      "baseline_backend": "md",
+      "ci_high": 0.675,
+      "ci_low": 0.35,
+      "mean_difference": 0.525,
+      "p_value": 0.0001,
+      "paired_units": 40,
+      "significant": true,
+      "target_backend": "zaxy"
+    },
+    {
+      "baseline_backend": "md+vector",
+      "ci_high": 0.525,
+      "ci_low": 0.2,
+      "mean_difference": 0.375,
+      "p_value": 0.0002,
+      "paired_units": 40,
+      "significant": true,
+      "target_backend": "zaxy"
+    },
+    {
+      "baseline_backend": "vector",
+      "ci_high": 0.5,
+      "ci_low": 0.175,
+      "mean_difference": 0.35,
+      "p_value": 0.0003,
+      "paired_units": 40,
+      "significant": true,
+      "target_backend": "zaxy"
+    }
+  ],
+  "embedding_provider": "hash:1536",
+  "external_results": [],
+  "generated_at": "2026-05-12T03:58:05Z",
+  "runs": [
+    {
+      "approx_tokens": 16536,
+      "backend": "md",
+      "case_name": "longmemeval-e47becba",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.2193,
+      "missing_expected": [
+        "Business Administration"
+      ],
+      "missing_identities": [
+        "answer_280352e9"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 66142,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17168,
+      "backend": "md",
+      "case_name": "longmemeval-118b2229",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0455,
+      "missing_expected": [
+        "45 minutes each way"
+      ],
+      "missing_identities": [
+        "answer_40a90d51"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 68672,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17884,
+      "backend": "md",
+      "case_name": "longmemeval-51a45a95",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Target"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 1.0755,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_d61669c7"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 71548,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17168,
+      "backend": "md",
+      "case_name": "longmemeval-58bf7951",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.1217,
+      "missing_expected": [
+        "The Glass Menagerie"
+      ],
+      "missing_identities": [
+        "answer_355c48bb"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 68672,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17168,
+      "backend": "md",
+      "case_name": "longmemeval-1e043500",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0673,
+      "missing_expected": [
+        "Summer Vibes"
+      ],
+      "missing_identities": [
+        "answer_3e012175"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 68672,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 16752,
+      "backend": "md",
+      "case_name": "longmemeval-c5e8278d",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.2839,
+      "missing_expected": [
+        "Johnson"
+      ],
+      "missing_identities": [
+        "answer_f6168136"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 67007,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 16384,
+      "backend": "md",
+      "case_name": "longmemeval-6ade9755",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.1745,
+      "missing_expected": [
+        "Serenity Yoga"
+      ],
+      "missing_identities": [
+        "answer_9398da02"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 65535,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17767,
+      "backend": "md",
+      "case_name": "longmemeval-6f9b354f",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.3976,
+      "missing_expected": [
+        "a lighter shade of gray"
+      ],
+      "missing_identities": [
+        "answer_feb5200f"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 71065,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17168,
+      "backend": "md",
+      "case_name": "longmemeval-58ef2f1c",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.1536,
+      "missing_expected": [
+        "February 14th"
+      ],
+      "missing_identities": [
+        "answer_59547700"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 68672,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 16333,
+      "backend": "md",
+      "case_name": "longmemeval-f8c5f88b",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.2714,
+      "missing_expected": [
+        "the sports store downtown"
+      ],
+      "missing_identities": [
+        "answer_c3567066"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 65329,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 16686,
+      "backend": "md",
+      "case_name": "longmemeval-5d3d2817",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.2137,
+      "missing_expected": [
+        "Marketing specialist at a small startup"
+      ],
+      "missing_identities": [
+        "answer_235eb6fb"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 66742,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 16905,
+      "backend": "md",
+      "case_name": "longmemeval-7527f7e2",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.1218,
+      "missing_expected": [
+        "$800"
+      ],
+      "missing_identities": [
+        "answer_7cb94507"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 67619,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 16102,
+      "backend": "md",
+      "case_name": "longmemeval-c960da58",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "20"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0958,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_e05e4612"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 64408,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 18176,
+      "backend": "md",
+      "case_name": "longmemeval-3b6f954b",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.1596,
+      "missing_expected": [
+        "University of Melbourne in Australia"
+      ],
+      "missing_identities": [
+        "answer_94030872"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 72704,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17168,
+      "backend": "md",
+      "case_name": "longmemeval-726462e0",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.1017,
+      "missing_expected": [
+        "10%"
+      ],
+      "missing_identities": [
+        "answer_f38f679b"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 68672,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17168,
+      "backend": "md",
+      "case_name": "longmemeval-94f70d80",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "4 hours"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.041,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_c63c0458"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 68672,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 18176,
+      "backend": "md",
+      "case_name": "longmemeval-66f24dbb",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.126,
+      "missing_expected": [
+        "a yellow dress"
+      ],
+      "missing_identities": [
+        "answer_fea2e4d3"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 72704,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 16007,
+      "backend": "md",
+      "case_name": "longmemeval-ad7109d1",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.1829,
+      "missing_expected": [
+        "500 Mbps"
+      ],
+      "missing_identities": [
+        "answer_679840f8"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 64028,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17168,
+      "backend": "md",
+      "case_name": "longmemeval-af8d2e46",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "7"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0939,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_82a04f59"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 68672,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 16686,
+      "backend": "md",
+      "case_name": "longmemeval-dccbc061",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.2432,
+      "missing_expected": [
+        "A staunch atheist"
+      ],
+      "missing_identities": [
+        "answer_8f276838"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 66742,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17197,
+      "backend": "md",
+      "case_name": "longmemeval-c8c3f81d",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.1306,
+      "missing_expected": [
+        "Nike"
+      ],
+      "missing_identities": [
+        "answer_761acef8"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 68787,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17709,
+      "backend": "md",
+      "case_name": "longmemeval-8ebdbe50",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.4187,
+      "missing_expected": [
+        "Data Science"
+      ],
+      "missing_identities": [
+        "answer_8ad8a34f"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 70835,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17292,
+      "backend": "md",
+      "case_name": "longmemeval-6b168ec8",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "three"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0886,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_e623ae87"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 69167,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17870,
+      "backend": "md",
+      "case_name": "longmemeval-75499fd8",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Golden Retriever"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.2275,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_723bf11f"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 71480,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 16905,
+      "backend": "md",
+      "case_name": "longmemeval-21436231",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "12"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.1976,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_1e6d4567"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 67619,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17168,
+      "backend": "md",
+      "case_name": "longmemeval-95bcc1c8",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "10"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.112,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_cb742a61"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 68672,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17168,
+      "backend": "md",
+      "case_name": "longmemeval-0862e8bf",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0611,
+      "missing_expected": [
+        "Luna"
+      ],
+      "missing_identities": [
+        "answer_c6fd8ebd"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 68672,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17168,
+      "backend": "md",
+      "case_name": "longmemeval-853b0a1d",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "18"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0429,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_69811d4a"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 68672,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17168,
+      "backend": "md",
+      "case_name": "longmemeval-a06e4cfe",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "3:1"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.1452,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_6fe9fb49"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 68672,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 16905,
+      "backend": "md",
+      "case_name": "longmemeval-37d43f65",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.1375,
+      "missing_expected": [
+        "16GB"
+      ],
+      "missing_identities": [
+        "answer_55161935"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 67619,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17168,
+      "backend": "md",
+      "case_name": "longmemeval-b86304ba",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0548,
+      "missing_expected": [
+        "The painting is worth triple what I paid for it."
+      ],
+      "missing_identities": [
+        "answer_645b0329"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 68672,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17828,
+      "backend": "md",
+      "case_name": "longmemeval-d52b4f67",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 1.0342,
+      "missing_expected": [
+        "The Grand Ballroom"
+      ],
+      "missing_identities": [
+        "answer_0df6aa4b"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 71323,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17201,
+      "backend": "md",
+      "case_name": "longmemeval-25e5aa4f",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 1.2339,
+      "missing_expected": [
+        "University of California, Los Angeles (UCLA)"
+      ],
+      "missing_identities": [
+        "answer_986de8c3"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 68809,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17168,
+      "backend": "md",
+      "case_name": "longmemeval-caf9ead2",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "5 hours"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0429,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_0714183a"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 68672,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17168,
+      "backend": "md",
+      "case_name": "longmemeval-8550ddae",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.112,
+      "missing_expected": [
+        "lavender gin fizz"
+      ],
+      "missing_identities": [
+        "answer_c8354ae9"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 68672,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17300,
+      "backend": "md",
+      "case_name": "longmemeval-60d45044",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.1836,
+      "missing_expected": [
+        "Japanese short-grain rice"
+      ],
+      "missing_identities": [
+        "answer_9cddca88"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 69197,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17168,
+      "backend": "md",
+      "case_name": "longmemeval-3f1e9474",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.1267,
+      "missing_expected": [
+        "Sarah"
+      ],
+      "missing_identities": [
+        "answer_57fc1954"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 68672,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 16333,
+      "backend": "md",
+      "case_name": "longmemeval-86b68151",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.2104,
+      "missing_expected": [
+        "IKEA"
+      ],
+      "missing_identities": [
+        "answer_dc11c1eb"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 65329,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17168,
+      "backend": "md",
+      "case_name": "longmemeval-577d4d32",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0862,
+      "missing_expected": [
+        "7 pm"
+      ],
+      "missing_identities": [
+        "answer_0dd4d99a"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 68672,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 16870,
+      "backend": "md",
+      "case_name": "longmemeval-ec81a493",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "500"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.2363,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_ed1982fc"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 67478,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 14505,
+      "backend": "bm25",
+      "case_name": "longmemeval-e47becba",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Business Administration"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_280352e9"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 319.1727,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 58051,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 11786,
+      "backend": "bm25",
+      "case_name": "longmemeval-118b2229",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "45 minutes each way"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_40a90d51"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 320.3395,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 47145,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 15341,
+      "backend": "bm25",
+      "case_name": "longmemeval-51a45a95",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Target"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_d61669c7"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 313.1377,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 61366,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 15620,
+      "backend": "bm25",
+      "case_name": "longmemeval-58bf7951",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "The Glass Menagerie"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_355c48bb"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 330.1379,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 62483,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 11487,
+      "backend": "bm25",
+      "case_name": "longmemeval-1e043500",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Summer Vibes"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_3e012175"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 326.8863,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 45948,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 3952,
+      "backend": "bm25",
+      "case_name": "longmemeval-c5e8278d",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Johnson"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_f6168136"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 325.3551,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 15807,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 14624,
+      "backend": "bm25",
+      "case_name": "longmemeval-6ade9755",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Serenity Yoga"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_9398da02"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 313.2918,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 58493,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 15814,
+      "backend": "bm25",
+      "case_name": "longmemeval-6f9b354f",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "a lighter shade of gray"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_feb5200f"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 313.3719,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 63255,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 15739,
+      "backend": "bm25",
+      "case_name": "longmemeval-58ef2f1c",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "February 14th"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_59547700"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 315.1137,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 62956,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 14328,
+      "backend": "bm25",
+      "case_name": "longmemeval-f8c5f88b",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "the sports store downtown"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_c3567066"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 312.6021,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 57310,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 4053,
+      "backend": "bm25",
+      "case_name": "longmemeval-5d3d2817",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Marketing specialist at a small startup"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_235eb6fb"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 308.6338,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 16209,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 12248,
+      "backend": "bm25",
+      "case_name": "longmemeval-7527f7e2",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "$800"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_7cb94507"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 314.5874,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 48992,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 15539,
+      "backend": "bm25",
+      "case_name": "longmemeval-c960da58",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "20"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_e05e4612"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 316.6885,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 62162,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 12911,
+      "backend": "bm25",
+      "case_name": "longmemeval-3b6f954b",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "University of Melbourne in Australia"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_94030872"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 315.1369,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 51646,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 5657,
+      "backend": "bm25",
+      "case_name": "longmemeval-726462e0",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "10%"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_f38f679b"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 321.6947,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 22627,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 13124,
+      "backend": "bm25",
+      "case_name": "longmemeval-94f70d80",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "4 hours"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_c63c0458"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 321.1667,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 52498,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 12858,
+      "backend": "bm25",
+      "case_name": "longmemeval-66f24dbb",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "a yellow dress"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_fea2e4d3"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 313.6889,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 51429,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 9148,
+      "backend": "bm25",
+      "case_name": "longmemeval-ad7109d1",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "500 Mbps"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_679840f8"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 307.8617,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 36592,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 13266,
+      "backend": "bm25",
+      "case_name": "longmemeval-af8d2e46",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "7"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_82a04f59"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 313.8099,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 53067,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 6880,
+      "backend": "bm25",
+      "case_name": "longmemeval-dccbc061",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "A staunch atheist"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_8f276838"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 312.9191,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 27520,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 10195,
+      "backend": "bm25",
+      "case_name": "longmemeval-c8c3f81d",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Nike"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_761acef8"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 307.7271,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 40777,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 5512,
+      "backend": "bm25",
+      "case_name": "longmemeval-8ebdbe50",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Data Science"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_8ad8a34f"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 312.6413,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 22047,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 14056,
+      "backend": "bm25",
+      "case_name": "longmemeval-6b168ec8",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "three"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_e623ae87"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 313.5077,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 56222,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 15752,
+      "backend": "bm25",
+      "case_name": "longmemeval-75499fd8",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Golden Retriever"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_723bf11f"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 312.4486,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 63008,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17621,
+      "backend": "bm25",
+      "case_name": "longmemeval-21436231",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "12"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_1e6d4567"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 328.711,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 70490,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 14895,
+      "backend": "bm25",
+      "case_name": "longmemeval-95bcc1c8",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "10"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_cb742a61"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 311.0893,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 59578,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 9024,
+      "backend": "bm25",
+      "case_name": "longmemeval-0862e8bf",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Luna"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_c6fd8ebd"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 308.4582,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 36097,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 10943,
+      "backend": "bm25",
+      "case_name": "longmemeval-853b0a1d",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "18"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_69811d4a"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 307.3847,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 43771,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 16192,
+      "backend": "bm25",
+      "case_name": "longmemeval-a06e4cfe",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "3:1"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_6fe9fb49"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 312.865,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 64770,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 12654,
+      "backend": "bm25",
+      "case_name": "longmemeval-37d43f65",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "16GB"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_55161935"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 306.1492,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 50613,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 11577,
+      "backend": "bm25",
+      "case_name": "longmemeval-b86304ba",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "The painting is worth triple what I paid for it."
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_645b0329"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 315.7252,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 46312,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 14550,
+      "backend": "bm25",
+      "case_name": "longmemeval-d52b4f67",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "The Grand Ballroom"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_0df6aa4b"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 306.0184,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 58197,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 13791,
+      "backend": "bm25",
+      "case_name": "longmemeval-25e5aa4f",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 310.2804,
+      "missing_expected": [
+        "University of California, Los Angeles (UCLA)"
+      ],
+      "missing_identities": [
+        "answer_986de8c3"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 55162,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 13517,
+      "backend": "bm25",
+      "case_name": "longmemeval-caf9ead2",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "5 hours"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_0714183a"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 311.5466,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 54068,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 11700,
+      "backend": "bm25",
+      "case_name": "longmemeval-8550ddae",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "lavender gin fizz"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_c8354ae9"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 316.217,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 46797,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 9859,
+      "backend": "bm25",
+      "case_name": "longmemeval-60d45044",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Japanese short-grain rice"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_9cddca88"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 326.5809,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 39436,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 15766,
+      "backend": "bm25",
+      "case_name": "longmemeval-3f1e9474",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Sarah"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_57fc1954"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 324.6563,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 63063,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 10152,
+      "backend": "bm25",
+      "case_name": "longmemeval-86b68151",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "IKEA"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_dc11c1eb"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 313.4091,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 40611,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 16147,
+      "backend": "bm25",
+      "case_name": "longmemeval-577d4d32",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "7 pm"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_0dd4d99a"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 323.0748,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 64587,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 13534,
+      "backend": "bm25",
+      "case_name": "longmemeval-ec81a493",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "500"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_ed1982fc"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 324.972,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 54147,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 14532,
+      "backend": "vector",
+      "case_name": "longmemeval-e47becba",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 863.0608,
+      "missing_expected": [
+        "Business Administration"
+      ],
+      "missing_identities": [
+        "answer_280352e9"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 58201,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 15068,
+      "backend": "vector",
+      "case_name": "longmemeval-118b2229",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "45 minutes each way"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 883.5772,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_40a90d51"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 60269,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17236,
+      "backend": "vector",
+      "case_name": "longmemeval-51a45a95",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_d61669c7"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 835.9397,
+      "missing_expected": [
+        "Target"
+      ],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 68944,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 16720,
+      "backend": "vector",
+      "case_name": "longmemeval-58bf7951",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 811.3046,
+      "missing_expected": [
+        "The Glass Menagerie"
+      ],
+      "missing_identities": [
+        "answer_355c48bb"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 66886,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 18643,
+      "backend": "vector",
+      "case_name": "longmemeval-1e043500",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 885.858,
+      "missing_expected": [
+        "Summer Vibes"
+      ],
+      "missing_identities": [
+        "answer_3e012175"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 74622,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 8411,
+      "backend": "vector",
+      "case_name": "longmemeval-c5e8278d",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Johnson"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_f6168136"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 822.3427,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 33715,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 13765,
+      "backend": "vector",
+      "case_name": "longmemeval-6ade9755",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 818.7273,
+      "missing_expected": [
+        "Serenity Yoga"
+      ],
+      "missing_identities": [
+        "answer_9398da02"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 55117,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 12004,
+      "backend": "vector",
+      "case_name": "longmemeval-6f9b354f",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 805.0841,
+      "missing_expected": [
+        "a lighter shade of gray"
+      ],
+      "missing_identities": [
+        "answer_feb5200f"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 48121,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 16755,
+      "backend": "vector",
+      "case_name": "longmemeval-58ef2f1c",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 838.0551,
+      "missing_expected": [
+        "February 14th"
+      ],
+      "missing_identities": [
+        "answer_59547700"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 67060,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 15566,
+      "backend": "vector",
+      "case_name": "longmemeval-f8c5f88b",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "the sports store downtown"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_c3567066"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 889.1429,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 62367,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 9724,
+      "backend": "vector",
+      "case_name": "longmemeval-5d3d2817",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Marketing specialist at a small startup"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_235eb6fb"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 894.7078,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 38922,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17957,
+      "backend": "vector",
+      "case_name": "longmemeval-7527f7e2",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 835.6112,
+      "missing_expected": [
+        "$800"
+      ],
+      "missing_identities": [
+        "answer_7cb94507"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 71874,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 8581,
+      "backend": "vector",
+      "case_name": "longmemeval-c960da58",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "20"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_e05e4612"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 839.8966,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 34323,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 15228,
+      "backend": "vector",
+      "case_name": "longmemeval-3b6f954b",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 822.8325,
+      "missing_expected": [
+        "University of Melbourne in Australia"
+      ],
+      "missing_identities": [
+        "answer_94030872"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 60969,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 18205,
+      "backend": "vector",
+      "case_name": "longmemeval-726462e0",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 824.1264,
+      "missing_expected": [
+        "10%"
+      ],
+      "missing_identities": [
+        "answer_f38f679b"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 72896,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17038,
+      "backend": "vector",
+      "case_name": "longmemeval-94f70d80",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 846.7698,
+      "missing_expected": [
+        "4 hours"
+      ],
+      "missing_identities": [
+        "answer_c63c0458"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 68154,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 12645,
+      "backend": "vector",
+      "case_name": "longmemeval-66f24dbb",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 885.2821,
+      "missing_expected": [
+        "a yellow dress"
+      ],
+      "missing_identities": [
+        "answer_fea2e4d3"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 50609,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 11114,
+      "backend": "vector",
+      "case_name": "longmemeval-ad7109d1",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "500 Mbps"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_679840f8"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 857.0352,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 44456,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 11811,
+      "backend": "vector",
+      "case_name": "longmemeval-af8d2e46",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "7"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_82a04f59"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 823.4328,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 47269,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 12603,
+      "backend": "vector",
+      "case_name": "longmemeval-dccbc061",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "A staunch atheist"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_8f276838"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 878.7335,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 50435,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 11767,
+      "backend": "vector",
+      "case_name": "longmemeval-c8c3f81d",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Nike"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_761acef8"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 838.1612,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 47068,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 12450,
+      "backend": "vector",
+      "case_name": "longmemeval-8ebdbe50",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Data Science"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_8ad8a34f"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 877.0554,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 49828,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 13379,
+      "backend": "vector",
+      "case_name": "longmemeval-6b168ec8",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "three"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 886.2295,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_e623ae87"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 53585,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 14279,
+      "backend": "vector",
+      "case_name": "longmemeval-75499fd8",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 858.7328,
+      "missing_expected": [
+        "Golden Retriever"
+      ],
+      "missing_identities": [
+        "answer_723bf11f"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 57139,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 10932,
+      "backend": "vector",
+      "case_name": "longmemeval-21436231",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "12"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_1e6d4567"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 816.7037,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 43752,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17108,
+      "backend": "vector",
+      "case_name": "longmemeval-95bcc1c8",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "10"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 803.1734,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_cb742a61"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 68432,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17557,
+      "backend": "vector",
+      "case_name": "longmemeval-0862e8bf",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 820.6457,
+      "missing_expected": [
+        "Luna"
+      ],
+      "missing_identities": [
+        "answer_c6fd8ebd"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 70277,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 13585,
+      "backend": "vector",
+      "case_name": "longmemeval-853b0a1d",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "18"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_69811d4a"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 805.2169,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 54407,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 16664,
+      "backend": "vector",
+      "case_name": "longmemeval-a06e4cfe",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "3:1"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 800.4331,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_6fe9fb49"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 66660,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 11470,
+      "backend": "vector",
+      "case_name": "longmemeval-37d43f65",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "16GB"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_55161935"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 831.094,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 45982,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17576,
+      "backend": "vector",
+      "case_name": "longmemeval-b86304ba",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 857.3756,
+      "missing_expected": [
+        "The painting is worth triple what I paid for it."
+      ],
+      "missing_identities": [
+        "answer_645b0329"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 70359,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 13693,
+      "backend": "vector",
+      "case_name": "longmemeval-d52b4f67",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 815.8591,
+      "missing_expected": [
+        "The Grand Ballroom"
+      ],
+      "missing_identities": [
+        "answer_0df6aa4b"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 54877,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 13815,
+      "backend": "vector",
+      "case_name": "longmemeval-25e5aa4f",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_986de8c3"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 795.0022,
+      "missing_expected": [
+        "University of California, Los Angeles (UCLA)"
+      ],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 55288,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17778,
+      "backend": "vector",
+      "case_name": "longmemeval-caf9ead2",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "5 hours"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 801.7205,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_0714183a"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 71111,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 11365,
+      "backend": "vector",
+      "case_name": "longmemeval-8550ddae",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "lavender gin fizz"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_c8354ae9"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 859.048,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 45508,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 15490,
+      "backend": "vector",
+      "case_name": "longmemeval-60d45044",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 839.1297,
+      "missing_expected": [
+        "Japanese short-grain rice"
+      ],
+      "missing_identities": [
+        "answer_9cddca88"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 61968,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17381,
+      "backend": "vector",
+      "case_name": "longmemeval-3f1e9474",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 834.1256,
+      "missing_expected": [
+        "Sarah"
+      ],
+      "missing_identities": [
+        "answer_57fc1954"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 69527,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 14066,
+      "backend": "vector",
+      "case_name": "longmemeval-86b68151",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 857.2413,
+      "missing_expected": [
+        "IKEA"
+      ],
+      "missing_identities": [
+        "answer_dc11c1eb"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 56367,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 14842,
+      "backend": "vector",
+      "case_name": "longmemeval-577d4d32",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 885.9252,
+      "missing_expected": [
+        "7 pm"
+      ],
+      "missing_identities": [
+        "answer_0dd4d99a"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 59370,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 13645,
+      "backend": "vector",
+      "case_name": "longmemeval-ec81a493",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "500"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_ed1982fc"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 831.5339,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 54598,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 14532,
+      "backend": "md+vector",
+      "case_name": "longmemeval-e47becba",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 949.2293,
+      "missing_expected": [
+        "Business Administration"
+      ],
+      "missing_identities": [
+        "answer_280352e9"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 58201,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 15068,
+      "backend": "md+vector",
+      "case_name": "longmemeval-118b2229",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "45 minutes each way"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 927.1221,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_40a90d51"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 60269,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17236,
+      "backend": "md+vector",
+      "case_name": "longmemeval-51a45a95",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_d61669c7"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 507.9115,
+      "missing_expected": [
+        "Target"
+      ],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 68944,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 16720,
+      "backend": "md+vector",
+      "case_name": "longmemeval-58bf7951",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 960.4778,
+      "missing_expected": [
+        "The Glass Menagerie"
+      ],
+      "missing_identities": [
+        "answer_355c48bb"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 66886,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 18643,
+      "backend": "md+vector",
+      "case_name": "longmemeval-1e043500",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 895.6567,
+      "missing_expected": [
+        "Summer Vibes"
+      ],
+      "missing_identities": [
+        "answer_3e012175"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 74622,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 8411,
+      "backend": "md+vector",
+      "case_name": "longmemeval-c5e8278d",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Johnson"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_f6168136"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 759.9115,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 33715,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 15157,
+      "backend": "md+vector",
+      "case_name": "longmemeval-6ade9755",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 576.4078,
+      "missing_expected": [
+        "Serenity Yoga"
+      ],
+      "missing_identities": [
+        "answer_9398da02"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 60686,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 13568,
+      "backend": "md+vector",
+      "case_name": "longmemeval-6f9b354f",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 677.5879,
+      "missing_expected": [
+        "a lighter shade of gray"
+      ],
+      "missing_identities": [
+        "answer_feb5200f"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 54376,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 16755,
+      "backend": "md+vector",
+      "case_name": "longmemeval-58ef2f1c",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 1051.0822,
+      "missing_expected": [
+        "February 14th"
+      ],
+      "missing_identities": [
+        "answer_59547700"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 67060,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 15566,
+      "backend": "md+vector",
+      "case_name": "longmemeval-f8c5f88b",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "the sports store downtown"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_c3567066"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 979.5392,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 62367,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 9724,
+      "backend": "md+vector",
+      "case_name": "longmemeval-5d3d2817",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Marketing specialist at a small startup"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_235eb6fb"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 663.0564,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 38922,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17957,
+      "backend": "md+vector",
+      "case_name": "longmemeval-7527f7e2",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 758.0576,
+      "missing_expected": [
+        "$800"
+      ],
+      "missing_identities": [
+        "answer_7cb94507"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 71874,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 8581,
+      "backend": "md+vector",
+      "case_name": "longmemeval-c960da58",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "20"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_e05e4612"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 882.6463,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 34323,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 15228,
+      "backend": "md+vector",
+      "case_name": "longmemeval-3b6f954b",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 1036.4464,
+      "missing_expected": [
+        "University of Melbourne in Australia"
+      ],
+      "missing_identities": [
+        "answer_94030872"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 60969,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 18205,
+      "backend": "md+vector",
+      "case_name": "longmemeval-726462e0",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 954.9688,
+      "missing_expected": [
+        "10%"
+      ],
+      "missing_identities": [
+        "answer_f38f679b"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 72896,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17038,
+      "backend": "md+vector",
+      "case_name": "longmemeval-94f70d80",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 907.3442,
+      "missing_expected": [
+        "4 hours"
+      ],
+      "missing_identities": [
+        "answer_c63c0458"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 68154,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 12645,
+      "backend": "md+vector",
+      "case_name": "longmemeval-66f24dbb",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 974.1274,
+      "missing_expected": [
+        "a yellow dress"
+      ],
+      "missing_identities": [
+        "answer_fea2e4d3"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 50609,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 11127,
+      "backend": "md+vector",
+      "case_name": "longmemeval-ad7109d1",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "500 Mbps"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_679840f8"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 780.3146,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 44508,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 11811,
+      "backend": "md+vector",
+      "case_name": "longmemeval-af8d2e46",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "7"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_82a04f59"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 921.5064,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 47269,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 9870,
+      "backend": "md+vector",
+      "case_name": "longmemeval-dccbc061",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "A staunch atheist"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_8f276838"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 715.7118,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 39503,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 11767,
+      "backend": "md+vector",
+      "case_name": "longmemeval-c8c3f81d",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Nike"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_761acef8"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 1030.0955,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 47068,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 12450,
+      "backend": "md+vector",
+      "case_name": "longmemeval-8ebdbe50",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Data Science"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_8ad8a34f"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 762.0005,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 49828,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 11898,
+      "backend": "md+vector",
+      "case_name": "longmemeval-6b168ec8",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 835.4056,
+      "missing_expected": [
+        "three"
+      ],
+      "missing_identities": [
+        "answer_e623ae87"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 47660,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 14343,
+      "backend": "md+vector",
+      "case_name": "longmemeval-75499fd8",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 507.1641,
+      "missing_expected": [
+        "Golden Retriever"
+      ],
+      "missing_identities": [
+        "answer_723bf11f"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 57437,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 12308,
+      "backend": "md+vector",
+      "case_name": "longmemeval-21436231",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "12"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_1e6d4567"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 871.7685,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 49256,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17108,
+      "backend": "md+vector",
+      "case_name": "longmemeval-95bcc1c8",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "10"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 951.3339,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_cb742a61"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 68432,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17557,
+      "backend": "md+vector",
+      "case_name": "longmemeval-0862e8bf",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 879.7146,
+      "missing_expected": [
+        "Luna"
+      ],
+      "missing_identities": [
+        "answer_c6fd8ebd"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 70277,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 13585,
+      "backend": "md+vector",
+      "case_name": "longmemeval-853b0a1d",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "18"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_69811d4a"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 926.2435,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 54407,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 16664,
+      "backend": "md+vector",
+      "case_name": "longmemeval-a06e4cfe",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "3:1"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 965.8322,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_6fe9fb49"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 66660,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 11470,
+      "backend": "md+vector",
+      "case_name": "longmemeval-37d43f65",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "16GB"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_55161935"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 708.6374,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 45982,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17576,
+      "backend": "md+vector",
+      "case_name": "longmemeval-b86304ba",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 857.5405,
+      "missing_expected": [
+        "The painting is worth triple what I paid for it."
+      ],
+      "missing_identities": [
+        "answer_645b0329"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 70359,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 13975,
+      "backend": "md+vector",
+      "case_name": "longmemeval-d52b4f67",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 456.7734,
+      "missing_expected": [
+        "The Grand Ballroom"
+      ],
+      "missing_identities": [
+        "answer_0df6aa4b"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 55959,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 13421,
+      "backend": "md+vector",
+      "case_name": "longmemeval-25e5aa4f",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_986de8c3"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 580.6012,
+      "missing_expected": [
+        "University of California, Los Angeles (UCLA)"
+      ],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 53715,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17778,
+      "backend": "md+vector",
+      "case_name": "longmemeval-caf9ead2",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "5 hours"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 826.6073,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_0714183a"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 71111,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 11365,
+      "backend": "md+vector",
+      "case_name": "longmemeval-8550ddae",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "lavender gin fizz"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_c8354ae9"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 771.8631,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 45508,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 15490,
+      "backend": "md+vector",
+      "case_name": "longmemeval-60d45044",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 615.2105,
+      "missing_expected": [
+        "Japanese short-grain rice"
+      ],
+      "missing_identities": [
+        "answer_9cddca88"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 61968,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 17381,
+      "backend": "md+vector",
+      "case_name": "longmemeval-3f1e9474",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 889.88,
+      "missing_expected": [
+        "Sarah"
+      ],
+      "missing_identities": [
+        "answer_57fc1954"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 69527,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 14066,
+      "backend": "md+vector",
+      "case_name": "longmemeval-86b68151",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 807.2334,
+      "missing_expected": [
+        "IKEA"
+      ],
+      "missing_identities": [
+        "answer_dc11c1eb"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 56367,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 14842,
+      "backend": "md+vector",
+      "case_name": "longmemeval-577d4d32",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 907.4384,
+      "missing_expected": [
+        "7 pm"
+      ],
+      "missing_identities": [
+        "answer_0dd4d99a"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 59370,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 13645,
+      "backend": "md+vector",
+      "case_name": "longmemeval-ec81a493",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "500"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_ed1982fc"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 754.8752,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 54598,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 7279,
+      "backend": "zaxy",
+      "case_name": "longmemeval-e47becba",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 279.9822,
+      "missing_expected": [
+        "Business Administration"
+      ],
+      "missing_identities": [
+        "answer_280352e9"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 29169,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 8896,
+      "backend": "zaxy",
+      "case_name": "longmemeval-118b2229",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "45 minutes each way"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 105.7928,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_40a90d51"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 35608,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 7938,
+      "backend": "zaxy",
+      "case_name": "longmemeval-51a45a95",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Target"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_d61669c7"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 113.083,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 31773,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 8838,
+      "backend": "zaxy",
+      "case_name": "longmemeval-58bf7951",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "The Glass Menagerie"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_355c48bb"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 110.2276,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 35372,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 7764,
+      "backend": "zaxy",
+      "case_name": "longmemeval-1e043500",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Summer Vibes"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_3e012175"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 96.9872,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 31077,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 8287,
+      "backend": "zaxy",
+      "case_name": "longmemeval-c5e8278d",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Johnson"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_f6168136"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 89.592,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 33168,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 8956,
+      "backend": "zaxy",
+      "case_name": "longmemeval-6ade9755",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 96.4262,
+      "missing_expected": [
+        "Serenity Yoga"
+      ],
+      "missing_identities": [
+        "answer_9398da02"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 35841,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 8696,
+      "backend": "zaxy",
+      "case_name": "longmemeval-6f9b354f",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "a lighter shade of gray"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 88.803,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_feb5200f"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 34804,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 8870,
+      "backend": "zaxy",
+      "case_name": "longmemeval-58ef2f1c",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_59547700"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 102.7516,
+      "missing_expected": [
+        "February 14th"
+      ],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 35514,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 8168,
+      "backend": "zaxy",
+      "case_name": "longmemeval-f8c5f88b",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "the sports store downtown"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_c3567066"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 85.997,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 32692,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 7179,
+      "backend": "zaxy",
+      "case_name": "longmemeval-5d3d2817",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 87.4947,
+      "missing_expected": [
+        "Marketing specialist at a small startup"
+      ],
+      "missing_identities": [
+        "answer_235eb6fb"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 28739,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 7679,
+      "backend": "zaxy",
+      "case_name": "longmemeval-7527f7e2",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "$800"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_7cb94507"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 91.9361,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 30736,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 7986,
+      "backend": "zaxy",
+      "case_name": "longmemeval-c960da58",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "20"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_e05e4612"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 83.6764,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 31969,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 6799,
+      "backend": "zaxy",
+      "case_name": "longmemeval-3b6f954b",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "University of Melbourne in Australia"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_94030872"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 87.804,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 27218,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 7849,
+      "backend": "zaxy",
+      "case_name": "longmemeval-726462e0",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "10%"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_f38f679b"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 92.0316,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 31413,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 7593,
+      "backend": "zaxy",
+      "case_name": "longmemeval-94f70d80",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "4 hours"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_c63c0458"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 98.4564,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 30393,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 7738,
+      "backend": "zaxy",
+      "case_name": "longmemeval-66f24dbb",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "a yellow dress"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_fea2e4d3"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 82.5704,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 30972,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 7352,
+      "backend": "zaxy",
+      "case_name": "longmemeval-ad7109d1",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "500 Mbps"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_679840f8"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 113.377,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 29459,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 8200,
+      "backend": "zaxy",
+      "case_name": "longmemeval-af8d2e46",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "7"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_82a04f59"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 103.1731,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 32837,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 7407,
+      "backend": "zaxy",
+      "case_name": "longmemeval-dccbc061",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "A staunch atheist"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_8f276838"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 91.9437,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 29645,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 7977,
+      "backend": "zaxy",
+      "case_name": "longmemeval-c8c3f81d",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Nike"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_761acef8"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 99.2233,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 31940,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 8181,
+      "backend": "zaxy",
+      "case_name": "longmemeval-8ebdbe50",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Data Science"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_8ad8a34f"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 91.0351,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 32750,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 7694,
+      "backend": "zaxy",
+      "case_name": "longmemeval-6b168ec8",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "three"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_e623ae87"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 95.7193,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 30795,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 7758,
+      "backend": "zaxy",
+      "case_name": "longmemeval-75499fd8",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Golden Retriever"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 95.8017,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_723bf11f"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 31057,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 8340,
+      "backend": "zaxy",
+      "case_name": "longmemeval-21436231",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "12"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_1e6d4567"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 116.439,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 33384,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 8279,
+      "backend": "zaxy",
+      "case_name": "longmemeval-95bcc1c8",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "10"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_cb742a61"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 118.947,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 33134,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 8621,
+      "backend": "zaxy",
+      "case_name": "longmemeval-0862e8bf",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 96.5322,
+      "missing_expected": [
+        "Luna"
+      ],
+      "missing_identities": [
+        "answer_c6fd8ebd"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 34538,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 7878,
+      "backend": "zaxy",
+      "case_name": "longmemeval-853b0a1d",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "18"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_69811d4a"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 91.0343,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 31531,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 1048,
+      "backend": "zaxy",
+      "case_name": "longmemeval-a06e4cfe",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 2,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "3:1"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_6fe9fb49"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 72.4676,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 2,
+      "returned_bytes": 4196,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 7767,
+      "backend": "zaxy",
+      "case_name": "longmemeval-37d43f65",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "16GB"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_55161935"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 80.3038,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 31086,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 8508,
+      "backend": "zaxy",
+      "case_name": "longmemeval-b86304ba",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "The painting is worth triple what I paid for it."
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_645b0329"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 97.0612,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 34062,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 8207,
+      "backend": "zaxy",
+      "case_name": "longmemeval-d52b4f67",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "The Grand Ballroom"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_0df6aa4b"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 76.4684,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 32878,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 8795,
+      "backend": "zaxy",
+      "case_name": "longmemeval-25e5aa4f",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_986de8c3"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 88.8483,
+      "missing_expected": [
+        "University of California, Los Angeles (UCLA)"
+      ],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 35199,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 7701,
+      "backend": "zaxy",
+      "case_name": "longmemeval-caf9ead2",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "5 hours"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 88.6097,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_0714183a"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 30827,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 8729,
+      "backend": "zaxy",
+      "case_name": "longmemeval-8550ddae",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "lavender gin fizz"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_c8354ae9"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 86.1911,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 34934,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 8706,
+      "backend": "zaxy",
+      "case_name": "longmemeval-60d45044",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "Japanese short-grain rice"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 88.5549,
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_9cddca88"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 34847,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 8779,
+      "backend": "zaxy",
+      "case_name": "longmemeval-3f1e9474",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 90.6956,
+      "missing_expected": [
+        "Sarah"
+      ],
+      "missing_identities": [
+        "answer_57fc1954"
+      ],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 35135,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 7957,
+      "backend": "zaxy",
+      "case_name": "longmemeval-86b68151",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "IKEA"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_dc11c1eb"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 85.4814,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 31894,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 8058,
+      "backend": "zaxy",
+      "case_name": "longmemeval-577d4d32",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "7 pm"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_0dd4d99a"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 93.2753,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 32253,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 7575,
+      "backend": "zaxy",
+      "case_name": "longmemeval-ec81a493",
+      "category": "longmemeval:single-session-user",
+      "citation_count": 10,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "500"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_ed1982fc"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 95.6455,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 10,
+      "returned_bytes": 30328,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    }
+  ],
+  "summaries": [
+    {
+      "backend": "bm25",
+      "case_count": 40,
+      "latency_ms_mean": 315.7265,
+      "latency_ms_p50": 313.5983,
+      "latency_ms_p95": 326.9775,
+      "latency_ms_p99": 329.5814,
+      "mean_approx_tokens": 12407.925,
+      "mean_citation_coverage": 1.0,
+      "mean_identity_recall": 0.975,
+      "mean_returned_bytes": 49632.725,
+      "mean_score": 0.975,
+      "mean_source_recall": null,
+      "runs": 1
+    },
+    {
+      "backend": "md",
+      "case_count": 40,
+      "latency_ms_mean": 0.2268,
+      "latency_ms_p50": 0.1414,
+      "latency_ms_p95": 1.0363,
+      "latency_ms_p99": 1.1721,
+      "mean_approx_tokens": 17112.3,
+      "mean_citation_coverage": 1.0,
+      "mean_identity_recall": 0.0,
+      "mean_returned_bytes": 68449.2,
+      "mean_score": 0.3,
+      "mean_source_recall": null,
+      "runs": 1
+    },
+    {
+      "backend": "md+vector",
+      "case_count": 40,
+      "latency_ms_mean": 819.6331,
+      "latency_ms_p50": 864.6545,
+      "latency_ms_p95": 1030.413,
+      "latency_ms_p99": 1045.3742,
+      "mean_approx_tokens": 14313.275,
+      "mean_citation_coverage": 1.0,
+      "mean_identity_recall": 0.4,
+      "mean_returned_bytes": 57291.05,
+      "mean_score": 0.45,
+      "mean_source_recall": null,
+      "runs": 1
+    },
+    {
+      "backend": "vector",
+      "case_count": 40,
+      "latency_ms_mean": 841.8982,
+      "latency_ms_p50": 836.9974,
+      "latency_ms_p95": 886.3752,
+      "latency_ms_p99": 892.5375,
+      "mean_approx_tokens": 14311.2,
+      "mean_citation_coverage": 1.0,
+      "mean_identity_recall": 0.4,
+      "mean_returned_bytes": 57282.8,
+      "mean_score": 0.475,
+      "mean_source_recall": null,
+      "runs": 1
+    },
+    {
+      "backend": "zaxy",
+      "case_count": 40,
+      "latency_ms_mean": 98.761,
+      "latency_ms_p50": 91.9877,
+      "latency_ms_p95": 116.5644,
+      "latency_ms_p99": 217.1785,
+      "mean_approx_tokens": 7900.8,
+      "mean_citation_coverage": 1.0,
+      "mean_identity_recall": 0.75,
+      "mean_returned_bytes": 31629.175,
+      "mean_score": 0.825,
+      "mean_source_recall": null,
+      "runs": 1
+    }
+  ],
+  "workload": {
+    "case_count": 40,
+    "documents": null,
+    "event_count": 7011,
+    "lanes": [
+      "longmemeval"
+    ],
+    "sessions": 1952,
+    "sha256": "c042a16106a5907a80488aa83a76043ce85e366a8aa9d3e1e60260800f967a0b",
+    "subjects": 40,
+    "version": "longmemeval-cleaned-v1"
+  }
+}
