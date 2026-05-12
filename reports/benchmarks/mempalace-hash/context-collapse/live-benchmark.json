@@ -1,0 +1,3573 @@
+{
+  "category_summaries": [
+    {
+      "backend": "bm25",
+      "category": "context-collapse",
+      "mean_citation_coverage": 1.0,
+      "mean_score": 1.0,
+      "mean_source_recall": null,
+      "miss_count": 0,
+      "query_count": 25
+    },
+    {
+      "backend": "md",
+      "category": "context-collapse",
+      "mean_citation_coverage": null,
+      "mean_score": 0.0,
+      "mean_source_recall": null,
+      "miss_count": 25,
+      "query_count": 25
+    },
+    {
+      "backend": "md+vector",
+      "category": "context-collapse",
+      "mean_citation_coverage": null,
+      "mean_score": 0.0,
+      "mean_source_recall": null,
+      "miss_count": 25,
+      "query_count": 25
+    },
+    {
+      "backend": "vector",
+      "category": "context-collapse",
+      "mean_citation_coverage": null,
+      "mean_score": 0.0,
+      "mean_source_recall": null,
+      "miss_count": 25,
+      "query_count": 25
+    },
+    {
+      "backend": "zaxy",
+      "category": "context-collapse",
+      "mean_citation_coverage": 1.0,
+      "mean_score": 1.0,
+      "mean_source_recall": null,
+      "miss_count": 0,
+      "query_count": 25
+    }
+  ],
+  "comparisons": [
+    {
+      "baseline_backend": "bm25",
+      "ci_high": 0.0,
+      "ci_low": 0.0,
+      "mean_difference": 0.0,
+      "p_value": 1.0,
+      "paired_units": 25,
+      "significant": false,
+      "target_backend": "zaxy"
+    },
+    {
+      "baseline_backend": "md",
+      "ci_high": 1.0,
+      "ci_low": 1.0,
+      "mean_difference": 1.0,
+      "p_value": 0.0001,
+      "paired_units": 25,
+      "significant": true,
+      "target_backend": "zaxy"
+    },
+    {
+      "baseline_backend": "md+vector",
+      "ci_high": 1.0,
+      "ci_low": 1.0,
+      "mean_difference": 1.0,
+      "p_value": 0.0001,
+      "paired_units": 25,
+      "significant": true,
+      "target_backend": "zaxy"
+    },
+    {
+      "baseline_backend": "vector",
+      "ci_high": 1.0,
+      "ci_low": 1.0,
+      "mean_difference": 1.0,
+      "p_value": 0.0001,
+      "paired_units": 25,
+      "significant": true,
+      "target_backend": "zaxy"
+    }
+  ],
+  "embedding_provider": "hash:1536",
+  "external_results": [],
+  "generated_at": "2026-05-12T03:22:55Z",
+  "runs": [
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0000",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0000"
+      ],
+      "identity_recall": 0.5,
+      "latency_ms": 0.0251,
+      "missing_expected": [
+        "collapseanswer0000"
+      ],
+      "missing_identities": [
+        "collapseanswer0000"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0001",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.009,
+      "missing_expected": [
+        "collapseanswer0001"
+      ],
+      "missing_identities": [
+        "collapse-session-0001",
+        "collapseanswer0001"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0002",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.006,
+      "missing_expected": [
+        "collapseanswer0002"
+      ],
+      "missing_identities": [
+        "collapse-session-0002",
+        "collapseanswer0002"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0003",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0045,
+      "missing_expected": [
+        "collapseanswer0003"
+      ],
+      "missing_identities": [
+        "collapse-session-0003",
+        "collapseanswer0003"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0004",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0049,
+      "missing_expected": [
+        "collapseanswer0004"
+      ],
+      "missing_identities": [
+        "collapse-session-0004",
+        "collapseanswer0004"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0005",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0044,
+      "missing_expected": [
+        "collapseanswer0005"
+      ],
+      "missing_identities": [
+        "collapse-session-0005",
+        "collapseanswer0005"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0006",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0041,
+      "missing_expected": [
+        "collapseanswer0006"
+      ],
+      "missing_identities": [
+        "collapse-session-0006",
+        "collapseanswer0006"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0007",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.004,
+      "missing_expected": [
+        "collapseanswer0007"
+      ],
+      "missing_identities": [
+        "collapse-session-0007",
+        "collapseanswer0007"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0008",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0041,
+      "missing_expected": [
+        "collapseanswer0008"
+      ],
+      "missing_identities": [
+        "collapse-session-0008",
+        "collapseanswer0008"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0009",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0039,
+      "missing_expected": [
+        "collapseanswer0009"
+      ],
+      "missing_identities": [
+        "collapse-session-0009",
+        "collapseanswer0009"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0010",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0038,
+      "missing_expected": [
+        "collapseanswer0010"
+      ],
+      "missing_identities": [
+        "collapse-session-0010",
+        "collapseanswer0010"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0011",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0039,
+      "missing_expected": [
+        "collapseanswer0011"
+      ],
+      "missing_identities": [
+        "collapse-session-0011",
+        "collapseanswer0011"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0012",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0041,
+      "missing_expected": [
+        "collapseanswer0012"
+      ],
+      "missing_identities": [
+        "collapse-session-0012",
+        "collapseanswer0012"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0013",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0038,
+      "missing_expected": [
+        "collapseanswer0013"
+      ],
+      "missing_identities": [
+        "collapse-session-0013",
+        "collapseanswer0013"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0014",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.004,
+      "missing_expected": [
+        "collapseanswer0014"
+      ],
+      "missing_identities": [
+        "collapse-session-0014",
+        "collapseanswer0014"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0015",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0038,
+      "missing_expected": [
+        "collapseanswer0015"
+      ],
+      "missing_identities": [
+        "collapse-session-0015",
+        "collapseanswer0015"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0016",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0039,
+      "missing_expected": [
+        "collapseanswer0016"
+      ],
+      "missing_identities": [
+        "collapse-session-0016",
+        "collapseanswer0016"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0017",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0039,
+      "missing_expected": [
+        "collapseanswer0017"
+      ],
+      "missing_identities": [
+        "collapse-session-0017",
+        "collapseanswer0017"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0018",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0038,
+      "missing_expected": [
+        "collapseanswer0018"
+      ],
+      "missing_identities": [
+        "collapse-session-0018",
+        "collapseanswer0018"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0019",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0042,
+      "missing_expected": [
+        "collapseanswer0019"
+      ],
+      "missing_identities": [
+        "collapse-session-0019",
+        "collapseanswer0019"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0020",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0039,
+      "missing_expected": [
+        "collapseanswer0020"
+      ],
+      "missing_identities": [
+        "collapse-session-0020",
+        "collapseanswer0020"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0021",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0039,
+      "missing_expected": [
+        "collapseanswer0021"
+      ],
+      "missing_identities": [
+        "collapse-session-0021",
+        "collapseanswer0021"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0022",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0041,
+      "missing_expected": [
+        "collapseanswer0022"
+      ],
+      "missing_identities": [
+        "collapse-session-0022",
+        "collapseanswer0022"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0023",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0039,
+      "missing_expected": [
+        "collapseanswer0023"
+      ],
+      "missing_identities": [
+        "collapse-session-0023",
+        "collapseanswer0023"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 870,
+      "backend": "md",
+      "case_name": "context-collapse-0024",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.004,
+      "missing_expected": [
+        "collapseanswer0024"
+      ],
+      "missing_identities": [
+        "collapse-session-0024",
+        "collapseanswer0024"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3479,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 884,
+      "backend": "bm25",
+      "case_name": "context-collapse-0000",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0000"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0000",
+        "collapseanswer0000"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 10.9716,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3535,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 886,
+      "backend": "bm25",
+      "case_name": "context-collapse-0001",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0001"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0001",
+        "collapseanswer0001"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 4.0382,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3543,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 887,
+      "backend": "bm25",
+      "case_name": "context-collapse-0002",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0002"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0002",
+        "collapseanswer0002"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 4.143,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3545,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 889,
+      "backend": "bm25",
+      "case_name": "context-collapse-0003",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0003"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0003",
+        "collapseanswer0003"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 4.3287,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3553,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 889,
+      "backend": "bm25",
+      "case_name": "context-collapse-0004",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0004"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0004",
+        "collapseanswer0004"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 4.4568,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3553,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 889,
+      "backend": "bm25",
+      "case_name": "context-collapse-0005",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0005"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0005",
+        "collapseanswer0005"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 4.4129,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3553,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 889,
+      "backend": "bm25",
+      "case_name": "context-collapse-0006",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0006"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0006",
+        "collapseanswer0006"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 4.4636,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3553,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 889,
+      "backend": "bm25",
+      "case_name": "context-collapse-0007",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0007"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0007",
+        "collapseanswer0007"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 4.5303,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3553,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 889,
+      "backend": "bm25",
+      "case_name": "context-collapse-0008",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0008"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0008",
+        "collapseanswer0008"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 4.5181,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3553,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 889,
+      "backend": "bm25",
+      "case_name": "context-collapse-0009",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0009"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0009",
+        "collapseanswer0009"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 4.5621,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3553,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 889,
+      "backend": "bm25",
+      "case_name": "context-collapse-0010",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0010"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0010",
+        "collapseanswer0010"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 4.4605,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3553,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 889,
+      "backend": "bm25",
+      "case_name": "context-collapse-0011",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0011"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0011",
+        "collapseanswer0011"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 4.4361,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3553,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 889,
+      "backend": "bm25",
+      "case_name": "context-collapse-0012",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0012"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0012",
+        "collapseanswer0012"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 4.4693,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3553,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 889,
+      "backend": "bm25",
+      "case_name": "context-collapse-0013",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0013"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0013",
+        "collapseanswer0013"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 4.3851,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3553,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 889,
+      "backend": "bm25",
+      "case_name": "context-collapse-0014",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0014"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0014",
+        "collapseanswer0014"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 4.4025,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3553,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 889,
+      "backend": "bm25",
+      "case_name": "context-collapse-0015",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0015"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0015",
+        "collapseanswer0015"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 4.4005,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3553,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 889,
+      "backend": "bm25",
+      "case_name": "context-collapse-0016",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0016"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0016",
+        "collapseanswer0016"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 4.4244,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3553,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 889,
+      "backend": "bm25",
+      "case_name": "context-collapse-0017",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0017"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0017",
+        "collapseanswer0017"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 4.4161,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3553,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 889,
+      "backend": "bm25",
+      "case_name": "context-collapse-0018",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0018"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0018",
+        "collapseanswer0018"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 4.5381,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3553,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 889,
+      "backend": "bm25",
+      "case_name": "context-collapse-0019",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0019"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0019",
+        "collapseanswer0019"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 4.4471,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3553,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 889,
+      "backend": "bm25",
+      "case_name": "context-collapse-0020",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0020"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0020",
+        "collapseanswer0020"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 4.4262,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3553,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 889,
+      "backend": "bm25",
+      "case_name": "context-collapse-0021",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0021"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0021",
+        "collapseanswer0021"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 4.3799,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3553,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 889,
+      "backend": "bm25",
+      "case_name": "context-collapse-0022",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0022"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0022",
+        "collapseanswer0022"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 4.3992,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3553,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 889,
+      "backend": "bm25",
+      "case_name": "context-collapse-0023",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0023"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0023",
+        "collapseanswer0023"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 4.3907,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3553,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 889,
+      "backend": "bm25",
+      "case_name": "context-collapse-0024",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0024"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0024",
+        "collapseanswer0024"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 4.3772,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3555,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 878,
+      "backend": "vector",
+      "case_name": "context-collapse-0000",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 115.6902,
+      "missing_expected": [
+        "collapseanswer0000"
+      ],
+      "missing_identities": [
+        "collapse-session-0000",
+        "collapseanswer0000"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3509,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "vector",
+      "case_name": "context-collapse-0001",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 115.4612,
+      "missing_expected": [
+        "collapseanswer0001"
+      ],
+      "missing_identities": [
+        "collapse-session-0001",
+        "collapseanswer0001"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "vector",
+      "case_name": "context-collapse-0002",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 115.762,
+      "missing_expected": [
+        "collapseanswer0002"
+      ],
+      "missing_identities": [
+        "collapse-session-0002",
+        "collapseanswer0002"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "vector",
+      "case_name": "context-collapse-0003",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 116.2002,
+      "missing_expected": [
+        "collapseanswer0003"
+      ],
+      "missing_identities": [
+        "collapse-session-0003",
+        "collapseanswer0003"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 878,
+      "backend": "vector",
+      "case_name": "context-collapse-0004",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0004"
+      ],
+      "identity_recall": 0.5,
+      "latency_ms": 114.5545,
+      "missing_expected": [
+        "collapseanswer0004"
+      ],
+      "missing_identities": [
+        "collapseanswer0004"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3509,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 888,
+      "backend": "vector",
+      "case_name": "context-collapse-0005",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 115.4432,
+      "missing_expected": [
+        "collapseanswer0005"
+      ],
+      "missing_identities": [
+        "collapse-session-0005",
+        "collapseanswer0005"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3550,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "vector",
+      "case_name": "context-collapse-0006",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0006"
+      ],
+      "identity_recall": 0.5,
+      "latency_ms": 114.2422,
+      "missing_expected": [
+        "collapseanswer0006"
+      ],
+      "missing_identities": [
+        "collapseanswer0006"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "vector",
+      "case_name": "context-collapse-0007",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 116.8311,
+      "missing_expected": [
+        "collapseanswer0007"
+      ],
+      "missing_identities": [
+        "collapse-session-0007",
+        "collapseanswer0007"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 885,
+      "backend": "vector",
+      "case_name": "context-collapse-0008",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 116.6872,
+      "missing_expected": [
+        "collapseanswer0008"
+      ],
+      "missing_identities": [
+        "collapse-session-0008",
+        "collapseanswer0008"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3537,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 878,
+      "backend": "vector",
+      "case_name": "context-collapse-0009",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 114.1782,
+      "missing_expected": [
+        "collapseanswer0009"
+      ],
+      "missing_identities": [
+        "collapse-session-0009",
+        "collapseanswer0009"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3509,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "vector",
+      "case_name": "context-collapse-0010",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 114.9239,
+      "missing_expected": [
+        "collapseanswer0010"
+      ],
+      "missing_identities": [
+        "collapse-session-0010",
+        "collapseanswer0010"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "vector",
+      "case_name": "context-collapse-0011",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0011"
+      ],
+      "identity_recall": 0.5,
+      "latency_ms": 115.5822,
+      "missing_expected": [
+        "collapseanswer0011"
+      ],
+      "missing_identities": [
+        "collapseanswer0011"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "vector",
+      "case_name": "context-collapse-0012",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 114.7538,
+      "missing_expected": [
+        "collapseanswer0012"
+      ],
+      "missing_identities": [
+        "collapse-session-0012",
+        "collapseanswer0012"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 878,
+      "backend": "vector",
+      "case_name": "context-collapse-0013",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 116.2525,
+      "missing_expected": [
+        "collapseanswer0013"
+      ],
+      "missing_identities": [
+        "collapse-session-0013",
+        "collapseanswer0013"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3511,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 881,
+      "backend": "vector",
+      "case_name": "context-collapse-0014",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 119.6642,
+      "missing_expected": [
+        "collapseanswer0014"
+      ],
+      "missing_identities": [
+        "collapse-session-0014",
+        "collapseanswer0014"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3524,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "vector",
+      "case_name": "context-collapse-0015",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 122.6156,
+      "missing_expected": [
+        "collapseanswer0015"
+      ],
+      "missing_identities": [
+        "collapse-session-0015",
+        "collapseanswer0015"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "vector",
+      "case_name": "context-collapse-0016",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0016"
+      ],
+      "identity_recall": 0.5,
+      "latency_ms": 124.2287,
+      "missing_expected": [
+        "collapseanswer0016"
+      ],
+      "missing_identities": [
+        "collapseanswer0016"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 884,
+      "backend": "vector",
+      "case_name": "context-collapse-0017",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 120.2392,
+      "missing_expected": [
+        "collapseanswer0017"
+      ],
+      "missing_identities": [
+        "collapse-session-0017",
+        "collapseanswer0017"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3535,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "vector",
+      "case_name": "context-collapse-0018",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0018"
+      ],
+      "identity_recall": 0.5,
+      "latency_ms": 116.6586,
+      "missing_expected": [
+        "collapseanswer0018"
+      ],
+      "missing_identities": [
+        "collapseanswer0018"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 885,
+      "backend": "vector",
+      "case_name": "context-collapse-0019",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 119.1028,
+      "missing_expected": [
+        "collapseanswer0019"
+      ],
+      "missing_identities": [
+        "collapse-session-0019",
+        "collapseanswer0019"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3539,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "vector",
+      "case_name": "context-collapse-0020",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 125.5275,
+      "missing_expected": [
+        "collapseanswer0020"
+      ],
+      "missing_identities": [
+        "collapse-session-0020",
+        "collapseanswer0020"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 886,
+      "backend": "vector",
+      "case_name": "context-collapse-0021",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 125.4254,
+      "missing_expected": [
+        "collapseanswer0021"
+      ],
+      "missing_identities": [
+        "collapse-session-0021",
+        "collapseanswer0021"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3541,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "vector",
+      "case_name": "context-collapse-0022",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 122.3246,
+      "missing_expected": [
+        "collapseanswer0022"
+      ],
+      "missing_identities": [
+        "collapse-session-0022",
+        "collapseanswer0022"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "vector",
+      "case_name": "context-collapse-0023",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 120.9932,
+      "missing_expected": [
+        "collapseanswer0023"
+      ],
+      "missing_identities": [
+        "collapse-session-0023",
+        "collapseanswer0023"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "vector",
+      "case_name": "context-collapse-0024",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0024"
+      ],
+      "identity_recall": 0.5,
+      "latency_ms": 120.4485,
+      "missing_expected": [
+        "collapseanswer0024"
+      ],
+      "missing_identities": [
+        "collapseanswer0024"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 878,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0000",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 116.527,
+      "missing_expected": [
+        "collapseanswer0000"
+      ],
+      "missing_identities": [
+        "collapse-session-0000",
+        "collapseanswer0000"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3509,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0001",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 116.0181,
+      "missing_expected": [
+        "collapseanswer0001"
+      ],
+      "missing_identities": [
+        "collapse-session-0001",
+        "collapseanswer0001"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0002",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 115.5182,
+      "missing_expected": [
+        "collapseanswer0002"
+      ],
+      "missing_identities": [
+        "collapse-session-0002",
+        "collapseanswer0002"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0003",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 113.9599,
+      "missing_expected": [
+        "collapseanswer0003"
+      ],
+      "missing_identities": [
+        "collapse-session-0003",
+        "collapseanswer0003"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 878,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0004",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0004"
+      ],
+      "identity_recall": 0.5,
+      "latency_ms": 116.1529,
+      "missing_expected": [
+        "collapseanswer0004"
+      ],
+      "missing_identities": [
+        "collapseanswer0004"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3509,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 888,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0005",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 115.6374,
+      "missing_expected": [
+        "collapseanswer0005"
+      ],
+      "missing_identities": [
+        "collapse-session-0005",
+        "collapseanswer0005"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3550,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0006",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0006"
+      ],
+      "identity_recall": 0.5,
+      "latency_ms": 114.29,
+      "missing_expected": [
+        "collapseanswer0006"
+      ],
+      "missing_identities": [
+        "collapseanswer0006"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0007",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 114.0576,
+      "missing_expected": [
+        "collapseanswer0007"
+      ],
+      "missing_identities": [
+        "collapse-session-0007",
+        "collapseanswer0007"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 885,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0008",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 114.2781,
+      "missing_expected": [
+        "collapseanswer0008"
+      ],
+      "missing_identities": [
+        "collapse-session-0008",
+        "collapseanswer0008"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3537,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 878,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0009",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 114.5768,
+      "missing_expected": [
+        "collapseanswer0009"
+      ],
+      "missing_identities": [
+        "collapse-session-0009",
+        "collapseanswer0009"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3509,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0010",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 114.398,
+      "missing_expected": [
+        "collapseanswer0010"
+      ],
+      "missing_identities": [
+        "collapse-session-0010",
+        "collapseanswer0010"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0011",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0011"
+      ],
+      "identity_recall": 0.5,
+      "latency_ms": 114.5486,
+      "missing_expected": [
+        "collapseanswer0011"
+      ],
+      "missing_identities": [
+        "collapseanswer0011"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0012",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 113.9724,
+      "missing_expected": [
+        "collapseanswer0012"
+      ],
+      "missing_identities": [
+        "collapse-session-0012",
+        "collapseanswer0012"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 878,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0013",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 112.8274,
+      "missing_expected": [
+        "collapseanswer0013"
+      ],
+      "missing_identities": [
+        "collapse-session-0013",
+        "collapseanswer0013"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3511,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 881,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0014",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 113.1528,
+      "missing_expected": [
+        "collapseanswer0014"
+      ],
+      "missing_identities": [
+        "collapse-session-0014",
+        "collapseanswer0014"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3524,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0015",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 113.1593,
+      "missing_expected": [
+        "collapseanswer0015"
+      ],
+      "missing_identities": [
+        "collapse-session-0015",
+        "collapseanswer0015"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0016",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0016"
+      ],
+      "identity_recall": 0.5,
+      "latency_ms": 113.7544,
+      "missing_expected": [
+        "collapseanswer0016"
+      ],
+      "missing_identities": [
+        "collapseanswer0016"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 884,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0017",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 113.8601,
+      "missing_expected": [
+        "collapseanswer0017"
+      ],
+      "missing_identities": [
+        "collapse-session-0017",
+        "collapseanswer0017"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3535,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0018",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0018"
+      ],
+      "identity_recall": 0.5,
+      "latency_ms": 114.0481,
+      "missing_expected": [
+        "collapseanswer0018"
+      ],
+      "missing_identities": [
+        "collapseanswer0018"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 885,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0019",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 123.164,
+      "missing_expected": [
+        "collapseanswer0019"
+      ],
+      "missing_identities": [
+        "collapse-session-0019",
+        "collapseanswer0019"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3539,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0020",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 118.8743,
+      "missing_expected": [
+        "collapseanswer0020"
+      ],
+      "missing_identities": [
+        "collapse-session-0020",
+        "collapseanswer0020"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 886,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0021",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 121.1056,
+      "missing_expected": [
+        "collapseanswer0021"
+      ],
+      "missing_identities": [
+        "collapse-session-0021",
+        "collapseanswer0021"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3541,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0022",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 121.592,
+      "missing_expected": [
+        "collapseanswer0022"
+      ],
+      "missing_identities": [
+        "collapse-session-0022",
+        "collapseanswer0022"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0023",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 122.0752,
+      "missing_expected": [
+        "collapseanswer0023"
+      ],
+      "missing_identities": [
+        "collapse-session-0023",
+        "collapseanswer0023"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 882,
+      "backend": "md+vector",
+      "case_name": "context-collapse-0024",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0024"
+      ],
+      "identity_recall": 0.5,
+      "latency_ms": 122.1943,
+      "missing_expected": [
+        "collapseanswer0024"
+      ],
+      "missing_identities": [
+        "collapseanswer0024"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 3526,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 376,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0000",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0000"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0000",
+        "collapseanswer0000"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 92.3436,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1512,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 378,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0001",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0001"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0001",
+        "collapseanswer0001"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 59.6698,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1521,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 376,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0002",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0002"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0002",
+        "collapseanswer0002"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 34.862,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1513,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 380,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0003",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0003"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0003",
+        "collapseanswer0003"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 36.9407,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1529,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 378,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0004",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0004"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0004",
+        "collapseanswer0004"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 38.3451,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1519,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 380,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0005",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0005"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0005",
+        "collapseanswer0005"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 36.4415,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1529,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 378,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0006",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0006"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0006",
+        "collapseanswer0006"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 38.6686,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1519,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 380,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0007",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0007"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0007",
+        "collapseanswer0007"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 37.8539,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1529,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 378,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0008",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0008"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0008",
+        "collapseanswer0008"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 38.6204,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1519,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 380,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0009",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0009"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0009",
+        "collapseanswer0009"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 36.3999,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1529,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 380,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0010",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0010"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0010",
+        "collapseanswer0010"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 37.9592,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1530,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 378,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0011",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0011"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0011",
+        "collapseanswer0011"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 38.2492,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1520,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 381,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0012",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0012"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0012",
+        "collapseanswer0012"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 42.7032,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1531,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 378,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0013",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0013"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0013",
+        "collapseanswer0013"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 39.5515,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1520,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 380,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0014",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0014"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0014",
+        "collapseanswer0014"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 35.7879,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1530,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 378,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0015",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0015"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0015",
+        "collapseanswer0015"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 33.9192,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1520,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 378,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0016",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0016"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0016",
+        "collapseanswer0016"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 34.2545,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1520,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 378,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0017",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0017"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0017",
+        "collapseanswer0017"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 33.4544,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1520,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 380,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0018",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0018"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0018",
+        "collapseanswer0018"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 35.9433,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1530,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 378,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0019",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0019"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0019",
+        "collapseanswer0019"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 36.5104,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1520,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 380,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0020",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0020"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0020",
+        "collapseanswer0020"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 37.2594,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1530,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 378,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0021",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0021"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0021",
+        "collapseanswer0021"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 36.5536,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1520,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 378,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0022",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0022"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0022",
+        "collapseanswer0022"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 36.7495,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1520,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 378,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0023",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0023"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0023",
+        "collapseanswer0023"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 36.5984,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1520,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 384,
+      "backend": "zaxy",
+      "case_name": "context-collapse-0024",
+      "category": "context-collapse",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "collapseanswer0024"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "collapse-session-0024",
+        "collapseanswer0024"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 36.1812,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 1543,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    }
+  ],
+  "summaries": [
+    {
+      "backend": "bm25",
+      "case_count": 25,
+      "latency_ms_mean": 4.6711,
+      "latency_ms_p50": 4.4244,
+      "latency_ms_p95": 4.5573,
+      "latency_ms_p99": 9.4333,
+      "mean_approx_tokens": 888.6,
+      "mean_citation_coverage": 1.0,
+      "mean_identity_recall": 1.0,
+      "mean_returned_bytes": 3551.64,
+      "mean_score": 1.0,
+      "mean_source_recall": null,
+      "runs": 1
+    },
+    {
+      "backend": "md",
+      "case_count": 25,
+      "latency_ms_mean": 0.0052,
+      "latency_ms_p50": 0.004,
+      "latency_ms_p95": 0.0084,
+      "latency_ms_p99": 0.0212,
+      "mean_approx_tokens": 870.0,
+      "mean_citation_coverage": null,
+      "mean_identity_recall": 0.02,
+      "mean_returned_bytes": 3479.0,
+      "mean_score": 0.0,
+      "mean_source_recall": null,
+      "runs": 1
+    },
+    {
+      "backend": "md+vector",
+      "case_count": 25,
+      "latency_ms_mean": 116.1497,
+      "latency_ms_p50": 114.5486,
+      "latency_ms_p95": 122.1705,
+      "latency_ms_p99": 122.9313,
+      "mean_approx_tokens": 882.04,
+      "mean_citation_coverage": null,
+      "mean_identity_recall": 0.12,
+      "mean_returned_bytes": 3526.16,
+      "mean_score": 0.0,
+      "mean_source_recall": null,
+      "runs": 1
+    },
+    {
+      "backend": "vector",
+      "case_count": 25,
+      "latency_ms_mean": 118.1516,
+      "latency_ms_p50": 116.6586,
+      "latency_ms_p95": 125.1861,
+      "latency_ms_p99": 125.503,
+      "mean_approx_tokens": 882.04,
+      "mean_citation_coverage": null,
+      "mean_identity_recall": 0.12,
+      "mean_returned_bytes": 3526.16,
+      "mean_score": 0.0,
+      "mean_source_recall": null,
+      "runs": 1
+    },
+    {
+      "backend": "zaxy",
+      "case_count": 25,
+      "latency_ms_mean": 40.0728,
+      "latency_ms_p50": 36.7495,
+      "latency_ms_p95": 56.2765,
+      "latency_ms_p99": 84.5019,
+      "mean_approx_tokens": 378.84,
+      "mean_citation_coverage": 1.0,
+      "mean_identity_recall": 1.0,
+      "mean_returned_bytes": 1523.72,
+      "mean_score": 1.0,
+      "mean_source_recall": null,
+      "runs": 1
+    }
+  ],
+  "workload": {
+    "case_count": 25,
+    "documents": null,
+    "event_count": 1025,
+    "lanes": [
+      "context-collapse"
+    ],
+    "sessions": 25,
+    "sha256": "33d8d30864c605cb9665f56a353971926d301005bad05fd7239e09904e266249",
+    "subjects": null,
+    "version": "mempalace-context-collapse-v1"
+  }
+}

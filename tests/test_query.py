@@ -109,6 +109,55 @@ class TestQueryRouting:
 
         assert results[0].content.startswith("Goal 0003")
 
+    async def test_identifier_queries_suppress_fuzzy_distractors(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Identifier-bearing source queries should not include near-miss fuzzy matches."""
+        target = GraphEntity(
+            name="source-recall/target/service-0000.md:10-14",
+            entity_type="document",
+            valid_from="2024-04-01T00:00:00Z",
+            valid_to=None,
+            properties={
+                "summary": (
+                    "source-recall/target/service-0000.md records "
+                    "source_recall_answer_code=source-answer-0000."
+                ),
+                "source_path": "source-recall/target/service-0000.md",
+            },
+        )
+        distractor = GraphEntity(
+            name="source-recall/distractor/service-0000.md:20-24",
+            entity_type="document",
+            valid_from="2024-04-01T00:00:00Z",
+            valid_to=None,
+            properties={
+                "summary": (
+                    "source-recall/distractor/service-0000.md discusses a nearby "
+                    "source recall incident for service-0000."
+                ),
+                "source_path": "source-recall/distractor/service-0000.md",
+            },
+        )
+        mock_store.search_keyword.return_value = [
+            SearchResult(entity=target, score=1.0, source="keyword")
+        ]
+        mock_store.search_vector.return_value = [
+            SearchResult(entity=distractor, score=0.99, source="vector")
+        ]
+
+        results = await router.query(
+            "Which cited source records source-answer-0000?",
+            embedding=[0.1, 0.2],
+            limit=5,
+        )
+
+        assert [result.entity_name for result in results] == [
+            "source-recall/target/service-0000.md:10-14"
+        ]
+
     async def test_traversal_expansion(self, router: QueryRouter, mock_store: AsyncMock) -> None:
         """Traversal from keyword hits should bring in neighbors."""
         keyword_ent = GraphEntity(

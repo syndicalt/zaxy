@@ -1,0 +1,3439 @@
+{
+  "category_summaries": [
+    {
+      "backend": "bm25",
+      "category": "source-recall",
+      "mean_citation_coverage": 1.0,
+      "mean_score": 1.0,
+      "mean_source_recall": 1.0,
+      "miss_count": 0,
+      "query_count": 25
+    },
+    {
+      "backend": "md",
+      "category": "source-recall",
+      "mean_citation_coverage": 1.0,
+      "mean_score": 0.04,
+      "mean_source_recall": 0.12,
+      "miss_count": 24,
+      "query_count": 25
+    },
+    {
+      "backend": "md+vector",
+      "category": "source-recall",
+      "mean_citation_coverage": 1.0,
+      "mean_score": 0.2,
+      "mean_source_recall": 0.2,
+      "miss_count": 20,
+      "query_count": 25
+    },
+    {
+      "backend": "vector",
+      "category": "source-recall",
+      "mean_citation_coverage": 1.0,
+      "mean_score": 0.2,
+      "mean_source_recall": 0.2,
+      "miss_count": 20,
+      "query_count": 25
+    },
+    {
+      "backend": "zaxy",
+      "category": "source-recall",
+      "mean_citation_coverage": 1.0,
+      "mean_score": 1.0,
+      "mean_source_recall": 1.0,
+      "miss_count": 0,
+      "query_count": 25
+    }
+  ],
+  "comparisons": [
+    {
+      "baseline_backend": "bm25",
+      "ci_high": 0.0,
+      "ci_low": 0.0,
+      "mean_difference": 0.0,
+      "p_value": 1.0,
+      "paired_units": 25,
+      "significant": false,
+      "target_backend": "zaxy"
+    },
+    {
+      "baseline_backend": "md",
+      "ci_high": 1.0,
+      "ci_low": 0.88,
+      "mean_difference": 0.96,
+      "p_value": 0.0001,
+      "paired_units": 25,
+      "significant": true,
+      "target_backend": "zaxy"
+    },
+    {
+      "baseline_backend": "md+vector",
+      "ci_high": 0.96,
+      "ci_low": 0.64,
+      "mean_difference": 0.8,
+      "p_value": 0.0001,
+      "paired_units": 25,
+      "significant": true,
+      "target_backend": "zaxy"
+    },
+    {
+      "baseline_backend": "vector",
+      "ci_high": 0.96,
+      "ci_low": 0.64,
+      "mean_difference": 0.8,
+      "p_value": 0.0001,
+      "paired_units": 25,
+      "significant": true,
+      "target_backend": "zaxy"
+    }
+  ],
+  "embedding_provider": "hash:1536",
+  "external_results": [],
+  "generated_at": "2026-05-12T03:22:32Z",
+  "runs": [
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0000",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [
+        "source-answer-0000"
+      ],
+      "forbidden_hits": [
+        "source-recall/distractor/service-0000.md"
+      ],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.0194,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [
+        "source-recall/target/service-0000.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0001",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [
+        "source-answer-0001"
+      ],
+      "forbidden_hits": [
+        "source-recall/distractor/service-0001.md"
+      ],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.0081,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [
+        "source-recall/target/service-0001.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0002",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0002"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.0065,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0002.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0003",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.0055,
+      "missing_expected": [
+        "source-answer-0003"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0003.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0004",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.0097,
+      "missing_expected": [
+        "source-answer-0004"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0004.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0005",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.0058,
+      "missing_expected": [
+        "source-answer-0005"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0005.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0006",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.0052,
+      "missing_expected": [
+        "source-answer-0006"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0006.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0007",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.0051,
+      "missing_expected": [
+        "source-answer-0007"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0007.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0008",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.0047,
+      "missing_expected": [
+        "source-answer-0008"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0008.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0009",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.0052,
+      "missing_expected": [
+        "source-answer-0009"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0009.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0010",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.0051,
+      "missing_expected": [
+        "source-answer-0010"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0010.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0011",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.0053,
+      "missing_expected": [
+        "source-answer-0011"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0011.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0012",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.0049,
+      "missing_expected": [
+        "source-answer-0012"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0012.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0013",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.0047,
+      "missing_expected": [
+        "source-answer-0013"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0013.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0014",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.0047,
+      "missing_expected": [
+        "source-answer-0014"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0014.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0015",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.005,
+      "missing_expected": [
+        "source-answer-0015"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0015.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0016",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.0053,
+      "missing_expected": [
+        "source-answer-0016"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0016.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0017",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.005,
+      "missing_expected": [
+        "source-answer-0017"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0017.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0018",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.005,
+      "missing_expected": [
+        "source-answer-0018"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0018.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0019",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.0048,
+      "missing_expected": [
+        "source-answer-0019"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0019.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0020",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.0045,
+      "missing_expected": [
+        "source-answer-0020"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0020.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0021",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.0051,
+      "missing_expected": [
+        "source-answer-0021"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0021.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0022",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.0055,
+      "missing_expected": [
+        "source-answer-0022"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0022.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0023",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.0051,
+      "missing_expected": [
+        "source-answer-0023"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0023.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1228,
+      "backend": "md",
+      "case_name": "source-recall-0024",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.0049,
+      "missing_expected": [
+        "source-answer-0024"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0024.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 4909,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1258,
+      "backend": "bm25",
+      "case_name": "source-recall-0000",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0000"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.3846,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5029,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0000.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1258,
+      "backend": "bm25",
+      "case_name": "source-recall-0001",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0001"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.2242,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5029,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0001.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1258,
+      "backend": "bm25",
+      "case_name": "source-recall-0002",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0002"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.2066,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5029,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0002.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1258,
+      "backend": "bm25",
+      "case_name": "source-recall-0003",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0003"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.1953,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5029,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0003.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1258,
+      "backend": "bm25",
+      "case_name": "source-recall-0004",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0004"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.1923,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5029,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0004.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1258,
+      "backend": "bm25",
+      "case_name": "source-recall-0005",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0005"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.1987,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5031,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0005.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1258,
+      "backend": "bm25",
+      "case_name": "source-recall-0006",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0006"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.1881,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5031,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0006.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1258,
+      "backend": "bm25",
+      "case_name": "source-recall-0007",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0007"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.1843,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5031,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0007.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1258,
+      "backend": "bm25",
+      "case_name": "source-recall-0008",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0008"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.1776,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5031,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0008.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1258,
+      "backend": "bm25",
+      "case_name": "source-recall-0009",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0009"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.1773,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5031,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0009.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1259,
+      "backend": "bm25",
+      "case_name": "source-recall-0010",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0010"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.1952,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5033,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0010.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1258,
+      "backend": "bm25",
+      "case_name": "source-recall-0011",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0011"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.1889,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5031,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0011.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1258,
+      "backend": "bm25",
+      "case_name": "source-recall-0012",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0012"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.1872,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5031,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0012.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1258,
+      "backend": "bm25",
+      "case_name": "source-recall-0013",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0013"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.1852,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5031,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0013.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1258,
+      "backend": "bm25",
+      "case_name": "source-recall-0014",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0014"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.1928,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5031,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0014.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1258,
+      "backend": "bm25",
+      "case_name": "source-recall-0015",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0015"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.1788,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5031,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0015.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1258,
+      "backend": "bm25",
+      "case_name": "source-recall-0016",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0016"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.1817,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5031,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0016.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1258,
+      "backend": "bm25",
+      "case_name": "source-recall-0017",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0017"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.1782,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5031,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0017.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1258,
+      "backend": "bm25",
+      "case_name": "source-recall-0018",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0018"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.177,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5031,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0018.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1258,
+      "backend": "bm25",
+      "case_name": "source-recall-0019",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0019"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.198,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5031,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0019.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1258,
+      "backend": "bm25",
+      "case_name": "source-recall-0020",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0020"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.1938,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5031,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0020.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1259,
+      "backend": "bm25",
+      "case_name": "source-recall-0021",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0021"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.189,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5033,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0021.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1258,
+      "backend": "bm25",
+      "case_name": "source-recall-0022",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0022"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.1878,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5031,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0022.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1258,
+      "backend": "bm25",
+      "case_name": "source-recall-0023",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0023"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.1857,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5031,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0023.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1258,
+      "backend": "bm25",
+      "case_name": "source-recall-0024",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0024"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 0.2005,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5031,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0024.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0000",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0000"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.2928,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0000.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0001",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.339,
+      "missing_expected": [
+        "source-answer-0001"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0001.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0002",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.4736,
+      "missing_expected": [
+        "source-answer-0002"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0002.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5039,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0003",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0003"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.5635,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0003.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0004",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.5212,
+      "missing_expected": [
+        "source-answer-0004"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0004.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0005",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.4891,
+      "missing_expected": [
+        "source-answer-0005"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0005.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0006",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.5298,
+      "missing_expected": [
+        "source-answer-0006"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0006.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0007",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0007"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.4035,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0007.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0008",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.4631,
+      "missing_expected": [
+        "source-answer-0008"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0008.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0009",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.6581,
+      "missing_expected": [
+        "source-answer-0009"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0009.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0010",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0010"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.1299,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0010.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0011",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.2142,
+      "missing_expected": [
+        "source-answer-0011"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0011.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0012",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.2436,
+      "missing_expected": [
+        "source-answer-0012"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0012.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0013",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.2575,
+      "missing_expected": [
+        "source-answer-0013"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0013.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0014",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.3268,
+      "missing_expected": [
+        "source-answer-0014"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0014.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0015",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.4795,
+      "missing_expected": [
+        "source-answer-0015"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0015.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0016",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.5179,
+      "missing_expected": [
+        "source-answer-0016"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0016.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0017",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.4567,
+      "missing_expected": [
+        "source-answer-0017"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0017.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0018",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0018"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.601,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0018.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0019",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.7446,
+      "missing_expected": [
+        "source-answer-0019"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0019.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0020",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.6505,
+      "missing_expected": [
+        "source-answer-0020"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0020.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0021",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.6844,
+      "missing_expected": [
+        "source-answer-0021"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0021.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0022",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.7197,
+      "missing_expected": [
+        "source-answer-0022"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0022.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0023",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.6866,
+      "missing_expected": [
+        "source-answer-0023"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0023.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "vector",
+      "case_name": "source-recall-0024",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.6174,
+      "missing_expected": [
+        "source-answer-0024"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0024.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0000",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0000"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.4414,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0000.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0001",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.5892,
+      "missing_expected": [
+        "source-answer-0001"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0001.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0002",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.5862,
+      "missing_expected": [
+        "source-answer-0002"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0002.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5039,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0003",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0003"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.4651,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0003.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0004",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.6013,
+      "missing_expected": [
+        "source-answer-0004"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0004.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0005",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.5209,
+      "missing_expected": [
+        "source-answer-0005"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0005.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0006",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.5919,
+      "missing_expected": [
+        "source-answer-0006"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0006.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0007",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0007"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.5235,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0007.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0008",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.5226,
+      "missing_expected": [
+        "source-answer-0008"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0008.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0009",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.5659,
+      "missing_expected": [
+        "source-answer-0009"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0009.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0010",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0010"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.5976,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0010.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0011",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.6383,
+      "missing_expected": [
+        "source-answer-0011"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0011.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0012",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.6019,
+      "missing_expected": [
+        "source-answer-0012"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0012.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0013",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.4686,
+      "missing_expected": [
+        "source-answer-0013"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0013.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0014",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.4672,
+      "missing_expected": [
+        "source-answer-0014"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0014.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0015",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.4901,
+      "missing_expected": [
+        "source-answer-0015"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0015.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0016",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.5969,
+      "missing_expected": [
+        "source-answer-0016"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0016.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0017",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 6.0696,
+      "missing_expected": [
+        "source-answer-0017"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0017.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0018",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0018"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.1382,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0018.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0019",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.2946,
+      "missing_expected": [
+        "source-answer-0019"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0019.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0020",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.4053,
+      "missing_expected": [
+        "source-answer-0020"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0020.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0021",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.5804,
+      "missing_expected": [
+        "source-answer-0021"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0021.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0022",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.4648,
+      "missing_expected": [
+        "source-answer-0022"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0022.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0023",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.4801,
+      "missing_expected": [
+        "source-answer-0023"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0023.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1260,
+      "backend": "md+vector",
+      "case_name": "source-recall-0024",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 5.4928,
+      "missing_expected": [
+        "source-answer-0024"
+      ],
+      "missing_identities": [],
+      "missing_sources": [
+        "source-recall/target/service-0024.md"
+      ],
+      "result_count": 5,
+      "returned_bytes": 5037,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": 0.0
+    },
+    {
+      "approx_tokens": 1092,
+      "backend": "zaxy",
+      "case_name": "source-recall-0000",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0000"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 100.2294,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4367,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0000.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1092,
+      "backend": "zaxy",
+      "case_name": "source-recall-0001",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0001"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 29.5144,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4367,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0001.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1092,
+      "backend": "zaxy",
+      "case_name": "source-recall-0002",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0002"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 29.1015,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4367,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0002.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1092,
+      "backend": "zaxy",
+      "case_name": "source-recall-0003",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0003"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 31.0909,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4367,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0003.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1092,
+      "backend": "zaxy",
+      "case_name": "source-recall-0004",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0004"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 30.9753,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4367,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0004.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1092,
+      "backend": "zaxy",
+      "case_name": "source-recall-0005",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0005"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 32.612,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4369,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0005.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1092,
+      "backend": "zaxy",
+      "case_name": "source-recall-0006",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0006"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 31.1253,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4369,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0006.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1092,
+      "backend": "zaxy",
+      "case_name": "source-recall-0007",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0007"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 33.0576,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4369,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0007.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1092,
+      "backend": "zaxy",
+      "case_name": "source-recall-0008",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0008"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 34.2779,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4369,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0008.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1092,
+      "backend": "zaxy",
+      "case_name": "source-recall-0009",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0009"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 22.5055,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4369,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0009.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1093,
+      "backend": "zaxy",
+      "case_name": "source-recall-0010",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0010"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 33.5253,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4372,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0010.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1092,
+      "backend": "zaxy",
+      "case_name": "source-recall-0011",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0011"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 31.1621,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4369,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0011.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1092,
+      "backend": "zaxy",
+      "case_name": "source-recall-0012",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0012"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 36.3307,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4369,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0012.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1092,
+      "backend": "zaxy",
+      "case_name": "source-recall-0013",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0013"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 27.5458,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4369,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0013.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1092,
+      "backend": "zaxy",
+      "case_name": "source-recall-0014",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0014"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 34.5134,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4369,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0014.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1092,
+      "backend": "zaxy",
+      "case_name": "source-recall-0015",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0015"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 29.5401,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4369,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0015.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1092,
+      "backend": "zaxy",
+      "case_name": "source-recall-0016",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0016"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 32.3552,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4369,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0016.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1092,
+      "backend": "zaxy",
+      "case_name": "source-recall-0017",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0017"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 23.3255,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4369,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0017.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1092,
+      "backend": "zaxy",
+      "case_name": "source-recall-0018",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0018"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 25.2477,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4369,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0018.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1092,
+      "backend": "zaxy",
+      "case_name": "source-recall-0019",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0019"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 29.7968,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4369,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0019.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1092,
+      "backend": "zaxy",
+      "case_name": "source-recall-0020",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0020"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 31.9223,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4369,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0020.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1093,
+      "backend": "zaxy",
+      "case_name": "source-recall-0021",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0021"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 30.8109,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4372,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0021.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1092,
+      "backend": "zaxy",
+      "case_name": "source-recall-0022",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0022"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 32.3222,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4369,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0022.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1092,
+      "backend": "zaxy",
+      "case_name": "source-recall-0023",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0023"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 23.9926,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4369,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0023.md"
+      ],
+      "source_recall": 1.0
+    },
+    {
+      "approx_tokens": 1092,
+      "backend": "zaxy",
+      "case_name": "source-recall-0024",
+      "category": "source-recall",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "source-answer-0024"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": null,
+      "latency_ms": 23.2467,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 4369,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [
+        "source-recall/target/service-0024.md"
+      ],
+      "source_recall": 1.0
+    }
+  ],
+  "summaries": [
+    {
+      "backend": "bm25",
+      "case_count": 25,
+      "latency_ms_mean": 0.198,
+      "latency_ms_p50": 0.1889,
+      "latency_ms_p95": 0.2207,
+      "latency_ms_p99": 0.3461,
+      "mean_approx_tokens": 1258.08,
+      "mean_citation_coverage": 1.0,
+      "mean_identity_recall": null,
+      "mean_returned_bytes": 5030.76,
+      "mean_score": 1.0,
+      "mean_source_recall": 1.0,
+      "runs": 1
+    },
+    {
+      "backend": "md",
+      "case_count": 25,
+      "latency_ms_mean": 0.006,
+      "latency_ms_p50": 0.0051,
+      "latency_ms_p95": 0.0094,
+      "latency_ms_p99": 0.0171,
+      "mean_approx_tokens": 1228.0,
+      "mean_citation_coverage": 1.0,
+      "mean_identity_recall": null,
+      "mean_returned_bytes": 4909.0,
+      "mean_score": 0.04,
+      "mean_source_recall": 0.12,
+      "runs": 1
+    },
+    {
+      "backend": "md+vector",
+      "case_count": 25,
+      "latency_ms_mean": 5.5278,
+      "latency_ms_p50": 5.5226,
+      "latency_ms_p95": 5.631,
+      "latency_ms_p99": 5.9661,
+      "mean_approx_tokens": 1260.0,
+      "mean_citation_coverage": 1.0,
+      "mean_identity_recall": null,
+      "mean_returned_bytes": 5037.08,
+      "mean_score": 0.2,
+      "mean_source_recall": 0.2,
+      "runs": 1
+    },
+    {
+      "backend": "vector",
+      "case_count": 25,
+      "latency_ms_mean": 5.4826,
+      "latency_ms_p50": 5.4891,
+      "latency_ms_p95": 5.7131,
+      "latency_ms_p99": 5.7386,
+      "mean_approx_tokens": 1260.0,
+      "mean_citation_coverage": 1.0,
+      "mean_identity_recall": null,
+      "mean_returned_bytes": 5037.08,
+      "mean_score": 0.2,
+      "mean_source_recall": 0.2,
+      "runs": 1
+    },
+    {
+      "backend": "zaxy",
+      "case_count": 25,
+      "latency_ms_mean": 32.8051,
+      "latency_ms_p50": 31.0909,
+      "latency_ms_p95": 35.9672,
+      "latency_ms_p99": 84.8937,
+      "mean_approx_tokens": 1092.08,
+      "mean_citation_coverage": 1.0,
+      "mean_identity_recall": null,
+      "mean_returned_bytes": 4368.84,
+      "mean_score": 1.0,
+      "mean_source_recall": 1.0,
+      "runs": 1
+    }
+  ],
+  "workload": {
+    "case_count": 25,
+    "documents": 25,
+    "event_count": 50,
+    "lanes": [
+      "source-recall"
+    ],
+    "sessions": null,
+    "sha256": "f1e520fc9778012a707a9ba93e1c729fd3ea9f879021a49a46f52a472dc1f7dd",
+    "subjects": null,
+    "version": "mempalace-source-recall-v1"
+  }
+}

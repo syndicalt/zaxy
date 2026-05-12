@@ -562,7 +562,7 @@ class ZaxyRetriever:
             embedding=embedding,
         )
         graph_results = [_benchmark_context_from_chunk(chunk) for chunk in chunks]
-        if self._lexical_retriever is None:
+        if self._lexical_retriever is None or not _should_query_source_lexical_lane(query):
             return graph_results
         fused = RankFusionRetriever(
             {
@@ -598,6 +598,28 @@ def _benchmark_context_from_chunk(chunk: object) -> str:
     if isinstance(citation, str) and citation:
         return f"{content}\ncitation={citation}"
     return content
+
+
+def _should_query_source_lexical_lane(query: str) -> bool:
+    """Return whether raw Eventloom text should supplement graph retrieval.
+
+    The lexical Eventloom lane is useful for exact source/provenance recovery,
+    but it is unsafe as a generic backfill for temporal queries because raw
+    history contains superseded facts.
+    """
+    tokens = set(re.findall(r"[a-z0-9]+", query.casefold()))
+    return bool(
+        tokens
+        & {
+            "citation",
+            "cited",
+            "document",
+            "file",
+            "runbook",
+            "source",
+            "sources",
+        }
+    )
 
 
 def corpus_from_event_log(eventlog: EventLog) -> tuple[BenchmarkChunk, ...]:

@@ -443,8 +443,14 @@ class QueryRouter:
             if key not in best or r.score > best[key].score:
                 best[key] = r
 
-        # 6. Sort with either provider reranking or MMR diversity and truncate
-        ranked = await self._rank(query, [_with_warnings(r, warnings) for r in best.values()], lim)
+        # 6. Suppress fuzzy near-neighbors when a durable identifier has a direct hit.
+        filtered = _suppress_identifier_fuzzy_distractors(
+            list(best.values()),
+            identifier_terms,
+        )
+
+        # 7. Sort with either provider reranking or MMR diversity and truncate
+        ranked = await self._rank(query, [_with_warnings(r, warnings) for r in filtered], lim)
 
         return [_to_chunk(r) for r in ranked]
 
@@ -597,6 +603,30 @@ def _identifier_boosted_score(
     if any(identifier.casefold() in searchable for identifier in identifiers):
         return max(base_score, 1.35)
     return base_score
+
+
+def _suppress_identifier_fuzzy_distractors(
+    results: list[SearchResult],
+    identifiers: tuple[str, ...],
+) -> list[SearchResult]:
+    """Remove fuzzy candidates that miss durable query identifiers.
+
+    Identifier-bearing questions are usually asking for exact provenance or
+    source recovery. If at least one candidate contains the identifier, fuzzy
+    keyword/vector neighbors that do not contain it are likely distractors.
+    Exact and traversal results are kept because they come from explicit graph
+    anchors rather than semantic similarity alone.
+    """
+    if not identifiers:
+        return results
+    if not any(_entity_matches_identifier(result.entity, identifiers) for result in results):
+        return results
+    return [
+        result
+        for result in results
+        if result.source in {"exact", "traversal"}
+        or _entity_matches_identifier(result.entity, identifiers)
+    ]
 
 
 def _entity_identifier_text(entity: GraphEntity) -> str:

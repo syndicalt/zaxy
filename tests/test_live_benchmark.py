@@ -754,10 +754,14 @@ def test_rank_fusion_retriever_preserves_complementary_hits() -> None:
     assert len(results) == 2
 
 
-async def test_zaxy_retriever_can_fuse_graph_and_lexical_results() -> None:
-    """Live Zaxy benchmark retrieval should support lexical fusion."""
+async def test_zaxy_retriever_can_fuse_graph_and_source_lexical_results() -> None:
+    """Source/provenance benchmark retrieval should support lexical fusion."""
     corpus = (
-        BenchmarkChunk("answer", "longmemeval_session_id=answer-1 degree Business Administration"),
+        BenchmarkChunk(
+            "answer",
+            "citation=eventloom://benchmark/events/1#abc "
+            "source-recall/target/service-0001.md records source-answer-0001",
+        ),
     )
 
     class FakeRouter:
@@ -769,7 +773,7 @@ async def test_zaxy_retriever_can_fuse_graph_and_lexical_results() -> None:
             embedding: list[float] | None = None,
         ) -> list[SimpleNamespace]:
             del query, temporal_point, limit, embedding
-            return [SimpleNamespace(content="graph context about the user degree")]
+            return [SimpleNamespace(content="graph context about source-answer-0001")]
 
     retriever = ZaxyRetriever(
         FakeRouter(),  # type: ignore[arg-type]
@@ -777,10 +781,10 @@ async def test_zaxy_retriever_can_fuse_graph_and_lexical_results() -> None:
         lexical_retriever=BM25Retriever(corpus),
     )
 
-    results = await retriever.query_async("What degree did I graduate with?", limit=2)
+    results = await retriever.query_async("Which cited source records source-answer-0001?", limit=2)
 
     assert any("graph context" in result for result in results)
-    assert any("answer-1" in result for result in results)
+    assert any("eventloom://benchmark/events/1#abc" in result for result in results)
 
 
 async def test_zaxy_retriever_prioritizes_graph_evidence_over_lexical_sidecar() -> None:
@@ -844,6 +848,45 @@ async def test_zaxy_retriever_preserves_graph_citations() -> None:
         "graph-finisher-0001 completed graph-task-0001\n"
         "citation=eventloom://benchmark/events/3#abc123"
     ]
+
+
+async def test_zaxy_retriever_does_not_backfill_temporal_queries_with_raw_history() -> None:
+    """Raw Eventloom lexical context should not reintroduce superseded temporal facts."""
+    corpus = (
+        BenchmarkChunk(
+            "history",
+            (
+                "workspace=workspace-alpha-0000 "
+                "workspace=workspace-beta-0000 "
+                "workspace=workspace-gamma-0000"
+            ),
+        ),
+    )
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, limit, embedding
+            return [SimpleNamespace(content="workspace=workspace-alpha-0000 user-0000")]
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=BM25Retriever(corpus),
+    )
+
+    results = await retriever.query_async(
+        "What workspace preference was active for user-0000 at 2024-03-01T00:00:00Z?",
+        temporal_point="2024-03-01T00:00:00Z",
+        limit=5,
+    )
+
+    assert results == ["workspace=workspace-alpha-0000 user-0000"]
 
 
 def test_live_benchmark_outputs_machine_and_markdown_reports(tmp_path: Path) -> None:

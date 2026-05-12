@@ -1,0 +1,3885 @@
+{
+  "category_summaries": [
+    {
+      "backend": "bm25",
+      "category": "graph-traversal",
+      "mean_citation_coverage": 1.0,
+      "mean_score": 0.92,
+      "mean_source_recall": null,
+      "miss_count": 2,
+      "query_count": 25
+    },
+    {
+      "backend": "md",
+      "category": "graph-traversal",
+      "mean_citation_coverage": 1.0,
+      "mean_score": 0.04,
+      "mean_source_recall": null,
+      "miss_count": 24,
+      "query_count": 25
+    },
+    {
+      "backend": "md+vector",
+      "category": "graph-traversal",
+      "mean_citation_coverage": 1.0,
+      "mean_score": 0.12,
+      "mean_source_recall": null,
+      "miss_count": 24,
+      "query_count": 25
+    },
+    {
+      "backend": "vector",
+      "category": "graph-traversal",
+      "mean_citation_coverage": 1.0,
+      "mean_score": 0.12,
+      "mean_source_recall": null,
+      "miss_count": 24,
+      "query_count": 25
+    },
+    {
+      "backend": "zaxy",
+      "category": "graph-traversal",
+      "mean_citation_coverage": 1.0,
+      "mean_score": 1.0,
+      "mean_source_recall": null,
+      "miss_count": 0,
+      "query_count": 25
+    }
+  ],
+  "comparisons": [
+    {
+      "baseline_backend": "bm25",
+      "ci_high": 0.2,
+      "ci_low": 0.0,
+      "mean_difference": 0.08,
+      "p_value": 0.493551,
+      "paired_units": 25,
+      "significant": false,
+      "target_backend": "zaxy"
+    },
+    {
+      "baseline_backend": "md",
+      "ci_high": 1.0,
+      "ci_low": 0.88,
+      "mean_difference": 0.96,
+      "p_value": 0.0001,
+      "paired_units": 25,
+      "significant": true,
+      "target_backend": "zaxy"
+    },
+    {
+      "baseline_backend": "md+vector",
+      "ci_high": 0.96,
+      "ci_low": 0.78,
+      "mean_difference": 0.88,
+      "p_value": 0.0001,
+      "paired_units": 25,
+      "significant": true,
+      "target_backend": "zaxy"
+    },
+    {
+      "baseline_backend": "vector",
+      "ci_high": 0.96,
+      "ci_low": 0.78,
+      "mean_difference": 0.88,
+      "p_value": 0.0001,
+      "paired_units": 25,
+      "significant": true,
+      "target_backend": "zaxy"
+    }
+  ],
+  "embedding_provider": "hash:1536",
+  "external_results": [],
+  "generated_at": "2026-05-12T03:22:38Z",
+  "runs": [
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0000",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [
+        "graph-finisher-0000",
+        "graph-task-0000"
+      ],
+      "forbidden_hits": [
+        "graph-finisher-distractor-0000"
+      ],
+      "identity_hits": [
+        "graph-goal-0000",
+        "graph-task-0000",
+        "graph-finisher-0000"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 0.0191,
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0001",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0001",
+        "graph-task-0001"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0001"
+      ],
+      "identity_recall": 0.3333,
+      "latency_ms": 0.0078,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-task-0001",
+        "graph-finisher-0001"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0002",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0074,
+      "missing_expected": [
+        "graph-finisher-0002",
+        "graph-task-0002"
+      ],
+      "missing_identities": [
+        "graph-goal-0002",
+        "graph-task-0002",
+        "graph-finisher-0002"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0003",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0054,
+      "missing_expected": [
+        "graph-finisher-0003",
+        "graph-task-0003"
+      ],
+      "missing_identities": [
+        "graph-goal-0003",
+        "graph-task-0003",
+        "graph-finisher-0003"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0004",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0052,
+      "missing_expected": [
+        "graph-finisher-0004",
+        "graph-task-0004"
+      ],
+      "missing_identities": [
+        "graph-goal-0004",
+        "graph-task-0004",
+        "graph-finisher-0004"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0005",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0046,
+      "missing_expected": [
+        "graph-finisher-0005",
+        "graph-task-0005"
+      ],
+      "missing_identities": [
+        "graph-goal-0005",
+        "graph-task-0005",
+        "graph-finisher-0005"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0006",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0043,
+      "missing_expected": [
+        "graph-finisher-0006",
+        "graph-task-0006"
+      ],
+      "missing_identities": [
+        "graph-goal-0006",
+        "graph-task-0006",
+        "graph-finisher-0006"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0007",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0041,
+      "missing_expected": [
+        "graph-finisher-0007",
+        "graph-task-0007"
+      ],
+      "missing_identities": [
+        "graph-goal-0007",
+        "graph-task-0007",
+        "graph-finisher-0007"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0008",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0041,
+      "missing_expected": [
+        "graph-finisher-0008",
+        "graph-task-0008"
+      ],
+      "missing_identities": [
+        "graph-goal-0008",
+        "graph-task-0008",
+        "graph-finisher-0008"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0009",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0042,
+      "missing_expected": [
+        "graph-finisher-0009",
+        "graph-task-0009"
+      ],
+      "missing_identities": [
+        "graph-goal-0009",
+        "graph-task-0009",
+        "graph-finisher-0009"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0010",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.004,
+      "missing_expected": [
+        "graph-finisher-0010",
+        "graph-task-0010"
+      ],
+      "missing_identities": [
+        "graph-goal-0010",
+        "graph-task-0010",
+        "graph-finisher-0010"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0011",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0043,
+      "missing_expected": [
+        "graph-finisher-0011",
+        "graph-task-0011"
+      ],
+      "missing_identities": [
+        "graph-goal-0011",
+        "graph-task-0011",
+        "graph-finisher-0011"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0012",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0043,
+      "missing_expected": [
+        "graph-finisher-0012",
+        "graph-task-0012"
+      ],
+      "missing_identities": [
+        "graph-goal-0012",
+        "graph-task-0012",
+        "graph-finisher-0012"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0013",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0043,
+      "missing_expected": [
+        "graph-finisher-0013",
+        "graph-task-0013"
+      ],
+      "missing_identities": [
+        "graph-goal-0013",
+        "graph-task-0013",
+        "graph-finisher-0013"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0014",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0044,
+      "missing_expected": [
+        "graph-finisher-0014",
+        "graph-task-0014"
+      ],
+      "missing_identities": [
+        "graph-goal-0014",
+        "graph-task-0014",
+        "graph-finisher-0014"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0015",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0041,
+      "missing_expected": [
+        "graph-finisher-0015",
+        "graph-task-0015"
+      ],
+      "missing_identities": [
+        "graph-goal-0015",
+        "graph-task-0015",
+        "graph-finisher-0015"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0016",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0041,
+      "missing_expected": [
+        "graph-finisher-0016",
+        "graph-task-0016"
+      ],
+      "missing_identities": [
+        "graph-goal-0016",
+        "graph-task-0016",
+        "graph-finisher-0016"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0017",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0041,
+      "missing_expected": [
+        "graph-finisher-0017",
+        "graph-task-0017"
+      ],
+      "missing_identities": [
+        "graph-goal-0017",
+        "graph-task-0017",
+        "graph-finisher-0017"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0018",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0039,
+      "missing_expected": [
+        "graph-finisher-0018",
+        "graph-task-0018"
+      ],
+      "missing_identities": [
+        "graph-goal-0018",
+        "graph-task-0018",
+        "graph-finisher-0018"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0019",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0038,
+      "missing_expected": [
+        "graph-finisher-0019",
+        "graph-task-0019"
+      ],
+      "missing_identities": [
+        "graph-goal-0019",
+        "graph-task-0019",
+        "graph-finisher-0019"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0020",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0041,
+      "missing_expected": [
+        "graph-finisher-0020",
+        "graph-task-0020"
+      ],
+      "missing_identities": [
+        "graph-goal-0020",
+        "graph-task-0020",
+        "graph-finisher-0020"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0021",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0039,
+      "missing_expected": [
+        "graph-finisher-0021",
+        "graph-task-0021"
+      ],
+      "missing_identities": [
+        "graph-goal-0021",
+        "graph-task-0021",
+        "graph-finisher-0021"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0022",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0039,
+      "missing_expected": [
+        "graph-finisher-0022",
+        "graph-task-0022"
+      ],
+      "missing_identities": [
+        "graph-goal-0022",
+        "graph-task-0022",
+        "graph-finisher-0022"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0023",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0037,
+      "missing_expected": [
+        "graph-finisher-0023",
+        "graph-task-0023"
+      ],
+      "missing_identities": [
+        "graph-goal-0023",
+        "graph-task-0023",
+        "graph-finisher-0023"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 506,
+      "backend": "md",
+      "case_name": "graph-traversal-0024",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 0.0056,
+      "missing_expected": [
+        "graph-finisher-0024",
+        "graph-task-0024"
+      ],
+      "missing_identities": [
+        "graph-goal-0024",
+        "graph-task-0024",
+        "graph-finisher-0024"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2023,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 536,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0000",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [
+        "graph-finisher-0000",
+        "graph-task-0000"
+      ],
+      "forbidden_hits": [
+        "graph-finisher-distractor-0000"
+      ],
+      "identity_hits": [
+        "graph-goal-0000",
+        "graph-task-0000"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.4378,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0000"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2143,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 536,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0001",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [
+        "graph-finisher-0001",
+        "graph-task-0001"
+      ],
+      "forbidden_hits": [
+        "graph-finisher-distractor-0001"
+      ],
+      "identity_hits": [
+        "graph-goal-0001",
+        "graph-task-0001"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.296,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0001"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2143,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 526,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0002",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0002",
+        "graph-task-0002"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0002",
+        "graph-task-0002"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.2856,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0002"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2103,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 527,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0003",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0003",
+        "graph-task-0003"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0003",
+        "graph-task-0003"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.2794,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0003"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2105,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 527,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0004",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0004",
+        "graph-task-0004"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0004",
+        "graph-task-0004"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.2751,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0004"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2105,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 527,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0005",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0005",
+        "graph-task-0005"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0005",
+        "graph-task-0005"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.2702,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0005"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2105,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 527,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0006",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0006",
+        "graph-task-0006"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0006",
+        "graph-task-0006"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.2681,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0006"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2105,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 527,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0007",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0007",
+        "graph-task-0007"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0007",
+        "graph-task-0007"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.2697,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0007"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2105,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 527,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0008",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0008",
+        "graph-task-0008"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0008",
+        "graph-task-0008"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.2668,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0008"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2105,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 527,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0009",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0009",
+        "graph-task-0009"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0009",
+        "graph-task-0009"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.2673,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0009"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2105,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 527,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0010",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0010",
+        "graph-task-0010"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0010",
+        "graph-task-0010"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.2685,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0010"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2105,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 527,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0011",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0011",
+        "graph-task-0011"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0011",
+        "graph-task-0011"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.2689,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0011"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2105,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 527,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0012",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0012",
+        "graph-task-0012"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0012",
+        "graph-task-0012"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.2781,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0012"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2105,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 527,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0013",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0013",
+        "graph-task-0013"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0013",
+        "graph-task-0013"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.2753,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0013"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2105,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 527,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0014",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0014",
+        "graph-task-0014"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0014",
+        "graph-task-0014"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.2824,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0014"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2105,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 527,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0015",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0015",
+        "graph-task-0015"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0015",
+        "graph-task-0015"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.2759,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0015"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2105,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 527,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0016",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0016",
+        "graph-task-0016"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0016",
+        "graph-task-0016"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.2745,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0016"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2105,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 527,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0017",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0017",
+        "graph-task-0017"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0017",
+        "graph-task-0017"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.2753,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0017"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2105,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 527,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0018",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0018",
+        "graph-task-0018"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0018",
+        "graph-task-0018"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.2776,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0018"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2105,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 527,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0019",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0019",
+        "graph-task-0019"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0019",
+        "graph-task-0019"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.28,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0019"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2105,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 527,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0020",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0020",
+        "graph-task-0020"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0020",
+        "graph-task-0020"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.274,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0020"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2105,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 527,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0021",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0021",
+        "graph-task-0021"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0021",
+        "graph-task-0021"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.2697,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0021"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2105,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 527,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0022",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0022",
+        "graph-task-0022"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0022",
+        "graph-task-0022"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.2713,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0022"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2105,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 527,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0023",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0023",
+        "graph-task-0023"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0023",
+        "graph-task-0023"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.2755,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0023"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2105,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 527,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0024",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0024",
+        "graph-task-0024"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0024",
+        "graph-task-0024"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.276,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0024"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2105,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "vector",
+      "case_name": "graph-traversal-0000",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [
+        "graph-task-0000"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0000",
+        "graph-task-0000"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 11.3795,
+      "missing_expected": [
+        "graph-finisher-0000"
+      ],
+      "missing_identities": [
+        "graph-finisher-0000"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.5,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "vector",
+      "case_name": "graph-traversal-0001",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [
+        "graph-task-0001"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0001",
+        "graph-task-0001"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 11.843,
+      "missing_expected": [
+        "graph-finisher-0001"
+      ],
+      "missing_identities": [
+        "graph-finisher-0001"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.5,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "vector",
+      "case_name": "graph-traversal-0002",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [
+        "graph-task-0002"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0002",
+        "graph-task-0002"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 11.6937,
+      "missing_expected": [
+        "graph-finisher-0002"
+      ],
+      "missing_identities": [
+        "graph-finisher-0002"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.5,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "vector",
+      "case_name": "graph-traversal-0003",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.8516,
+      "missing_expected": [
+        "graph-finisher-0003",
+        "graph-task-0003"
+      ],
+      "missing_identities": [
+        "graph-goal-0003",
+        "graph-task-0003",
+        "graph-finisher-0003"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "vector",
+      "case_name": "graph-traversal-0004",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.8948,
+      "missing_expected": [
+        "graph-finisher-0004",
+        "graph-task-0004"
+      ],
+      "missing_identities": [
+        "graph-goal-0004",
+        "graph-task-0004",
+        "graph-finisher-0004"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "vector",
+      "case_name": "graph-traversal-0005",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.7917,
+      "missing_expected": [
+        "graph-finisher-0005",
+        "graph-task-0005"
+      ],
+      "missing_identities": [
+        "graph-goal-0005",
+        "graph-task-0005",
+        "graph-finisher-0005"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "vector",
+      "case_name": "graph-traversal-0006",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.9091,
+      "missing_expected": [
+        "graph-finisher-0006",
+        "graph-task-0006"
+      ],
+      "missing_identities": [
+        "graph-goal-0006",
+        "graph-task-0006",
+        "graph-finisher-0006"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "vector",
+      "case_name": "graph-traversal-0007",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.7856,
+      "missing_expected": [
+        "graph-finisher-0007",
+        "graph-task-0007"
+      ],
+      "missing_identities": [
+        "graph-goal-0007",
+        "graph-task-0007",
+        "graph-finisher-0007"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "vector",
+      "case_name": "graph-traversal-0008",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.8448,
+      "missing_expected": [
+        "graph-finisher-0008",
+        "graph-task-0008"
+      ],
+      "missing_identities": [
+        "graph-goal-0008",
+        "graph-task-0008",
+        "graph-finisher-0008"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "vector",
+      "case_name": "graph-traversal-0009",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.868,
+      "missing_expected": [
+        "graph-finisher-0009",
+        "graph-task-0009"
+      ],
+      "missing_identities": [
+        "graph-goal-0009",
+        "graph-task-0009",
+        "graph-finisher-0009"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 538,
+      "backend": "vector",
+      "case_name": "graph-traversal-0010",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0010",
+        "graph-task-0010"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0010",
+        "graph-task-0010"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 11.681,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0010"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2150,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "vector",
+      "case_name": "graph-traversal-0011",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.7159,
+      "missing_expected": [
+        "graph-finisher-0011",
+        "graph-task-0011"
+      ],
+      "missing_identities": [
+        "graph-goal-0011",
+        "graph-task-0011",
+        "graph-finisher-0011"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "vector",
+      "case_name": "graph-traversal-0012",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.8598,
+      "missing_expected": [
+        "graph-finisher-0012",
+        "graph-task-0012"
+      ],
+      "missing_identities": [
+        "graph-goal-0012",
+        "graph-task-0012",
+        "graph-finisher-0012"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "vector",
+      "case_name": "graph-traversal-0013",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.8176,
+      "missing_expected": [
+        "graph-finisher-0013",
+        "graph-task-0013"
+      ],
+      "missing_identities": [
+        "graph-goal-0013",
+        "graph-task-0013",
+        "graph-finisher-0013"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "vector",
+      "case_name": "graph-traversal-0014",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.8941,
+      "missing_expected": [
+        "graph-finisher-0014",
+        "graph-task-0014"
+      ],
+      "missing_identities": [
+        "graph-goal-0014",
+        "graph-task-0014",
+        "graph-finisher-0014"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "vector",
+      "case_name": "graph-traversal-0015",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.9294,
+      "missing_expected": [
+        "graph-finisher-0015",
+        "graph-task-0015"
+      ],
+      "missing_identities": [
+        "graph-goal-0015",
+        "graph-task-0015",
+        "graph-finisher-0015"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "vector",
+      "case_name": "graph-traversal-0016",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [
+        "graph-task-0016"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0016",
+        "graph-task-0016"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 11.8002,
+      "missing_expected": [
+        "graph-finisher-0016"
+      ],
+      "missing_identities": [
+        "graph-finisher-0016"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.5,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "vector",
+      "case_name": "graph-traversal-0017",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.9495,
+      "missing_expected": [
+        "graph-finisher-0017",
+        "graph-task-0017"
+      ],
+      "missing_identities": [
+        "graph-goal-0017",
+        "graph-task-0017",
+        "graph-finisher-0017"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "vector",
+      "case_name": "graph-traversal-0018",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.675,
+      "missing_expected": [
+        "graph-finisher-0018",
+        "graph-task-0018"
+      ],
+      "missing_identities": [
+        "graph-goal-0018",
+        "graph-task-0018",
+        "graph-finisher-0018"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "vector",
+      "case_name": "graph-traversal-0019",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.9304,
+      "missing_expected": [
+        "graph-finisher-0019",
+        "graph-task-0019"
+      ],
+      "missing_identities": [
+        "graph-goal-0019",
+        "graph-task-0019",
+        "graph-finisher-0019"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "vector",
+      "case_name": "graph-traversal-0020",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.8325,
+      "missing_expected": [
+        "graph-finisher-0020",
+        "graph-task-0020"
+      ],
+      "missing_identities": [
+        "graph-goal-0020",
+        "graph-task-0020",
+        "graph-finisher-0020"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 538,
+      "backend": "vector",
+      "case_name": "graph-traversal-0021",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.8471,
+      "missing_expected": [
+        "graph-finisher-0021",
+        "graph-task-0021"
+      ],
+      "missing_identities": [
+        "graph-goal-0021",
+        "graph-task-0021",
+        "graph-finisher-0021"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2152,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "vector",
+      "case_name": "graph-traversal-0022",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 12.0148,
+      "missing_expected": [
+        "graph-finisher-0022",
+        "graph-task-0022"
+      ],
+      "missing_identities": [
+        "graph-goal-0022",
+        "graph-task-0022",
+        "graph-finisher-0022"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "vector",
+      "case_name": "graph-traversal-0023",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.9747,
+      "missing_expected": [
+        "graph-finisher-0023",
+        "graph-task-0023"
+      ],
+      "missing_identities": [
+        "graph-goal-0023",
+        "graph-task-0023",
+        "graph-finisher-0023"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "vector",
+      "case_name": "graph-traversal-0024",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.8005,
+      "missing_expected": [
+        "graph-finisher-0024",
+        "graph-task-0024"
+      ],
+      "missing_identities": [
+        "graph-goal-0024",
+        "graph-task-0024",
+        "graph-finisher-0024"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0000",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [
+        "graph-task-0000"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0000",
+        "graph-task-0000"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 11.7033,
+      "missing_expected": [
+        "graph-finisher-0000"
+      ],
+      "missing_identities": [
+        "graph-finisher-0000"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.5,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0001",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [
+        "graph-task-0001"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0001",
+        "graph-task-0001"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 11.7622,
+      "missing_expected": [
+        "graph-finisher-0001"
+      ],
+      "missing_identities": [
+        "graph-finisher-0001"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.5,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0002",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [
+        "graph-task-0002"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0002",
+        "graph-task-0002"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 11.6623,
+      "missing_expected": [
+        "graph-finisher-0002"
+      ],
+      "missing_identities": [
+        "graph-finisher-0002"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.5,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0003",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.5278,
+      "missing_expected": [
+        "graph-finisher-0003",
+        "graph-task-0003"
+      ],
+      "missing_identities": [
+        "graph-goal-0003",
+        "graph-task-0003",
+        "graph-finisher-0003"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0004",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.4943,
+      "missing_expected": [
+        "graph-finisher-0004",
+        "graph-task-0004"
+      ],
+      "missing_identities": [
+        "graph-goal-0004",
+        "graph-task-0004",
+        "graph-finisher-0004"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0005",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.7046,
+      "missing_expected": [
+        "graph-finisher-0005",
+        "graph-task-0005"
+      ],
+      "missing_identities": [
+        "graph-goal-0005",
+        "graph-task-0005",
+        "graph-finisher-0005"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0006",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.5022,
+      "missing_expected": [
+        "graph-finisher-0006",
+        "graph-task-0006"
+      ],
+      "missing_identities": [
+        "graph-goal-0006",
+        "graph-task-0006",
+        "graph-finisher-0006"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0007",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.7209,
+      "missing_expected": [
+        "graph-finisher-0007",
+        "graph-task-0007"
+      ],
+      "missing_identities": [
+        "graph-goal-0007",
+        "graph-task-0007",
+        "graph-finisher-0007"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0008",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.6903,
+      "missing_expected": [
+        "graph-finisher-0008",
+        "graph-task-0008"
+      ],
+      "missing_identities": [
+        "graph-goal-0008",
+        "graph-task-0008",
+        "graph-finisher-0008"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0009",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.7601,
+      "missing_expected": [
+        "graph-finisher-0009",
+        "graph-task-0009"
+      ],
+      "missing_identities": [
+        "graph-goal-0009",
+        "graph-task-0009",
+        "graph-finisher-0009"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 538,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0010",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0010",
+        "graph-task-0010"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0010",
+        "graph-task-0010"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 11.7283,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0010"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2150,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0011",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.8477,
+      "missing_expected": [
+        "graph-finisher-0011",
+        "graph-task-0011"
+      ],
+      "missing_identities": [
+        "graph-goal-0011",
+        "graph-task-0011",
+        "graph-finisher-0011"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0012",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.7221,
+      "missing_expected": [
+        "graph-finisher-0012",
+        "graph-task-0012"
+      ],
+      "missing_identities": [
+        "graph-goal-0012",
+        "graph-task-0012",
+        "graph-finisher-0012"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0013",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.7394,
+      "missing_expected": [
+        "graph-finisher-0013",
+        "graph-task-0013"
+      ],
+      "missing_identities": [
+        "graph-goal-0013",
+        "graph-task-0013",
+        "graph-finisher-0013"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0014",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.6772,
+      "missing_expected": [
+        "graph-finisher-0014",
+        "graph-task-0014"
+      ],
+      "missing_identities": [
+        "graph-goal-0014",
+        "graph-task-0014",
+        "graph-finisher-0014"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0015",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.6432,
+      "missing_expected": [
+        "graph-finisher-0015",
+        "graph-task-0015"
+      ],
+      "missing_identities": [
+        "graph-goal-0015",
+        "graph-task-0015",
+        "graph-finisher-0015"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0016",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [
+        "graph-task-0016"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0016",
+        "graph-task-0016"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 11.4217,
+      "missing_expected": [
+        "graph-finisher-0016"
+      ],
+      "missing_identities": [
+        "graph-finisher-0016"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.5,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0017",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.6377,
+      "missing_expected": [
+        "graph-finisher-0017",
+        "graph-task-0017"
+      ],
+      "missing_identities": [
+        "graph-goal-0017",
+        "graph-task-0017",
+        "graph-finisher-0017"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0018",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.4928,
+      "missing_expected": [
+        "graph-finisher-0018",
+        "graph-task-0018"
+      ],
+      "missing_identities": [
+        "graph-goal-0018",
+        "graph-task-0018",
+        "graph-finisher-0018"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0019",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.6977,
+      "missing_expected": [
+        "graph-finisher-0019",
+        "graph-task-0019"
+      ],
+      "missing_identities": [
+        "graph-goal-0019",
+        "graph-task-0019",
+        "graph-finisher-0019"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0020",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.5864,
+      "missing_expected": [
+        "graph-finisher-0020",
+        "graph-task-0020"
+      ],
+      "missing_identities": [
+        "graph-goal-0020",
+        "graph-task-0020",
+        "graph-finisher-0020"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 538,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0021",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.5393,
+      "missing_expected": [
+        "graph-finisher-0021",
+        "graph-task-0021"
+      ],
+      "missing_identities": [
+        "graph-goal-0021",
+        "graph-task-0021",
+        "graph-finisher-0021"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2152,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0022",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.6099,
+      "missing_expected": [
+        "graph-finisher-0022",
+        "graph-task-0022"
+      ],
+      "missing_identities": [
+        "graph-goal-0022",
+        "graph-task-0022",
+        "graph-finisher-0022"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0023",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.499,
+      "missing_expected": [
+        "graph-finisher-0023",
+        "graph-task-0023"
+      ],
+      "missing_identities": [
+        "graph-goal-0023",
+        "graph-task-0023",
+        "graph-finisher-0023"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 528,
+      "backend": "md+vector",
+      "case_name": "graph-traversal-0024",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [],
+      "identity_recall": 0.0,
+      "latency_ms": 11.6054,
+      "missing_expected": [
+        "graph-finisher-0024",
+        "graph-task-0024"
+      ],
+      "missing_identities": [
+        "graph-goal-0024",
+        "graph-task-0024",
+        "graph-finisher-0024"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 2110,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 202,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0000",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0000",
+        "graph-task-0000"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0000",
+        "graph-finisher-0000"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 144.7032,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0000"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 815,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 202,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0001",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0001",
+        "graph-task-0001"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0001",
+        "graph-finisher-0001"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 140.0454,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0001"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 815,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 203,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0002",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0002",
+        "graph-task-0002"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0002",
+        "graph-finisher-0002"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 128.885,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0002"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 819,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 203,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0003",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0003",
+        "graph-task-0003"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0003",
+        "graph-finisher-0003"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 125.5974,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0003"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 819,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 203,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0004",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0004",
+        "graph-task-0004"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0004",
+        "graph-finisher-0004"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 127.3215,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0004"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 819,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 203,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0005",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0005",
+        "graph-task-0005"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0005",
+        "graph-finisher-0005"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 135.321,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0005"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 819,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 203,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0006",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0006",
+        "graph-task-0006"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0006",
+        "graph-finisher-0006"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 125.7885,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0006"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 819,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 203,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0007",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0007",
+        "graph-task-0007"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0007",
+        "graph-finisher-0007"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 130.7618,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0007"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 819,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 203,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0008",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0008",
+        "graph-task-0008"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0008",
+        "graph-finisher-0008"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 125.4999,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0008"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 819,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 203,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0009",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0009",
+        "graph-task-0009"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0009",
+        "graph-finisher-0009"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 121.2799,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0009"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 819,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 203,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0010",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0010",
+        "graph-task-0010"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0010",
+        "graph-finisher-0010"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 117.7882,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0010"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 819,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 203,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0011",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0011",
+        "graph-task-0011"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0011",
+        "graph-finisher-0011"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 125.5155,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0011"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 819,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 203,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0012",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0012",
+        "graph-task-0012"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0012",
+        "graph-finisher-0012"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 121.3235,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0012"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 819,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 203,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0013",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0013",
+        "graph-task-0013"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0013",
+        "graph-finisher-0013"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 136.5113,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0013"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 819,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 203,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0014",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0014",
+        "graph-task-0014"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0014",
+        "graph-finisher-0014"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 121.9931,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0014"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 819,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 203,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0015",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0015",
+        "graph-task-0015"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0015",
+        "graph-finisher-0015"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 126.1003,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0015"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 819,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 203,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0016",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0016",
+        "graph-task-0016"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0016",
+        "graph-finisher-0016"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 137.5763,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0016"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 819,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 203,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0017",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0017",
+        "graph-task-0017"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0017",
+        "graph-finisher-0017"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 124.0158,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0017"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 819,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 203,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0018",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0018",
+        "graph-task-0018"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0018",
+        "graph-finisher-0018"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 128.9233,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0018"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 819,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 203,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0019",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0019",
+        "graph-task-0019"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0019",
+        "graph-finisher-0019"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 125.7162,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0019"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 819,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 203,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0020",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0020",
+        "graph-task-0020"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0020",
+        "graph-finisher-0020"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 129.0483,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0020"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 819,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 203,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0021",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0021",
+        "graph-task-0021"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0021",
+        "graph-finisher-0021"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 129.0612,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0021"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 819,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 203,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0022",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0022",
+        "graph-task-0022"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0022",
+        "graph-finisher-0022"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 120.4688,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0022"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 819,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 203,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0023",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0023",
+        "graph-task-0023"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0023",
+        "graph-finisher-0023"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 123.8125,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0023"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 819,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "approx_tokens": 203,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0024",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "graph-finisher-0024",
+        "graph-task-0024"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-task-0024",
+        "graph-finisher-0024"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 131.3024,
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-goal-0024"
+      ],
+      "missing_sources": [],
+      "result_count": 5,
+      "returned_bytes": 819,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    }
+  ],
+  "summaries": [
+    {
+      "backend": "bm25",
+      "case_count": 25,
+      "latency_ms_mean": 0.2816,
+      "latency_ms_p50": 0.2753,
+      "latency_ms_p95": 0.2939,
+      "latency_ms_p99": 0.4038,
+      "mean_approx_tokens": 527.68,
+      "mean_citation_coverage": 1.0,
+      "mean_identity_recall": 0.6667,
+      "mean_returned_bytes": 2107.96,
+      "mean_score": 0.92,
+      "mean_source_recall": null,
+      "runs": 1
+    },
+    {
+      "backend": "md",
+      "case_count": 25,
+      "latency_ms_mean": 0.0051,
+      "latency_ms_p50": 0.0042,
+      "latency_ms_p95": 0.0077,
+      "latency_ms_p99": 0.0164,
+      "mean_approx_tokens": 506.0,
+      "mean_citation_coverage": 1.0,
+      "mean_identity_recall": 0.0533,
+      "mean_returned_bytes": 2023.0,
+      "mean_score": 0.04,
+      "mean_source_recall": null,
+      "runs": 1
+    },
+    {
+      "backend": "md+vector",
+      "case_count": 25,
+      "latency_ms_mean": 11.639,
+      "latency_ms_p50": 11.6623,
+      "latency_ms_p95": 11.7618,
+      "latency_ms_p99": 11.8272,
+      "mean_approx_tokens": 528.8,
+      "mean_citation_coverage": 1.0,
+      "mean_identity_recall": 0.1333,
+      "mean_returned_bytes": 2113.28,
+      "mean_score": 0.12,
+      "mean_source_recall": null,
+      "runs": 1
+    },
+    {
+      "backend": "vector",
+      "case_count": 25,
+      "latency_ms_mean": 11.8234,
+      "latency_ms_p50": 11.8448,
+      "latency_ms_p95": 11.9697,
+      "latency_ms_p99": 12.0052,
+      "mean_approx_tokens": 528.8,
+      "mean_citation_coverage": 1.0,
+      "mean_identity_recall": 0.1333,
+      "mean_returned_bytes": 2113.28,
+      "mean_score": 0.12,
+      "mean_source_recall": null,
+      "runs": 1
+    },
+    {
+      "backend": "zaxy",
+      "case_count": 25,
+      "latency_ms_mean": 128.1744,
+      "latency_ms_p50": 126.1003,
+      "latency_ms_p95": 139.5516,
+      "latency_ms_p99": 143.5853,
+      "mean_approx_tokens": 202.92,
+      "mean_citation_coverage": 1.0,
+      "mean_identity_recall": 0.6667,
+      "mean_returned_bytes": 818.68,
+      "mean_score": 1.0,
+      "mean_source_recall": null,
+      "runs": 1
+    }
+  ],
+  "workload": {
+    "case_count": 25,
+    "documents": null,
+    "event_count": 100,
+    "lanes": [
+      "graph-traversal"
+    ],
+    "sessions": null,
+    "sha256": "c7972ceadf84dc32f51efa2bdd071a73ae69d590a35ea26f6749727677f81547",
+    "subjects": 25,
+    "version": "mempalace-graph-traversal-v1"
+  }
+}
