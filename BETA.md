@@ -38,6 +38,7 @@ Zaxy's beta goal is to prove the product thesis: **Git for LLM memory**. A sessi
    - `zaxy memory inferred-status` now reports inferred-edge totals, method distribution, confidence statistics, evidence coverage, source-event gaps, and representative samples.
    - Graph traversal now applies source-aware inferred-edge trust scoring, downweighting uncited inferred paths and exposing trust metadata in score explanations.
    - Memory Checkout now summarizes inferred graph-path reliance in `inferred_context` diagnostics and prompt guidance.
+   - Local Neo4j UAT now proves inferred edges flow from Eventloom append through graph traversal into Memory Checkout with relation labels and inference methods intact.
    - Continue improving graph traversal density by adding generated inferred edges only when provenance and confidence are defensible.
    - Keep Eventloom provenance as the source of truth; do not fake graph density.
 

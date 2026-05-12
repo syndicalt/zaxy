@@ -98,8 +98,9 @@ operators.
 
 Memory Checkout also rolls those per-result explanations into an
 `inferred_context` diagnostic. The prompt-ready checkout includes inferred
-context counts, inferred edge counts, average trust, and low-trust guidance so
-models can distinguish cited inferred graph context from deterministic memory.
+context counts, inferred edge counts, relation labels, inference methods,
+average trust, and low-trust guidance so models can distinguish cited inferred
+graph context from deterministic memory.
 
 Example Eventloom payload:
 

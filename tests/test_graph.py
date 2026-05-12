@@ -1230,6 +1230,82 @@ class TestIntegration:
         # Should still find it (not invalidated, and 2025 > 2024)
         assert len(future_chunks) > 0
 
+    async def test_inferred_edge_uat_reaches_memory_checkout(
+        self,
+        real_store: GraphStore,
+        tmp_path: Any,
+    ) -> None:
+        """UAT: inferred edges should flow from append through traversal into checkout."""
+        from zaxy.core import MemoryFabric
+
+        session_id = "uat-inferred-checkout"
+        decision_text = "Use Memory Checkout as the model-facing state contract"
+        fabric = MemoryFabric(
+            eventloom_path=str(tmp_path / ".eventloom"),
+            neo4j_uri="bolt://localhost:7688",
+            neo4j_user="neo4j",
+            neo4j_password="testpassword",
+            tracer_disabled=True,
+        )
+        fabric.graph = real_store
+        fabric.query_router.store = real_store
+
+        await fabric.append(
+            "decision.made",
+            actor="codex",
+            payload={
+                "decision": decision_text,
+                "rationale": "Models need a current cited prompt state.",
+            },
+            session_id=session_id,
+        )
+        decision_event = fabric.session_manager.get(session_id).eventlog.read_all()[-1]
+
+        await fabric.append(
+            "task.completed",
+            actor="codex",
+            payload={
+                "taskId": "task-uat-0001",
+                "summary": "Implemented Memory Checkout.",
+                "decision": decision_text,
+                "decision_event_seq": decision_event.seq,
+                "decision_event_hash": decision_event.hash,
+            },
+            session_id=session_id,
+        )
+
+        checkout = await fabric.checkout_memory(
+            "What decision did task-uat-0001 implement?",
+            session_id=session_id,
+            limit=5,
+        )
+
+        inferred_facts = [
+            fact
+            for fact in checkout.current_facts
+            if fact.get("score_explanation", {}).get("inferred_edge_count")
+        ]
+        assert inferred_facts
+        score_explanation = inferred_facts[0]["score_explanation"]
+        assert score_explanation["inferred_edge_trust"] == 0.86
+        assert score_explanation["inferred_edge_trust_multiplier"] == 1.08
+        assert score_explanation["inferred_relation_types"] == [
+            "likely_implemented_decision"
+        ]
+        assert score_explanation["inference_methods"] == [
+            "task_completed_decision_citation_v1"
+        ]
+        assert checkout.diagnostics["inferred_context"]["context_count"] >= 1
+        assert checkout.diagnostics["inferred_context"]["edge_count"] >= 1
+        assert checkout.diagnostics["inferred_context"]["relation_types"] == [
+            "likely_implemented_decision"
+        ]
+        assert checkout.diagnostics["inferred_context"]["inference_methods"] == [
+            "task_completed_decision_citation_v1"
+        ]
+        assert "Inferred graph context:" in checkout.prompt
+        assert "likely_implemented_decision" in checkout.prompt
+
 
 @pytest.mark.integration
 class TestTLSIntegration:

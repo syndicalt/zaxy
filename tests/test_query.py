@@ -501,6 +501,7 @@ class TestQueryRouting:
             valid_to=None,
             properties={
                 "_path_relation_types": ["likely_implemented_decision"],
+                "_path_inferred_flags": [True],
                 "_path_length": 1,
                 "_path_inferred_edge_count": 1,
                 "_path_inferred_confidences": [0.86],
@@ -516,6 +517,7 @@ class TestQueryRouting:
             valid_to=None,
             properties={
                 "_path_relation_types": ["likely_implemented_decision"],
+                "_path_inferred_flags": [True],
                 "_path_length": 1,
                 "_path_inferred_edge_count": 1,
                 "_path_inferred_confidences": [0.86],
@@ -545,6 +547,12 @@ class TestQueryRouting:
         assert trusted.score_explanation["inferred_edge_trust_multiplier"] > 1.0
         assert trusted.score_explanation["inferred_edge_evidence_coverage"] == 1.0
         assert trusted.score_explanation["inferred_edge_source_coverage"] == 1.0
+        assert trusted.score_explanation["inferred_relation_types"] == [
+            "likely_implemented_decision"
+        ]
+        assert trusted.score_explanation["inference_methods"] == [
+            "task_completed_decision_citation_v1"
+        ]
         assert weak.score_explanation is not None
         assert weak.score_explanation["inferred_edge_trust_multiplier"] < 1.0
         assert weak.score_explanation["inferred_edge_evidence_coverage"] == 0.0

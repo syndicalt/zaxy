@@ -1104,6 +1104,8 @@ def _list_property(value: object) -> list[object]:
 def _score_explanation(result: SearchResult) -> dict[str, Any]:
     """Return compact score details for retrieval debugging."""
     inferred_trust = _inferred_edge_trust_metadata(result.entity.properties)
+    inferred_relation_types = _inferred_relation_types(result.entity.properties)
+    inference_methods = _inference_methods(result.entity.properties)
     return {
         "source": result.source,
         "raw_score": round(result.raw_score if result.raw_score is not None else result.score, 4),
@@ -1145,6 +1147,8 @@ def _score_explanation(result: SearchResult) -> dict[str, Any]:
                 "inferred_edge_method_coverage": round(float(inferred_trust["method_coverage"]), 4),
                 "inferred_edge_source_coverage": round(float(inferred_trust["source_coverage"]), 4),
                 "inferred_edge_evidence_coverage": round(float(inferred_trust["evidence_coverage"]), 4),
+                "inferred_relation_types": inferred_relation_types,
+                "inference_methods": inference_methods,
             }
             if inferred_trust["count"]
             else {}
@@ -1152,6 +1156,36 @@ def _score_explanation(result: SearchResult) -> dict[str, Any]:
         "weighted_score": round(result.score, 4),
         "ranking_score": round(result.ranking_score if result.ranking_score is not None else result.score, 4),
     }
+
+
+def _inferred_relation_types(properties: dict[str, Any]) -> list[str]:
+    relation_types = [str(value) for value in _list_property(properties.get("_path_relation_types"))]
+    inferred_flags = [
+        bool(value) for value in _list_property(properties.get("_path_inferred_flags"))
+    ]
+    if inferred_flags and len(inferred_flags) == len(relation_types):
+        return _unique_text(
+            relation_type
+            for relation_type, inferred in zip(relation_types, inferred_flags, strict=True)
+            if inferred
+        )
+    return _unique_text(relation_types)
+
+
+def _inference_methods(properties: dict[str, Any]) -> list[str]:
+    return _unique_text(str(value) for value in _list_property(properties.get("_path_inference_methods")))
+
+
+def _unique_text(values: Any) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        text = str(value).strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        unique.append(text)
+    return unique
 
 
 def _citation(entity: GraphEntity) -> str | None:

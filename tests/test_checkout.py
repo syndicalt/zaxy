@@ -97,6 +97,8 @@ def test_checkout_diagnostics_summarize_inferred_context_dependency() -> None:
                 "inferred_edge_method_coverage": 1.0,
                 "inferred_edge_source_coverage": 1.0,
                 "inferred_edge_evidence_coverage": 1.0,
+                "inferred_relation_types": ["likely_implemented_decision"],
+                "inference_methods": ["task_completed_decision_citation_v1"],
             },
         },
         {
@@ -114,6 +116,8 @@ def test_checkout_diagnostics_summarize_inferred_context_dependency() -> None:
                 "inferred_edge_method_coverage": 0.0,
                 "inferred_edge_source_coverage": 0.0,
                 "inferred_edge_evidence_coverage": 0.0,
+                "inferred_relation_types": ["weak_inferred_relation"],
+                "inference_methods": ["unknown"],
             },
         },
     ]
@@ -153,8 +157,12 @@ def test_checkout_diagnostics_summarize_inferred_context_dependency() -> None:
         "source_coverage": 0.5,
         "evidence_coverage": 0.5,
         "low_trust_count": 1,
+        "relation_types": ["likely_implemented_decision", "weak_inferred_relation"],
+        "inference_methods": ["task_completed_decision_citation_v1", "unknown"],
     }
     assert "Checkout depends on inferred graph paths; inspect inferred_context diagnostics." in guidance["trust"]
     assert "Low-trust inferred graph paths were included; treat them as leads, not facts." in guidance["ignore"]
     assert "Checkout includes inferred graph paths." in quality["reasons"]
     assert "Inferred graph context: contexts=2, edges=2, average_trust=0.43" in prompt
+    assert "relations=likely_implemented_decision, weak_inferred_relation" in prompt
+    assert "methods=task_completed_decision_citation_v1, unknown" in prompt

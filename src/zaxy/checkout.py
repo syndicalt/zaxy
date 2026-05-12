@@ -195,12 +195,19 @@ def format_memory_checkout_prompt(
     )
     inferred_context = diagnostics.get("inferred_context")
     if isinstance(inferred_context, dict):
-        lines.append(
+        inferred_line = (
             "- Inferred graph context: "
             f"contexts={inferred_context.get('context_count', 0)}, "
             f"edges={inferred_context.get('edge_count', 0)}, "
             f"average_trust={inferred_context.get('average_trust', 0)}"
         )
+        relation_types = _text_list(inferred_context.get("relation_types"))
+        if relation_types:
+            inferred_line += f", relations={', '.join(relation_types)}"
+        inference_methods = _text_list(inferred_context.get("inference_methods"))
+        if inference_methods:
+            inferred_line += f", methods={', '.join(inference_methods)}"
+        lines.append(inferred_line)
     if diagnostics.get("feedback_recommended"):
         lines.append(
             "- Feedback: call "
@@ -288,6 +295,8 @@ def _inferred_context_diagnostics(items: list[dict[str, Any]]) -> dict[str, Any]
             for exp in explanations
             if _float_metric(exp.get("inferred_edge_trust")) < 0.5
         ),
+        "relation_types": _unique_explanation_texts(explanations, "inferred_relation_types"),
+        "inference_methods": _unique_explanation_texts(explanations, "inference_methods"),
     }
 
 
@@ -311,6 +320,31 @@ def _float_metric(value: Any) -> float:
 
 def _round_metric(value: float, *, digits: int = 2) -> float:
     return round(value, digits)
+
+
+def _unique_explanation_texts(items: list[dict[str, Any]], key: str) -> list[str]:
+    values: list[str] = []
+    for item in items:
+        values.extend(_text_list(item.get(key)))
+    seen: set[str] = set()
+    unique: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        unique.append(value)
+    return unique
+
+
+def _text_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    texts: list[str] = []
+    for item in value:
+        text = str(item).strip()
+        if text:
+            texts.append(text)
+    return texts
 
 
 def _format_source_lanes(source_lanes: Any) -> str:
