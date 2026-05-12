@@ -40,6 +40,7 @@ from zaxy.compaction import (
     build_compaction_projection,
     write_compaction_projection,
 )
+from zaxy.config import get_settings
 from zaxy.core import MemoryFabric
 from zaxy.doctor import (
     format_doctor_report,
@@ -133,7 +134,12 @@ from zaxy.packet_projection import (
 )
 from zaxy.refs import MemoryRefStore
 from zaxy.release import package_version, run_beta_readiness, run_release_smoke
-from zaxy.schema import render_schema_plan
+from zaxy.schema import (
+    fetch_schema_migration_records,
+    render_schema_plan,
+    render_schema_recovery_plan,
+    schema_migration_status,
+)
 from zaxy.viewer import write_viewer_html
 
 app = typer.Typer(help="Zaxy: Event-sourced temporal knowledge graph fabric")
@@ -1285,6 +1291,33 @@ def viewer(
 def schema_plan() -> None:
     """Print the current Neo4j schema migration plan."""
     typer.echo(render_schema_plan())
+
+
+@app.command("schema-recovery-plan")
+def schema_recovery_plan() -> None:
+    """Inspect Neo4j migration records and print recovery guidance."""
+    import asyncio
+
+    settings = get_settings()
+
+    async def _run() -> str:
+        graph = GraphStore(
+            settings.neo4j_uri,
+            settings.neo4j_user,
+            settings.neo4j_password,
+            ca_cert=settings.neo4j_ca_cert,
+            trust_all=settings.neo4j_trust_all,
+        )
+        try:
+            await graph.connect()
+            records = await fetch_schema_migration_records(graph._driver)
+        finally:
+            await graph.close()
+        return render_schema_recovery_plan(
+            schema_migration_status(records=records)
+        )
+
+    typer.echo(asyncio.run(_run()))
 
 
 @app.command("extractor-template")

@@ -11,8 +11,11 @@ from zaxy.schema import (
     SchemaMigration,
     apply_schema_migrations,
     fetch_applied_schema_migrations,
+    fetch_schema_migration_records,
     pending_schema_migrations,
     render_schema_plan,
+    render_schema_recovery_plan,
+    schema_migration_status,
 )
 
 
@@ -104,3 +107,68 @@ async def test_fetch_applied_schema_migrations_handles_neo4j_records() -> None:
     applied = await fetch_applied_schema_migrations(driver)
 
     assert applied == {"001_first", "002_second"}
+
+
+async def test_fetch_schema_migration_records_includes_audit_metadata() -> None:
+    driver = AsyncMock()
+    driver.execute_query.return_value = (
+        [
+            {
+                "name": "001_first",
+                "checksum": "abc",
+                "statement_count": 2,
+                "applied_at": "2026-05-11T00:00:00Z",
+            }
+        ],
+        None,
+        None,
+    )
+
+    records = await fetch_schema_migration_records(driver)
+
+    assert records["001_first"] == {
+        "checksum": "abc",
+        "statement_count": 2,
+        "applied_at": "2026-05-11T00:00:00Z",
+    }
+
+
+def test_schema_migration_status_detects_checksum_and_partial_states() -> None:
+    first = SchemaMigration("001_first", ("RETURN 1", "RETURN 2"))
+    second = SchemaMigration("002_second", ("RETURN 3",))
+
+    statuses = schema_migration_status(
+        migrations=[first, second],
+        records={
+            "001_first": {
+                "checksum": "wrong",
+                "statement_count": 1,
+                "applied_at": "2026-05-11T00:00:00Z",
+            }
+        },
+    )
+
+    assert statuses[0].state == "partial"
+    assert statuses[0].checksum_ok is False
+    assert statuses[0].statement_count_ok is False
+    assert statuses[1].state == "pending"
+
+
+def test_render_schema_recovery_plan_gives_operator_actions() -> None:
+    migration = SchemaMigration("001_first", ("RETURN 1", "RETURN 2"))
+    statuses = schema_migration_status(
+        migrations=[migration],
+        records={
+            "001_first": {
+                "checksum": migration.checksum,
+                "statement_count": 1,
+                "applied_at": "2026-05-11T00:00:00Z",
+            }
+        },
+    )
+
+    plan = render_schema_recovery_plan(statuses)
+
+    assert "Schema recovery plan:" in plan
+    assert "001_first: partial" in plan
+    assert "Re-run `zaxy schema-plan`" in plan

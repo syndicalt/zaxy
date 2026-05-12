@@ -75,3 +75,45 @@ def test_task_completion_without_decision_citation_emits_no_inference() -> None:
     )
 
     assert build_inferred_edge_events(event) == []
+
+
+def test_inference_contradiction_emits_retraction_event() -> None:
+    """Contradicting evidence should produce a retraction event for inferred edges."""
+    event = _event(
+        "inference.edge.contradicted",
+        {
+            "source": {"name": "task-7", "entity_type": "task"},
+            "target": {"name": "Use Memory Checkout", "entity_type": "decision"},
+            "relation_type": "likely_implemented_decision",
+            "valid_from": "2024-01-01T00:00:00Z",
+            "original_event_seq": 8,
+            "original_event_hash": "a" * 64,
+            "reason": "Later source showed the task implemented a different decision.",
+        },
+    )
+
+    generated = build_inferred_edge_events(event)
+
+    assert generated == [
+        {
+            "event_type": "inference.edge.retracted",
+            "actor": "zaxy-inference",
+            "payload": {
+                "source": {"name": "task-7", "entity_type": "task"},
+                "target": {"name": "Use Memory Checkout", "entity_type": "decision"},
+                "relation_type": "likely_implemented_decision",
+                "valid_from": "2024-01-01T00:00:00Z",
+                "valid_to": "2024-01-01T00:00:00Z",
+                "confidence": 0.0,
+                "inference_method": "contradicting_evidence_retraction_v1",
+                "evidence": {
+                    "source_event_seq": 7,
+                    "source_event_hash": "b" * 64,
+                    "original_event_seq": 8,
+                    "original_event_hash": "a" * 64,
+                    "reason": "Later source showed the task implemented a different decision.",
+                },
+            },
+            "thread": "agent-1",
+        }
+    ]

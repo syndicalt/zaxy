@@ -1358,6 +1358,61 @@ def _extract_inference_edge_generated(event: Event) -> ExtractionResult:
     )
 
 
+@register("inference.edge.retracted")
+def _extract_inference_edge_retracted(event: Event) -> ExtractionResult:
+    """Project a contradicted inferred edge as a closed validity interval."""
+    source = _entity_reference(
+        event.payload.get("source"),
+        role="source",
+        event_seq=event.seq,
+        observed_at=event.timestamp,
+    )
+    target = _entity_reference(
+        event.payload.get("target"),
+        role="target",
+        event_seq=event.seq,
+        observed_at=event.timestamp,
+    )
+    relation_type = _required_text(
+        event.payload.get("relation_type"),
+        field="relation_type",
+        event_seq=event.seq,
+    )
+    inference_method = _required_text(
+        event.payload.get("inference_method"),
+        field="inference_method",
+        event_seq=event.seq,
+    )
+    valid_from = _required_text(
+        event.payload.get("valid_from"),
+        field="valid_from",
+        event_seq=event.seq,
+    )
+    valid_to = _required_text(
+        event.payload.get("valid_to"),
+        field="valid_to",
+        event_seq=event.seq,
+    )
+    confidence = _required_confidence(event.payload.get("confidence"), event_seq=event.seq)
+    evidence = event.payload.get("evidence")
+    edge = ExtractedEdge(
+        source=source.name,
+        target=target.name,
+        relation_type=relation_type,
+        valid_from=valid_from,
+        valid_to=valid_to,
+        inferred=True,
+        confidence=confidence,
+        inference_method=inference_method,
+        evidence=evidence if isinstance(evidence, dict) else {},
+    )
+    return ExtractionResult(
+        entities=[source, target],
+        edges=[edge],
+        source_event_seq=event.seq,
+    )
+
+
 def _optional_text(value: object) -> str | None:
     """Return non-empty text for extracted summaries."""
     if value is None:

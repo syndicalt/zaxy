@@ -10,6 +10,7 @@ import pytest
 from zaxy.config import Settings
 from zaxy.embedding import (
     HashEmbeddingProvider,
+    LocalHTTPEmbeddingProvider,
     OpenAIEmbeddingProvider,
     build_embedding_provider,
     embed_extraction,
@@ -130,6 +131,28 @@ class TestEmbeddingProviderFactory:
         provider = build_embedding_provider(settings)
 
         assert isinstance(provider, OpenAIEmbeddingProvider)
+
+    def test_factory_returns_local_http_provider_when_configured(self) -> None:
+        settings = Settings(
+            _env_file=None,
+            embedding_provider="local-http",
+            embedding_http_url="http://localhost:8080/embed",
+            embedding_http_model="bge-small",
+        )
+
+        provider = build_embedding_provider(settings)
+
+        assert isinstance(provider, LocalHTTPEmbeddingProvider)
+
+    def test_factory_requires_local_http_url(self) -> None:
+        settings = Settings(
+            _env_file=None,
+            embedding_provider="local-http",
+            embedding_http_url=None,
+        )
+
+        with pytest.raises(ValueError, match="EMBEDDING_HTTP_URL"):
+            build_embedding_provider(settings)
 
     def test_factory_requires_openai_key_in_openai_mode(self) -> None:
         settings = Settings(
@@ -360,3 +383,73 @@ class TestOpenAIEmbeddingProvider:
 
         assert provider.embed("Ship MVP") == [0.1, 0.2, 0.3]
         assert sleeps == [7]
+
+
+class TestLocalHTTPEmbeddingProvider:
+    """Tests for OpenAI-compatible or simple local embedding endpoints."""
+
+    def test_embed_posts_to_local_endpoint(self) -> None:
+        captured: dict[str, object] = {}
+
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, object]:
+                return {"embedding": [0.1, 0.2, 0.3]}
+
+        class FakeClient:
+            def post(
+                self,
+                url: str,
+                *,
+                headers: dict[str, str],
+                json: dict[str, object],
+            ) -> FakeResponse:
+                captured["url"] = url
+                captured["headers"] = headers
+                captured["json"] = json
+                return FakeResponse()
+
+        provider = LocalHTTPEmbeddingProvider(
+            url="http://localhost:8080/embed",
+            model="bge-small",
+            dimension=3,
+            api_key="local-key",
+            client=FakeClient(),
+        )
+
+        vector = provider.embed("Ship MVP")
+
+        assert vector == [0.1, 0.2, 0.3]
+        assert captured["url"] == "http://localhost:8080/embed"
+        assert captured["headers"] == {"Authorization": "Bearer local-key"}
+        assert captured["json"] == {"input": "Ship MVP", "model": "bge-small"}
+
+    def test_embed_accepts_openai_compatible_response(self) -> None:
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, object]:
+                return {"data": [{"embedding": [0.1, 0.2, 0.3]}]}
+
+        class FakeClient:
+            def post(
+                self,
+                url: str,
+                *,
+                headers: dict[str, str],
+                json: dict[str, object],
+            ) -> FakeResponse:
+                del url, headers, json
+                return FakeResponse()
+
+        provider = LocalHTTPEmbeddingProvider(
+            url="http://localhost:8080/v1/embeddings",
+            model=None,
+            dimension=3,
+            client=FakeClient(),
+        )
+
+        assert provider.embed("Ship MVP") == [0.1, 0.2, 0.3]

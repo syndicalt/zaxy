@@ -141,6 +141,55 @@ def audit_event_log(
     )
 
 
+def compaction_remediation_plan(report: CompactionAuditReport) -> list[dict[str, Any]]:
+    """Return concrete remediation steps for a failed compaction audit."""
+    if report.safe:
+        return []
+    steps: list[dict[str, Any]] = []
+    if not report.integrity_ok:
+        steps.append(
+            {
+                "code": "repair_eventloom_integrity",
+                "action": (
+                    "Restore the Eventloom log from backup or remove the tampered "
+                    "candidate from compaction."
+                ),
+                "details": {"reason": report.integrity_reason},
+            }
+        )
+    if report.missing_identities:
+        steps.append(
+            {
+                "code": "preserve_missing_identities",
+                "action": "Use exemplar projection or increase max_records before compacting.",
+                "details": {
+                    "missing_identities": list(report.missing_identities),
+                    "identity_recall": report.identity_recall,
+                },
+            }
+        )
+    if report.citation_coverage < 1.0:
+        steps.append(
+            {
+                "code": "restore_source_citations",
+                "action": (
+                    "Re-ingest uncited document/transcript events with source paths, "
+                    "line ranges, or Eventloom refs before compacting."
+                ),
+                "details": {"citation_coverage": report.citation_coverage},
+            }
+        )
+    if not steps:
+        steps.append(
+            {
+                "code": "review_unsafe_reasons",
+                "action": "Inspect unsafe_reasons and rerun compaction audit after remediation.",
+                "details": {"unsafe_reasons": list(report.unsafe_reasons)},
+            }
+        )
+    return steps
+
+
 def build_compaction_projection(
     eventlog: EventLog,
     *,

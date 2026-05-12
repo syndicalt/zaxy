@@ -437,6 +437,33 @@ class TestIngestion:
         assert kwargs["session_id"] == "agent-1"
         assert kwargs["source_event_hash"] == "c" * 64
 
+    async def test_upsert_records_projection_step_order(self, store: GraphStore) -> None:
+        """Projection should expose phase boundaries for diagnostics and decomposition."""
+        result = ExtractionResult(
+            entities=[
+                ExtractedEntity(name="Alice", entity_type="user", observed_at="2024-01-01T00:00:00Z"),
+                ExtractedEntity(name="Goal1", entity_type="goal", observed_at="2024-01-01T00:00:00Z"),
+            ],
+            edges=[
+                ExtractedEdge(
+                    source="Alice",
+                    target="Goal1",
+                    relation_type="created_goal",
+                    valid_from="2024-01-01T00:00:00Z",
+                )
+            ],
+            source_event_seq=1,
+        )
+
+        await store.upsert_extraction(result, session_id="agent-1")
+
+        assert store.last_projection_steps == (
+            "provenance_backbone",
+            "entity_version",
+            "entity_version",
+            "relationship",
+        )
+
     async def test_upsert_inferred_edge_persists_audit_metadata(self, store: GraphStore) -> None:
         """Inferred edges should be explicitly marked with confidence and method metadata."""
         result = ExtractionResult(
@@ -450,6 +477,7 @@ class TestIngestion:
                     target="Decision1",
                     relation_type="likely_informed",
                     valid_from="2024-01-01T00:00:00Z",
+                    valid_to="2024-02-01T00:00:00Z",
                     inferred=True,
                     confidence=0.82,
                     inference_method="lexical_overlap_v1",
@@ -468,6 +496,7 @@ class TestIngestion:
         assert "r.inferred = $inferred" in cypher
         assert "r.confidence = $confidence" in cypher
         assert "r.inference_method = $inference_method" in cypher
+        assert "r.valid_to = CASE" in cypher
         assert "r += $edge_properties" in cypher
         assert "typed.inferred = $inferred" in cypher
         assert "typed.confidence = $confidence" in cypher
@@ -478,6 +507,7 @@ class TestIngestion:
         assert "pr.inference_method = $inference_method" in cypher
         assert kwargs["inferred"] is True
         assert kwargs["confidence"] == 0.82
+        assert kwargs["valid_to"] == "2024-02-01T00:00:00Z"
         assert kwargs["inference_method"] == "lexical_overlap_v1"
         assert kwargs["edge_properties"] == {
             "evidence_source": "checkpoint:7",

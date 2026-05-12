@@ -101,6 +101,9 @@ class TestToolSchema:
         """memory_query temporal_filter should be optional."""
         tool = next(t for t in TOOLS if t.name == "memory_query")
         assert "temporal_filter" in tool.inputSchema["properties"]
+        assert "cursor" in tool.inputSchema["properties"]
+        assert "paged" in tool.inputSchema["properties"]
+        assert "session_ids" in tool.inputSchema["properties"]
         assert "temporal_filter" not in (tool.inputSchema.get("required") or [])
 
     def test_memory_feedback_has_required_identity_and_feedback(self) -> None:
@@ -380,6 +383,97 @@ class TestMemoryQuery:
             call = mock_router.query.await_args
             assert call.kwargs["temporal_point"] == "2024-03-01T00:00:00Z"
 
+    async def test_paged_query_returns_continuation_cursor(self, server: ZaxyMCPServer) -> None:
+        """Paged memory_query should return an object with an opaque continuation cursor."""
+        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
+            mock_router = AsyncMock()
+            mock_router.query.return_value = [
+                MagicMock(
+                    content="alpha",
+                    source="keyword",
+                    score=0.9,
+                    valid_from=None,
+                    valid_to=None,
+                    citation=None,
+                    score_explanation={},
+                ),
+                MagicMock(
+                    content="beta",
+                    source="keyword",
+                    score=0.8,
+                    valid_from=None,
+                    valid_to=None,
+                    citation=None,
+                    score_explanation={},
+                ),
+                MagicMock(
+                    content="gamma",
+                    source="keyword",
+                    score=0.7,
+                    valid_from=None,
+                    valid_to=None,
+                    citation=None,
+                    score_explanation={},
+                ),
+            ]
+            mock_router_cls.return_value = mock_router
+
+            first = await server.handle_memory_query({"query": "roadmap", "limit": 2, "paged": True})
+            payload = json.loads(first[0].text)
+
+            assert [row["content"] for row in payload["contexts"]] == ["alpha", "beta"]
+            assert payload["next_cursor"]
+            assert payload["has_more"] is True
+            call = mock_router.query.await_args
+            assert call.kwargs["limit"] == 3
+
+    async def test_paged_query_continues_without_repeating_results(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """A returned cursor should continue from the next ranked item."""
+        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
+            mock_router = AsyncMock()
+            mock_router.query.return_value = [
+                MagicMock(
+                    content="alpha",
+                    source="keyword",
+                    score=0.9,
+                    valid_from=None,
+                    valid_to=None,
+                    citation=None,
+                    score_explanation={},
+                ),
+                MagicMock(
+                    content="beta",
+                    source="keyword",
+                    score=0.8,
+                    valid_from=None,
+                    valid_to=None,
+                    citation=None,
+                    score_explanation={},
+                ),
+                MagicMock(
+                    content="gamma",
+                    source="keyword",
+                    score=0.7,
+                    valid_from=None,
+                    valid_to=None,
+                    citation=None,
+                    score_explanation={},
+                ),
+            ]
+            mock_router_cls.return_value = mock_router
+
+            first = await server.handle_memory_query({"query": "roadmap", "limit": 2, "paged": True})
+            cursor = json.loads(first[0].text)["next_cursor"]
+            second = await server.handle_memory_query({"query": "roadmap", "limit": 2, "cursor": cursor})
+            payload = json.loads(second[0].text)
+
+            assert [row["content"] for row in payload["contexts"]] == ["gamma"]
+            assert payload["next_cursor"] is None
+            assert payload["has_more"] is False
+
     async def test_remote_scope_passes_session_to_router(self, server: ZaxyMCPServer) -> None:
         """Remote SSE queries should search only within their request session scope."""
         with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
@@ -408,6 +502,63 @@ class TestMemoryQuery:
                     "query": "x",
                     "session_id": "other-session",
                 })
+        finally:
+            remote_session_scope.reset(token)
+
+    async def test_local_cross_session_query_merges_scoped_results(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """Local clients should be able to request an explicit cross-session scope."""
+        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
+            first_router = AsyncMock()
+            first_router.query.return_value = [
+                MagicMock(
+                    content="agent one decision",
+                    source="keyword",
+                    score=0.7,
+                    valid_from=None,
+                    valid_to=None,
+                    citation=None,
+                    score_explanation={},
+                )
+            ]
+            second_router = AsyncMock()
+            second_router.query.return_value = [
+                MagicMock(
+                    content="agent two decision",
+                    source="keyword",
+                    score=0.9,
+                    valid_from=None,
+                    valid_to=None,
+                    citation=None,
+                    score_explanation={},
+                )
+            ]
+            mock_router_cls.side_effect = [first_router, second_router]
+
+            result = await server.handle_memory_query(
+                {"query": "decision", "session_ids": ["agent-1", "agent-2"], "limit": 2}
+            )
+            payload = json.loads(result[0].text)
+
+            assert [row["content"] for row in payload] == [
+                "agent two decision",
+                "agent one decision",
+            ]
+            assert [row["session_id"] for row in payload] == ["agent-2", "agent-1"]
+
+    async def test_remote_scope_rejects_cross_session_ids(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """Remote clients must not fan out across arbitrary sessions."""
+        token = remote_session_scope.set("client-session")
+        try:
+            with pytest.raises(PermissionError, match="cross-session"):
+                await server.handle_memory_query(
+                    {"query": "decision", "session_ids": ["client-session", "other-session"]}
+                )
         finally:
             remote_session_scope.reset(token)
 
@@ -982,6 +1133,13 @@ class TestTransportAuth:
         })
 
         assert session_id == "agent-1"
+
+    def test_configured_token_rejects_missing_session_header(self) -> None:
+        """Authenticated remote transports should fail closed without session identity."""
+        auth = MCPTransportAuth(token="secret")
+
+        with pytest.raises(PermissionError, match="session header"):
+            auth.authorize({"authorization": "Bearer secret"})
 
     def test_rejects_invalid_session_header(self) -> None:
         """Remote session scope should use the same session validation as tools."""

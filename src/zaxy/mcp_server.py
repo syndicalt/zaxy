@@ -43,11 +43,13 @@ from zaxy.lifecycle import (
 )
 from zaxy.log import get_logger, setup_logging
 from zaxy.metrics import get_metrics
+from zaxy.pagination import encode_query_cursor, validate_query_cursor
 from zaxy.query import QueryRouter, build_retention_policy
 from zaxy.refs import MemoryRef, MemoryRefStore
 from zaxy.remote_security import AuditEventExporter, RemoteAuditEvent, SessionRateLimiter
 from zaxy.runtime import LocalNeo4jRuntime
 from zaxy.security import (
+    MAX_QUERY_LIMIT,
     MAX_REPLAY_EVENTS,
     validate_from_seq,
     validate_limit,
@@ -107,6 +109,14 @@ TOOLS = [
                 "query": {"type": "string", "description": "Natural language query"},
                 "temporal_filter": {"type": "string", "description": "ISO-8601 point-in-time filter"},
                 "limit": {"type": "integer", "description": "Max results", "default": 10},
+                "session_id": {"type": "string", "description": "Session ID for scoped retrieval"},
+                "cursor": {"type": "string", "description": "Opaque cursor from a prior paged memory_query call"},
+                "paged": {"type": "boolean", "description": "Return contexts with pagination metadata"},
+                "session_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Local-only explicit cross-session query scope",
+                },
             },
             "additionalProperties": False,
         },
@@ -527,15 +537,48 @@ class ZaxyMCPServer:
         query = validate_query(arguments["query"])
         temporal = arguments.get("temporal_filter")
         limit = validate_limit(arguments.get("limit"), default=10)
+        cursor = _optional_text(arguments.get("cursor"))
+        paged = bool(arguments.get("paged")) or cursor is not None
         session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
+        if arguments.get("session_ids") is not None:
+            if cursor:
+                raise ValueError("cursor cannot be combined with session_ids")
+            output = await self._handle_cross_session_memory_query(
+                query=query,
+                temporal=temporal,
+                limit=limit,
+                session_ids=arguments["session_ids"],
+            )
+            return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+        offset = 0
+        if cursor:
+            decoded = validate_query_cursor(
+                cursor,
+                query=query,
+                session_id=session_id,
+                temporal_point=temporal,
+            )
+            offset = decoded.offset
+        fetch_limit = min(offset + limit + 1, MAX_QUERY_LIMIT)
 
         router = QueryRouter(
             self.graph,
             session_id=session_id,
             retention_policy=self._retention_policy,
         )
-        results = await router.query(query, temporal_point=temporal, limit=limit)
+        results = await router.query(query, temporal_point=temporal, limit=fetch_limit)
         await self.tracer.trace_query(query, len(results), 0.0, temporal)
+        page_results = results[offset : offset + limit]
+        has_more = len(results) > offset + limit
+        next_cursor = None
+        if has_more:
+            next_cursor = encode_query_cursor(
+                query=query,
+                session_id=session_id,
+                temporal_point=temporal,
+                offset=offset + limit,
+            )
 
         output = [
             {
@@ -547,9 +590,57 @@ class ZaxyMCPServer:
                 "citation": r.citation,
                 "score_explanation": r.score_explanation,
             }
-            for r in results
+            for r in page_results
         ]
+        if paged:
+            page_output = {
+                "contexts": output,
+                "next_cursor": next_cursor,
+                "cursor": cursor,
+                "has_more": has_more,
+                "offset": offset,
+                "session_id": session_id,
+            }
+            return [TextContent(type="text", text=json.dumps(page_output, indent=2))]
         return [TextContent(type="text", text=json.dumps(output, indent=2))]
+
+    async def _handle_cross_session_memory_query(
+        self,
+        *,
+        query: str,
+        temporal: str | None,
+        limit: int,
+        session_ids: Any,
+    ) -> list[dict[str, Any]]:
+        """Run an explicit local cross-session query and annotate each hit."""
+        if remote_session_scope.get() is not None:
+            raise PermissionError("session scope does not permit cross-session query")
+        if not isinstance(session_ids, list) or not session_ids:
+            raise ValueError("session_ids must be a non-empty list")
+        sessions = [validate_session_id(session_id) for session_id in session_ids]
+        merged: list[dict[str, Any]] = []
+        for scoped_session in sessions:
+            router = QueryRouter(
+                self.graph,
+                session_id=scoped_session,
+                retention_policy=self._retention_policy,
+            )
+            results = await router.query(query, temporal_point=temporal, limit=limit)
+            for result in results:
+                merged.append(
+                    {
+                        "content": result.content,
+                        "source": result.source,
+                        "score": result.score,
+                        "valid_from": result.valid_from,
+                        "valid_to": result.valid_to,
+                        "citation": result.citation,
+                        "score_explanation": result.score_explanation,
+                        "session_id": scoped_session,
+                    }
+                )
+        merged.sort(key=lambda row: row["score"], reverse=True)
+        return merged[:limit]
 
     async def handle_memory_verbatim(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle memory_verbatim source-recall tool call."""
@@ -961,6 +1052,10 @@ class MCPTransportAuth:
             supplied = header.removeprefix("Bearer ").strip()
             if not hmac.compare_digest(supplied, self._token):
                 raise PermissionError("Authorization bearer token is invalid")
+            session_id = normalized.get(self._session_header)
+            if not session_id:
+                raise PermissionError("remote session header is required")
+            return validate_session_id(session_id)
         return validate_session_id(normalized.get(self._session_header, "default"))
 
     @property

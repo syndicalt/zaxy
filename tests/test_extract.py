@@ -467,6 +467,37 @@ class TestInferredEdgeGenerated:
             "reason": "Operator confirmed the task led to the decision.",
         }
 
+    def test_projects_inferred_edge_retraction(self) -> None:
+        """Retraction events should close the inferred edge validity interval."""
+        ev = _make_event(
+            "inference.edge.retracted",
+            {
+                "source": {"name": "task-7", "entity_type": "task"},
+                "target": {"name": "Use Memory Checkout", "entity_type": "decision"},
+                "relation_type": "likely_informed",
+                "valid_from": "2024-01-01T00:00:00Z",
+                "valid_to": "2024-01-02T00:00:00Z",
+                "confidence": 0.0,
+                "inference_method": "contradicting_evidence_retraction_v1",
+                "evidence": {
+                    "original_event_seq": 7,
+                    "reason": "Contradicting evidence arrived.",
+                },
+            },
+        )
+
+        result = extract(ev)
+
+        edge = result.edges[0]
+        assert edge.source == "task-7"
+        assert edge.target == "Use Memory Checkout"
+        assert edge.relation_type == "likely_informed"
+        assert edge.valid_from == "2024-01-01T00:00:00Z"
+        assert edge.valid_to == "2024-01-02T00:00:00Z"
+        assert edge.inferred is True
+        assert edge.confidence == 0.0
+        assert edge.inference_method == "contradicting_evidence_retraction_v1"
+
 
 class TestIssueDiagnosed:
     """Tests for issue.diagnosed extractor."""

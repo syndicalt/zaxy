@@ -1892,6 +1892,31 @@ def test_schema_plan_command_prints_migration_plan() -> None:
     assert "entity_version_identity" in result.output
 
 
+def test_schema_recovery_plan_command_prints_recovery_guidance() -> None:
+    runner = CliRunner()
+
+    with (
+        patch("zaxy.__main__.GraphStore") as mock_store_cls,
+        patch("zaxy.__main__.fetch_schema_migration_records", new_callable=AsyncMock) as mock_fetch,
+    ):
+        store = AsyncMock()
+        mock_store_cls.return_value = store
+        mock_fetch.return_value = {
+            "001_entity_version_identity": {
+                "checksum": "wrong",
+                "statement_count": 4,
+                "applied_at": "2026-05-11T00:00:00Z",
+            }
+        }
+        result = runner.invoke(app, ["schema-recovery-plan"])
+
+    assert result.exit_code == 0
+    store.connect.assert_awaited_once()
+    store.close.assert_awaited_once()
+    assert "Schema recovery plan:" in result.output
+    assert "001_entity_version_identity: checksum_mismatch" in result.output
+
+
 def test_extractor_template_command_prints_safe_starter() -> None:
     runner = CliRunner()
 

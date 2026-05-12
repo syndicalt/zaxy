@@ -18,6 +18,7 @@ from zaxy.core import (
     HandoffBundle,
     MemoryCheckout,
     MemoryFabric,
+    QueryPage,
     build_memory_checkout,
 )
 from zaxy.embedding import HashEmbeddingProvider
@@ -349,6 +350,59 @@ class TestAppend:
         assert inferred_call.kwargs["payload"]["target"]["entity_type"] == "decision"
         assert inferred_call.kwargs["payload"]["confidence"] == 0.86
         assert fabric.graph.upsert_extraction.await_count == 2
+
+
+class TestQueryPagination:
+    """Tests for stable query continuation pages."""
+
+    async def test_query_page_returns_next_cursor_and_continues_without_repeating(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Continuation cursors should page through one ranked result set."""
+        fabric._connected = True
+        fabric.query_router.query.return_value = [
+            ContextChunk(content="alpha", source="keyword", score=0.9, valid_from=None, valid_to=None),
+            ContextChunk(content="beta", source="keyword", score=0.8, valid_from=None, valid_to=None),
+            ContextChunk(content="gamma", source="keyword", score=0.7, valid_from=None, valid_to=None),
+        ]
+
+        first = await fabric.query_page("roadmap", limit=2, session_id="agent-1")
+        second = await fabric.query_page(
+            "roadmap",
+            limit=2,
+            session_id="agent-1",
+            cursor=first.next_cursor,
+        )
+
+        assert isinstance(first, QueryPage)
+        assert [context.content for context in first.contexts] == ["alpha", "beta"]
+        assert first.next_cursor is not None
+        assert first.has_more is True
+        assert [context.content for context in second.contexts] == ["gamma"]
+        assert second.next_cursor is None
+        assert second.has_more is False
+
+    async def test_query_page_rejects_cursor_for_different_query(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Cursor state should be bound to the original query."""
+        fabric._connected = True
+        fabric.query_router.query.return_value = [
+            ContextChunk(content="alpha", source="keyword", score=0.9, valid_from=None, valid_to=None),
+            ContextChunk(content="beta", source="keyword", score=0.8, valid_from=None, valid_to=None),
+        ]
+
+        first = await fabric.query_page("roadmap", limit=1, session_id="agent-1")
+
+        with pytest.raises(ValueError, match="cursor does not match query"):
+            await fabric.query_page(
+                "different roadmap",
+                limit=1,
+                session_id="agent-1",
+                cursor=first.next_cursor,
+            )
 
 
 class TestContextFeedback:

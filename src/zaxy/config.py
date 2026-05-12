@@ -271,7 +271,7 @@ class Settings(BaseSettings):
     )
     embedding_provider: str = Field(
         default="hash",
-        description="Embedding provider: hash or openai",
+        description="Embedding provider: hash, openai, or local-http",
     )
     embedding_dimension: int = Field(
         default=1536,
@@ -292,6 +292,18 @@ class Settings(BaseSettings):
     openai_base_url: str = Field(
         default="https://api.openai.com/v1",
         description="OpenAI-compatible API base URL",
+    )
+    embedding_http_url: str | None = Field(
+        default=None,
+        description="Local HTTP embedding endpoint URL",
+    )
+    embedding_http_model: str | None = Field(
+        default=None,
+        description="Optional model name for local HTTP embedding endpoints",
+    )
+    embedding_http_api_key: str | None = Field(
+        default=None,
+        description="Optional bearer token for local HTTP embedding endpoints",
     )
 
     # ------------------------------------------------------------------

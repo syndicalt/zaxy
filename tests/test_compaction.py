@@ -8,6 +8,7 @@ from pathlib import Path
 from zaxy.compaction import (
     audit_event_log,
     build_compaction_projection,
+    compaction_remediation_plan,
     load_compaction_projection,
     search_compaction_projections,
     write_compaction_projection,
@@ -71,6 +72,11 @@ def test_audit_flags_centroid_like_identity_loss(tmp_path: Path) -> None:
     assert report.missing_identities
     assert "docs/service-0004.md:1-5" in report.missing_identities
 
+    plan = compaction_remediation_plan(report)
+    assert plan[0]["code"] == "preserve_missing_identities"
+    assert "identity-code-0004" in plan[0]["details"]["missing_identities"]
+    assert plan[0]["action"] == "Use exemplar projection or increase max_records before compacting."
+
 
 def test_audit_detects_missing_source_citations(tmp_path: Path) -> None:
     """Document events without path citations should be called out."""
@@ -89,6 +95,9 @@ def test_audit_detects_missing_source_citations(tmp_path: Path) -> None:
     assert report.citation_coverage < 1.0
     assert "citation coverage below 1.000" in report.unsafe_reasons
 
+    plan = compaction_remediation_plan(report)
+    assert any(step["code"] == "restore_source_citations" for step in plan)
+
 
 def test_audit_blocks_broken_eventloom_integrity(tmp_path: Path) -> None:
     """Broken hash-chain integrity should make compaction unsafe."""
@@ -105,6 +114,13 @@ def test_audit_blocks_broken_eventloom_integrity(tmp_path: Path) -> None:
     assert report.integrity_ok is False
     assert report.integrity_reason == "Event 1 hash mismatch"
     assert "integrity check failed" in report.unsafe_reasons
+
+    plan = compaction_remediation_plan(report)
+    assert plan[0] == {
+        "code": "repair_eventloom_integrity",
+        "action": "Restore the Eventloom log from backup or remove the tampered candidate from compaction.",
+        "details": {"reason": "Event 1 hash mismatch"},
+    }
 
 
 def test_builds_medoid_projection_with_source_backpointers(tmp_path: Path) -> None:

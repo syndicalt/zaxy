@@ -209,6 +209,7 @@ class GraphStore:
         self._ca_cert = ca_cert
         self._trust_all = trust_all
         self._driver: AsyncDriver | None = None
+        self.last_projection_steps: tuple[str, ...] = ()
 
     async def connect(self) -> None:
         """Initialize the async driver with optional TLS."""
@@ -423,8 +424,11 @@ class GraphStore:
         assert self._driver is not None
         safe_session_id = validate_session_id(session_id)
         observed_at = _extraction_observed_at(result)
+        projection_steps: list[str] = []
 
-        await self._driver.execute_query(
+        await self._execute_projection_statement(
+            "provenance_backbone",
+            projection_steps,
             """
             MERGE (s:Session {id: $session_id})
             ON CREATE SET s.created_at = datetime()
@@ -489,7 +493,9 @@ class GraphStore:
         )
 
         for ent in result.entities:
-            await self._driver.execute_query(
+            await self._execute_projection_statement(
+                "entity_version",
+                projection_steps,
                 """
                 MERGE (e:Entity {
                     session_id: $session_id,
@@ -677,7 +683,9 @@ class GraphStore:
 
         for edge in result.edges:
             typed_relationship_label = _typed_relationship_label(edge.relation_type)
-            await self._driver.execute_query(
+            await self._execute_projection_statement(
+                "relationship",
+                projection_steps,
                 f"""
                 MATCH (s:Entity {{name: $source}})
                 WHERE s.session_id = $session_id
@@ -690,7 +698,10 @@ class GraphStore:
                 MERGE (s)-[r:RELATES {{relation_type: $relation_type, valid_from: datetime($valid_from)}}]->(t)
                 ON CREATE SET r.created_at = datetime($valid_from)
                 SET r.session_id = $session_id,
-                    r.valid_to = null,
+                    r.valid_to = CASE
+                        WHEN $valid_to IS NULL THEN null
+                        ELSE datetime($valid_to)
+                    END,
                     r.source_event_seq = $source_event_seq,
                     r.source_event_hash = $source_event_hash,
                     r.source_event_type = $source_event_type,
@@ -703,7 +714,10 @@ class GraphStore:
                 ON CREATE SET typed.created_at = datetime($valid_from)
                 SET typed.session_id = $session_id,
                     typed.relation_type = $relation_type,
-                    typed.valid_to = null,
+                    typed.valid_to = CASE
+                        WHEN $valid_to IS NULL THEN null
+                        ELSE datetime($valid_to)
+                    END,
                     typed.source_event_seq = $source_event_seq,
                     typed.source_event_hash = $source_event_hash,
                     typed.source_event_type = $source_event_type,
@@ -733,6 +747,7 @@ class GraphStore:
                 target=edge.target,
                 relation_type=edge.relation_type,
                 valid_from=edge.valid_from,
+                valid_to=edge.valid_to,
                 source_event_seq=result.source_event_seq,
                 source_event_hash=result.source_event_hash,
                 source_event_type=result.source_event_type,
@@ -742,6 +757,20 @@ class GraphStore:
                 inference_method=edge.inference_method,
                 edge_properties=_edge_evidence_properties(edge.evidence),
             )
+        self.last_projection_steps = tuple(projection_steps)
+
+    async def _execute_projection_statement(
+        self,
+        step: str,
+        projection_steps: list[str],
+        cypher: str,
+        **parameters: Any,
+    ) -> Any:
+        """Execute one named projection phase and record completed step order."""
+        assert self._driver is not None
+        result = await self._driver.execute_query(cypher, **parameters)
+        projection_steps.append(step)
+        return result
 
     async def invalidate_entity(
         self,

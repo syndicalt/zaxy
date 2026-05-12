@@ -3,7 +3,7 @@
 from zaxy.adapters.crewai import CrewAIMemoryAdapter, create_crewai_memory_step
 from zaxy.adapters.langgraph import LangGraphMemoryAdapter, create_langgraph_memory_node
 from zaxy.context import Context, ContextAssemblyPolicy
-from zaxy.core import MemoryCheckout, MemoryFabric
+from zaxy.core import MemoryCheckout, MemoryFabric, QueryPage
 from zaxy.integrations import (
     FrameworkIntegrationSpec,
     list_framework_integration_specs,
@@ -26,6 +26,7 @@ __all__ = [
     "ContextAssemblyPolicy",
     "MemoryCheckout",
     "MemoryFabric",
+    "QueryPage",
     "MemoryRef",
     "MemoryRefStore",
     "VerbatimHit",

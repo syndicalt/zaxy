@@ -149,6 +149,52 @@ class OpenAIEmbeddingProvider:
         return float(self._retry_backoff_seconds * (2 ** attempt))
 
 
+class LocalHTTPEmbeddingProvider:
+    """Model-agnostic local HTTP embedding provider.
+
+    The endpoint may return either ``{"embedding": [...]}`` or an
+    OpenAI-compatible ``{"data": [{"embedding": [...]}]}`` payload.
+    """
+
+    def __init__(
+        self,
+        url: str,
+        *,
+        dimension: int = 1536,
+        model: str | None = None,
+        api_key: str | None = None,
+        client: Any | None = None,
+    ) -> None:
+        if not url:
+            raise ValueError("EMBEDDING_HTTP_URL is required for local-http embeddings")
+        if dimension <= 0:
+            raise ValueError("embedding dimension must be positive")
+        self.dimension = dimension
+        self.model = model
+        self._url = url
+        self._api_key = api_key
+        self._client = client or httpx.Client(timeout=30.0)
+
+    def embed(self, text: str) -> list[float]:
+        """Embed text with a local HTTP endpoint."""
+        request: dict[str, Any] = {"input": text}
+        if self.model:
+            request["model"] = self.model
+        headers = (
+            {"Authorization": f"Bearer {self._api_key}"}
+            if self._api_key
+            else {}
+        )
+        response = self._client.post(self._url, headers=headers, json=request)
+        response.raise_for_status()
+        vector = _embedding_from_payload(response.json())
+        if len(vector) != self.dimension:
+            raise ValueError(
+                f"embedding dimension mismatch: expected {self.dimension}, got {len(vector)}"
+            )
+        return vector
+
+
 def build_embedding_provider(settings: Any) -> EmbeddingProvider | None:
     """Build the configured embedding provider."""
     if not settings.embedding_enabled:
@@ -166,7 +212,16 @@ def build_embedding_provider(settings: Any) -> EmbeddingProvider | None:
             dimension=settings.embedding_dimension,
             base_url=settings.openai_base_url,
         )
-    raise ValueError("EMBEDDING_PROVIDER must be 'hash' or 'openai'")
+    if provider in {"local-http", "local_http", "http"}:
+        if not settings.embedding_http_url:
+            raise ValueError("EMBEDDING_HTTP_URL is required when EMBEDDING_PROVIDER=local-http")
+        return LocalHTTPEmbeddingProvider(
+            url=settings.embedding_http_url,
+            model=settings.embedding_http_model,
+            api_key=settings.embedding_http_api_key,
+            dimension=settings.embedding_dimension,
+        )
+    raise ValueError("EMBEDDING_PROVIDER must be 'hash', 'openai', or 'local-http'")
 
 
 def entity_embedding_text(entity: ExtractedEntity) -> str:
@@ -203,3 +258,16 @@ def _tokens(text: str) -> list[str]:
     """Tokenize for deterministic feature hashing."""
     tokens = text.casefold().split()
     return tokens or [""]
+
+
+def _embedding_from_payload(payload: Any) -> list[float]:
+    if isinstance(payload, dict):
+        direct = payload.get("embedding")
+        if isinstance(direct, list):
+            return [float(value) for value in direct]
+        data = payload.get("data")
+        if isinstance(data, list) and data:
+            first = data[0]
+            if isinstance(first, dict) and isinstance(first.get("embedding"), list):
+                return [float(value) for value in first["embedding"]]
+    raise ValueError("embedding response missing embedding vector")

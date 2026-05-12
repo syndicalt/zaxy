@@ -46,9 +46,16 @@ from zaxy.graph import GraphStore
 from zaxy.inference import build_inferred_edge_events
 from zaxy.lifecycle import build_subagent_completed_event
 from zaxy.metrics import get_metrics
+from zaxy.pagination import encode_query_cursor, validate_query_cursor
 from zaxy.query import QueryRouter, build_reranker, build_retention_policy
 from zaxy.refs import MemoryRef, MemoryRefStore
-from zaxy.security import validate_payload, validate_query, validate_session_id
+from zaxy.security import (
+    MAX_QUERY_LIMIT,
+    validate_limit,
+    validate_payload,
+    validate_query,
+    validate_session_id,
+)
 from zaxy.session import SessionManager
 from zaxy.trace import MemoryTracer
 from zaxy.transcripts import collect_transcript_events
@@ -122,6 +129,37 @@ class MemoryCheckout:
             "replay_event_count": self.replay_event_count,
             "compacted": self.compacted,
             "assembly_policy": self.assembly_policy,
+        }
+
+
+@dataclass(frozen=True)
+class QueryPage:
+    """A stable page of ranked memory query results."""
+
+    contexts: list[Context]
+    next_cursor: str | None
+    cursor: str | None
+    has_more: bool
+    offset: int
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a stable JSON-serializable pagination payload."""
+        return {
+            "contexts": [
+                {
+                    "content": context.content,
+                    "source": context.source,
+                    "score": context.score,
+                    "valid_from": context.valid_from,
+                    "valid_to": context.valid_to,
+                    "metadata": context.metadata,
+                }
+                for context in self.contexts
+            ],
+            "next_cursor": self.next_cursor,
+            "cursor": self.cursor,
+            "has_more": self.has_more,
+            "offset": self.offset,
         }
 
 
@@ -533,6 +571,59 @@ class MemoryFabric:
                 )
             )
         return self._merge_projection_contexts(contexts, query, limit)
+
+    async def query_page(
+        self,
+        query: str,
+        temporal_point: str | None = None,
+        limit: int = 10,
+        embedding: list[float] | None = None,
+        session_id: str = "default",
+        cursor: str | None = None,
+    ) -> QueryPage:
+        """Query memory with an opaque continuation cursor.
+
+        The cursor is bound to the query text, temporal filter, and session so an
+        agent can ask for more results without accidentally paging a different
+        memory scope.
+        """
+        validated_query = validate_query(query)
+        sid = validate_session_id(session_id)
+        page_limit = validate_limit(limit)
+        offset = 0
+        if cursor:
+            decoded = validate_query_cursor(
+                cursor,
+                query=validated_query,
+                session_id=sid,
+                temporal_point=temporal_point,
+            )
+            offset = decoded.offset
+        fetch_limit = min(offset + page_limit + 1, MAX_QUERY_LIMIT)
+        contexts = await self.query(
+            validated_query,
+            temporal_point=temporal_point,
+            limit=fetch_limit,
+            embedding=embedding,
+            session_id=sid,
+        )
+        page_contexts = contexts[offset : offset + page_limit]
+        has_more = len(contexts) > offset + page_limit
+        next_cursor = None
+        if has_more:
+            next_cursor = encode_query_cursor(
+                query=validated_query,
+                session_id=sid,
+                temporal_point=temporal_point,
+                offset=offset + page_limit,
+            )
+        return QueryPage(
+            contexts=page_contexts,
+            next_cursor=next_cursor,
+            cursor=cursor,
+            has_more=has_more,
+            offset=offset,
+        )
 
     async def query_verbatim(
         self,
