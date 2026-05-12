@@ -214,6 +214,8 @@ def _expected_term_present(term: str, haystack: str) -> bool:
     normalized_haystack = _normalize_answer_text(haystack)
     if normalized_term in normalized_haystack:
         return True
+    if _parenthetical_acronym_present(normalized_term, normalized_haystack):
+        return True
     term_tokens = [
         token for token in _answer_tokens(normalized_term)
         if token not in _LOW_INFORMATION_ANSWER_TOKENS
@@ -233,6 +235,15 @@ def _normalize_answer_text(text: str) -> str:
 
 def _answer_tokens(text: str) -> tuple[str, ...]:
     return tuple(re.findall(r"[a-z0-9]+", text.casefold()))
+
+
+def _parenthetical_acronym_present(term: str, haystack: str) -> bool:
+    """Return whether an expected full-name answer is present by acronym."""
+    matches = re.findall(r"\(([a-z0-9]{2,12})\)", term)
+    if not matches:
+        return False
+    haystack_tokens = set(_answer_tokens(haystack))
+    return any(match in haystack_tokens for match in matches)
 
 
 def _event_context(event: dict[str, object]) -> str:

@@ -595,6 +595,28 @@ def test_bm25_boosts_salient_memory_turns() -> None:
     assert results == [corpus[1].text]
 
 
+def test_bm25_expands_common_education_paraphrases() -> None:
+    """Education queries should match normal undergrad/CS phrasing in memory."""
+    corpus = (
+        BenchmarkChunk(
+            "generic",
+            "I completed a Bachelor's degree in Business Administration.",
+        ),
+        BenchmarkChunk(
+            "answer",
+            "longmemeval_salient_memory_turn=true "
+            "longmemeval_session_id=answer-1 I completed my undergrad in CS from UCLA.",
+        ),
+    )
+
+    results = BM25Retriever(corpus).query(
+        "Where did I complete my Bachelor's degree in Computer Science?",
+        limit=1,
+    )
+
+    assert results == [corpus[1].text]
+
+
 def test_live_benchmark_compares_all_retriever_backends(tmp_path: Path) -> None:
     """The benchmark core should compare md, BM25, vector, md+vector, and zaxy rows."""
     log = build_competitive_event_log(tmp_path / "bench.jsonl")

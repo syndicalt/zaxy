@@ -22,8 +22,11 @@ from zaxy.security import validate_limit, validate_query, validate_session_id
 
 QUERY_EXPANSIONS: dict[str, tuple[str, ...]] = {
     "auth": ("authentication", "authorization"),
+    "bachelor": ("undergraduate", "undergrad", "graduated", "graduation"),
+    "bachelors": ("undergraduate", "undergrad", "graduated", "graduation"),
     "decision": ("decided", "choice", "rationale"),
     "decisions": ("decided", "choice", "rationale"),
+    "degree": ("undergraduate", "undergrad", "graduated", "graduation"),
     "doc": ("document", "documentation"),
     "docs": ("document", "documentation"),
     "bug": ("defect", "failure", "regression"),
@@ -650,11 +653,20 @@ def _expanded_queries(query: str) -> list[str]:
     expanded_terms: list[str] = []
     for token in tokens:
         expanded_terms.extend(QUERY_EXPANSIONS.get(token, ()))
+    expanded_terms.extend(_phrase_expansions(tokens))
     expanded_terms = _unique(expanded_terms)
     identifier_terms = list(_identifier_terms(query))
     if not expanded_terms:
         return [query, *identifier_terms]
     return [query, f"{query} {' '.join(expanded_terms)}", *identifier_terms]
+
+
+def _phrase_expansions(tokens: list[str]) -> tuple[str, ...]:
+    token_set = set(tokens)
+    expansions: list[str] = []
+    if {"computer", "science"} <= token_set:
+        expansions.append("cs")
+    return tuple(expansions)
 
 
 def _candidate_payload(index: int, result: SearchResult) -> dict[str, object]:

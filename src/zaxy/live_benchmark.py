@@ -375,7 +375,7 @@ class BM25Retriever:
     ) -> list[str]:
         """Return chunks ranked by Okapi BM25 score."""
         del temporal_point
-        query_terms = tuple(dict.fromkeys(_bm25_tokens(query)))
+        query_terms = _expanded_bm25_query_terms(query)
         if not query_terms:
             return []
         scored = [
@@ -2265,6 +2265,23 @@ def _tokens(query: str) -> list[str]:
 
 def _bm25_tokens(text: str) -> list[str]:
     return re.findall(r"[a-z0-9]+(?:[-_:./#][a-z0-9]+)*", text.casefold())
+
+
+_BM25_QUERY_EXPANSIONS: dict[str, tuple[str, ...]] = {
+    "bachelor": ("undergraduate", "undergrad", "graduated", "graduation"),
+    "bachelors": ("undergraduate", "undergrad", "graduated", "graduation"),
+    "degree": ("undergraduate", "undergrad", "graduated", "graduation"),
+}
+
+
+def _expanded_bm25_query_terms(query: str) -> tuple[str, ...]:
+    terms = _bm25_tokens(query)
+    expanded: list[str] = [*terms]
+    for term in terms:
+        expanded.extend(_BM25_QUERY_EXPANSIONS.get(term, ()))
+    if {"computer", "science"} <= set(terms):
+        expanded.append("cs")
+    return tuple(dict.fromkeys(expanded))
 
 
 def _memory_salience_boost(text: str) -> float:

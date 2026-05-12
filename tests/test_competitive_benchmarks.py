@@ -81,6 +81,20 @@ def test_score_retrieval_accepts_semantic_answer_surface_forms() -> None:
     assert distributed_location.score == 1.0
 
 
+def test_score_retrieval_accepts_parenthetical_acronym_surface_forms() -> None:
+    """Expected answers with parenthetical acronyms should match acronym-only evidence."""
+    case = BenchmarkCase(
+        name="ucla-degree",
+        query="Where did I complete my Bachelor's degree in Computer Science?",
+        expected_terms=("University of California, Los Angeles (UCLA)",),
+    )
+
+    score = score_retrieval(case, ["I completed my undergrad in CS from UCLA."])
+
+    assert score.score == 1.0
+    assert score.expected_hits == ("University of California, Los Angeles (UCLA)",)
+
+
 def test_flat_jsonl_baseline_exposes_stale_context_limitation(tmp_path: Path) -> None:
     """Flat event scanning should surface both old and new preference values."""
     log_path = tmp_path / "bench.jsonl"
