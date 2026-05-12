@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from zaxy.__main__ import app
@@ -33,6 +34,59 @@ def test_capture_soak_report_passes_when_all_capture_lanes_are_active(tmp_path: 
     assert report["missing_observation_types"] == []
     assert report["stale_observation_types"] == []
     assert report["actions"] == []
+
+
+def test_capture_soak_detects_runtime_when_session_scopes_eventloom_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Session-scoped coverage should still detect the directory-level capture watcher."""
+    workspace = tmp_path
+    eventloom = workspace / ".eventloom"
+    (workspace / ".codex").mkdir()
+    (workspace / ".codex" / "zaxy-capture.json").write_text(
+        json.dumps(
+            {
+                "client": "codex",
+                "capture": "local-session-jsonl",
+                "eventloom_path": ".eventloom",
+                "session_id": "agent-1",
+            }
+        ),
+        encoding="utf-8",
+    )
+    log = EventLog(eventloom / "agent-1.jsonl")
+    log.append("hook.heartbeat", actor="zaxy-hook", payload={"source": "codex"}, thread="agent-1")
+    for event_type in ("command.completed", "file.edit.applied", "tool.call.completed", "transcript.turn"):
+        log.append(event_type, actor="zaxy-observer", payload={"source": "codex"}, thread="agent-1")
+    monkeypatch.setattr(
+        "zaxy.hooks._iter_process_cmdlines",
+        lambda: [
+            (
+                4242,
+                [
+                    "zaxy",
+                    "codex-capture",
+                    "--watch",
+                    "--workspace",
+                    str(workspace),
+                    "--eventloom-path",
+                    str(eventloom),
+                ],
+            )
+        ],
+    )
+    monkeypatch.setattr("zaxy.hooks._process_cwd", lambda _pid: workspace)
+
+    report = build_capture_soak_report(
+        eventloom_path=eventloom,
+        workspace_root=workspace,
+        session_id="agent-1",
+    )
+
+    assert report["eventloom_path"] == str(eventloom / "agent-1.jsonl")
+    assert report["codex_capture"]["runtime"]["running"] is True
+    assert report["beta_criteria"]["status"] == "pass"
 
 
 def test_capture_soak_report_fails_for_missing_or_stale_capture_lanes(tmp_path: Path) -> None:

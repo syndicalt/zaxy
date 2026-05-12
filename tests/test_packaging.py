@@ -165,6 +165,28 @@ def test_beta_uat_script_fails_when_checkout_has_no_memory() -> None:
     assert "grep -Eq \"Citations: [1-9]\"" in script
 
 
+def test_beta_uat_script_verifies_model_facing_memory_guidance() -> None:
+    """UAT should prove bootstrap and checkout teach models when to use memory."""
+    script = Path("scripts/beta-uat.sh").read_text(encoding="utf-8")
+
+    assert "BOOTSTRAP_OUTPUT=\"$(zaxy memory bootstrap" in script
+    assert "grep -q \"Call memory_checkout before answering roadmap or implementation questions.\"" in script
+    assert "grep -q \"Call memory_feedback when cited checkout context was used.\"" in script
+    assert "grep -q \"Feedback: call memory_feedback\" <<<\"${CHECKOUT_OUTPUT}\"" in script
+    assert "grep -q \"Suggested next call: memory_checkout\" <<<\"${CHECKOUT_OUTPUT}\"" in script
+
+
+def test_beta_uat_script_exercises_observation_sinks_for_capture_soak() -> None:
+    """UAT should prove the hook protocol lanes that make model memory observable."""
+    script = Path("scripts/beta-uat.sh").read_text(encoding="utf-8")
+
+    assert "zaxy hook-event command" in script
+    assert "zaxy hook-event file-edit" in script
+    assert "zaxy hook-event tool-call" in script
+    assert "zaxy hook-event transcript-turn" in script
+    assert "zaxy capture-soak --eventloom-path .eventloom --workspace-root . --session-id" in script
+
+
 def test_beta_uat_script_stops_managed_capture_before_cleanup() -> None:
     """UAT should not leave its managed capture watcher running after success."""
     script = Path("scripts/beta-uat.sh").read_text(encoding="utf-8")

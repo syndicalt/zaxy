@@ -341,6 +341,8 @@ def detect_codex_capture_runtime(workspace_root: Path, eventloom_path: Path) -> 
 def _detect_codex_capture_runtime(workspace_root: Path, eventloom_path: Path) -> dict[str, Any]:
     expected_workspace = workspace_root.resolve()
     expected_eventloom = _resolve_against(eventloom_path, expected_workspace)
+    if expected_eventloom.suffix == ".jsonl":
+        expected_eventloom = expected_eventloom.parent
     pids = [
         pid
         for pid, cmdline in _iter_process_cmdlines()

@@ -343,13 +343,14 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Source-aware inferred-edge retrieval scoring with trust multipliers and score explanations
 - [x] Checkout-level inferred graph context diagnostics and prompt guidance
 - [x] Local Neo4j UAT coverage for inferred-edge projection, retrieval scoring, and Memory Checkout diagnostics
+- [x] Model-facing clean-repo UAT proving init, Memory Bootstrap guidance, cited Memory Checkout, feedback guidance, capture status, and capture-soak coverage
 
 ## Metrics
 
 | Metric | Value |
 |--------|-------|
-| Tests | 792 passed, 9 deselected |
-| Coverage | 92.35% |
+| Tests | 795 passed, 9 deselected |
+| Coverage | 92.32% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
@@ -357,4 +358,4 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 ## Next Steps
 
 1. Use LangGraph and CrewAI native-preview usage to choose the next maintained adapter or model-facing UX hardening target.
-2. Add model-facing UAT for memory bootstrap plus checkout guidance in a clean initialized repo.
+2. Add reproducible MemPalace-comparable workloads for temporal, source-recall, graph-traversal, and context-collapse behavior.

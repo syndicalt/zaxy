@@ -42,15 +42,50 @@ zaxy init . \
     --capture start \
     --infra check
 
-zaxy memory bootstrap --session-id "${SESSION_ID}"
+BOOTSTRAP_OUTPUT="$(zaxy memory bootstrap --session-id "${SESSION_ID}")"
+echo "${BOOTSTRAP_OUTPUT}"
+grep -q "Call memory_checkout before answering roadmap or implementation questions." <<<"${BOOTSTRAP_OUTPUT}"
+grep -q "Call memory_feedback when cited checkout context was used." <<<"${BOOTSTRAP_OUTPUT}"
 CHECKOUT_OUTPUT="$(zaxy memory checkout "current workspace memory state" --session-id "${SESSION_ID}")"
 echo "${CHECKOUT_OUTPUT}"
 grep -q "Answerability: answer_from_memory" <<<"${CHECKOUT_OUTPUT}"
 grep -Eq "Citations: [1-9]" <<<"${CHECKOUT_OUTPUT}"
+grep -q "Suggested next call: memory_checkout" <<<"${CHECKOUT_OUTPUT}"
+grep -q "Feedback: call memory_feedback" <<<"${CHECKOUT_OUTPUT}"
+zaxy hook-event command \
+    --eventloom-path .eventloom \
+    --session-id "${SESSION_ID}" \
+    --source codex-local \
+    --workspace "${PROJECT}" \
+    --command "zaxy memory bootstrap" \
+    --exit-code 0
+zaxy hook-event file-edit \
+    --eventloom-path .eventloom \
+    --session-id "${SESSION_ID}" \
+    --source codex-local \
+    --workspace "${PROJECT}" \
+    --path README.md \
+    --operation created \
+    --summary "Created clean UAT workspace README"
+zaxy hook-event tool-call \
+    --eventloom-path .eventloom \
+    --session-id "${SESSION_ID}" \
+    --source codex-local \
+    --workspace "${PROJECT}" \
+    --tool-name memory_checkout \
+    --tool-status ok \
+    --result-summary "Checkout returned cited model-facing memory guidance"
+zaxy hook-event transcript-turn \
+    --eventloom-path .eventloom \
+    --session-id "${SESSION_ID}" \
+    --source codex-local \
+    --role assistant \
+    --content "Verified memory bootstrap and memory checkout guidance in a clean workspace." \
+    --turn-index 1
 zaxy doctor --eventloom-path .eventloom
 zaxy hook-status --eventloom-path .eventloom
 zaxy capture status --workspace .
-zaxy capture-soak --eventloom-path .eventloom --session-id "${SESSION_ID}"
+zaxy capture-soak --eventloom-path .eventloom --workspace-root . --session-id "${SESSION_ID}"
 zaxy memory status --eventloom-path .eventloom
 zaxy doctor --beta-readiness --project-root "${ROOT}"
 zaxy capture stop --workspace .

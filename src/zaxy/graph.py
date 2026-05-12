@@ -890,7 +890,7 @@ class GraphStore:
                     | coalesce(rel.confidence, 0.0)] AS path_inferred_confidences,
                [rel IN relationships(path)
                     WHERE coalesce(rel.inferred, false)
-                    | coalesce(rel.inference_method, 'unknown')] AS path_inference_methods,
+                    | coalesce(properties(rel)['inference_method'], 'unknown')] AS path_inference_methods,
                [rel IN relationships(path)
                     WHERE coalesce(rel.inferred, false)
                       AND rel.source_event_seq IS NOT NULL

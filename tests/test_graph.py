@@ -828,7 +828,7 @@ class TestRetrieval:
         call = store._driver.execute_query.await_args
         assert "rel.inferred" in call.args[0]
         assert "rel.confidence" in call.args[0]
-        assert "rel.inference_method" in call.args[0]
+        assert "properties(rel)['inference_method']" in call.args[0]
         assert "key STARTS WITH 'evidence_'" in call.args[0]
 
     async def test_search_traversal_with_temporal_filter(self, store: GraphStore) -> None:
