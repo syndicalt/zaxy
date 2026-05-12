@@ -1062,6 +1062,50 @@ class TestContextAssembly:
         assert checkout.quality["required_action"] == checkout.guidance["recommended_next_call"]
         assert "Checkout contains warnings that reduce confidence." in checkout.quality["reasons"]
 
+    def test_checkout_memory_reports_inferred_context_dependency(self) -> None:
+        """build_memory_checkout() should expose inferred-path reliance to the model."""
+        assembly = ContextAssembly(
+            session_id="agent-1",
+            prompt="# Active Memory Working Set\n- Task 7 likely implemented a decision.",
+            contexts=[
+                Context(
+                    content="Task 7 likely implemented the Memory Checkout decision.",
+                    source="traversal",
+                    score=0.94,
+                    metadata={
+                        "citation": "eventloom://agent-1/events/12#aaaaaaaaaaaa",
+                        "score_explanation": {
+                            "inferred_edge_count": 1,
+                            "inferred_edge_trust": 0.86,
+                            "inferred_edge_trust_multiplier": 1.08,
+                            "inferred_edge_method_coverage": 1.0,
+                            "inferred_edge_source_coverage": 1.0,
+                            "inferred_edge_evidence_coverage": 1.0,
+                        },
+                    },
+                    valid_from="2026-05-10T12:00:00Z",
+                    valid_to=None,
+                ),
+            ],
+            working_set={"items": []},
+            context_counts={"graph": 1},
+            replay_event_count=12,
+            compacted=False,
+            warnings=[],
+            assembly_policy={},
+        )
+
+        checkout = build_memory_checkout(
+            query="What decision did task 7 implement?",
+            assembly=assembly,
+        )
+
+        assert checkout.current_facts[0]["score_explanation"]["inferred_edge_trust"] == 0.86
+        assert checkout.diagnostics["inferred_context"]["context_count"] == 1
+        assert checkout.diagnostics["inferred_context"]["average_trust"] == 0.86
+        assert "Checkout includes inferred graph paths." in checkout.quality["reasons"]
+        assert "Inferred graph context: contexts=1, edges=1, average_trust=0.86" in checkout.prompt
+
     async def test_checkout_memory_prioritizes_exact_recent_task_context(
         self,
         fabric: MemoryFabric,

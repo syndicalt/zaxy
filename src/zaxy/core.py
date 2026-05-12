@@ -1127,12 +1127,15 @@ def _checkout_fact(context: Context) -> dict[str, Any]:
         value = metadata.get(key)
         if isinstance(value, str) and value:
             fact[key] = value
+    score_explanation = metadata.get("score_explanation")
+    if isinstance(score_explanation, dict):
+        fact["score_explanation"] = score_explanation
     return fact
 
 def _checkout_evidence(context: Context) -> dict[str, Any]:
     citation = _context_citation(context)
     seq, event_hash = _citation_event_identity(citation)
-    return {
+    evidence: dict[str, Any] = {
         "citation": citation,
         "content": context.content,
         "source": context.source,
@@ -1141,6 +1144,11 @@ def _checkout_evidence(context: Context) -> dict[str, Any]:
         "event_seq": seq,
         "event_hash": event_hash,
     }
+    metadata = context.metadata or {}
+    score_explanation = metadata.get("score_explanation")
+    if isinstance(score_explanation, dict):
+        evidence["score_explanation"] = score_explanation
+    return evidence
 
 
 def _checkout_provenance(context: Context) -> dict[str, Any]:

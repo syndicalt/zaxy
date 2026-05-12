@@ -18,7 +18,7 @@ def build_checkout_diagnostics(
     warnings: list[str],
 ) -> dict[str, Any]:
     """Build observable checkout metrics used by quality scoring and prompts."""
-    return {
+    diagnostics = {
         "source_lanes": source_lanes,
         "citation_count": len(evidence),
         "current_citation_count": sum(1 for fact in current_facts if fact.get("citation")),
@@ -29,6 +29,10 @@ def build_checkout_diagnostics(
         "feedback_tool": "memory_feedback",
         "feedback_reason": "Reinforce cited context if it materially informed the next response.",
     }
+    inferred_context = _inferred_context_diagnostics(current_facts)
+    if inferred_context["context_count"]:
+        diagnostics["inferred_context"] = inferred_context
+    return diagnostics
 
 
 def build_checkout_guidance(
@@ -56,6 +60,11 @@ def build_checkout_guidance(
         trust.append("Treat this checkout as low-confidence because it has no cited evidence.")
     if retention.get("superseded_contexts_excluded", 0):
         ignore.append("Superseded contexts were excluded from current_facts but remain auditable.")
+    inferred_context = _inferred_context_diagnostics(current_facts)
+    if inferred_context["context_count"]:
+        trust.append("Checkout depends on inferred graph paths; inspect inferred_context diagnostics.")
+    if inferred_context["low_trust_count"]:
+        ignore.append("Low-trust inferred graph paths were included; treat them as leads, not facts.")
     return {
         "trust": trust,
         "ignore": ignore,
@@ -96,6 +105,9 @@ def build_checkout_quality(
         reasons.append("Superseded contexts were excluded from current facts.")
     if warning_count:
         reasons.append("Checkout contains warnings that reduce confidence.")
+    inferred_context = diagnostics.get("inferred_context")
+    if isinstance(inferred_context, dict) and _int_metric(inferred_context.get("context_count")):
+        reasons.append("Checkout includes inferred graph paths.")
     confidence = 0.25
     confidence += min(current_fact_count, 2) * 0.22
     confidence += min(current_citation_count, 2) * 0.28
@@ -181,6 +193,14 @@ def format_memory_checkout_prompt(
     lines.append(
         f"- Superseded contexts excluded: {diagnostics.get('superseded_contexts_excluded', 0)}"
     )
+    inferred_context = diagnostics.get("inferred_context")
+    if isinstance(inferred_context, dict):
+        lines.append(
+            "- Inferred graph context: "
+            f"contexts={inferred_context.get('context_count', 0)}, "
+            f"edges={inferred_context.get('edge_count', 0)}, "
+            f"average_trust={inferred_context.get('average_trust', 0)}"
+        )
     if diagnostics.get("feedback_recommended"):
         lines.append(
             "- Feedback: call "
@@ -227,6 +247,70 @@ def _append_required_action(lines: list[str], required_action: Any) -> None:
 
 def _int_metric(value: Any) -> int:
     return value if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
+def _inferred_context_diagnostics(items: list[dict[str, Any]]) -> dict[str, Any]:
+    inferred_items = [
+        item
+        for item in items
+        if _inferred_score_explanation(item).get("inferred_edge_count")
+    ]
+    context_count = len(inferred_items)
+    if context_count == 0:
+        return {
+            "context_count": 0,
+            "current_fact_count": 0,
+            "citation_count": 0,
+            "edge_count": 0,
+            "average_trust": 0.0,
+            "average_multiplier": 0.0,
+            "method_coverage": 0.0,
+            "source_coverage": 0.0,
+            "evidence_coverage": 0.0,
+            "low_trust_count": 0,
+        }
+    explanations = [_inferred_score_explanation(item) for item in inferred_items]
+    return {
+        "context_count": context_count,
+        "current_fact_count": context_count,
+        "citation_count": sum(1 for item in inferred_items if item.get("citation")),
+        "edge_count": sum(_int_metric(exp.get("inferred_edge_count")) for exp in explanations),
+        "average_trust": _round_metric(_average_metric(explanations, "inferred_edge_trust")),
+        "average_multiplier": _round_metric(
+            _average_metric(explanations, "inferred_edge_trust_multiplier"),
+            digits=3,
+        ),
+        "method_coverage": _round_metric(_average_metric(explanations, "inferred_edge_method_coverage")),
+        "source_coverage": _round_metric(_average_metric(explanations, "inferred_edge_source_coverage")),
+        "evidence_coverage": _round_metric(_average_metric(explanations, "inferred_edge_evidence_coverage")),
+        "low_trust_count": sum(
+            1
+            for exp in explanations
+            if _float_metric(exp.get("inferred_edge_trust")) < 0.5
+        ),
+    }
+
+
+def _inferred_score_explanation(item: dict[str, Any]) -> dict[str, Any]:
+    value = item.get("score_explanation")
+    return value if isinstance(value, dict) else {}
+
+
+def _average_metric(items: list[dict[str, Any]], key: str) -> float:
+    values = [_float_metric(item.get(key)) for item in items]
+    return sum(values) / len(values) if values else 0.0
+
+
+def _float_metric(value: Any) -> float:
+    if isinstance(value, bool):
+        return 0.0
+    if isinstance(value, int | float):
+        return float(value)
+    return 0.0
+
+
+def _round_metric(value: float, *, digits: int = 2) -> float:
+    return round(value, digits)
 
 
 def _format_source_lanes(source_lanes: Any) -> str:

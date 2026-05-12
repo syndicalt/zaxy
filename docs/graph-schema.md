@@ -96,6 +96,11 @@ and context assembly expose the trust score, multiplier, and coverage factors in
 score explanations so inferred relationships remain visible to the model and to
 operators.
 
+Memory Checkout also rolls those per-result explanations into an
+`inferred_context` diagnostic. The prompt-ready checkout includes inferred
+context counts, inferred edge counts, average trust, and low-trust guidance so
+models can distinguish cited inferred graph context from deterministic memory.
+
 Example Eventloom payload:
 
 ```json
