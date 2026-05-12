@@ -18,7 +18,6 @@ import contextvars
 import hmac
 import inspect
 import json
-import re
 from collections.abc import Mapping
 from contextlib import suppress
 from datetime import UTC, datetime
@@ -32,14 +31,9 @@ from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
 from zaxy.capabilities import build_memory_bootstrap, build_memory_capabilities
-from zaxy.checkout import (
-    build_checkout_diagnostics,
-    build_checkout_guidance,
-    build_checkout_quality,
-    format_memory_checkout_prompt,
-)
 from zaxy.config import get_settings
 from zaxy.context import Context, ContextAssemblyPolicy, context_counts
+from zaxy.core import ContextAssembly, build_memory_checkout
 from zaxy.extract import extract
 from zaxy.graph import GraphStore
 from zaxy.lifecycle import (
@@ -712,7 +706,11 @@ class ZaxyMCPServer:
             max_recent_events=max_recent_events,
             as_of_seq=resolved_ref.target_seq if resolved_ref is not None else None,
         )
-        output = _memory_checkout_payload(query=query, assembly=assembly, ref=resolved_ref)
+        output = build_memory_checkout(
+            query=query,
+            assembly=_context_assembly_from_payload(assembly),
+            ref=resolved_ref,
+        ).to_dict()
         return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
     async def handle_context_after_turn(self, arguments: dict[str, Any]) -> list[TextContent]:
@@ -1097,172 +1095,41 @@ class RemoteRequestGuard:
         )
 
 
-def _memory_checkout_payload(
-    *,
-    query: str,
-    assembly: dict[str, Any],
-    ref: MemoryRef | None = None,
-) -> dict[str, Any]:
-    contexts = sorted(
-        [context for context in assembly.get("contexts", []) if isinstance(context, dict)],
-        key=lambda context: _checkout_rank(context, query),
-        reverse=True,
-    )
-    current_facts = [
-        _checkout_fact_payload(context)
-        for context in contexts
-        if context.get("valid_to") is None
+def _context_assembly_from_payload(payload: dict[str, Any]) -> ContextAssembly:
+    """Convert an MCP context payload into the shared core assembly contract."""
+    contexts = [
+        _context_from_payload(context)
+        for context in payload.get("contexts", [])
+        if isinstance(context, dict)
     ]
-    evidence = [
-        _checkout_evidence_payload(context)
-        for context in contexts
-        if context.get("citation")
-    ]
-    provenance = [
-        _checkout_provenance_payload(context)
-        for context in contexts
-        if context.get("citation")
-    ]
-    warnings: list[str] = []
-    if assembly.get("compacted") is True:
-        warnings.append("Recent replay was compacted to fit the checkout budget.")
-    if current_facts and not evidence:
-        warnings.append("Checkout contains current facts without Eventloom citations.")
-    retention = {
-        "policy": "current_only",
-        "superseded_contexts_excluded": sum(
-            1
-            for context in contexts
-            if context.get("valid_to") is not None
-        ),
-    }
-    diagnostics = build_checkout_diagnostics(
-        source_lanes=_checkout_source_lanes_payload(contexts),
-        current_facts=current_facts,
-        evidence=evidence,
-        retention=retention,
-        warnings=warnings,
+    warnings = payload.get("warnings")
+    assembly_policy = payload.get("assembly_policy")
+    counts = payload.get("context_counts")
+    working_set = payload.get("working_set")
+    return ContextAssembly(
+        session_id=str(payload.get("session_id") or "default"),
+        prompt=str(payload.get("prompt") or ""),
+        contexts=contexts,
+        replay_event_count=int(payload.get("replay_event_count") or 0),
+        compacted=payload.get("compacted") is True,
+        warnings=list(warnings) if isinstance(warnings, list) else [],
+        assembly_policy=assembly_policy if isinstance(assembly_policy, dict) else {},
+        context_counts=counts if isinstance(counts, dict) else {},
+        working_set=working_set if isinstance(working_set, dict) else {},
     )
-    guidance = build_checkout_guidance(
-        query=query,
-        current_facts=current_facts,
-        retention=retention,
-        evidence=evidence,
+
+
+def _context_from_payload(payload: dict[str, Any]) -> Context:
+    metadata = payload.get("metadata")
+    metadata = metadata if isinstance(metadata, dict) else {}
+    return Context(
+        content=str(payload.get("content") or ""),
+        source=str(payload.get("source") or "unknown"),
+        score=float(payload.get("score") or 0.0),
+        valid_from=payload.get("valid_from") if isinstance(payload.get("valid_from"), str) else None,
+        valid_to=payload.get("valid_to") if isinstance(payload.get("valid_to"), str) else None,
+        metadata=metadata,
     )
-    quality = build_checkout_quality(
-        diagnostics=diagnostics,
-        guidance=guidance,
-    )
-    return {
-        **assembly,
-        "query": query,
-        "ref": ref.to_dict() if ref is not None else None,
-        "prompt": format_memory_checkout_prompt(
-            query=query,
-            assembly_prompt=str(assembly.get("prompt", "")),
-            current_facts=current_facts,
-            evidence=evidence,
-            quality=quality,
-            guidance=guidance,
-            diagnostics=diagnostics,
-        ),
-        "current_facts": current_facts,
-        "evidence": evidence,
-        "provenance": provenance,
-        "retention": retention,
-        "warnings": warnings,
-        "guidance": guidance,
-        "quality": quality,
-        "diagnostics": diagnostics,
-    }
-
-
-def _checkout_fact_payload(context: dict[str, Any]) -> dict[str, Any]:
-    metadata = context.get("metadata")
-    metadata = metadata if isinstance(metadata, dict) else {}
-    fact: dict[str, Any] = {
-        "content": context.get("content"),
-        "source": context.get("source"),
-        "score": context.get("score"),
-        "citation": context.get("citation"),
-        "valid_from": context.get("valid_from"),
-        "valid_to": context.get("valid_to"),
-        "source_lane": _checkout_source_lane_payload(context),
-    }
-    for key in ("entity_name", "entity_type"):
-        value = metadata.get(key)
-        if isinstance(value, str) and value:
-            fact[key] = value
-    score_explanation = context.get("score_explanation") or metadata.get("score_explanation")
-    if isinstance(score_explanation, dict):
-        fact["score_explanation"] = score_explanation
-    return fact
-
-def _checkout_evidence_payload(context: dict[str, Any]) -> dict[str, Any]:
-    citation = context.get("citation") if isinstance(context.get("citation"), str) else None
-    seq, event_hash = _citation_event_identity(citation)
-    evidence: dict[str, Any] = {
-        "citation": citation,
-        "content": context.get("content"),
-        "source": context.get("source"),
-        "source_lane": _checkout_source_lane_payload(context),
-        "score": context.get("score"),
-        "event_seq": seq,
-        "event_hash": event_hash,
-    }
-    metadata = context.get("metadata")
-    metadata = metadata if isinstance(metadata, dict) else {}
-    score_explanation = context.get("score_explanation") or metadata.get("score_explanation")
-    if isinstance(score_explanation, dict):
-        evidence["score_explanation"] = score_explanation
-    return evidence
-
-
-def _checkout_provenance_payload(context: dict[str, Any]) -> dict[str, Any]:
-    citation = context.get("citation") if isinstance(context.get("citation"), str) else None
-    seq, event_hash = _citation_event_identity(citation)
-    return {
-        "citation": citation,
-        "event_seq": seq,
-        "event_hash": event_hash,
-        "source": context.get("source"),
-        "source_lane": _checkout_source_lane_payload(context),
-        "valid_from": context.get("valid_from"),
-        "valid_to": context.get("valid_to"),
-    }
-
-
-def _checkout_source_lanes_payload(contexts: list[dict[str, Any]]) -> dict[str, int]:
-    source_lanes: dict[str, int] = {}
-    for context in contexts:
-        lane = _checkout_source_lane_payload(context)
-        source_lanes[lane] = source_lanes.get(lane, 0) + 1
-    return source_lanes
-
-
-def _checkout_source_lane_payload(context: dict[str, Any]) -> str:
-    metadata = context.get("metadata")
-    metadata = metadata if isinstance(metadata, dict) else {}
-    lane = metadata.get("assembly_lane")
-    if isinstance(lane, str) and lane:
-        return lane
-    source = context.get("source")
-    if source in {"verbatim", "packet_memory", "projection", "eventloom"}:
-        return str(source)
-    return "graph"
-
-
-def _checkout_rank(context: dict[str, Any], query: str) -> tuple[float, int, str, float]:
-    query_tokens = _checkout_tokens(query)
-    content_tokens = _checkout_tokens(str(context.get("content") or ""))
-    overlap = len(query_tokens & content_tokens) / max(1, len(query_tokens))
-    metadata = context.get("metadata")
-    metadata = metadata if isinstance(metadata, dict) else {}
-    entity_type = metadata.get("entity_type")
-    type_priority = 1 if entity_type in {"task", "decision", "goal", "memory"} else 0
-    score = context.get("score")
-    numeric_score = float(score) if isinstance(score, int | float) else 0.0
-    return (overlap, type_priority, str(context.get("valid_from") or ""), numeric_score)
 
 
 def _contexts_as_of_seq(contexts: list[Context], as_of_seq: int) -> list[Context]:
@@ -1273,10 +1140,6 @@ def _contexts_as_of_seq(contexts: list[Context], as_of_seq: int) -> list[Context
         if seq is None or seq <= as_of_seq:
             filtered.append(context)
     return filtered
-
-
-def _checkout_tokens(value: str) -> set[str]:
-    return {token for token in re.findall(r"[a-z0-9]+", value.casefold()) if len(token) > 2}
 
 
 def _citation_event_identity(citation: str | None) -> tuple[int | None, str | None]:

@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import zaxy.mcp_server
+from zaxy.core import build_memory_checkout
 from zaxy.event import EventLog
 from zaxy.mcp_server import (
     TOOLS,
@@ -685,6 +686,42 @@ class TestContextLifecycleTools:
         assert "current decisions, blockers, and next actions" in output["prompt"]
         assert "memory_feedback" in output["prompt"]
         assert all(fact["valid_to"] is None for fact in output["current_facts"])
+
+    async def test_memory_checkout_uses_core_checkout_builder(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """MCP memory_checkout should share the core MemoryFabric checkout policy."""
+        server.session_manager.replay.return_value = MagicMock(events=[])
+        with (
+            patch("zaxy.mcp_server.QueryRouter") as mock_router_cls,
+            patch("zaxy.mcp_server.build_memory_checkout", wraps=build_memory_checkout) as builder,
+        ):
+            router = AsyncMock()
+            router.query.return_value = [
+                MagicMock(
+                    content="Memory checkout is the context contract.",
+                    source="keyword",
+                    score=0.8,
+                    valid_from="2026-05-10T20:55:40Z",
+                    valid_to=None,
+                    citation="eventloom://agent-1/events/1882#checkout",
+                    score_explanation=None,
+                    entity_name="memory checkout",
+                    entity_type="task",
+                ),
+            ]
+            mock_router_cls.return_value = router
+
+            result = await server.handle_memory_checkout({
+                "query": "What context contract should the model use?",
+                "session_id": "agent-1",
+                "limit": 3,
+            })
+
+        output = json_loads(result[0].text)
+        assert output["current_facts"][0]["content"] == "Memory checkout is the context contract."
+        builder.assert_called_once()
 
     async def test_memory_checkout_asks_user_when_only_superseded_context_is_retrieved(
         self,
