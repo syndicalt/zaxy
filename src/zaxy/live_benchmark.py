@@ -564,10 +564,19 @@ class ZaxyRetriever:
         graph_results = [_benchmark_context_from_chunk(chunk) for chunk in chunks]
         if self._lexical_retriever is None or not _should_query_source_lexical_lane(query):
             return graph_results
+        lexical_results = self._lexical_retriever.query(
+            query,
+            temporal_point=temporal_point,
+            limit=limit,
+        )
+        lexical_results = _filter_superseded_preference_lexical_results(
+            graph_results,
+            lexical_results,
+        )
         fused = RankFusionRetriever(
             {
                 "graph": _StaticRetriever(tuple(graph_results)),
-                "lexical": self._lexical_retriever,
+                "lexical": _StaticRetriever(tuple(lexical_results)),
             },
             weights={"graph": 3.0, "lexical": 1.0},
         )
@@ -620,6 +629,55 @@ def _should_query_source_lexical_lane(query: str) -> bool:
             "sources",
         }
     )
+
+
+def _filter_superseded_preference_lexical_results(
+    graph_results: list[str],
+    lexical_results: list[str],
+) -> list[str]:
+    """Remove raw stale preference rows when graph retrieval has the current fact."""
+    current_preferences = _current_preference_values(graph_results)
+    if not current_preferences:
+        return lexical_results
+    filtered: list[str] = []
+    for result in lexical_results:
+        if _is_stale_preference_result(result, current_preferences):
+            continue
+        filtered.append(result)
+    return filtered
+
+
+def _current_preference_values(results: list[str]) -> dict[tuple[str, str], str]:
+    preferences: dict[tuple[str, str], str] = {}
+    for result in results:
+        for match in re.finditer(
+            r"\b(?P<user>user-\d{4}):(?P<key>[A-Za-z0-9_.-]+)\b.*?"
+            r"(?P=key)=(?P<value>[A-Za-z0-9_.-]+)",
+            result,
+            flags=re.IGNORECASE,
+        ):
+            preferences[
+                (match.group("user").casefold(), match.group("key").casefold())
+            ] = match.group("value").casefold()
+    return preferences
+
+
+def _is_stale_preference_result(
+    result: str,
+    current_preferences: dict[tuple[str, str], str],
+) -> bool:
+    lowered = result.casefold()
+    for (user_id, key), current_value in current_preferences.items():
+        if user_id not in lowered or key not in lowered:
+            continue
+        value_match = re.search(
+            rf"\b(?:value|{re.escape(key)})[=:]\s*['\"]?(?P<value>[A-Za-z0-9_.-]+)",
+            result,
+            flags=re.IGNORECASE,
+        )
+        if value_match and value_match.group("value").casefold() != current_value:
+            return True
+    return False
 
 
 def corpus_from_event_log(eventlog: EventLog) -> tuple[BenchmarkChunk, ...]:

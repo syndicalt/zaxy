@@ -666,6 +666,62 @@ class TestQueryRouting:
         )
         assert matching_call.kwargs["temporal_point"] == "2024-03-01T00:00:00Z"
 
+    async def test_mixed_current_queries_suppress_superseded_preference_versions(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Mixed context should keep current facts without leaking stale preference values."""
+        current_preference = GraphEntity(
+            name="user-0003:theme",
+            entity_type="preference",
+            valid_from="2024-06-01T00:00:00Z",
+            valid_to=None,
+            properties={"summary": "theme=theme-new-3"},
+        )
+        stale_preference = GraphEntity(
+            name="user-0003:theme",
+            entity_type="preference",
+            valid_from="2024-02-01T00:00:00Z",
+            valid_to="2024-06-01T00:00:00Z",
+            properties={"summary": "theme=theme-old-3"},
+        )
+        document = GraphEntity(
+            name="docs/runbooks/service-0003.md:22-27",
+            entity_type="document",
+            valid_from="2024-08-01T00:00:00Z",
+            valid_to=None,
+            properties={
+                "summary": "service-0003 production runbook uses release marker doc-code-0003.",
+                "source_path": "docs/runbooks/service-0003.md",
+            },
+        )
+        async def _search_exact(name: str, **_: object) -> list[GraphEntity]:
+            return [current_preference] if name == "user-0003:theme" else []
+
+        async def _search_keyword(query: str, **_: object) -> list[SearchResult]:
+            results = [
+                SearchResult(entity=stale_preference, score=0.99, source="keyword"),
+                SearchResult(entity=document, score=0.95, source="keyword"),
+            ]
+            if "doc-code-0003" in query:
+                return [results[1]]
+            return results
+
+        mock_store.search_exact.side_effect = _search_exact
+        mock_store.search_keyword.side_effect = _search_keyword
+
+        chunks = await router.query(
+            "For user-0003 in workstream 0003, recover the current theme, "
+            "runbook marker doc-code-0003, and session decision.",
+            limit=10,
+        )
+        content = "\n".join(chunk.content for chunk in chunks)
+
+        assert "theme=theme-new-3" in content
+        assert "doc-code-0003" in content
+        assert "theme=theme-old-3" not in content
+
     async def test_deduplication_keeps_highest_score(self, router: QueryRouter, mock_store: AsyncMock) -> None:
         """If the same entity appears from multiple sources, keep the highest score."""
         ent = GraphEntity(

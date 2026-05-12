@@ -52,6 +52,7 @@ from zaxy.live_benchmark import (
     workload_fingerprint,
     write_benchmark_report,
 )
+from zaxy.query import ContextChunk
 
 
 def test_cli_exposes_live_benchmark_command() -> None:
@@ -714,6 +715,80 @@ async def test_live_benchmark_reports_progress_for_each_backend_case() -> None:
     assert report.summaries
     assert [item["backend"] for item in progress] == ["md", "zaxy"]
     assert all(item["completed"] <= item["total"] for item in progress)
+
+
+async def test_zaxy_retriever_filters_stale_preference_lexical_backfill() -> None:
+    """Raw lexical source backfill should not reintroduce superseded preference values."""
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            *,
+            temporal_point: str | None = None,
+            limit: int = 10,
+            embedding: list[float] | None = None,
+        ) -> list[ContextChunk]:
+            del query, temporal_point, limit, embedding
+            return [
+                ContextChunk(
+                    content="user-0003:theme (preference) — summary=theme=theme-new-3",
+                    source="exact",
+                    score=1.0,
+                    valid_from="2024-06-01T00:00:00Z",
+                    valid_to=None,
+                ),
+                ContextChunk(
+                    content=(
+                        "docs/runbooks/service-0003.md:22-27 (document) — "
+                        "summary=release marker doc-code-0003"
+                    ),
+                    source="keyword",
+                    score=0.9,
+                    valid_from="2024-08-01T00:00:00Z",
+                    valid_to=None,
+                ),
+            ]
+
+    class FakeProvider:
+        dimension = 2
+
+        def embed(self, text: str) -> list[float]:
+            del text
+            return [1.0, 0.0]
+
+    class FakeLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return [
+                (
+                    "type=user.preference_changed actor=user payload={userId=user-0003, "
+                    "key=theme, value=theme-old-3}"
+                ),
+                "type=transcript.turn content=We decided decision-code-0003 for workstream 0003.",
+            ]
+
+    retriever = ZaxyRetriever(  # type: ignore[arg-type]
+        FakeRouter(),
+        FakeProvider(),
+        lexical_retriever=FakeLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "For user-0003 in workstream 0003, recover the current theme, "
+        "runbook marker doc-code-0003, and session decision.",
+        limit=10,
+    )
+    content = "\n".join(results)
+
+    assert "theme=theme-new-3" in content
+    assert "doc-code-0003" in content
+    assert "decision-code-0003" in content
+    assert "theme-old-3" not in content
 
 
 def test_bm25_retriever_ranks_specific_identifier_above_generic_overlap() -> None:
