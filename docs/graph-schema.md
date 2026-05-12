@@ -87,6 +87,15 @@ statistics, evidence coverage, missing evidence counts, missing source-event
 provenance, and representative samples. This keeps inferred edges inspectable
 as a trust surface instead of a hidden retrieval heuristic.
 
+Retrieval uses the same trust surface. When graph traversal crosses inferred
+edges, Zaxy computes an inferred-edge trust multiplier from confidence,
+non-unknown inference methods, Eventloom source-event provenance, and evidence
+coverage. Fully cited inferred edges can modestly boost traversal context;
+uncited or weakly evidenced inferred edges are downweighted. `memory_checkout`
+and context assembly expose the trust score, multiplier, and coverage factors in
+score explanations so inferred relationships remain visible to the model and to
+operators.
+
 Example Eventloom payload:
 
 ```json

@@ -666,7 +666,58 @@ def _traversal_raw_score(query: str, seed: SearchResult, neighbor: GraphEntity) 
     if isinstance(path_length, int) and path_length > 1:
         score -= min(0.25, 0.05 * (path_length - 1))
 
+    score *= _inferred_edge_trust_metadata(neighbor.properties)["multiplier"]
+
     return max(0.1, score)
+
+
+def _inferred_edge_trust_metadata(properties: dict[str, Any]) -> dict[str, float | int]:
+    """Return traversal trust metadata for paths that contain inferred edges."""
+    inferred_edge_count = _positive_int(properties.get("_path_inferred_edge_count"))
+    if inferred_edge_count == 0:
+        return {
+            "count": 0,
+            "trust": 1.0,
+            "multiplier": 1.0,
+            "confidence": 1.0,
+            "method_coverage": 1.0,
+            "source_coverage": 1.0,
+            "evidence_coverage": 1.0,
+        }
+    confidences = [
+        _bounded_float(value, default=0.0)
+        for value in _list_property(properties.get("_path_inferred_confidences"))
+    ]
+    average_confidence = (
+        sum(confidences[:inferred_edge_count]) / inferred_edge_count
+        if confidences
+        else 0.0
+    )
+    methods = [
+        str(method).strip().casefold()
+        for method in _list_property(properties.get("_path_inference_methods"))
+    ]
+    method_count = sum(1 for method in methods if method and method != "unknown")
+    source_count = _positive_int(properties.get("_path_inferred_source_event_count"))
+    evidenced_edge_count = _positive_int(properties.get("_path_inferred_evidenced_edge_count"))
+    if evidenced_edge_count == 0 and _positive_int(properties.get("_path_inferred_evidence_count")) > 0:
+        evidenced_edge_count = min(inferred_edge_count, _positive_int(properties.get("_path_inferred_evidence_count")))
+
+    method_coverage = min(1.0, method_count / inferred_edge_count)
+    source_coverage = min(1.0, source_count / inferred_edge_count)
+    evidence_coverage = min(1.0, evidenced_edge_count / inferred_edge_count)
+    provenance_coverage = (method_coverage + source_coverage + evidence_coverage) / 3.0
+    trust = average_confidence * provenance_coverage
+    multiplier = 0.65 + (0.5 * trust)
+    return {
+        "count": inferred_edge_count,
+        "trust": trust,
+        "multiplier": multiplier,
+        "confidence": average_confidence,
+        "method_coverage": method_coverage,
+        "source_coverage": source_coverage,
+        "evidence_coverage": evidence_coverage,
+    }
 
 
 def _traversal_seeds(
@@ -1036,8 +1087,23 @@ def _bounded_float(value: object, *, default: float) -> float:
     return max(0.0, min(1.0, parsed))
 
 
+def _positive_int(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, int) and value > 0:
+        return value
+    return 0
+
+
+def _list_property(value: object) -> list[object]:
+    if isinstance(value, list):
+        return value
+    return []
+
+
 def _score_explanation(result: SearchResult) -> dict[str, Any]:
     """Return compact score details for retrieval debugging."""
+    inferred_trust = _inferred_edge_trust_metadata(result.entity.properties)
     return {
         "source": result.source,
         "raw_score": round(result.raw_score if result.raw_score is not None else result.score, 4),
@@ -1068,6 +1134,19 @@ def _score_explanation(result: SearchResult) -> dict[str, Any]:
         **(
             {"retention_expired": bool(result.entity.properties["_retention_expired"])}
             if "_retention_expired" in result.entity.properties
+            else {}
+        ),
+        **(
+            {
+                "inferred_edge_count": int(inferred_trust["count"]),
+                "inferred_edge_trust": round(float(inferred_trust["trust"]), 4),
+                "inferred_edge_trust_multiplier": round(float(inferred_trust["multiplier"]), 4),
+                "inferred_edge_confidence": round(float(inferred_trust["confidence"]), 4),
+                "inferred_edge_method_coverage": round(float(inferred_trust["method_coverage"]), 4),
+                "inferred_edge_source_coverage": round(float(inferred_trust["source_coverage"]), 4),
+                "inferred_edge_evidence_coverage": round(float(inferred_trust["evidence_coverage"]), 4),
+            }
+            if inferred_trust["count"]
             else {}
         ),
         "weighted_score": round(result.score, 4),

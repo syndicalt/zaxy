@@ -884,6 +884,21 @@ class GraphStore:
           AND ALL(rel IN relationships(path) WHERE true{temporal_checks})
         RETURN neighbor,
                [rel IN relationships(path) | rel.relation_type] AS path_relation_types,
+               [rel IN relationships(path) | coalesce(rel.inferred, false)] AS path_inferred_flags,
+               [rel IN relationships(path)
+                    WHERE coalesce(rel.inferred, false)
+                    | coalesce(rel.confidence, 0.0)] AS path_inferred_confidences,
+               [rel IN relationships(path)
+                    WHERE coalesce(rel.inferred, false)
+                    | coalesce(rel.inference_method, 'unknown')] AS path_inference_methods,
+               [rel IN relationships(path)
+                    WHERE coalesce(rel.inferred, false)
+                      AND rel.source_event_seq IS NOT NULL
+                      AND rel.source_event_hash IS NOT NULL
+                    | rel.source_event_seq] AS path_inferred_source_event_refs,
+               [rel IN relationships(path)
+                    WHERE coalesce(rel.inferred, false)
+                    | size([key IN keys(rel) WHERE key STARTS WITH 'evidence_'])] AS path_inferred_evidence_counts,
                length(path) AS path_length
         ORDER BY path_length ASC
         """
@@ -901,6 +916,7 @@ class GraphStore:
                 **entity.properties,
                 "_path_relation_types": list(record.get("path_relation_types") or []),
                 "_path_length": int(record.get("path_length") or 0),
+                **_traversal_inferred_metadata(record),
             }
             entities.append(
                 GraphEntity(
@@ -1058,6 +1074,38 @@ def _record_to_inferred_edge_sample(record: Any) -> GraphInferredEdgeSample:
         source_event_hash=_optional_str_record_value(record.get("source_event_hash")),
         evidence_keys=tuple(safe_evidence_keys),
     )
+
+
+def _traversal_inferred_metadata(record: Any) -> dict[str, Any]:
+    """Return normalized inferred-edge trust metadata for a traversal path."""
+    inferred_flags = [flag is True for flag in record.get("path_inferred_flags") or []]
+    inferred_edge_count = sum(1 for flag in inferred_flags if flag)
+    if inferred_edge_count == 0:
+        return {}
+    evidence_counts = [
+        value
+        for value in (_int_record_value(raw) for raw in record.get("path_inferred_evidence_counts") or [])
+        if value > 0
+    ]
+    return {
+        "_path_inferred_edge_count": inferred_edge_count,
+        "_path_inferred_confidences": [
+            value
+            for value in (
+                _optional_float_record_value(raw)
+                for raw in record.get("path_inferred_confidences") or []
+            )
+            if value is not None
+        ],
+        "_path_inference_methods": [
+            str(method)
+            for method in record.get("path_inference_methods") or []
+            if isinstance(method, str) and method
+        ],
+        "_path_inferred_source_event_count": len(record.get("path_inferred_source_event_refs") or []),
+        "_path_inferred_evidence_count": sum(evidence_counts),
+        "_path_inferred_evidenced_edge_count": len(evidence_counts),
+    }
 
 
 def _int_record_value(value: Any) -> int:

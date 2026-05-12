@@ -481,6 +481,74 @@ class TestQueryRouting:
         assert "graph-task-0003" in result_names
         assert "graph-finisher-distractor-0003" not in result_names
 
+    async def test_cited_inferred_paths_outrank_uncited_inferred_paths(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Inferred traversal should prefer cited, evidenced, high-confidence edges."""
+        task = GraphEntity(
+            name="task-7",
+            entity_type="task",
+            valid_from="2024-03-01T00:00:00Z",
+            valid_to=None,
+            properties={},
+        )
+        trusted_decision = GraphEntity(
+            name="decision:Use Memory Checkout",
+            entity_type="decision",
+            valid_from="2024-03-02T00:00:00Z",
+            valid_to=None,
+            properties={
+                "_path_relation_types": ["likely_implemented_decision"],
+                "_path_length": 1,
+                "_path_inferred_edge_count": 1,
+                "_path_inferred_confidences": [0.86],
+                "_path_inference_methods": ["task_completed_decision_citation_v1"],
+                "_path_inferred_source_event_count": 1,
+                "_path_inferred_evidence_count": 2,
+            },
+        )
+        weak_decision = GraphEntity(
+            name="decision:Loose guess",
+            entity_type="decision",
+            valid_from="2024-03-02T00:00:00Z",
+            valid_to=None,
+            properties={
+                "_path_relation_types": ["likely_implemented_decision"],
+                "_path_length": 1,
+                "_path_inferred_edge_count": 1,
+                "_path_inferred_confidences": [0.86],
+                "_path_inference_methods": ["unknown"],
+                "_path_inferred_source_event_count": 0,
+                "_path_inferred_evidence_count": 0,
+            },
+        )
+
+        async def _search_exact(name: str, **_: object) -> list[GraphEntity]:
+            return [task] if name == "task-7" else []
+
+        mock_store.search_exact.side_effect = _search_exact
+        mock_store.search_traversal.return_value = [weak_decision, trusted_decision]
+
+        results = await router.query("Which decision did task-7 implement?", limit=3)
+
+        result_names = [result.entity_name for result in results]
+        assert result_names.index("decision:Use Memory Checkout") < result_names.index(
+            "decision:Loose guess"
+        )
+        trusted = next(result for result in results if result.entity_name == "decision:Use Memory Checkout")
+        weak = next(result for result in results if result.entity_name == "decision:Loose guess")
+        assert trusted.score > weak.score
+        assert trusted.score_explanation is not None
+        assert trusted.score_explanation["inferred_edge_trust"] == pytest.approx(0.86)
+        assert trusted.score_explanation["inferred_edge_trust_multiplier"] > 1.0
+        assert trusted.score_explanation["inferred_edge_evidence_coverage"] == 1.0
+        assert trusted.score_explanation["inferred_edge_source_coverage"] == 1.0
+        assert weak.score_explanation is not None
+        assert weak.score_explanation["inferred_edge_trust_multiplier"] < 1.0
+        assert weak.score_explanation["inferred_edge_evidence_coverage"] == 0.0
+
     async def test_preference_queries_exact_match_structured_preference_entity(
         self,
         router: QueryRouter,

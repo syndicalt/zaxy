@@ -793,6 +793,44 @@ class TestRetrieval:
         assert results[0].properties["_path_relation_types"] == ["has_task", "completed_task"]
         assert results[0].properties["_path_length"] == 2
 
+    async def test_search_traversal_returns_inferred_edge_trust_metadata(
+        self,
+        store: GraphStore,
+    ) -> None:
+        """Traversal path metadata should expose inferred-edge trust signals."""
+        node = _make_node(name="Decision", entity_type="decision", valid_from="2024-01-01T00:00:00Z")
+        store._driver.execute_query.return_value = (
+            [
+                {
+                    "neighbor": node,
+                    "path_relation_types": ["likely_implemented_decision"],
+                    "path_length": 1,
+                    "path_inferred_flags": [True],
+                    "path_inferred_confidences": [0.86],
+                    "path_inference_methods": ["task_completed_decision_citation_v1"],
+                    "path_inferred_source_event_refs": [12],
+                    "path_inferred_evidence_counts": [2],
+                }
+            ],
+            None,
+            None,
+        )
+
+        results = await store.search_traversal("Task", session_id="agent-1")
+
+        assert results[0].properties["_path_inferred_edge_count"] == 1
+        assert results[0].properties["_path_inferred_confidences"] == [0.86]
+        assert results[0].properties["_path_inference_methods"] == [
+            "task_completed_decision_citation_v1"
+        ]
+        assert results[0].properties["_path_inferred_source_event_count"] == 1
+        assert results[0].properties["_path_inferred_evidence_count"] == 2
+        call = store._driver.execute_query.await_args
+        assert "rel.inferred" in call.args[0]
+        assert "rel.confidence" in call.args[0]
+        assert "rel.inference_method" in call.args[0]
+        assert "key STARTS WITH 'evidence_'" in call.args[0]
+
     async def test_search_traversal_with_temporal_filter(self, store: GraphStore) -> None:
         """Traversal should optionally filter by temporal point."""
         store._driver.execute_query.return_value = ([], None, None)
