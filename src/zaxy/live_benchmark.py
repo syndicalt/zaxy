@@ -562,7 +562,11 @@ class ZaxyRetriever:
             embedding=embedding,
         )
         graph_results = [_benchmark_context_from_chunk(chunk) for chunk in chunks]
-        if self._lexical_retriever is None or not _should_query_source_lexical_lane(query):
+        if (
+            self._lexical_retriever is None
+            or temporal_point is not None
+            or not _should_query_source_lexical_lane(query)
+        ):
             return graph_results
         lexical_results = self._lexical_retriever.query(
             query,
@@ -580,7 +584,8 @@ class ZaxyRetriever:
             },
             weights={"graph": 3.0, "lexical": 1.0},
         )
-        return fused.query(query, temporal_point=temporal_point, limit=limit)
+        fused_results = fused.query(query, temporal_point=temporal_point, limit=limit)
+        return _with_reserved_lexical_lane(fused_results, lexical_results, limit=limit)
 
 
 class _StaticRetriever:
@@ -613,22 +618,26 @@ def _should_query_source_lexical_lane(query: str) -> bool:
     """Return whether raw Eventloom text should supplement graph retrieval.
 
     The lexical Eventloom lane is useful for exact source/provenance recovery,
-    but it is unsafe as a generic backfill for temporal queries because raw
-    history contains superseded facts.
+    and for non-temporal personal-memory questions where exact utterance text
+    often contains the answer before graph extraction has a typed schema for it.
+    Temporal queries are blocked by the caller because raw history contains
+    superseded facts.
     """
     tokens = set(re.findall(r"[a-z0-9]+", query.casefold()))
-    return bool(
-        tokens
-        & {
-            "citation",
-            "cited",
-            "document",
-            "file",
-            "runbook",
-            "source",
-            "sources",
-        }
-    )
+    source_tokens = {
+        "citation",
+        "cited",
+        "document",
+        "file",
+        "runbook",
+        "source",
+        "sources",
+    }
+    if tokens & source_tokens:
+        return True
+    personal_tokens = {"i", "me", "my", "mine"}
+    memory_question_tokens = {"what", "where", "who", "name", "previous", "conversation"}
+    return bool(tokens & personal_tokens and tokens & memory_question_tokens)
 
 
 def _filter_superseded_preference_lexical_results(
@@ -645,6 +654,37 @@ def _filter_superseded_preference_lexical_results(
             continue
         filtered.append(result)
     return filtered
+
+
+def _with_reserved_lexical_lane(
+    fused_results: list[str],
+    lexical_results: list[str],
+    *,
+    limit: int,
+) -> list[str]:
+    """Preserve top verbatim source hits as a bounded lane in fused context."""
+    if limit <= 0 or not lexical_results:
+        return fused_results[:limit]
+    reserved_count = min(len(lexical_results), max(1, min(2, limit // 5)))
+    reserved = _unique_contexts(lexical_results[:reserved_count])
+    reserved_set = set(reserved)
+    primary_slots = max(0, limit - len(reserved))
+    primary = [
+        result for result in fused_results
+        if result not in reserved_set
+    ][:primary_slots]
+    return [*primary, *reserved][:limit]
+
+
+def _unique_contexts(contexts: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for context in contexts:
+        if context in seen:
+            continue
+        seen.add(context)
+        unique.append(context)
+    return unique
 
 
 def _current_preference_values(results: list[str]) -> dict[tuple[str, str], str]:

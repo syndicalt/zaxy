@@ -561,12 +561,16 @@ def _extract_document_indexed(event: Event) -> ExtractionResult:
         entity_type="document",
         observed_at=event.timestamp,
         summary=content,
-        properties={
-            "source_path": path,
-            "source_start_line": start_line,
-            "source_end_line": end_line,
-            "source_sha256": sha256,
-        },
+        properties=_merge_properties(
+            {
+                "source_path": path,
+                "source_start_line": start_line,
+                "source_end_line": end_line,
+                "source_sha256": sha256,
+            },
+            _retrieval_salience_properties(event.payload),
+        )
+        or {},
     )
     return ExtractionResult(
         entities=[entity],
@@ -1557,6 +1561,26 @@ def _retention_properties(payload: dict[str, Any]) -> dict[str, Any] | None:
     return properties or None
 
 
+def _retrieval_salience_properties(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Return ranking salience metadata for compact memory artifacts."""
+    salience = _positive_float(
+        payload.get("retrieval_salience")
+        or payload.get("memory_salience")
+        or payload.get("salience")
+    )
+    if salience is None and any(
+        bool(payload.get(key))
+        for key in (
+            "salient_memory_turn",
+            "longmemeval_salient_memory_turn",
+        )
+    ):
+        salience = 4.0
+    if salience is None:
+        return None
+    return {"retrieval_salience": salience}
+
+
 def _merge_properties(*values: dict[str, Any] | None) -> dict[str, Any] | None:
     merged: dict[str, Any] = {}
     for value in values:
@@ -1573,6 +1597,18 @@ def _bounded_float(value: object) -> float | None:
     except (TypeError, ValueError):
         return None
     return max(0.0, min(1.0, parsed))
+
+
+def _positive_float(value: object, *, maximum: float = 10.0) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        parsed = float(str(value))
+    except (TypeError, ValueError):
+        return None
+    if parsed <= 0.0:
+        return None
+    return min(parsed, maximum)
 
 
 def _optional_positive_int(value: object) -> int | None:

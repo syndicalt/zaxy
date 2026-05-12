@@ -648,6 +648,36 @@ class TestDocumentIndexed:
             "source_sha256": "abc123",
         }
 
+    def test_extracts_document_retrieval_salience(self) -> None:
+        ev = _make_event(
+            "document.indexed",
+            {
+                "path": "memory/turn.md",
+                "content": "I take classes at Serenity Yoga.",
+                "retrieval_salience": 3.5,
+            },
+            actor="indexer",
+        )
+
+        result = extract(ev)
+
+        assert result.entities[0].properties["retrieval_salience"] == 3.5
+
+    def test_extracts_longmemeval_salient_turn_as_retrieval_salience(self) -> None:
+        ev = _make_event(
+            "document.indexed",
+            {
+                "path": "longmemeval/example/salient-turn-0005.md",
+                "content": "I take classes at Serenity Yoga.",
+                "longmemeval_salient_memory_turn": True,
+            },
+            actor="longmemeval",
+        )
+
+        result = extract(ev)
+
+        assert result.entities[0].properties["retrieval_salience"] == 4.0
+
 
 class TestCodeFileIndexed:
     """Tests for code.file.indexed extractor."""

@@ -800,6 +800,38 @@ class TestQueryRouting:
         assert results[0].content.startswith("High")
         assert results[1].content.startswith("Low")
 
+    async def test_retrieval_salience_boosts_compact_memory(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """High-salience memory artifacts should outrank generic matching documents."""
+        generic = GraphEntity(
+            name="docs/generic-yoga.md:1-20",
+            entity_type="document",
+            valid_from="2024-01-01T00:00:00Z",
+            valid_to=None,
+            properties={"summary": "yoga classes yoga classes yoga classes in my area"},
+        )
+        memory = GraphEntity(
+            name="memory/serenity-yoga.md:1-6",
+            entity_type="document",
+            valid_from="2024-01-01T00:00:00Z",
+            valid_to=None,
+            properties={
+                "summary": "I cannot make it to Serenity Yoga today.",
+                "retrieval_salience": 4.0,
+            },
+        )
+        mock_store.search_keyword.return_value = [
+            SearchResult(entity=generic, score=1.0, source="keyword"),
+            SearchResult(entity=memory, score=0.4, source="keyword"),
+        ]
+
+        results = await router.query("Where do I take yoga classes?", limit=2)
+
+        assert results[0].entity_name == "memory/serenity-yoga.md:1-6"
+
     async def test_ranking_uses_mmr_to_diversify_near_duplicate_hits(
         self,
         router: QueryRouter,

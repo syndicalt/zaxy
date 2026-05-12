@@ -862,6 +862,75 @@ async def test_zaxy_retriever_can_fuse_graph_and_source_lexical_results() -> Non
     assert any("eventloom://benchmark/events/1#abc" in result for result in results)
 
 
+async def test_zaxy_retriever_fuses_verbatim_personal_memory_results() -> None:
+    """Personal-memory questions should be able to recover exact Eventloom text."""
+    corpus = (
+        BenchmarkChunk(
+            "answer",
+            "citation=eventloom://benchmark/events/1#abc "
+            "longmemeval_session_id=answer-1 my cat's name is Luna",
+        ),
+    )
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, limit, embedding
+            return [SimpleNamespace(content="graph context about pet care")]
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=BM25Retriever(corpus),
+    )
+
+    results = await retriever.query_async("What is the name of my cat?", limit=2)
+
+    assert any("Luna" in result for result in results)
+    assert any("graph context" in result for result in results)
+
+
+async def test_zaxy_retriever_reserves_verbatim_lane_when_graph_crowds_results() -> None:
+    """Top verbatim hits should survive even when graph returns many candidates."""
+    corpus = (
+        BenchmarkChunk(
+            "answer",
+            "citation=eventloom://benchmark/events/1#abc "
+            "longmemeval_session_id=answer-1 my cat's name is Luna",
+        ),
+    )
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=BM25Retriever(corpus),
+    )
+
+    results = await retriever.query_async("What is the name of my cat?", limit=10)
+
+    assert len(results) == 10
+    assert any("Luna" in result for result in results)
+
+
 async def test_zaxy_retriever_prioritizes_graph_evidence_over_lexical_sidecar() -> None:
     """Lexical fusion should not outrank graph evidence when both return hits."""
     corpus = (

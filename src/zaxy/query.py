@@ -311,22 +311,24 @@ class QueryRouter:
         exact_hits: list[SearchResult] = []
         for candidate in _exact_candidates(query):
             try:
-                exact_hits.extend(
-                    SearchResult(
-                        entity=ent,
-                        score=1.0 * self.fusion_weights["exact"],
-                        source="exact",
-                        raw_score=1.0,
-                        source_weight=self.fusion_weights["exact"],
-                        matched_query=candidate,
-                        scoring_profile=self.scoring_profile.name,
+                for ent in await self.store.search_exact(
+                    candidate,
+                    temporal_point=temporal_point,
+                    session_id=scope,
+                ):
+                    exact_hits.append(
+                        _apply_salience_score(
+                            SearchResult(
+                                entity=ent,
+                                score=1.0 * self.fusion_weights["exact"],
+                                source="exact",
+                                raw_score=1.0,
+                                source_weight=self.fusion_weights["exact"],
+                                matched_query=candidate,
+                                scoring_profile=self.scoring_profile.name,
+                            )
+                        )
                     )
-                    for ent in await self.store.search_exact(
-                        candidate,
-                        temporal_point=temporal_point,
-                        session_id=scope,
-                    )
-                )
             except Exception:
                 get_metrics().record_degraded_operation("query", "exact_search_unavailable")
                 warnings.append("exact search unavailable")
@@ -356,7 +358,8 @@ class QueryRouter:
                     matched_query=query,
                     scoring_profile=self.scoring_profile.name,
                 )
-                results.append(_apply_temporal_score(hit, temporal_point, self.temporal_weight))
+                hit = _apply_temporal_score(hit, temporal_point, self.temporal_weight)
+                results.append(_apply_salience_score(hit))
 
         # 3. Keyword search
         keyword_hits: list[SearchResult] = []
@@ -391,6 +394,7 @@ class QueryRouter:
                     scoring_profile=self.scoring_profile.name,
                 )
                 hit = _apply_temporal_score(hit, temporal_point, self.temporal_weight)
+                hit = _apply_salience_score(hit)
                 keyword_hits.append(hit)
                 results.append(hit)
 
@@ -421,13 +425,15 @@ class QueryRouter:
                     continue
                 raw_score = _traversal_raw_score(query, hit, neighbor)
                 results.append(
-                    SearchResult(
-                        entity=neighbor,
-                        score=raw_score * self.fusion_weights["traversal"],
-                        source="traversal",
-                        raw_score=raw_score,
-                        source_weight=self.fusion_weights["traversal"],
-                        scoring_profile=self.scoring_profile.name,
+                    _apply_salience_score(
+                        SearchResult(
+                            entity=neighbor,
+                            score=raw_score * self.fusion_weights["traversal"],
+                            source="traversal",
+                            raw_score=raw_score,
+                            source_weight=self.fusion_weights["traversal"],
+                            scoring_profile=self.scoring_profile.name,
+                        )
                     )
                 )
                 seen.add(neighbor.name)
@@ -992,6 +998,27 @@ def _apply_temporal_score(
     )
 
 
+def _apply_salience_score(result: SearchResult) -> SearchResult:
+    """Boost explicitly high-salience memory artifacts without changing provenance."""
+    multiplier = _retrieval_salience(result.entity)
+    if multiplier == 1.0:
+        return result
+    return replace(result, score=result.score * multiplier)
+
+
+def _retrieval_salience(entity: GraphEntity) -> float:
+    value = entity.properties.get("retrieval_salience")
+    if value is None:
+        return 1.0
+    try:
+        parsed = float(str(value))
+    except (TypeError, ValueError):
+        return 1.0
+    if parsed <= 0.0:
+        return 1.0
+    return min(parsed, 10.0)
+
+
 def _temporal_proximity(valid_from: str | None, temporal_point: str | None) -> float | None:
     """Score how close an assertion is to the requested as-of point."""
     if not valid_from or not temporal_point:
@@ -1145,6 +1172,11 @@ def _score_explanation(result: SearchResult) -> dict[str, Any]:
         **({"matched_query": result.matched_query} if result.matched_query is not None else {}),
         **({"temporal_score": round(result.temporal_score, 4)} if result.temporal_score is not None else {}),
         **({"temporal_weight": round(result.temporal_weight, 4)} if result.temporal_weight is not None else {}),
+        **(
+            {"retrieval_salience": round(_retrieval_salience(result.entity), 4)}
+            if _retrieval_salience(result.entity) != 1.0
+            else {}
+        ),
         **({"reranker": result.reranker} if result.reranker is not None else {}),
         **({"rerank_score": round(result.rerank_score, 4)} if result.rerank_score is not None else {}),
         **({"warnings": list(result.warnings)} if result.warnings else {}),
