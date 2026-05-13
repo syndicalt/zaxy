@@ -1399,6 +1399,64 @@ async def test_zaxy_retriever_projects_aggregation_source_bundle() -> None:
     assert "\n".join(results).count("session_id=answer-") >= 5
 
 
+async def test_zaxy_retriever_projects_numeric_operators_in_aggregation_bundle() -> None:
+    """Aggregation bundles should expose deterministic numeric operations."""
+    source_contexts = [
+        (
+            "citation=eventloom://benchmark/events/1#abc "
+            "session_id=answer-1 I booked a Maui resort for $300 per night."
+        ),
+        (
+            "citation=eventloom://benchmark/events/2#abc "
+            "session_id=answer-2 I stayed in a Tokyo hostel for $30 per night."
+        ),
+        (
+            "citation=eventloom://benchmark/events/3#abc "
+            "session_id=answer-3 I went for a 30-minute jog."
+        ),
+    ]
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    class SourceLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return source_contexts
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=SourceLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "How much more did I spend on accommodations per night in Hawaii compared to Tokyo?",
+        limit=5,
+    )
+
+    bundle = results[0]
+    assert "currency_values=$300,$30" in bundle
+    assert "currency_difference=$270" in bundle
+    assert "minute_total_hours=0.5 hours" in bundle
+
+
 async def test_zaxy_retriever_uses_source_lane_for_absence_checks() -> None:
     """Mention/absence questions should inspect source evidence."""
     corpus = (
@@ -1431,6 +1489,44 @@ async def test_zaxy_retriever_uses_source_lane_for_absence_checks() -> None:
     results = await retriever.query_async("Did I mention my hamster?", limit=4)
 
     assert any("cat Luna" in result for result in results)
+
+
+async def test_zaxy_retriever_projects_absence_check_bundle() -> None:
+    """Absence checks should expose cited no-direct-mention guidance."""
+    corpus = (
+        BenchmarkChunk(
+            "answer",
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "session_id=answer-1 I mentioned my cat Luna during the conversation."
+            ),
+        ),
+    )
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, limit, embedding
+            return [SimpleNamespace(content="graph context about pet care")]
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=BM25Retriever(corpus),
+    )
+
+    results = await retriever.query_async("Did I mention my hamster?", limit=4)
+
+    bundle = results[0]
+    assert "zaxy_absence_check=true" in bundle
+    assert "not_mentioned_candidate=hamster" in bundle
+    assert "You did not mention this information." in bundle
+    assert "cat Luna" in bundle
 
 
 async def test_zaxy_retriever_prioritizes_graph_evidence_over_lexical_sidecar() -> None:

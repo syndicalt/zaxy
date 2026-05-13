@@ -584,6 +584,10 @@ class ZaxyRetriever:
             query=query,
             source_results=lexical_results,
             limit=limit,
+        ) or _absence_check_bundle(
+            query=query,
+            source_results=lexical_results,
+            limit=limit,
         )
         fused = RankFusionRetriever(
             {
@@ -772,6 +776,7 @@ def _source_synthesis_bundle(
         f"query={query}",
         f"source_count={len(grouped_sources)}",
     ]
+    lines.extend(_numeric_synthesis_lines(grouped_sources))
     for index, context in enumerate(grouped_sources, start=1):
         lines.append(
             "- "
@@ -782,6 +787,156 @@ def _source_synthesis_bundle(
         if index >= group_limit:
             break
     return "\n".join(lines)
+
+
+def _absence_check_bundle(
+    *,
+    query: str,
+    source_results: list[str],
+    limit: int,
+) -> str | None:
+    """Build cited guidance for questions about absent personal memories."""
+    intent = classify_retrieval_intent(query, limit=limit)
+    if "absence_check" not in intent.reasons:
+        return None
+    target = _absence_check_target(query)
+    if not target:
+        return None
+    grouped_sources = _diverse_source_contexts(
+        source_results,
+        limit=max(1, intent.source_lane_slots),
+    )
+    if not grouped_sources or _target_terms_present(target, grouped_sources):
+        return None
+    lines = [
+        "zaxy_absence_check=true",
+        "synthesis_mode=absence_check",
+        f"query={query}",
+        f"not_mentioned_candidate={target}",
+        (
+            "answer_guidance=You did not mention this information. "
+            f"You mentioned cited evidence below, but not {target}."
+        ),
+    ]
+    for context in grouped_sources:
+        lines.append(
+            "- "
+            f"source_id={_source_context_group(context)} "
+            f"citation={_source_context_citation(context)} "
+            f"snippet={_source_context_snippet(context)}"
+        )
+    return "\n".join(lines)
+
+
+_ABSENCE_QUERY_STOPWORDS = {
+    "about",
+    "any",
+    "anything",
+    "did",
+    "do",
+    "does",
+    "ever",
+    "have",
+    "i",
+    "in",
+    "information",
+    "me",
+    "mention",
+    "mentioned",
+    "my",
+    "not",
+    "remember",
+    "say",
+    "the",
+    "this",
+    "whether",
+}
+
+
+def _absence_check_target(query: str) -> str:
+    terms = [
+        token
+        for token in _bm25_tokens(query)
+        if token not in _ABSENCE_QUERY_STOPWORDS
+        and not token.isdigit()
+        and len(token) > 1
+    ]
+    return " ".join(dict.fromkeys(terms))
+
+
+def _target_terms_present(target: str, contexts: list[str]) -> bool:
+    target_terms = [
+        token
+        for token in _bm25_tokens(target)
+        if token not in _ABSENCE_QUERY_STOPWORDS and len(token) > 1
+    ]
+    if not target_terms:
+        return False
+    for context in contexts:
+        context_terms = set(_bm25_tokens(context))
+        if all(term in context_terms for term in target_terms):
+            return True
+    return False
+
+
+def _numeric_synthesis_lines(contexts: list[str]) -> list[str]:
+    """Project deterministic numeric operations from cited source snippets."""
+    lines: list[str] = []
+    currency_values = _currency_values(contexts)
+    if currency_values:
+        lines.append(
+            "currency_values="
+            + ",".join(_format_currency(value) for value in currency_values)
+        )
+        lines.append(f"currency_total={_format_currency(sum(currency_values))}")
+        if len(currency_values) >= 2:
+            lines.append(
+                "currency_difference="
+                f"{_format_currency(max(currency_values) - min(currency_values))}"
+            )
+    minute_values = _unit_values(contexts, unit_pattern=r"minutes?|mins?")
+    if minute_values:
+        lines.append("minute_values=" + ",".join(_format_number(value) for value in minute_values))
+        lines.append(f"minute_total_hours={_format_number(sum(minute_values) / 60)} hours")
+    hour_values = _unit_values(contexts, unit_pattern=r"hours?|hrs?")
+    if hour_values:
+        lines.append("hour_values=" + ",".join(_format_number(value) for value in hour_values))
+        lines.append(f"hour_total={_format_number(sum(hour_values))} hours")
+    day_values = _unit_values(contexts, unit_pattern=r"days?")
+    if day_values:
+        lines.append("day_values=" + ",".join(_format_number(value) for value in day_values))
+        lines.append(f"day_total={_format_number(sum(day_values))} days")
+    return lines
+
+
+def _currency_values(contexts: list[str]) -> list[float]:
+    values: list[float] = []
+    for context in contexts:
+        for match in re.finditer(r"\$(?P<value>\d+(?:,\d{3})*(?:\.\d+)?)", context):
+            values.append(float(match.group("value").replace(",", "")))
+    return values
+
+
+def _unit_values(contexts: list[str], *, unit_pattern: str) -> list[float]:
+    values: list[float] = []
+    pattern = re.compile(
+        rf"\b(?P<value>\d+(?:\.\d+)?)\s*[- ]?(?:{unit_pattern})\b",
+        flags=re.IGNORECASE,
+    )
+    for context in contexts:
+        for match in pattern.finditer(context):
+            values.append(float(match.group("value")))
+    return values
+
+
+def _format_currency(value: float) -> str:
+    return f"${_format_number(value)}"
+
+
+def _format_number(value: float) -> str:
+    if value.is_integer():
+        return str(int(value))
+    return f"{value:g}"
 
 
 def _diverse_source_contexts(contexts: list[str], *, limit: int) -> list[str]:
@@ -2567,6 +2722,8 @@ _BM25_QUERY_EXPANSIONS: dict[str, tuple[str, ...]] = {
     "bachelor": ("undergraduate", "undergrad", "graduated", "graduation"),
     "bachelors": ("undergraduate", "undergrad", "graduated", "graduation"),
     "degree": ("undergraduate", "undergrad", "graduated", "graduation"),
+    "mention": ("mentioned", "discussed", "said", "told"),
+    "mentioned": ("mention", "discussed", "said", "told"),
 }
 
 
