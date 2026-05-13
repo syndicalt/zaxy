@@ -1292,14 +1292,24 @@ def _contexts_as_of_seq(contexts: list[Context], as_of_seq: int) -> list[Context
     return filtered
 
 
-def _checkout_rank(context: Context, query: str) -> tuple[float, int, str, float]:
+def _checkout_rank(context: Context, query: str) -> tuple[float, int, int, int, str, float]:
     query_tokens = _checkout_tokens(query)
     content_tokens = _checkout_tokens(context.content)
     overlap = len(query_tokens & content_tokens) / max(1, len(query_tokens))
     metadata = context.metadata or {}
     entity_type = metadata.get("entity_type")
     type_priority = 1 if entity_type in {"task", "decision", "goal", "memory"} else 0
-    return (overlap, type_priority, context.valid_from or "", context.score)
+    citation_priority = 1 if _context_citation(context) else 0
+    source_lane = _checkout_source_lane(context)
+    source_priority = 1 if source_lane in {"verbatim", "eventloom", "projection"} else 0
+    return (
+        overlap,
+        citation_priority,
+        source_priority,
+        type_priority,
+        context.valid_from or "",
+        context.score,
+    )
 
 
 def _checkout_tokens(value: str) -> set[str]:

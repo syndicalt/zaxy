@@ -8,6 +8,8 @@ from zaxy.checkout import (
     build_checkout_quality,
     format_memory_checkout_prompt,
 )
+from zaxy.context import Context
+from zaxy.core import ContextAssembly, build_memory_checkout
 
 
 def test_checkout_policy_handles_uncited_current_fact_once_for_core_and_mcp() -> None:
@@ -222,6 +224,83 @@ def test_checkout_guides_multi_source_aggregation() -> None:
     assert guidance["synthesis"]["mode"] == "multi_source_aggregation"
     assert "Group evidence by distinct cited source" in prompt
     assert "Do not answer aggregation questions from a single top memory" in prompt
+
+
+def test_memory_checkout_exposes_evidence_plan_for_aggregation() -> None:
+    """Checkout should expose the evidence shape required by the query."""
+    assembly = ContextAssembly(
+        session_id="agent-1",
+        prompt="# Retrieved Context",
+        contexts=[
+            Context(
+                content="session_id=answer-1 I attended Rachel and Mike's wedding.",
+                source="verbatim",
+                score=0.91,
+                metadata={"citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa"},
+            ),
+            Context(
+                content="session_id=answer-2 I attended Emily and Sarah's wedding.",
+                source="verbatim",
+                score=0.9,
+                metadata={"citation": "eventloom://agent-1/events/2#bbbbbbbbbbbb"},
+            ),
+            Context(
+                content="A low-value uncited graph summary.",
+                source="keyword",
+                score=0.99,
+            ),
+        ],
+        replay_event_count=0,
+    )
+
+    checkout = build_memory_checkout(
+        query="How many weddings did I attend?",
+        assembly=assembly,
+    )
+
+    assert checkout.diagnostics["evidence_plan"] == {
+        "mode": "multi_source_aggregation",
+        "needs_source_lane": True,
+        "source_lane_slots": 8,
+        "required_source_groups": 2,
+        "promote_cited_sources": True,
+        "reasons": ["personal_memory", "aggregation", "aggregation_question"],
+    }
+    assert checkout.current_facts[0]["citation"] == "eventloom://agent-1/events/1#aaaaaaaaaaaa"
+    assert checkout.current_facts[1]["citation"] == "eventloom://agent-1/events/2#bbbbbbbbbbbb"
+    assert "Evidence plan: mode=multi_source_aggregation" in checkout.prompt
+
+
+def test_memory_checkout_exposes_evidence_plan_for_absence() -> None:
+    """Checkout should tell the model when cited contrast evidence is required."""
+    assembly = ContextAssembly(
+        session_id="agent-1",
+        prompt="# Retrieved Context",
+        contexts=[
+            Context(
+                content="session_id=answer-1 I mentioned my cat Luna.",
+                source="verbatim",
+                score=0.88,
+                metadata={"citation": "eventloom://agent-1/events/4#cccccccccccc"},
+            )
+        ],
+        replay_event_count=0,
+    )
+
+    checkout = build_memory_checkout(
+        query="Did I mention my hamster?",
+        assembly=assembly,
+    )
+
+    assert checkout.diagnostics["evidence_plan"] == {
+        "mode": "absence_check",
+        "needs_source_lane": True,
+        "source_lane_slots": 4,
+        "required_source_groups": 1,
+        "promote_cited_sources": True,
+        "reasons": ["personal_memory", "absence_check"],
+    }
+    assert checkout.guidance["synthesis"]["mode"] == "absence_check"
 
 
 def test_checkout_groups_synthesis_evidence_by_source_identity() -> None:

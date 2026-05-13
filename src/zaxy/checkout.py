@@ -43,6 +43,9 @@ def build_checkout_diagnostics(
         "feedback_tool": "memory_feedback",
         "feedback_reason": "Reinforce cited context if it materially informed the next response.",
     }
+    evidence_plan = _checkout_evidence_plan(query)
+    if evidence_plan:
+        diagnostics["evidence_plan"] = evidence_plan
     inferred_context = _inferred_context_diagnostics(current_facts)
     if inferred_context["context_count"]:
         diagnostics["inferred_context"] = inferred_context
@@ -232,6 +235,17 @@ def format_memory_checkout_prompt(
         lines.append(f"- Feedback: call {feedback.get('tool')} with a listed payload after use.")
     source_lanes = diagnostics.get("source_lanes")
     lines.extend(["", "## Checkout Diagnostics"])
+    evidence_plan = diagnostics.get("evidence_plan")
+    if isinstance(evidence_plan, dict):
+        reasons = _text_list(evidence_plan.get("reasons"))
+        reason_text = f", reasons={', '.join(reasons)}" if reasons else ""
+        lines.append(
+            "- Evidence plan: "
+            f"mode={evidence_plan.get('mode')}, "
+            f"required_source_groups={evidence_plan.get('required_source_groups')}, "
+            f"source_lane_slots={evidence_plan.get('source_lane_slots')}"
+            f"{reason_text}"
+        )
     lines.append(f"- Source lanes: {_format_source_lanes(source_lanes)}")
     lines.append(f"- Citations: {diagnostics.get('citation_count', 0)}")
     lines.append(f"- Current citations: {diagnostics.get('current_citation_count', 0)}")
@@ -341,6 +355,14 @@ def _checkout_synthesis_guidance(
             ],
         }
     return None
+
+
+def _checkout_evidence_plan(query: str | None) -> dict[str, object] | None:
+    if query is None:
+        return None
+    from zaxy.retrieval_plan import build_evidence_plan
+
+    return build_evidence_plan(query, limit=10).to_dict()
 
 
 def build_checkout_feedback_payload(fact: dict[str, Any], query: str) -> dict[str, Any] | None:

@@ -3,8 +3,61 @@
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
 from zaxy.retrieval_intent import RetrievalIntent, classify_retrieval_intent
+
+
+@dataclass(frozen=True)
+class EvidencePlan:
+    """Query-level evidence shape required for answerable memory checkout."""
+
+    mode: str
+    needs_source_lane: bool
+    source_lane_slots: int
+    required_source_groups: int
+    promote_cited_sources: bool
+    reasons: tuple[str, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        """Return a stable diagnostics representation."""
+        return {
+            "mode": self.mode,
+            "needs_source_lane": self.needs_source_lane,
+            "source_lane_slots": self.source_lane_slots,
+            "required_source_groups": self.required_source_groups,
+            "promote_cited_sources": self.promote_cited_sources,
+            "reasons": list(self.reasons),
+        }
+
+
+def build_evidence_plan(query: str, *, limit: int = 10) -> EvidencePlan:
+    """Build deterministic evidence requirements for a memory query."""
+    intent = classify_retrieval_intent(query, limit=limit)
+    reasons = set(intent.reasons)
+    if {"aggregation", "aggregation_question"} & reasons:
+        mode = "multi_source_aggregation"
+        required_source_groups = 2
+    elif "absence_check" in reasons:
+        mode = "absence_check"
+        required_source_groups = 1
+    elif "source_recall" in reasons:
+        mode = "source_recall"
+        required_source_groups = 1
+    elif "operational_memory" in reasons:
+        mode = "operational_memory"
+        required_source_groups = 1
+    else:
+        mode = "direct_fact"
+        required_source_groups = 1 if intent.needs_source_lane else 0
+    return EvidencePlan(
+        mode=mode,
+        needs_source_lane=intent.needs_source_lane,
+        source_lane_slots=intent.source_lane_slots,
+        required_source_groups=required_source_groups,
+        promote_cited_sources=intent.needs_source_lane or mode != "direct_fact",
+        reasons=intent.reasons,
+    )
 
 
 def should_query_source_lane(query: str, *, limit: int = 10) -> bool:

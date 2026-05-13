@@ -803,6 +803,14 @@ class TestContextLifecycleTools:
             "feedback_recommended": True,
             "feedback_tool": "memory_feedback",
             "feedback_reason": "Reinforce cited context if it materially informed the next response.",
+            "evidence_plan": {
+                "mode": "direct_fact",
+                "needs_source_lane": False,
+                "source_lane_slots": 0,
+                "required_source_groups": 0,
+                "promote_cited_sources": False,
+                "reasons": [],
+            },
         }
         assert output["guidance"]["recommended_next_call"] == {
             "tool": "memory_checkout",
