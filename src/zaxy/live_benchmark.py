@@ -881,8 +881,9 @@ def _target_terms_present(target: str, contexts: list[str]) -> bool:
 
 def _numeric_synthesis_lines(contexts: list[str]) -> list[str]:
     """Project deterministic numeric operations from cited source snippets."""
+    numeric_contexts = [_numeric_context_text(context) for context in contexts]
     lines: list[str] = []
-    currency_values = _currency_values(contexts)
+    currency_values = _currency_values(numeric_contexts)
     if currency_values:
         lines.append(
             "currency_values="
@@ -894,19 +895,25 @@ def _numeric_synthesis_lines(contexts: list[str]) -> list[str]:
                 "currency_difference="
                 f"{_format_currency(max(currency_values) - min(currency_values))}"
             )
-    minute_values = _unit_values(contexts, unit_pattern=r"minutes?|mins?")
+    minute_values = _unit_values(numeric_contexts, unit_pattern=r"minutes?|mins?")
     if minute_values:
         lines.append("minute_values=" + ",".join(_format_number(value) for value in minute_values))
         lines.append(f"minute_total_hours={_format_number(sum(minute_values) / 60)} hours")
-    hour_values = _unit_values(contexts, unit_pattern=r"hours?|hrs?")
+    hour_values = _unit_values(numeric_contexts, unit_pattern=r"hours?|hrs?")
     if hour_values:
         lines.append("hour_values=" + ",".join(_format_number(value) for value in hour_values))
         lines.append(f"hour_total={_format_number(sum(hour_values))} hours")
-    day_values = _unit_values(contexts, unit_pattern=r"days?")
+    day_values = _unit_values(numeric_contexts, unit_pattern=r"days?")
     if day_values:
         lines.append("day_values=" + ",".join(_format_number(value) for value in day_values))
         lines.append(f"day_total={_format_number(sum(day_values))} days")
     return lines
+
+
+def _numeric_context_text(context: str) -> str:
+    """Return source text once, excluding Eventloom JSON payload echoes."""
+    text = _source_context_snippet(context)
+    return text.split(' {"content":', 1)[0]
 
 
 def _currency_values(contexts: list[str]) -> list[float]:

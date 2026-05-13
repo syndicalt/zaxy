@@ -1457,6 +1457,64 @@ async def test_zaxy_retriever_projects_numeric_operators_in_aggregation_bundle()
     assert "minute_total_hours=0.5 hours" in bundle
 
 
+async def test_zaxy_retriever_deduplicates_numeric_values_from_eventloom_context() -> None:
+    """Numeric projection should not count payload and JSON echoes twice."""
+    source_contexts = [
+        (
+            "# Event 1\n"
+            "citation=eventloom://benchmark/events/1#abc "
+            "content=longmemeval_session_id=answer-1 I completed a 5-day camping trip. "
+            '{"content": "longmemeval_session_id=answer-1 I completed a 5-day camping trip."}'
+        ),
+        (
+            "# Event 2\n"
+            "citation=eventloom://benchmark/events/2#abc "
+            "content=longmemeval_session_id=answer-2 I completed a 3-day camping trip. "
+            '{"content": "longmemeval_session_id=answer-2 I completed a 3-day camping trip."}'
+        ),
+    ]
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    class SourceLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return source_contexts
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=SourceLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "How many days did I spend on camping trips?",
+        limit=5,
+    )
+
+    bundle = results[0]
+    assert "day_values=5,3" in bundle
+    assert "day_total=8 days" in bundle
+    assert "day_total=16 days" not in bundle
+
+
 async def test_zaxy_retriever_uses_source_lane_for_absence_checks() -> None:
     """Mention/absence questions should inspect source evidence."""
     corpus = (
