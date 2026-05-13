@@ -1327,7 +1327,58 @@ async def test_zaxy_retriever_overfetches_salient_sources_for_aggregation() -> N
     results = await retriever.query_async("How many weddings did I attend?", limit=10)
 
     assert seen_limits == [48]
-    assert sum("session_id=answer-" in result for result in results) == 6
+    assert sum("session_id=answer-" in result for result in results) >= 6
+
+
+async def test_zaxy_retriever_projects_aggregation_source_bundle() -> None:
+    """Aggregation retrieval should compact grouped source evidence into one context."""
+    source_contexts = [
+        (
+            f"citation=eventloom://benchmark/events/{index}#abc "
+            f"session_id=answer-{index} I attended wedding {index}."
+        )
+        for index in range(1, 7)
+    ]
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    class SourceLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return source_contexts
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=SourceLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async("How many weddings did I attend?", limit=5)
+
+    bundle = results[0]
+    assert "zaxy_synthesis_bundle=true" in bundle
+    assert "synthesis_mode=multi_source_aggregation" in bundle
+    assert "source_count=5" in bundle
+    assert "session_id=answer-1" in bundle
+    assert "session_id=answer-5" in bundle
+    assert "\n".join(results).count("session_id=answer-") >= 5
 
 
 async def test_zaxy_retriever_uses_source_lane_for_absence_checks() -> None:

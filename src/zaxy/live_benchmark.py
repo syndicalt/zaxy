@@ -580,6 +580,11 @@ class ZaxyRetriever:
             graph_results,
             lexical_results,
         )
+        synthesis_bundle = _source_synthesis_bundle(
+            query=query,
+            source_results=lexical_results,
+            limit=limit,
+        )
         fused = RankFusionRetriever(
             {
                 "graph": _StaticRetriever(tuple(graph_results)),
@@ -593,6 +598,7 @@ class ZaxyRetriever:
             lexical_results,
             query=query,
             limit=limit,
+            synthesis_bundle=synthesis_bundle,
         )
 
 
@@ -723,6 +729,7 @@ def _with_reserved_lexical_lane(
     *,
     query: str,
     limit: int,
+    synthesis_bundle: str | None = None,
 ) -> list[str]:
     """Preserve top verbatim source hits as a bounded lane in fused context."""
     if limit <= 0 or not lexical_results:
@@ -739,7 +746,42 @@ def _with_reserved_lexical_lane(
         result for result in fused_results
         if result not in reserved_set
     ][:primary_slots]
-    return [*primary, *reserved][:limit]
+    results = [*primary, *reserved][:limit]
+    if synthesis_bundle is None:
+        return results
+    return [synthesis_bundle, *[result for result in results if result != synthesis_bundle]][:limit]
+
+
+def _source_synthesis_bundle(
+    *,
+    query: str,
+    source_results: list[str],
+    limit: int,
+) -> str | None:
+    """Build one compact cited source bundle for multi-source synthesis queries."""
+    intent = classify_retrieval_intent(query, limit=limit)
+    if not {"aggregation", "aggregation_question"} & set(intent.reasons):
+        return None
+    group_limit = max(limit, intent.source_lane_slots)
+    grouped_sources = _diverse_source_contexts(source_results, limit=group_limit)
+    if len(grouped_sources) < 2:
+        return None
+    lines = [
+        "zaxy_synthesis_bundle=true",
+        "synthesis_mode=multi_source_aggregation",
+        f"query={query}",
+        f"source_count={len(grouped_sources)}",
+    ]
+    for index, context in enumerate(grouped_sources, start=1):
+        lines.append(
+            "- "
+            f"source_id={_source_context_group(context)} "
+            f"citation={_source_context_citation(context)} "
+            f"snippet={_source_context_snippet(context)}"
+        )
+        if index >= group_limit:
+            break
+    return "\n".join(lines)
 
 
 def _diverse_source_contexts(contexts: list[str], *, limit: int) -> list[str]:
@@ -794,16 +836,37 @@ def _source_lane_priority(context: str) -> int:
 def _source_context_group(context: str) -> str:
     """Return a stable source group from common citation/session metadata."""
     patterns = [
-        r"eventloom://[^/]+/events/(?P<value>\d+)",
-        r"\b(?:source_path|path|file)=['\"]?(?P<value>[^\s'\"]+)",
         r"\b[a-z0-9_.-]*session[_-]?id=(?P<value>[^\s]+)",
+        r"\b(?:source_path|path|file)=['\"]?(?P<value>[^\s'\"]+)",
         r"\bthread=['\"]?(?P<value>[^\s'\"]+)",
+        r"eventloom://[^/]+/events/(?P<value>\d+)",
     ]
     for pattern in patterns:
         match = re.search(pattern, context, flags=re.IGNORECASE)
         if match:
             return match.group("value").casefold()
     return context[:160].casefold()
+
+
+def _source_context_citation(context: str) -> str:
+    """Extract a compact citation token from source context."""
+    for pattern in (
+        r"\bcitation=(?P<value>\S+)",
+        r"(?P<value>eventloom://\S+)",
+        r"\bsource_path=(?P<value>\S+)",
+    ):
+        match = re.search(pattern, context, flags=re.IGNORECASE)
+        if match:
+            return match.group("value")
+    return "unknown"
+
+
+def _source_context_snippet(context: str, *, max_chars: int = 900) -> str:
+    """Return a bounded one-line source snippet."""
+    snippet = " ".join(context.split())
+    if len(snippet) <= max_chars:
+        return snippet
+    return f"{snippet[: max_chars - 3].rstrip()}..."
 
 
 def _unique_contexts(contexts: list[str]) -> list[str]:
