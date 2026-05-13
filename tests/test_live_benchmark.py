@@ -39,8 +39,6 @@ from zaxy.live_benchmark import (
     _benchmark_projection_present,
     _build_source_lane_retriever,
     _mark_benchmark_projection,
-    _source_lane_candidate_limit,
-    _source_lane_query,
     benchmark_live_retrievers,
     benchmark_projection_cache_key,
     benchmark_retrievers,
@@ -63,6 +61,7 @@ from zaxy.live_benchmark import (
 )
 from zaxy.query import ContextChunk
 from zaxy.retrieval_intent import classify_retrieval_intent
+from zaxy.retrieval_plan import source_lane_candidate_limit, source_lane_query
 
 
 def test_cli_exposes_live_benchmark_command() -> None:
@@ -1263,7 +1262,7 @@ async def test_zaxy_retriever_reserves_multiple_personal_memory_sources() -> Non
 
 def test_source_lane_query_uses_graph_answer_concepts_for_source_recovery() -> None:
     """Graph answer concepts should help raw source lookup recover citations."""
-    query = _source_lane_query(
+    query = source_lane_query(
         "What breed is my dog?",
         [
             (
@@ -1278,7 +1277,7 @@ def test_source_lane_query_uses_graph_answer_concepts_for_source_recovery() -> N
 
 def test_source_lane_query_ignores_date_header_noise() -> None:
     """Capitalized provenance/date words should not pollute source backfill."""
-    query = _source_lane_query(
+    query = source_lane_query(
         "What play did I attend at the local community theater?",
         [
             (
@@ -1383,7 +1382,7 @@ def test_aggregation_intent_reserves_larger_source_set() -> None:
 
     assert intent.needs_source_lane
     assert intent.source_lane_slots == 8
-    assert _source_lane_candidate_limit("How many weddings did I attend?", limit=10) == 48
+    assert source_lane_candidate_limit("How many weddings did I attend?", limit=10) == 48
 
 
 async def test_zaxy_retriever_overfetches_salient_sources_for_aggregation() -> None:
