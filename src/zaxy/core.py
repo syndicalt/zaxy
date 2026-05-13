@@ -53,6 +53,11 @@ from zaxy.query import QueryRouter, build_reranker, build_retention_policy
 from zaxy.recall import RecallCandidateSet, build_recall_candidate_set, empty_recall_candidate_set
 from zaxy.refs import MemoryRef, MemoryRefStore
 from zaxy.retrieval_plan import build_evidence_plan, source_lane_candidate_limit
+from zaxy.retrieval_profile import (
+    RetrievalProfile,
+    apply_retrieval_profile,
+    resolve_retrieval_profile,
+)
 from zaxy.security import (
     MAX_QUERY_LIMIT,
     validate_limit,
@@ -206,31 +211,35 @@ class MemoryFabric:
         Explicit values override env vars for framework integrations.
         """
         settings = get_settings()
+        retrieval_profile = resolve_retrieval_profile(settings)
+        resolved_settings = apply_retrieval_profile(settings, retrieval_profile)
+        self.settings = resolved_settings
+        self.retrieval_profile: RetrievalProfile = retrieval_profile
 
-        self.session_manager = SessionManager(base_path=eventloom_path or settings.eventloom_path)
+        self.session_manager = SessionManager(base_path=eventloom_path or resolved_settings.eventloom_path)
         self.eventloom = self.session_manager.get("default").eventlog
         self.graph = GraphStore(
-            neo4j_uri or settings.neo4j_uri,
-            neo4j_user or settings.neo4j_user,
-            neo4j_password or settings.neo4j_password,
-            ca_cert=neo4j_ca_cert if neo4j_ca_cert is not None else settings.neo4j_ca_cert,
-            trust_all=neo4j_trust_all if neo4j_trust_all is not None else settings.neo4j_trust_all,
+            neo4j_uri or resolved_settings.neo4j_uri,
+            neo4j_user or resolved_settings.neo4j_user,
+            neo4j_password or resolved_settings.neo4j_password,
+            ca_cert=neo4j_ca_cert if neo4j_ca_cert is not None else resolved_settings.neo4j_ca_cert,
+            trust_all=neo4j_trust_all if neo4j_trust_all is not None else resolved_settings.neo4j_trust_all,
         )
         self.query_router = QueryRouter(
             self.graph,
-            default_limit=settings.query_default_limit,
-            session_id=settings.eventloom_thread,
-            scoring_profile=settings.query_scoring_profile,
-            reranker=build_reranker(settings),
-            retention_policy=build_retention_policy(settings),
+            default_limit=resolved_settings.query_default_limit,
+            session_id=resolved_settings.eventloom_thread,
+            scoring_profile=resolved_settings.query_scoring_profile,
+            reranker=build_reranker(resolved_settings),
+            retention_policy=build_retention_policy(resolved_settings),
         )
-        self.embedding_provider = build_embedding_provider(settings)
+        self.embedding_provider = build_embedding_provider(resolved_settings)
         self.tracer = MemoryTracer(
-            base_url=pathlight_url or settings.pathlight_url,
-            project_id=pathlight_project_id or settings.pathlight_project_id,
-            disabled=tracer_disabled or not settings.pathlight_enabled,
+            base_url=pathlight_url or resolved_settings.pathlight_url,
+            project_id=pathlight_project_id or resolved_settings.pathlight_project_id,
+            disabled=tracer_disabled or not resolved_settings.pathlight_enabled,
         )
-        projection_search_base = Path(eventloom_path or settings.eventloom_path)
+        projection_search_base = Path(eventloom_path or resolved_settings.eventloom_path)
         self.refs = MemoryRefStore(projection_search_base)
         self.projections: tuple[CompactionProjection, ...] = tuple(
             load_compaction_projection(path)
@@ -240,10 +249,10 @@ class MemoryFabric:
             )
         )
         self.context_assembly_policy = ContextAssemblyPolicy(
-            verbatim_enabled=settings.context_verbatim_enabled,
-            verbatim_slots=settings.context_verbatim_slots,
-            packet_memory_enabled=settings.context_packet_memory_enabled,
-            packet_memory_slots=settings.context_packet_memory_slots,
+            verbatim_enabled=resolved_settings.context_verbatim_enabled,
+            verbatim_slots=resolved_settings.context_verbatim_slots,
+            packet_memory_enabled=resolved_settings.context_packet_memory_enabled,
+            packet_memory_slots=resolved_settings.context_packet_memory_slots,
         )
         self._initialized_workspaces: dict[tuple[str, str], WorkspaceProfile] = {}
         self._initialized_instruction_signatures: dict[tuple[str, str], str] = {}
@@ -864,6 +873,8 @@ class MemoryFabric:
             lines.append("# Context Warnings")
             for warning in warnings:
                 lines.append(f"- {warning}")
+        working_set_payload = working_set.to_dict()
+        working_set_payload["retrieval_profile"] = self.retrieval_profile.to_diagnostics()
         return ContextAssembly(
             session_id=sid,
             prompt="\n".join(lines).strip(),
@@ -873,7 +884,7 @@ class MemoryFabric:
             warnings=warnings,
             assembly_policy=self.context_assembly_policy.describe(),
             context_counts=context_counts(contexts, replay_count=len(replay_events)),
-            working_set=working_set.to_dict(),
+            working_set=working_set_payload,
             recall=recall,
         )
 
@@ -1198,6 +1209,9 @@ def build_memory_checkout(
         retention=retention,
         warnings=warnings,
     )
+    retrieval_profile = assembly.working_set.get("retrieval_profile")
+    if isinstance(retrieval_profile, dict):
+        diagnostics = {**diagnostics, "retrieval_profile": retrieval_profile}
     recall_diagnostics = assembly.recall.to_diagnostics()
     if recall_diagnostics["candidate_count"] and recall_diagnostics["candidate_count"] != len(assembly.contexts):
         diagnostics = {**diagnostics, "recall": recall_diagnostics}

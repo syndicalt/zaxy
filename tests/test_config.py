@@ -46,6 +46,12 @@ def test_context_assembly_defaults_include_source_recall() -> None:
     assert settings.context_packet_memory_slots == 1
 
 
+def test_retrieval_profile_default_is_local_fast() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.retrieval_profile == "local_fast"
+
+
 class TestSecretFiles:
     """Docker/Kubernetes secret file loading."""
 

@@ -223,6 +223,10 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # Query router
     # ------------------------------------------------------------------
+    retrieval_profile: str = Field(
+        default="local_fast",
+        description="Named retrieval profile: local_fast, local_sota, hosted_sota, or custom",
+    )
     query_default_limit: int = Field(
         default=10,
         description="Default result limit for queries",

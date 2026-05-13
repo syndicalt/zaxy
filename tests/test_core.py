@@ -25,6 +25,7 @@ from zaxy.embedding import HashEmbeddingProvider
 from zaxy.event import Event, EventLog
 from zaxy.query import ContextChunk
 from zaxy.refs import MemoryRef
+from zaxy.retrieval_profile import resolve_retrieval_profile
 
 
 class BrokenEmbeddingProvider:
@@ -176,6 +177,37 @@ class TestLifecycle:
             MemoryFabric()
 
         assert mock_router_cls.call_args.kwargs["scoring_profile"] == "precision"
+        assert mock_router_cls.call_args.kwargs["reranker"] is mock_build_reranker.return_value
+
+    def test_initializes_query_router_from_named_retrieval_profile(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Named retrieval profiles should resolve before provider wiring."""
+        monkeypatch.setenv("RETRIEVAL_PROFILE", "local_sota")
+        from zaxy.config import get_settings
+
+        get_settings.cache_clear()
+        with (
+            patch("zaxy.core.GraphStore"),
+            patch("zaxy.core.QueryRouter") as mock_router_cls,
+            patch("zaxy.core.build_embedding_provider") as mock_build_embedding_provider,
+            patch("zaxy.core.build_reranker") as mock_build_reranker,
+            patch("zaxy.core.MemoryTracer"),
+            patch("zaxy.core.SessionManager") as mock_session_cls,
+        ):
+            mock_build_embedding_provider.return_value = object()
+            mock_build_reranker.return_value = object()
+            mock_session_cls.return_value.get.return_value.eventlog = MagicMock()
+
+            fabric = MemoryFabric()
+
+        profile = resolve_retrieval_profile(fabric.settings)
+        assert profile.name == "local_sota"
+        assert fabric.retrieval_profile == profile
+        assert mock_build_embedding_provider.call_args.args[0].embedding_provider == "sentence-transformers"
+        assert mock_build_embedding_provider.call_args.args[0].embedding_dimension == 1024
+        assert mock_router_cls.call_args.kwargs["scoring_profile"] == "recall"
         assert mock_router_cls.call_args.kwargs["reranker"] is mock_build_reranker.return_value
 
     async def test_connect_initializes_graph_and_tracer(self, fabric: MemoryFabric) -> None:
@@ -956,6 +988,17 @@ class TestContextAssembly:
             "feedback_recommended": True,
             "feedback_tool": "memory_feedback",
             "feedback_reason": "Reinforce cited context if it materially informed the next response.",
+            "retrieval_profile": {
+                "name": "local_fast",
+                "embedding_provider": "hash",
+                "embedding_model": None,
+                "embedding_dimension": 1536,
+                "reranker_provider": "lexical",
+                "scoring_profile": "balanced",
+                "lanes": ["bm25", "hash_vector", "verbatim", "graph", "lexical_rerank"],
+                "hosted": False,
+                "experimental": False,
+            },
         }
         assert checkout.guidance["recommended_next_call"] == {
             "tool": "memory_checkout",
@@ -1467,6 +1510,14 @@ class TestContextAssembly:
         assert fabric.query_router.query.await_args.kwargs["limit"] > 2
         assert checkout.diagnostics["recall"]["candidate_count"] == 4
         assert checkout.diagnostics["recall"]["source_group_count"] == 4
+        assert checkout.diagnostics["retrieval_profile"]["name"] == "local_fast"
+        assert checkout.diagnostics["retrieval_profile"]["lanes"] == [
+            "bm25",
+            "hash_vector",
+            "verbatim",
+            "graph",
+            "lexical_rerank",
+        ]
         assert [item["citation"] for item in checkout.evidence[:3]] == [
             "eventloom://agent-1/events/1#111111111111",
             "eventloom://agent-1/events/2#222222222222",
@@ -1777,6 +1828,7 @@ class TestContextAssembly:
             patch("zaxy.core.GraphStore") as mock_graph_cls,
             patch("zaxy.core.QueryRouter") as mock_router_cls,
             patch("zaxy.core.build_reranker") as mock_build_reranker,
+            patch("zaxy.core.build_embedding_provider") as mock_build_embedding_provider,
             patch("zaxy.core.MemoryTracer") as mock_tracer_cls,
             patch("zaxy.core.SessionManager") as mock_session_cls,
         ):
@@ -1788,6 +1840,7 @@ class TestContextAssembly:
             router.query.return_value = []
             mock_router_cls.return_value = router
             mock_build_reranker.return_value = None
+            mock_build_embedding_provider.return_value = None
             mock_tracer_cls.return_value = AsyncMock()
             fabric = MemoryFabric(projection_paths=[projection_path])
 
