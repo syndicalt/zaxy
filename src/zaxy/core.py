@@ -50,8 +50,9 @@ from zaxy.lifecycle import build_subagent_completed_event
 from zaxy.metrics import get_metrics
 from zaxy.pagination import encode_query_cursor, validate_query_cursor
 from zaxy.query import QueryRouter, build_reranker, build_retention_policy
+from zaxy.recall import RecallCandidateSet, build_recall_candidate_set, empty_recall_candidate_set
 from zaxy.refs import MemoryRef, MemoryRefStore
-from zaxy.retrieval_plan import build_evidence_plan
+from zaxy.retrieval_plan import build_evidence_plan, source_lane_candidate_limit
 from zaxy.security import (
     MAX_QUERY_LIMIT,
     validate_limit,
@@ -88,6 +89,7 @@ class ContextAssembly:
     assembly_policy: dict[str, bool | int] = field(default_factory=dict)
     context_counts: dict[str, int] = field(default_factory=dict)
     working_set: dict[str, object] = field(default_factory=dict)
+    recall: RecallCandidateSet = field(default_factory=empty_recall_candidate_set)
 
 
 @dataclass(frozen=True)
@@ -800,16 +802,19 @@ class MemoryFabric:
         session_id: str = "default",
         replay_from_seq: int = 1,
         limit: int = 10,
+        recall_limit: int | None = None,
         max_recent_events: int | None = None,
         as_of_seq: int | None = None,
     ) -> ContextAssembly:
         """Assemble recent replay plus retrieval into prompt-ready context."""
         sid = validate_session_id(session_id)
+        prompt_limit = validate_limit(limit)
+        candidate_limit = prompt_limit if recall_limit is None else validate_limit(max(prompt_limit, recall_limit))
         replay = await self.replay(from_seq=replay_from_seq, session_id=sid)
-        graph_contexts = await self.query(query, limit=limit, session_id=sid)
+        graph_contexts = await self.query(query, limit=candidate_limit, session_id=sid)
         verbatim_candidate_limit = self.context_assembly_policy.verbatim_candidate_limit(
             query=query,
-            limit=limit,
+            limit=candidate_limit,
         )
         verbatim_contexts = (
             await self.query_verbatim(query, limit=verbatim_candidate_limit, session_id=sid)
@@ -817,15 +822,21 @@ class MemoryFabric:
             else []
         )
         packet_memory_contexts = self._recent_packet_memory_contexts(list(replay.events))
+        recall_contexts = [*graph_contexts, *verbatim_contexts, *packet_memory_contexts]
+        recall = build_recall_candidate_set(recall_contexts, budget=candidate_limit)
         contexts = self.context_assembly_policy.assemble(
             graph_contexts,
             verbatim_contexts,
             packet_memory_contexts,
-            limit=limit,
+            limit=prompt_limit,
             query=query,
         )
         if as_of_seq is not None:
             contexts = _contexts_as_of_seq(contexts, as_of_seq)
+            recall = build_recall_candidate_set(
+                _contexts_as_of_seq(recall.contexts(), as_of_seq),
+                budget=candidate_limit,
+            )
         replay_events = list(replay.events)
         if as_of_seq is not None:
             replay_events = [event for event in replay_events if event.seq <= as_of_seq]
@@ -863,6 +874,7 @@ class MemoryFabric:
             assembly_policy=self.context_assembly_policy.describe(),
             context_counts=context_counts(contexts, replay_count=len(replay_events)),
             working_set=working_set.to_dict(),
+            recall=recall,
         )
 
     async def checkout_memory(
@@ -884,6 +896,7 @@ class MemoryFabric:
             session_id=checkout_session_id,
             replay_from_seq=replay_from_seq,
             limit=limit,
+            recall_limit=_checkout_recall_limit(query, limit),
             max_recent_events=max_recent_events,
             as_of_seq=as_of_seq,
         )
@@ -1147,8 +1160,9 @@ def build_memory_checkout(
     ref: MemoryRef | None = None,
 ) -> MemoryCheckout:
     """Build the Memory Checkout contract from assembled context."""
+    checkout_contexts = assembly.recall.contexts() or assembly.contexts
     ranked_contexts = sorted(
-        assembly.contexts,
+        checkout_contexts,
         key=lambda context: _checkout_rank(context, query),
         reverse=True,
     )
@@ -1184,6 +1198,9 @@ def build_memory_checkout(
         retention=retention,
         warnings=warnings,
     )
+    recall_diagnostics = assembly.recall.to_diagnostics()
+    if recall_diagnostics["candidate_count"] and recall_diagnostics["candidate_count"] != len(assembly.contexts):
+        diagnostics = {**diagnostics, "recall": recall_diagnostics}
     guidance = build_checkout_guidance(
         query=query,
         current_facts=current_facts,
@@ -1292,6 +1309,23 @@ def _checkout_source_lanes(contexts: list[Context]) -> dict[str, int]:
         lane = _checkout_source_lane(context)
         source_lanes[lane] = source_lanes.get(lane, 0) + 1
     return source_lanes
+
+
+def _checkout_recall_limit(query: str, limit: int) -> int:
+    """Return the internal recall budget for checkout without inflating prompt context."""
+    prompt_limit = validate_limit(limit)
+    plan = build_evidence_plan(query, limit=max(prompt_limit, 10))
+    if not plan.promote_cited_sources:
+        return prompt_limit
+    source_budget = source_lane_candidate_limit(query, limit=max(prompt_limit, 10))
+    return min(
+        MAX_QUERY_LIMIT,
+        max(
+            prompt_limit,
+            source_budget,
+            plan.required_source_groups * 8,
+        ),
+    )
 
 
 def _checkout_source_lane(context: Context) -> str:

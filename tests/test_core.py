@@ -1390,6 +1390,90 @@ class TestContextAssembly:
             session_id="agent-1",
         )
 
+    async def test_assemble_context_keeps_recall_set_separate_from_prompt_budget(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Recall overfetch should not inflate the prompt-ready context surface."""
+        fabric.session_manager.replay.return_value = MagicMock(
+            events=[],
+            integrity=MagicMock(ok=True),
+        )
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content=f"Recall candidate {index}",
+                source="keyword",
+                score=1.0 - (index / 100),
+                valid_from=None,
+                valid_to=None,
+                citation=f"eventloom://agent-1/events/{index}#{str(index) * 12}",
+            )
+            for index in range(1, 7)
+        ]
+
+        with patch.object(fabric, "query_verbatim", return_value=[]):
+            assembly = await fabric.assemble_context(
+                "What should I remember?",
+                session_id="agent-1",
+                limit=2,
+                recall_limit=6,
+            )
+
+        assert [context.content for context in assembly.contexts] == [
+            "Recall candidate 1",
+            "Recall candidate 2",
+        ]
+        assert len(assembly.recall.candidates) == 6
+        assert assembly.recall.to_diagnostics() == {
+            "candidate_count": 6,
+            "evidence_count": 6,
+            "source_group_count": 6,
+            "budget": 6,
+            "lanes": {"graph": 6},
+        }
+        assert "Recall candidate 6" not in assembly.prompt
+
+    async def test_checkout_memory_uses_internal_recall_without_benchmark_branching(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Checkout should select cited evidence from recall, not only visible prompt contexts."""
+        fabric.session_manager.replay.return_value = MagicMock(
+            events=[],
+            integrity=MagicMock(ok=True),
+        )
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content=(
+                    f"longmemeval_session_id=answer-{index} "
+                    f"Wedding memory source {index}."
+                ),
+                source="keyword",
+                score=1.0 - (index / 100),
+                valid_from=None,
+                valid_to=None,
+                citation=f"eventloom://agent-1/events/{index}#{str(index) * 12}",
+            )
+            for index in range(1, 5)
+        ]
+
+        with patch.object(fabric, "query_verbatim", return_value=[]):
+            checkout = await fabric.checkout_memory(
+                "How many weddings did I attend?",
+                session_id="agent-1",
+                limit=2,
+            )
+
+        assert fabric.query_router.query.await_args.kwargs["limit"] > 2
+        assert checkout.diagnostics["recall"]["candidate_count"] == 4
+        assert checkout.diagnostics["recall"]["source_group_count"] == 4
+        assert [item["citation"] for item in checkout.evidence[:3]] == [
+            "eventloom://agent-1/events/1#111111111111",
+            "eventloom://agent-1/events/2#222222222222",
+            "eventloom://agent-1/events/3#333333333333",
+        ]
+        assert "required_source_groups=2" in checkout.prompt
+
     async def test_assemble_context_includes_recent_packet_memory_lane(
         self,
         fabric: MemoryFabric,
