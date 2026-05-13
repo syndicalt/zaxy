@@ -366,6 +366,60 @@ def test_benchmark_report_tracks_source_recall() -> None:
     assert "Source recall" in markdown
 
 
+def test_benchmark_report_tracks_recall_at_k() -> None:
+    """LongMemEval-style reports should expose Recall@K source recovery."""
+    case = BenchmarkCase(
+        name="identity-1",
+        query="What source contains my trip memory?",
+        expected_terms=("trip answer",),
+        identity_terms=("answer-session-1",),
+        category="longmemeval:multi-session",
+    )
+
+    class OrderedRetriever:
+        def __init__(self, contexts: tuple[str, ...]) -> None:
+            self._contexts = contexts
+
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point
+            return list(self._contexts[:limit])
+
+    report = benchmark_retrievers(
+        {
+            "late-hit": OrderedRetriever(
+                tuple(
+                    f"distractor {index}"
+                    for index in range(4)
+                )
+                + (
+                    "answer-session-1 contains the trip answer",
+                )
+            ),
+            "miss": OrderedRetriever(("unrelated trip answer",)),
+        },
+        (case,),
+        runs=1,
+        limit=5,
+    )
+
+    runs = {run.backend: run for run in report.runs}
+    summaries = {summary.backend: summary for summary in report.summaries}
+    markdown = report_to_markdown(report)
+
+    assert runs["late-hit"].recall_at_1 == 0.0
+    assert runs["late-hit"].recall_at_5 == 1.0
+    assert runs["late-hit"].recall_at_10 == 1.0
+    assert runs["miss"].recall_at_5 == 0.0
+    assert summaries["late-hit"].mean_recall_at_5 == 1.0
+    assert summaries["miss"].mean_recall_at_5 == 0.0
+    assert "Recall@5" in markdown
+
+
 def test_temporal_recall_workload_is_frozen_and_source_cited(tmp_path: Path) -> None:
     """MemPalace-comparable temporal recall should be reproducible and cited."""
     eventlog, cases, workload = build_temporal_recall_workload(
@@ -1067,6 +1121,43 @@ async def test_zaxy_retriever_fuses_verbatim_personal_memory_results() -> None:
 
     assert any("Luna" in result for result in results)
     assert any("graph context" in result for result in results)
+
+
+async def test_zaxy_retriever_ranks_personal_source_lane_before_graph_context() -> None:
+    """Personal memory checkout should surface cited source text in top slots."""
+    corpus = (
+        BenchmarkChunk(
+            "answer",
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=answer-1 my cat's name is Luna"
+            ),
+        ),
+    )
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=BM25Retriever(corpus),
+    )
+
+    results = await retriever.query_async("What is the name of my cat?", limit=5)
+
+    assert "longmemeval_session_id=answer-1" in results[0]
 
 
 async def test_zaxy_retriever_reserves_verbatim_lane_when_graph_crowds_results() -> None:

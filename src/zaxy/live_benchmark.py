@@ -23,7 +23,7 @@ from zaxy.event import EventLog
 from zaxy.extract import extract
 from zaxy.graph import GraphStore
 from zaxy.query import QueryRouter
-from zaxy.retrieval_intent import classify_retrieval_intent
+from zaxy.retrieval_intent import RetrievalIntent, classify_retrieval_intent
 
 FROZEN_WORKLOAD_VERSION = "statistical-v1"
 FROZEN_WORKLOAD_SUBJECTS = 100
@@ -77,6 +77,9 @@ class BenchmarkRun:
     missing_sources: tuple[str, ...]
     citation_count: int
     citation_coverage: float | None
+    recall_at_1: float | None = None
+    recall_at_5: float | None = None
+    recall_at_10: float | None = None
 
 
 @dataclass(frozen=True)
@@ -96,6 +99,9 @@ class BenchmarkSummary:
     mean_identity_recall: float | None = None
     mean_source_recall: float | None = None
     mean_citation_coverage: float | None = None
+    mean_recall_at_1: float | None = None
+    mean_recall_at_5: float | None = None
+    mean_recall_at_10: float | None = None
 
 
 @dataclass(frozen=True)
@@ -145,6 +151,9 @@ class CategorySummary:
     miss_count: int
     mean_source_recall: float | None = None
     mean_citation_coverage: float | None = None
+    mean_recall_at_1: float | None = None
+    mean_recall_at_5: float | None = None
+    mean_recall_at_10: float | None = None
 
 
 @dataclass(frozen=True)
@@ -750,10 +759,23 @@ def _with_reserved_lexical_lane(
         result for result in fused_results
         if result not in reserved_set
     ][:primary_slots]
-    results = [*primary, *reserved][:limit]
+    if _should_rank_source_lane_first(intent):
+        results = [*reserved, *primary][:limit]
+    else:
+        results = [*primary, *reserved][:limit]
     if synthesis_bundle is None:
         return results
     return [synthesis_bundle, *[result for result in results if result != synthesis_bundle]][:limit]
+
+
+def _should_rank_source_lane_first(intent: RetrievalIntent) -> bool:
+    reasons = set(intent.reasons)
+    return "personal_memory" in reasons and not reasons & {
+        "aggregation",
+        "aggregation_question",
+        "operational_memory",
+        "source_recall",
+    }
 
 
 def _source_synthesis_bundle(
@@ -2223,8 +2245,8 @@ def report_to_markdown(report: BenchmarkReport) -> str:
     lines.extend(
         [
         "",
-        "| Backend | Mean score | Identity recall | Source recall | Citation coverage | p50 ms | p95 ms | p99 ms | Returned bytes | Approx tokens |",
-        "|---------|------------|-----------------|---------------|-------------------|--------|--------|--------|----------------|---------------|",
+        "| Backend | Mean score | Identity recall | Source recall | Citation coverage | Recall@1 | Recall@5 | Recall@10 | p50 ms | p95 ms | p99 ms | Returned bytes | Approx tokens |",
+        "|---------|------------|-----------------|---------------|-------------------|----------|----------|-----------|--------|--------|--------|----------------|---------------|",
         ]
     )
     for backend_summary in report.summaries:
@@ -2243,6 +2265,21 @@ def report_to_markdown(report: BenchmarkReport) -> str:
             if backend_summary.mean_source_recall is None
             else f"{backend_summary.mean_source_recall:.3f}"
         )
+        recall_at_1 = (
+            ""
+            if backend_summary.mean_recall_at_1 is None
+            else f"{backend_summary.mean_recall_at_1:.3f}"
+        )
+        recall_at_5 = (
+            ""
+            if backend_summary.mean_recall_at_5 is None
+            else f"{backend_summary.mean_recall_at_5:.3f}"
+        )
+        recall_at_10 = (
+            ""
+            if backend_summary.mean_recall_at_10 is None
+            else f"{backend_summary.mean_recall_at_10:.3f}"
+        )
         lines.append(
             "| "
             f"{backend_summary.backend} | "
@@ -2250,6 +2287,9 @@ def report_to_markdown(report: BenchmarkReport) -> str:
             f"{identity_recall} | "
             f"{source_recall} | "
             f"{citation_coverage} | "
+            f"{recall_at_1} | "
+            f"{recall_at_5} | "
+            f"{recall_at_10} | "
             f"{backend_summary.latency_ms_p50:.2f} | "
             f"{backend_summary.latency_ms_p95:.2f} | "
             f"{backend_summary.latency_ms_p99:.2f} | "
@@ -2262,8 +2302,8 @@ def report_to_markdown(report: BenchmarkReport) -> str:
                 "",
                 "## Category summaries",
                 "",
-                "| Backend | Category | Queries | Mean score | Misses | Source recall | Citation coverage |",
-                "|---------|----------|---------|------------|--------|---------------|-------------------|",
+                "| Backend | Category | Queries | Mean score | Misses | Source recall | Citation coverage | Recall@1 | Recall@5 | Recall@10 |",
+                "|---------|----------|---------|------------|--------|---------------|-------------------|----------|----------|-----------|",
             ]
         )
         for category_summary in report.category_summaries:
@@ -2277,6 +2317,21 @@ def report_to_markdown(report: BenchmarkReport) -> str:
                 if category_summary.mean_source_recall is None
                 else f"{category_summary.mean_source_recall:.3f}"
             )
+            recall_at_1 = (
+                ""
+                if category_summary.mean_recall_at_1 is None
+                else f"{category_summary.mean_recall_at_1:.3f}"
+            )
+            recall_at_5 = (
+                ""
+                if category_summary.mean_recall_at_5 is None
+                else f"{category_summary.mean_recall_at_5:.3f}"
+            )
+            recall_at_10 = (
+                ""
+                if category_summary.mean_recall_at_10 is None
+                else f"{category_summary.mean_recall_at_10:.3f}"
+            )
             lines.append(
                 "| "
                 f"{category_summary.backend} | "
@@ -2285,7 +2340,10 @@ def report_to_markdown(report: BenchmarkReport) -> str:
                 f"{category_summary.mean_score:.3f} | "
                 f"{category_summary.miss_count} | "
                 f"{source_recall} | "
-                f"{citation_coverage} |"
+                f"{citation_coverage} | "
+                f"{recall_at_1} | "
+                f"{recall_at_5} | "
+                f"{recall_at_10} |"
             )
     if report.comparisons:
         lines.extend(
@@ -2488,6 +2546,9 @@ def _measurement(
     returned_text = "\n".join(contexts)
     returned_bytes = len(returned_text.encode("utf-8"))
     citation_count = _citation_count(contexts)
+    recall_at_1 = _recall_at_k(case, contexts, 1)
+    recall_at_5 = _recall_at_k(case, contexts, 5)
+    recall_at_10 = _recall_at_k(case, contexts, 10)
     return BenchmarkRun(
         backend=backend,
         case_name=case.name,
@@ -2509,7 +2570,19 @@ def _measurement(
         missing_sources=score.missing_sources,
         citation_count=citation_count,
         citation_coverage=_citation_coverage(score, citation_count),
+        recall_at_1=recall_at_1,
+        recall_at_5=recall_at_5,
+        recall_at_10=recall_at_10,
     )
+
+
+def _recall_at_k(case: BenchmarkCase, contexts: list[str], k: int) -> float | None:
+    """Return whether any retrieval target appears in the top-k contexts."""
+    target_terms = case.source_terms or case.identity_terms or case.expected_terms
+    if not target_terms:
+        return None
+    haystack = "\n".join(contexts[:k]).casefold()
+    return 1.0 if any(term.casefold() in haystack for term in target_terms) else 0.0
 
 
 def _summaries(
@@ -2536,6 +2609,21 @@ def _summaries(
             row.source_recall
             for row in rows
             if row.source_recall is not None
+        ]
+        recall_at_1_values = [
+            row.recall_at_1
+            for row in rows
+            if row.recall_at_1 is not None
+        ]
+        recall_at_5_values = [
+            row.recall_at_5
+            for row in rows
+            if row.recall_at_5 is not None
+        ]
+        recall_at_10_values = [
+            row.recall_at_10
+            for row in rows
+            if row.recall_at_10 is not None
         ]
         summaries.append(
             BenchmarkSummary(
@@ -2568,6 +2656,21 @@ def _summaries(
                     if citation_coverages
                     else None
                 ),
+                mean_recall_at_1=(
+                    round(statistics.fmean(recall_at_1_values), 4)
+                    if recall_at_1_values
+                    else None
+                ),
+                mean_recall_at_5=(
+                    round(statistics.fmean(recall_at_5_values), 4)
+                    if recall_at_5_values
+                    else None
+                ),
+                mean_recall_at_10=(
+                    round(statistics.fmean(recall_at_10_values), 4)
+                    if recall_at_10_values
+                    else None
+                ),
             )
         )
     return summaries
@@ -2591,6 +2694,21 @@ def _category_summaries(measurements: list[BenchmarkRun]) -> list[CategorySummar
             for row in rows
             if row.source_recall is not None
         ]
+        recall_at_1_values = [
+            row.recall_at_1
+            for row in rows
+            if row.recall_at_1 is not None
+        ]
+        recall_at_5_values = [
+            row.recall_at_5
+            for row in rows
+            if row.recall_at_5 is not None
+        ]
+        recall_at_10_values = [
+            row.recall_at_10
+            for row in rows
+            if row.recall_at_10 is not None
+        ]
         summaries.append(
             CategorySummary(
                 backend=backend,
@@ -2609,6 +2727,21 @@ def _category_summaries(measurements: list[BenchmarkRun]) -> list[CategorySummar
                 mean_citation_coverage=(
                     round(statistics.fmean(citation_coverages), 4)
                     if citation_coverages
+                    else None
+                ),
+                mean_recall_at_1=(
+                    round(statistics.fmean(recall_at_1_values), 4)
+                    if recall_at_1_values
+                    else None
+                ),
+                mean_recall_at_5=(
+                    round(statistics.fmean(recall_at_5_values), 4)
+                    if recall_at_5_values
+                    else None
+                ),
+                mean_recall_at_10=(
+                    round(statistics.fmean(recall_at_10_values), 4)
+                    if recall_at_10_values
                     else None
                 ),
             )
