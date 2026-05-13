@@ -1270,8 +1270,8 @@ def test_aggregation_intent_reserves_larger_source_set() -> None:
     intent = classify_retrieval_intent("How many weddings did I attend?", limit=10)
 
     assert intent.needs_source_lane
-    assert intent.source_lane_slots == 6
-    assert _source_lane_candidate_limit("How many weddings did I attend?", limit=10) == 36
+    assert intent.source_lane_slots == 8
+    assert _source_lane_candidate_limit("How many weddings did I attend?", limit=10) == 48
 
 
 async def test_zaxy_retriever_overfetches_salient_sources_for_aggregation() -> None:
@@ -1326,7 +1326,7 @@ async def test_zaxy_retriever_overfetches_salient_sources_for_aggregation() -> N
 
     results = await retriever.query_async("How many weddings did I attend?", limit=10)
 
-    assert seen_limits == [36]
+    assert seen_limits == [48]
     assert sum("session_id=answer-" in result for result in results) == 6
 
 

@@ -114,13 +114,14 @@ def classify_retrieval_intent(query: str, *, limit: int) -> RetrievalIntent:
         needs_source = True
         slots = max(slots, max(2, min(3, limit // 3)))
         reasons.append("personal_memory")
+    aggregation_slots = max(4, min(8, (limit * 4) // 5))
     if tokens & personal_terms and tokens & aggregation_terms:
         needs_source = True
-        slots = max(slots, max(4, min(6, (limit * 3) // 5)))
+        slots = max(slots, aggregation_slots)
         reasons.append("aggregation")
     if {"how", "many"} <= tokens or {"how", "much"} <= tokens or {"how", "long"} <= tokens:
         needs_source = True
-        slots = max(slots, max(4, min(6, (limit * 3) // 5)))
+        slots = max(slots, aggregation_slots)
         reasons.append("aggregation_question")
     if tokens & personal_terms and len(tokens & absence_terms) >= 2:
         needs_source = True
