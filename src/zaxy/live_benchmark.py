@@ -570,10 +570,11 @@ class ZaxyRetriever:
         ):
             return graph_results
         lexical_query = _source_lane_query(query, graph_results)
+        lexical_limit = _source_lane_candidate_limit(query, limit=limit)
         lexical_results = self._lexical_retriever.query(
             lexical_query,
             temporal_point=temporal_point,
-            limit=limit,
+            limit=lexical_limit,
         )
         lexical_results = _filter_superseded_preference_lexical_results(
             graph_results,
@@ -639,6 +640,21 @@ def _source_lane_query(query: str, graph_results: list[str]) -> str:
     if not concepts:
         return query
     return " ".join([query, *concepts])
+
+
+def _source_lane_candidate_limit(query: str, *, limit: int) -> int:
+    """Return internal source candidate budget for source-sensitive retrieval."""
+    if limit <= 0:
+        return 0
+    intent = classify_retrieval_intent(query, limit=limit)
+    if not intent.needs_source_lane:
+        return limit
+    if any(
+        reason in intent.reasons
+        for reason in ("aggregation", "aggregation_question", "absence_check")
+    ):
+        return max(limit, intent.source_lane_slots * 6)
+    return max(limit, intent.source_lane_slots * 4)
 
 
 def _graph_answer_concepts(graph_results: list[str], *, limit: int = 4) -> list[str]:
@@ -730,6 +746,7 @@ def _diverse_source_contexts(contexts: list[str], *, limit: int) -> list[str]:
     """Select source contexts across provenance groups before filling by rank."""
     if limit <= 0:
         return []
+    contexts = _source_lane_priority_order(contexts)
     selected: list[str] = []
     seen_contexts: set[str] = set()
     seen_groups: set[str] = set()
@@ -752,6 +769,26 @@ def _diverse_source_contexts(contexts: list[str], *, limit: int) -> list[str]:
         if len(selected) >= limit:
             break
     return selected
+
+
+def _source_lane_priority_order(contexts: list[str]) -> list[str]:
+    """Prefer compact source memories over raw chunks while preserving rank within tiers."""
+    indexed = list(enumerate(contexts))
+    indexed.sort(key=lambda item: (-_source_lane_priority(item[1]), item[0]))
+    return [context for _, context in indexed]
+
+
+def _source_lane_priority(context: str) -> int:
+    lowered = context.casefold()
+    if (
+        "salient_memory_turn=true" in lowered
+        or "hook.checkpoint" in lowered
+        or "longmemeval_salient_memory_turn=true" in lowered
+    ):
+        return 2
+    if "citation=" in lowered or "eventloom://" in lowered or "source_path=" in lowered:
+        return 1
+    return 0
 
 
 def _source_context_group(context: str) -> str:

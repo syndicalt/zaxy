@@ -37,6 +37,7 @@ from zaxy.live_benchmark import (
     ZaxyRetriever,
     _benchmark_projection_present,
     _mark_benchmark_projection,
+    _source_lane_candidate_limit,
     _source_lane_query,
     benchmark_live_retrievers,
     benchmark_projection_cache_key,
@@ -1219,6 +1220,71 @@ async def test_zaxy_retriever_reserves_multiple_source_lanes_for_aggregation() -
     results = await retriever.query_async("How many weddings did I attend?", limit=8)
 
     assert sum("session_id=answer-" in result for result in results) == 4
+
+
+def test_aggregation_intent_reserves_larger_source_set() -> None:
+    """Aggregation questions should allocate enough source slots for collection."""
+    intent = classify_retrieval_intent("How many weddings did I attend?", limit=10)
+
+    assert intent.needs_source_lane
+    assert intent.source_lane_slots == 6
+    assert _source_lane_candidate_limit("How many weddings did I attend?", limit=10) == 36
+
+
+async def test_zaxy_retriever_overfetches_salient_sources_for_aggregation() -> None:
+    """Aggregation source assembly should overfetch and prefer compact memories."""
+    raw_contexts = [
+        (
+            f"citation=eventloom://benchmark/events/{index}#abc "
+            f"session_id=raw-{index} wedding planning distractor {index}."
+        )
+        for index in range(1, 13)
+    ]
+    salient_contexts = [
+        (
+            f"citation=eventloom://benchmark/events/{20 + index}#abc "
+            "longmemeval_salient_memory_turn=true "
+            f"session_id=answer-{index} I attended wedding {index}."
+        )
+        for index in range(1, 7)
+    ]
+    seen_limits: list[int] = []
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    class OverfetchLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point
+            seen_limits.append(limit)
+            return [*raw_contexts, *salient_contexts][:limit]
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=OverfetchLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async("How many weddings did I attend?", limit=10)
+
+    assert seen_limits == [36]
+    assert sum("session_id=answer-" in result for result in results) == 6
 
 
 async def test_zaxy_retriever_uses_source_lane_for_absence_checks() -> None:
