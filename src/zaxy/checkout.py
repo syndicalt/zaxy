@@ -324,27 +324,18 @@ def build_compact_answer_contexts(
     quality: dict[str, Any],
 ) -> list[str]:
     """Build a compact model-facing checkout surface for answer synthesis."""
-    evidence_plan = diagnostics.get("evidence_plan")
-    evidence_status = diagnostics.get("evidence_plan_status")
-    compact = [
-        "\n".join(
-            [
-                "memory_checkout_compact=true",
-                "memory_checkout=true",
-                f"query={query}",
-                f"answerability={quality.get('answerability')}",
-                f"confidence={quality.get('confidence')}",
-                f"evidence_plan_mode={_dict_value(evidence_plan, 'mode')}",
-                f"evidence_plan_satisfied={_dict_value(evidence_status, 'satisfied')}",
-                f"required_source_groups={_dict_value(evidence_status, 'required_source_groups')}",
-                f"observed_source_groups={_dict_value(evidence_status, 'observed_source_groups')}",
-            ]
-        )
+    contract = _compact_contract(query=query, diagnostics=diagnostics, quality=quality)
+    support_items = [
+        *_compact_synthesis_items(current_facts, evidence),
+        *_compact_evidence_group_items(diagnostics),
     ]
-    compact.extend(_compact_synthesis_items(current_facts, evidence))
-    compact.extend(_compact_evidence_group_items(diagnostics))
-    compact.extend(_compact_fact_items(current_facts, used=len(compact)))
-    return compact[:_COMPACT_CONTEXT_LIMIT]
+    support_items.extend(_compact_fact_items(current_facts, used=len(support_items) + 1))
+    if not support_items:
+        return [contract]
+    return [
+        _prepend_compact_contract(contract, support_items[0]),
+        *support_items[1:_COMPACT_CONTEXT_LIMIT],
+    ]
 
 
 def _checkout_synthesis_diagnostics(
@@ -453,6 +444,33 @@ def _compact_synthesis_items(
             )
         )
     return items
+
+
+def _compact_contract(
+    *,
+    query: str,
+    diagnostics: dict[str, Any],
+    quality: dict[str, Any],
+) -> str:
+    evidence_plan = diagnostics.get("evidence_plan")
+    evidence_status = diagnostics.get("evidence_plan_status")
+    return "\n".join(
+        [
+            "memory_checkout_compact=true",
+            "memory_checkout=true",
+            f"query={query}",
+            f"answerability={quality.get('answerability')}",
+            f"confidence={quality.get('confidence')}",
+            f"evidence_plan_mode={_dict_value(evidence_plan, 'mode')}",
+            f"evidence_plan_satisfied={_dict_value(evidence_status, 'satisfied')}",
+            f"required_source_groups={_dict_value(evidence_status, 'required_source_groups')}",
+            f"observed_source_groups={_dict_value(evidence_status, 'observed_source_groups')}",
+        ]
+    )
+
+
+def _prepend_compact_contract(contract: str, context: str) -> str:
+    return "\n".join([contract, context])
 
 
 def _compact_synthesis_summary(content: str) -> str:

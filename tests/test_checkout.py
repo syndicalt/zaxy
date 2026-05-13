@@ -529,10 +529,58 @@ def test_checkout_builds_compact_answer_contexts_for_synthesis() -> None:
 
     joined = "\n".join(compact)
     assert compact[0].startswith("memory_checkout_compact=true")
+    assert "checkout_synthesis=true" in compact[0]
     assert "date_interval_answer=14 days. 15 days" in joined
     assert "source_id=answer-1" in joined
     assert "source_id=answer-2" in joined
     assert len(joined) < 1800
+
+
+def test_checkout_compact_contexts_put_evidence_before_control_only_metadata() -> None:
+    """Compact checkout should spend top context slots on cited evidence."""
+    evidence = [
+        {
+            "content": "longmemeval_session_id=answer-1 I attended Rachel and Mike's wedding.",
+            "source": "verbatim",
+            "score": 0.91,
+            "citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa",
+            "source_lane": "verbatim",
+        },
+        {
+            "content": "longmemeval_session_id=answer-2 I attended Emily and Sarah's wedding.",
+            "source": "verbatim",
+            "score": 0.89,
+            "citation": "eventloom://agent-1/events/2#bbbbbbbbbbbb",
+            "source_lane": "verbatim",
+        },
+    ]
+    diagnostics = build_checkout_diagnostics(
+        query="How many weddings did I attend?",
+        source_lanes={"verbatim": 2},
+        current_facts=evidence,
+        evidence=evidence,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        warnings=[],
+    )
+
+    compact = build_compact_answer_contexts(
+        query="How many weddings did I attend?",
+        current_facts=evidence,
+        evidence=evidence,
+        diagnostics=diagnostics,
+        quality={"answerability": "answer_from_memory", "confidence": 0.88},
+    )
+
+    assert compact[0].startswith("memory_checkout_compact=true")
+    assert "checkout_evidence_group=true" in compact[0]
+    assert "source_id=answer-1" in compact[0]
+    assert "memory_checkout=true" in compact[0]
+    assert not any(
+        context.startswith("memory_checkout_compact=true\nmemory_checkout=true\nquery=")
+        and "checkout_evidence_group=true" not in context
+        and "checkout_synthesis=true" not in context
+        for context in compact[:5]
+    )
 
 
 def test_checkout_guides_absence_checks_without_overclaiming() -> None:
