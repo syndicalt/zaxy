@@ -12,6 +12,7 @@ from zaxy.integrations import (
     render_handoff_adapter,
     render_mcp_client_config,
 )
+from zaxy.projection import ProjectionStore
 from zaxy.refs import MemoryRef, MemoryRefStore
 from zaxy.release import package_version
 from zaxy.verbatim import VerbatimHit, VerbatimIndex
@@ -26,6 +27,7 @@ __all__ = [
     "ContextAssemblyPolicy",
     "MemoryCheckout",
     "MemoryFabric",
+    "ProjectionStore",
     "QueryPage",
     "MemoryRef",
     "MemoryRefStore",

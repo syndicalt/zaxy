@@ -78,3 +78,43 @@ def test_context_assembly_policy_reserves_packet_memory_lane() -> None:
 
     assert [context.source for context in contexts] == ["keyword", "packet_memory"]
     assert contexts[1].metadata == {"assembly_lane": "packet_memory"}
+
+
+def test_context_assembly_policy_expands_verbatim_lane_for_aggregation_queries() -> None:
+    """Aggregation queries need multiple source observations, not one top hit."""
+    policy = ContextAssemblyPolicy(verbatim_slots=1)
+
+    contexts = policy.assemble(
+        [
+            Context(content=f"Graph summary {index}", source="keyword", score=0.9)
+            for index in range(6)
+        ],
+        [
+            Context(content=f"Exact source {index}", source="verbatim", score=0.8)
+            for index in range(4)
+        ],
+        limit=8,
+        query="How many properties did I visit before making an offer?",
+    )
+
+    assert [context.source for context in contexts].count("verbatim") == 4
+
+
+def test_context_assembly_policy_expands_verbatim_lane_for_absence_queries() -> None:
+    """Absence checks need nearby mentioned alternatives from source evidence."""
+    policy = ContextAssemblyPolicy(verbatim_slots=1)
+
+    contexts = policy.assemble(
+        [
+            Context(content=f"Graph summary {index}", source="keyword", score=0.9)
+            for index in range(6)
+        ],
+        [
+            Context(content=f"Exact source {index}", source="verbatim", score=0.8)
+            for index in range(3)
+        ],
+        limit=6,
+        query="Did I mention my hamster?",
+    )
+
+    assert [context.source for context in contexts].count("verbatim") == 3

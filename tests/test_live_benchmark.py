@@ -953,6 +953,78 @@ async def test_zaxy_retriever_reserves_verbatim_lane_when_graph_crowds_results()
     assert any("Luna" in result for result in results)
 
 
+async def test_zaxy_retriever_reserves_multiple_source_lanes_for_aggregation() -> None:
+    """Aggregation should preserve diverse source observations for synthesis."""
+    corpus = tuple(
+        BenchmarkChunk(
+            f"answer-{index}",
+            (
+                f"citation=eventloom://benchmark/events/{index}#abc "
+                f"session_id=answer-{index} I attended wedding {index}."
+            ),
+        )
+        for index in range(1, 5)
+    )
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=BM25Retriever(corpus),
+    )
+
+    results = await retriever.query_async("How many weddings did I attend?", limit=8)
+
+    assert sum("session_id=answer-" in result for result in results) == 4
+
+
+async def test_zaxy_retriever_uses_source_lane_for_absence_checks() -> None:
+    """Mention/absence questions should inspect source evidence."""
+    corpus = (
+        BenchmarkChunk(
+            "answer",
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "session_id=answer-1 I mentioned my cat Luna but not a hamster."
+            ),
+        ),
+    )
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, limit, embedding
+            return [SimpleNamespace(content="graph context about pet care")]
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=BM25Retriever(corpus),
+    )
+
+    results = await retriever.query_async("Did I mention my hamster?", limit=4)
+
+    assert any("cat Luna" in result for result in results)
+
+
 async def test_zaxy_retriever_prioritizes_graph_evidence_over_lexical_sidecar() -> None:
     """Lexical fusion should not outrank graph evidence when both return hits."""
     corpus = (

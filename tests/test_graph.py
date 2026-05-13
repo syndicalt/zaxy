@@ -19,6 +19,7 @@ from zaxy.graph import (
     _record_to_entity,
     _typed_relationship_label,
 )
+from zaxy.projection import ProjectionStore
 
 # ------------------------------------------------------------------
 # Helpers
@@ -66,6 +67,12 @@ def store(mock_driver: AsyncMock) -> GraphStore:
 
 class TestConnection:
     """Tests for driver lifecycle."""
+
+    def test_graph_store_satisfies_projection_store_contract(self, store: GraphStore) -> None:
+        """Neo4j GraphStore should remain usable through the projection boundary."""
+        projection_store: ProjectionStore = store
+
+        assert projection_store is store
 
     @patch("zaxy.graph.AsyncGraphDatabase.driver")
     async def test_connect_creates_driver(self, mock_factory: MagicMock) -> None:

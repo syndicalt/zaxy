@@ -16,7 +16,8 @@ from typing import Any
 
 from neo4j import AsyncDriver, AsyncGraphDatabase, TrustAll, TrustCustomCAs
 
-from zaxy.extract import ExtractionResult
+from zaxy.extract import ExtractedEdge, ExtractedEntity, ExtractionResult
+from zaxy.projection import ProjectionStore
 from zaxy.schema import apply_schema_migrations
 from zaxy.security import validate_limit, validate_session_id, validate_traversal_depth
 
@@ -187,7 +188,7 @@ class GraphInferredEdgeStatus:
         }
 
 
-class GraphStore:
+class GraphStore(ProjectionStore):
     """Async Neo4j wrapper for bi-temporal knowledge graph operations.
 
     Args:
@@ -426,6 +427,39 @@ class GraphStore:
         observed_at = _extraction_observed_at(result)
         projection_steps: list[str] = []
 
+        await self._upsert_provenance_backbone(
+            result,
+            session_id=safe_session_id,
+            observed_at=observed_at,
+            projection_steps=projection_steps,
+        )
+
+        for ent in result.entities:
+            await self._upsert_entity_version_projection(
+                ent,
+                result,
+                session_id=safe_session_id,
+                projection_steps=projection_steps,
+            )
+
+        for edge in result.edges:
+            await self._upsert_relationship_projection(
+                edge,
+                result,
+                session_id=safe_session_id,
+                projection_steps=projection_steps,
+            )
+        self.last_projection_steps = tuple(projection_steps)
+
+    async def _upsert_provenance_backbone(
+        self,
+        result: ExtractionResult,
+        *,
+        session_id: str,
+        observed_at: str | None,
+        projection_steps: list[str],
+    ) -> None:
+        """Project session, event, and hash-chain provenance links."""
         await self._execute_projection_statement(
             "provenance_backbone",
             projection_steps,
@@ -483,7 +517,7 @@ class GraphStore:
             }
             RETURN previous_event_links, next_event_links
             """,
-            session_id=safe_session_id,
+            session_id=session_id,
             source_event_seq=result.source_event_seq,
             source_event_hash=result.source_event_hash,
             source_event_prev_hash=result.source_event_prev_hash,
@@ -492,272 +526,287 @@ class GraphStore:
             observed_at=observed_at,
         )
 
-        for ent in result.entities:
-            await self._execute_projection_statement(
-                "entity_version",
-                projection_steps,
-                """
-                MERGE (e:Entity {
-                    session_id: $session_id,
-                    name: $name,
-                    entity_type: $entity_type,
-                    valid_from: datetime($observed_at)
-                })
-                ON CREATE SET e.created_at = datetime($observed_at)
-                SET e.updated_at = datetime($observed_at),
-                    e.summary = coalesce($summary, e.summary),
-                    e.embedding = coalesce($embedding, e.embedding),
-                    e.source_event_seq = $source_event_seq,
-                    e.source_event_hash = $source_event_hash,
-                    e.source_event_type = $source_event_type,
-                    e.source_thread = $source_thread
-                SET e += $properties
-                WITH e
-                OPTIONAL MATCH (prev:Entity {name: $name, entity_type: $entity_type})
-                WHERE prev.session_id = $session_id
-                  AND prev.valid_from < e.valid_from
-                  AND (prev.valid_to IS NULL OR prev.valid_to > e.valid_from)
-                SET prev.valid_to = e.valid_from,
-                    prev.updated_at = datetime($observed_at)
-                WITH e
-                OPTIONAL MATCH (next:Entity {name: $name, entity_type: $entity_type})
-                WHERE next.session_id = $session_id
-                  AND next.valid_from > e.valid_from
-                WITH e, min(next.valid_from) AS next_valid_from
-                SET e.valid_to = next_valid_from
-                WITH e
-                CALL (e) {
-                    OPTIONAL MATCH (prev:Entity {session_id: $session_id, name: $name, entity_type: $entity_type})
-                    WHERE prev.valid_to = e.valid_from
-                    WITH e, prev
-                    WHERE prev IS NOT NULL
-                    MERGE (prev)-[sb:SUPERSEDED_BY]->(e)
-                    ON CREATE SET sb.created_at = datetime($observed_at)
-                    SET sb.updated_at = datetime($observed_at),
-                        sb.session_id = $session_id,
-                        sb.valid_from = e.valid_from,
-                        sb.source_event_seq = $source_event_seq,
-                        sb.source_event_hash = $source_event_hash,
-                        sb.source_event_type = $source_event_type,
-                        sb.source_thread = $source_thread
-                    MERGE (e)-[pv:PREVIOUS_VERSION]->(prev)
-                    ON CREATE SET pv.created_at = datetime($observed_at)
-                    SET pv.updated_at = datetime($observed_at),
-                        pv.session_id = $session_id,
-                        pv.valid_from = e.valid_from,
-                        pv.source_event_seq = $source_event_seq,
-                        pv.source_event_hash = $source_event_hash,
-                        pv.source_event_type = $source_event_type,
-                        pv.source_thread = $source_thread
-                    RETURN count(prev) AS linked_previous_versions
-                }
-                WITH e
-                CALL (e) {
-                    OPTIONAL MATCH (next:Entity {session_id: $session_id, name: $name, entity_type: $entity_type})
-                    WHERE e.valid_to = next.valid_from
-                    WITH e, next
-                    WHERE next IS NOT NULL
-                    MERGE (e)-[next_sb:SUPERSEDED_BY]->(next)
-                    ON CREATE SET next_sb.created_at = datetime($observed_at)
-                    SET next_sb.updated_at = datetime($observed_at),
-                        next_sb.session_id = $session_id,
-                        next_sb.valid_from = next.valid_from,
-                        next_sb.source_event_seq = $source_event_seq,
-                        next_sb.source_event_hash = $source_event_hash,
-                        next_sb.source_event_type = $source_event_type,
-                        next_sb.source_thread = $source_thread
-                    MERGE (next)-[next_pv:PREVIOUS_VERSION]->(e)
-                    ON CREATE SET next_pv.created_at = datetime($observed_at)
-                    SET next_pv.updated_at = datetime($observed_at),
-                        next_pv.session_id = $session_id,
-                        next_pv.valid_from = next.valid_from,
-                        next_pv.source_event_seq = $source_event_seq,
-                        next_pv.source_event_hash = $source_event_hash,
-                        next_pv.source_event_type = $source_event_type,
-                        next_pv.source_thread = $source_thread
-                    RETURN count(next) AS linked_next_versions
-                }
-                WITH e
-                CALL (e) {
-                    OPTIONAL MATCH (prev:Entity {session_id: $session_id, name: $name, entity_type: $entity_type})
-                    WHERE prev.valid_to = e.valid_from
-                    OPTIONAL MATCH (source:Entity)-[old_in:RELATES]->(prev)
-                    WHERE old_in.session_id = $session_id
-                      AND old_in.valid_to IS NULL
-                    WITH e, source, old_in
-                    WHERE old_in IS NOT NULL
-                    MERGE (source)-[new_in:RELATES {
-                        relation_type: old_in.relation_type,
-                        valid_from: old_in.valid_from
-                    }]->(e)
-                    ON CREATE SET new_in.created_at = datetime($observed_at)
-                    SET new_in.session_id = $session_id,
-                        new_in.valid_to = null,
-                        new_in.source_event_seq = old_in.source_event_seq,
-                        new_in.source_event_hash = old_in.source_event_hash,
-                        new_in.source_event_type = old_in.source_event_type,
-                        new_in.source_thread = old_in.source_thread
-                    SET new_in.inferred = coalesce(old_in.inferred, false),
-                        new_in.confidence = coalesce(old_in.confidence, 1.0),
-                        new_in.inference_method = old_in.inference_method
-                    RETURN count(new_in) AS copied_incoming_relationships
-                }
-                WITH e
-                CALL (e) {
-                    OPTIONAL MATCH (prev:Entity {session_id: $session_id, name: $name, entity_type: $entity_type})
-                    WHERE prev.valid_to = e.valid_from
-                    OPTIONAL MATCH (prev)-[old_out:RELATES]->(target:Entity)
-                    WHERE old_out.session_id = $session_id
-                      AND old_out.valid_to IS NULL
-                    WITH e, target, old_out
-                    WHERE old_out IS NOT NULL
-                    MERGE (e)-[new_out:RELATES {
-                        relation_type: old_out.relation_type,
-                        valid_from: old_out.valid_from
-                    }]->(target)
-                    ON CREATE SET new_out.created_at = datetime($observed_at)
-                    SET new_out.session_id = $session_id,
-                        new_out.valid_to = null,
-                        new_out.source_event_seq = old_out.source_event_seq,
-                        new_out.source_event_hash = old_out.source_event_hash,
-                        new_out.source_event_type = old_out.source_event_type,
-                        new_out.source_thread = old_out.source_thread
-                    SET new_out.inferred = coalesce(old_out.inferred, false),
-                        new_out.confidence = coalesce(old_out.confidence, 1.0),
-                        new_out.inference_method = old_out.inference_method
-                    RETURN count(new_out) AS copied_outgoing_relationships
-                }
-                WITH e
-                MATCH (ev:Event {session_id: $session_id, seq: $source_event_seq})
-                MERGE (ev)-[pe:PROJECTED_ENTITY {
-                    name: $name,
-                    entity_type: $entity_type,
-                    valid_from: datetime($observed_at)
+    async def _upsert_entity_version_projection(
+        self,
+        entity: ExtractedEntity,
+        result: ExtractionResult,
+        *,
+        session_id: str,
+        projection_steps: list[str],
+    ) -> None:
+        """Project one temporal entity version plus provenance and citations."""
+        await self._execute_projection_statement(
+            "entity_version",
+            projection_steps,
+            """
+            MERGE (e:Entity {
+                session_id: $session_id,
+                name: $name,
+                entity_type: $entity_type,
+                valid_from: datetime($observed_at)
+            })
+            ON CREATE SET e.created_at = datetime($observed_at)
+            SET e.updated_at = datetime($observed_at),
+                e.summary = coalesce($summary, e.summary),
+                e.embedding = coalesce($embedding, e.embedding),
+                e.source_event_seq = $source_event_seq,
+                e.source_event_hash = $source_event_hash,
+                e.source_event_type = $source_event_type,
+                e.source_thread = $source_thread
+            SET e += $properties
+            WITH e
+            OPTIONAL MATCH (prev:Entity {name: $name, entity_type: $entity_type})
+            WHERE prev.session_id = $session_id
+              AND prev.valid_from < e.valid_from
+              AND (prev.valid_to IS NULL OR prev.valid_to > e.valid_from)
+            SET prev.valid_to = e.valid_from,
+                prev.updated_at = datetime($observed_at)
+            WITH e
+            OPTIONAL MATCH (next:Entity {name: $name, entity_type: $entity_type})
+            WHERE next.session_id = $session_id
+              AND next.valid_from > e.valid_from
+            WITH e, min(next.valid_from) AS next_valid_from
+            SET e.valid_to = next_valid_from
+            WITH e
+            CALL (e) {
+                OPTIONAL MATCH (prev:Entity {session_id: $session_id, name: $name, entity_type: $entity_type})
+                WHERE prev.valid_to = e.valid_from
+                WITH e, prev
+                WHERE prev IS NOT NULL
+                MERGE (prev)-[sb:SUPERSEDED_BY]->(e)
+                ON CREATE SET sb.created_at = datetime($observed_at)
+                SET sb.updated_at = datetime($observed_at),
+                    sb.session_id = $session_id,
+                    sb.valid_from = e.valid_from,
+                    sb.source_event_seq = $source_event_seq,
+                    sb.source_event_hash = $source_event_hash,
+                    sb.source_event_type = $source_event_type,
+                    sb.source_thread = $source_thread
+                MERGE (e)-[pv:PREVIOUS_VERSION]->(prev)
+                ON CREATE SET pv.created_at = datetime($observed_at)
+                SET pv.updated_at = datetime($observed_at),
+                    pv.session_id = $session_id,
+                    pv.valid_from = e.valid_from,
+                    pv.source_event_seq = $source_event_seq,
+                    pv.source_event_hash = $source_event_hash,
+                    pv.source_event_type = $source_event_type,
+                    pv.source_thread = $source_thread
+                RETURN count(prev) AS linked_previous_versions
+            }
+            WITH e
+            CALL (e) {
+                OPTIONAL MATCH (next:Entity {session_id: $session_id, name: $name, entity_type: $entity_type})
+                WHERE e.valid_to = next.valid_from
+                WITH e, next
+                WHERE next IS NOT NULL
+                MERGE (e)-[next_sb:SUPERSEDED_BY]->(next)
+                ON CREATE SET next_sb.created_at = datetime($observed_at)
+                SET next_sb.updated_at = datetime($observed_at),
+                    next_sb.session_id = $session_id,
+                    next_sb.valid_from = next.valid_from,
+                    next_sb.source_event_seq = $source_event_seq,
+                    next_sb.source_event_hash = $source_event_hash,
+                    next_sb.source_event_type = $source_event_type,
+                    next_sb.source_thread = $source_thread
+                MERGE (next)-[next_pv:PREVIOUS_VERSION]->(e)
+                ON CREATE SET next_pv.created_at = datetime($observed_at)
+                SET next_pv.updated_at = datetime($observed_at),
+                    next_pv.session_id = $session_id,
+                    next_pv.valid_from = next.valid_from,
+                    next_pv.source_event_seq = $source_event_seq,
+                    next_pv.source_event_hash = $source_event_hash,
+                    next_pv.source_event_type = $source_event_type,
+                    next_pv.source_thread = $source_thread
+                RETURN count(next) AS linked_next_versions
+            }
+            WITH e
+            CALL (e) {
+                OPTIONAL MATCH (prev:Entity {session_id: $session_id, name: $name, entity_type: $entity_type})
+                WHERE prev.valid_to = e.valid_from
+                OPTIONAL MATCH (source:Entity)-[old_in:RELATES]->(prev)
+                WHERE old_in.session_id = $session_id
+                  AND old_in.valid_to IS NULL
+                WITH e, source, old_in
+                WHERE old_in IS NOT NULL
+                MERGE (source)-[new_in:RELATES {
+                    relation_type: old_in.relation_type,
+                    valid_from: old_in.valid_from
                 }]->(e)
-                ON CREATE SET pe.created_at = datetime($observed_at)
-                SET pe.source_event_hash = $source_event_hash,
-                    pe.source_event_type = $source_event_type
+                ON CREATE SET new_in.created_at = datetime($observed_at)
+                SET new_in.session_id = $session_id,
+                    new_in.valid_to = null,
+                    new_in.source_event_seq = old_in.source_event_seq,
+                    new_in.source_event_hash = old_in.source_event_hash,
+                    new_in.source_event_type = old_in.source_event_type,
+                    new_in.source_thread = old_in.source_thread
+                SET new_in.inferred = coalesce(old_in.inferred, false),
+                    new_in.confidence = coalesce(old_in.confidence, 1.0),
+                    new_in.inference_method = old_in.inference_method
+                RETURN count(new_in) AS copied_incoming_relationships
+            }
+            WITH e
+            CALL (e) {
+                OPTIONAL MATCH (prev:Entity {session_id: $session_id, name: $name, entity_type: $entity_type})
+                WHERE prev.valid_to = e.valid_from
+                OPTIONAL MATCH (prev)-[old_out:RELATES]->(target:Entity)
+                WHERE old_out.session_id = $session_id
+                  AND old_out.valid_to IS NULL
+                WITH e, target, old_out
+                WHERE old_out IS NOT NULL
+                MERGE (e)-[new_out:RELATES {
+                    relation_type: old_out.relation_type,
+                    valid_from: old_out.valid_from
+                }]->(target)
+                ON CREATE SET new_out.created_at = datetime($observed_at)
+                SET new_out.session_id = $session_id,
+                    new_out.valid_to = null,
+                    new_out.source_event_seq = old_out.source_event_seq,
+                    new_out.source_event_hash = old_out.source_event_hash,
+                    new_out.source_event_type = old_out.source_event_type,
+                    new_out.source_thread = old_out.source_thread
+                SET new_out.inferred = coalesce(old_out.inferred, false),
+                    new_out.confidence = coalesce(old_out.confidence, 1.0),
+                    new_out.inference_method = old_out.inference_method
+                RETURN count(new_out) AS copied_outgoing_relationships
+            }
+            WITH e
+            MATCH (ev:Event {session_id: $session_id, seq: $source_event_seq})
+            MERGE (ev)-[pe:PROJECTED_ENTITY {
+                name: $name,
+                entity_type: $entity_type,
+                valid_from: datetime($observed_at)
+            }]->(e)
+            ON CREATE SET pe.created_at = datetime($observed_at)
+            SET pe.source_event_hash = $source_event_hash,
+                pe.source_event_type = $source_event_type
+            WITH e, ev
+            CALL (e, ev) {
                 WITH e, ev
-                CALL (e, ev) {
-                    WITH e, ev
-                    WITH e, ev WHERE $source_path IS NOT NULL
-                    MERGE (src:Source {session_id: $session_id, path: $source_path})
-                    ON CREATE SET src.created_at = datetime($observed_at)
-                    SET src.updated_at = datetime($observed_at),
-                        src.sha256 = coalesce($source_sha256, src.sha256)
-                    MERGE (e)-[cs:CITES_SOURCE]->(src)
-                    ON CREATE SET cs.created_at = datetime($observed_at)
-                    SET cs.updated_at = datetime($observed_at),
-                        cs.source_start_line = $source_start_line,
-                        cs.source_end_line = $source_end_line,
-                        cs.source_sha256 = $source_sha256,
-                        cs.source_event_seq = $source_event_seq,
-                        cs.source_event_hash = $source_event_hash,
-                        cs.source_event_type = $source_event_type
-                    MERGE (ev)-[ecs:CITES_SOURCE]->(src)
-                    ON CREATE SET ecs.created_at = datetime($observed_at)
-                    SET ecs.updated_at = datetime($observed_at),
-                        ecs.source_start_line = $source_start_line,
-                        ecs.source_end_line = $source_end_line,
-                        ecs.source_sha256 = $source_sha256,
-                        ecs.source_event_seq = $source_event_seq,
-                        ecs.source_event_hash = $source_event_hash,
-                        ecs.source_event_type = $source_event_type
-                    RETURN count(src) AS cited_sources
-                }
-                RETURN count(e) AS projected_entities, sum(cited_sources) AS cited_sources
-                """,
-                session_id=safe_session_id,
-                name=ent.name,
-                entity_type=ent.entity_type,
-                observed_at=ent.observed_at,
-                summary=ent.summary,
-                embedding=ent.embedding,
-                source_event_seq=result.source_event_seq,
-                source_event_hash=result.source_event_hash,
-                source_event_type=result.source_event_type,
-                source_thread=result.source_thread,
-                properties=_neo4j_properties(ent.properties),
-                **_source_citation_properties(ent.properties),
-            )
+                WITH e, ev WHERE $source_path IS NOT NULL
+                MERGE (src:Source {session_id: $session_id, path: $source_path})
+                ON CREATE SET src.created_at = datetime($observed_at)
+                SET src.updated_at = datetime($observed_at),
+                    src.sha256 = coalesce($source_sha256, src.sha256)
+                MERGE (e)-[cs:CITES_SOURCE]->(src)
+                ON CREATE SET cs.created_at = datetime($observed_at)
+                SET cs.updated_at = datetime($observed_at),
+                    cs.source_start_line = $source_start_line,
+                    cs.source_end_line = $source_end_line,
+                    cs.source_sha256 = $source_sha256,
+                    cs.source_event_seq = $source_event_seq,
+                    cs.source_event_hash = $source_event_hash,
+                    cs.source_event_type = $source_event_type
+                MERGE (ev)-[ecs:CITES_SOURCE]->(src)
+                ON CREATE SET ecs.created_at = datetime($observed_at)
+                SET ecs.updated_at = datetime($observed_at),
+                    ecs.source_start_line = $source_start_line,
+                    ecs.source_end_line = $source_end_line,
+                    ecs.source_sha256 = $source_sha256,
+                    ecs.source_event_seq = $source_event_seq,
+                    ecs.source_event_hash = $source_event_hash,
+                    ecs.source_event_type = $source_event_type
+                RETURN count(src) AS cited_sources
+            }
+            RETURN count(e) AS projected_entities, sum(cited_sources) AS cited_sources
+            """,
+            session_id=session_id,
+            name=entity.name,
+            entity_type=entity.entity_type,
+            observed_at=entity.observed_at,
+            summary=entity.summary,
+            embedding=entity.embedding,
+            source_event_seq=result.source_event_seq,
+            source_event_hash=result.source_event_hash,
+            source_event_type=result.source_event_type,
+            source_thread=result.source_thread,
+            properties=_neo4j_properties(entity.properties),
+            **_source_citation_properties(entity.properties),
+        )
 
-        for edge in result.edges:
-            typed_relationship_label = _typed_relationship_label(edge.relation_type)
-            await self._execute_projection_statement(
-                "relationship",
-                projection_steps,
-                f"""
-                MATCH (s:Entity {{name: $source}})
-                WHERE s.session_id = $session_id
-                  AND s.valid_from <= datetime($valid_from)
-                  AND (s.valid_to IS NULL OR s.valid_to > datetime($valid_from))
-                MATCH (t:Entity {{name: $target}})
-                WHERE t.session_id = $session_id
-                  AND t.valid_from <= datetime($valid_from)
-                  AND (t.valid_to IS NULL OR t.valid_to > datetime($valid_from))
-                MERGE (s)-[r:RELATES {{relation_type: $relation_type, valid_from: datetime($valid_from)}}]->(t)
-                ON CREATE SET r.created_at = datetime($valid_from)
-                SET r.session_id = $session_id,
-                    r.valid_to = CASE
-                        WHEN $valid_to IS NULL THEN null
-                        ELSE datetime($valid_to)
-                    END,
-                    r.source_event_seq = $source_event_seq,
-                    r.source_event_hash = $source_event_hash,
-                    r.source_event_type = $source_event_type,
-                    r.source_thread = $source_thread,
-                    r.inferred = $inferred,
-                    r.confidence = $confidence,
-                    r.inference_method = $inference_method
-                SET r += $edge_properties
-                MERGE (s)-[typed:{typed_relationship_label} {{valid_from: datetime($valid_from)}}]->(t)
-                ON CREATE SET typed.created_at = datetime($valid_from)
-                SET typed.session_id = $session_id,
-                    typed.relation_type = $relation_type,
-                    typed.valid_to = CASE
-                        WHEN $valid_to IS NULL THEN null
-                        ELSE datetime($valid_to)
-                    END,
-                    typed.source_event_seq = $source_event_seq,
-                    typed.source_event_hash = $source_event_hash,
-                    typed.source_event_type = $source_event_type,
-                    typed.source_thread = $source_thread,
-                    typed.inferred = $inferred,
-                    typed.confidence = $confidence,
-                    typed.inference_method = $inference_method
-                SET typed += $edge_properties
-                WITH s, t, r, typed
-                MATCH (ev:Event {{session_id: $session_id, seq: $source_event_seq}})
-                MERGE (ev)-[pr:PROJECTED_RELATION {{
-                    source: $source,
-                    target: $target,
-                    relation_type: $relation_type,
-                    valid_from: datetime($valid_from)
-                }}]->(t)
-                ON CREATE SET pr.created_at = datetime($valid_from)
-                SET pr.source_event_hash = $source_event_hash,
-                    pr.source_event_type = $source_event_type,
-                    pr.inferred = $inferred,
-                    pr.confidence = $confidence,
-                    pr.inference_method = $inference_method
-                SET pr += $edge_properties
-                """,
-                session_id=safe_session_id,
-                source=edge.source,
-                target=edge.target,
-                relation_type=edge.relation_type,
-                valid_from=edge.valid_from,
-                valid_to=edge.valid_to,
-                source_event_seq=result.source_event_seq,
-                source_event_hash=result.source_event_hash,
-                source_event_type=result.source_event_type,
-                source_thread=result.source_thread,
-                inferred=edge.inferred,
-                confidence=edge.confidence,
-                inference_method=edge.inference_method,
-                edge_properties=_edge_evidence_properties(edge.evidence),
-            )
-        self.last_projection_steps = tuple(projection_steps)
+    async def _upsert_relationship_projection(
+        self,
+        edge: ExtractedEdge,
+        result: ExtractionResult,
+        *,
+        session_id: str,
+        projection_steps: list[str],
+    ) -> None:
+        """Project one temporal relation plus typed and provenance edges."""
+        typed_relationship_label = _typed_relationship_label(edge.relation_type)
+        await self._execute_projection_statement(
+            "relationship",
+            projection_steps,
+            f"""
+            MATCH (s:Entity {{name: $source}})
+            WHERE s.session_id = $session_id
+              AND s.valid_from <= datetime($valid_from)
+              AND (s.valid_to IS NULL OR s.valid_to > datetime($valid_from))
+            MATCH (t:Entity {{name: $target}})
+            WHERE t.session_id = $session_id
+              AND t.valid_from <= datetime($valid_from)
+              AND (t.valid_to IS NULL OR t.valid_to > datetime($valid_from))
+            MERGE (s)-[r:RELATES {{relation_type: $relation_type, valid_from: datetime($valid_from)}}]->(t)
+            ON CREATE SET r.created_at = datetime($valid_from)
+            SET r.session_id = $session_id,
+                r.valid_to = CASE
+                    WHEN $valid_to IS NULL THEN null
+                    ELSE datetime($valid_to)
+                END,
+                r.source_event_seq = $source_event_seq,
+                r.source_event_hash = $source_event_hash,
+                r.source_event_type = $source_event_type,
+                r.source_thread = $source_thread,
+                r.inferred = $inferred,
+                r.confidence = $confidence,
+                r.inference_method = $inference_method
+            SET r += $edge_properties
+            MERGE (s)-[typed:{typed_relationship_label} {{valid_from: datetime($valid_from)}}]->(t)
+            ON CREATE SET typed.created_at = datetime($valid_from)
+            SET typed.session_id = $session_id,
+                typed.relation_type = $relation_type,
+                typed.valid_to = CASE
+                    WHEN $valid_to IS NULL THEN null
+                    ELSE datetime($valid_to)
+                END,
+                typed.source_event_seq = $source_event_seq,
+                typed.source_event_hash = $source_event_hash,
+                typed.source_event_type = $source_event_type,
+                typed.source_thread = $source_thread,
+                typed.inferred = $inferred,
+                typed.confidence = $confidence,
+                typed.inference_method = $inference_method
+            SET typed += $edge_properties
+            WITH s, t, r, typed
+            MATCH (ev:Event {{session_id: $session_id, seq: $source_event_seq}})
+            MERGE (ev)-[pr:PROJECTED_RELATION {{
+                source: $source,
+                target: $target,
+                relation_type: $relation_type,
+                valid_from: datetime($valid_from)
+            }}]->(t)
+            ON CREATE SET pr.created_at = datetime($valid_from)
+            SET pr.source_event_hash = $source_event_hash,
+                pr.source_event_type = $source_event_type,
+                pr.inferred = $inferred,
+                pr.confidence = $confidence,
+                pr.inference_method = $inference_method
+            SET pr += $edge_properties
+            """,
+            session_id=session_id,
+            source=edge.source,
+            target=edge.target,
+            relation_type=edge.relation_type,
+            valid_from=edge.valid_from,
+            valid_to=edge.valid_to,
+            source_event_seq=result.source_event_seq,
+            source_event_hash=result.source_event_hash,
+            source_event_type=result.source_event_type,
+            source_thread=result.source_thread,
+            inferred=edge.inferred,
+            confidence=edge.confidence,
+            inference_method=edge.inference_method,
+            edge_properties=_edge_evidence_properties(edge.evidence),
+        )
 
     async def _execute_projection_statement(
         self,

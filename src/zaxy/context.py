@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from zaxy.retrieval_intent import classify_retrieval_intent
+
 
 @dataclass(frozen=True)
 class Context:
@@ -56,13 +58,19 @@ class ContextAssemblyPolicy:
         packet_memory_contexts: list[Context] | None = None,
         *,
         limit: int,
+        query: str | None = None,
     ) -> list[Context]:
         """Merge graph and verbatim contexts with a reserved source-recall lane."""
         if limit <= 0:
             return []
         packet_memory_contexts = packet_memory_contexts or []
+        desired_verbatim_slots = self.verbatim_slots
+        if query is not None:
+            intent = classify_retrieval_intent(query, limit=limit)
+            if intent.needs_source_lane:
+                desired_verbatim_slots = max(desired_verbatim_slots, intent.source_lane_slots)
         verbatim_limit = (
-            min(self.verbatim_slots, limit, len(verbatim_contexts))
+            min(desired_verbatim_slots, limit, len(verbatim_contexts))
             if self.verbatim_enabled
             else 0
         )

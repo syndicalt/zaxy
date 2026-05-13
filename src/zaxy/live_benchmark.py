@@ -23,6 +23,7 @@ from zaxy.event import EventLog
 from zaxy.extract import extract
 from zaxy.graph import GraphStore
 from zaxy.query import QueryRouter
+from zaxy.retrieval_intent import classify_retrieval_intent
 
 FROZEN_WORKLOAD_VERSION = "statistical-v1"
 FROZEN_WORKLOAD_SUBJECTS = 100
@@ -565,7 +566,7 @@ class ZaxyRetriever:
         if (
             self._lexical_retriever is None
             or temporal_point is not None
-            or not _should_query_source_lexical_lane(query)
+            or not _should_query_source_lexical_lane(query, limit=limit)
         ):
             return graph_results
         lexical_results = self._lexical_retriever.query(
@@ -585,7 +586,12 @@ class ZaxyRetriever:
             weights={"graph": 3.0, "lexical": 1.0},
         )
         fused_results = fused.query(query, temporal_point=temporal_point, limit=limit)
-        return _with_reserved_lexical_lane(fused_results, lexical_results, limit=limit)
+        return _with_reserved_lexical_lane(
+            fused_results,
+            lexical_results,
+            query=query,
+            limit=limit,
+        )
 
 
 class _StaticRetriever:
@@ -614,7 +620,7 @@ def _benchmark_context_from_chunk(chunk: object) -> str:
     return content
 
 
-def _should_query_source_lexical_lane(query: str) -> bool:
+def _should_query_source_lexical_lane(query: str, *, limit: int = 10) -> bool:
     """Return whether raw Eventloom text should supplement graph retrieval.
 
     The lexical Eventloom lane is useful for exact source/provenance recovery,
@@ -623,21 +629,7 @@ def _should_query_source_lexical_lane(query: str) -> bool:
     Temporal queries are blocked by the caller because raw history contains
     superseded facts.
     """
-    tokens = set(re.findall(r"[a-z0-9]+", query.casefold()))
-    source_tokens = {
-        "citation",
-        "cited",
-        "document",
-        "file",
-        "runbook",
-        "source",
-        "sources",
-    }
-    if tokens & source_tokens:
-        return True
-    personal_tokens = {"i", "me", "my", "mine"}
-    memory_question_tokens = {"what", "where", "who", "name", "previous", "conversation"}
-    return bool(tokens & personal_tokens and tokens & memory_question_tokens)
+    return classify_retrieval_intent(query, limit=limit).needs_source_lane
 
 
 def _filter_superseded_preference_lexical_results(
@@ -660,13 +652,18 @@ def _with_reserved_lexical_lane(
     fused_results: list[str],
     lexical_results: list[str],
     *,
+    query: str,
     limit: int,
 ) -> list[str]:
     """Preserve top verbatim source hits as a bounded lane in fused context."""
     if limit <= 0 or not lexical_results:
         return fused_results[:limit]
-    reserved_count = min(len(lexical_results), max(1, min(2, limit // 5)))
-    reserved = _unique_contexts(lexical_results[:reserved_count])
+    intent = classify_retrieval_intent(query, limit=limit)
+    reserved_count = min(
+        len(lexical_results),
+        max(1, min(2, limit // 5), intent.source_lane_slots),
+    )
+    reserved = _diverse_source_contexts(lexical_results, limit=reserved_count)
     reserved_set = set(reserved)
     primary_slots = max(0, limit - len(reserved))
     primary = [
@@ -674,6 +671,49 @@ def _with_reserved_lexical_lane(
         if result not in reserved_set
     ][:primary_slots]
     return [*primary, *reserved][:limit]
+
+
+def _diverse_source_contexts(contexts: list[str], *, limit: int) -> list[str]:
+    """Select source contexts across provenance groups before filling by rank."""
+    if limit <= 0:
+        return []
+    selected: list[str] = []
+    seen_contexts: set[str] = set()
+    seen_groups: set[str] = set()
+    for context in contexts:
+        if context in seen_contexts:
+            continue
+        group = _source_context_group(context)
+        if group in seen_groups:
+            continue
+        selected.append(context)
+        seen_contexts.add(context)
+        seen_groups.add(group)
+        if len(selected) >= limit:
+            return selected
+    for context in contexts:
+        if context in seen_contexts:
+            continue
+        selected.append(context)
+        seen_contexts.add(context)
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def _source_context_group(context: str) -> str:
+    """Return a stable source group from common citation/session metadata."""
+    patterns = [
+        r"eventloom://[^/]+/events/(?P<value>\d+)",
+        r"\b(?:source_path|path|file)=['\"]?(?P<value>[^\s'\"]+)",
+        r"\b[a-z0-9_.-]*session[_-]?id=(?P<value>[^\s]+)",
+        r"\bthread=['\"]?(?P<value>[^\s'\"]+)",
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, context, flags=re.IGNORECASE)
+        if match:
+            return match.group("value").casefold()
+    return context[:160].casefold()
 
 
 def _unique_contexts(contexts: list[str]) -> list[str]:

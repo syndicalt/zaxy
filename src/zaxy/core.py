@@ -815,6 +815,7 @@ class MemoryFabric:
             verbatim_contexts,
             packet_memory_contexts,
             limit=limit,
+            query=query,
         )
         if as_of_seq is not None:
             contexts = _contexts_as_of_seq(contexts, as_of_seq)
