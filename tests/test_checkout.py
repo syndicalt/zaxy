@@ -224,6 +224,87 @@ def test_checkout_guides_multi_source_aggregation() -> None:
     assert "Do not answer aggregation questions from a single top memory" in prompt
 
 
+def test_checkout_groups_synthesis_evidence_by_source_identity() -> None:
+    """Aggregation checkout should expose a source-grouped evidence table."""
+    evidence = [
+        {
+            "content": "longmemeval_session_id=answer-1 I attended Rachel and Mike's wedding.",
+            "source": "verbatim",
+            "score": 0.91,
+            "citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa",
+            "source_lane": "verbatim",
+        },
+        {
+            "content": "longmemeval_session_id=answer-1 Reception details mentioned dancing.",
+            "source": "verbatim",
+            "score": 0.83,
+            "citation": "eventloom://agent-1/events/2#bbbbbbbbbbbb",
+            "source_lane": "verbatim",
+        },
+        {
+            "content": "longmemeval_session_id=answer-2 I attended Emily and Sarah's wedding.",
+            "source": "graph",
+            "score": 0.89,
+            "citation": "eventloom://agent-1/events/3#cccccccccccc",
+            "source_lane": "graph",
+        },
+    ]
+
+    diagnostics = build_checkout_diagnostics(
+        query="How many weddings did I attend?",
+        source_lanes={"graph": 1, "verbatim": 2},
+        current_facts=evidence,
+        evidence=evidence,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        warnings=[],
+    )
+    guidance = build_checkout_guidance(
+        query="How many weddings did I attend?",
+        current_facts=evidence,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        evidence=evidence,
+    )
+    quality = build_checkout_quality(diagnostics=diagnostics, guidance=guidance)
+    prompt = format_memory_checkout_prompt(
+        query="How many weddings did I attend?",
+        assembly_prompt="# Active Memory Working Set",
+        current_facts=evidence,
+        evidence=evidence,
+        quality=quality,
+        guidance=guidance,
+        diagnostics=diagnostics,
+    )
+
+    groups = diagnostics["synthesis"]["evidence_groups"]
+    assert groups == [
+        {
+            "source_id": "answer-1",
+            "evidence_count": 2,
+            "citation_count": 2,
+            "citations": [
+                "eventloom://agent-1/events/1#aaaaaaaaaaaa",
+                "eventloom://agent-1/events/2#bbbbbbbbbbbb",
+            ],
+            "source_lanes": ["verbatim"],
+            "top_score": 0.91,
+            "snippet": "longmemeval_session_id=answer-1 I attended Rachel and Mike's wedding.",
+        },
+        {
+            "source_id": "answer-2",
+            "evidence_count": 1,
+            "citation_count": 1,
+            "citations": ["eventloom://agent-1/events/3#cccccccccccc"],
+            "source_lanes": ["graph"],
+            "top_score": 0.89,
+            "snippet": "longmemeval_session_id=answer-2 I attended Emily and Sarah's wedding.",
+        },
+    ]
+    assert "## Synthesis Evidence" in prompt
+    assert "source_id=answer-1" in prompt
+    assert "evidence_count=2" in prompt
+    assert "eventloom://agent-1/events/1#aaaaaaaaaaaa" in prompt
+
+
 def test_checkout_guides_absence_checks_without_overclaiming() -> None:
     """Absence checkout should distinguish missing evidence from proved absence."""
     current_facts = [

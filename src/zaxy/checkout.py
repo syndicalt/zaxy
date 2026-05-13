@@ -6,9 +6,20 @@ and prompt formatting so every interface exposes the same trust contract.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from zaxy.retrieval_intent import classify_retrieval_intent
+
+_SOURCE_ID_PATTERNS = (
+    re.compile(r"\blongmemeval_session_id[=:]\s*['\"]?(?P<value>[A-Za-z0-9_.-]+)"),
+    re.compile(r"\bsession_id[=:]\s*['\"]?(?P<value>[A-Za-z0-9_.-]+)"),
+    re.compile(r"\bsource_path[=:]\s*['\"]?(?P<value>[^\s,'\"]+)"),
+    re.compile(r"\bpath[=:]\s*['\"]?(?P<value>[^\s,'\"]+)"),
+)
+_SYNTHESIS_GROUP_LIMIT = 8
+_SYNTHESIS_CITATION_LIMIT = 3
+_SYNTHESIS_SNIPPET_LIMIT = 220
 
 
 def build_checkout_diagnostics(
@@ -209,6 +220,7 @@ def format_memory_checkout_prompt(
         lines.append(f"- Evidence needed: {synthesis.get('evidence_needed')}")
         for step in _text_list(synthesis.get("steps")):
             lines.append(f"- Step: {step}")
+    _append_synthesis_evidence(lines, diagnostics.get("synthesis"))
     recommended_next_call = guidance.get("recommended_next_call")
     if isinstance(recommended_next_call, dict):
         lines.append(
@@ -281,6 +293,10 @@ def _checkout_synthesis_diagnostics(
         "current_fact_count": len(current_facts),
         "citation_count": len(citations),
         "source_lanes": source_lanes,
+        "evidence_groups": _checkout_synthesis_evidence_groups(
+            evidence=evidence,
+            current_facts=current_facts,
+        ),
     }
 
 
@@ -360,6 +376,115 @@ def _append_required_action(lines: list[str], required_action: Any) -> None:
             )
     else:
         lines.append("- Required action: none")
+
+
+def _append_synthesis_evidence(lines: list[str], synthesis: Any) -> None:
+    if not isinstance(synthesis, dict):
+        return
+    groups = synthesis.get("evidence_groups")
+    if not isinstance(groups, list) or not groups:
+        return
+    lines.extend(["", "## Synthesis Evidence"])
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        citations = _text_list(group.get("citations"))
+        citation_text = ", ".join(citations) if citations else "none"
+        source_lanes = _text_list(group.get("source_lanes"))
+        lane_text = ", ".join(source_lanes) if source_lanes else "unknown"
+        lines.append(
+            "- "
+            f"source_id={group.get('source_id')}; "
+            f"evidence_count={group.get('evidence_count', 0)}; "
+            f"citations={citation_text}; "
+            f"source_lanes={lane_text}; "
+            f"snippet={group.get('snippet', '')}"
+        )
+
+
+def _checkout_synthesis_evidence_groups(
+    *,
+    evidence: list[dict[str, Any]],
+    current_facts: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    items = evidence if evidence else current_facts
+    grouped: dict[str, dict[str, Any]] = {}
+    seen_items: set[tuple[str, str, str]] = set()
+    for item in items:
+        citation = item.get("citation")
+        if not isinstance(citation, str) or not citation:
+            continue
+        source_id = _evidence_source_id(item)
+        content = _evidence_content(item)
+        item_key = (source_id, citation, content)
+        if item_key in seen_items:
+            continue
+        seen_items.add(item_key)
+        group = grouped.setdefault(
+            source_id,
+            {
+                "source_id": source_id,
+                "evidence_count": 0,
+                "citations": [],
+                "source_lanes": set(),
+                "top_score": 0.0,
+                "snippet": "",
+            },
+        )
+        group["evidence_count"] += 1
+        if citation not in group["citations"]:
+            group["citations"].append(citation)
+        lane = item.get("source_lane")
+        if isinstance(lane, str) and lane:
+            group["source_lanes"].add(lane)
+        score = _float_metric(item.get("score"))
+        if score > group["top_score"]:
+            group["top_score"] = score
+        if not group["snippet"] and content:
+            group["snippet"] = _evidence_snippet(content)
+    groups = [_finalize_synthesis_evidence_group(group) for group in grouped.values()]
+    groups.sort(key=lambda group: (-group["evidence_count"], -group["top_score"], group["source_id"]))
+    return groups[:_SYNTHESIS_GROUP_LIMIT]
+
+
+def _finalize_synthesis_evidence_group(group: dict[str, Any]) -> dict[str, Any]:
+    citations = _text_list(group.get("citations"))
+    source_lanes = group.get("source_lanes")
+    lanes = sorted(source_lanes) if isinstance(source_lanes, set) else []
+    return {
+        "source_id": str(group["source_id"]),
+        "evidence_count": _int_metric(group.get("evidence_count")),
+        "citation_count": len(citations),
+        "citations": citations[:_SYNTHESIS_CITATION_LIMIT],
+        "source_lanes": lanes,
+        "top_score": round(_float_metric(group.get("top_score")), 4),
+        "snippet": str(group.get("snippet", "")),
+    }
+
+
+def _evidence_source_id(item: dict[str, Any]) -> str:
+    content = _evidence_content(item)
+    for pattern in _SOURCE_ID_PATTERNS:
+        match = pattern.search(content)
+        if match:
+            return match.group("value").strip()
+    source = item.get("source")
+    if isinstance(source, str) and source and source not in {"graph", "verbatim", "packet_memory"}:
+        return source
+    citation = item.get("citation")
+    return citation if isinstance(citation, str) and citation else "unknown"
+
+
+def _evidence_content(item: dict[str, Any]) -> str:
+    content = item.get("content")
+    return content if isinstance(content, str) else ""
+
+
+def _evidence_snippet(content: str) -> str:
+    snippet = " ".join(content.split())
+    if len(snippet) <= _SYNTHESIS_SNIPPET_LIMIT:
+        return snippet
+    return f"{snippet[: _SYNTHESIS_SNIPPET_LIMIT - 3].rstrip()}..."
 
 
 def _int_metric(value: Any) -> int:
