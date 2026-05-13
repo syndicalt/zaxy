@@ -11,6 +11,9 @@ from typing import Any
 from zaxy.evidence import build_evidence_set
 from zaxy.retrieval_intent import classify_retrieval_intent
 
+_COMPACT_CONTEXT_LIMIT = 8
+_COMPACT_SNIPPET_LIMIT = 800
+
 
 def build_checkout_diagnostics(
     *,
@@ -213,6 +216,13 @@ def format_memory_checkout_prompt(
 ) -> str:
     """Format the prompt-ready Memory Checkout contract."""
     lines = ["# Memory Checkout", f"Query: {query}", "", "## Current Facts"]
+    compact_contexts = diagnostics.get("compact_contexts")
+    if isinstance(compact_contexts, list) and compact_contexts:
+        lines = ["# Memory Checkout", f"Query: {query}", "", "## Compact Answer Context"]
+        for context in compact_contexts:
+            if isinstance(context, str):
+                lines.append(f"- {_trim_text(context, 700)}")
+        lines.extend(["", "## Current Facts"])
     if current_facts:
         for fact in current_facts:
             citation = f" ({fact['citation']})" if fact.get("citation") else ""
@@ -305,6 +315,38 @@ def format_memory_checkout_prompt(
     return "\n".join(lines).strip()
 
 
+def build_compact_answer_contexts(
+    *,
+    query: str,
+    current_facts: list[dict[str, Any]],
+    evidence: list[dict[str, Any]],
+    diagnostics: dict[str, Any],
+    quality: dict[str, Any],
+) -> list[str]:
+    """Build a compact model-facing checkout surface for answer synthesis."""
+    evidence_plan = diagnostics.get("evidence_plan")
+    evidence_status = diagnostics.get("evidence_plan_status")
+    compact = [
+        "\n".join(
+            [
+                "memory_checkout_compact=true",
+                "memory_checkout=true",
+                f"query={query}",
+                f"answerability={quality.get('answerability')}",
+                f"confidence={quality.get('confidence')}",
+                f"evidence_plan_mode={_dict_value(evidence_plan, 'mode')}",
+                f"evidence_plan_satisfied={_dict_value(evidence_status, 'satisfied')}",
+                f"required_source_groups={_dict_value(evidence_status, 'required_source_groups')}",
+                f"observed_source_groups={_dict_value(evidence_status, 'observed_source_groups')}",
+            ]
+        )
+    ]
+    compact.extend(_compact_synthesis_items(current_facts, evidence))
+    compact.extend(_compact_evidence_group_items(diagnostics))
+    compact.extend(_compact_fact_items(current_facts, used=len(compact)))
+    return compact[:_COMPACT_CONTEXT_LIMIT]
+
+
 def _checkout_synthesis_diagnostics(
     *,
     query: str | None,
@@ -381,6 +423,141 @@ def _checkout_synthesis_guidance(
             ],
         }
     return None
+
+
+def _compact_synthesis_items(
+    current_facts: list[dict[str, Any]],
+    evidence: list[dict[str, Any]],
+) -> list[str]:
+    items: list[str] = []
+    seen: set[str] = set()
+    for item in [*current_facts, *evidence]:
+        content = item.get("content")
+        if not isinstance(content, str) or not content:
+            continue
+        lowered = content.casefold()
+        if "zaxy_synthesis_bundle=true" not in lowered and "zaxy_absence_check=true" not in lowered:
+            continue
+        summary = _compact_synthesis_summary(content)
+        if summary in seen:
+            continue
+        seen.add(summary)
+        items.append(
+            "\n".join(
+                [
+                    "checkout_synthesis=true",
+                    f"citation={item.get('citation')}",
+                    f"source_lane={item.get('source_lane')}",
+                    summary,
+                ]
+            )
+        )
+    return items
+
+
+def _compact_synthesis_summary(content: str) -> str:
+    lines: list[str] = []
+    for raw_line in content.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if line.startswith("- source_id="):
+            if len(lines) >= 10:
+                break
+            lines.append(_trim_text(line, _COMPACT_SNIPPET_LIMIT))
+            continue
+        if any(
+            line.startswith(prefix)
+            for prefix in (
+                "zaxy_synthesis_bundle=",
+                "zaxy_absence_check=",
+                "synthesis_mode=",
+                "query=",
+                "source_count=",
+                "currency_",
+                "minute_",
+                "hour_",
+                "day_",
+                "month_",
+                "date_interval_",
+                "issue_",
+                "not_mentioned_",
+            )
+        ):
+            lines.append(_trim_text(line, _COMPACT_SNIPPET_LIMIT))
+    if lines:
+        return "\n".join(lines[:12])
+    return _trim_text(" ".join(content.split()), _COMPACT_SNIPPET_LIMIT)
+
+
+def _compact_evidence_group_items(diagnostics: dict[str, Any]) -> list[str]:
+    evidence_set = diagnostics.get("evidence_set")
+    groups = evidence_set.get("groups") if isinstance(evidence_set, dict) else None
+    if not isinstance(groups, list):
+        return []
+    items: list[str] = []
+    for group in groups:
+        if not isinstance(group, dict):
+            continue
+        citations = _text_list(group.get("citations"))
+        citation_text = ",".join(citations)
+        items.append(
+            "\n".join(
+                [
+                    "checkout_evidence_group=true",
+                    f"source_id={group.get('source_id')}",
+                    f"evidence_count={group.get('evidence_count')}",
+                    f"citation_count={group.get('citation_count')}",
+                    f"citations={citation_text}",
+                    f"source_lanes={','.join(_text_list(group.get('source_lanes')))}",
+                    f"snippet={_trim_text(str(group.get('snippet', '')), _COMPACT_SNIPPET_LIMIT)}",
+                ]
+            )
+        )
+    return items
+
+
+def _compact_fact_items(
+    current_facts: list[dict[str, Any]],
+    *,
+    used: int,
+) -> list[str]:
+    remaining = max(0, _COMPACT_CONTEXT_LIMIT - used)
+    items: list[str] = []
+    seen: set[str] = set()
+    for fact in current_facts:
+        content = fact.get("content")
+        if not isinstance(content, str) or not content:
+            continue
+        key = " ".join(content.split()).casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append(
+            "\n".join(
+                [
+                    "checkout_fact=true",
+                    f"citation={fact.get('citation')}",
+                    f"source_lane={fact.get('source_lane')}",
+                    f"score={fact.get('score')}",
+                    f"snippet={_trim_text(content, _COMPACT_SNIPPET_LIMIT)}",
+                ]
+            )
+        )
+        if len(items) >= remaining:
+            break
+    return items
+
+
+def _trim_text(value: str, limit: int) -> str:
+    text = " ".join(value.split())
+    if len(text) <= limit:
+        return text
+    return f"{text[: limit - 3].rstrip()}..."
+
+
+def _dict_value(value: Any, key: str) -> Any:
+    return value.get(key) if isinstance(value, dict) else None
 
 
 def _checkout_evidence_plan(query: str | None) -> dict[str, object] | None:

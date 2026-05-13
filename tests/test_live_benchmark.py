@@ -1114,13 +1114,14 @@ async def test_zaxy_checkout_retriever_returns_checkout_contract() -> None:
     results = await retriever.query_async("How many weddings did I attend?", limit=5)
     output = "\n".join(results)
 
-    assert results[0].startswith("checkout_item=current_fact")
+    assert results[0].startswith("memory_checkout_compact=true")
     assert "memory_checkout=true" in output
     assert "answerability=answer_from_memory" in output
     assert "evidence_plan_mode=multi_source_aggregation" in output
     assert "evidence_plan_satisfied=True" in output
     assert "source_id=answer-1" in output
     assert "source_id=answer-2" in output
+    assert sum(len(result) for result in results) < 3000
 
 
 async def test_zaxy_retriever_filters_stale_preference_lexical_backfill() -> None:

@@ -820,6 +820,9 @@ def _benchmark_contexts_from_checkout(checkout: object) -> list[str]:
     """Format a Memory Checkout object as benchmark-scored contexts."""
     quality = getattr(checkout, "quality", {})
     diagnostics = getattr(checkout, "diagnostics", {})
+    compact_contexts = diagnostics.get("compact_contexts") if isinstance(diagnostics, dict) else None
+    if isinstance(compact_contexts, list) and compact_contexts:
+        return [context for context in compact_contexts if isinstance(context, str)]
     evidence_plan = diagnostics.get("evidence_plan") if isinstance(diagnostics, dict) else None
     evidence_status = (
         diagnostics.get("evidence_plan_status") if isinstance(diagnostics, dict) else None

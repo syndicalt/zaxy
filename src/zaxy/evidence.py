@@ -16,7 +16,7 @@ _SOURCE_ID_PATTERNS = (
 )
 _GROUP_LIMIT = 8
 _CITATION_LIMIT = 3
-_SNIPPET_LIMIT = 220
+_SNIPPET_LIMIT = 700
 _GENERIC_SOURCE_NAMES = {
     "exact",
     "eventloom",
@@ -196,10 +196,18 @@ def evidence_content(item: dict[str, Any]) -> str:
 
 def evidence_snippet(content: str) -> str:
     """Return a bounded one-line evidence snippet."""
-    snippet = " ".join(content.split())
+    snippet = " ".join(_semantic_evidence_text(content).split())
     if len(snippet) <= _SNIPPET_LIMIT:
         return snippet
     return f"{snippet[: _SNIPPET_LIMIT - 3].rstrip()}..."
+
+
+def _semantic_evidence_text(content: str) -> str:
+    """Prefer remembered text over projection metadata in evidence snippets."""
+    for marker in (" role=user | ", " role=assistant | "):
+        if marker in content:
+            return content.split(marker, 1)[1]
+    return content
 
 
 def _promote_evidence_groups(

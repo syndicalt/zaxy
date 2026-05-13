@@ -28,6 +28,7 @@ from zaxy.checkout import (
     build_checkout_diagnostics,
     build_checkout_guidance,
     build_checkout_quality,
+    build_compact_answer_contexts,
     format_memory_checkout_prompt,
 )
 from zaxy.codebase import collect_codebase_events
@@ -1193,6 +1194,15 @@ def build_memory_checkout(
         diagnostics=diagnostics,
         guidance=guidance,
     )
+    compact_contexts = build_compact_answer_contexts(
+        query=query,
+        current_facts=current_facts,
+        evidence=evidence,
+        diagnostics=diagnostics,
+        quality=quality,
+    )
+    if compact_contexts and "synthesis" in diagnostics:
+        diagnostics = {**diagnostics, "compact_contexts": compact_contexts}
     prompt = format_memory_checkout_prompt(
         query=query,
         assembly_prompt=assembly.prompt,

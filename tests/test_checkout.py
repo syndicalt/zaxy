@@ -6,6 +6,7 @@ from zaxy.checkout import (
     build_checkout_diagnostics,
     build_checkout_guidance,
     build_checkout_quality,
+    build_compact_answer_contexts,
     format_memory_checkout_prompt,
 )
 from zaxy.context import Context
@@ -476,6 +477,62 @@ def test_checkout_groups_synthesis_evidence_by_source_identity() -> None:
     assert "source_id=answer-1" in prompt
     assert "evidence_count=2" in prompt
     assert "eventloom://agent-1/events/1#aaaaaaaaaaaa" in prompt
+
+
+def test_checkout_builds_compact_answer_contexts_for_synthesis() -> None:
+    """Checkout should expose a small model-facing synthesis surface."""
+    current_facts = [
+        {
+            "content": (
+                "zaxy_synthesis_bundle=true\n"
+                "synthesis_mode=multi_source_aggregation\n"
+                "date_interval_answer=14 days. 15 days (including the last day) is also acceptable.\n"
+                "- source_id=answer-1 snippet=Since I started with Rachel on 2/15.\n"
+                "- source_id=answer-2 snippet=The house I loved was on March 1st."
+            ),
+            "source": "verbatim",
+            "score": 1.2,
+            "citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa",
+            "source_lane": "verbatim",
+        }
+    ]
+    evidence = [
+        *current_facts,
+        {
+            "content": (
+                "longmemeval_session_id=answer-2 "
+                "The house I loved was on March 1st."
+            ),
+            "source": "verbatim",
+            "score": 1.0,
+            "citation": "eventloom://agent-1/events/2#bbbbbbbbbbbb",
+            "source_lane": "verbatim",
+        },
+    ]
+    diagnostics = build_checkout_diagnostics(
+        query="How many days did it take to find a house after starting with Rachel?",
+        source_lanes={"verbatim": 2},
+        current_facts=current_facts,
+        evidence=evidence,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        warnings=[],
+    )
+    quality = {"answerability": "answer_from_memory", "confidence": 0.95}
+
+    compact = build_compact_answer_contexts(
+        query="How many days did it take to find a house after starting with Rachel?",
+        current_facts=current_facts,
+        evidence=evidence,
+        diagnostics=diagnostics,
+        quality=quality,
+    )
+
+    joined = "\n".join(compact)
+    assert compact[0].startswith("memory_checkout_compact=true")
+    assert "date_interval_answer=14 days. 15 days" in joined
+    assert "source_id=answer-1" in joined
+    assert "source_id=answer-2" in joined
+    assert len(joined) < 1800
 
 
 def test_checkout_guides_absence_checks_without_overclaiming() -> None:
