@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from typer.testing import CliRunner
 
@@ -533,6 +534,48 @@ def test_longmemeval_workload_chunks_large_sessions_for_embedding_limits(tmp_pat
     assert all("longmemeval_session_id=answer-1" in chunk.text for chunk in corpus)
     assert max(len(chunk.text) for chunk in corpus) < 9000
     assert any("Business Administration" in chunk.text for chunk in corpus)
+
+
+def test_longmemeval_workload_appends_events_in_one_batch(tmp_path: Path) -> None:
+    """Large public benchmark workloads should avoid per-event append overhead."""
+    dataset = tmp_path / "longmemeval-batch.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "question_id": "q1",
+                    "question_type": "single-session-user",
+                    "question": "What is my project?",
+                    "answer": "Atlas",
+                    "answer_session_ids": ["answer-1"],
+                    "haystack_dates": ["2023/05/20 (Sat) 02:21"],
+                    "haystack_session_ids": ["answer-1"],
+                    "haystack_sessions": [
+                        [
+                            {"role": "user", "content": "My project is Atlas."},
+                            {
+                                "role": "user",
+                                "content": "Atlas is still the right name.",
+                                "has_answer": True,
+                            },
+                        ]
+                    ],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with patch.object(EventLog, "append", side_effect=AssertionError("use append_many")):
+        eventlog, cases, workload = build_longmemeval_workload(
+            tmp_path / "longmemeval-batch.jsonl",
+            dataset,
+        )
+
+    events = eventlog.read_all()
+    assert len(events) == 2
+    assert workload.event_count == 2
+    assert cases[0].identity_terms == ("answer-1",)
 
 
 def test_longmemeval_workload_projects_annotated_answer_turns(tmp_path: Path) -> None:

@@ -1534,6 +1534,7 @@ def build_longmemeval_workload(
     selected = records[:questions] if questions is not None else records
     eventlog = EventLog(path)
     cases: list[BenchmarkCase] = []
+    event_items: list[dict[str, object]] = []
     session_count = 0
     for index, record in enumerate(selected):
         if not isinstance(record, dict):
@@ -1562,19 +1563,21 @@ def build_longmemeval_workload(
             content = _format_longmemeval_session(session_id, session_date, session)
             chunks = _longmemeval_session_chunks(session_id, session_date, content)
             for chunk_index, chunk in enumerate(chunks, start=1):
-                eventlog.append(
-                    "document.indexed",
-                    actor="longmemeval",
-                    payload={
-                        "path": f"longmemeval/{question_id}/{session_id}/chunk-{chunk_index:04d}.md",
-                        "start_line": 1,
-                        "end_line": max(1, chunk.count("\n") + 1),
-                        "content": chunk,
-                        "sha256": _content_sha256(chunk),
-                        "longmemeval_session_id": session_id,
-                        "longmemeval_chunk_index": chunk_index,
-                        "longmemeval_chunk_count": len(chunks),
-                    },
+                event_items.append(
+                    {
+                        "event_type": "document.indexed",
+                        "actor": "longmemeval",
+                        "payload": {
+                            "path": f"longmemeval/{question_id}/{session_id}/chunk-{chunk_index:04d}.md",
+                            "start_line": 1,
+                            "end_line": max(1, chunk.count("\n") + 1),
+                            "content": chunk,
+                            "sha256": _content_sha256(chunk),
+                            "longmemeval_session_id": session_id,
+                            "longmemeval_chunk_index": chunk_index,
+                            "longmemeval_chunk_count": len(chunks),
+                        },
+                    }
                 )
             for turn_index, role, turn_content in _longmemeval_salient_turns(session):
                 content = _format_longmemeval_salient_turn(
@@ -1584,23 +1587,25 @@ def build_longmemeval_workload(
                     role,
                     turn_content,
                 )
-                eventlog.append(
-                    "document.indexed",
-                    actor="longmemeval",
-                    payload={
-                        "path": (
-                            f"longmemeval/{question_id}/{session_id}/"
-                            f"salient-turn-{turn_index:04d}.md"
-                        ),
-                        "start_line": 1,
-                        "end_line": max(1, content.count("\n") + 1),
-                        "content": content,
-                        "sha256": _content_sha256(content),
-                        "longmemeval_session_id": session_id,
-                        "longmemeval_salient_memory_turn": True,
-                        "turn_index": turn_index,
-                        "role": role,
-                    },
+                event_items.append(
+                    {
+                        "event_type": "document.indexed",
+                        "actor": "longmemeval",
+                        "payload": {
+                            "path": (
+                                f"longmemeval/{question_id}/{session_id}/"
+                                f"salient-turn-{turn_index:04d}.md"
+                            ),
+                            "start_line": 1,
+                            "end_line": max(1, content.count("\n") + 1),
+                            "content": content,
+                            "sha256": _content_sha256(content),
+                            "longmemeval_session_id": session_id,
+                            "longmemeval_salient_memory_turn": True,
+                            "turn_index": turn_index,
+                            "role": role,
+                        },
+                    }
                 )
             session_count += 1
 
@@ -1614,6 +1619,7 @@ def build_longmemeval_workload(
             )
         )
 
+    eventlog.append_many(event_items)
     workload = BenchmarkWorkload.from_event_log(
         eventlog,
         tuple(cases),
