@@ -24,6 +24,8 @@ from zaxy.benchmark import (
     expected_terms_recall,
     score_retrieval,
 )
+from zaxy.context import Context
+from zaxy.core import ContextAssembly, build_memory_checkout
 from zaxy.embedding import EmbeddingProvider, HashEmbeddingProvider, embed_extraction
 from zaxy.event import EventLog
 from zaxy.extract import extract
@@ -658,6 +660,93 @@ class ZaxyRetriever:
             synthesis_bundle=synthesis_bundle,
         )
 
+    def as_checkout_retriever(self) -> ZaxyCheckoutRetriever:
+        """Return a checkout benchmark backend over the same live graph."""
+        return ZaxyCheckoutRetriever(
+            self._router,
+            self._provider,
+            lexical_retriever=self._lexical_retriever,
+        )
+
+
+class ZaxyCheckoutRetriever(ZaxyRetriever):
+    """Benchmark backend that measures the model-facing Memory Checkout contract."""
+
+    async def query_async(
+        self,
+        query: str,
+        temporal_point: str | None = None,
+        limit: int = 10,
+    ) -> list[str]:
+        """Return prompt-scored Memory Checkout contexts for benchmark scoring."""
+        if temporal_point is not None:
+            return await super().query_async(query, temporal_point=temporal_point, limit=limit)
+        embedding = self._provider.embed(query)
+        chunks = await self._router.query(
+            query,
+            temporal_point=temporal_point,
+            limit=limit,
+            embedding=embedding,
+        )
+        graph_contexts = [_context_from_chunk(chunk) for chunk in chunks]
+        lexical_contexts = self._checkout_source_contexts(
+            query=query,
+            graph_results=[_benchmark_context_from_chunk(chunk) for chunk in chunks],
+            limit=limit,
+        )
+        assembly = ContextAssembly(
+            session_id="benchmark",
+            prompt="# Benchmark Checkout Context",
+            contexts=[*graph_contexts, *lexical_contexts],
+            replay_event_count=0,
+            context_counts={
+                "graph": len(graph_contexts),
+                "verbatim": len(lexical_contexts),
+                "packet_memory": 0,
+                "replay": 0,
+            },
+        )
+        checkout = build_memory_checkout(query=query, assembly=assembly)
+        return _benchmark_contexts_from_checkout(checkout)
+
+    def _checkout_source_contexts(
+        self,
+        *,
+        query: str,
+        graph_results: list[str],
+        limit: int,
+    ) -> list[Context]:
+        if self._lexical_retriever is None or not should_query_source_lane(query, limit=limit):
+            return []
+        lexical_query = source_lane_query(query, graph_results)
+        lexical_limit = source_lane_candidate_limit(query, limit=limit)
+        lexical_results = self._lexical_retriever.query(
+            lexical_query,
+            temporal_point=None,
+            limit=lexical_limit,
+        )
+        lexical_results = filter_superseded_preference_source_results(
+            graph_results,
+            lexical_results,
+        )
+        synthesis_bundle = source_synthesis_bundle(
+            query=query,
+            source_results=lexical_results,
+            limit=limit,
+        ) or absence_check_bundle(
+            query=query,
+            source_results=lexical_results,
+            limit=limit,
+        )
+        selected_results = reserve_source_lane(
+            lexical_results,
+            lexical_results,
+            query=query,
+            limit=limit,
+            synthesis_bundle=synthesis_bundle,
+        )
+        return [_context_from_source_text(text) for text in selected_results]
+
 
 class _StaticRetriever:
     """Return precomputed contexts using the Retriever protocol."""
@@ -683,6 +772,126 @@ def _benchmark_context_from_chunk(chunk: object) -> str:
     if isinstance(citation, str) and citation:
         return f"{content}\ncitation={citation}"
     return content
+
+
+def _context_from_chunk(chunk: object) -> Context:
+    """Convert a query result into a checkout assembly context."""
+    metadata: dict[str, object] = {}
+    citation = getattr(chunk, "citation", None)
+    if isinstance(citation, str) and citation:
+        metadata["citation"] = citation
+    score_explanation = getattr(chunk, "score_explanation", None)
+    if isinstance(score_explanation, dict):
+        metadata["score_explanation"] = score_explanation
+    entity_name = getattr(chunk, "entity_name", None)
+    if isinstance(entity_name, str) and entity_name:
+        metadata["entity_name"] = entity_name
+    entity_type = getattr(chunk, "entity_type", None)
+    if isinstance(entity_type, str) and entity_type:
+        metadata["entity_type"] = entity_type
+    return Context(
+        content=str(getattr(chunk, "content", "")),
+        source=str(getattr(chunk, "source", "graph")),
+        score=_numeric_attr(chunk, "score", default=0.0),
+        valid_from=getattr(chunk, "valid_from", None),
+        valid_to=getattr(chunk, "valid_to", None),
+        metadata=metadata or None,
+    )
+
+
+def _context_from_source_text(text: str) -> Context:
+    """Convert a source-lane benchmark string into checkout context."""
+    citation = _citation_from_text(text)
+    metadata: dict[str, object] = {"assembly_lane": "verbatim"}
+    if citation is not None:
+        metadata["citation"] = citation
+    score = 1.0
+    if "zaxy_synthesis_bundle=true" in text or "zaxy_absence_check=true" in text:
+        score = 1.2
+    return Context(
+        content=text,
+        source="verbatim",
+        score=score,
+        metadata=metadata,
+    )
+
+
+def _benchmark_contexts_from_checkout(checkout: object) -> list[str]:
+    """Format a Memory Checkout object as benchmark-scored contexts."""
+    quality = getattr(checkout, "quality", {})
+    diagnostics = getattr(checkout, "diagnostics", {})
+    evidence_plan = diagnostics.get("evidence_plan") if isinstance(diagnostics, dict) else None
+    evidence_status = (
+        diagnostics.get("evidence_plan_status") if isinstance(diagnostics, dict) else None
+    )
+    contexts = [
+        "\n".join(
+            [
+                "memory_checkout=true",
+                f"answerability={_dict_value(quality, 'answerability')}",
+                f"confidence={_dict_value(quality, 'confidence')}",
+                f"evidence_plan_mode={_dict_value(evidence_plan, 'mode')}",
+                f"evidence_plan_satisfied={_dict_value(evidence_status, 'satisfied')}",
+                f"required_source_groups={_dict_value(evidence_status, 'required_source_groups')}",
+                f"observed_source_groups={_dict_value(evidence_status, 'observed_source_groups')}",
+            ]
+        )
+    ]
+    for fact in getattr(checkout, "current_facts", []):
+        if isinstance(fact, dict):
+            contexts.append(_benchmark_context_from_checkout_item("current_fact", fact))
+    for item in getattr(checkout, "evidence", []):
+        if isinstance(item, dict):
+            contexts.append(_benchmark_context_from_checkout_item("evidence", item))
+    evidence_set = diagnostics.get("evidence_set") if isinstance(diagnostics, dict) else None
+    groups = evidence_set.get("groups") if isinstance(evidence_set, dict) else None
+    if isinstance(groups, list):
+        for group in groups:
+            if isinstance(group, dict):
+                contexts.append(
+                    "\n".join(
+                        [
+                            "checkout_evidence_group=true",
+                            f"source_id={_dict_value(group, 'source_id')}",
+                            f"evidence_count={_dict_value(group, 'evidence_count')}",
+                            f"citation_count={_dict_value(group, 'citation_count')}",
+                            f"snippet={_dict_value(group, 'snippet')}",
+                        ]
+                    )
+                )
+    return contexts
+
+
+def _benchmark_context_from_checkout_item(kind: str, item: dict[str, object]) -> str:
+    lines = [
+        f"checkout_item={kind}",
+        f"citation={_dict_value(item, 'citation')}",
+        f"source_lane={_dict_value(item, 'source_lane')}",
+        f"score={_dict_value(item, 'score')}",
+        str(item.get("content", "")),
+    ]
+    return "\n".join(lines)
+
+
+def _citation_from_text(text: str) -> str | None:
+    match = re.search(r"\bcitation=(?P<citation>\S+)", text)
+    if match:
+        return match.group("citation")
+    return None
+
+
+def _dict_value(value: object, key: str) -> object:
+    if isinstance(value, dict):
+        item = value.get(key)
+        return "" if item is None else item
+    return ""
+
+
+def _numeric_attr(value: object, name: str, *, default: float) -> float:
+    item = getattr(value, name, default)
+    if isinstance(item, int | float) and not isinstance(item, bool):
+        return float(item)
+    return default
 
 
 def corpus_from_event_log(eventlog: EventLog) -> tuple[BenchmarkChunk, ...]:
@@ -1583,12 +1792,19 @@ async def benchmark_live_retrievers(
     workload: BenchmarkWorkload | None = None,
     external_results: tuple[ExternalBenchmarkResult, ...] = (),
     progress_callback: Callable[[dict[str, object]], None] | None = None,
+    checkout_retriever: ZaxyCheckoutRetriever | None = None,
+    include_zaxy: bool = True,
 ) -> BenchmarkReport:
     """Benchmark sync baselines and live Zaxy retrieval in one event loop."""
     if runs <= 0:
         raise ValueError("runs must be positive")
     measurements: list[BenchmarkRun] = []
-    total = (len(retrievers) + 1) * len(cases) * runs
+    live_retrievers: dict[str, ZaxyRetriever] = {}
+    if include_zaxy:
+        live_retrievers["zaxy"] = zaxy_retriever
+    if checkout_retriever is not None:
+        live_retrievers["zaxy-checkout"] = checkout_retriever
+    total = (len(retrievers) + len(live_retrievers)) * len(cases) * runs
     completed = 0
     for backend, retriever in retrievers.items():
         for case in cases:
@@ -1621,35 +1837,36 @@ async def benchmark_live_retrievers(
                     total=total,
                 )
 
-    for case in cases:
-        for run in range(1, runs + 1):
-            start = time.perf_counter()
-            contexts = await zaxy_retriever.query_async(
-                case.query,
-                temporal_point=case.temporal_point,
-                limit=limit,
-            )
-            latency_ms = (time.perf_counter() - start) * 1000
-            score = score_retrieval(case, contexts)
-            measurements.append(
-                _measurement(
-                    backend="zaxy",
+    for backend, live_retriever in live_retrievers.items():
+        for case in cases:
+            for run in range(1, runs + 1):
+                start = time.perf_counter()
+                contexts = await live_retriever.query_async(
+                    case.query,
+                    temporal_point=case.temporal_point,
+                    limit=limit,
+                )
+                latency_ms = (time.perf_counter() - start) * 1000
+                score = score_retrieval(case, contexts)
+                measurements.append(
+                    _measurement(
+                        backend=backend,
+                        case=case,
+                        run=run,
+                        score=score,
+                        contexts=contexts,
+                        latency_ms=latency_ms,
+                    )
+                )
+                completed += 1
+                _emit_progress(
+                    progress_callback,
+                    backend=backend,
                     case=case,
                     run=run,
-                    score=score,
-                    contexts=contexts,
-                    latency_ms=latency_ms,
+                    completed=completed,
+                    total=total,
                 )
-            )
-            completed += 1
-            _emit_progress(
-                progress_callback,
-                backend="zaxy",
-                case=case,
-                run=run,
-                completed=completed,
-                total=total,
-            )
 
     report = BenchmarkReport(
         generated_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

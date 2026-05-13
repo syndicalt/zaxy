@@ -35,6 +35,7 @@ from zaxy.live_benchmark import (
     MarkdownVectorRetriever,
     RankFusionRetriever,
     VectorRetriever,
+    ZaxyCheckoutRetriever,
     ZaxyRetriever,
     _benchmark_projection_present,
     _build_source_lane_retriever,
@@ -84,6 +85,8 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "build_graph_traversal_workload" in cli
     assert "build_mempalace_workload_inventory" in cli
     assert "build_longmemeval_workload" in cli
+    assert "--zaxy-backend" in cli
+    assert "checkout_retriever=checkout_retriever" in cli
     assert "build_source_recall_workload" in cli
     assert "build_temporal_recall_workload" in cli
     assert "benchmark-inventory" in cli
@@ -978,6 +981,145 @@ async def test_live_benchmark_reports_progress_for_each_backend_case() -> None:
     assert report.summaries
     assert [item["backend"] for item in progress] == ["md", "zaxy"]
     assert all(item["completed"] <= item["total"] for item in progress)
+
+
+async def test_live_benchmark_can_include_memory_checkout_backend() -> None:
+    """Benchmarks should be able to exercise the production Memory Checkout path."""
+    case = BenchmarkCase(
+        name="checkout-aggregation",
+        query="How many weddings did I attend?",
+        expected_terms=("answerability=answer_from_memory", "evidence_plan_mode=multi_source_aggregation"),
+        identity_terms=("answer-1", "answer-2"),
+    )
+    progress: list[dict[str, object]] = []
+
+    class FakeZaxy:
+        async def query_async(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return ["plain zaxy context"]
+
+    class FakeCheckout:
+        async def query_async(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return [
+                "memory_checkout=true\n"
+                "answerability=answer_from_memory\n"
+                "evidence_plan_mode=multi_source_aggregation\n"
+                "source_id=answer-1\n"
+                "source_id=answer-2"
+            ]
+
+    report = await benchmark_live_retrievers(
+        {},
+        FakeZaxy(),  # type: ignore[arg-type]
+        (case,),
+        runs=1,
+        limit=1,
+        checkout_retriever=FakeCheckout(),  # type: ignore[arg-type]
+        progress_callback=progress.append,
+    )
+
+    by_backend = {run.backend: run for run in report.runs}
+    assert by_backend["zaxy-checkout"].score == 1.0
+    assert by_backend["zaxy-checkout"].identity_recall == 1.0
+    assert [item["backend"] for item in progress] == ["zaxy", "zaxy-checkout"]
+
+
+async def test_live_benchmark_can_run_checkout_backend_without_graph_backend() -> None:
+    """Checkout-only mode should make the benchmark target explicit."""
+    case = BenchmarkCase(
+        name="checkout-only",
+        query="What should I use?",
+        expected_terms=("memory_checkout=true",),
+    )
+
+    class FakeZaxy:
+        async def query_async(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return ["graph"]
+
+    class FakeCheckout:
+        async def query_async(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return ["memory_checkout=true"]
+
+    report = await benchmark_live_retrievers(
+        {},
+        FakeZaxy(),  # type: ignore[arg-type]
+        (case,),
+        runs=1,
+        checkout_retriever=FakeCheckout(),  # type: ignore[arg-type]
+        include_zaxy=False,
+    )
+
+    assert [run.backend for run in report.runs] == ["zaxy-checkout"]
+
+
+async def test_zaxy_checkout_retriever_returns_checkout_contract() -> None:
+    """The checkout benchmark backend should expose model-facing diagnostics."""
+    corpus = (
+        BenchmarkChunk(
+            "answer-1",
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "session_id=answer-1 I attended Rachel and Mike's wedding."
+            ),
+        ),
+        BenchmarkChunk(
+            "answer-2",
+            (
+                "citation=eventloom://benchmark/events/2#abc "
+                "session_id=answer-2 I attended Emily and Sarah's wedding."
+            ),
+        ),
+    )
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, limit, embedding
+            return [SimpleNamespace(content="uncited graph summary", source="keyword", score=0.99)]
+
+    retriever = ZaxyCheckoutRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=BM25Retriever(corpus),
+    )
+
+    results = await retriever.query_async("How many weddings did I attend?", limit=5)
+    output = "\n".join(results)
+
+    assert results[0].startswith("memory_checkout=true")
+    assert "answerability=answer_from_memory" in output
+    assert "evidence_plan_mode=multi_source_aggregation" in output
+    assert "evidence_plan_satisfied=True" in output
+    assert "source_id=answer-1" in output
+    assert "source_id=answer-2" in output
 
 
 async def test_zaxy_retriever_filters_stale_preference_lexical_backfill() -> None:

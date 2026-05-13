@@ -89,6 +89,7 @@ from zaxy.live_benchmark import (
     MarkdownRetriever,
     MarkdownVectorRetriever,
     VectorRetriever,
+    ZaxyCheckoutRetriever,
     _build_source_lane_retriever,
     benchmark_live_retrievers,
     benchmark_projection_cache_key,
@@ -1894,8 +1895,13 @@ def benchmark(
         "--baseline-backends",
         help="Comma-separated non-Zaxy baselines to run: md,bm25,vector,md+vector,centroid",
     ),
+    zaxy_backend: str = typer.Option(
+        "graph",
+        "--zaxy-backend",
+        help="Zaxy backend to benchmark: graph, checkout, or both",
+    ),
 ) -> None:
-    """Run live retrieval benchmarks against md/BM25/vector/md+vector/Zaxy."""
+    """Run live retrieval benchmarks against baseline memories and Zaxy."""
     import asyncio
 
     from zaxy.config import get_settings
@@ -2051,6 +2057,12 @@ def benchmark(
                 projection_cache_key=projection_cache_key,
             )
             try:
+                checkout_retriever: ZaxyCheckoutRetriever | None = None
+                zaxy_backend_name = zaxy_backend.casefold()
+                if zaxy_backend_name not in {"graph", "checkout", "both"}:
+                    raise typer.BadParameter("--zaxy-backend must be graph, checkout, or both")
+                if zaxy_backend_name in {"checkout", "both"}:
+                    checkout_retriever = zaxy_retriever.as_checkout_retriever()
                 retrievers = _build_benchmark_baselines(
                     corpus,
                     provider,
@@ -2065,6 +2077,8 @@ def benchmark(
                     embedding_provider=provider_label,
                     workload=benchmark_workload,
                     external_results=_load_external_results(external_results),
+                    checkout_retriever=checkout_retriever,
+                    include_zaxy=zaxy_backend_name in {"graph", "both"},
                     progress_callback=(
                         lambda item: typer.echo(
                             (
