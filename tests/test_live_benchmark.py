@@ -11,6 +11,7 @@ from typer.testing import CliRunner
 from zaxy.__main__ import app
 from zaxy.benchmark import build_competitive_event_log, competitive_cases
 from zaxy.embedding import HashEmbeddingProvider
+from zaxy.event import EventLog
 from zaxy.live_benchmark import (
     CONSOLIDATION_WORKLOAD_VERSION,
     CONTEXT_COLLAPSE_WORKLOAD_VERSION,
@@ -25,6 +26,7 @@ from zaxy.live_benchmark import (
     BenchmarkChunk,
     BenchmarkReport,
     BenchmarkSummary,
+    BenchmarkWorkload,
     BM25Retriever,
     CachedEmbeddingProvider,
     CentroidConsolidationRetriever,
@@ -36,6 +38,7 @@ from zaxy.live_benchmark import (
     _benchmark_projection_present,
     _mark_benchmark_projection,
     benchmark_live_retrievers,
+    benchmark_projection_cache_key,
     benchmark_retrievers,
     build_benchmark_suite_workload,
     build_consolidation_collapse_workload,
@@ -82,7 +85,9 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "--embedding-cache" in cli
     assert "--progress" in cli
     assert "--reuse-projection" in cli
-    assert "projection_cache_key = f\"{benchmark_workload.sha256}:{provider_label}\"" in cli
+    assert "--baseline-backends" in cli
+    assert "_build_benchmark_baselines" in cli
+    assert "benchmark_projection_cache_key" in cli
     assert "--workload" in script
     assert "--dataset" in script
     assert "--subjects" in script
@@ -742,6 +747,54 @@ async def test_benchmark_projection_marker_round_trips() -> None:
     assert marker_call[1]["event_count"] == 2
     assert marker_call[1]["latest_seq"] == 2
     assert marker_call[1]["latest_hash"] == "def"
+
+
+def test_benchmark_projection_cache_key_ignores_eventloom_seal(tmp_path: Path) -> None:
+    """Projection reuse should survive regenerated Eventloom timestamps and hashes."""
+    first_log = EventLog(tmp_path / "first.jsonl")
+    second_log = EventLog(tmp_path / "second.jsonl")
+    first_log.append(
+        "transcript.turn",
+        actor="user",
+        payload={"content": "Stable benchmark memory."},
+        timestamp="2024-01-01T00:00:00Z",
+    )
+    second_log.append(
+        "transcript.turn",
+        actor="user",
+        payload={"content": "Stable benchmark memory."},
+        timestamp="2024-01-02T00:00:00Z",
+    )
+    cases = (
+        BenchmarkCase(
+            name="stable",
+            query="What memory is stable?",
+            expected_terms=("Stable benchmark memory",),
+        ),
+    )
+    first_workload = BenchmarkWorkload.from_event_log(
+        first_log,
+        cases,
+        version="fixture-v1",
+    )
+    second_workload = BenchmarkWorkload.from_event_log(
+        second_log,
+        cases,
+        version="fixture-v1",
+    )
+
+    assert first_workload.sha256 != second_workload.sha256
+    assert benchmark_projection_cache_key(
+        first_log,
+        cases,
+        first_workload,
+        "hash:1536",
+    ) == benchmark_projection_cache_key(
+        second_log,
+        cases,
+        second_workload,
+        "hash:1536",
+    )
 
 
 async def test_live_benchmark_reports_progress_for_each_backend_case() -> None:

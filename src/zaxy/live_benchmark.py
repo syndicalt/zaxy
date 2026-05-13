@@ -1553,6 +1553,48 @@ def workload_fingerprint(
     return hashlib.sha256(encoded).hexdigest()
 
 
+def benchmark_projection_cache_key(
+    eventlog: EventLog,
+    cases: tuple[BenchmarkCase, ...],
+    workload: BenchmarkWorkload,
+    provider_label: str,
+) -> str:
+    """Return a stable cache key for reusable benchmark graph projections.
+
+    Eventloom timestamps and hash-chain fields are intentionally excluded
+    because generated benchmark logs are rebuilt in temporary directories on
+    every CLI invocation. Projection safety depends on stable event semantics,
+    workload identity, cases, and embedding provider, not the transient log
+    seal created for that invocation.
+    """
+    payload = {
+        "provider": provider_label,
+        "workload": {
+            "version": workload.version,
+            "subjects": workload.subjects,
+            "event_count": workload.event_count,
+            "case_count": workload.case_count,
+            "documents": workload.documents,
+            "sessions": workload.sessions,
+            "lanes": workload.lanes,
+        },
+        "events": [
+            {
+                "seq": event.seq,
+                "type": event.type,
+                "actor": event.actor,
+                "thread": event.thread,
+                "payload": event.payload,
+                "security": event.security.model_dump(mode="json") if event.security else None,
+            }
+            for event in eventlog.read_all()
+        ],
+        "cases": [asdict(case) for case in cases],
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def benchmark_retrievers(
     retrievers: dict[str, Retriever],
     cases: tuple[BenchmarkCase, ...],

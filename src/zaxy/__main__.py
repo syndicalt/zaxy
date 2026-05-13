@@ -22,6 +22,7 @@ import time
 from contextlib import suppress
 from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 
 import typer
 
@@ -83,6 +84,7 @@ from zaxy.live_benchmark import (
     MarkdownVectorRetriever,
     VectorRetriever,
     benchmark_live_retrievers,
+    benchmark_projection_cache_key,
     build_benchmark_suite_workload,
     build_consolidation_collapse_workload,
     build_context_collapse_workload,
@@ -1776,6 +1778,44 @@ def packet_project(
     )
 
 
+def _parse_benchmark_baselines(value: str, *, allow_centroid: bool) -> tuple[str, ...]:
+    """Parse the benchmark baseline selection string."""
+    allowed = {"md", "bm25", "vector", "md+vector"}
+    if allow_centroid:
+        allowed.add("centroid")
+    selected = tuple(dict.fromkeys(part.strip() for part in value.split(",") if part.strip()))
+    if not selected:
+        raise typer.BadParameter("--baseline-backends must include at least one backend")
+    invalid = sorted(set(selected) - allowed)
+    if invalid:
+        allowed_text = ", ".join(sorted(allowed))
+        raise typer.BadParameter(
+            f"Unsupported baseline backend(s): {', '.join(invalid)}. Allowed: {allowed_text}"
+        )
+    return selected
+
+
+def _build_benchmark_baselines(
+    corpus: tuple[Any, ...],
+    provider: Any,
+    selected: tuple[str, ...],
+) -> dict[str, Any]:
+    """Build only the requested non-Zaxy benchmark baselines."""
+    retrievers: dict[str, Any] = {}
+    for backend in selected:
+        if backend == "md":
+            retrievers[backend] = MarkdownRetriever(corpus)
+        elif backend == "bm25":
+            retrievers[backend] = BM25Retriever(corpus)
+        elif backend == "vector":
+            retrievers[backend] = VectorRetriever(corpus, provider)
+        elif backend == "md+vector":
+            retrievers[backend] = MarkdownVectorRetriever(corpus, provider)
+        elif backend == "centroid":
+            retrievers[backend] = CentroidConsolidationRetriever(corpus, provider)
+    return retrievers
+
+
 @app.command()
 def benchmark(
     output_dir: Path = typer.Option(  # noqa: B008
@@ -1838,6 +1878,11 @@ def benchmark(
         False,
         "--reuse-projection",
         help="Reuse an existing benchmark graph projection for the same workload and embedding provider",
+    ),
+    baseline_backends: str = typer.Option(
+        "md,bm25,vector,md+vector",
+        "--baseline-backends",
+        help="Comma-separated non-Zaxy baselines to run: md,bm25,vector,md+vector,centroid",
     ),
 ) -> None:
     """Run live retrieval benchmarks against md/BM25/vector/md+vector/Zaxy."""
@@ -1939,7 +1984,16 @@ def benchmark(
                     "or 'longmemeval'"
                 )
             corpus = corpus_from_event_log(eventlog)
-            projection_cache_key = f"{benchmark_workload.sha256}:{provider_label}"
+            selected_baselines = _parse_benchmark_baselines(
+                baseline_backends,
+                allow_centroid=workload == "consolidation",
+            )
+            projection_cache_key = benchmark_projection_cache_key(
+                eventlog,
+                cases,
+                benchmark_workload,
+                provider_label,
+            )
             zaxy_retriever, graph = await build_live_zaxy_retriever(
                 eventlog,
                 provider,
@@ -1952,18 +2006,13 @@ def benchmark(
                 projection_cache_key=projection_cache_key,
             )
             try:
+                retrievers = _build_benchmark_baselines(
+                    corpus,
+                    provider,
+                    selected_baselines,
+                )
                 report = await benchmark_live_retrievers(
-                    {
-                        "md": MarkdownRetriever(corpus),
-                        "bm25": BM25Retriever(corpus),
-                        "vector": VectorRetriever(corpus, provider),
-                        "md+vector": MarkdownVectorRetriever(corpus, provider),
-                        **(
-                            {"centroid": CentroidConsolidationRetriever(corpus, provider)}
-                            if workload == "consolidation"
-                            else {}
-                        ),
-                    },
+                    retrievers,
                     zaxy_retriever,
                     cases,
                     runs=runs,
