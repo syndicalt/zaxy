@@ -33,6 +33,8 @@ from zaxy.live_benchmark import (
     RankFusionRetriever,
     VectorRetriever,
     ZaxyRetriever,
+    _benchmark_projection_present,
+    _mark_benchmark_projection,
     benchmark_live_retrievers,
     benchmark_retrievers,
     build_benchmark_suite_workload,
@@ -79,6 +81,8 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "lexical_retriever=BM25Retriever(corpus)" in cli
     assert "--embedding-cache" in cli
     assert "--progress" in cli
+    assert "--reuse-projection" in cli
+    assert "projection_cache_key = f\"{benchmark_workload.sha256}:{provider_label}\"" in cli
     assert "--workload" in script
     assert "--dataset" in script
     assert "--subjects" in script
@@ -707,6 +711,37 @@ def test_cached_embedding_provider_batches_and_atomically_flushes(tmp_path: Path
         "gamma": [5.0, 1.0, 0.0],
     }
     assert not cache_path.with_suffix(".tmp").exists()
+
+
+async def test_benchmark_projection_marker_round_trips() -> None:
+    """Projection markers should make expensive benchmark ingestion reusable."""
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    class FakeDriver:
+        async def execute_query(self, cypher: str, **kwargs: object) -> tuple[list[object], None, None]:
+            calls.append((cypher, kwargs))
+            if "MATCH (p:ZaxyBenchmarkProjection" in cypher:
+                return ([{"key": kwargs["key"]}] if kwargs["key"] == "present" else [], None, None)
+            return ([], None, None)
+
+    graph = SimpleNamespace(_driver=FakeDriver())
+
+    assert await _benchmark_projection_present(graph, "present") is True  # type: ignore[arg-type]
+    assert await _benchmark_projection_present(graph, "missing") is False  # type: ignore[arg-type]
+    await _mark_benchmark_projection(
+        graph,  # type: ignore[arg-type]
+        "present",
+        [
+            SimpleNamespace(seq=1, hash="abc"),
+            SimpleNamespace(seq=2, hash="def"),
+        ],
+    )
+
+    marker_call = calls[-1]
+    assert "MERGE (p:ZaxyBenchmarkProjection {key: $key})" in marker_call[0]
+    assert marker_call[1]["event_count"] == 2
+    assert marker_call[1]["latest_seq"] == 2
+    assert marker_call[1]["latest_hash"] == "def"
 
 
 async def test_live_benchmark_reports_progress_for_each_backend_case() -> None:

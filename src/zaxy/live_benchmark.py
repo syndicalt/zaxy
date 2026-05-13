@@ -11,7 +11,7 @@ import re
 import statistics
 import time
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -1720,6 +1720,8 @@ async def build_live_zaxy_retriever(
     neo4j_password: str = "testpassword",
     reset_graph: bool = False,
     lexical_retriever: Retriever | None = None,
+    reuse_projection: bool = False,
+    projection_cache_key: str | None = None,
 ) -> tuple[ZaxyRetriever, GraphStore]:
     """Ingest the benchmark event log into Neo4j and return a live retriever.
 
@@ -1730,11 +1732,59 @@ async def build_live_zaxy_retriever(
     await graph.init_schema()
     if reset_graph:
         assert graph._driver is not None
-        await graph._driver.execute_query("MATCH (n:Entity) DETACH DELETE n")
-    for event in eventlog.read_all():
+        await graph._driver.execute_query("MATCH (n) DETACH DELETE n")
+    if (
+        reuse_projection
+        and projection_cache_key is not None
+        and not reset_graph
+        and await _benchmark_projection_present(graph, projection_cache_key)
+    ):
+        return ZaxyRetriever(QueryRouter(graph), provider, lexical_retriever=lexical_retriever), graph
+    events = eventlog.read_all()
+    for event in events:
         extraction = embed_extraction(extract(event), provider)
         await graph.upsert_extraction(extraction)
+    if projection_cache_key is not None:
+        await _mark_benchmark_projection(graph, projection_cache_key, events)
     return ZaxyRetriever(QueryRouter(graph), provider, lexical_retriever=lexical_retriever), graph
+
+
+async def _benchmark_projection_present(graph: GraphStore, projection_cache_key: str) -> bool:
+    """Return whether a benchmark workload projection is already present."""
+    assert graph._driver is not None
+    records, _summary, _keys = await graph._driver.execute_query(
+        """
+        MATCH (p:ZaxyBenchmarkProjection {key: $key})
+        RETURN p.key AS key
+        LIMIT 1
+        """,
+        key=projection_cache_key,
+    )
+    return bool(records)
+
+
+async def _mark_benchmark_projection(
+    graph: GraphStore,
+    projection_cache_key: str,
+    events: Sequence[object],
+) -> None:
+    """Persist a benchmark projection marker for safe reuse."""
+    assert graph._driver is not None
+    latest = events[-1] if events else None
+    await graph._driver.execute_query(
+        """
+        MERGE (p:ZaxyBenchmarkProjection {key: $key})
+        ON CREATE SET p.created_at = datetime()
+        SET p.updated_at = datetime(),
+            p.event_count = $event_count,
+            p.latest_seq = $latest_seq,
+            p.latest_hash = $latest_hash
+        """,
+        key=projection_cache_key,
+        event_count=len(events),
+        latest_seq=getattr(latest, "seq", None),
+        latest_hash=getattr(latest, "hash", None),
+    )
 
 
 def write_benchmark_report(

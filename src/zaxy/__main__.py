@@ -1834,6 +1834,11 @@ def benchmark(
         help="Optional JSON cache for benchmark embeddings across runs",
     ),
     progress: bool = typer.Option(False, "--progress", help="Print benchmark progress to stderr"),
+    reuse_projection: bool = typer.Option(
+        False,
+        "--reuse-projection",
+        help="Reuse an existing benchmark graph projection for the same workload and embedding provider",
+    ),
 ) -> None:
     """Run live retrieval benchmarks against md/BM25/vector/md+vector/Zaxy."""
     import asyncio
@@ -1934,6 +1939,7 @@ def benchmark(
                     "or 'longmemeval'"
                 )
             corpus = corpus_from_event_log(eventlog)
+            projection_cache_key = f"{benchmark_workload.sha256}:{provider_label}"
             zaxy_retriever, graph = await build_live_zaxy_retriever(
                 eventlog,
                 provider,
@@ -1942,6 +1948,8 @@ def benchmark(
                 neo4j_password=neo4j_password,
                 reset_graph=reset_graph,
                 lexical_retriever=BM25Retriever(corpus),
+                reuse_projection=reuse_projection,
+                projection_cache_key=projection_cache_key,
             )
             try:
                 report = await benchmark_live_retrievers(
