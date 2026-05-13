@@ -50,7 +50,13 @@ from zaxy.doctor import (
     run_doctor,
 )
 from zaxy.domain import derive_domain, domain_default_session
-from zaxy.embedding import EmbeddingProvider, HashEmbeddingProvider, OpenAIEmbeddingProvider
+from zaxy.embedding import (
+    EmbeddingProvider,
+    HashEmbeddingProvider,
+    LocalHTTPEmbeddingProvider,
+    OpenAIEmbeddingProvider,
+    SentenceTransformersEmbeddingProvider,
+)
 from zaxy.event import Event, EventLog
 from zaxy.extract import extract
 from zaxy.extract_templates import ExtractorTemplateSpec, render_extractor_template
@@ -83,6 +89,7 @@ from zaxy.live_benchmark import (
     MarkdownRetriever,
     MarkdownVectorRetriever,
     VectorRetriever,
+    _build_source_lane_retriever,
     benchmark_live_retrievers,
     benchmark_projection_cache_key,
     build_benchmark_suite_workload,
@@ -1822,7 +1829,10 @@ def benchmark(
         Path("reports/benchmarks"),
         help="Directory for JSON and Markdown benchmark reports",
     ),
-    embedding_provider: str = typer.Option("openai", help="Embedding provider: openai or hash"),
+    embedding_provider: str = typer.Option(
+        "openai",
+        help="Embedding provider: openai, hash, local-http, or sentence-transformers",
+    ),
     runs: int = typer.Option(5, min=1, help="Measured runs per backend/case"),
     limit: int = typer.Option(10, min=1, max=50, help="Returned contexts per query"),
     neo4j_uri: str = typer.Option("bolt://localhost:7688", help="Benchmark Neo4j Bolt URI"),
@@ -1906,8 +1916,43 @@ def benchmark(
     elif provider_name == "hash":
         provider = HashEmbeddingProvider(dimension=settings.embedding_dimension)
         provider_label = f"hash:{settings.embedding_dimension}"
+    elif provider_name in {"local-http", "local_http", "http"}:
+        if not settings.embedding_http_url:
+            raise typer.BadParameter(
+                "EMBEDDING_HTTP_URL is required for local-http benchmarks"
+            )
+        provider = LocalHTTPEmbeddingProvider(
+            url=settings.embedding_http_url,
+            model=settings.embedding_http_model,
+            api_key=settings.embedding_http_api_key,
+            dimension=settings.embedding_dimension,
+        )
+        label_model = settings.embedding_http_model or settings.embedding_http_url
+        provider_label = f"local-http:{label_model}:{settings.embedding_dimension}"
+    elif provider_name in {
+        "sentence-transformers",
+        "sentence_transformers",
+        "sentence-transformer",
+        "sentence_transformer",
+        "local-model",
+        "local_model",
+    }:
+        try:
+            provider = SentenceTransformersEmbeddingProvider(
+                model_name=settings.embedding_sentence_transformer_model,
+                dimension=settings.embedding_dimension,
+            )
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        provider_label = (
+            "sentence-transformers:"
+            f"{settings.embedding_sentence_transformer_model}:{settings.embedding_dimension}"
+        )
     else:
-        raise typer.BadParameter("embedding provider must be 'openai' or 'hash'")
+        raise typer.BadParameter(
+            "embedding provider must be 'openai', 'hash', 'local-http', "
+            "or 'sentence-transformers'"
+        )
     provider = CachedEmbeddingProvider(provider, cache_path=embedding_cache)
 
     async def _run() -> None:
@@ -2001,7 +2046,7 @@ def benchmark(
                 neo4j_user=neo4j_user,
                 neo4j_password=neo4j_password,
                 reset_graph=reset_graph,
-                lexical_retriever=BM25Retriever(corpus),
+                lexical_retriever=_build_source_lane_retriever(corpus, provider),
                 reuse_projection=reuse_projection,
                 projection_cache_key=projection_cache_key,
             )

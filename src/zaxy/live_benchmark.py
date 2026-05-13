@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Protocol
 
 from zaxy.benchmark import BenchmarkCase, RetrievalScore, _event_context, score_retrieval
-from zaxy.embedding import EmbeddingProvider, embed_extraction
+from zaxy.embedding import EmbeddingProvider, HashEmbeddingProvider, embed_extraction
 from zaxy.event import EventLog
 from zaxy.extract import extract
 from zaxy.graph import GraphStore
@@ -530,6 +530,27 @@ class CentroidConsolidationRetriever:
         if _cosine(query_embedding, self._centroid) <= 0.0:
             return []
         return [self._representative]
+
+
+def _build_source_lane_retriever(
+    corpus: tuple[BenchmarkChunk, ...],
+    provider: EmbeddingProvider,
+) -> Retriever:
+    """Build the verbatim source lane retriever used to backfill graph context.
+
+    Source recall needs exact lexical matches and semantic near-neighbors. BM25
+    keeps entity names, identifiers, and citations sharp; vector retrieval adds
+    the synonym bridge needed for natural-language model questions.
+    """
+    if isinstance(provider, HashEmbeddingProvider):
+        return BM25Retriever(corpus)
+    return RankFusionRetriever(
+        {
+            "bm25": BM25Retriever(corpus),
+            "vector": VectorRetriever(corpus, provider),
+        },
+        weights={"bm25": 1.25, "vector": 1.0},
+    )
 
 
 class ZaxyRetriever:

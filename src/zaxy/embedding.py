@@ -195,6 +195,55 @@ class LocalHTTPEmbeddingProvider:
         return vector
 
 
+class SentenceTransformersEmbeddingProvider:
+    """In-process local semantic embedding provider.
+
+    This provider is optional and dependency-gated. It gives local deployments a
+    real semantic vector signal without routing benchmark or production queries
+    through a hosted API.
+    """
+
+    def __init__(
+        self,
+        model_name: str,
+        *,
+        dimension: int,
+        model: Any | None = None,
+    ) -> None:
+        if not model_name:
+            raise ValueError("EMBEDDING_SENTENCE_TRANSFORMER_MODEL is required")
+        if dimension <= 0:
+            raise ValueError("embedding dimension must be positive")
+        self.dimension = dimension
+        self.model_name = model_name
+        self._model = model or _load_sentence_transformer(model_name)
+
+    def embed(self, text: str) -> list[float]:
+        """Embed text with a local sentence-transformers model."""
+        raw_vector = self._model.encode(text, normalize_embeddings=True)
+        if hasattr(raw_vector, "tolist"):
+            raw_vector = raw_vector.tolist()
+        vector = [float(value) for value in raw_vector]
+        if len(vector) != self.dimension:
+            raise ValueError(
+                f"embedding dimension mismatch: expected {self.dimension}, got {len(vector)}"
+            )
+        return vector
+
+
+def _load_sentence_transformer(model_name: str) -> Any:
+    """Load a sentence-transformers model with an actionable dependency error."""
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError as exc:  # pragma: no cover - exercised through factory behavior
+        raise ValueError(
+            "sentence-transformers is required when "
+            "EMBEDDING_PROVIDER=sentence-transformers; install "
+            "zaxy-memory[local-embeddings]"
+        ) from exc
+    return SentenceTransformer(model_name)
+
+
 def build_embedding_provider(settings: Any) -> EmbeddingProvider | None:
     """Build the configured embedding provider."""
     if not settings.embedding_enabled:
@@ -221,7 +270,22 @@ def build_embedding_provider(settings: Any) -> EmbeddingProvider | None:
             api_key=settings.embedding_http_api_key,
             dimension=settings.embedding_dimension,
         )
-    raise ValueError("EMBEDDING_PROVIDER must be 'hash', 'openai', or 'local-http'")
+    if provider in {
+        "sentence-transformers",
+        "sentence_transformers",
+        "sentence-transformer",
+        "sentence_transformer",
+        "local-model",
+        "local_model",
+    }:
+        return SentenceTransformersEmbeddingProvider(
+            model_name=settings.embedding_sentence_transformer_model,
+            dimension=settings.embedding_dimension,
+        )
+    raise ValueError(
+        "EMBEDDING_PROVIDER must be 'hash', 'openai', 'local-http', "
+        "or 'sentence-transformers'"
+    )
 
 
 def entity_embedding_text(entity: ExtractedEntity) -> str:

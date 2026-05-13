@@ -486,12 +486,16 @@ groups:
 | `CONTEXT_VERBATIM_ENABLED` | `true` | Include exact Eventloom source recall in assembled context |
 | `CONTEXT_VERBATIM_SLOTS` | `1` | Assembled context slots reserved for verbatim source recall |
 | `EMBEDDING_ENABLED` | `true` | Generate embeddings for vector search |
-| `EMBEDDING_PROVIDER` | `hash` | Embedding provider: `hash` or `openai` |
+| `EMBEDDING_PROVIDER` | `hash` | Embedding provider: `hash`, `openai`, `local-http`, or `sentence-transformers` |
 | `EMBEDDING_DIMENSION` | `1536` | Vector dimension; must match the Neo4j vector index |
 | `OPENAI_API_KEY` | unset | OpenAI API key for hosted embeddings |
 | `OPENAI_API_KEY_FILE` | unset | File containing OpenAI API key |
 | `OPENAI_EMBEDDING_MODEL` | `text-embedding-3-small` | OpenAI embedding model |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible API base URL |
+| `EMBEDDING_HTTP_URL` | unset | Local HTTP embedding endpoint for `local-http` |
+| `EMBEDDING_HTTP_MODEL` | unset | Optional local HTTP embedding model name |
+| `EMBEDDING_HTTP_API_KEY` | unset | Optional bearer token for local HTTP embeddings |
+| `EMBEDDING_SENTENCE_TRANSFORMER_MODEL` | `sentence-transformers/all-MiniLM-L6-v2` | Local model used by `sentence-transformers`; install `zaxy-memory[local-embeddings]` |
 
 ### CLI Commands
 

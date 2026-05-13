@@ -305,6 +305,10 @@ class Settings(BaseSettings):
         default=None,
         description="Optional bearer token for local HTTP embedding endpoints",
     )
+    embedding_sentence_transformer_model: str = Field(
+        default="sentence-transformers/all-MiniLM-L6-v2",
+        description="Local sentence-transformers model name for semantic embeddings",
+    )
 
     # ------------------------------------------------------------------
     # Reranking

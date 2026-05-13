@@ -12,6 +12,7 @@ from zaxy.embedding import (
     HashEmbeddingProvider,
     LocalHTTPEmbeddingProvider,
     OpenAIEmbeddingProvider,
+    SentenceTransformersEmbeddingProvider,
     build_embedding_provider,
     embed_extraction,
     entity_embedding_text,
@@ -143,6 +144,35 @@ class TestEmbeddingProviderFactory:
         provider = build_embedding_provider(settings)
 
         assert isinstance(provider, LocalHTTPEmbeddingProvider)
+
+    def test_factory_returns_sentence_transformers_provider_when_configured(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        class FakeModel:
+            def encode(
+                self,
+                text: str,
+                *,
+                normalize_embeddings: bool,
+            ) -> list[float]:
+                del text, normalize_embeddings
+                return [0.1, 0.2, 0.3]
+
+        def fake_loader(model_name: str) -> FakeModel:
+            assert model_name == "sentence-transformers/all-MiniLM-L6-v2"
+            return FakeModel()
+
+        monkeypatch.setattr("zaxy.embedding._load_sentence_transformer", fake_loader)
+        settings = Settings(
+            _env_file=None,
+            embedding_provider="sentence-transformers",
+            embedding_dimension=3,
+        )
+
+        provider = build_embedding_provider(settings)
+
+        assert isinstance(provider, SentenceTransformersEmbeddingProvider)
 
     def test_factory_requires_local_http_url(self) -> None:
         settings = Settings(
@@ -453,3 +483,57 @@ class TestLocalHTTPEmbeddingProvider:
         )
 
         assert provider.embed("Ship MVP") == [0.1, 0.2, 0.3]
+
+
+class TestSentenceTransformersEmbeddingProvider:
+    """Tests for the optional in-process local semantic embedding adapter."""
+
+    def test_embed_uses_sentence_transformers_model(self) -> None:
+        captured: dict[str, object] = {}
+
+        class FakeVector:
+            def tolist(self) -> list[float]:
+                return [0.1, 0.2, 0.3]
+
+        class FakeModel:
+            def encode(
+                self,
+                text: str,
+                *,
+                normalize_embeddings: bool,
+            ) -> FakeVector:
+                captured["text"] = text
+                captured["normalize_embeddings"] = normalize_embeddings
+                return FakeVector()
+
+        provider = SentenceTransformersEmbeddingProvider(
+            model_name="sentence-transformers/all-MiniLM-L6-v2",
+            dimension=3,
+            model=FakeModel(),
+        )
+
+        assert provider.embed("doctor specialist") == [0.1, 0.2, 0.3]
+        assert captured == {
+            "text": "doctor specialist",
+            "normalize_embeddings": True,
+        }
+
+    def test_embed_rejects_unexpected_dimension(self) -> None:
+        class FakeModel:
+            def encode(
+                self,
+                text: str,
+                *,
+                normalize_embeddings: bool,
+            ) -> list[float]:
+                del text, normalize_embeddings
+                return [0.1, 0.2]
+
+        provider = SentenceTransformersEmbeddingProvider(
+            model_name="sentence-transformers/all-MiniLM-L6-v2",
+            dimension=3,
+            model=FakeModel(),
+        )
+
+        with pytest.raises(ValueError, match="dimension"):
+            provider.embed("doctor specialist")

@@ -37,6 +37,7 @@ from zaxy.live_benchmark import (
     VectorRetriever,
     ZaxyRetriever,
     _benchmark_projection_present,
+    _build_source_lane_retriever,
     _mark_benchmark_projection,
     _source_lane_candidate_limit,
     _source_lane_query,
@@ -72,7 +73,9 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "def benchmark(" in cli
     assert "def benchmark_compare(" in cli
     assert "compare_benchmark_reports" in cli
-    assert 'embedding_provider: str = typer.Option("openai"' in cli
+    assert "embedding_provider: str = typer.Option(" in cli
+    assert "local-http" in cli
+    assert "sentence-transformers" in cli
     assert "build_live_zaxy_retriever" in cli
     assert "build_statistical_event_log" in cli
     assert "build_frozen_statistical_workload" in cli
@@ -85,7 +88,7 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "build_source_recall_workload" in cli
     assert "build_temporal_recall_workload" in cli
     assert "benchmark-inventory" in cli
-    assert "lexical_retriever=BM25Retriever(corpus)" in cli
+    assert "lexical_retriever=_build_source_lane_retriever(corpus, provider)" in cli
     assert "--embedding-cache" in cli
     assert "--progress" in cli
     assert "--reuse-projection" in cli
@@ -2069,6 +2072,47 @@ def test_cached_embedding_provider_reuses_repeated_text() -> None:
     assert provider.embed("other") == [5.0, 1.0]
     assert provider.cache_size == 2
     assert inner.calls == 2
+
+
+def test_source_lane_retriever_uses_semantic_candidates_when_bm25_misses() -> None:
+    """Verbatim source recall should not be limited to lexical overlap."""
+    corpus = (
+        BenchmarkChunk("target", "I met with my primary care physician yesterday."),
+        BenchmarkChunk("distractor", "I bought a lamp for the office yesterday."),
+    )
+
+    class FakeProvider:
+        dimension = 2
+
+        def embed(self, text: str) -> list[float]:
+            lowered = text.casefold()
+            if "doctor" in lowered or "physician" in lowered:
+                return [1.0, 0.0]
+            return [0.0, 1.0]
+
+    bm25_results = BM25Retriever(corpus).query("doctor?", limit=2)
+    source_results = _build_source_lane_retriever(corpus, FakeProvider()).query(
+        "doctor?",
+        limit=2,
+    )
+
+    assert not any("physician" in result for result in bm25_results)
+    assert "primary care physician" in source_results[0]
+
+
+def test_source_lane_retriever_keeps_hash_provider_lexical() -> None:
+    """Hash embeddings should not be treated as independent semantic evidence."""
+    corpus = (
+        BenchmarkChunk("target", "I met with my primary care physician yesterday."),
+        BenchmarkChunk("distractor", "I bought a lamp for the office yesterday."),
+    )
+
+    source_results = _build_source_lane_retriever(
+        corpus,
+        HashEmbeddingProvider(dimension=16),
+    ).query("doctor?", limit=2)
+
+    assert source_results == []
 
 
 def test_live_benchmark_script_help_mentions_frozen_workload() -> None:
