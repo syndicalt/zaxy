@@ -100,6 +100,26 @@ def test_context_assembly_policy_expands_verbatim_lane_for_aggregation_queries()
     assert [context.source for context in contexts].count("verbatim") == 4
 
 
+def test_context_assembly_policy_overfetches_source_candidates_for_aggregation() -> None:
+    """Source-sensitive queries should retrieve more candidates than final prompt slots."""
+    policy = ContextAssemblyPolicy(verbatim_slots=1)
+
+    assert (
+        policy.verbatim_candidate_limit(
+            query="How many properties did I visit before making an offer?",
+            limit=8,
+        )
+        == 36
+    )
+
+
+def test_context_assembly_policy_uses_limit_for_direct_fact_source_candidates() -> None:
+    """Direct fact queries should not pay source-lane overfetch cost."""
+    policy = ContextAssemblyPolicy(verbatim_slots=1)
+
+    assert policy.verbatim_candidate_limit(query="What is the current task?", limit=8) == 8
+
+
 def test_context_assembly_policy_expands_verbatim_lane_for_absence_queries() -> None:
     """Absence checks need nearby mentioned alternatives from source evidence."""
     policy = ContextAssemblyPolicy(verbatim_slots=1)

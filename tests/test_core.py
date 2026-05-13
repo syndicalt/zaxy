@@ -1345,6 +1345,29 @@ class TestContextAssembly:
         assert assembly.working_set["items"][0]["category"] == "source_anchor"
         assert "# Active Memory Working Set" in assembly.prompt
 
+    async def test_assemble_context_overfetches_source_candidates_for_aggregation(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """assemble_context() should fetch enough sources for evidence planning."""
+        fabric.session_manager.replay.return_value = MagicMock(
+            events=[],
+            integrity=MagicMock(ok=True),
+        )
+        fabric.query_router.query.return_value = []
+        with patch.object(fabric, "query_verbatim", return_value=[]) as mock_query_verbatim:
+            await fabric.assemble_context(
+                "How many properties did I visit before making an offer?",
+                session_id="agent-1",
+                limit=8,
+            )
+
+        mock_query_verbatim.assert_called_once_with(
+            "How many properties did I visit before making an offer?",
+            limit=36,
+            session_id="agent-1",
+        )
+
     async def test_assemble_context_includes_recent_packet_memory_lane(
         self,
         fabric: MemoryFabric,

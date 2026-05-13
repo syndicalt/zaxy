@@ -804,9 +804,13 @@ class MemoryFabric:
         sid = validate_session_id(session_id)
         replay = await self.replay(from_seq=replay_from_seq, session_id=sid)
         graph_contexts = await self.query(query, limit=limit, session_id=sid)
+        verbatim_candidate_limit = self.context_assembly_policy.verbatim_candidate_limit(
+            query=query,
+            limit=limit,
+        )
         verbatim_contexts = (
-            await self.query_verbatim(query, limit=limit, session_id=sid)
-            if self.context_assembly_policy.should_query_verbatim(limit=limit)
+            await self.query_verbatim(query, limit=verbatim_candidate_limit, session_id=sid)
+            if verbatim_candidate_limit > 0
             else []
         )
         packet_memory_contexts = self._recent_packet_memory_contexts(list(replay.events))

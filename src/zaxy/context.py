@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from zaxy.retrieval_intent import classify_retrieval_intent
+from zaxy.retrieval_plan import build_evidence_plan, source_lane_candidate_limit
 
 
 @dataclass(frozen=True)
@@ -32,6 +32,14 @@ class ContextAssemblyPolicy:
     def should_query_verbatim(self, *, limit: int) -> bool:
         """Return whether assembly should read the verbatim source lane."""
         return self.verbatim_enabled and self.verbatim_slots > 0 and limit > 0
+
+    def verbatim_candidate_limit(self, *, query: str | None, limit: int) -> int:
+        """Return the source candidate budget needed before final assembly."""
+        if not self.should_query_verbatim(limit=limit):
+            return 0
+        if query is None:
+            return limit
+        return source_lane_candidate_limit(query, limit=limit)
 
     def describe(self) -> dict[str, bool | int]:
         """Return a stable client-facing policy description."""
@@ -66,9 +74,9 @@ class ContextAssemblyPolicy:
         packet_memory_contexts = packet_memory_contexts or []
         desired_verbatim_slots = self.verbatim_slots
         if query is not None:
-            intent = classify_retrieval_intent(query, limit=limit)
-            if intent.needs_source_lane:
-                desired_verbatim_slots = max(desired_verbatim_slots, intent.source_lane_slots)
+            plan = build_evidence_plan(query, limit=limit)
+            if plan.needs_source_lane:
+                desired_verbatim_slots = max(desired_verbatim_slots, plan.source_lane_slots)
         verbatim_limit = (
             min(desired_verbatim_slots, limit, len(verbatim_contexts))
             if self.verbatim_enabled
