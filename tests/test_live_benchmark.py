@@ -57,6 +57,7 @@ from zaxy.live_benchmark import (
     format_benchmark_comparison,
     format_mempalace_workload_inventory,
     report_to_markdown,
+    summarize_miss_taxonomy,
     workload_fingerprint,
     write_benchmark_report,
 )
@@ -456,6 +457,68 @@ def test_benchmark_report_separates_answer_and_evidence_recall() -> None:
     assert run.identity_recall == 0.0
     assert run.recall_at_5 == 0.0
     assert run.answer_recall_at_5 == 1.0
+    assert run.miss_category == "projection_miss"
+    assert report.miss_taxonomy == {
+        "answer-only": {
+            "projection_miss": 1,
+        }
+    }
+
+
+def test_benchmark_miss_taxonomy_classifies_ranking_and_synthesis_misses() -> None:
+    """Run-level miss categories should identify the likely failure layer."""
+    answer_case = BenchmarkCase(
+        name="answer-case",
+        query="Which service?",
+        expected_terms=("Spotify",),
+        identity_terms=("answer-session",),
+    )
+    source_case = BenchmarkCase(
+        name="source-case",
+        query="Which source?",
+        expected_terms=("Spotify",),
+        identity_terms=("answer-session",),
+    )
+
+    class MixedRetriever:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del temporal_point, limit
+            if "service" in query.casefold():
+                return [
+                    "distractor service note 1",
+                    "distractor service note 2",
+                    "distractor service note 3",
+                    "distractor service note 4",
+                    "distractor service note 5",
+                    "answer-session says Spotify",
+                ]
+            return ["answer-session contains no answer text"]
+
+    report = benchmark_retrievers(
+        {"mixed": MixedRetriever()},
+        (answer_case, source_case),
+        runs=1,
+        limit=10,
+    )
+
+    runs = {run.case_name: run for run in report.runs}
+    assert runs["answer-case"].miss_category == "ranking_miss", runs["answer-case"]
+    assert runs["source-case"].miss_category == "synthesis_miss", runs["source-case"]
+    assert summarize_miss_taxonomy(report.runs) == {
+        "mixed": {
+            "ranking_miss": 1,
+            "synthesis_miss": 1,
+        }
+    }
+    markdown = report_to_markdown(report)
+    assert "## Miss taxonomy" in markdown
+    assert "ranking_miss" in markdown
+    assert "synthesis_miss" in markdown
 
 
 def test_temporal_recall_workload_is_frozen_and_source_cited(tmp_path: Path) -> None:

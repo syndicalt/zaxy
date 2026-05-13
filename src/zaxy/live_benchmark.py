@@ -99,6 +99,7 @@ class BenchmarkRun:
     answer_recall_at_1: float | None = None
     answer_recall_at_5: float | None = None
     answer_recall_at_10: float | None = None
+    miss_category: str = "hit"
 
 
 @dataclass(frozen=True)
@@ -256,6 +257,7 @@ class BenchmarkReport:
     comparisons: tuple[BackendComparison, ...] = ()
     workload: BenchmarkWorkload | None = None
     external_results: tuple[ExternalBenchmarkResult, ...] = ()
+    miss_taxonomy: dict[str, dict[str, int]] | None = None
 
 
 @dataclass(frozen=True)
@@ -1781,6 +1783,7 @@ def benchmark_retrievers(
         category_summaries=tuple(_category_summaries(measurements)),
         workload=workload,
         external_results=external_results,
+        miss_taxonomy=summarize_miss_taxonomy(measurements),
     )
     return _with_comparisons(report)
 
@@ -1879,6 +1882,7 @@ async def benchmark_live_retrievers(
         category_summaries=tuple(_category_summaries(measurements)),
         workload=workload,
         external_results=external_results,
+        miss_taxonomy=summarize_miss_taxonomy(measurements),
     )
     return _with_comparisons(report)
 
@@ -2026,6 +2030,9 @@ def load_benchmark_report(path: str | Path) -> BenchmarkReport:
             ExternalBenchmarkResult(**item)
             for item in payload.get("external_results", [])
         ),
+        miss_taxonomy=payload.get("miss_taxonomy")
+        if isinstance(payload.get("miss_taxonomy"), dict)
+        else None,
     )
 
 
@@ -2165,6 +2172,20 @@ def report_to_markdown(report: BenchmarkReport) -> str:
                 f"{recall_at_5} | "
                 f"{recall_at_10} |"
             )
+    miss_taxonomy = report.miss_taxonomy or summarize_miss_taxonomy(report.runs)
+    if miss_taxonomy:
+        lines.extend(
+            [
+                "",
+                "## Miss taxonomy",
+                "",
+                "| Backend | Miss category | Count |",
+                "|---------|---------------|-------|",
+            ]
+        )
+        for backend in sorted(miss_taxonomy):
+            for category, count in sorted(miss_taxonomy[backend].items()):
+                lines.append(f"| {backend} | {category} | {count} |")
     if report.comparisons:
         lines.extend(
             [
@@ -2399,6 +2420,13 @@ def _measurement(
         answer_recall_at_1=answer_recall_at_1,
         answer_recall_at_5=answer_recall_at_5,
         answer_recall_at_10=answer_recall_at_10,
+        miss_category=_miss_category(
+            score=score,
+            recall_at_1=recall_at_1,
+            recall_at_5=recall_at_5,
+            recall_at_10=recall_at_10,
+            answer_recall_at_5=answer_recall_at_5,
+        ),
     )
 
 
@@ -2414,6 +2442,45 @@ def _recall_at_k(case: BenchmarkCase, contexts: list[str], k: int) -> float | No
 def _answer_recall_at_k(case: BenchmarkCase, contexts: list[str], k: int) -> float | None:
     """Return expected-answer recall over the top-k contexts."""
     return expected_terms_recall(case, contexts[:k])
+
+
+def _miss_category(
+    *,
+    score: RetrievalScore,
+    recall_at_1: float | None,
+    recall_at_5: float | None,
+    recall_at_10: float | None,
+    answer_recall_at_5: float | None,
+) -> str:
+    """Classify the likely benchmark failure layer for a single run."""
+    if score.forbidden_hits:
+        return "stale_or_forbidden_hit"
+    if answer_recall_at_5 == 1.0 and score.identity_recall == 0.0:
+        return "projection_miss"
+    if recall_at_10 == 0.0:
+        return "retrieval_miss"
+    if recall_at_5 == 0.0:
+        return "ranking_miss"
+    if recall_at_5 == 1.0 and answer_recall_at_5 == 0.0:
+        return "synthesis_miss"
+    if score.score >= 1.0:
+        return "hit"
+    if score.missing_expected:
+        return "answer_miss"
+    return "partial_hit"
+
+
+def summarize_miss_taxonomy(
+    runs: tuple[BenchmarkRun, ...] | list[BenchmarkRun],
+) -> dict[str, dict[str, int]]:
+    """Return miss-category counts grouped by backend."""
+    summary: dict[str, dict[str, int]] = {}
+    for run in runs:
+        if run.miss_category == "hit":
+            continue
+        backend_counts = summary.setdefault(run.backend, {})
+        backend_counts[run.miss_category] = backend_counts.get(run.miss_category, 0) + 1
+    return summary
 
 
 def _summaries(
@@ -2949,6 +3016,7 @@ def _report_payload(report: BenchmarkReport) -> dict[str, object]:
         "category_summaries": [asdict(summary) for summary in report.category_summaries],
         "comparisons": [asdict(comparison) for comparison in report.comparisons],
         "external_results": [asdict(result) for result in report.external_results],
+        "miss_taxonomy": report.miss_taxonomy or summarize_miss_taxonomy(report.runs),
         "runs": [asdict(run) for run in report.runs],
     }
 
