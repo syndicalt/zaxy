@@ -81,6 +81,33 @@ def test_score_retrieval_accepts_semantic_answer_surface_forms() -> None:
     assert distributed_location.score == 1.0
 
 
+def test_score_retrieval_accepts_structured_absence_guidance() -> None:
+    """Absence answers should not require exact prose reproduction."""
+    case = BenchmarkCase(
+        name="missing-hamster",
+        query="What is the name of my hamster?",
+        expected_terms=(
+            "You did not mention this information. You mentioned your cat Luna but not your hamster.",
+        ),
+    )
+
+    score = score_retrieval(
+        case,
+        [
+            (
+                "zaxy_absence_check=true synthesis_mode=absence_check "
+                "not_mentioned_candidate=hamster "
+                "answer_guidance=You did not mention this information. "
+                "source_id=answer citation=eventloom://benchmark/events/1#abc "
+                "snippet=I mentioned my cat Luna during the conversation."
+            )
+        ],
+    )
+
+    assert score.score == 1.0
+    assert score.expected_hits == case.expected_terms
+
+
 def test_score_retrieval_accepts_parenthetical_acronym_surface_forms() -> None:
     """Expected answers with parenthetical acronyms should match acronym-only evidence."""
     case = BenchmarkCase(

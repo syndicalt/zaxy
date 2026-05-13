@@ -422,6 +422,39 @@ def test_benchmark_report_tracks_recall_at_k() -> None:
     assert "Recall@5" in markdown
 
 
+def test_benchmark_report_separates_answer_and_evidence_recall() -> None:
+    """Answer presence and source identity presence should be visible separately."""
+    case = BenchmarkCase(
+        name="answered-without-source-id",
+        query="Which music service did I mention?",
+        expected_terms=("Spotify",),
+        identity_terms=("answer_session_1",),
+    )
+
+    class AnswerOnlyRetriever:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return ["I mentioned Spotify as my music streaming service."]
+
+    report = benchmark_retrievers(
+        {"answer-only": AnswerOnlyRetriever()},
+        (case,),
+        runs=1,
+        limit=5,
+    )
+
+    run = report.runs[0]
+    assert run.score == 1.0
+    assert run.identity_recall == 0.0
+    assert run.recall_at_5 == 0.0
+    assert run.answer_recall_at_5 == 1.0
+
+
 def test_temporal_recall_workload_is_frozen_and_source_cited(tmp_path: Path) -> None:
     """MemPalace-comparable temporal recall should be reproducible and cited."""
     eventlog, cases, workload = build_temporal_recall_workload(

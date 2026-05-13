@@ -17,7 +17,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
-from zaxy.benchmark import BenchmarkCase, RetrievalScore, _event_context, score_retrieval
+from zaxy.benchmark import (
+    BenchmarkCase,
+    RetrievalScore,
+    _event_context,
+    expected_terms_recall,
+    score_retrieval,
+)
 from zaxy.embedding import EmbeddingProvider, HashEmbeddingProvider, embed_extraction
 from zaxy.event import EventLog
 from zaxy.extract import extract
@@ -88,6 +94,9 @@ class BenchmarkRun:
     recall_at_1: float | None = None
     recall_at_5: float | None = None
     recall_at_10: float | None = None
+    answer_recall_at_1: float | None = None
+    answer_recall_at_5: float | None = None
+    answer_recall_at_10: float | None = None
 
 
 @dataclass(frozen=True)
@@ -110,6 +119,9 @@ class BenchmarkSummary:
     mean_recall_at_1: float | None = None
     mean_recall_at_5: float | None = None
     mean_recall_at_10: float | None = None
+    mean_answer_recall_at_1: float | None = None
+    mean_answer_recall_at_5: float | None = None
+    mean_answer_recall_at_10: float | None = None
 
 
 @dataclass(frozen=True)
@@ -162,6 +174,9 @@ class CategorySummary:
     mean_recall_at_1: float | None = None
     mean_recall_at_5: float | None = None
     mean_recall_at_10: float | None = None
+    mean_answer_recall_at_1: float | None = None
+    mean_answer_recall_at_5: float | None = None
+    mean_answer_recall_at_10: float | None = None
 
 
 @dataclass(frozen=True)
@@ -1818,8 +1833,8 @@ def report_to_markdown(report: BenchmarkReport) -> str:
     lines.extend(
         [
         "",
-        "| Backend | Mean score | Identity recall | Source recall | Citation coverage | Recall@1 | Recall@5 | Recall@10 | p50 ms | p95 ms | p99 ms | Returned bytes | Approx tokens |",
-        "|---------|------------|-----------------|---------------|-------------------|----------|----------|-----------|--------|--------|--------|----------------|---------------|",
+        "| Backend | Mean score | Identity recall | Source recall | Citation coverage | Answer@5 | Recall@1 | Recall@5 | Recall@10 | p50 ms | p95 ms | p99 ms | Returned bytes | Approx tokens |",
+        "|---------|------------|-----------------|---------------|-------------------|----------|----------|----------|-----------|--------|--------|--------|----------------|---------------|",
         ]
     )
     for backend_summary in report.summaries:
@@ -1853,6 +1868,11 @@ def report_to_markdown(report: BenchmarkReport) -> str:
             if backend_summary.mean_recall_at_10 is None
             else f"{backend_summary.mean_recall_at_10:.3f}"
         )
+        answer_recall_at_5 = (
+            ""
+            if backend_summary.mean_answer_recall_at_5 is None
+            else f"{backend_summary.mean_answer_recall_at_5:.3f}"
+        )
         lines.append(
             "| "
             f"{backend_summary.backend} | "
@@ -1860,6 +1880,7 @@ def report_to_markdown(report: BenchmarkReport) -> str:
             f"{identity_recall} | "
             f"{source_recall} | "
             f"{citation_coverage} | "
+            f"{answer_recall_at_5} | "
             f"{recall_at_1} | "
             f"{recall_at_5} | "
             f"{recall_at_10} | "
@@ -1875,8 +1896,8 @@ def report_to_markdown(report: BenchmarkReport) -> str:
                 "",
                 "## Category summaries",
                 "",
-                "| Backend | Category | Queries | Mean score | Misses | Source recall | Citation coverage | Recall@1 | Recall@5 | Recall@10 |",
-                "|---------|----------|---------|------------|--------|---------------|-------------------|----------|----------|-----------|",
+                "| Backend | Category | Queries | Mean score | Misses | Source recall | Citation coverage | Answer@5 | Recall@1 | Recall@5 | Recall@10 |",
+                "|---------|----------|---------|------------|--------|---------------|-------------------|----------|----------|----------|-----------|",
             ]
         )
         for category_summary in report.category_summaries:
@@ -1905,6 +1926,11 @@ def report_to_markdown(report: BenchmarkReport) -> str:
                 if category_summary.mean_recall_at_10 is None
                 else f"{category_summary.mean_recall_at_10:.3f}"
             )
+            answer_recall_at_5 = (
+                ""
+                if category_summary.mean_answer_recall_at_5 is None
+                else f"{category_summary.mean_answer_recall_at_5:.3f}"
+            )
             lines.append(
                 "| "
                 f"{category_summary.backend} | "
@@ -1914,6 +1940,7 @@ def report_to_markdown(report: BenchmarkReport) -> str:
                 f"{category_summary.miss_count} | "
                 f"{source_recall} | "
                 f"{citation_coverage} | "
+                f"{answer_recall_at_5} | "
                 f"{recall_at_1} | "
                 f"{recall_at_5} | "
                 f"{recall_at_10} |"
@@ -2122,6 +2149,9 @@ def _measurement(
     recall_at_1 = _recall_at_k(case, contexts, 1)
     recall_at_5 = _recall_at_k(case, contexts, 5)
     recall_at_10 = _recall_at_k(case, contexts, 10)
+    answer_recall_at_1 = _answer_recall_at_k(case, contexts, 1)
+    answer_recall_at_5 = _answer_recall_at_k(case, contexts, 5)
+    answer_recall_at_10 = _answer_recall_at_k(case, contexts, 10)
     return BenchmarkRun(
         backend=backend,
         case_name=case.name,
@@ -2146,6 +2176,9 @@ def _measurement(
         recall_at_1=recall_at_1,
         recall_at_5=recall_at_5,
         recall_at_10=recall_at_10,
+        answer_recall_at_1=answer_recall_at_1,
+        answer_recall_at_5=answer_recall_at_5,
+        answer_recall_at_10=answer_recall_at_10,
     )
 
 
@@ -2156,6 +2189,11 @@ def _recall_at_k(case: BenchmarkCase, contexts: list[str], k: int) -> float | No
         return None
     haystack = "\n".join(contexts[:k]).casefold()
     return 1.0 if any(term.casefold() in haystack for term in target_terms) else 0.0
+
+
+def _answer_recall_at_k(case: BenchmarkCase, contexts: list[str], k: int) -> float | None:
+    """Return expected-answer recall over the top-k contexts."""
+    return expected_terms_recall(case, contexts[:k])
 
 
 def _summaries(
@@ -2197,6 +2235,21 @@ def _summaries(
             row.recall_at_10
             for row in rows
             if row.recall_at_10 is not None
+        ]
+        answer_recall_at_1_values = [
+            row.answer_recall_at_1
+            for row in rows
+            if row.answer_recall_at_1 is not None
+        ]
+        answer_recall_at_5_values = [
+            row.answer_recall_at_5
+            for row in rows
+            if row.answer_recall_at_5 is not None
+        ]
+        answer_recall_at_10_values = [
+            row.answer_recall_at_10
+            for row in rows
+            if row.answer_recall_at_10 is not None
         ]
         summaries.append(
             BenchmarkSummary(
@@ -2244,6 +2297,21 @@ def _summaries(
                     if recall_at_10_values
                     else None
                 ),
+                mean_answer_recall_at_1=(
+                    round(statistics.fmean(answer_recall_at_1_values), 4)
+                    if answer_recall_at_1_values
+                    else None
+                ),
+                mean_answer_recall_at_5=(
+                    round(statistics.fmean(answer_recall_at_5_values), 4)
+                    if answer_recall_at_5_values
+                    else None
+                ),
+                mean_answer_recall_at_10=(
+                    round(statistics.fmean(answer_recall_at_10_values), 4)
+                    if answer_recall_at_10_values
+                    else None
+                ),
             )
         )
     return summaries
@@ -2282,6 +2350,21 @@ def _category_summaries(measurements: list[BenchmarkRun]) -> list[CategorySummar
             for row in rows
             if row.recall_at_10 is not None
         ]
+        answer_recall_at_1_values = [
+            row.answer_recall_at_1
+            for row in rows
+            if row.answer_recall_at_1 is not None
+        ]
+        answer_recall_at_5_values = [
+            row.answer_recall_at_5
+            for row in rows
+            if row.answer_recall_at_5 is not None
+        ]
+        answer_recall_at_10_values = [
+            row.answer_recall_at_10
+            for row in rows
+            if row.answer_recall_at_10 is not None
+        ]
         summaries.append(
             CategorySummary(
                 backend=backend,
@@ -2315,6 +2398,21 @@ def _category_summaries(measurements: list[BenchmarkRun]) -> list[CategorySummar
                 mean_recall_at_10=(
                     round(statistics.fmean(recall_at_10_values), 4)
                     if recall_at_10_values
+                    else None
+                ),
+                mean_answer_recall_at_1=(
+                    round(statistics.fmean(answer_recall_at_1_values), 4)
+                    if answer_recall_at_1_values
+                    else None
+                ),
+                mean_answer_recall_at_5=(
+                    round(statistics.fmean(answer_recall_at_5_values), 4)
+                    if answer_recall_at_5_values
+                    else None
+                ),
+                mean_answer_recall_at_10=(
+                    round(statistics.fmean(answer_recall_at_10_values), 4)
+                    if answer_recall_at_10_values
                     else None
                 ),
             )

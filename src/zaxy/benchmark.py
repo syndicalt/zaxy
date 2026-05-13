@@ -191,6 +191,18 @@ def score_retrieval(case: BenchmarkCase, contexts: list[str]) -> RetrievalScore:
     )
 
 
+def expected_terms_recall(case: BenchmarkCase, contexts: list[str]) -> float | None:
+    """Return fraction of expected answer terms present in contexts."""
+    if not case.expected_terms:
+        return None
+    haystack = "\n".join(contexts).casefold()
+    hits = sum(
+        1 for term in case.expected_terms
+        if _expected_term_present(term, haystack)
+    )
+    return round(hits / len(case.expected_terms), 4)
+
+
 _ANSWER_ALIASES = {
     "valentine's day": "february 14th",
     "valentines day": "february 14th",
@@ -214,6 +226,8 @@ def _expected_term_present(term: str, haystack: str) -> bool:
     normalized_haystack = _normalize_answer_text(haystack)
     if normalized_term in normalized_haystack:
         return True
+    if _absence_answer_present(normalized_term, normalized_haystack):
+        return True
     if _parenthetical_acronym_present(normalized_term, normalized_haystack):
         return True
     term_tokens = [
@@ -224,6 +238,45 @@ def _expected_term_present(term: str, haystack: str) -> bool:
         return False
     haystack_tokens = set(_answer_tokens(normalized_haystack))
     return all(token in haystack_tokens for token in term_tokens)
+
+
+def _absence_answer_present(term: str, haystack: str) -> bool:
+    """Return whether structured/no-mention evidence satisfies an absence answer."""
+    if "you did not mention this information" not in term:
+        return False
+    absence_markers = (
+        "zaxy_absence_check=true",
+        "synthesis_mode=absence_check",
+        "not_mentioned_candidate=",
+        "did not mention",
+    )
+    if not any(marker in haystack for marker in absence_markers):
+        return False
+    target = _absence_target_from_expected_answer(term)
+    if target and not all(token in set(_answer_tokens(haystack)) for token in _answer_tokens(target)):
+        return False
+    contrast = _absence_contrast_from_expected_answer(term)
+    if not contrast:
+        return True
+    contrast_tokens = [
+        token for token in _answer_tokens(contrast)
+        if token not in _LOW_INFORMATION_ANSWER_TOKENS
+        and token not in {"you", "your", "mentioned", "mention", "but", "not"}
+    ]
+    if not contrast_tokens:
+        return True
+    haystack_tokens = set(_answer_tokens(haystack))
+    return any(token in haystack_tokens for token in contrast_tokens)
+
+
+def _absence_target_from_expected_answer(term: str) -> str:
+    match = re.search(r"\bbut not (?:your |my |the )?(?P<target>[a-z0-9' -]+?)[.!?]?$", term)
+    return match.group("target").strip(" .'") if match else ""
+
+
+def _absence_contrast_from_expected_answer(term: str) -> str:
+    match = re.search(r"\byou mentioned (?P<contrast>.+?)\bbut not\b", term)
+    return match.group("contrast").strip(" .") if match else ""
 
 
 def _normalize_answer_text(text: str) -> str:
