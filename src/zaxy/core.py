@@ -41,6 +41,7 @@ from zaxy.context import Context, ContextAssemblyPolicy, context_counts
 from zaxy.documents import collect_document_events
 from zaxy.embedding import build_embedding_provider, embed_extraction
 from zaxy.event import EventLog, ReplayResult  # noqa: F401 - compatibility for existing tests
+from zaxy.evidence import select_checkout_evidence
 from zaxy.extract import extract
 from zaxy.graph import GraphStore
 from zaxy.inference import build_inferred_edge_events
@@ -49,6 +50,7 @@ from zaxy.metrics import get_metrics
 from zaxy.pagination import encode_query_cursor, validate_query_cursor
 from zaxy.query import QueryRouter, build_reranker, build_retention_policy
 from zaxy.refs import MemoryRef, MemoryRefStore
+from zaxy.retrieval_plan import build_evidence_plan
 from zaxy.security import (
     MAX_QUERY_LIMIT,
     validate_limit,
@@ -1149,8 +1151,20 @@ def build_memory_checkout(
         key=lambda context: _checkout_rank(context, query),
         reverse=True,
     )
-    current_facts = [_checkout_fact(context) for context in ranked_contexts if context.valid_to is None]
-    evidence = [_checkout_evidence(context) for context in ranked_contexts if _context_citation(context)]
+    candidate_current_facts = [
+        _checkout_fact(context) for context in ranked_contexts if context.valid_to is None
+    ]
+    candidate_evidence = [
+        _checkout_evidence(context) for context in ranked_contexts if _context_citation(context)
+    ]
+    selection = select_checkout_evidence(
+        query=query,
+        evidence_plan=build_evidence_plan(query, limit=10),
+        current_facts=candidate_current_facts,
+        evidence=candidate_evidence,
+    )
+    current_facts = selection.current_facts
+    evidence = selection.evidence
     provenance = [_checkout_provenance(context) for context in ranked_contexts if _context_citation(context)]
     warnings = list(assembly.warnings)
     if assembly.compacted and not any("compacted" in warning for warning in warnings):

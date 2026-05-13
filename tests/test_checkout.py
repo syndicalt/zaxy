@@ -325,6 +325,46 @@ def test_memory_checkout_exposes_evidence_plan_for_aggregation() -> None:
     assert "Evidence plan: mode=multi_source_aggregation" in checkout.prompt
 
 
+def test_memory_checkout_uses_evidence_selection_for_aggregation() -> None:
+    """Production checkout should promote cited source groups before uncited summaries."""
+    assembly = ContextAssembly(
+        session_id="agent-1",
+        prompt="# Retrieved Context",
+        contexts=[
+            Context(
+                content="A high-score uncited summary says there were weddings.",
+                source="keyword",
+                score=0.99,
+            ),
+            Context(
+                content="session_id=answer-1 I attended Rachel and Mike's wedding.",
+                source="verbatim",
+                score=0.9,
+                metadata={"citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa"},
+            ),
+            Context(
+                content="session_id=answer-2 I attended Emily and Sarah's wedding.",
+                source="verbatim",
+                score=0.89,
+                metadata={"citation": "eventloom://agent-1/events/2#bbbbbbbbbbbb"},
+            ),
+        ],
+        replay_event_count=0,
+    )
+
+    checkout = build_memory_checkout(
+        query="How many weddings did I attend?",
+        assembly=assembly,
+    )
+
+    assert [fact["citation"] for fact in checkout.current_facts[:2]] == [
+        "eventloom://agent-1/events/1#aaaaaaaaaaaa",
+        "eventloom://agent-1/events/2#bbbbbbbbbbbb",
+    ]
+    assert checkout.current_facts[2]["citation"] is None
+    assert checkout.quality["answerability"] == "answer_from_memory"
+
+
 def test_memory_checkout_exposes_evidence_plan_for_absence() -> None:
     """Checkout should tell the model when cited contrast evidence is required."""
     assembly = ContextAssembly(

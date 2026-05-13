@@ -45,6 +45,49 @@ class EvidenceSet:
         return diagnostics
 
 
+@dataclass(frozen=True)
+class CheckoutEvidenceSelection:
+    """Selected checkout facts and cited evidence after evidence-plan promotion."""
+
+    current_facts: list[dict[str, Any]]
+    evidence: list[dict[str, Any]]
+
+
+def select_checkout_evidence(
+    *,
+    query: str | None,
+    evidence_plan: EvidencePlan | dict[str, object] | None,
+    current_facts: list[dict[str, Any]],
+    evidence: list[dict[str, Any]],
+) -> CheckoutEvidenceSelection:
+    """Select and order checkout facts/evidence for the query's evidence plan."""
+    del query
+    deduped_current = _dedupe_items(current_facts)
+    deduped_evidence = _dedupe_items([item for item in evidence if _citation(item)])
+    if not _should_promote_cited_sources(evidence_plan):
+        return CheckoutEvidenceSelection(
+            current_facts=deduped_current,
+            evidence=deduped_evidence,
+        )
+    promoted_evidence = _promote_evidence_groups(
+        deduped_evidence,
+        required_groups=_required_source_groups(evidence_plan),
+    )
+    citation_order = {
+        citation: index
+        for index, item in enumerate(promoted_evidence)
+        if (citation := _citation(item)) is not None
+    }
+    promoted_current = sorted(
+        deduped_current,
+        key=lambda item: _current_fact_selection_key(item, citation_order),
+    )
+    return CheckoutEvidenceSelection(
+        current_facts=promoted_current,
+        evidence=promoted_evidence,
+    )
+
+
 def build_evidence_set(
     *,
     query: str | None,
@@ -157,6 +200,76 @@ def evidence_snippet(content: str) -> str:
     if len(snippet) <= _SNIPPET_LIMIT:
         return snippet
     return f"{snippet[: _SNIPPET_LIMIT - 3].rstrip()}..."
+
+
+def _promote_evidence_groups(
+    evidence: list[dict[str, Any]],
+    *,
+    required_groups: int,
+) -> list[dict[str, Any]]:
+    if required_groups <= 0:
+        return evidence
+    groups = evidence_groups(evidence=evidence, current_facts=[])
+    promoted_citations: list[str] = []
+    for group in groups[:required_groups]:
+        promoted_citations.extend(_text_list(group.get("citations")))
+    citation_rank = {citation: index for index, citation in enumerate(promoted_citations)}
+    return sorted(evidence, key=lambda item: _evidence_selection_key(item, citation_rank))
+
+
+def _evidence_selection_key(
+    item: dict[str, Any],
+    citation_rank: dict[str, int],
+) -> tuple[int, int, float]:
+    citation = _citation(item)
+    if citation is not None and citation in citation_rank:
+        return (0, citation_rank[citation], -_float_metric(item.get("score")))
+    return (1, len(citation_rank), -_float_metric(item.get("score")))
+
+
+def _current_fact_selection_key(
+    item: dict[str, Any],
+    citation_rank: dict[str, int],
+) -> tuple[int, int, int, float]:
+    citation = _citation(item)
+    if citation is not None and citation in citation_rank:
+        return (0, citation_rank[citation], 0, -_float_metric(item.get("score")))
+    if citation is not None:
+        return (1, len(citation_rank), 0, -_float_metric(item.get("score")))
+    return (2, len(citation_rank), 1, -_float_metric(item.get("score")))
+
+
+def _dedupe_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    deduped: list[dict[str, Any]] = []
+    for item in items:
+        key = _item_key(item)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
+
+
+def _item_key(item: dict[str, Any]) -> str:
+    citation = _citation(item)
+    if citation is not None:
+        return f"citation:{citation}"
+    return f"content:{' '.join(evidence_content(item).split()).casefold()}"
+
+
+def _citation(item: dict[str, Any]) -> str | None:
+    citation = item.get("citation")
+    return citation if isinstance(citation, str) and citation else None
+
+
+def _should_promote_cited_sources(evidence_plan: EvidencePlan | dict[str, object] | None) -> bool:
+    if evidence_plan is None:
+        return False
+    if isinstance(evidence_plan, EvidencePlan):
+        return evidence_plan.promote_cited_sources
+    promote = evidence_plan.get("promote_cited_sources")
+    return promote if isinstance(promote, bool) else False
 
 
 def _finalize_group(group: dict[str, Any]) -> dict[str, Any]:
