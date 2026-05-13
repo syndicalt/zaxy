@@ -2555,7 +2555,12 @@ def _tokens(query: str) -> list[str]:
 
 
 def _bm25_tokens(text: str) -> list[str]:
-    return re.findall(r"[a-z0-9]+(?:[-_:./#][a-z0-9]+)*", text.casefold())
+    tokens: list[str] = []
+    for token in re.findall(r"[a-z0-9]+(?:[-_:./#][a-z0-9]+)*", text.casefold()):
+        tokens.append(token)
+        if re.search(r"[-_:/#]", token):
+            tokens.extend(part for part in re.split(r"[-_:/#]+", token) if part)
+    return tokens
 
 
 _BM25_QUERY_EXPANSIONS: dict[str, tuple[str, ...]] = {

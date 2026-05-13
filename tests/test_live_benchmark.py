@@ -672,6 +672,24 @@ def test_bm25_expands_common_education_paraphrases() -> None:
     assert results == [corpus[1].text]
 
 
+def test_bm25_splits_hyphenated_query_compounds() -> None:
+    """Compound query words should match equivalent source terms."""
+    corpus = (
+        BenchmarkChunk(
+            "distractor",
+            "I tracked household expenses and grocery costs this month.",
+        ),
+        BenchmarkChunk(
+            "answer",
+            "I spent $25 on a bike chain and $40 on bike lights.",
+        ),
+    )
+
+    results = BM25Retriever(corpus).query("bike-related expenses", limit=1)
+
+    assert results == [corpus[1].text]
+
+
 def test_live_benchmark_compares_all_retriever_backends(tmp_path: Path) -> None:
     """The benchmark core should compare md, BM25, vector, md+vector, and zaxy rows."""
     log = build_competitive_event_log(tmp_path / "bench.jsonl")
