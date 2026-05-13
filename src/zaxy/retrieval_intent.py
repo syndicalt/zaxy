@@ -112,7 +112,7 @@ def classify_retrieval_intent(query: str, *, limit: int) -> RetrievalIntent:
         reasons.append("source_recall")
     if tokens & personal_terms and tokens & (question_terms | memory_terms):
         needs_source = True
-        slots = max(slots, 1)
+        slots = max(slots, max(2, min(3, limit // 3)))
         reasons.append("personal_memory")
     if tokens & personal_terms and tokens & aggregation_terms:
         needs_source = True

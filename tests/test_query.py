@@ -1414,6 +1414,36 @@ class TestContextChunk:
         # Should only include first few properties
         assert "extra=ignored" not in chunk.content
 
+    async def test_chunk_content_preserves_source_identity_fields(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Source/session identity should not be truncated out of graph context."""
+        mock_store.search_exact.return_value = [
+            GraphEntity(
+                name="longmemeval/75499fd8/answer_723bf11f/chunk-0001.md:1-9",
+                entity_type="document",
+                valid_from="2024-01-01T00:00:00Z",
+                valid_to=None,
+                properties={
+                    "source_path": "longmemeval/75499fd8/answer_723bf11f/chunk-0001.md",
+                    "source_start_line": 1,
+                    "source_end_line": 9,
+                    "longmemeval_session_id": "answer_723bf11f",
+                    "summary": "Max is a Golden Retriever.",
+                    "extra": "may be omitted",
+                },
+            )
+        ]
+
+        results = await router.query("What breed is Max?")
+
+        assert "longmemeval_session_id=answer_723bf11f" in results[0].content
+        assert "summary=Max is a Golden Retriever." in results[0].content
+        assert "source_path=longmemeval/75499fd8/answer_723bf11f/chunk-0001.md" in results[0].content
+        assert "source_start_line=1" in results[0].content
+
     async def test_chunk_exposes_entity_identity(
         self,
         router: QueryRouter,

@@ -569,8 +569,9 @@ class ZaxyRetriever:
             or not _should_query_source_lexical_lane(query, limit=limit)
         ):
             return graph_results
+        lexical_query = _source_lane_query(query, graph_results)
         lexical_results = self._lexical_retriever.query(
-            query,
+            lexical_query,
             temporal_point=temporal_point,
             limit=limit,
         )
@@ -630,6 +631,58 @@ def _should_query_source_lexical_lane(query: str, *, limit: int = 10) -> bool:
     superseded facts.
     """
     return classify_retrieval_intent(query, limit=limit).needs_source_lane
+
+
+def _source_lane_query(query: str, graph_results: list[str]) -> str:
+    """Expand source lookup with compact answer concepts found by graph retrieval."""
+    concepts = _graph_answer_concepts(graph_results)
+    if not concepts:
+        return query
+    return " ".join([query, *concepts])
+
+
+def _graph_answer_concepts(graph_results: list[str], *, limit: int = 4) -> list[str]:
+    """Extract bounded human-scale concepts from graph context for source backfill."""
+    concepts: list[str] = []
+    seen: set[str] = set()
+    skip_tokens = {
+        "entity",
+        "event",
+        "source",
+        "summary",
+        "document",
+        "citation",
+        "benchmark",
+        "mon",
+        "tue",
+        "wed",
+        "thu",
+        "fri",
+        "sat",
+        "sun",
+        "for",
+        "the",
+        "do",
+        "now",
+    }
+    for result in graph_results:
+        for phrase in re.findall(
+            r"\b[A-Z][A-Za-z0-9]+(?:\s+[A-Z][A-Za-z0-9]+){0,3}\b",
+            result,
+        ):
+            normalized = phrase.casefold()
+            words = normalized.split()
+            if normalized in seen or all(word in skip_tokens for word in words):
+                continue
+            if len(words) == 1 and (words[0] in skip_tokens or len(words[0]) < 3):
+                continue
+            if re.fullmatch(r"[a-f0-9]{8,}", normalized):
+                continue
+            concepts.append(phrase)
+            seen.add(normalized)
+            if len(concepts) >= limit:
+                return concepts
+    return concepts
 
 
 def _filter_superseded_preference_lexical_results(

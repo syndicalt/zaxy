@@ -526,12 +526,8 @@ def _to_chunk(result: SearchResult) -> ContextChunk:
     # Build a concise natural-language summary of the entity
     content = f"{ent.name} ({ent.entity_type})"
     if ent.properties:
-        safe_properties = {
-            key: value
-            for key, value in ent.properties.items()
-            if key not in {"embedding", "created_at", "updated_at"} and not key.startswith("_")
-        }
-        props = ", ".join(f"{k}={v}" for k, v in list(safe_properties.items())[:3])
+        safe_properties = _prompt_visible_properties(ent.properties)
+        props = ", ".join(f"{k}={v}" for k, v in safe_properties)
         if props:
             content += f" — {props}"
     summary = ent.properties.get("summary")
@@ -549,6 +545,51 @@ def _to_chunk(result: SearchResult) -> ContextChunk:
         entity_name=ent.name,
         entity_type=ent.entity_type,
     )
+
+
+def _prompt_visible_properties(properties: dict[str, Any], *, limit: int = 3) -> list[tuple[str, Any]]:
+    """Return bounded prompt properties while preserving source identity."""
+    excluded = {"embedding", "created_at", "updated_at"}
+    safe_items = [
+        (key, value)
+        for key, value in properties.items()
+        if key not in excluded and not key.startswith("_")
+    ]
+    priority_prefixes = ("longmemeval_session_id",)
+    priority_key_order = (
+        "summary",
+        "source_path",
+        "source_start_line",
+        "source_end_line",
+        "source_event_seq",
+        "source_event_hash",
+        "source_thread",
+        "transcript_source",
+    )
+    priority_keys = set(priority_key_order)
+    priority: list[tuple[str, Any]] = []
+    remaining: list[tuple[str, Any]] = []
+    safe_by_key = dict(safe_items)
+    for key in priority_key_order:
+        if key in safe_by_key:
+            priority.append((key, safe_by_key[key]))
+    for key, value in safe_items:
+        if key in priority_keys:
+            continue
+        if key.startswith(priority_prefixes):
+            priority.append((key, value))
+        else:
+            remaining.append((key, value))
+    selected: list[tuple[str, Any]] = []
+    seen: set[str] = set()
+    for key, value in [*priority, *remaining]:
+        if key in seen:
+            continue
+        selected.append((key, value))
+        seen.add(key)
+        if len(selected) >= max(limit, len(priority)):
+            break
+    return selected
 
 
 def _exact_candidates(query: str) -> list[str]:

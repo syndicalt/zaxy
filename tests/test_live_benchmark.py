@@ -37,6 +37,7 @@ from zaxy.live_benchmark import (
     ZaxyRetriever,
     _benchmark_projection_present,
     _mark_benchmark_projection,
+    _source_lane_query,
     benchmark_live_retrievers,
     benchmark_projection_cache_key,
     benchmark_retrievers,
@@ -58,6 +59,7 @@ from zaxy.live_benchmark import (
     write_benchmark_report,
 )
 from zaxy.query import ContextChunk
+from zaxy.retrieval_intent import classify_retrieval_intent
 
 
 def test_cli_exposes_live_benchmark_command() -> None:
@@ -1039,6 +1041,146 @@ async def test_zaxy_retriever_reserves_verbatim_lane_when_graph_crowds_results()
 
     assert len(results) == 10
     assert any("Luna" in result for result in results)
+
+
+def test_personal_memory_intent_reserves_multiple_source_slots() -> None:
+    """Ambiguous personal-memory questions should preserve competing source evidence."""
+    intent = classify_retrieval_intent("What breed is my dog?", limit=10)
+
+    assert intent.needs_source_lane
+    assert intent.source_lane_slots == 3
+    assert "personal_memory" in intent.reasons
+
+
+async def test_zaxy_retriever_reserves_multiple_personal_memory_sources() -> None:
+    """Personal-memory retrieval should keep enough source identities to disambiguate."""
+    source_contexts = [
+        (
+            "citation=eventloom://benchmark/events/1#abc "
+            "longmemeval_session_id=distractor-1 my dog requires regular grooming."
+        ),
+        (
+            "citation=eventloom://benchmark/events/2#abc "
+            "longmemeval_session_id=distractor-2 my dog enjoys trail walks."
+        ),
+        (
+            "citation=eventloom://benchmark/events/3#abc "
+            "longmemeval_session_id=answer-3 my dog is a Golden Retriever."
+        ),
+    ]
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    class OrderedLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return source_contexts
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=OrderedLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async("What breed is my dog?", limit=10)
+
+    assert sum("longmemeval_session_id=" in result for result in results) == 3
+    assert any("longmemeval_session_id=answer-3" in result for result in results)
+
+
+def test_source_lane_query_uses_graph_answer_concepts_for_source_recovery() -> None:
+    """Graph answer concepts should help raw source lookup recover citations."""
+    query = _source_lane_query(
+        "What breed is my dog?",
+        [
+            (
+                "longmemeval/75499fd8/52c34859_1/chunk-0001.md "
+                "(document) — summary=Max is a Golden Retriever"
+            )
+        ],
+    )
+
+    assert query == "What breed is my dog? Max Golden Retriever"
+
+
+def test_source_lane_query_ignores_date_header_noise() -> None:
+    """Capitalized provenance/date words should not pollute source backfill."""
+    query = _source_lane_query(
+        "What play did I attend at the local community theater?",
+        [
+            (
+                "longmemeval/58bf7951/answer_355c48bb/chunk-0002.md "
+                "(document) — source_thread=default, summary=The Glass Menagerie"
+            )
+        ],
+    )
+
+    assert query == (
+        "What play did I attend at the local community theater? "
+        "The Glass Menagerie"
+    )
+
+
+async def test_zaxy_retriever_uses_graph_answer_concepts_for_source_lane() -> None:
+    """Source backfill should recover provenance for graph-discovered answer concepts."""
+    source_contexts = [
+        "longmemeval_session_id=distractor-1 my dog requires regular grooming.",
+        "longmemeval_session_id=distractor-2 my dog enjoys trail walks.",
+        "longmemeval_session_id=answer-3 Max is a Golden Retriever.",
+    ]
+    seen_queries: list[str] = []
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, limit, embedding
+            return [SimpleNamespace(content="graph says Max is a Golden Retriever")]
+
+    class QueryAwareLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del temporal_point
+            seen_queries.append(query)
+            if "Golden Retriever" not in query:
+                return source_contexts[:2]
+            return source_contexts[:limit]
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=QueryAwareLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async("What breed is my dog?", limit=10)
+
+    assert "Golden Retriever" in seen_queries[0]
+    assert any("longmemeval_session_id=answer-3" in result for result in results)
 
 
 async def test_zaxy_retriever_reserves_multiple_source_lanes_for_aggregation() -> None:
