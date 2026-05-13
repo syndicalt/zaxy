@@ -8,9 +8,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from zaxy.retrieval_intent import classify_retrieval_intent
+
 
 def build_checkout_diagnostics(
     *,
+    query: str | None = None,
     source_lanes: dict[str, int],
     current_facts: list[dict[str, Any]],
     evidence: list[dict[str, Any]],
@@ -32,6 +35,14 @@ def build_checkout_diagnostics(
     inferred_context = _inferred_context_diagnostics(current_facts)
     if inferred_context["context_count"]:
         diagnostics["inferred_context"] = inferred_context
+    synthesis = _checkout_synthesis_diagnostics(
+        query=query,
+        current_facts=current_facts,
+        evidence=evidence,
+        source_lanes=source_lanes,
+    )
+    if synthesis:
+        diagnostics["synthesis"] = synthesis
     return diagnostics
 
 
@@ -65,9 +76,18 @@ def build_checkout_guidance(
         trust.append("Checkout depends on inferred graph paths; inspect inferred_context diagnostics.")
     if inferred_context["low_trust_count"]:
         ignore.append("Low-trust inferred graph paths were included; treat them as leads, not facts.")
+    synthesis = _checkout_synthesis_guidance(
+        query=query,
+        current_facts=current_facts,
+        evidence=evidence,
+    )
+    if synthesis:
+        trust.extend(synthesis["trust"])
+        ignore.extend(synthesis["ignore"])
     return {
         "trust": trust,
         "ignore": ignore,
+        "synthesis": synthesis,
         "recommended_next_call": {
             "tool": "memory_checkout",
             "query": f"current decisions, blockers, and next actions for: {query}",
@@ -108,6 +128,13 @@ def build_checkout_quality(
     inferred_context = diagnostics.get("inferred_context")
     if isinstance(inferred_context, dict) and _int_metric(inferred_context.get("context_count")):
         reasons.append("Checkout includes inferred graph paths.")
+    synthesis = diagnostics.get("synthesis")
+    if isinstance(synthesis, dict):
+        mode = synthesis.get("mode")
+        if mode == "multi_source_aggregation":
+            reasons.append("Query requires multi-source synthesis from cited memory.")
+        elif mode == "absence_check":
+            reasons.append("Query requires absence checking against cited memory.")
     confidence = 0.25
     confidence += min(current_fact_count, 2) * 0.22
     confidence += min(current_citation_count, 2) * 0.28
@@ -175,6 +202,13 @@ def format_memory_checkout_prompt(
         lines.append(f"- Trust: {item}")
     for item in guidance.get("ignore", []):
         lines.append(f"- Ignore: {item}")
+    synthesis = guidance.get("synthesis")
+    if isinstance(synthesis, dict):
+        lines.extend(["", "## Synthesis Guidance"])
+        lines.append(f"- Mode: {synthesis.get('mode')}")
+        lines.append(f"- Evidence needed: {synthesis.get('evidence_needed')}")
+        for step in _text_list(synthesis.get("steps")):
+            lines.append(f"- Step: {step}")
     recommended_next_call = guidance.get("recommended_next_call")
     if isinstance(recommended_next_call, dict):
         lines.append(
@@ -215,6 +249,82 @@ def format_memory_checkout_prompt(
         )
     lines.extend(["", assembly_prompt])
     return "\n".join(lines).strip()
+
+
+def _checkout_synthesis_diagnostics(
+    *,
+    query: str | None,
+    current_facts: list[dict[str, Any]],
+    evidence: list[dict[str, Any]],
+    source_lanes: dict[str, int],
+) -> dict[str, Any] | None:
+    if not query:
+        return None
+    intent = classify_retrieval_intent(query, limit=max(1, len(current_facts)))
+    reasons = set(intent.reasons)
+    mode: str | None = None
+    if {"aggregation", "aggregation_question"} & reasons:
+        mode = "multi_source_aggregation"
+    elif "absence_check" in reasons:
+        mode = "absence_check"
+    if mode is None:
+        return None
+    citations = {
+        citation
+        for item in [*current_facts, *evidence]
+        if isinstance((citation := item.get("citation")), str) and citation
+    }
+    return {
+        "mode": mode,
+        "reasons": sorted(reasons),
+        "source_lane_slots": intent.source_lane_slots,
+        "current_fact_count": len(current_facts),
+        "citation_count": len(citations),
+        "source_lanes": source_lanes,
+    }
+
+
+def _checkout_synthesis_guidance(
+    *,
+    query: str,
+    current_facts: list[dict[str, Any]],
+    evidence: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    intent = classify_retrieval_intent(query, limit=max(1, len(current_facts)))
+    reasons = set(intent.reasons)
+    if {"aggregation", "aggregation_question"} & reasons:
+        return {
+            "mode": "multi_source_aggregation",
+            "evidence_needed": "Use every relevant cited memory in the checkout before deriving a count, sum, duration, or list.",
+            "steps": [
+                "Group evidence by distinct cited source or session before deriving the answer.",
+                "Compute the requested count, sum, duration, or list from the grouped evidence.",
+                "If the cited source set looks incomplete, call memory_checkout again with a broader aggregation query.",
+            ],
+            "trust": [
+                "For aggregation questions, treat cited memories as inputs to derive an answer rather than expecting one fact to contain the final answer."
+            ],
+            "ignore": [
+                "Do not answer aggregation questions from a single top memory when the checkout contains multiple relevant sources."
+            ],
+        }
+    if "absence_check" in reasons:
+        return {
+            "mode": "absence_check",
+            "evidence_needed": "Use cited positive mentions to decide whether the requested memory is absent or only unsupported by the current checkout.",
+            "steps": [
+                "Look for cited memories that mention nearby alternatives or the same topic.",
+                "Only say the user did not mention something when cited evidence supports the contrast.",
+                "If the checkout lacks nearby cited evidence, ask the user or refresh memory instead of asserting absence.",
+            ],
+            "trust": [
+                "For absence checks, rely on cited nearby memories and explicitly distinguish not found from contradicted."
+            ],
+            "ignore": [
+                "Do not treat a missing search hit as proof that the user never mentioned something."
+            ],
+        }
+    return None
 
 
 def build_checkout_feedback_payload(fact: dict[str, Any], query: str) -> dict[str, Any] | None:

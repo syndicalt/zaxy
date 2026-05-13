@@ -1158,6 +1158,7 @@ def build_memory_checkout(
         "superseded_contexts_excluded": sum(1 for context in assembly.contexts if context.valid_to is not None),
     }
     diagnostics = build_checkout_diagnostics(
+        query=query,
         source_lanes=_checkout_source_lanes(ranked_contexts),
         current_facts=current_facts,
         evidence=evidence,

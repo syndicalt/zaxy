@@ -166,3 +166,103 @@ def test_checkout_diagnostics_summarize_inferred_context_dependency() -> None:
     assert "Inferred graph context: contexts=2, edges=2, average_trust=0.43" in prompt
     assert "relations=likely_implemented_decision, weak_inferred_relation" in prompt
     assert "methods=task_completed_decision_citation_v1, unknown" in prompt
+
+
+def test_checkout_guides_multi_source_aggregation() -> None:
+    """Aggregation checkout should tell the model to synthesize across sources."""
+    current_facts = [
+        {
+            "content": "answer-1: I attended Rachel and Mike's wedding.",
+            "source": "verbatim",
+            "score": 0.91,
+            "citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa",
+            "valid_from": "2026-05-10T12:00:00Z",
+            "valid_to": None,
+            "source_lane": "verbatim",
+        },
+        {
+            "content": "answer-2: I attended Emily and Sarah's wedding.",
+            "source": "verbatim",
+            "score": 0.9,
+            "citation": "eventloom://agent-1/events/2#bbbbbbbbbbbb",
+            "valid_from": "2026-05-10T12:05:00Z",
+            "valid_to": None,
+            "source_lane": "verbatim",
+        },
+    ]
+    evidence = current_facts
+    diagnostics = build_checkout_diagnostics(
+        query="How many weddings did I attend?",
+        source_lanes={"verbatim": 2},
+        current_facts=current_facts,
+        evidence=evidence,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        warnings=[],
+    )
+    guidance = build_checkout_guidance(
+        query="How many weddings did I attend?",
+        current_facts=current_facts,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        evidence=evidence,
+    )
+    quality = build_checkout_quality(diagnostics=diagnostics, guidance=guidance)
+    prompt = format_memory_checkout_prompt(
+        query="How many weddings did I attend?",
+        assembly_prompt="# Active Memory Working Set",
+        current_facts=current_facts,
+        evidence=evidence,
+        quality=quality,
+        guidance=guidance,
+        diagnostics=diagnostics,
+    )
+
+    assert diagnostics["synthesis"]["mode"] == "multi_source_aggregation"
+    assert diagnostics["synthesis"]["citation_count"] == 2
+    assert "Query requires multi-source synthesis from cited memory." in quality["reasons"]
+    assert guidance["synthesis"]["mode"] == "multi_source_aggregation"
+    assert "Group evidence by distinct cited source" in prompt
+    assert "Do not answer aggregation questions from a single top memory" in prompt
+
+
+def test_checkout_guides_absence_checks_without_overclaiming() -> None:
+    """Absence checkout should distinguish missing evidence from proved absence."""
+    current_facts = [
+        {
+            "content": "The user mentioned cat Luna.",
+            "source": "verbatim",
+            "score": 0.88,
+            "citation": "eventloom://agent-1/events/4#cccccccccccc",
+            "valid_from": "2026-05-10T12:00:00Z",
+            "valid_to": None,
+            "source_lane": "verbatim",
+        }
+    ]
+    diagnostics = build_checkout_diagnostics(
+        query="Did I mention my hamster?",
+        source_lanes={"verbatim": 1},
+        current_facts=current_facts,
+        evidence=current_facts,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        warnings=[],
+    )
+    guidance = build_checkout_guidance(
+        query="Did I mention my hamster?",
+        current_facts=current_facts,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        evidence=current_facts,
+    )
+    quality = build_checkout_quality(diagnostics=diagnostics, guidance=guidance)
+    prompt = format_memory_checkout_prompt(
+        query="Did I mention my hamster?",
+        assembly_prompt="# Active Memory Working Set",
+        current_facts=current_facts,
+        evidence=current_facts,
+        quality=quality,
+        guidance=guidance,
+        diagnostics=diagnostics,
+    )
+
+    assert diagnostics["synthesis"]["mode"] == "absence_check"
+    assert "Query requires absence checking against cited memory." in quality["reasons"]
+    assert guidance["synthesis"]["mode"] == "absence_check"
+    assert "Do not treat a missing search hit as proof" in prompt
