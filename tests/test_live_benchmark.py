@@ -1841,9 +1841,73 @@ async def test_zaxy_retriever_builds_date_interval_source_synthesis() -> None:
     assert "date_interval_answer=30 days. 31 days (including the last day) is also acceptable." in bundle
 
 
+async def test_zaxy_retriever_prioritizes_query_specific_source_synthesis() -> None:
+    """Synthesis should prefer sources matching query concepts over generic numeric hits."""
+    source_contexts = [
+        (
+            "content=longmemeval_session_id=distractor "
+            "I trimmed goat hooves two weeks ago and it went well."
+        ),
+        (
+            "content=longmemeval_session_id=answer-1 "
+            "longmemeval_session_date=2022/03/02 (Wed) "
+            "Since I started working with Rachel on 2/15, she can advise on listings."
+        ),
+        (
+            "content=longmemeval_session_id=answer-2 "
+            "longmemeval_session_date=2022/03/02 (Wed) "
+            "The house I saw on March 1st really checks all the boxes and I loved it."
+        ),
+    ]
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    class SourceLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return source_contexts
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=SourceLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "How many days did it take for me to find a house I loved after starting to work with Rachel?",
+        limit=2,
+    )
+
+    top = "\n".join(results[:5])
+    assert "answer-1" in top
+    assert "answer-2" in top
+    assert "date_interval_answer=14 days. 15 days (including the last day) is also acceptable." in top
+
+
 async def test_zaxy_retriever_builds_relative_month_source_synthesis() -> None:
     """Relative month evidence should expose a compact derived answer."""
     source_contexts = [
+        (
+            "content=longmemeval_session_id=distractor "
+            "I attended a data analysis webinar two months ago."
+        ),
         (
             "content=longmemeval_session_id=answer-1 "
             "I booked my Airbnb three months in advance for the wedding. "
@@ -1894,6 +1958,7 @@ async def test_zaxy_retriever_builds_relative_month_source_synthesis() -> None:
     bundle = results[0]
     assert "month_values=3,2" in bundle
     assert "month_total_words=Five months ago" in bundle
+    assert "Seven months ago" not in bundle
 
 
 async def test_zaxy_retriever_builds_issue_source_synthesis() -> None:

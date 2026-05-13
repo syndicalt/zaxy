@@ -203,7 +203,12 @@ def source_synthesis_bundle(
     if not {"aggregation", "aggregation_question"} & set(intent.reasons) and not _issue_query(query):
         return None
     group_limit = max(limit, intent.source_lane_slots)
-    grouped_sources = diverse_source_contexts(source_results, limit=group_limit)
+    ordered_sources = query_specific_source_order(query, source_results)
+    grouped_sources = diverse_source_contexts(
+        ordered_sources,
+        limit=group_limit,
+        preserve_order=True,
+    )
     if len(grouped_sources) < 2:
         return None
     lines = [
@@ -212,7 +217,7 @@ def source_synthesis_bundle(
         f"query={query}",
         f"source_count={len(grouped_sources)}",
     ]
-    lines.extend(_numeric_synthesis_lines(grouped_sources))
+    lines.extend(_numeric_synthesis_lines(query, grouped_sources))
     lines.extend(_date_interval_synthesis_lines(query, grouped_sources))
     lines.extend(_issue_synthesis_lines(query, grouped_sources))
     for index, context in enumerate(grouped_sources, start=1):
@@ -319,11 +324,33 @@ def target_terms_present(target: str, contexts: list[str]) -> bool:
     return False
 
 
-def diverse_source_contexts(contexts: list[str], *, limit: int) -> list[str]:
+def query_specific_source_order(query: str, contexts: list[str]) -> list[str]:
+    """Prefer source contexts that overlap query-specific concepts."""
+    query_terms = _query_specific_terms(query)
+    if not query_terms:
+        return contexts
+    indexed = list(enumerate(contexts))
+    indexed.sort(
+        key=lambda item: (
+            -_query_overlap_score(query_terms, item[1]),
+            -source_lane_priority(item[1]),
+            item[0],
+        )
+    )
+    return [context for _, context in indexed]
+
+
+def diverse_source_contexts(
+    contexts: list[str],
+    *,
+    limit: int,
+    preserve_order: bool = False,
+) -> list[str]:
     """Select source contexts across provenance groups before filling by rank."""
     if limit <= 0:
         return []
-    contexts = source_lane_priority_order(contexts)
+    if not preserve_order:
+        contexts = source_lane_priority_order(contexts)
     selected: list[str] = []
     seen_contexts: set[str] = set()
     seen_groups: set[str] = set()
@@ -384,6 +411,61 @@ def source_context_group(context: str) -> str:
     return context[:160].casefold()
 
 
+_QUERY_SOURCE_STOPWORDS = {
+    "a",
+    "about",
+    "after",
+    "ago",
+    "all",
+    "and",
+    "before",
+    "between",
+    "did",
+    "do",
+    "does",
+    "for",
+    "from",
+    "had",
+    "have",
+    "how",
+    "i",
+    "in",
+    "it",
+    "many",
+    "me",
+    "my",
+    "of",
+    "on",
+    "the",
+    "to",
+    "was",
+    "what",
+    "when",
+    "where",
+    "which",
+    "with",
+}
+
+
+def _query_specific_terms(query: str) -> set[str]:
+    return {
+        token
+        for token in source_tokens(query)
+        if len(token) > 2 and token not in _QUERY_SOURCE_STOPWORDS and not token.isdigit()
+    }
+
+
+def _query_overlap_score(query_terms: set[str], context: str) -> int:
+    context_terms = set(source_tokens(context))
+    score = len(query_terms & context_terms)
+    for term in query_terms:
+        if term.endswith("ing") and term[:-3] in context_terms:
+            score += 1
+        if f"{term}ed" in context_terms or f"{term}ing" in context_terms:
+            score += 1
+    return score
+
+
 def source_context_citation(context: str) -> str:
     """Extract a compact citation token from source context."""
     for pattern in (
@@ -415,7 +497,7 @@ def source_tokens(text: str) -> list[str]:
     return tokens
 
 
-def _numeric_synthesis_lines(contexts: list[str]) -> list[str]:
+def _numeric_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
     """Project deterministic numeric operations from cited source snippets."""
     numeric_contexts = [_numeric_context_text(context) for context in contexts]
     lines: list[str] = []
@@ -443,7 +525,11 @@ def _numeric_synthesis_lines(contexts: list[str]) -> list[str]:
     if day_values:
         lines.append("day_values=" + ",".join(_format_number(value) for value in day_values))
         lines.append(f"day_total={_format_number(sum(day_values))} days")
-    month_values = _month_values(numeric_contexts)
+    month_contexts = [
+        _numeric_context_text(context)
+        for context in _query_relevant_numeric_contexts(query, contexts)
+    ]
+    month_values = _month_values(month_contexts)
     if month_values:
         lines.append("month_values=" + ",".join(_format_number(value) for value in month_values))
         month_total = sum(month_values)
@@ -451,6 +537,27 @@ def _numeric_synthesis_lines(contexts: list[str]) -> list[str]:
         if month_words := _number_words(month_total):
             lines.append(f"month_total_words={month_words} months ago")
     return lines
+
+
+def _query_relevant_numeric_contexts(query: str, contexts: list[str]) -> list[str]:
+    """Keep numeric evidence tied to query concepts before aggregation."""
+    query_terms = _query_specific_terms(query)
+    if not query_terms:
+        return contexts
+    scored = [
+        (_query_overlap_score(query_terms, context), index, context)
+        for index, context in enumerate(contexts)
+    ]
+    best_score = max((score for score, _, _ in scored), default=0)
+    if best_score < 2:
+        return contexts
+    threshold = max(2, best_score // 2)
+    selected = [
+        context
+        for score, _, context in scored
+        if score >= threshold
+    ]
+    return selected if len(selected) >= 2 else contexts
 
 
 def _numeric_context_text(context: str) -> str:
@@ -464,7 +571,7 @@ def _currency_values(contexts: list[str]) -> list[float]:
     for context in contexts:
         for match in re.finditer(r"\$(?P<value>\d+(?:,\d{3})*(?:\.\d+)?)", context):
             values.append(float(match.group("value").replace(",", "")))
-    return values
+    return sorted(values, reverse=True)
 
 
 def _unit_values(contexts: list[str], *, unit_pattern: str) -> list[float]:
