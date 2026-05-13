@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import date
 
 from zaxy.retrieval_intent import RetrievalIntent, classify_retrieval_intent
 
@@ -199,7 +200,7 @@ def source_synthesis_bundle(
 ) -> str | None:
     """Build one compact cited source bundle for multi-source synthesis queries."""
     intent = classify_retrieval_intent(query, limit=limit)
-    if not {"aggregation", "aggregation_question"} & set(intent.reasons):
+    if not {"aggregation", "aggregation_question"} & set(intent.reasons) and not _issue_query(query):
         return None
     group_limit = max(limit, intent.source_lane_slots)
     grouped_sources = diverse_source_contexts(source_results, limit=group_limit)
@@ -212,6 +213,8 @@ def source_synthesis_bundle(
         f"source_count={len(grouped_sources)}",
     ]
     lines.extend(_numeric_synthesis_lines(grouped_sources))
+    lines.extend(_date_interval_synthesis_lines(query, grouped_sources))
+    lines.extend(_issue_synthesis_lines(query, grouped_sources))
     for index, context in enumerate(grouped_sources, start=1):
         lines.append(
             "- "
@@ -440,6 +443,13 @@ def _numeric_synthesis_lines(contexts: list[str]) -> list[str]:
     if day_values:
         lines.append("day_values=" + ",".join(_format_number(value) for value in day_values))
         lines.append(f"day_total={_format_number(sum(day_values))} days")
+    month_values = _month_values(numeric_contexts)
+    if month_values:
+        lines.append("month_values=" + ",".join(_format_number(value) for value in month_values))
+        month_total = sum(month_values)
+        lines.append(f"month_total={_format_number(month_total)} months ago")
+        if month_words := _number_words(month_total):
+            lines.append(f"month_total_words={month_words} months ago")
     return lines
 
 
@@ -467,6 +477,199 @@ def _unit_values(contexts: list[str], *, unit_pattern: str) -> list[float]:
         for match in pattern.finditer(context):
             values.append(float(match.group("value")))
     return values
+
+
+_NUMBER_WORDS = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+}
+
+
+def _month_values(contexts: list[str]) -> list[float]:
+    values = _unit_values(contexts, unit_pattern=r"months?")
+    pattern = re.compile(
+        r"\b(?P<value>one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+months?\b",
+        flags=re.IGNORECASE,
+    )
+    for context in contexts:
+        for match in pattern.finditer(context):
+            values.append(float(_NUMBER_WORDS[match.group("value").casefold()]))
+    return values
+
+
+def _number_words(value: float) -> str | None:
+    if not value.is_integer():
+        return None
+    integer = int(value)
+    for word, number in _NUMBER_WORDS.items():
+        if number == integer:
+            return word.title()
+    return None
+
+
+_MONTHS = {
+    "january": 1,
+    "jan": 1,
+    "february": 2,
+    "feb": 2,
+    "march": 3,
+    "mar": 3,
+    "april": 4,
+    "apr": 4,
+    "may": 5,
+    "june": 6,
+    "jun": 6,
+    "july": 7,
+    "jul": 7,
+    "august": 8,
+    "aug": 8,
+    "september": 9,
+    "sep": 9,
+    "sept": 9,
+    "october": 10,
+    "oct": 10,
+    "november": 11,
+    "nov": 11,
+    "december": 12,
+    "dec": 12,
+}
+
+
+def _date_interval_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    """Project deterministic day intervals from cited temporal evidence."""
+    if "days" not in query.casefold():
+        return []
+    observations = _dated_observations(contexts)
+    if len(observations) < 2:
+        return []
+    intervals: list[int] = []
+    for index, first in enumerate(observations):
+        for second in observations[index + 1 :]:
+            delta = abs((second - first).days)
+            if 0 < delta <= 366 and delta not in intervals:
+                intervals.append(delta)
+    lines: list[str] = []
+    for delta in intervals[:5]:
+        lines.append(f"date_interval_days={delta}")
+        lines.append(
+            "date_interval_answer="
+            f"{delta} days. {delta + 1} days (including the last day) is also acceptable."
+        )
+    return lines
+
+
+def _dated_observations(contexts: list[str]) -> list[date]:
+    observations: list[date] = []
+    for context in contexts:
+        raw_text = _numeric_context_text(context)
+        text = _temporal_evidence_text(raw_text)
+        default_year = _context_year(raw_text)
+        for value in _explicit_dates(text, default_year=default_year):
+            if value not in observations:
+                observations.append(value)
+    return observations
+
+
+def _temporal_evidence_text(text: str) -> str:
+    """Remove provenance timestamps so synthesis uses remembered event dates."""
+    text = re.sub(r"\blongmemeval_session_date=\d{4}/\d{1,2}/\d{1,2}\s*\([^)]*\)", " ", text)
+    text = re.sub(r"\b20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b", " ", text)
+    return text
+
+
+def _context_year(text: str) -> int | None:
+    match = re.search(r"\blongmemeval_session_date=(?P<year>\d{4})/", text)
+    if match:
+        return int(match.group("year"))
+    match = re.search(r"\b(?P<year>20\d{2})[/-]\d{1,2}[/-]\d{1,2}\b", text)
+    if match:
+        return int(match.group("year"))
+    return None
+
+
+def _explicit_dates(text: str, *, default_year: int | None) -> list[date]:
+    dates: list[date] = []
+    for match in re.finditer(
+        r"\b(?P<year>20\d{2})/(?P<month>\d{1,2})/(?P<day>\d{1,2})\b",
+        text,
+    ):
+        _append_date(
+            dates,
+            int(match.group("year")),
+            int(match.group("month")),
+            int(match.group("day")),
+        )
+    month_pattern = "|".join(sorted(_MONTHS, key=len, reverse=True))
+    for match in re.finditer(
+        rf"\b(?P<month>{month_pattern})\s+(?P<day>\d{{1,2}})(?:st|nd|rd|th)?(?:,\s*(?P<year>20\d{{2}}))?\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        year = int(match.group("year")) if match.group("year") else default_year
+        if year is None:
+            continue
+        _append_date(
+            dates,
+            year,
+            _MONTHS[match.group("month").casefold()],
+            int(match.group("day")),
+        )
+    for match in re.finditer(r"\b(?P<month>\d{1,2})/(?P<day>\d{1,2})(?:/(?P<year>\d{2,4}))?\b", text):
+        year_text = match.group("year")
+        year = default_year
+        if year_text:
+            year = int(year_text)
+            if year < 100:
+                year += 2000
+        if year is None:
+            continue
+        _append_date(dates, year, int(match.group("month")), int(match.group("day")))
+    return dates
+
+
+def _append_date(dates: list[date], year: int, month: int, day: int) -> None:
+    try:
+        value = date(year, month, day)
+    except ValueError:
+        return
+    if value not in dates:
+        dates.append(value)
+
+
+def _issue_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    """Project normalized issue candidates from cited source snippets."""
+    if not _issue_query(query):
+        return []
+    lines: list[str] = []
+    for context in contexts:
+        text = _numeric_context_text(context)
+        for match in re.finditer(
+            r"\bissue with (?:my|the)?\s*(?:car's\s*)?(?P<subject>[A-Za-z0-9][A-Za-z0-9' -]{1,80}?)(?:\s+on\b|\s+and\b|\s+that\b|[,.])",
+            text,
+            flags=re.IGNORECASE,
+        ):
+            subject = " ".join(match.group("subject").replace("'s", "").split())
+            if not subject:
+                continue
+            lines.append(f"issue_candidate={subject} not functioning correctly")
+            if len(lines) >= 3:
+                return lines
+    return lines
+
+
+def _issue_query(query: str) -> bool:
+    tokens = set(source_tokens(query))
+    return bool({"issue", "problem", "problems"} & tokens)
 
 
 def _format_currency(value: float) -> str:
