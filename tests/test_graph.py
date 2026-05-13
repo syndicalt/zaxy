@@ -252,6 +252,8 @@ class TestIngestion:
         assert "MERGE (e)-[next_sb:SUPERSEDED_BY]->(next)" in cypher
         assert "MERGE (next)-[next_pv:PREVIOUS_VERSION]->(e)" in cypher
         assert "sb.source_event_hash = $source_event_hash" in cypher
+        assert "e.summary = coalesce(e.summary, prev.summary)" in cypher
+        assert "e.taskId = coalesce(e.taskId, prev.taskId)" in cypher
 
     async def test_upsert_entity_applies_extracted_properties(self, store: GraphStore) -> None:
         """Extractor-supplied safe properties should be projected to Neo4j."""
@@ -1215,6 +1217,46 @@ class TestIntegration:
 
         assert "graph-task-0001" in names
         assert "graph-finisher-0001" in names
+
+    async def test_sparse_reasserted_entity_carries_forward_durable_fields(
+        self,
+        real_store: GraphStore,
+    ) -> None:
+        """Sparse later events should preserve prior current-state context."""
+        proposed = ExtractionResult(
+            entities=[
+                ExtractedEntity(
+                    name="task-0001",
+                    entity_type="task",
+                    observed_at="2024-03-01T00:00:00Z",
+                    summary="Design landing page for Ship MVP.",
+                    properties={"taskId": "task-0001"},
+                )
+            ],
+            edges=[],
+            source_event_seq=1,
+        )
+        completed = ExtractionResult(
+            entities=[
+                ExtractedEntity(
+                    name="task-0001",
+                    entity_type="task",
+                    observed_at="2024-03-02T00:00:00Z",
+                    properties={"taskId": "task-0001"},
+                )
+            ],
+            edges=[],
+            source_event_seq=2,
+        )
+
+        await real_store.upsert_extraction(proposed)
+        await real_store.upsert_extraction(completed)
+
+        current = await real_store.search_exact("task-0001")
+
+        assert len(current) == 1
+        assert current[0].properties["summary"] == "Design landing page for Ship MVP."
+        assert current[0].properties["taskId"] == "task-0001"
 
     async def test_full_pipeline_event_to_query(self, real_store: GraphStore) -> None:
         """End-to-end: event -> extract -> upsert -> query -> context chunk."""

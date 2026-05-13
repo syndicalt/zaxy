@@ -176,7 +176,10 @@ def _extract_task_proposed(event: Event) -> ExtractionResult:
         entity_type="task",
         observed_at=event.timestamp,
         summary=_optional_text(event.payload.get("summary") or event.payload.get("title")),
-        properties=_retention_properties(event.payload),
+        properties=_merge_properties(
+            _task_identity_properties(event.payload),
+            _retention_properties(event.payload),
+        ),
     )
     actor = ExtractedEntity(
         name=event.actor,
@@ -246,7 +249,10 @@ def _extract_task_completed(event: Event) -> ExtractionResult:
         entity_type="task",
         observed_at=event.timestamp,
         summary=summary,
-        properties=_retention_properties(event.payload),
+        properties=_merge_properties(
+            _task_identity_properties(event.payload),
+            _retention_properties(event.payload),
+        ),
     )
     actor = ExtractedEntity(
         name=event.actor,
@@ -1476,6 +1482,15 @@ def _entity_reference(
 def _explicit_task_id(payload: dict[str, Any]) -> str | None:
     """Return an explicitly supplied task identifier from common event taxonomies."""
     return _optional_text(payload.get("task_id") or payload.get("taskId"))
+
+
+def _task_identity_properties(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Return stable task identity fields that should stay prompt-visible."""
+    task_id = _explicit_task_id(payload)
+    if task_id is None:
+        return None
+    key = "task_id" if "task_id" in payload else "taskId"
+    return {key: task_id}
 
 
 def _with_explicit_task_observation(

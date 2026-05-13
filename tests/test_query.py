@@ -14,6 +14,7 @@ from zaxy.query import (
     OpenAICompatibleReranker,
     QueryRouter,
     _mmr_rank,
+    _prompt_visible_properties,
     build_reranker,
     build_retention_policy,
 )
@@ -1585,3 +1586,19 @@ class TestContextChunk:
             "weighted_score": 0.8,
             "ranking_score": 0.8,
         }
+
+
+def test_prompt_visible_properties_prioritize_domain_identity() -> None:
+    """Domain identity should remain visible before source audit metadata."""
+    visible = _prompt_visible_properties(
+        {
+            "summary": "Design landing page for Ship MVP.",
+            "source_event_seq": 2,
+            "source_event_hash": "abc",
+            "source_thread": "agent-1",
+            "taskId": "task-0001",
+        }
+    )
+
+    assert ("taskId", "task-0001") in visible
+    assert visible.index(("taskId", "task-0001")) < visible.index(("source_event_seq", 2))

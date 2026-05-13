@@ -559,6 +559,13 @@ class GraphStore(ProjectionStore):
             WHERE prev.session_id = $session_id
               AND prev.valid_from < e.valid_from
               AND (prev.valid_to IS NULL OR prev.valid_to > e.valid_from)
+            SET e.summary = coalesce(e.summary, prev.summary),
+                e.taskId = coalesce(e.taskId, prev.taskId),
+                e.task_id = coalesce(e.task_id, prev.task_id),
+                e.userId = coalesce(e.userId, prev.userId),
+                e.user_id = coalesce(e.user_id, prev.user_id),
+                e.goalTitle = coalesce(e.goalTitle, prev.goalTitle),
+                e.goal_title = coalesce(e.goal_title, prev.goal_title)
             SET prev.valid_to = e.valid_from,
                 prev.updated_at = datetime($observed_at)
             WITH e

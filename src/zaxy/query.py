@@ -558,6 +558,12 @@ def _prompt_visible_properties(properties: dict[str, Any], *, limit: int = 3) ->
     priority_prefixes = ("longmemeval_session_id",)
     priority_key_order = (
         "summary",
+        "taskId",
+        "task_id",
+        "userId",
+        "user_id",
+        "goalTitle",
+        "goal_title",
         "source_path",
         "source_start_line",
         "source_end_line",

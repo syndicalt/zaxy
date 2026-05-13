@@ -216,6 +216,7 @@ class TestTaskProposed:
         result = extract(ev)
         task = next(e for e in result.entities if e.entity_type == "task")
         assert task.summary == "Design landing page"
+        assert task.properties == {"taskId": "t1"}
 
     def test_links_task_to_goal_when_goal_title_present(self) -> None:
         """Structured task proposals should preserve task-goal graph links."""
@@ -255,6 +256,8 @@ class TestTaskCompleted:
         ev = _make_event("task.completed", {"taskId": "t1"}, actor="agent-b")
         result = extract(ev)
         assert result.edges[0].relation_type == "completed_task"
+        task = next(e for e in result.entities if e.entity_type == "task")
+        assert task.properties == {"taskId": "t1"}
 
     def test_uses_task_and_summary_payload(self) -> None:
         ev = _make_event(
@@ -284,7 +287,11 @@ class TestTaskCompleted:
         result = extract(ev)
 
         task = next(e for e in result.entities if e.entity_type == "task")
-        assert task.properties == {"expires_at": "2024-03-01T00:00:00Z", "importance": 0.8}
+        assert task.properties == {
+            "expires_at": "2024-03-01T00:00:00Z",
+            "importance": 0.8,
+            "taskId": "t1",
+        }
 
 
 class TestDecisionMade:
