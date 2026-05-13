@@ -824,25 +824,25 @@ def _benchmark_contexts_from_checkout(checkout: object) -> list[str]:
     evidence_status = (
         diagnostics.get("evidence_plan_status") if isinstance(diagnostics, dict) else None
     )
-    contexts = [
-        "\n".join(
-            [
-                "memory_checkout=true",
-                f"answerability={_dict_value(quality, 'answerability')}",
-                f"confidence={_dict_value(quality, 'confidence')}",
-                f"evidence_plan_mode={_dict_value(evidence_plan, 'mode')}",
-                f"evidence_plan_satisfied={_dict_value(evidence_status, 'satisfied')}",
-                f"required_source_groups={_dict_value(evidence_status, 'required_source_groups')}",
-                f"observed_source_groups={_dict_value(evidence_status, 'observed_source_groups')}",
-            ]
-        )
-    ]
+    diagnostics_context = "\n".join(
+        [
+            "memory_checkout=true",
+            f"answerability={_dict_value(quality, 'answerability')}",
+            f"confidence={_dict_value(quality, 'confidence')}",
+            f"evidence_plan_mode={_dict_value(evidence_plan, 'mode')}",
+            f"evidence_plan_satisfied={_dict_value(evidence_status, 'satisfied')}",
+            f"required_source_groups={_dict_value(evidence_status, 'required_source_groups')}",
+            f"observed_source_groups={_dict_value(evidence_status, 'observed_source_groups')}",
+        ]
+    )
+    contexts: list[str] = []
     for fact in getattr(checkout, "current_facts", []):
         if isinstance(fact, dict):
             contexts.append(_benchmark_context_from_checkout_item("current_fact", fact))
     for item in getattr(checkout, "evidence", []):
         if isinstance(item, dict):
             contexts.append(_benchmark_context_from_checkout_item("evidence", item))
+    contexts.append(diagnostics_context)
     evidence_set = diagnostics.get("evidence_set") if isinstance(diagnostics, dict) else None
     groups = evidence_set.get("groups") if isinstance(evidence_set, dict) else None
     if isinstance(groups, list):
