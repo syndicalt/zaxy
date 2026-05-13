@@ -57,6 +57,14 @@ def build_checkout_diagnostics(
     )
     if synthesis:
         diagnostics["synthesis"] = synthesis
+    evidence_plan_status = _checkout_evidence_plan_status(
+        query=query,
+        evidence_plan=evidence_plan,
+        synthesis=synthesis,
+        current_citation_count=_int_metric(diagnostics["current_citation_count"]),
+    )
+    if evidence_plan_status:
+        diagnostics["evidence_plan_status"] = evidence_plan_status
     return diagnostics
 
 
@@ -149,6 +157,21 @@ def build_checkout_quality(
             reasons.append("Query requires multi-source synthesis from cited memory.")
         elif mode == "absence_check":
             reasons.append("Query requires absence checking against cited memory.")
+    evidence_plan_status = diagnostics.get("evidence_plan_status")
+    evidence_plan_block: dict[str, Any] | None = None
+    if isinstance(evidence_plan_status, dict) and not evidence_plan_status.get("satisfied"):
+        required_groups = _int_metric(evidence_plan_status.get("required_source_groups"))
+        observed_groups = _int_metric(evidence_plan_status.get("observed_source_groups"))
+        reason = (
+            f"Evidence plan requires {required_groups} cited source groups, "
+            f"but checkout has {observed_groups}."
+        )
+        reasons.append(reason)
+        evidence_plan_block = {
+            "type": "memory_checkout",
+            "reason": reason,
+            "query": str(evidence_plan_status.get("refresh_query", "broader cited evidence")),
+        }
     confidence = 0.25
     confidence += min(current_fact_count, 2) * 0.22
     confidence += min(current_citation_count, 2) * 0.28
@@ -156,6 +179,8 @@ def build_checkout_quality(
         confidence += 0.07
     confidence = min(0.95, confidence)
     confidence -= min(0.35, warning_count * 0.18)
+    if evidence_plan_block is not None:
+        confidence -= 0.25
     confidence = round(max(0.0, confidence), 2)
     recommended_next_call = guidance.get("recommended_next_call")
     required_action = recommended_next_call if isinstance(recommended_next_call, dict) else None
@@ -168,6 +193,9 @@ def build_checkout_quality(
                 "before answering from memory."
             ),
         }
+    elif evidence_plan_block is not None:
+        answerability = "refresh_recommended"
+        required_action = evidence_plan_block
     elif current_citation_count and not warning_count and confidence >= 0.75:
         answerability = "answer_from_memory"
         required_action = None
@@ -245,6 +273,14 @@ def format_memory_checkout_prompt(
             f"required_source_groups={evidence_plan.get('required_source_groups')}, "
             f"source_lane_slots={evidence_plan.get('source_lane_slots')}"
             f"{reason_text}"
+        )
+    evidence_plan_status = diagnostics.get("evidence_plan_status")
+    if isinstance(evidence_plan_status, dict):
+        lines.append(
+            "- Evidence plan status: "
+            f"observed_source_groups={evidence_plan_status.get('observed_source_groups')}, "
+            f"required_source_groups={evidence_plan_status.get('required_source_groups')}, "
+            f"satisfied={evidence_plan_status.get('satisfied')}"
         )
     lines.append(f"- Source lanes: {_format_source_lanes(source_lanes)}")
     lines.append(f"- Citations: {diagnostics.get('citation_count', 0)}")
@@ -363,6 +399,33 @@ def _checkout_evidence_plan(query: str | None) -> dict[str, object] | None:
     from zaxy.retrieval_plan import build_evidence_plan
 
     return build_evidence_plan(query, limit=10).to_dict()
+
+
+def _checkout_evidence_plan_status(
+    *,
+    query: str | None,
+    evidence_plan: dict[str, object] | None,
+    synthesis: dict[str, Any] | None,
+    current_citation_count: int,
+) -> dict[str, Any] | None:
+    if not evidence_plan:
+        return None
+    required_groups = _int_metric(evidence_plan.get("required_source_groups"))
+    if required_groups <= 0:
+        return None
+    evidence_groups = synthesis.get("evidence_groups") if isinstance(synthesis, dict) else None
+    if isinstance(evidence_groups, list):
+        observed_groups = len(evidence_groups)
+    else:
+        observed_groups = min(1, current_citation_count)
+    status: dict[str, Any] = {
+        "required_source_groups": required_groups,
+        "observed_source_groups": observed_groups,
+        "satisfied": observed_groups >= required_groups,
+    }
+    if not status["satisfied"] and query:
+        status["refresh_query"] = f"broader cited evidence for: {query}"
+    return status
 
 
 def build_checkout_feedback_payload(fact: dict[str, Any], query: str) -> dict[str, Any] | None:

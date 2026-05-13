@@ -226,6 +226,58 @@ def test_checkout_guides_multi_source_aggregation() -> None:
     assert "Do not answer aggregation questions from a single top memory" in prompt
 
 
+def test_checkout_blocks_aggregation_when_required_source_groups_are_missing() -> None:
+    """Aggregation checkout should not be answerable from one cited source group."""
+    current_facts = [
+        {
+            "content": "longmemeval_session_id=answer-1 I attended Rachel and Mike's wedding.",
+            "source": "verbatim",
+            "score": 0.91,
+            "citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa",
+            "source_lane": "verbatim",
+        }
+    ]
+    diagnostics = build_checkout_diagnostics(
+        query="How many weddings did I attend?",
+        source_lanes={"verbatim": 1},
+        current_facts=current_facts,
+        evidence=current_facts,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        warnings=[],
+    )
+    guidance = build_checkout_guidance(
+        query="How many weddings did I attend?",
+        current_facts=current_facts,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        evidence=current_facts,
+    )
+    quality = build_checkout_quality(diagnostics=diagnostics, guidance=guidance)
+    prompt = format_memory_checkout_prompt(
+        query="How many weddings did I attend?",
+        assembly_prompt="# Active Memory Working Set",
+        current_facts=current_facts,
+        evidence=current_facts,
+        quality=quality,
+        guidance=guidance,
+        diagnostics=diagnostics,
+    )
+
+    assert diagnostics["evidence_plan_status"] == {
+        "required_source_groups": 2,
+        "observed_source_groups": 1,
+        "satisfied": False,
+        "refresh_query": "broader cited evidence for: How many weddings did I attend?",
+    }
+    assert quality["answerability"] == "refresh_recommended"
+    assert quality["required_action"] == {
+        "type": "memory_checkout",
+        "reason": "Evidence plan requires 2 cited source groups, but checkout has 1.",
+        "query": "broader cited evidence for: How many weddings did I attend?",
+    }
+    assert "Evidence plan requires 2 cited source groups, but checkout has 1." in quality["reasons"]
+    assert "Evidence plan status: observed_source_groups=1, required_source_groups=2, satisfied=False" in prompt
+
+
 def test_memory_checkout_exposes_evidence_plan_for_aggregation() -> None:
     """Checkout should expose the evidence shape required by the query."""
     assembly = ContextAssembly(
