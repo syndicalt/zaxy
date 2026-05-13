@@ -66,6 +66,7 @@ def test_checkout_policy_handles_uncited_current_fact_once_for_core_and_mcp() ->
         "feedback_recommended": False,
         "feedback_tool": "memory_feedback",
         "feedback_reason": "Reinforce cited context if it materially informed the next response.",
+        "evidence_set": {"groups": []},
     }
     assert quality == {
         "answerability": "refresh_recommended",
@@ -220,6 +221,7 @@ def test_checkout_guides_multi_source_aggregation() -> None:
 
     assert diagnostics["synthesis"]["mode"] == "multi_source_aggregation"
     assert diagnostics["synthesis"]["citation_count"] == 2
+    assert diagnostics["evidence_set"]["status"]["satisfied"] is True
     assert "Query requires multi-source synthesis from cited memory." in quality["reasons"]
     assert guidance["synthesis"]["mode"] == "multi_source_aggregation"
     assert "Group evidence by distinct cited source" in prompt

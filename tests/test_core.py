@@ -929,6 +929,28 @@ class TestContextAssembly:
                 "promote_cited_sources": False,
                 "reasons": [],
             },
+            "evidence_set": {
+                "groups": [
+                    {
+                        "source_id": "eventloom://agent-1/events/3#cccccccccccc",
+                        "evidence_count": 1,
+                        "citation_count": 1,
+                        "citations": ["eventloom://agent-1/events/3#cccccccccccc"],
+                        "source_lanes": ["graph"],
+                        "top_score": 0.95,
+                        "snippet": "Use Memory Checkout as the prompt-ready context contract.",
+                    },
+                    {
+                        "source_id": "eventloom://agent-1/events/2#bbbbbbbbbbbb",
+                        "evidence_count": 1,
+                        "citation_count": 1,
+                        "citations": ["eventloom://agent-1/events/2#bbbbbbbbbbbb"],
+                        "source_lanes": ["graph"],
+                        "top_score": 0.7,
+                        "snippet": "Use raw replay only for model context.",
+                    },
+                ]
+            },
             "superseded_contexts_excluded": 1,
             "warning_count": 0,
             "feedback_recommended": True,

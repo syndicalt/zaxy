@@ -811,6 +811,28 @@ class TestContextLifecycleTools:
                 "promote_cited_sources": False,
                 "reasons": [],
             },
+            "evidence_set": {
+                "groups": [
+                    {
+                        "source_id": "eventloom://agent-1/events/1832#gap",
+                        "evidence_count": 1,
+                        "citation_count": 1,
+                        "citations": ["eventloom://agent-1/events/1832#gap"],
+                        "source_lanes": ["graph"],
+                        "top_score": 0.91,
+                        "snippet": "A memory capture gap was recorded during benchmark debugging.",
+                    },
+                    {
+                        "source_id": "eventloom://agent-1/events/1882#checkout",
+                        "evidence_count": 1,
+                        "citation_count": 1,
+                        "citations": ["eventloom://agent-1/events/1882#checkout"],
+                        "source_lanes": ["graph"],
+                        "top_score": 0.8,
+                        "snippet": "Memory checkout is the context contract.",
+                    },
+                ]
+            },
         }
         assert output["guidance"]["recommended_next_call"] == {
             "tool": "memory_checkout",
