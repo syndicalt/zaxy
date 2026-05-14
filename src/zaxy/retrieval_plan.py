@@ -74,6 +74,19 @@ def source_lane_query(query: str, graph_results: list[str]) -> str:
     return " ".join([query, *concepts])
 
 
+def source_lane_queries(query: str, graph_results: list[str]) -> tuple[str, ...]:
+    """Return source-lane queries in safe recall order.
+
+    The original user query remains first so graph-derived concepts can improve
+    recall without replacing the lexical evidence request when graph retrieval
+    starts in the wrong neighborhood.
+    """
+    expanded = source_lane_query(query, graph_results)
+    if expanded == query:
+        return (query,)
+    return (query, expanded)
+
+
 def source_lane_candidate_limit(query: str, *, limit: int) -> int:
     """Return internal source candidate budget for source-sensitive retrieval."""
     if limit <= 0:

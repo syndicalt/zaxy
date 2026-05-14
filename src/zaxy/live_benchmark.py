@@ -38,7 +38,7 @@ from zaxy.retrieval_plan import (
     should_query_source_lane,
     source_context_group,
     source_lane_candidate_limit,
-    source_lane_query,
+    source_lane_queries,
     source_synthesis_bundle,
 )
 
@@ -627,10 +627,9 @@ class ZaxyRetriever:
             or not should_query_source_lane(query, limit=limit)
         ):
             return graph_results
-        lexical_query = source_lane_query(query, graph_results)
         lexical_limit = source_lane_candidate_limit(query, limit=limit)
-        lexical_results = self._lexical_retriever.query(
-            lexical_query,
+        lexical_results = self._source_lane_results(
+            source_lane_queries(query, graph_results),
             temporal_point=temporal_point,
             limit=lexical_limit,
         )
@@ -666,6 +665,35 @@ class ZaxyRetriever:
             limit=limit,
             synthesis_bundle=synthesis_bundle,
         )
+
+    def _source_lane_results(
+        self,
+        queries: tuple[str, ...],
+        *,
+        temporal_point: str | None,
+        limit: int,
+    ) -> list[str]:
+        """Return merged source-lane hits across original and expanded queries."""
+        if self._lexical_retriever is None or limit <= 0:
+            return []
+        results: list[str] = []
+        seen: set[str] = set()
+        per_query_limit = max(limit, 1)
+        for source_query in queries:
+            for context in self._lexical_retriever.query(
+                source_query,
+                temporal_point=temporal_point,
+                limit=per_query_limit,
+            ):
+                if context in seen:
+                    continue
+                seen.add(context)
+                results.append(context)
+                if len(results) >= limit:
+                    break
+            if len(results) >= limit:
+                break
+        return results
 
     def as_checkout_retriever(self) -> ZaxyCheckoutRetriever:
         """Return a checkout benchmark backend over the same live graph."""
@@ -725,10 +753,9 @@ class ZaxyCheckoutRetriever(ZaxyRetriever):
     ) -> list[Context]:
         if self._lexical_retriever is None or not should_query_source_lane(query, limit=limit):
             return []
-        lexical_query = source_lane_query(query, graph_results)
         lexical_limit = source_lane_candidate_limit(query, limit=limit)
-        lexical_results = self._lexical_retriever.query(
-            lexical_query,
+        lexical_results = self._source_lane_results(
+            source_lane_queries(query, graph_results),
             temporal_point=None,
             limit=lexical_limit,
         )

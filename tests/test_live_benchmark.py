@@ -1574,8 +1574,69 @@ async def test_zaxy_retriever_uses_graph_answer_concepts_for_source_lane() -> No
 
     results = await retriever.query_async("What breed is my dog?", limit=10)
 
-    assert "Golden Retriever" in seen_queries[0]
+    assert seen_queries[0] == "What breed is my dog?"
+    assert any("Golden Retriever" in query for query in seen_queries[1:])
     assert any("longmemeval_session_id=answer-3" in result for result in results)
+
+
+async def test_zaxy_retriever_preserves_original_source_query_when_graph_concepts_are_noisy() -> None:
+    """Graph-expanded source lookup should supplement, not replace, original recall."""
+    source_contexts = [
+        (
+            "citation=eventloom://benchmark/events/1#abc "
+            "longmemeval_session_id=distractor play directing next month"
+        ),
+        (
+            "citation=eventloom://benchmark/events/2#abc "
+            "longmemeval_session_id=answer_355c48bb "
+            "I attended The Glass Menagerie at the local community theater."
+        ),
+        (
+            "citation=eventloom://benchmark/events/3#abc "
+            "longmemeval_session_id=noisy Provenance Story Netflix Adding"
+        ),
+    ]
+    seen_queries: list[str] = []
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, limit, embedding
+            return [
+                SimpleNamespace(content="graph says Provenance Story Netflix Adding")
+            ]
+
+    class QueryAwareLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del temporal_point
+            seen_queries.append(query)
+            if "Provenance Story Netflix Adding" in query:
+                return [source_contexts[2], source_contexts[0]][:limit]
+            return source_contexts[:limit]
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=QueryAwareLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "What play did I attend at the local community theater?",
+        limit=5,
+    )
+
+    assert seen_queries[0] == "What play did I attend at the local community theater?"
+    assert any("The Glass Menagerie" in result for result in results)
 
 
 async def test_zaxy_retriever_reserves_multiple_source_lanes_for_aggregation() -> None:
