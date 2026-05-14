@@ -2149,6 +2149,7 @@ async def test_zaxy_retriever_builds_date_interval_source_synthesis() -> None:
     bundle = results[0]
     assert "date_interval_days=30" in bundle
     assert "date_interval_answer=30 days. 31 days (including the last day) is also acceptable." in bundle
+    assert "date_interval_source_ids=answer-1,answer-2" in bundle
 
 
 async def test_zaxy_retriever_ranks_query_specific_date_intervals_before_distractors() -> None:
@@ -2236,6 +2237,7 @@ async def test_zaxy_retriever_ranks_query_specific_date_intervals_before_distrac
     first_interval = bundle.index("date_interval_answer=")
     assert "date_interval_answer=30 days. 31 days (including the last day) is also acceptable." in bundle
     assert first_interval == bundle.index("date_interval_answer=30 days")
+    assert "date_interval_source_ids=answer-1,answer-2" in bundle
 
 
 async def test_zaxy_retriever_prioritizes_query_specific_source_synthesis() -> None:

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import date, timedelta
 
 from zaxy.evidence_candidates import aggregate_candidate_projection
 from zaxy.retrieval_intent import RetrievalIntent, classify_retrieval_intent
@@ -233,7 +232,6 @@ def source_synthesis_bundle(
             grouped_sources,
             aggregate_lines=list(aggregate_projection.lines),
         ),
-        *_date_interval_synthesis_lines(query, grouped_sources),
         *_temporal_order_synthesis_lines(query, grouped_sources),
         *_issue_synthesis_lines(query, grouped_sources),
     ]
@@ -992,174 +990,6 @@ def _temporal_order_candidate(text: str) -> str:
         text = match.group("candidate").strip(" .")
     words = text.split()
     return " ".join(words[:8])
-
-
-_MONTHS = {
-    "january": 1,
-    "jan": 1,
-    "february": 2,
-    "feb": 2,
-    "march": 3,
-    "mar": 3,
-    "april": 4,
-    "apr": 4,
-    "may": 5,
-    "june": 6,
-    "jun": 6,
-    "july": 7,
-    "jul": 7,
-    "august": 8,
-    "aug": 8,
-    "september": 9,
-    "sep": 9,
-    "sept": 9,
-    "october": 10,
-    "oct": 10,
-    "november": 11,
-    "nov": 11,
-    "december": 12,
-    "dec": 12,
-}
-
-
-def _date_interval_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
-    """Project deterministic day intervals from cited temporal evidence."""
-    if "days" not in query.casefold():
-        return []
-    observations = _dated_observations(contexts)
-    if len(observations) < 2:
-        return []
-    intervals: list[int] = []
-    for index, first in enumerate(observations):
-        for second in observations[index + 1 :]:
-            delta = abs((second - first).days)
-            if 0 < delta <= 366 and delta not in intervals:
-                intervals.append(delta)
-    lines: list[str] = []
-    for delta in intervals[:5]:
-        lines.append(f"date_interval_days={delta}")
-        lines.append(
-            "date_interval_answer="
-            f"{delta} days. {delta + 1} days (including the last day) is also acceptable."
-        )
-    return lines
-
-
-def _dated_observations(contexts: list[str]) -> list[date]:
-    observations: list[date] = []
-    for context in contexts:
-        raw_text = _numeric_context_text(context)
-        text = _temporal_evidence_text(raw_text)
-        default_year = _context_year(raw_text)
-        for value in _explicit_dates(text, default_year=default_year):
-            if value not in observations:
-                observations.append(value)
-    return observations
-
-
-def _temporal_evidence_text(text: str) -> str:
-    """Remove provenance timestamps so synthesis uses remembered event dates."""
-    text = re.sub(r"\blongmemeval_session_date=\d{4}/\d{1,2}/\d{1,2}\s*\([^)]*\)", " ", text)
-    text = re.sub(r"\b20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b", " ", text)
-    return text
-
-
-def _context_year(text: str) -> int | None:
-    match = re.search(r"\blongmemeval_session_date=(?P<year>\d{4})/", text)
-    if match:
-        return int(match.group("year"))
-    match = re.search(r"\b(?P<year>20\d{2})[/-]\d{1,2}[/-]\d{1,2}\b", text)
-    if match:
-        return int(match.group("year"))
-    return None
-
-
-def _explicit_dates(text: str, *, default_year: int | None) -> list[date]:
-    dates: list[date] = []
-    for match in re.finditer(
-        r"\b(?P<year>20\d{2})/(?P<month>\d{1,2})/(?P<day>\d{1,2})\b",
-        text,
-    ):
-        _append_date(
-            dates,
-            int(match.group("year")),
-            int(match.group("month")),
-            int(match.group("day")),
-        )
-    month_pattern = "|".join(sorted(_MONTHS, key=len, reverse=True))
-    if default_year is not None:
-        black_friday = _black_friday(default_year)
-        if re.search(r"\bblack friday\b", text, flags=re.IGNORECASE):
-            if re.search(r"\b(?:on|during)\s+black friday\b", text, flags=re.IGNORECASE):
-                _append_unique_date(dates, black_friday)
-            if re.search(r"\b(?:a|one|1)\s+weeks?\s+before\s+black friday\b", text, flags=re.IGNORECASE):
-                _append_unique_date(dates, black_friday - timedelta(days=7))
-            if re.search(r"\b(?:a|one|1)\s+weeks?\s+after\s+black friday\b", text, flags=re.IGNORECASE):
-                _append_unique_date(dates, black_friday + timedelta(days=7))
-    for match in re.finditer(
-        rf"\b(?P<month>{month_pattern})\s+(?P<day>\d{{1,2}})(?:st|nd|rd|th)?(?:,\s*(?P<year>20\d{{2}}))?\b",
-        text,
-        flags=re.IGNORECASE,
-    ):
-        year = int(match.group("year")) if match.group("year") else default_year
-        if year is None:
-            continue
-        _append_date(
-            dates,
-            year,
-            _MONTHS[match.group("month").casefold()],
-            int(match.group("day")),
-        )
-    for match in re.finditer(
-        rf"\b(?:the\s+)?(?P<day>\d{{1,2}})(?:st|nd|rd|th)?\s+of\s+(?P<month>{month_pattern})(?:,\s*(?P<year>20\d{{2}}))?\b",
-        text,
-        flags=re.IGNORECASE,
-    ):
-        year = int(match.group("year")) if match.group("year") else default_year
-        if year is None:
-            continue
-        _append_date(
-            dates,
-            year,
-            _MONTHS[match.group("month").casefold()],
-            int(match.group("day")),
-        )
-    for match in re.finditer(r"\b(?P<month>\d{1,2})/(?P<day>\d{1,2})(?:/(?P<year>\d{2,4}))?\b", text):
-        year_text = match.group("year")
-        year = default_year
-        if year_text:
-            year = int(year_text)
-            if year < 100:
-                year += 2000
-        if year is None:
-            continue
-        _append_date(dates, year, int(match.group("month")), int(match.group("day")))
-    return dates
-
-
-def _black_friday(year: int) -> date:
-    thanksgiving = _nth_weekday_of_month(year, 11, weekday=3, n=4)
-    return thanksgiving + timedelta(days=1)
-
-
-def _nth_weekday_of_month(year: int, month: int, *, weekday: int, n: int) -> date:
-    value = date(year, month, 1)
-    days_until_weekday = (weekday - value.weekday()) % 7
-    return value + timedelta(days=days_until_weekday + (n - 1) * 7)
-
-
-def _append_unique_date(dates: list[date], value: date) -> None:
-    if value not in dates:
-        dates.append(value)
-
-
-def _append_date(dates: list[date], year: int, month: int, day: int) -> None:
-    try:
-        value = date(year, month, day)
-    except ValueError:
-        return
-    if value not in dates:
-        dates.append(value)
 
 
 def _issue_synthesis_lines(query: str, contexts: list[str]) -> list[str]:

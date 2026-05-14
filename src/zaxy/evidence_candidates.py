@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import date, timedelta
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,10 @@ def aggregate_candidate_projection(query: str, contexts: list[str]) -> EvidenceP
     if duration:
         lines.extend(_duration_candidate_lines(duration))
         source_groups.extend(candidate.source_group for candidate in duration)
+    date_projection = _date_interval_projection(query, contexts)
+    if date_projection.lines:
+        lines.extend(date_projection.lines)
+        source_groups.extend(date_projection.source_groups)
     return EvidenceProjection(
         lines=tuple(lines),
         source_groups=tuple(dict.fromkeys(source_groups)),
@@ -233,6 +238,191 @@ def _duration_candidates(query: str, contexts: list[str]) -> list[EvidenceCandid
                 )
             )
     return _filter_duration_candidates(query, items)
+
+
+def _date_interval_projection(query: str, contexts: list[str]) -> EvidenceProjection:
+    if "days" not in _tokens(query):
+        return EvidenceProjection(lines=(), source_groups=())
+    candidates = _date_candidates(query, contexts)
+    if len(candidates) < 2:
+        return EvidenceProjection(lines=(), source_groups=())
+    intervals: list[tuple[int, int, int, EvidenceCandidate, EvidenceCandidate]] = []
+    seen_deltas: set[int] = set()
+    for left_index, left in enumerate(candidates):
+        for right_index, right in enumerate(candidates[left_index + 1 :], start=left_index + 1):
+            if left.source_group == right.source_group:
+                continue
+            delta = abs((date.fromisoformat(right.value) - date.fromisoformat(left.value)).days)
+            if delta <= 0 or delta > 366 or delta in seen_deltas:
+                continue
+            seen_deltas.add(delta)
+            intervals.append(
+                (
+                    -(left.relevance + right.relevance),
+                    left_index + right_index,
+                    delta,
+                    left,
+                    right,
+                )
+            )
+    if not intervals:
+        return EvidenceProjection(lines=(), source_groups=())
+    intervals.sort(key=lambda item: (item[0], item[1], item[2]))
+    lines: list[str] = []
+    support_groups: list[str] = []
+    for index, (_, _, delta, left, right) in enumerate(intervals[:5]):
+        lines.append(f"date_interval_days={delta}")
+        lines.append(
+            "date_interval_answer="
+            f"{delta} days. {delta + 1} days (including the last day) is also acceptable."
+        )
+        if index == 0:
+            support_groups.extend(sorted({left.source_group, right.source_group}))
+            lines.append("date_interval_source_ids=" + ",".join(support_groups))
+    return EvidenceProjection(lines=tuple(lines), source_groups=tuple(support_groups))
+
+
+def _date_candidates(query: str, contexts: list[str]) -> list[EvidenceCandidate]:
+    focus_terms = _expanded_focus_terms(query)
+    candidates: list[EvidenceCandidate] = []
+    seen: set[tuple[str, str]] = set()
+    for context in contexts:
+        raw_text = _context_text(context)
+        text = _temporal_evidence_text(raw_text)
+        default_year = _context_year(raw_text)
+        group = _source_group(context)
+        relevance = _relevance(focus_terms, text)
+        for value in _explicit_dates(text, default_year=default_year):
+            identity = (group, value.isoformat())
+            if identity in seen:
+                continue
+            seen.add(identity)
+            candidates.append(
+                EvidenceCandidate(
+                    kind="date",
+                    value=value.isoformat(),
+                    unit="day",
+                    source_group=group,
+                    label=value.isoformat(),
+                    context=text,
+                    relevance=relevance,
+                )
+            )
+    return _filter_date_candidates(candidates)
+
+
+def _filter_date_candidates(candidates: list[EvidenceCandidate]) -> list[EvidenceCandidate]:
+    if len(candidates) < 3:
+        return candidates
+    best = max((candidate.relevance for candidate in candidates), default=0)
+    if best < 2:
+        return candidates
+    selected = [candidate for candidate in candidates if candidate.relevance >= max(2, best // 2)]
+    return selected if len(selected) >= 2 else candidates
+
+
+def _temporal_evidence_text(text: str) -> str:
+    text = re.sub(r"\blongmemeval_session_date=\d{4}/\d{1,2}/\d{1,2}\s*\([^)]*\)", " ", text)
+    text = re.sub(r"\b20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b", " ", text)
+    return text
+
+
+def _context_year(text: str) -> int | None:
+    match = re.search(r"\blongmemeval_session_date=(?P<year>\d{4})/", text)
+    if match:
+        return int(match.group("year"))
+    match = re.search(r"\b(?P<year>20\d{2})[/-]\d{1,2}[/-]\d{1,2}\b", text)
+    if match:
+        return int(match.group("year"))
+    return None
+
+
+def _explicit_dates(text: str, *, default_year: int | None) -> list[date]:
+    dates: list[date] = []
+    for match in re.finditer(
+        r"\b(?P<year>20\d{2})/(?P<month>\d{1,2})/(?P<day>\d{1,2})\b",
+        text,
+    ):
+        _append_date(
+            dates,
+            int(match.group("year")),
+            int(match.group("month")),
+            int(match.group("day")),
+        )
+    month_pattern = "|".join(sorted(_MONTHS, key=len, reverse=True))
+    if default_year is not None:
+        black_friday = _black_friday(default_year)
+        if re.search(r"\bblack friday\b", text, flags=re.IGNORECASE):
+            if re.search(r"\b(?:on|during)\s+black friday\b", text, flags=re.IGNORECASE):
+                _append_unique_date(dates, black_friday)
+            if re.search(r"\b(?:a|one|1)\s+weeks?\s+before\s+black friday\b", text, flags=re.IGNORECASE):
+                _append_unique_date(dates, black_friday - timedelta(days=7))
+            if re.search(r"\b(?:a|one|1)\s+weeks?\s+after\s+black friday\b", text, flags=re.IGNORECASE):
+                _append_unique_date(dates, black_friday + timedelta(days=7))
+    for match in re.finditer(
+        rf"\b(?P<month>{month_pattern})\s+(?P<day>\d{{1,2}})(?:st|nd|rd|th)?(?:,\s*(?P<year>20\d{{2}}))?\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        year = int(match.group("year")) if match.group("year") else default_year
+        if year is None:
+            continue
+        _append_date(
+            dates,
+            year,
+            _MONTHS[match.group("month").casefold()],
+            int(match.group("day")),
+        )
+    for match in re.finditer(
+        rf"\b(?:the\s+)?(?P<day>\d{{1,2}})(?:st|nd|rd|th)?\s+of\s+(?P<month>{month_pattern})(?:,\s*(?P<year>20\d{{2}}))?\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        year = int(match.group("year")) if match.group("year") else default_year
+        if year is None:
+            continue
+        _append_date(
+            dates,
+            year,
+            _MONTHS[match.group("month").casefold()],
+            int(match.group("day")),
+        )
+    for match in re.finditer(r"\b(?P<month>\d{1,2})/(?P<day>\d{1,2})(?:/(?P<year>\d{2,4}))?\b", text):
+        year_text = match.group("year")
+        year = default_year
+        if year_text:
+            year = int(year_text)
+            if year < 100:
+                year += 2000
+        if year is None:
+            continue
+        _append_date(dates, year, int(match.group("month")), int(match.group("day")))
+    return dates
+
+
+def _black_friday(year: int) -> date:
+    thanksgiving = _nth_weekday_of_month(year, 11, weekday=3, n=4)
+    return thanksgiving + timedelta(days=1)
+
+
+def _nth_weekday_of_month(year: int, month: int, *, weekday: int, n: int) -> date:
+    value = date(year, month, 1)
+    days_until_weekday = (weekday - value.weekday()) % 7
+    return value + timedelta(days=days_until_weekday + (n - 1) * 7)
+
+
+def _append_unique_date(dates: list[date], value: date) -> None:
+    if value not in dates:
+        dates.append(value)
+
+
+def _append_date(dates: list[date], year: int, month: int, day: int) -> None:
+    try:
+        value = date(year, month, day)
+    except ValueError:
+        return
+    if value not in dates:
+        dates.append(value)
 
 
 def _filter_duration_candidates(
@@ -466,4 +656,32 @@ _QUERY_STOPWORDS = {
     "what",
     "when",
     "which",
+}
+
+
+_MONTHS = {
+    "january": 1,
+    "jan": 1,
+    "february": 2,
+    "feb": 2,
+    "march": 3,
+    "mar": 3,
+    "april": 4,
+    "apr": 4,
+    "may": 5,
+    "june": 6,
+    "jun": 6,
+    "july": 7,
+    "jul": 7,
+    "august": 8,
+    "aug": 8,
+    "september": 9,
+    "sep": 9,
+    "sept": 9,
+    "october": 10,
+    "oct": 10,
+    "november": 11,
+    "nov": 11,
+    "december": 12,
+    "dec": 12,
 }
