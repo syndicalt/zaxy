@@ -150,6 +150,15 @@ def build_synthesis_plan(query: str, *, limit: int = 10) -> SynthesisPlan:
             required_source_groups=2,
             reasons=tuple(reasons or ["money"]),
         )
+    if duration_query:
+        return SynthesisPlan(
+            answer_type="sum",
+            operation="sum_values",
+            subject_terms=subject_terms,
+            required_kinds=("duration",),
+            required_source_groups=2,
+            reasons=tuple(reasons or ["duration"]),
+        )
     if "average" in tokens:
         return SynthesisPlan(
             answer_type="average",
@@ -257,6 +266,90 @@ def render_currency_result(ledger: EvidenceLedger, *, rank: int) -> SynthesisRes
     )
 
 
+def build_duration_ledger(query: str, contexts: list[str]) -> EvidenceLedger:
+    """Extract and normalize duration evidence into a cited ledger."""
+    plan = build_synthesis_plan(query)
+    if "duration" not in plan.required_kinds:
+        return EvidenceLedger(plan=plan, rows=())
+    focus_terms = _duration_focus_terms(query)
+    rows: list[EvidenceLedgerRow] = []
+    seen: set[str] = set()
+    for context_index, context in enumerate(contexts):
+        text = context_text(context)
+        group = source_group(context)
+        citation = source_citation(context)
+        relevance = _relevance(focus_terms, text)
+        for match_index, match in enumerate(
+            re.finditer(
+                r"\b(?P<value>\d+(?:\.\d+)?)\s*[- ]?(?P<unit>minutes?|mins?|hours?|hrs?|days?|weeks?|months?)\b",
+                text,
+                flags=re.IGNORECASE,
+            )
+        ):
+            unit = canonical_duration_unit(match.group("unit"))
+            raw_value = float(match.group("value"))
+            minutes = raw_value * duration_unit_minutes(unit)
+            label = f"{format_number(raw_value)} {unit}"
+            identity = duration_identity(group=group, minutes=minutes, label=label)
+            duplicate = identity in seen
+            seen.add(identity)
+            rows.append(
+                EvidenceLedgerRow(
+                    fact_id=f"duration:{context_index}:{match_index}",
+                    source_group=group,
+                    citation=citation,
+                    kind="duration",
+                    value=str(minutes),
+                    unit="minutes",
+                    label=label,
+                    raw_span=match.group(0),
+                    context=text,
+                    normalized_identity=identity,
+                    relevance=relevance,
+                    include_reason="duration_value",
+                    exclude_reason="duplicate_identity" if duplicate else "",
+                    confidence=_row_confidence(relevance=relevance, has_label=True),
+                )
+            )
+    return _filter_duration_ledger(EvidenceLedger(plan=plan, rows=tuple(rows)), focus_terms)
+
+
+def render_duration_result(ledger: EvidenceLedger, *, rank: int) -> SynthesisResult:
+    """Render duration synthesis lines from an evidence ledger."""
+    candidates = ledger.included(kind="duration")
+    excluded = ledger.excluded(kind="duration")
+    if not candidates:
+        return SynthesisResult(lines=(), support_source_groups=())
+    values = [duration_display(row) for row in candidates]
+    total_minutes = sum(float(row.value) for row in candidates)
+    lines = [
+        *_candidate_diagnostic_lines("duration", candidates, rank=rank),
+        "duration_values=" + ",".join(values),
+        f"duration_total_minutes={format_number(total_minutes)} minutes",
+        f"duration_total_hours={format_number(total_minutes / 60)} hours",
+        f"duration_total_answer={format_number(total_minutes / 60)} hours",
+        "duration_source_ids="
+        + ",".join(row.source_group for row in candidates),
+    ]
+    if excluded:
+        lines.append(
+            "duration_excluded_source_ids="
+            + ",".join(row.source_group for row in excluded)
+        )
+    if len(candidates) >= 2:
+        raw_values = [float(row.value) for row in candidates]
+        lines.append(
+            "duration_difference_minutes="
+            f"{format_number(max(raw_values) - min(raw_values))} minutes"
+        )
+    lines.extend(duration_compatibility_lines(candidates))
+    return SynthesisResult(
+        lines=tuple(lines),
+        support_source_groups=tuple(dict.fromkeys(row.source_group for row in candidates)),
+        excluded_source_groups=tuple(dict.fromkeys(row.source_group for row in excluded)),
+    )
+
+
 def source_tokens(text: str) -> list[str]:
     """Tokenize source/query text for deterministic synthesis helpers."""
     tokens: list[str] = []
@@ -340,6 +433,75 @@ def format_currency(value: float) -> str:
     return f"${whole:,}.{fraction}"
 
 
+def format_number(value: float) -> str:
+    """Render a number without unnecessary trailing zeroes."""
+    if value.is_integer():
+        return str(int(value))
+    return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
+def canonical_duration_unit(unit: str) -> str:
+    """Return the canonical display unit for a duration token."""
+    normalized = unit.casefold()
+    if normalized in {"min", "mins", "minute", "minutes"}:
+        return "minutes"
+    if normalized in {"hr", "hrs", "hour", "hours"}:
+        return "hours"
+    if normalized in {"day", "days"}:
+        return "days"
+    if normalized in {"week", "weeks"}:
+        return "weeks"
+    return "months"
+
+
+def duration_unit_minutes(unit: str) -> float:
+    """Return the number of minutes represented by one canonical duration unit."""
+    return {
+        "minutes": 1,
+        "hours": 60,
+        "days": 60 * 24,
+        "weeks": 60 * 24 * 7,
+        "months": 60 * 24 * 28,
+    }[unit]
+
+
+def duration_identity(*, group: str, minutes: float, label: str) -> str:
+    """Return a stable identity used for duration deduplication."""
+    return f"group={group}|minutes={format_number(minutes)}|label={label.casefold()}"
+
+
+def duration_display(row: EvidenceLedgerRow) -> str:
+    """Return the original display value for a duration ledger row."""
+    return row.label or f"{format_number(float(row.value))} minutes"
+
+
+def duration_compatibility_lines(candidates: tuple[EvidenceLedgerRow, ...]) -> list[str]:
+    """Render legacy compatibility fields for common duration units."""
+    by_unit: dict[str, list[float]] = {}
+    for row in candidates:
+        raw_value, raw_unit = duration_raw_value_unit(row)
+        by_unit.setdefault(raw_unit, []).append(raw_value)
+    lines: list[str] = []
+    if minute_values := by_unit.get("minutes"):
+        lines.append("minute_values=" + ",".join(format_number(value) for value in minute_values))
+        lines.append(f"minute_total_hours={format_number(sum(minute_values) / 60)} hours")
+    if hour_values := by_unit.get("hours"):
+        lines.append("hour_values=" + ",".join(format_number(value) for value in hour_values))
+        lines.append(f"hour_total={format_number(sum(hour_values))} hours")
+    if day_values := by_unit.get("days"):
+        lines.append("day_values=" + ",".join(format_number(value) for value in day_values))
+        lines.append(f"day_total={format_number(sum(day_values))} days")
+    return lines
+
+
+def duration_raw_value_unit(row: EvidenceLedgerRow) -> tuple[float, str]:
+    """Return the original raw value/unit encoded in a duration label."""
+    match = re.match(r"(?P<value>\d+(?:\.\d+)?)\s+(?P<unit>[a-z]+)", row.label)
+    if not match:
+        return float(row.value), row.unit
+    return float(match.group("value")), match.group("unit")
+
+
 def clean_label(label: str) -> str:
     """Return a bounded label with trailing clauses removed."""
     label = re.split(r"\b(?:on|in|for|with|and|but|because|when)\b", label, maxsplit=1)[0]
@@ -371,6 +533,49 @@ def _filter_currency_ledger(
     rows: list[EvidenceLedgerRow] = []
     for row in ledger.rows:
         if row.exclude_reason or row.kind != "currency":
+            rows.append(row)
+            continue
+        if row.normalized_identity in selected_identities:
+            rows.append(row)
+            continue
+        rows.append(
+            EvidenceLedgerRow(
+                fact_id=row.fact_id,
+                source_group=row.source_group,
+                citation=row.citation,
+                kind=row.kind,
+                value=row.value,
+                unit=row.unit,
+                label=row.label,
+                raw_span=row.raw_span,
+                context=row.context,
+                normalized_identity=row.normalized_identity,
+                relevance=row.relevance,
+                include_reason=row.include_reason,
+                exclude_reason="query_focus_mismatch",
+                confidence=row.confidence,
+            )
+        )
+    return EvidenceLedger(plan=ledger.plan, rows=tuple(rows))
+
+
+def _filter_duration_ledger(
+    ledger: EvidenceLedger,
+    focus_terms: set[str],
+) -> EvidenceLedger:
+    included = list(ledger.included(kind="duration"))
+    if len(included) < 2 or not focus_terms:
+        return ledger
+    if max((row.relevance for row in included), default=0) <= 0:
+        return ledger
+    selected_identities = {
+        row.normalized_identity for row in included if row.relevance > 0
+    }
+    if len(selected_identities) < 2:
+        return ledger
+    rows: list[EvidenceLedgerRow] = []
+    for row in ledger.rows:
+        if row.exclude_reason or row.kind != "duration":
             rows.append(row)
             continue
         if row.normalized_identity in selected_identities:
@@ -432,6 +637,22 @@ def _numeric_focus_terms(query: str) -> set[str]:
         "groceries": {"grocery", "groceries", "market", "store", "foods", "trader", "joe"},
         "store": {"store", "market", "foods", "trader", "joe"},
         "luxury": {"luxury", "designer", "premium", "bag", "shoes", "jewelry", "watch"},
+    }
+    for term in terms:
+        expanded.update(semantic_groups.get(term, set()))
+    return expanded
+
+
+def _duration_focus_terms(query: str) -> set[str]:
+    terms = {
+        token
+        for token in source_tokens(query)
+        if len(token) > 2 and token not in _QUERY_STOPWORDS and not token.isdigit()
+    }
+    expanded = set(terms)
+    semantic_groups = {
+        "practice": {"practice", "practiced", "practicing"},
+        "spent": {"spent", "spend"},
     }
     for term in terms:
         expanded.update(semantic_groups.get(term, set()))
