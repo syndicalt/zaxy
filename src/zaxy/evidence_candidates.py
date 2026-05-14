@@ -35,7 +35,7 @@ def aggregate_candidate_projection(query: str, contexts: list[str]) -> EvidenceP
     rank = 1
     count = _count_candidates(query, contexts)
     if len(count) >= 2:
-        lines.extend(_count_candidate_lines(count, rank=rank))
+        lines.extend(_count_candidate_lines(query, count, rank=rank))
         source_groups.extend(candidate.source_group for candidate in count)
         rank += 1
     currency = _currency_candidates(query, contexts)
@@ -63,13 +63,36 @@ def aggregate_candidate_lines(query: str, contexts: list[str]) -> list[str]:
     return list(aggregate_candidate_projection(query, contexts).lines)
 
 
-def _count_candidate_lines(candidates: list[EvidenceCandidate], *, rank: int) -> list[str]:
+def _count_candidate_lines(
+    query: str,
+    candidates: list[EvidenceCandidate],
+    *,
+    rank: int,
+) -> list[str]:
     source_ids = ",".join(candidate.source_group for candidate in candidates)
-    return [
+    lines = [
         *_candidate_diagnostic_lines("count", candidates, rank=rank),
         f"count_answer={len(candidates)}",
         "count_unit=events",
         f"count_source_ids={source_ids}",
+    ]
+    if _list_detail_query(query):
+        lines.extend(_list_candidate_lines(candidates))
+    return lines
+
+
+def _list_candidate_lines(candidates: list[EvidenceCandidate]) -> list[str]:
+    labeled_candidates = [
+        candidate for candidate in candidates if _rendered_list_label(candidate)
+    ]
+    if not labeled_candidates:
+        return []
+    return [
+        f"list_item_count={len(labeled_candidates)}",
+        "list_items="
+        + " | ".join(_rendered_list_label(candidate) for candidate in labeled_candidates),
+        "list_source_ids="
+        + ",".join(candidate.source_group for candidate in labeled_candidates),
     ]
 
 
@@ -535,6 +558,25 @@ def _count_query(query: str) -> bool:
     return bool(tokens & {"many", "number", "count", "total"}) and "how" in tokens
 
 
+def _list_detail_query(query: str) -> bool:
+    tokens = set(_tokens(query))
+    return bool(
+        tokens
+        & {
+            "which",
+            "who",
+            "what",
+            "list",
+            "name",
+            "names",
+            "were",
+            "they",
+            "them",
+            "items",
+        }
+    )
+
+
 def _currency_query(query: str) -> bool:
     tokens = set(_tokens(query))
     if tokens & {"hours", "hour", "minutes", "minute", "days", "day", "weeks", "week", "months", "month"}:
@@ -630,6 +672,10 @@ def _count_label(text: str) -> str:
     if match:
         return " ".join(match.group("label").split()[:12])
     return ""
+
+
+def _rendered_list_label(candidate: EvidenceCandidate) -> str:
+    return " ".join(candidate.label.strip(" .,'\"").split())
 
 
 def _currency_label(text: str, start: int, end: int) -> str:

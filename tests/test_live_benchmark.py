@@ -1778,14 +1778,73 @@ async def test_zaxy_retriever_counts_distinct_event_sources_not_duplicate_mentio
     )
 
     results = await retriever.query_async(
-        "How many movie festivals did I attend?",
+        "How many movie festivals did I attend, and which were they?",
         limit=5,
     )
 
     bundle = results[0]
     assert "count_answer=4" in bundle
     assert "count_unit=events" in bundle
+    assert "list_item_count=4" in bundle
+    assert (
+        "list_items=attended the Spring Film Festival | attended the Lakeside Film Festival | "
+        "attended the Indie Film Festival | attended the Documentary Film Festival"
+    ) in bundle
     assert "source_id=distractor-1" not in bundle
+
+
+async def test_zaxy_retriever_projects_count_list_answer_details() -> None:
+    """Count synthesis should preserve list details needed to answer follow-up clauses."""
+    source_contexts = [
+        "session_id=answer-1 I attended Rachel and Mike's wedding.",
+        "session_id=answer-2 I attended Emily and Sarah's wedding.",
+        "session_id=answer-3 I attended Jen and Tom's wedding.",
+        "session_id=distractor-1 I planned a birthday dinner.",
+    ]
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    class SourceLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return source_contexts
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=SourceLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "How many weddings did I attend and who were the couples?",
+        limit=5,
+    )
+
+    bundle = results[0]
+    assert "count_answer=3" in bundle
+    assert "list_item_count=3" in bundle
+    assert (
+        "list_items=attended Rachel and Mike's wedding | "
+        "attended Emily and Sarah's wedding | attended Jen and Tom's wedding"
+    ) in bundle
+    assert "list_source_ids=answer-1,answer-2,answer-3" in bundle
 
 
 async def test_zaxy_retriever_projects_numeric_operators_in_aggregation_bundle() -> None:
