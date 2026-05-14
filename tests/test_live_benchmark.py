@@ -1894,6 +1894,102 @@ async def test_zaxy_retriever_formats_large_currency_totals_for_synthesis() -> N
     assert "currency_total=$2,500" in bundle
 
 
+async def test_zaxy_retriever_filters_currency_aggregate_to_query_focus() -> None:
+    """Aggregate synthesis should exclude unrelated money when query focus is clear."""
+    source_contexts = [
+        "content=longmemeval_session_id=answer-1 I bought a designer bag for $1,500.",
+        "content=longmemeval_session_id=answer-2 I bought luxury shoes for $1,000.",
+        "content=longmemeval_session_id=distractor-1 I bought lunch for $20.",
+    ]
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    class SourceLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return source_contexts
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=SourceLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "What is the total amount I spent on luxury items?",
+        limit=5,
+    )
+
+    bundle = results[0]
+    assert "currency_total=$2,500" in bundle
+    assert "$20" not in bundle.split("currency_values=", 1)[1].splitlines()[0]
+
+
+async def test_zaxy_retriever_names_max_currency_source_for_most_money_query() -> None:
+    """Most-money queries should expose the entity/source tied to the max value."""
+    source_contexts = [
+        "content=longmemeval_session_id=answer-1 I spent $85 at Thrive Market.",
+        "content=longmemeval_session_id=answer-2 I spent $42 at Whole Foods.",
+        "content=longmemeval_session_id=answer-3 I spent $18 at Trader Joe's.",
+    ]
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    class SourceLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return source_contexts
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=SourceLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "Which grocery store did I spend the most money at?",
+        limit=5,
+    )
+
+    bundle = results[0]
+    assert "currency_max=$85" in bundle
+    assert "currency_max_label=Thrive Market" in bundle
+
+
 async def test_zaxy_retriever_builds_date_interval_source_synthesis() -> None:
     """Temporal aggregation should expose cited date-difference candidates."""
     source_contexts = [
