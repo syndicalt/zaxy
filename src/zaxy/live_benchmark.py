@@ -33,6 +33,7 @@ from zaxy.graph import GraphStore
 from zaxy.query import QueryRouter
 from zaxy.retrieval_plan import (
     absence_check_bundle,
+    bridge_source_lane_queries,
     filter_superseded_preference_source_results,
     reserve_source_lane,
     should_query_source_lane,
@@ -676,21 +677,39 @@ class ZaxyRetriever:
         """Return merged source-lane hits across original and expanded queries."""
         if self._lexical_retriever is None or limit <= 0:
             return []
+        lexical_retriever = self._lexical_retriever
+        per_query_limit = max(limit, 1)
+
+        def collect(source_query: str) -> list[str]:
+            return list(
+                lexical_retriever.query(
+                    source_query,
+                    temporal_point=temporal_point,
+                    limit=per_query_limit,
+                )
+            )
+
+        primary_results = collect(queries[0])
+        bridge_results: list[str] = []
+        for bridge_query in bridge_source_lane_queries(queries[0], primary_results):
+            bridge_results.extend(collect(bridge_query))
+
+        expanded_results: list[str] = []
+        for source_query in queries[1:]:
+            expanded_results.extend(collect(source_query))
+
+        ordered_candidates = [
+            *bridge_results,
+            *primary_results,
+            *expanded_results,
+        ]
         results: list[str] = []
         seen: set[str] = set()
-        per_query_limit = max(limit, 1)
-        for source_query in queries:
-            for context in self._lexical_retriever.query(
-                source_query,
-                temporal_point=temporal_point,
-                limit=per_query_limit,
-            ):
-                if context in seen:
-                    continue
-                seen.add(context)
-                results.append(context)
-                if len(results) >= limit:
-                    break
+        for context in ordered_candidates:
+            if context in seen:
+                continue
+            seen.add(context)
+            results.append(context)
             if len(results) >= limit:
                 break
         return results

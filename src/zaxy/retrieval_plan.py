@@ -87,6 +87,103 @@ def source_lane_queries(query: str, graph_results: list[str]) -> tuple[str, ...]
     return (query, expanded)
 
 
+def bridge_source_lane_queries(query: str, source_results: list[str]) -> tuple[str, ...]:
+    """Return query expansions from deterministic session/entity bridges."""
+    targets = possessive_entity_targets(query)
+    attribute_terms = bridge_attribute_terms(query, targets)
+    if not attribute_terms:
+        return ()
+    aliases = session_entity_aliases(query, source_results, targets=targets)
+    if not aliases:
+        return ()
+    queries: list[str] = []
+    for alias in aliases:
+        queries.append(" ".join([alias, *attribute_terms]))
+    return tuple(dict.fromkeys(queries))
+
+
+def session_entity_aliases(
+    query: str,
+    source_results: list[str],
+    *,
+    targets: tuple[str, ...] | None = None,
+    limit: int = 3,
+) -> tuple[str, ...]:
+    """Extract concrete aliases for possessive entity references in a query."""
+    targets = targets if targets is not None else possessive_entity_targets(query)
+    if not targets:
+        return ()
+    aliases: list[str] = []
+    seen: set[str] = set()
+    for context in source_results:
+        text = source_context_snippet(context, max_chars=1_000)
+        for target in targets:
+            for alias in aliases_for_possessive_target(text, target):
+                normalized = alias.casefold()
+                if normalized in seen:
+                    continue
+                seen.add(normalized)
+                aliases.append(alias)
+                if len(aliases) >= limit:
+                    return tuple(aliases)
+    return tuple(aliases)
+
+
+def possessive_entity_targets(query: str) -> tuple[str, ...]:
+    """Return entity nouns referenced possessively by the user query."""
+    targets: list[str] = []
+    for match in re.finditer(
+        r"\b(?:my|our)\s+(?:new\s+|old\s+)?(?P<target>[a-z][a-z0-9_-]*)\b",
+        query,
+        flags=re.IGNORECASE,
+    ):
+        target = match.group("target").casefold()
+        if target in _BRIDGE_ENTITY_STOPWORDS or target not in _BRIDGE_ENTITY_TARGETS:
+            continue
+        targets.append(target)
+    return tuple(dict.fromkeys(targets))
+
+
+def bridge_attribute_terms(
+    query: str,
+    targets: tuple[str, ...],
+    *,
+    limit: int = 3,
+) -> tuple[str, ...]:
+    """Return attribute terms needed after resolving a possessive entity alias."""
+    target_terms = set(targets)
+    terms: list[str] = []
+    for token in source_tokens(query):
+        if (
+            token in target_terms
+            or token in _BRIDGE_QUERY_STOPWORDS
+            or token.isdigit()
+            or len(token) <= 1
+        ):
+            continue
+        terms.append(token)
+        if len(terms) >= limit:
+            break
+    return tuple(dict.fromkeys(terms))
+
+
+def aliases_for_possessive_target(text: str, target: str) -> tuple[str, ...]:
+    """Extract aliases introduced near a possessive entity target."""
+    aliases: list[str] = []
+    escaped_target = re.escape(target)
+    patterns = (
+        rf"\b(?i:my|our)\s+(?i:new\s+|old\s+)?(?i:{escaped_target})\s+(?P<alias>[A-Z][A-Za-z0-9'_-]{{1,40}})\b",
+        rf"\b(?i:for|with|about)\s+(?P<alias>[A-Z][A-Za-z0-9'_-]{{1,40}})\b(?=[^.!?]{{0,80}}\b(?i:{escaped_target})\b)",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, text):
+            alias = match.group("alias").strip(" .'\"")
+            if not valid_entity_alias(alias, target):
+                continue
+            aliases.append(alias)
+    return tuple(dict.fromkeys(aliases))
+
+
 def source_lane_candidate_limit(query: str, *, limit: int) -> int:
     """Return internal source candidate budget for source-sensitive retrieval."""
     if limit <= 0:
@@ -144,6 +241,20 @@ def graph_answer_concepts(graph_results: list[str], *, limit: int = 4) -> list[s
             if len(concepts) >= limit:
                 return concepts
     return concepts
+
+
+def valid_entity_alias(alias: str, target: str) -> bool:
+    """Return whether a candidate alias is useful for source-query bridging."""
+    normalized = alias.casefold()
+    if not alias[0].isupper():
+        return False
+    if normalized == target or normalized in _BRIDGE_ALIAS_STOPWORDS:
+        return False
+    if normalized in _QUERY_SOURCE_STOPWORDS:
+        return False
+    if len(alias) < 2:
+        return False
+    return bool(re.search(r"[A-Za-z]", alias))
 
 
 def filter_superseded_preference_source_results(
@@ -361,6 +472,72 @@ _ABSENCE_QUERY_STOPWORDS = {
     "the",
     "this",
     "whether",
+}
+
+_BRIDGE_ENTITY_STOPWORDS = _ABSENCE_QUERY_STOPWORDS | {
+    "area",
+    "favorite",
+    "name",
+    "new",
+    "old",
+    "place",
+    "time",
+}
+
+_BRIDGE_ENTITY_TARGETS = {
+    "bike",
+    "bicycle",
+    "camera",
+    "car",
+    "cat",
+    "computer",
+    "dog",
+    "guitar",
+    "instrument",
+    "laptop",
+    "pet",
+    "phone",
+    "tablet",
+    "truck",
+}
+
+_BRIDGE_ALIAS_STOPWORDS = {
+    "i",
+    "the",
+    "this",
+    "that",
+    "it",
+    "a",
+    "an",
+    "do",
+    "does",
+    "did",
+    "can",
+    "could",
+    "would",
+    "should",
+}
+
+_BRIDGE_QUERY_STOPWORDS = _ABSENCE_QUERY_STOPWORDS | {
+    "am",
+    "an",
+    "are",
+    "can",
+    "could",
+    "is",
+    "name",
+    "of",
+    "our",
+    "should",
+    "that",
+    "to",
+    "was",
+    "were",
+    "what",
+    "which",
+    "who",
+    "why",
+    "would",
 }
 
 

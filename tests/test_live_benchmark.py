@@ -63,7 +63,11 @@ from zaxy.live_benchmark import (
 )
 from zaxy.query import ContextChunk
 from zaxy.retrieval_intent import classify_retrieval_intent
-from zaxy.retrieval_plan import source_lane_candidate_limit, source_lane_query
+from zaxy.retrieval_plan import (
+    bridge_source_lane_queries,
+    source_lane_candidate_limit,
+    source_lane_query,
+)
 
 
 def test_cli_exposes_live_benchmark_command() -> None:
@@ -1637,6 +1641,170 @@ async def test_zaxy_retriever_preserves_original_source_query_when_graph_concept
 
     assert seen_queries[0] == "What play did I attend at the local community theater?"
     assert any("The Glass Menagerie" in result for result in results)
+
+
+def test_bridge_source_lane_queries_expands_possessive_pet_mentions() -> None:
+    """Source evidence should bridge possessive references to concrete entity names."""
+    queries = bridge_source_lane_queries(
+        "What breed is my dog?",
+        [
+            "longmemeval_session_id=seed I am thinking of getting a new leash for my dog Max.",
+            "longmemeval_session_id=other My cat Luna needs food.",
+        ],
+    )
+
+    assert queries == ("Max breed",)
+
+
+def test_bridge_source_lane_queries_ignores_lowercase_false_aliases() -> None:
+    """Bridge alias extraction should not treat ordinary lowercase words as names."""
+    queries = bridge_source_lane_queries(
+        "What breed is my dog?",
+        [
+            (
+                "longmemeval_session_id=seed Can you show me some options "
+                "for hands-free leashes for my dog?"
+            ),
+            "longmemeval_session_id=answer I use this with my dog Max.",
+        ],
+    )
+
+    assert queries == ("Max breed",)
+
+
+def test_bridge_source_lane_queries_ignores_category_phrases() -> None:
+    """Bridge alias extraction should not treat title-cased product phrases as names."""
+    queries = bridge_source_lane_queries(
+        "What breed is my dog?",
+        [
+            "longmemeval_session_id=seed I use Down Dog for my home practice.",
+            "longmemeval_session_id=other Interactive dog toys are useful.",
+            "longmemeval_session_id=answer I bought a collar for my dog Max.",
+        ],
+    )
+
+    assert queries == ("Max breed",)
+
+
+def test_bridge_source_lane_queries_ignores_abstract_possessive_targets() -> None:
+    """Entity bridges should not rewrite broad personal-state questions."""
+    queries = bridge_source_lane_queries(
+        "What is my job?",
+        [
+            (
+                "longmemeval_session_id=seed I talked about my job "
+                "as a marketing specialist."
+            ),
+        ],
+    )
+
+    assert queries == ()
+
+
+def test_bridge_source_lane_queries_ignores_name_questions() -> None:
+    """Name questions are answered by the alias-bearing source itself."""
+    queries = bridge_source_lane_queries(
+        "What is the name of my cat?",
+        [
+            "longmemeval_session_id=seed My cat Luna needs food.",
+        ],
+    )
+
+    assert queries == ()
+
+
+async def test_zaxy_retriever_uses_source_entity_bridge_for_cross_turn_properties() -> None:
+    """Source lookup should bridge my dog -> Max before looking for breed evidence."""
+    source_contexts = [
+        "longmemeval_session_id=seed I am thinking of getting a new leash for my dog Max.",
+        "longmemeval_session_id=distractor my dog likes puzzle toys.",
+        "longmemeval_session_id=answer_723bf11f Golden Retriever like Max.",
+    ]
+    seen_queries: list[str] = []
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, limit, embedding
+            return [SimpleNamespace(content="graph context about generic dogs")]
+
+    class BridgeAwareLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del temporal_point
+            seen_queries.append(query)
+            if query == "What breed is my dog?":
+                return source_contexts[:2]
+            if query == "Max breed":
+                return [source_contexts[2]]
+            return []
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=BridgeAwareLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async("What breed is my dog?", limit=5)
+
+    assert "Max breed" in seen_queries
+    assert any("Golden Retriever" in result for result in results)
+
+
+async def test_zaxy_retriever_promotes_bridge_hits_when_source_lane_is_full() -> None:
+    """Bridge evidence should not be starved by generic primary source hits."""
+    primary_contexts = [
+        "longmemeval_session_id=seed I am thinking of getting a new leash for my dog Max.",
+        "longmemeval_session_id=distractor-1 my dog likes puzzle toys.",
+        "longmemeval_session_id=distractor-2 my dog needs a bath.",
+        "longmemeval_session_id=distractor-3 my dog sleeps on the couch.",
+        "longmemeval_session_id=distractor-4 my dog knows a trick.",
+    ]
+    answer_context = "longmemeval_session_id=answer_723bf11f Golden Retriever like Max."
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, limit, embedding
+            return [SimpleNamespace(content="graph context about generic dogs")]
+
+    class BridgeAwareLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del temporal_point
+            if query == "What breed is my dog?":
+                return primary_contexts[:limit]
+            if query == "Max breed":
+                return [answer_context]
+            return []
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=BridgeAwareLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async("What breed is my dog?", limit=5)
+
+    assert any("Golden Retriever" in result for result in results)
 
 
 async def test_zaxy_retriever_reserves_multiple_source_lanes_for_aggregation() -> None:
