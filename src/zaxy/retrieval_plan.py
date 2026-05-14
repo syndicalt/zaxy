@@ -552,6 +552,22 @@ def _numeric_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
     if day_values:
         lines.append("day_values=" + ",".join(_format_number(value) for value in day_values))
         lines.append(f"day_total={_format_number(sum(day_values))} days")
+    week_contexts = [
+        _numeric_context_text(context)
+        for context in _query_relevant_numeric_contexts(query, contexts)
+    ]
+    week_values = _week_values(week_contexts)
+    if week_values:
+        lines.append("week_values=" + ",".join(_format_number(value) for value in week_values))
+        week_total = sum(week_values)
+        lines.append(f"week_total={_format_number(week_total)} weeks")
+        if week_words := _number_words(week_total):
+            lines.append(f"week_total_words={week_words} weeks")
+        if len(week_values) >= 2:
+            week_interval = max(week_values) - min(week_values)
+            lines.append(f"week_interval={_format_number(week_interval)} weeks")
+            if week_interval_words := _number_words(week_interval):
+                lines.append(f"week_interval_answer={week_interval_words} weeks")
     month_contexts = [
         _numeric_context_text(context)
         for context in _query_relevant_numeric_contexts(query, contexts)
@@ -563,6 +579,11 @@ def _numeric_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
         lines.append(f"month_total={_format_number(month_total)} months ago")
         if month_words := _number_words(month_total):
             lines.append(f"month_total_words={month_words} months ago")
+        if len(month_values) >= 2:
+            month_interval = max(month_values) - min(month_values)
+            lines.append(f"month_interval={_format_number(month_interval)} months")
+            if month_interval_words := _number_words(month_interval):
+                lines.append(f"month_interval_answer={month_interval_words} months")
     return lines
 
 
@@ -614,6 +635,8 @@ def _unit_values(contexts: list[str], *, unit_pattern: str) -> list[float]:
 
 
 _NUMBER_WORDS = {
+    "a": 1,
+    "an": 1,
     "one": 1,
     "two": 2,
     "three": 3,
@@ -629,16 +652,33 @@ _NUMBER_WORDS = {
 }
 
 
-def _month_values(contexts: list[str]) -> list[float]:
-    values = _unit_values(contexts, unit_pattern=r"months?")
+def _week_values(contexts: list[str]) -> list[float]:
+    values = _unit_values(contexts, unit_pattern=r"weeks?")
     pattern = re.compile(
-        r"\b(?P<value>one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+months?\b",
+        r"\b(?P<value>a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+weeks?\b",
         flags=re.IGNORECASE,
     )
     for context in contexts:
         for match in pattern.finditer(context):
-            values.append(float(_NUMBER_WORDS[match.group("value").casefold()]))
+            _append_unique_number(values, float(_NUMBER_WORDS[match.group("value").casefold()]))
     return values
+
+
+def _month_values(contexts: list[str]) -> list[float]:
+    values = _unit_values(contexts, unit_pattern=r"months?")
+    pattern = re.compile(
+        r"\b(?P<value>a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+months?\b",
+        flags=re.IGNORECASE,
+    )
+    for context in contexts:
+        for match in pattern.finditer(context):
+            _append_unique_number(values, float(_NUMBER_WORDS[match.group("value").casefold()]))
+    return values
+
+
+def _append_unique_number(values: list[float], value: float) -> None:
+    if value not in values:
+        values.append(value)
 
 
 def _number_words(value: float) -> str | None:

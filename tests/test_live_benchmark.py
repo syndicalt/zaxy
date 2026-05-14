@@ -2112,6 +2112,112 @@ async def test_zaxy_retriever_builds_relative_month_source_synthesis() -> None:
     assert "Seven months ago" not in bundle
 
 
+async def test_zaxy_retriever_builds_relative_month_interval_synthesis() -> None:
+    """Relative month evidence should expose duration differences when requested."""
+    source_contexts = [
+        (
+            "content=longmemeval_session_id=answer-1 "
+            "I've been getting into bird watching for about three months now."
+        ),
+        (
+            "content=longmemeval_session_id=answer-2 "
+            "I recently attended a bird watching workshop at the local Audubon society a month ago."
+        ),
+    ]
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    class SourceLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return source_contexts
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=SourceLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "How long had I been bird watching when I attended the bird watching workshop?",
+        limit=5,
+    )
+
+    bundle = results[0]
+    assert "month_values=1,3" in bundle
+    assert "month_interval_answer=Two months" in bundle
+
+
+async def test_zaxy_retriever_builds_relative_week_interval_synthesis() -> None:
+    """Relative week evidence should expose duration differences when requested."""
+    source_contexts = [
+        (
+            "content=longmemeval_session_id=answer-1 "
+            "I've been taking weekly guitar lessons with Alex for six weeks now."
+        ),
+        (
+            "content=longmemeval_session_id=answer-2 "
+            "I just got a new amp two weeks ago."
+        ),
+    ]
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    class SourceLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return source_contexts
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=SourceLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "How long had I been taking guitar lessons when I bought the new guitar amp?",
+        limit=5,
+    )
+
+    bundle = results[0]
+    assert "week_values=6,2" in bundle
+    assert "week_interval_answer=Four weeks" in bundle
+
+
 async def test_zaxy_retriever_builds_issue_source_synthesis() -> None:
     """Issue questions should expose normalized issue candidates from cited text."""
     source_contexts = [
