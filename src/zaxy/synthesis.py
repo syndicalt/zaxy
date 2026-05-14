@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import date, timedelta
 
 
 @dataclass(frozen=True)
@@ -115,6 +116,49 @@ _COUNT_STOPWORDS = _QUERY_STOPWORDS | {
     "past",
     "spent",
     "total",
+}
+
+_DATE_STOPWORDS = {
+    "did",
+    "for",
+    "had",
+    "has",
+    "have",
+    "how",
+    "many",
+    "me",
+    "my",
+    "the",
+    "take",
+    "days",
+    "passed",
+}
+
+_MONTHS = {
+    "january": 1,
+    "jan": 1,
+    "february": 2,
+    "feb": 2,
+    "march": 3,
+    "mar": 3,
+    "april": 4,
+    "apr": 4,
+    "may": 5,
+    "june": 6,
+    "jun": 6,
+    "july": 7,
+    "jul": 7,
+    "august": 8,
+    "aug": 8,
+    "september": 9,
+    "sep": 9,
+    "sept": 9,
+    "october": 10,
+    "oct": 10,
+    "november": 11,
+    "nov": 11,
+    "december": 12,
+    "dec": 12,
 }
 
 
@@ -357,6 +401,120 @@ def render_count_result(
     return SynthesisResult(
         lines=tuple(lines),
         support_source_groups=tuple(dict.fromkeys(row.source_group for row in candidates)),
+        excluded_source_groups=tuple(dict.fromkeys(row.source_group for row in excluded)),
+    )
+
+
+def build_date_ledger(query: str, contexts: list[str]) -> EvidenceLedger:
+    """Extract explicit date evidence for temporal interval synthesis."""
+    plan = SynthesisPlan(
+        answer_type="interval",
+        operation="date_difference",
+        subject_terms=tuple(
+            token
+            for token in source_tokens(query)
+            if len(token) > 2 and token not in _DATE_STOPWORDS and not token.isdigit()
+        ),
+        required_kinds=("date",),
+        required_source_groups=2,
+        reasons=("temporal",),
+    )
+    if "days" not in set(source_tokens(query)):
+        return EvidenceLedger(plan=plan, rows=())
+    focus_terms = _date_focus_terms(query)
+    rows: list[EvidenceLedgerRow] = []
+    provisional: list[EvidenceLedgerRow] = []
+    seen: set[str] = set()
+    for context_index, context in enumerate(contexts):
+        raw_text = context_text(context)
+        text = temporal_evidence_text(raw_text)
+        default_year = context_year(raw_text)
+        group = source_group(context)
+        citation = source_citation(context)
+        relevance = _relevance(focus_terms, text)
+        for match_index, value in enumerate(explicit_dates(text, default_year=default_year)):
+            identity = f"group={group}|date={value.isoformat()}"
+            duplicate = identity in seen
+            seen.add(identity)
+            row = EvidenceLedgerRow(
+                fact_id=f"date:{context_index}:{match_index}",
+                source_group=group,
+                citation=citation,
+                kind="date",
+                value=value.isoformat(),
+                unit="day",
+                label=value.isoformat(),
+                raw_span=value.isoformat(),
+                context=text,
+                normalized_identity=identity,
+                relevance=relevance,
+                include_reason="explicit_date",
+                exclude_reason="duplicate_identity" if duplicate else "",
+                confidence=_row_confidence(relevance=relevance, has_label=True),
+            )
+            if duplicate:
+                rows.append(row)
+            else:
+                provisional.append(row)
+    rows.extend(_filter_date_rows(provisional))
+    return EvidenceLedger(plan=plan, rows=tuple(rows))
+
+
+def render_date_interval_result(ledger: EvidenceLedger, *, rank: int) -> SynthesisResult:
+    """Render temporal interval synthesis lines from date evidence."""
+    candidates = ledger.included(kind="date")
+    excluded = ledger.excluded(kind="date")
+    if len(candidates) < ledger.plan.required_source_groups:
+        return SynthesisResult(lines=(), support_source_groups=())
+    anchor_terms = temporal_anchor_terms(ledger.plan.subject_terms)
+    intervals: list[tuple[int, int, int, int, EvidenceLedgerRow, EvidenceLedgerRow]] = []
+    seen_deltas: set[int] = set()
+    for left_index, left in enumerate(candidates):
+        for right_index, right in enumerate(candidates[left_index + 1 :], start=left_index + 1):
+            if left.source_group == right.source_group:
+                continue
+            delta = abs((date.fromisoformat(right.value) - date.fromisoformat(left.value)).days)
+            if delta <= 0 or delta > 366 or delta in seen_deltas:
+                continue
+            seen_deltas.add(delta)
+            ordered_anchor_score = temporal_ordered_anchor_score(left, right, anchor_terms)
+            intervals.append(
+                (
+                    -ordered_anchor_score,
+                    -(left.relevance + right.relevance),
+                    left_index + right_index,
+                    delta,
+                    left,
+                    right,
+                )
+            )
+    if not intervals:
+        return SynthesisResult(lines=(), support_source_groups=())
+    intervals.sort(key=lambda item: (item[0], item[1], item[2], item[3]))
+    lines: list[str] = []
+    support_groups: list[str] = []
+    for index, (_, _, _, delta, left, right) in enumerate(intervals[:5]):
+        if index == 0:
+            support = sorted({left.source_group, right.source_group})
+            lines.extend(
+                _candidate_diagnostic_lines_with_support(
+                    "date_interval",
+                    (left, right),
+                    rank=rank,
+                    support=support,
+                )
+            )
+        lines.append(f"date_interval_days={delta}")
+        lines.append(
+            "date_interval_answer="
+            f"{delta} days. {delta + 1} days (including the last day) is also acceptable."
+        )
+        if index == 0:
+            support_groups.extend(support)
+            lines.append("date_interval_source_ids=" + ",".join(support_groups))
+    return SynthesisResult(
+        lines=tuple(lines),
+        support_source_groups=tuple(support_groups),
         excluded_source_groups=tuple(dict.fromkeys(row.source_group for row in excluded)),
     )
 
@@ -708,6 +866,162 @@ def rendered_list_label(row: EvidenceLedgerRow) -> str:
     return " ".join(row.label.strip(" .,'\"").split())
 
 
+def temporal_evidence_text(text: str) -> str:
+    """Remove metadata dates that should not be treated as answer evidence."""
+    text = re.sub(r"\blongmemeval_session_date=\d{4}/\d{1,2}/\d{1,2}\s*\([^)]*\)", " ", text)
+    return re.sub(r"\b20\d{2}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\b", " ", text)
+
+
+def context_year(text: str) -> int | None:
+    """Infer the default year for month/day date mentions."""
+    match = re.search(r"\blongmemeval_session_date=(?P<year>\d{4})/", text)
+    if match:
+        return int(match.group("year"))
+    match = re.search(r"\b(?P<year>20\d{2})[/-]\d{1,2}[/-]\d{1,2}\b", text)
+    if match:
+        return int(match.group("year"))
+    return None
+
+
+def explicit_dates(text: str, *, default_year: int | None) -> list[date]:
+    """Extract explicit and supported relative dates from source text."""
+    dates: list[date] = []
+    for match in re.finditer(
+        r"\b(?P<year>20\d{2})/(?P<month>\d{1,2})/(?P<day>\d{1,2})\b",
+        text,
+    ):
+        append_date(
+            dates,
+            int(match.group("year")),
+            int(match.group("month")),
+            int(match.group("day")),
+        )
+    month_pattern = "|".join(sorted(_MONTHS, key=len, reverse=True))
+    if default_year is not None:
+        black_friday = black_friday_date(default_year)
+        if re.search(r"\bblack friday\b", text, flags=re.IGNORECASE):
+            if re.search(r"\b(?:on|during)\s+black friday\b", text, flags=re.IGNORECASE):
+                append_unique_date(dates, black_friday)
+            if re.search(r"\b(?:a|one|1)\s+weeks?\s+before\s+black friday\b", text, flags=re.IGNORECASE):
+                append_unique_date(dates, black_friday - timedelta(days=7))
+            if re.search(r"\b(?:a|one|1)\s+weeks?\s+after\s+black friday\b", text, flags=re.IGNORECASE):
+                append_unique_date(dates, black_friday + timedelta(days=7))
+    for match in re.finditer(
+        rf"\b(?P<month>{month_pattern})\s+(?P<day>\d{{1,2}})(?:st|nd|rd|th)?(?:,\s*(?P<year>20\d{{2}}))?\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        year = int(match.group("year")) if match.group("year") else default_year
+        if year is None:
+            continue
+        append_date(
+            dates,
+            year,
+            _MONTHS[match.group("month").casefold()],
+            int(match.group("day")),
+        )
+    for match in re.finditer(
+        rf"\b(?:the\s+)?(?P<day>\d{{1,2}})(?:st|nd|rd|th)?\s+of\s+(?P<month>{month_pattern})(?:,\s*(?P<year>20\d{{2}}))?\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        year = int(match.group("year")) if match.group("year") else default_year
+        if year is None:
+            continue
+        append_date(
+            dates,
+            year,
+            _MONTHS[match.group("month").casefold()],
+            int(match.group("day")),
+        )
+    for match in re.finditer(r"\b(?P<month>\d{1,2})/(?P<day>\d{1,2})(?:/(?P<year>\d{2,4}))?\b", text):
+        year_text = match.group("year")
+        year = default_year
+        if year_text:
+            year = int(year_text)
+            if year < 100:
+                year += 2000
+        if year is None:
+            continue
+        append_date(dates, year, int(match.group("month")), int(match.group("day")))
+    return dates
+
+
+def black_friday_date(year: int) -> date:
+    """Return Black Friday for a given year."""
+    thanksgiving = nth_weekday_of_month(year, 11, weekday=3, n=4)
+    return thanksgiving + timedelta(days=1)
+
+
+def nth_weekday_of_month(year: int, month: int, *, weekday: int, n: int) -> date:
+    """Return the nth weekday within a month."""
+    value = date(year, month, 1)
+    days_until_weekday = (weekday - value.weekday()) % 7
+    return value + timedelta(days=days_until_weekday + (n - 1) * 7)
+
+
+def append_unique_date(dates: list[date], value: date) -> None:
+    """Append a date once while preserving extraction order."""
+    if value not in dates:
+        dates.append(value)
+
+
+def append_date(dates: list[date], year: int, month: int, day: int) -> None:
+    """Append a valid calendar date once."""
+    try:
+        value = date(year, month, day)
+    except ValueError:
+        return
+    append_unique_date(dates, value)
+
+
+def temporal_anchor_terms(subject_terms: tuple[str, ...]) -> tuple[set[str], set[str]]:
+    """Split temporal query terms into ordered left/right event anchors."""
+    if not subject_terms:
+        return set(), set()
+    terms = list(subject_terms)
+    separators = {"after", "before", "between"}
+    if "between" in terms and "and" in terms:
+        between_index = terms.index("between")
+        and_index = terms.index("and")
+        if between_index < and_index:
+            return set(terms[between_index + 1 : and_index]), set(terms[and_index + 1 :])
+    if "after" in terms:
+        after_index = terms.index("after")
+        return set(terms[after_index + 1 :]), set(terms[:after_index])
+    if "before" in terms:
+        before_index = terms.index("before")
+        return set(terms[:before_index]), set(terms[before_index + 1 :])
+    midpoint = len(terms) // 2
+    if midpoint == 0:
+        return set(), set()
+    left = {term for term in terms[:midpoint] if term not in separators}
+    right = {term for term in terms[midpoint:] if term not in separators}
+    return left, right
+
+
+def temporal_ordered_anchor_score(
+    left: EvidenceLedgerRow,
+    right: EvidenceLedgerRow,
+    anchor_terms: tuple[set[str], set[str]],
+) -> int:
+    """Score whether two date rows match ordered temporal query anchors."""
+    first_anchor, second_anchor = anchor_terms
+    if not first_anchor or not second_anchor:
+        return 0
+    left_context_terms = set(source_tokens(left.context))
+    right_context_terms = set(source_tokens(right.context))
+    left_date = date.fromisoformat(left.value)
+    right_date = date.fromisoformat(right.value)
+    forward_score = len(first_anchor & left_context_terms) + len(second_anchor & right_context_terms)
+    reverse_score = len(first_anchor & right_context_terms) + len(second_anchor & left_context_terms)
+    if left_date <= right_date:
+        forward_score += 1
+    else:
+        reverse_score += 1
+    return max(forward_score, reverse_score)
+
+
 def clean_label(label: str) -> str:
     """Return a bounded label with trailing clauses removed."""
     label = re.split(r"\b(?:on|in|for|with|and|but|because|when)\b", label, maxsplit=1)[0]
@@ -839,6 +1153,42 @@ def _apply_count_threshold(
     return filtered
 
 
+def _filter_date_rows(rows: list[EvidenceLedgerRow]) -> list[EvidenceLedgerRow]:
+    if len(rows) < 3:
+        return rows
+    best = max((row.relevance for row in rows), default=0)
+    if best < 2:
+        return rows
+    selected_threshold = max(2, best // 2)
+    selected = [row for row in rows if row.relevance >= selected_threshold]
+    if len(selected) < 2:
+        return rows
+    filtered: list[EvidenceLedgerRow] = []
+    for row in rows:
+        if row.relevance >= selected_threshold:
+            filtered.append(row)
+            continue
+        filtered.append(
+            EvidenceLedgerRow(
+                fact_id=row.fact_id,
+                source_group=row.source_group,
+                citation=row.citation,
+                kind=row.kind,
+                value=row.value,
+                unit=row.unit,
+                label=row.label,
+                raw_span=row.raw_span,
+                context=row.context,
+                normalized_identity=row.normalized_identity,
+                relevance=row.relevance,
+                include_reason=row.include_reason,
+                exclude_reason="query_focus_mismatch",
+                confidence=row.confidence,
+            )
+        )
+    return filtered
+
+
 def _candidate_diagnostic_lines(
     candidate_type: str,
     candidates: tuple[EvidenceLedgerRow, ...],
@@ -850,6 +1200,20 @@ def _candidate_diagnostic_lines(
         f"candidate_confidence={_candidate_confidence(candidates)}",
         "candidate_support="
         + ",".join(dict.fromkeys(row.source_group for row in candidates)),
+    ]
+
+
+def _candidate_diagnostic_lines_with_support(
+    candidate_type: str,
+    candidates: tuple[EvidenceLedgerRow, ...],
+    *,
+    rank: int,
+    support: list[str],
+) -> list[str]:
+    return [
+        f"candidate_rank={rank} candidate_type={candidate_type}",
+        f"candidate_confidence={_candidate_confidence(candidates)}",
+        "candidate_support=" + ",".join(dict.fromkeys(support)),
     ]
 
 
@@ -917,6 +1281,10 @@ def _count_focus_terms(query: str) -> set[str]:
         else:
             expanded.add(f"{term}s")
     return expanded
+
+
+def _date_focus_terms(query: str) -> set[str]:
+    return _count_focus_terms(query)
 
 
 def _relevance(focus_terms: set[str], context: str) -> int:

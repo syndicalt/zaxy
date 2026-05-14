@@ -5,10 +5,12 @@ from __future__ import annotations
 from zaxy.synthesis import (
     build_count_ledger,
     build_currency_ledger,
+    build_date_ledger,
     build_duration_ledger,
     build_synthesis_plan,
     render_count_result,
     render_currency_result,
+    render_date_interval_result,
     render_duration_result,
 )
 
@@ -117,6 +119,103 @@ def test_render_count_result_projects_list_details_from_ledger() -> None:
     assert "list_source_ids=answer-1,answer-2,answer-3" in result.lines
     assert result.support_source_groups == ("answer-1", "answer-2", "answer-3")
     assert result.excluded_source_groups == ("distractor-1",)
+
+
+def test_date_ledger_extracts_dates_with_session_year_and_exclusions() -> None:
+    """Date evidence should keep duplicate and query-mismatch rows auditable."""
+    ledger = build_date_ledger(
+        "How many days had passed between Sunday mass and the Ash Wednesday service?",
+        [
+            (
+                "content=longmemeval_session_id=answer-1 "
+                "longmemeval_session_date=2023/02/20 (Mon) "
+                "I attended Sunday mass at St. Mary's Church on January 2nd. "
+                '{"content": "longmemeval_session_id=answer-1"}'
+            ),
+            (
+                "content=longmemeval_session_id=answer-2 "
+                "longmemeval_session_date=2023/02/20 (Mon) "
+                "I came from the Ash Wednesday service at the cathedral on February 1st."
+            ),
+            (
+                "content=longmemeval_session_id=distractor-1 "
+                "longmemeval_session_date=2023/03/26 (Sun) "
+                "I attended the Holi celebration at my local temple on February 26th."
+            ),
+        ],
+    )
+
+    included = ledger.included(kind="date")
+    excluded = ledger.excluded(kind="date")
+
+    assert [(row.source_group, row.value) for row in included] == [
+        ("answer-1", "2023-01-02"),
+        ("answer-2", "2023-02-01"),
+    ]
+    assert [(row.source_group, row.value, row.exclude_reason) for row in excluded] == [
+        ("distractor-1", "2023-02-26", "query_focus_mismatch")
+    ]
+
+
+def test_render_date_interval_result_ranks_query_specific_interval() -> None:
+    """Date interval synthesis should render the existing cited answer fields."""
+    ledger = build_date_ledger(
+        "How many days had passed between Sunday mass and the Ash Wednesday service?",
+        [
+            (
+                "content=longmemeval_session_id=distractor-1 "
+                "longmemeval_session_date=2023/03/26 (Sun) "
+                "I just got back from Sunday mass at St. Mary's Church on March 19th."
+            ),
+            (
+                "content=longmemeval_session_id=answer-1 "
+                "longmemeval_session_date=2023/02/20 (Mon) "
+                "I came from the Ash Wednesday service at the cathedral on February 1st."
+            ),
+            (
+                "content=longmemeval_session_id=answer-2 "
+                "longmemeval_session_date=2023/02/20 (Mon) "
+                "I attended Sunday mass at St. Mary's Church on January 2nd."
+            ),
+        ],
+    )
+
+    result = render_date_interval_result(ledger, rank=1)
+
+    assert "candidate_rank=1 candidate_type=date_interval" in result.lines
+    assert "candidate_support=answer-1,answer-2" in result.lines
+    assert "date_interval_days=30" in result.lines
+    assert (
+        "date_interval_answer=30 days. 31 days (including the last day) is also acceptable."
+        in result.lines
+    )
+    assert "date_interval_source_ids=answer-1,answer-2" in result.lines
+    assert result.support_source_groups == ("answer-1", "answer-2")
+
+
+def test_date_ledger_parses_black_friday_relative_dates() -> None:
+    """Named holiday-relative dates should stay available in the date ledger."""
+    ledger = build_date_ledger(
+        "How many days before I bought the iPhone 13 Pro did I attend the Holiday Market?",
+        [
+            (
+                "content=longmemeval_session_id=answer-1 "
+                "longmemeval_session_date=2023/12/10 (Sun) "
+                "I attended the annual Holiday Market a week before Black Friday."
+            ),
+            (
+                "content=longmemeval_session_id=answer-2 "
+                "longmemeval_session_date=2023/12/10 (Sun) "
+                "I bought the iPhone 13 Pro from Best Buy on Black Friday."
+            ),
+        ],
+    )
+
+    result = render_date_interval_result(ledger, rank=2)
+
+    assert "candidate_rank=2 candidate_type=date_interval" in result.lines
+    assert "date_interval_days=7" in result.lines
+    assert "date_interval_source_ids=answer-1,answer-2" in result.lines
 
 
 def test_currency_ledger_deduplicates_repeated_items_with_exclusions() -> None:
