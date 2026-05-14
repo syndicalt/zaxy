@@ -1726,6 +1726,9 @@ async def test_zaxy_retriever_projects_aggregation_source_bundle() -> None:
     bundle = results[0]
     assert "zaxy_synthesis_bundle=true" in bundle
     assert "synthesis_mode=multi_source_aggregation" in bundle
+    assert "candidate_rank=1 candidate_type=count" in bundle
+    assert "candidate_confidence=" in bundle
+    assert "candidate_support=answer-1,answer-2,answer-3,answer-4,answer-5" in bundle
     assert "source_count=5" in bundle
     assert "count_answer=5" in bundle
     assert "session_id=answer-1" in bundle
@@ -1995,6 +1998,8 @@ async def test_zaxy_retriever_formats_large_currency_totals_for_synthesis() -> N
     )
 
     bundle = results[0]
+    assert "candidate_rank=1 candidate_type=currency" in bundle
+    assert "candidate_support=answer-1,answer-2" in bundle
     assert "currency_total=$2,500" in bundle
 
 
@@ -2147,6 +2152,8 @@ async def test_zaxy_retriever_builds_date_interval_source_synthesis() -> None:
     )
 
     bundle = results[0]
+    assert "candidate_rank=1 candidate_type=date_interval" in bundle
+    assert "candidate_support=answer-1,answer-2" in bundle
     assert "date_interval_days=30" in bundle
     assert "date_interval_answer=30 days. 31 days (including the last day) is also acceptable." in bundle
     assert "date_interval_source_ids=answer-1,answer-2" in bundle

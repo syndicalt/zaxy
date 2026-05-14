@@ -32,19 +32,23 @@ def aggregate_candidate_projection(query: str, contexts: list[str]) -> EvidenceP
     """Build deterministic aggregate answer candidates from cited contexts."""
     lines: list[str] = []
     source_groups: list[str] = []
+    rank = 1
     count = _count_candidates(query, contexts)
     if len(count) >= 2:
-        lines.extend(_count_candidate_lines(count))
+        lines.extend(_count_candidate_lines(count, rank=rank))
         source_groups.extend(candidate.source_group for candidate in count)
+        rank += 1
     currency = _currency_candidates(query, contexts)
     if currency:
-        lines.extend(_currency_candidate_lines(currency))
+        lines.extend(_currency_candidate_lines(currency, rank=rank))
         source_groups.extend(candidate.source_group for candidate in currency)
+        rank += 1
     duration = _duration_candidates(query, contexts)
     if duration:
-        lines.extend(_duration_candidate_lines(duration))
+        lines.extend(_duration_candidate_lines(duration, rank=rank))
         source_groups.extend(candidate.source_group for candidate in duration)
-    date_projection = _date_interval_projection(query, contexts)
+        rank += 1
+    date_projection = _date_interval_projection(query, contexts, rank=rank)
     if date_projection.lines:
         lines.extend(date_projection.lines)
         source_groups.extend(date_projection.source_groups)
@@ -59,9 +63,10 @@ def aggregate_candidate_lines(query: str, contexts: list[str]) -> list[str]:
     return list(aggregate_candidate_projection(query, contexts).lines)
 
 
-def _count_candidate_lines(candidates: list[EvidenceCandidate]) -> list[str]:
+def _count_candidate_lines(candidates: list[EvidenceCandidate], *, rank: int) -> list[str]:
     source_ids = ",".join(candidate.source_group for candidate in candidates)
     return [
+        *_candidate_diagnostic_lines("count", candidates, rank=rank),
         f"count_answer={len(candidates)}",
         "count_unit=events",
         f"count_source_ids={source_ids}",
@@ -106,9 +111,10 @@ def _count_candidates(query: str, contexts: list[str]) -> list[EvidenceCandidate
     return candidates
 
 
-def _currency_candidate_lines(candidates: list[EvidenceCandidate]) -> list[str]:
+def _currency_candidate_lines(candidates: list[EvidenceCandidate], *, rank: int) -> list[str]:
     values = sorted((float(candidate.value) for candidate in candidates), reverse=True)
     lines = [
+        *_candidate_diagnostic_lines("currency", candidates, rank=rank),
         "currency_values=" + ",".join(_format_currency(value) for value in values),
         f"currency_total={_format_currency(sum(values))}",
     ]
@@ -153,10 +159,11 @@ def _currency_candidates(query: str, contexts: list[str]) -> list[EvidenceCandid
     return _filter_focused_candidates(query, items)
 
 
-def _duration_candidate_lines(candidates: list[EvidenceCandidate]) -> list[str]:
+def _duration_candidate_lines(candidates: list[EvidenceCandidate], *, rank: int) -> list[str]:
     values = [_duration_display(candidate) for candidate in candidates]
     total_minutes = sum(float(candidate.value) for candidate in candidates)
     lines = [
+        *_candidate_diagnostic_lines("duration", candidates, rank=rank),
         "duration_values=" + ",".join(values),
         f"duration_total_minutes={_format_number(total_minutes)} minutes",
         f"duration_total_hours={_format_number(total_minutes / 60)} hours",
@@ -240,7 +247,12 @@ def _duration_candidates(query: str, contexts: list[str]) -> list[EvidenceCandid
     return _filter_duration_candidates(query, items)
 
 
-def _date_interval_projection(query: str, contexts: list[str]) -> EvidenceProjection:
+def _date_interval_projection(
+    query: str,
+    contexts: list[str],
+    *,
+    rank: int,
+) -> EvidenceProjection:
     if "days" not in _tokens(query):
         return EvidenceProjection(lines=(), source_groups=())
     candidates = _date_candidates(query, contexts)
@@ -271,13 +283,23 @@ def _date_interval_projection(query: str, contexts: list[str]) -> EvidenceProjec
     lines: list[str] = []
     support_groups: list[str] = []
     for index, (_, _, delta, left, right) in enumerate(intervals[:5]):
+        if index == 0:
+            support = sorted({left.source_group, right.source_group})
+            lines.extend(
+                _candidate_diagnostic_lines(
+                    "date_interval",
+                    [left, right],
+                    rank=rank,
+                    support=support,
+                )
+            )
         lines.append(f"date_interval_days={delta}")
         lines.append(
             "date_interval_answer="
             f"{delta} days. {delta + 1} days (including the last day) is also acceptable."
         )
         if index == 0:
-            support_groups.extend(sorted({left.source_group, right.source_group}))
+            support_groups.extend(support)
             lines.append("date_interval_source_ids=" + ",".join(support_groups))
     return EvidenceProjection(lines=tuple(lines), source_groups=tuple(support_groups))
 
@@ -440,6 +462,30 @@ def _filter_duration_candidates(
     return selected if len(selected) >= 2 else items
 
 
+def _candidate_diagnostic_lines(
+    candidate_type: str,
+    candidates: list[EvidenceCandidate],
+    *,
+    rank: int,
+    support: list[str] | None = None,
+) -> list[str]:
+    support_ids = support or sorted({candidate.source_group for candidate in candidates})
+    return [
+        f"candidate_rank={rank} candidate_type={candidate_type}",
+        f"candidate_confidence={_candidate_confidence(candidates)}",
+        "candidate_support=" + ",".join(dict.fromkeys(support_ids)),
+    ]
+
+
+def _candidate_confidence(candidates: list[EvidenceCandidate]) -> str:
+    if not candidates:
+        return "0"
+    support_count = len({candidate.source_group for candidate in candidates})
+    average_relevance = sum(candidate.relevance for candidate in candidates) / len(candidates)
+    confidence = min(0.99, 0.55 + min(support_count, 5) * 0.06 + min(average_relevance, 6) * 0.04)
+    return f"{confidence:.2f}".rstrip("0").rstrip(".")
+
+
 def _duration_display(candidate: EvidenceCandidate) -> str:
     return candidate.label or f"{_format_number(float(candidate.value))} minutes"
 
@@ -484,6 +530,8 @@ def _filter_focused_candidates(
 
 def _count_query(query: str) -> bool:
     tokens = set(_tokens(query))
+    if tokens & {"hours", "hour", "minutes", "minute", "days", "day", "weeks", "week", "months", "month"}:
+        return False
     return bool(tokens & {"many", "number", "count", "total"}) and "how" in tokens
 
 
