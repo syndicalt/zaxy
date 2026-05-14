@@ -197,19 +197,23 @@ def _count_candidates(query: str, contexts: list[str]) -> list[EvidenceCandidate
 
 def _currency_candidate_lines(candidates: list[EvidenceCandidate], *, rank: int) -> list[str]:
     values = sorted((float(candidate.value) for candidate in candidates), reverse=True)
+    total = sum(values)
     lines = [
         *_candidate_diagnostic_lines("currency", candidates, rank=rank),
         "currency_values=" + ",".join(_format_currency(value) for value in values),
-        f"currency_total={_format_currency(sum(values))}",
+        f"currency_total={_format_currency(total)}",
+        f"currency_total_answer={_format_currency(total)}",
+        "currency_source_ids="
+        + ",".join(candidate.source_group for candidate in candidates),
     ]
     max_item = max(candidates, key=lambda candidate: float(candidate.value))
     lines.append(f"currency_max={_format_currency(float(max_item.value))}")
     if max_item.label:
         lines.append(f"currency_max_label={max_item.label}")
     if len(values) >= 2:
-        lines.append(
-            f"currency_difference={_format_currency(max(values) - min(values))}"
-        )
+        difference = max(values) - min(values)
+        lines.append(f"currency_difference={_format_currency(difference)}")
+        lines.append(f"currency_difference_answer={_format_currency(difference)}")
     return lines
 
 
@@ -217,7 +221,7 @@ def _currency_candidates(query: str, contexts: list[str]) -> list[EvidenceCandid
     if not _currency_query(query):
         return []
     items: list[EvidenceCandidate] = []
-    seen: set[tuple[str, str, str]] = set()
+    seen: set[tuple[str, str]] = set()
     for context in contexts:
         text = _context_text(context)
         group = _source_group(context)
@@ -225,7 +229,7 @@ def _currency_candidates(query: str, contexts: list[str]) -> list[EvidenceCandid
         for match in re.finditer(r"\$(?P<value>\d+(?:,\d{3})*(?:\.\d+)?)", text):
             value = str(float(match.group("value").replace(",", "")))
             label = _currency_label(text, match.start(), match.end())
-            identity = (group, value, label.casefold())
+            identity = _currency_identity(group=group, value=value, label=label)
             if identity in seen:
                 continue
             seen.add(identity)
@@ -243,6 +247,13 @@ def _currency_candidates(query: str, contexts: list[str]) -> list[EvidenceCandid
     return _filter_focused_candidates(query, items)
 
 
+def _currency_identity(*, group: str, value: str, label: str) -> tuple[str, str]:
+    normalized_label = _normalize_currency_label(label)
+    if normalized_label:
+        return (value, normalized_label)
+    return (f"{group}:{value}", "")
+
+
 def _duration_candidate_lines(candidates: list[EvidenceCandidate], *, rank: int) -> list[str]:
     values = [_duration_display(candidate) for candidate in candidates]
     total_minutes = sum(float(candidate.value) for candidate in candidates)
@@ -251,6 +262,7 @@ def _duration_candidate_lines(candidates: list[EvidenceCandidate], *, rank: int)
         "duration_values=" + ",".join(values),
         f"duration_total_minutes={_format_number(total_minutes)} minutes",
         f"duration_total_hours={_format_number(total_minutes / 60)} hours",
+        f"duration_total_answer={_format_number(total_minutes / 60)} hours",
         "duration_source_ids="
         + ",".join(candidate.source_group for candidate in candidates),
     ]
@@ -755,7 +767,46 @@ def _currency_label(text: str, start: int, end: int) -> str:
     )
     if match:
         return _clean_label(match.group("label"))
+    if label := _currency_label_before_amount(text[:start]):
+        return label
     return ""
+
+
+def _currency_label_before_amount(prefix: str) -> str:
+    prefix = " ".join(prefix.split())
+    patterns = (
+        r"(?P<label>[^.!?]{1,100}?)\s+for\s*$",
+        r"(?P<label>[^.!?]{1,100}?),?\s+which\s+were\s*$",
+        r"(?P<label>[^.!?]{1,100}?)\s+cost\s+me\s*$",
+        r"(?P<label>[^.!?]{1,100}?)\s+cost\s*$",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, prefix, flags=re.IGNORECASE)
+        if match:
+            return _clean_currency_item_label(match.group("label"))
+    return ""
+
+
+def _clean_currency_item_label(label: str) -> str:
+    label = re.sub(r"\b(?:content|session_id|longmemeval_session_id)=\S+\s*", "", label)
+    label = re.split(r"[,;:]|\b(?:because|and then|while)\b", label, maxsplit=1)[-1]
+    label = re.sub(
+        r"^(?:i\s+)?(?:recently\s+)?(?:also\s+)?"
+        r"(?:bought|booked|got|installed|replaced|stayed in|paid for|spent on)\s+",
+        "",
+        label.strip(),
+        flags=re.IGNORECASE,
+    )
+    label = re.sub(r"^(?:a|an|the|my|new)\s+", "", label, flags=re.IGNORECASE)
+    label = re.sub(r"^set\s+of\s+", "", label, flags=re.IGNORECASE)
+    return _clean_label(label)
+
+
+def _normalize_currency_label(label: str) -> str:
+    normalized = _clean_currency_item_label(label).casefold()
+    normalized = re.sub(r"\b(?:new|recent|recently|installed|got|my|the|a|an)\b", " ", normalized)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+    return normalized
 
 
 def _clean_label(label: str) -> str:

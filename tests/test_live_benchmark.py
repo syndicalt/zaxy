@@ -1954,7 +1954,60 @@ async def test_zaxy_retriever_projects_numeric_operators_in_aggregation_bundle()
     bundle = results[0]
     assert "currency_values=$300,$30" in bundle
     assert "currency_difference=$270" in bundle
+    assert "currency_difference_answer=$270" in bundle
     assert "minute_total_hours=0.5 hours" in bundle
+
+
+async def test_zaxy_retriever_deduplicates_repeated_currency_items() -> None:
+    """Currency synthesis should not double-count repeated mentions of the same expense."""
+    source_contexts = [
+        "session_id=answer-1 I bought my Bell Zephyr bike helmet for $120.",
+        "session_id=answer-2 I replaced the bike chain and it cost me $25.",
+        "session_id=answer-3 I got a new set of bike lights installed, which were $40.",
+        "session_id=answer-4 I recently got a new set of bike lights installed, which were $40.",
+    ]
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    class SourceLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return source_contexts
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=SourceLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "How much total money have I spent on bike-related expenses since the start of the year?",
+        limit=5,
+    )
+
+    bundle = results[0]
+    assert "currency_values=$120,$40,$25" in bundle
+    assert "currency_total=$185" in bundle
+    assert "currency_total_answer=$185" in bundle
+    assert "currency_total=$225" not in bundle
+    assert "currency_source_ids=answer-1,answer-2,answer-3" in bundle
 
 
 async def test_zaxy_retriever_deduplicates_numeric_values_from_eventloom_context() -> None:
@@ -2062,6 +2115,7 @@ async def test_zaxy_retriever_normalizes_duration_candidates_across_units() -> N
     assert "duration_values=2 hours,90 minutes" in bundle
     assert "duration_total_minutes=210 minutes" in bundle
     assert "duration_total_hours=3.5 hours" in bundle
+    assert "duration_total_answer=3.5 hours" in bundle
     assert "duration_source_ids=answer-2,answer-1" in bundle
     assert "source_id=distractor-1" not in bundle
 
@@ -2112,6 +2166,7 @@ async def test_zaxy_retriever_formats_large_currency_totals_for_synthesis() -> N
     assert "candidate_rank=1 candidate_type=currency" in bundle
     assert "candidate_support=answer-1,answer-2" in bundle
     assert "currency_total=$2,500" in bundle
+    assert "currency_total_answer=$2,500" in bundle
 
 
 async def test_zaxy_retriever_filters_currency_aggregate_to_query_focus() -> None:
