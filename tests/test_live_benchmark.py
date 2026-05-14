@@ -2164,7 +2164,7 @@ async def test_zaxy_retriever_formats_large_currency_totals_for_synthesis() -> N
 
     bundle = results[0]
     assert "candidate_rank=1 candidate_type=currency" in bundle
-    assert "candidate_support=answer-1,answer-2" in bundle
+    assert "candidate_support=answer-2,answer-1" in bundle
     assert "currency_total=$2,500" in bundle
     assert "currency_total_answer=$2,500" in bundle
 

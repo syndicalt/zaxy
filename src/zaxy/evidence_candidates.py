@@ -6,6 +6,8 @@ import re
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+from zaxy.synthesis import build_currency_ledger, render_currency_result
+
 
 @dataclass(frozen=True)
 class EvidenceCandidate:
@@ -38,10 +40,11 @@ def aggregate_candidate_projection(query: str, contexts: list[str]) -> EvidenceP
         lines.extend(_count_candidate_lines(query, count, rank=rank))
         source_groups.extend(candidate.source_group for candidate in count)
         rank += 1
-    currency = _currency_candidates(query, contexts)
-    if currency:
-        lines.extend(_currency_candidate_lines(currency, rank=rank))
-        source_groups.extend(candidate.source_group for candidate in currency)
+    currency_ledger = build_currency_ledger(query, contexts)
+    currency_projection = render_currency_result(currency_ledger, rank=rank)
+    if currency_projection.lines:
+        lines.extend(currency_projection.lines)
+        source_groups.extend(currency_projection.support_source_groups)
         rank += 1
     duration = _duration_candidates(query, contexts)
     if duration:
@@ -193,65 +196,6 @@ def _count_candidates(query: str, contexts: list[str]) -> list[EvidenceCandidate
         candidates.append(candidate)
         seen_groups.add(candidate.source_group)
     return candidates
-
-
-def _currency_candidate_lines(candidates: list[EvidenceCandidate], *, rank: int) -> list[str]:
-    values = sorted((float(candidate.value) for candidate in candidates), reverse=True)
-    total = sum(values)
-    lines = [
-        *_candidate_diagnostic_lines("currency", candidates, rank=rank),
-        "currency_values=" + ",".join(_format_currency(value) for value in values),
-        f"currency_total={_format_currency(total)}",
-        f"currency_total_answer={_format_currency(total)}",
-        "currency_source_ids="
-        + ",".join(candidate.source_group for candidate in candidates),
-    ]
-    max_item = max(candidates, key=lambda candidate: float(candidate.value))
-    lines.append(f"currency_max={_format_currency(float(max_item.value))}")
-    if max_item.label:
-        lines.append(f"currency_max_label={max_item.label}")
-    if len(values) >= 2:
-        difference = max(values) - min(values)
-        lines.append(f"currency_difference={_format_currency(difference)}")
-        lines.append(f"currency_difference_answer={_format_currency(difference)}")
-    return lines
-
-
-def _currency_candidates(query: str, contexts: list[str]) -> list[EvidenceCandidate]:
-    if not _currency_query(query):
-        return []
-    items: list[EvidenceCandidate] = []
-    seen: set[tuple[str, str]] = set()
-    for context in contexts:
-        text = _context_text(context)
-        group = _source_group(context)
-        relevance = _relevance(_numeric_focus_terms(query), text)
-        for match in re.finditer(r"\$(?P<value>\d+(?:,\d{3})*(?:\.\d+)?)", text):
-            value = str(float(match.group("value").replace(",", "")))
-            label = _currency_label(text, match.start(), match.end())
-            identity = _currency_identity(group=group, value=value, label=label)
-            if identity in seen:
-                continue
-            seen.add(identity)
-            items.append(
-                EvidenceCandidate(
-                    kind="currency",
-                    value=value,
-                    unit="USD",
-                    source_group=group,
-                    label=label,
-                    context=text,
-                    relevance=relevance,
-                )
-            )
-    return _filter_focused_candidates(query, items)
-
-
-def _currency_identity(*, group: str, value: str, label: str) -> tuple[str, str]:
-    normalized_label = _normalize_currency_label(label)
-    if normalized_label:
-        return (value, normalized_label)
-    return (f"{group}:{value}", "")
 
 
 def _duration_candidate_lines(candidates: list[EvidenceCandidate], *, rank: int) -> list[str]:
@@ -609,21 +553,6 @@ def _duration_unit_minutes(unit: str) -> float:
     }[unit]
 
 
-def _filter_focused_candidates(
-    query: str,
-    items: list[EvidenceCandidate],
-) -> list[EvidenceCandidate]:
-    if len(items) < 2:
-        return items
-    focus_terms = _numeric_focus_terms(query)
-    if not focus_terms:
-        return items
-    if max((item.relevance for item in items), default=0) <= 0:
-        return items
-    selected = [item for item in items if item.relevance > 0]
-    return selected if len(selected) >= 2 else items
-
-
 def _count_query(query: str) -> bool:
     tokens = set(_tokens(query))
     if tokens & {"hours", "hour", "minutes", "minute", "days", "day", "weeks", "week", "months", "month"}:
@@ -650,15 +579,6 @@ def _list_detail_query(query: str) -> bool:
     )
 
 
-def _currency_query(query: str) -> bool:
-    tokens = set(_tokens(query))
-    if tokens & {"hours", "hour", "minutes", "minute", "days", "day", "weeks", "week", "months", "month"}:
-        return bool(tokens & {"money", "amount", "cost", "costs", "price", "prices"})
-    return bool(
-        tokens & {"money", "amount", "cost", "costs", "spent", "spend", "price", "prices", "much"}
-    )
-
-
 def _expanded_focus_terms(query: str) -> set[str]:
     terms = _query_specific_terms(query)
     expanded = set(terms)
@@ -675,20 +595,6 @@ def _expanded_focus_terms(query: str) -> set[str]:
             expanded.add(term[:-1])
         else:
             expanded.add(f"{term}s")
-    return expanded
-
-
-def _numeric_focus_terms(query: str) -> set[str]:
-    terms = _query_specific_terms(query)
-    expanded = set(terms)
-    semantic_groups = {
-        "grocery": {"grocery", "groceries", "market", "store", "foods", "trader", "joe"},
-        "groceries": {"grocery", "groceries", "market", "store", "foods", "trader", "joe"},
-        "store": {"store", "market", "foods", "trader", "joe"},
-        "luxury": {"luxury", "designer", "premium", "bag", "shoes", "jewelry", "watch"},
-    }
-    for term in terms:
-        expanded.update(semantic_groups.get(term, set()))
     return expanded
 
 
@@ -751,69 +657,6 @@ def _rendered_list_label(candidate: EvidenceCandidate) -> str:
     return " ".join(candidate.label.strip(" .,'\"").split())
 
 
-def _currency_label(text: str, start: int, end: int) -> str:
-    after = text[end : end + 120]
-    for pattern in (
-        r"\s+(?:at|from)\s+(?P<label>[A-Z][A-Za-z0-9'&.-]*(?:\s+[A-Z][A-Za-z0-9'&.-]*){0,4})",
-        r"\s+(?:for|on)\s+(?:a|an|the)?\s*(?P<label>[A-Za-z][A-Za-z0-9'&.-]*(?:\s+[A-Za-z][A-Za-z0-9'&.-]*){0,4})",
-    ):
-        match = re.match(pattern, after)
-        if match:
-            return _clean_label(match.group("label"))
-    before = text[max(0, start - 120) : start]
-    match = re.search(
-        r"\b(?:at|from)\s+(?P<label>[A-Z][A-Za-z0-9'&.-]*(?:\s+[A-Z][A-Za-z0-9'&.-]*){0,4})\s*$",
-        before,
-    )
-    if match:
-        return _clean_label(match.group("label"))
-    if label := _currency_label_before_amount(text[:start]):
-        return label
-    return ""
-
-
-def _currency_label_before_amount(prefix: str) -> str:
-    prefix = " ".join(prefix.split())
-    patterns = (
-        r"(?P<label>[^.!?]{1,100}?)\s+for\s*$",
-        r"(?P<label>[^.!?]{1,100}?),?\s+which\s+were\s*$",
-        r"(?P<label>[^.!?]{1,100}?)\s+cost\s+me\s*$",
-        r"(?P<label>[^.!?]{1,100}?)\s+cost\s*$",
-    )
-    for pattern in patterns:
-        match = re.search(pattern, prefix, flags=re.IGNORECASE)
-        if match:
-            return _clean_currency_item_label(match.group("label"))
-    return ""
-
-
-def _clean_currency_item_label(label: str) -> str:
-    label = re.sub(r"\b(?:content|session_id|longmemeval_session_id)=\S+\s*", "", label)
-    label = re.split(r"[,;:]|\b(?:because|and then|while)\b", label, maxsplit=1)[-1]
-    label = re.sub(
-        r"^(?:i\s+)?(?:recently\s+)?(?:also\s+)?"
-        r"(?:bought|booked|got|installed|replaced|stayed in|paid for|spent on)\s+",
-        "",
-        label.strip(),
-        flags=re.IGNORECASE,
-    )
-    label = re.sub(r"^(?:a|an|the|my|new)\s+", "", label, flags=re.IGNORECASE)
-    label = re.sub(r"^set\s+of\s+", "", label, flags=re.IGNORECASE)
-    return _clean_label(label)
-
-
-def _normalize_currency_label(label: str) -> str:
-    normalized = _clean_currency_item_label(label).casefold()
-    normalized = re.sub(r"\b(?:new|recent|recently|installed|got|my|the|a|an)\b", " ", normalized)
-    normalized = re.sub(r"\s+", " ", normalized).strip()
-    return normalized
-
-
-def _clean_label(label: str) -> str:
-    label = re.split(r"\b(?:on|in|for|with|and|but|because|when)\b", label, maxsplit=1)[0]
-    return " ".join(label.strip(" .,'\"").split())
-
-
 def _tokens(text: str) -> list[str]:
     tokens: list[str] = []
     for token in re.findall(r"[a-z0-9]+(?:[-_:./#][a-z0-9]+)*", text.casefold()):
@@ -821,14 +664,6 @@ def _tokens(text: str) -> list[str]:
         if re.search(r"[-_:/#]", token):
             tokens.extend(part for part in re.split(r"[-_:/#]+", token) if part)
     return tokens
-
-
-def _format_currency(value: float) -> str:
-    if value.is_integer():
-        return f"${int(value):,}"
-    whole = int(value)
-    fraction = f"{value:.2f}".split(".", 1)[1].rstrip("0")
-    return f"${whole:,}.{fraction}"
 
 
 def _format_number(value: float) -> str:
