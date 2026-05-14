@@ -1848,6 +1848,52 @@ async def test_zaxy_retriever_deduplicates_numeric_values_from_eventloom_context
     assert "day_total=16 days" not in bundle
 
 
+async def test_zaxy_retriever_formats_large_currency_totals_for_synthesis() -> None:
+    """Currency aggregation should preserve thousands separators in answer candidates."""
+    source_contexts = [
+        "content=longmemeval_session_id=answer-1 I bought a designer bag for $1,500.",
+        "content=longmemeval_session_id=answer-2 I bought luxury shoes for $1,000.",
+    ]
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    class SourceLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return source_contexts
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=SourceLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "What is the total amount I spent on luxury items in the past few months?",
+        limit=5,
+    )
+
+    bundle = results[0]
+    assert "currency_total=$2,500" in bundle
+
+
 async def test_zaxy_retriever_builds_date_interval_source_synthesis() -> None:
     """Temporal aggregation should expose cited date-difference candidates."""
     source_contexts = [
@@ -2216,6 +2262,114 @@ async def test_zaxy_retriever_builds_relative_week_interval_synthesis() -> None:
     bundle = results[0]
     assert "week_values=6,2" in bundle
     assert "week_interval_answer=Four weeks" in bundle
+
+
+async def test_zaxy_retriever_builds_relative_time_offset_synthesis() -> None:
+    """Time evidence should expose derived answers from cited relative offsets."""
+    source_contexts = [
+        (
+            "content=longmemeval_session_id=answer-1 "
+            "My usual weekday wake-up time is 7:00 AM."
+        ),
+        (
+            "content=longmemeval_session_id=answer-2 "
+            "On Tuesdays and Thursdays I wake up 15 minutes earlier for training."
+        ),
+    ]
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    class SourceLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return source_contexts
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=SourceLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "What time do I wake up on Tuesdays and Thursdays?",
+        limit=5,
+    )
+
+    bundle = results[0]
+    assert "time_values=7:00 AM" in bundle
+    assert "time_offset_minutes=-15" in bundle
+    assert "time_offset_answer=6:45 AM" in bundle
+
+
+async def test_zaxy_retriever_builds_temporal_order_synthesis() -> None:
+    """Ordering questions should expose the earliest cited event candidate."""
+    source_contexts = [
+        (
+            "content=longmemeval_session_id=answer-1 "
+            "I received my new phone case about a month ago."
+        ),
+        (
+            "content=longmemeval_session_id=answer-2 "
+            "I lost my phone charger last week while traveling."
+        ),
+    ]
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    class SourceLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return source_contexts
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=SourceLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "Which event happened first, losing phone charger or receiving new phone case?",
+        limit=5,
+    )
+
+    bundle = results[0]
+    assert "temporal_order_answer=received my new phone case" in bundle
+    assert "temporal_order_rank=1 relative_days_ago=30" in bundle
+    assert "temporal_order_rank=2 relative_days_ago=7" in bundle
 
 
 async def test_zaxy_retriever_builds_issue_source_synthesis() -> None:

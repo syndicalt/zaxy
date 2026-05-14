@@ -201,7 +201,12 @@ def source_synthesis_bundle(
 ) -> str | None:
     """Build one compact cited source bundle for multi-source synthesis queries."""
     intent = classify_retrieval_intent(query, limit=limit)
-    if not {"aggregation", "aggregation_question"} & set(intent.reasons) and not _issue_query(query):
+    if (
+        not {"aggregation", "aggregation_question"} & set(intent.reasons)
+        and not _issue_query(query)
+        and not _time_offset_query(query)
+        and not _temporal_order_query(query)
+    ):
         return None
     group_limit = max(limit, intent.source_lane_slots)
     ordered_sources = query_specific_source_order(query, source_results)
@@ -225,6 +230,7 @@ def source_synthesis_bundle(
     ]
     lines.extend(_numeric_synthesis_lines(query, grouped_sources))
     lines.extend(_date_interval_synthesis_lines(query, grouped_sources))
+    lines.extend(_temporal_order_synthesis_lines(query, grouped_sources))
     lines.extend(_issue_synthesis_lines(query, grouped_sources))
     for index, context in enumerate(grouped_sources, start=1):
         lines.append(
@@ -584,6 +590,7 @@ def _numeric_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
             lines.append(f"month_interval={_format_number(month_interval)} months")
             if month_interval_words := _number_words(month_interval):
                 lines.append(f"month_interval_answer={month_interval_words} months")
+    lines.extend(_time_offset_synthesis_lines(query, numeric_contexts))
     return lines
 
 
@@ -689,6 +696,154 @@ def _number_words(value: float) -> str | None:
         if number == integer:
             return word.title()
     return None
+
+
+def _time_offset_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    """Project time candidates adjusted by relative minute offsets."""
+    if not _time_offset_query(query):
+        return []
+    base_times = _clock_time_values(contexts)
+    offsets = _relative_minute_offsets(contexts)
+    if not base_times or not offsets:
+        return []
+    lines = ["time_values=" + ",".join(_format_minutes_as_clock(value) for value in base_times)]
+    lines.append("time_offset_minutes=" + ",".join(str(value) for value in offsets))
+    answers: list[str] = []
+    for base in base_times:
+        for offset in offsets:
+            answer = _format_minutes_as_clock(base + offset)
+            if answer not in answers:
+                answers.append(answer)
+    for answer in answers[:5]:
+        lines.append(f"time_offset_answer={answer}")
+    return lines
+
+
+def _time_offset_query(query: str) -> bool:
+    query_tokens = set(source_tokens(query))
+    return bool({"time", "when"} & query_tokens)
+
+
+def _clock_time_values(contexts: list[str]) -> list[int]:
+    values: list[int] = []
+    pattern = re.compile(
+        r"\b(?P<hour>1[0-2]|0?[1-9]):(?P<minute>[0-5]\d)\s*(?P<period>a\.?m\.?|p\.?m\.?)\b",
+        flags=re.IGNORECASE,
+    )
+    for context in contexts:
+        for match in pattern.finditer(context):
+            hour = int(match.group("hour"))
+            minute = int(match.group("minute"))
+            period = match.group("period").casefold().replace(".", "")
+            if period == "am":
+                hour = 0 if hour == 12 else hour
+            else:
+                hour = 12 if hour == 12 else hour + 12
+            total = hour * 60 + minute
+            if total not in values:
+                values.append(total)
+    return values
+
+
+def _relative_minute_offsets(contexts: list[str]) -> list[int]:
+    values: list[int] = []
+    pattern = re.compile(
+        r"\b(?P<value>\d+)\s+minutes?\s+(?P<direction>earlier|before|later|after)\b",
+        flags=re.IGNORECASE,
+    )
+    for context in contexts:
+        for match in pattern.finditer(context):
+            value = int(match.group("value"))
+            direction = match.group("direction").casefold()
+            offset = -value if direction in {"earlier", "before"} else value
+            if offset not in values:
+                values.append(offset)
+    return values
+
+
+def _format_minutes_as_clock(total_minutes: int) -> str:
+    total_minutes %= 24 * 60
+    hour_24, minute = divmod(total_minutes, 60)
+    period = "AM" if hour_24 < 12 else "PM"
+    hour_12 = hour_24 % 12
+    if hour_12 == 0:
+        hour_12 = 12
+    return f"{hour_12}:{minute:02d} {period}"
+
+
+def _temporal_order_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    """Project relative ordering candidates from cited temporal evidence."""
+    if not _temporal_order_query(query):
+        return []
+    observations: list[tuple[int, str]] = []
+    for context in contexts:
+        text = _numeric_context_text(context)
+        days_ago = _relative_days_ago(text)
+        if days_ago is None:
+            continue
+        candidate = _temporal_order_candidate(text)
+        if not candidate:
+            continue
+        observations.append((days_ago, candidate))
+    if len(observations) < 2:
+        return []
+    observations.sort(key=lambda item: item[0], reverse=True)
+    lines = [f"temporal_order_answer={observations[0][1]}"]
+    for index, (days_ago, candidate) in enumerate(observations[:5], start=1):
+        lines.append(
+            f"temporal_order_rank={index} relative_days_ago={days_ago} candidate={candidate}"
+        )
+    return lines
+
+
+def _temporal_order_query(query: str) -> bool:
+    tokens = set(source_tokens(query))
+    return bool(tokens & {"first", "earlier", "before"}) and bool(
+        tokens & {"event", "happened", "which"}
+    )
+
+
+def _relative_days_ago(text: str) -> int | None:
+    lowered = text.casefold()
+    if "last week" in lowered:
+        return 7
+    if "recently" in lowered:
+        return 3
+    for unit, multiplier in (("month", 30), ("week", 7), ("day", 1)):
+        pattern = re.compile(
+            rf"\b(?:about\s+|around\s+|approximately\s+|exactly\s+)?"
+            rf"(?P<value>a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d+)\s+"
+            rf"{unit}s?\s+ago\b",
+            flags=re.IGNORECASE,
+        )
+        for match in pattern.finditer(text):
+            value_text = match.group("value").casefold()
+            value = _NUMBER_WORDS.get(value_text)
+            if value is None:
+                value = int(value_text)
+            return value * multiplier
+    return None
+
+
+def _temporal_order_candidate(text: str) -> str:
+    text = re.sub(r"\bcontent=longmemeval_session_id=\S+\s*", "", text)
+    text = re.sub(r"\blongmemeval_session_date=\d{4}/\d{1,2}/\d{1,2}\s*\([^)]*\)\s*", "", text)
+    text = re.sub(
+        r"\b(?:about\s+|around\s+|approximately\s+|exactly\s+)?"
+        r"(?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d+)\s+"
+        r"(?:months?|weeks?|days?)\s+ago\b",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(r"\blast week\b", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"\brecently\b", "", text, flags=re.IGNORECASE)
+    text = text.strip(" .")
+    match = re.match(r"\bI\s+(?P<candidate>.+)", text, flags=re.IGNORECASE)
+    if match:
+        text = match.group("candidate").strip(" .")
+    words = text.split()
+    return " ".join(words[:8])
 
 
 _MONTHS = {
@@ -847,7 +1002,11 @@ def _issue_query(query: str) -> bool:
 
 
 def _format_currency(value: float) -> str:
-    return f"${_format_number(value)}"
+    if value.is_integer():
+        return f"${int(value):,}"
+    whole = int(value)
+    fraction = f"{value:.2f}".split(".", 1)[1].rstrip("0")
+    return f"${whole:,}.{fraction}"
 
 
 def _format_number(value: float) -> str:
