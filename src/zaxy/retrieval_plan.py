@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from datetime import date, timedelta
 
+from zaxy.evidence_candidates import aggregate_candidate_projection
 from zaxy.retrieval_intent import RetrievalIntent, classify_retrieval_intent
 
 
@@ -30,19 +31,6 @@ class EvidencePlan:
             "promote_cited_sources": self.promote_cited_sources,
             "reasons": list(self.reasons),
         }
-
-
-@dataclass(frozen=True)
-class NumericEvidence:
-    """Typed numeric evidence extracted from one cited source context."""
-
-    kind: str
-    value: float
-    unit: str
-    source_group: str
-    label: str
-    context: str
-    relevance: int
 
 
 def build_evidence_plan(query: str, *, limit: int = 10) -> EvidencePlan:
@@ -238,8 +226,13 @@ def source_synthesis_bundle(
     if len(grouped_sources) < 2:
         return None
     aggregation_query = bool({"aggregation", "aggregation_question"} & set(intent.reasons))
+    aggregate_projection = aggregate_candidate_projection(query, grouped_sources)
     derived_lines = [
-        *_numeric_synthesis_lines(query, grouped_sources),
+        *_numeric_synthesis_lines(
+            query,
+            grouped_sources,
+            aggregate_lines=list(aggregate_projection.lines),
+        ),
         *_date_interval_synthesis_lines(query, grouped_sources),
         *_temporal_order_synthesis_lines(query, grouped_sources),
         *_issue_synthesis_lines(query, grouped_sources),
@@ -255,7 +248,11 @@ def source_synthesis_bundle(
         f"source_count={len(grouped_sources)}",
     ]
     lines.extend(derived_lines)
-    for index, context in enumerate(grouped_sources, start=1):
+    support_sources = _supporting_synthesis_sources(
+        grouped_sources,
+        source_groups=aggregate_projection.source_groups,
+    )
+    for index, context in enumerate(support_sources, start=1):
         lines.append(
             "- "
             f"source_id={source_context_group(context)} "
@@ -609,27 +606,30 @@ def source_tokens(text: str) -> list[str]:
     return tokens
 
 
-def _numeric_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+def _supporting_synthesis_sources(
+    contexts: list[str],
+    *,
+    source_groups: tuple[str, ...],
+) -> list[str]:
+    if not source_groups:
+        return contexts
+    source_group_set = set(source_groups)
+    selected = [
+        context for context in contexts
+        if source_context_group(context) in source_group_set
+    ]
+    return selected if len(selected) >= 2 else contexts
+
+
+def _numeric_synthesis_lines(
+    query: str,
+    contexts: list[str],
+    *,
+    aggregate_lines: list[str] | None = None,
+) -> list[str]:
     """Project deterministic numeric operations from cited source snippets."""
     numeric_contexts = [_numeric_context_text(context) for context in contexts]
-    lines: list[str] = []
-    currency_evidence = _currency_evidence(query, contexts)
-    currency_values = sorted((item.value for item in currency_evidence), reverse=True)
-    if currency_evidence:
-        lines.append(
-            "currency_values="
-            + ",".join(_format_currency(value) for value in currency_values)
-        )
-        lines.append(f"currency_total={_format_currency(sum(currency_values))}")
-        max_item = max(currency_evidence, key=lambda item: item.value)
-        lines.append(f"currency_max={_format_currency(max_item.value)}")
-        if max_item.label:
-            lines.append(f"currency_max_label={max_item.label}")
-        if len(currency_values) >= 2:
-            lines.append(
-                "currency_difference="
-                f"{_format_currency(max(currency_values) - min(currency_values))}"
-            )
+    lines: list[str] = list(aggregate_lines or [])
     lines.extend(_age_average_synthesis_lines(query, numeric_contexts))
     minute_values = _unit_values(numeric_contexts, unit_pattern=r"minutes?|mins?")
     if minute_values:
@@ -705,99 +705,6 @@ def _numeric_context_text(context: str) -> str:
     """Return source text once, excluding Eventloom JSON payload echoes."""
     text = source_context_snippet(context)
     return text.split(' {"content":', 1)[0]
-
-
-def _currency_evidence(query: str, contexts: list[str]) -> list[NumericEvidence]:
-    """Extract deduplicated, query-relevant currency evidence from source contexts."""
-    items: list[NumericEvidence] = []
-    seen: set[tuple[str, float, str]] = set()
-    for context in contexts:
-        text = _numeric_context_text(context)
-        group = source_context_group(context)
-        relevance = _numeric_context_relevance(query, text)
-        for match in re.finditer(r"\$(?P<value>\d+(?:,\d{3})*(?:\.\d+)?)", text):
-            value = float(match.group("value").replace(",", ""))
-            label = _currency_label(text, match.start(), match.end())
-            identity = (group, value, label.casefold())
-            if identity in seen:
-                continue
-            seen.add(identity)
-            items.append(
-                NumericEvidence(
-                    kind="currency",
-                    value=value,
-                    unit="USD",
-                    source_group=group,
-                    label=label,
-                    context=text,
-                    relevance=relevance,
-                )
-            )
-    return _filter_numeric_evidence_for_query(query, items)
-
-
-def _filter_numeric_evidence_for_query(
-    query: str,
-    items: list[NumericEvidence],
-) -> list[NumericEvidence]:
-    """Keep focused numeric candidates without hiding evidence for broad totals."""
-    if len(items) < 2:
-        return items
-    focus_terms = _numeric_query_focus_terms(query)
-    if not focus_terms:
-        return items
-    best = max((item.relevance for item in items), default=0)
-    if best <= 0:
-        return items
-    selected = [item for item in items if item.relevance > 0]
-    return selected if len(selected) >= 2 else items
-
-
-def _numeric_context_relevance(query: str, context: str) -> int:
-    focus_terms = _numeric_query_focus_terms(query)
-    if not focus_terms:
-        return 0
-    context_terms = set(source_tokens(context))
-    return len(focus_terms & context_terms)
-
-
-def _numeric_query_focus_terms(query: str) -> set[str]:
-    terms = _query_specific_terms(query)
-    expanded = set(terms)
-    semantic_groups = {
-        "grocery": {"grocery", "groceries", "market", "store", "foods", "trader", "joe"},
-        "groceries": {"grocery", "groceries", "market", "store", "foods", "trader", "joe"},
-        "store": {"store", "market", "foods", "trader", "joe"},
-        "luxury": {"luxury", "designer", "premium", "bag", "shoes", "jewelry", "watch"},
-    }
-    for term in terms:
-        expanded.update(semantic_groups.get(term, set()))
-    return expanded
-
-
-def _currency_label(text: str, start: int, end: int) -> str:
-    """Return a compact entity label attached to a currency mention."""
-    after = text[end : end + 120]
-    for pattern in (
-        r"\s+(?:at|from)\s+(?P<label>[A-Z][A-Za-z0-9'&.-]*(?:\s+[A-Z][A-Za-z0-9'&.-]*){0,4})",
-        r"\s+(?:for|on)\s+(?:a|an|the)?\s*(?P<label>[A-Za-z][A-Za-z0-9'&.-]*(?:\s+[A-Za-z][A-Za-z0-9'&.-]*){0,4})",
-    ):
-        match = re.match(pattern, after)
-        if match:
-            return _clean_numeric_label(match.group("label"))
-    before = text[max(0, start - 120) : start]
-    match = re.search(
-        r"\b(?:at|from)\s+(?P<label>[A-Z][A-Za-z0-9'&.-]*(?:\s+[A-Z][A-Za-z0-9'&.-]*){0,4})\s*$",
-        before,
-    )
-    if match:
-        return _clean_numeric_label(match.group("label"))
-    return ""
-
-
-def _clean_numeric_label(label: str) -> str:
-    label = re.split(r"\b(?:on|in|for|with|and|but|because|when)\b", label, maxsplit=1)[0]
-    return " ".join(label.strip(" .,'\"").split())
 
 
 def _age_average_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
