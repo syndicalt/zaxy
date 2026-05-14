@@ -76,6 +76,8 @@ def _count_candidate_lines(
         "count_unit=events",
         f"count_source_ids={source_ids}",
     ]
+    if answer_text := _count_answer_text(query, candidates):
+        lines.append(f"count_answer_text={answer_text}")
     if _list_detail_query(query):
         lines.extend(_list_candidate_lines(candidates))
     return lines
@@ -94,6 +96,65 @@ def _list_candidate_lines(candidates: list[EvidenceCandidate]) -> list[str]:
         "list_source_ids="
         + ",".join(candidate.source_group for candidate in labeled_candidates),
     ]
+
+
+def _count_answer_text(query: str, candidates: list[EvidenceCandidate]) -> str:
+    subject = _count_subject_phrase(query)
+    if not subject:
+        return ""
+    action = _common_count_action(candidates)
+    count = _count_display(len(candidates))
+    if action:
+        return f"I {action} {count} {subject}."
+    return f"There are {count} {subject}."
+
+
+def _count_subject_phrase(query: str) -> str:
+    match = re.search(
+        r"\bhow\s+many\s+(?P<subject>.+?)(?:\s+(?:did|do|does|that|have|has|had|"
+        r"were|was|are|is|can|could|should|would)\b|[?.,]|$)",
+        query,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    return " ".join(match.group("subject").strip(" .,'\"").casefold().split())
+
+
+def _common_count_action(candidates: list[EvidenceCandidate]) -> str:
+    actions: list[str] = []
+    for candidate in candidates:
+        label = _rendered_list_label(candidate)
+        if not label:
+            continue
+        first = label.split(maxsplit=1)[0].casefold()
+        if first:
+            actions.append(first)
+    if not actions:
+        return ""
+    first_action = actions[0]
+    if all(action == first_action for action in actions):
+        return first_action
+    return ""
+
+
+def _count_display(value: int) -> str:
+    words = {
+        0: "zero",
+        1: "one",
+        2: "two",
+        3: "three",
+        4: "four",
+        5: "five",
+        6: "six",
+        7: "seven",
+        8: "eight",
+        9: "nine",
+        10: "ten",
+        11: "eleven",
+        12: "twelve",
+    }
+    return words.get(value, str(value))
 
 
 def _count_candidates(query: str, contexts: list[str]) -> list[EvidenceCandidate]:

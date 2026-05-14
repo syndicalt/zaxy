@@ -1785,12 +1785,63 @@ async def test_zaxy_retriever_counts_distinct_event_sources_not_duplicate_mentio
     bundle = results[0]
     assert "count_answer=4" in bundle
     assert "count_unit=events" in bundle
+    assert "count_answer_text=I attended four movie festivals." in bundle
     assert "list_item_count=4" in bundle
     assert (
         "list_items=attended the Spring Film Festival | attended the Lakeside Film Festival | "
         "attended the Indie Film Festival | attended the Documentary Film Festival"
     ) in bundle
     assert "source_id=distractor-1" not in bundle
+
+
+async def test_zaxy_retriever_projects_plain_count_answer_text() -> None:
+    """Plain count synthesis should render a compact answer surface without list bloat."""
+    source_contexts = [
+        "session_id=answer-1 I attended the Portland Film Festival.",
+        "session_id=answer-2 I attended the Seattle Film Festival.",
+        "session_id=answer-3 I attended the Austin Film Festival.",
+        "session_id=answer-4 I attended the Denver Film Festival.",
+    ]
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    class SourceLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return source_contexts
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=SourceLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "How many movie festivals that I attended?",
+        limit=5,
+    )
+
+    bundle = results[0]
+    assert "count_answer=4" in bundle
+    assert "count_answer_text=I attended four movie festivals." in bundle
+    assert "list_item_count=" not in bundle
 
 
 async def test_zaxy_retriever_projects_count_list_answer_details() -> None:
@@ -1839,6 +1890,7 @@ async def test_zaxy_retriever_projects_count_list_answer_details() -> None:
 
     bundle = results[0]
     assert "count_answer=3" in bundle
+    assert "count_answer_text=I attended three weddings." in bundle
     assert "list_item_count=3" in bundle
     assert (
         "list_items=attended Rachel and Mike's wedding | "
