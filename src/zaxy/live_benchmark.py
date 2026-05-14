@@ -36,6 +36,7 @@ from zaxy.retrieval_plan import (
     filter_superseded_preference_source_results,
     reserve_source_lane,
     should_query_source_lane,
+    source_context_group,
     source_lane_candidate_limit,
     source_lane_query,
     source_synthesis_bundle,
@@ -641,6 +642,10 @@ class ZaxyRetriever:
             query=query,
             source_results=lexical_results,
             limit=limit,
+            preferred_source_groups=[
+                source_context_group(result)
+                for result in graph_results
+            ],
         ) or absence_check_bundle(
             query=query,
             source_results=lexical_results,
@@ -735,6 +740,10 @@ class ZaxyCheckoutRetriever(ZaxyRetriever):
             query=query,
             source_results=lexical_results,
             limit=limit,
+            preferred_source_groups=[
+                source_context_group(result)
+                for result in graph_results
+            ],
         ) or absence_check_bundle(
             query=query,
             source_results=lexical_results,

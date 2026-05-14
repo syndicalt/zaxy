@@ -1905,6 +1905,93 @@ async def test_zaxy_retriever_builds_date_interval_source_synthesis() -> None:
     assert "date_interval_answer=30 days. 31 days (including the last day) is also acceptable." in bundle
 
 
+async def test_zaxy_retriever_ranks_query_specific_date_intervals_before_distractors() -> None:
+    """Temporal synthesis should rank derived intervals by query evidence coverage."""
+    source_contexts = [
+        (
+            "content=longmemeval_session_id=distractor-1 "
+            "longmemeval_session_date=2023/03/26 (Sun) "
+            "I just got back from Sunday mass at St. Mary's Church on March 19th."
+        ),
+        (
+            "content=longmemeval_session_id=distractor-2 "
+            "longmemeval_session_date=2023/03/26 (Sun) "
+            "I attended the Holi celebration at my local temple on February 26th."
+        ),
+        (
+            "content=longmemeval_session_id=answer-1 "
+            "longmemeval_session_date=2023/02/20 (Mon) "
+            "I came from the Ash Wednesday service at the cathedral on February 1st."
+        ),
+        (
+            "content=longmemeval_session_id=answer-2 "
+            "longmemeval_session_date=2023/02/20 (Mon) "
+            "I attended Sunday mass at St. Mary's Church on January 2nd."
+        ),
+        (
+            "content=longmemeval_session_id=distractor-3 "
+            "longmemeval_session_date=2023/05/22 (Mon) "
+            "I finished a book club assignment two weeks ago."
+        ),
+    ]
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(
+                    content=(
+                        "longmemeval/08f4fc43/answer-1/salient-turn-0001.md "
+                        "longmemeval_session_id=answer-1 "
+                        "I came from the Ash Wednesday service at the cathedral on February 1st."
+                    )
+                ),
+                SimpleNamespace(
+                    content=(
+                        "longmemeval/08f4fc43/answer-2/salient-turn-0001.md "
+                        "longmemeval_session_id=answer-2 "
+                        "I attended Sunday mass at St. Mary's Church on January 2nd."
+                    )
+                ),
+                *[
+                    SimpleNamespace(content=f"graph distractor {index}")
+                    for index in range(max(0, (limit or 10) - 2))
+                ],
+            ]
+
+    class SourceLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return source_contexts
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=SourceLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "How many days had passed between the Sunday mass at St. Mary's Church and the Ash Wednesday service at the cathedral?",
+        limit=5,
+    )
+
+    bundle = results[0]
+    first_interval = bundle.index("date_interval_answer=")
+    assert "date_interval_answer=30 days. 31 days (including the last day) is also acceptable." in bundle
+    assert first_interval == bundle.index("date_interval_answer=30 days")
+
+
 async def test_zaxy_retriever_prioritizes_query_specific_source_synthesis() -> None:
     """Synthesis should prefer sources matching query concepts over generic numeric hits."""
     source_contexts = [

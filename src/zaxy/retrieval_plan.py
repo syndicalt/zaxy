@@ -197,6 +197,7 @@ def source_synthesis_bundle(
     query: str,
     source_results: list[str],
     limit: int,
+    preferred_source_groups: list[str] | tuple[str, ...] | None = None,
 ) -> str | None:
     """Build one compact cited source bundle for multi-source synthesis queries."""
     intent = classify_retrieval_intent(query, limit=limit)
@@ -204,6 +205,11 @@ def source_synthesis_bundle(
         return None
     group_limit = max(limit, intent.source_lane_slots)
     ordered_sources = query_specific_source_order(query, source_results)
+    if preferred_source_groups:
+        ordered_sources = preferred_source_group_order(
+            ordered_sources,
+            preferred_source_groups,
+        )
     grouped_sources = diverse_source_contexts(
         ordered_sources,
         limit=group_limit,
@@ -230,6 +236,27 @@ def source_synthesis_bundle(
         if index >= group_limit:
             break
     return "\n".join(lines)
+
+
+def preferred_source_group_order(
+    contexts: list[str],
+    preferred_groups: list[str] | tuple[str, ...],
+) -> list[str]:
+    """Move graph-anchored source groups ahead of lexical-only candidates by graph rank."""
+    if not preferred_groups:
+        return contexts
+    group_rank = {
+        group: rank
+        for rank, group in enumerate(dict.fromkeys(preferred_groups))
+    }
+    indexed = list(enumerate(contexts))
+    indexed.sort(
+        key=lambda item: (
+            group_rank.get(source_context_group(item[1]), len(group_rank)),
+            item[0],
+        )
+    )
+    return [context for _, context in indexed]
 
 
 def absence_check_bundle(
