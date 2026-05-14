@@ -2264,6 +2264,270 @@ async def test_zaxy_retriever_builds_relative_week_interval_synthesis() -> None:
     assert "week_interval_answer=Four weeks" in bundle
 
 
+async def test_zaxy_retriever_builds_mixed_relative_time_interval_synthesis() -> None:
+    """Relative month/week evidence should expose a day and week interval candidate."""
+    source_contexts = [
+        (
+            "content=longmemeval_session_id=answer-1 "
+            "I recently got a new area rug for my living room a month ago."
+        ),
+        (
+            "content=longmemeval_session_id=answer-2 "
+            "I rearranged the furniture three weeks ago."
+        ),
+    ]
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    class SourceLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return source_contexts
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=SourceLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "How long had I been using the new area rug when I rearranged my living room furniture?",
+        limit=5,
+    )
+
+    bundle = results[0]
+    assert "relative_day_interval=7 days" in bundle
+    assert "relative_week_interval_answer=One week" in bundle
+
+
+async def test_zaxy_retriever_parses_day_of_month_date_intervals() -> None:
+    """Day-of-month phrasing should support deterministic date interval synthesis."""
+    source_contexts = [
+        (
+            "content=longmemeval_session_id=answer-1 "
+            "longmemeval_session_date=2022/05/15 (Sun) "
+            "I ordered the personalized photo album on the 15th of April."
+        ),
+        (
+            "content=longmemeval_session_id=answer-2 "
+            "longmemeval_session_date=2022/05/15 (Sun) "
+            "I celebrated my best friend's birthday party on the 22nd of April."
+        ),
+    ]
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    class SourceLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return source_contexts
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=SourceLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "How many days before my best friend's birthday party did I order her gift?",
+        limit=5,
+    )
+
+    bundle = results[0]
+    assert "date_interval_answer=7 days. 8 days (including the last day) is also acceptable." in bundle
+
+
+async def test_zaxy_retriever_parses_black_friday_relative_dates() -> None:
+    """Named holiday-relative dates should support deterministic interval synthesis."""
+    source_contexts = [
+        (
+            "content=longmemeval_session_id=answer-1 "
+            "longmemeval_session_date=2023/12/10 (Sun) "
+            "I attended the annual Holiday Market a week before Black Friday."
+        ),
+        (
+            "content=longmemeval_session_id=answer-2 "
+            "longmemeval_session_date=2023/12/10 (Sun) "
+            "I bought the iPhone 13 Pro from Best Buy on Black Friday."
+        ),
+    ]
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    class SourceLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return source_contexts
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=SourceLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "How many days before I bought the iPhone 13 Pro did I attend the Holiday Market?",
+        limit=5,
+    )
+
+    bundle = results[0]
+    assert "date_interval_answer=7 days. 8 days (including the last day) is also acceptable." in bundle
+
+
+async def test_zaxy_retriever_builds_absence_bundle_for_missing_query_target() -> None:
+    """Source-sensitive queries should warn when the requested target is absent."""
+    source_contexts = [
+        (
+            "content=longmemeval_session_id=answer-1 "
+            "I booked an Airbnb in San Francisco for the wedding."
+        ),
+        (
+            "content=longmemeval_session_id=answer-2 "
+            "I visited San Francisco two months ago."
+        ),
+    ]
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    class SourceLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return source_contexts
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=SourceLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "When did I book the Airbnb in Sacramento?",
+        limit=5,
+    )
+
+    bundle = results[0]
+    assert "zaxy_absence_check=true" in bundle
+    assert "The information provided is not enough." in bundle
+    assert "did not mention sacramento" in bundle.casefold()
+    assert "San Francisco" in bundle
+
+
+async def test_zaxy_retriever_builds_average_age_synthesis() -> None:
+    """Average-age queries should expose a deterministic arithmetic answer."""
+    source_contexts = [
+        "content=longmemeval_session_id=answer-1 I just turned 32 on February 12th.",
+        "content=longmemeval_session_id=answer-2 My mom is 55 and my dad is 58.",
+        "content=longmemeval_session_id=answer-3 My grandma is 75 and my grandpa is 78.",
+    ]
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    class SourceLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return source_contexts
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=SourceLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "What is the average age of me, my parents, and my grandparents?",
+        limit=5,
+    )
+
+    bundle = results[0]
+    assert "age_values=32,55,58,75,78" in bundle
+    assert "age_average=59.6" in bundle
+
+
 async def test_zaxy_retriever_builds_relative_time_offset_synthesis() -> None:
     """Time evidence should expose derived answers from cited relative offsets."""
     source_contexts = [

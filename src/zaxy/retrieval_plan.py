@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
 from zaxy.retrieval_intent import RetrievalIntent, classify_retrieval_intent
 
@@ -204,6 +204,7 @@ def source_synthesis_bundle(
     if (
         not {"aggregation", "aggregation_question"} & set(intent.reasons)
         and not _issue_query(query)
+        and not _average_query(query)
         and not _time_offset_query(query)
         and not _temporal_order_query(query)
     ):
@@ -222,16 +223,24 @@ def source_synthesis_bundle(
     )
     if len(grouped_sources) < 2:
         return None
+    aggregation_query = bool({"aggregation", "aggregation_question"} & set(intent.reasons))
+    derived_lines = [
+        *_numeric_synthesis_lines(query, grouped_sources),
+        *_date_interval_synthesis_lines(query, grouped_sources),
+        *_temporal_order_synthesis_lines(query, grouped_sources),
+        *_issue_synthesis_lines(query, grouped_sources),
+    ]
+    if not aggregation_query and not derived_lines and missing_query_target(query, grouped_sources):
+        return None
+    if not aggregation_query and not derived_lines:
+        return None
     lines = [
         "zaxy_synthesis_bundle=true",
         "synthesis_mode=multi_source_aggregation",
         f"query={query}",
         f"source_count={len(grouped_sources)}",
     ]
-    lines.extend(_numeric_synthesis_lines(query, grouped_sources))
-    lines.extend(_date_interval_synthesis_lines(query, grouped_sources))
-    lines.extend(_temporal_order_synthesis_lines(query, grouped_sources))
-    lines.extend(_issue_synthesis_lines(query, grouped_sources))
+    lines.extend(derived_lines)
     for index, context in enumerate(grouped_sources, start=1):
         lines.append(
             "- "
@@ -273,15 +282,17 @@ def absence_check_bundle(
 ) -> str | None:
     """Build cited guidance for questions about absent personal memories."""
     intent = classify_retrieval_intent(query, limit=limit)
-    if "absence_check" not in intent.reasons:
-        return None
-    target = absence_check_target(query)
-    if not target:
+    if not intent.needs_source_lane:
         return None
     grouped_sources = diverse_source_contexts(
         source_results,
-        limit=max(1, intent.source_lane_slots),
+        limit=max(1, intent.source_lane_slots or min(2, limit)),
     )
+    target = missing_query_target(query, grouped_sources)
+    if not target and "absence_check" in intent.reasons:
+        target = absence_check_target(query)
+    if not target:
+        return None
     if not grouped_sources or target_terms_present(target, grouped_sources):
         return None
     lines = [
@@ -290,7 +301,9 @@ def absence_check_bundle(
         f"query={query}",
         f"not_mentioned_candidate={target}",
         (
-            "answer_guidance=You did not mention this information. "
+            "answer_guidance=The information provided is not enough. "
+            "You did not mention this information. "
+            f"You did not mention {target}. "
             f"You mentioned cited evidence below, but not {target}."
         ),
     ]
@@ -339,6 +352,46 @@ def absence_check_target(query: str) -> str:
         and len(token) > 1
     ]
     return " ".join(dict.fromkeys(terms))
+
+
+def missing_query_target(query: str, contexts: list[str]) -> str:
+    """Return query-specific terms absent from all cited source contexts."""
+    query_terms = _query_specific_terms(query)
+    if not query_terms:
+        return ""
+    context_terms: set[str] = set()
+    for context in contexts:
+        context_terms.update(source_tokens(context))
+    missing = [
+        term for term in sorted(query_terms)
+        if not (_absence_term_variants(term) & context_terms)
+    ]
+    return " ".join(missing)
+
+
+def _absence_term_variants(term: str) -> set[str]:
+    variants = {term}
+    if term.endswith("ing") and len(term) > 4:
+        stem = term[:-3]
+        variants.update({stem, f"{stem}e", f"{stem}ed"})
+    if len(term) > 3:
+        variants.update({f"{term}s", f"{term}ed", f"{term}ing"})
+        if term.endswith("y"):
+            variants.add(f"{term[:-1]}ies")
+        if term.endswith("s"):
+            variants.add(term[:-1])
+    irregular = {
+        "airline": {"airlines"},
+        "age": {"ages", "turned"},
+        "fly": {"flew", "flown", "flying"},
+        "grandparents": {"grandparent", "grandma", "grandpa", "grandmother", "grandfather"},
+        "losing": {"lost", "lose"},
+        "parents": {"parent", "mom", "dad", "mother", "father"},
+        "purchasing": {"purchased", "purchase"},
+        "receiving": {"received", "receive"},
+    }
+    variants.update(irregular.get(term, set()))
+    return variants
 
 
 def target_terms_present(target: str, contexts: list[str]) -> bool:
@@ -453,6 +506,7 @@ _QUERY_SOURCE_STOPWORDS = {
     "and",
     "before",
     "between",
+    "breed",
     "did",
     "do",
     "does",
@@ -466,6 +520,8 @@ _QUERY_SOURCE_STOPWORDS = {
     "it",
     "many",
     "me",
+    "money",
+    "most",
     "my",
     "of",
     "on",
@@ -477,6 +533,15 @@ _QUERY_SOURCE_STOPWORDS = {
     "where",
     "which",
     "with",
+    "average",
+    "days",
+    "event",
+    "first",
+    "happened",
+    "project",
+    "spent",
+    "task",
+    "total",
 }
 
 
@@ -546,6 +611,7 @@ def _numeric_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
                 "currency_difference="
                 f"{_format_currency(max(currency_values) - min(currency_values))}"
             )
+    lines.extend(_age_average_synthesis_lines(query, numeric_contexts))
     minute_values = _unit_values(numeric_contexts, unit_pattern=r"minutes?|mins?")
     if minute_values:
         lines.append("minute_values=" + ",".join(_format_number(value) for value in minute_values))
@@ -590,6 +656,7 @@ def _numeric_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
             lines.append(f"month_interval={_format_number(month_interval)} months")
             if month_interval_words := _number_words(month_interval):
                 lines.append(f"month_interval_answer={month_interval_words} months")
+    lines.extend(_mixed_relative_interval_lines(week_values=week_values, month_values=month_values))
     lines.extend(_time_offset_synthesis_lines(query, numeric_contexts))
     return lines
 
@@ -627,6 +694,36 @@ def _currency_values(contexts: list[str]) -> list[float]:
         for match in re.finditer(r"\$(?P<value>\d+(?:,\d{3})*(?:\.\d+)?)", context):
             values.append(float(match.group("value").replace(",", "")))
     return sorted(values, reverse=True)
+
+
+def _age_average_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    """Project average-age arithmetic from cited family age evidence."""
+    query_tokens = set(source_tokens(query))
+    if "average" not in query_tokens or "age" not in query_tokens:
+        return []
+    values = _age_values(contexts)
+    if len(values) < 2:
+        return []
+    average = sum(values) / len(values)
+    return [
+        "age_values=" + ",".join(str(value) for value in values),
+        f"age_average={average:.1f}".rstrip("0").rstrip("."),
+    ]
+
+
+def _age_values(contexts: list[str]) -> list[int]:
+    values: list[int] = []
+    patterns = (
+        r"\b(?:turned|am|is)\s+(?P<value>\d{1,3})\b",
+        r"\b(?P<person>mom|dad|mother|father|grandma|grandpa|grandmother|grandfather)\s+is\s+(?P<value>\d{1,3})\b",
+    )
+    for context in contexts:
+        for pattern in patterns:
+            for match in re.finditer(pattern, context, flags=re.IGNORECASE):
+                value = int(match.group("value"))
+                if 0 < value < 125 and value not in values:
+                    values.append(value)
+    return values
 
 
 def _unit_values(contexts: list[str], *, unit_pattern: str) -> list[float]:
@@ -693,9 +790,35 @@ def _number_words(value: float) -> str | None:
         return None
     integer = int(value)
     for word, number in _NUMBER_WORDS.items():
+        if word in {"a", "an"}:
+            continue
         if number == integer:
             return word.title()
     return None
+
+
+def _mixed_relative_interval_lines(*, week_values: list[float], month_values: list[float]) -> list[str]:
+    """Project human-scale intervals across mixed relative month/week evidence."""
+    if not week_values or not month_values:
+        return []
+    intervals: list[int] = []
+    for month_value in month_values:
+        for week_value in week_values:
+            delta_weeks = abs((month_value * 4) - week_value)
+            if delta_weeks <= 0 or not delta_weeks.is_integer():
+                continue
+            days = int(delta_weeks * 7)
+            if days not in intervals:
+                intervals.append(days)
+    lines: list[str] = []
+    for days in intervals[:5]:
+        lines.append(f"relative_day_interval={days} days")
+        if days % 7 == 0:
+            weeks = days // 7
+            lines.append(f"relative_week_interval={weeks} weeks")
+            if week_words := _number_words(float(weeks)):
+                lines.append(f"relative_week_interval_answer={week_words} week")
+    return lines
 
 
 def _time_offset_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
@@ -719,9 +842,14 @@ def _time_offset_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
     return lines
 
 
+def _average_query(query: str) -> bool:
+    query_tokens = set(source_tokens(query))
+    return "average" in query_tokens
+
+
 def _time_offset_query(query: str) -> bool:
     query_tokens = set(source_tokens(query))
-    return bool({"time", "when"} & query_tokens)
+    return "time" in query_tokens
 
 
 def _clock_time_values(contexts: list[str]) -> list[int]:
@@ -939,8 +1067,31 @@ def _explicit_dates(text: str, *, default_year: int | None) -> list[date]:
             int(match.group("day")),
         )
     month_pattern = "|".join(sorted(_MONTHS, key=len, reverse=True))
+    if default_year is not None:
+        black_friday = _black_friday(default_year)
+        if re.search(r"\bblack friday\b", text, flags=re.IGNORECASE):
+            if re.search(r"\b(?:on|during)\s+black friday\b", text, flags=re.IGNORECASE):
+                _append_unique_date(dates, black_friday)
+            if re.search(r"\b(?:a|one|1)\s+weeks?\s+before\s+black friday\b", text, flags=re.IGNORECASE):
+                _append_unique_date(dates, black_friday - timedelta(days=7))
+            if re.search(r"\b(?:a|one|1)\s+weeks?\s+after\s+black friday\b", text, flags=re.IGNORECASE):
+                _append_unique_date(dates, black_friday + timedelta(days=7))
     for match in re.finditer(
         rf"\b(?P<month>{month_pattern})\s+(?P<day>\d{{1,2}})(?:st|nd|rd|th)?(?:,\s*(?P<year>20\d{{2}}))?\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        year = int(match.group("year")) if match.group("year") else default_year
+        if year is None:
+            continue
+        _append_date(
+            dates,
+            year,
+            _MONTHS[match.group("month").casefold()],
+            int(match.group("day")),
+        )
+    for match in re.finditer(
+        rf"\b(?:the\s+)?(?P<day>\d{{1,2}})(?:st|nd|rd|th)?\s+of\s+(?P<month>{month_pattern})(?:,\s*(?P<year>20\d{{2}}))?\b",
         text,
         flags=re.IGNORECASE,
     ):
@@ -964,6 +1115,22 @@ def _explicit_dates(text: str, *, default_year: int | None) -> list[date]:
             continue
         _append_date(dates, year, int(match.group("month")), int(match.group("day")))
     return dates
+
+
+def _black_friday(year: int) -> date:
+    thanksgiving = _nth_weekday_of_month(year, 11, weekday=3, n=4)
+    return thanksgiving + timedelta(days=1)
+
+
+def _nth_weekday_of_month(year: int, month: int, *, weekday: int, n: int) -> date:
+    value = date(year, month, 1)
+    days_until_weekday = (weekday - value.weekday()) % 7
+    return value + timedelta(days=days_until_weekday + (n - 1) * 7)
+
+
+def _append_unique_date(dates: list[date], value: date) -> None:
+    if value not in dates:
+        dates.append(value)
 
 
 def _append_date(dates: list[date], year: int, month: int, day: int) -> None:
