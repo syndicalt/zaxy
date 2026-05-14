@@ -630,19 +630,21 @@ def _numeric_synthesis_lines(
     """Project deterministic numeric operations from cited source snippets."""
     numeric_contexts = [_numeric_context_text(context) for context in contexts]
     lines: list[str] = list(aggregate_lines or [])
+    has_typed_duration = any(line.startswith("duration_values=") for line in lines)
     lines.extend(_age_average_synthesis_lines(query, numeric_contexts))
-    minute_values = _unit_values(numeric_contexts, unit_pattern=r"minutes?|mins?")
-    if minute_values:
-        lines.append("minute_values=" + ",".join(_format_number(value) for value in minute_values))
-        lines.append(f"minute_total_hours={_format_number(sum(minute_values) / 60)} hours")
-    hour_values = _unit_values(numeric_contexts, unit_pattern=r"hours?|hrs?")
-    if hour_values:
-        lines.append("hour_values=" + ",".join(_format_number(value) for value in hour_values))
-        lines.append(f"hour_total={_format_number(sum(hour_values))} hours")
-    day_values = _unit_values(numeric_contexts, unit_pattern=r"days?")
-    if day_values:
-        lines.append("day_values=" + ",".join(_format_number(value) for value in day_values))
-        lines.append(f"day_total={_format_number(sum(day_values))} days")
+    if not has_typed_duration:
+        minute_values = _unit_values(numeric_contexts, unit_pattern=r"minutes?|mins?")
+        if minute_values:
+            lines.append("minute_values=" + ",".join(_format_number(value) for value in minute_values))
+            lines.append(f"minute_total_hours={_format_number(sum(minute_values) / 60)} hours")
+        hour_values = _unit_values(numeric_contexts, unit_pattern=r"hours?|hrs?")
+        if hour_values:
+            lines.append("hour_values=" + ",".join(_format_number(value) for value in hour_values))
+            lines.append(f"hour_total={_format_number(sum(hour_values))} hours")
+        day_values = _unit_values(numeric_contexts, unit_pattern=r"days?")
+        if day_values:
+            lines.append("day_values=" + ",".join(_format_number(value) for value in day_values))
+            lines.append(f"day_total={_format_number(sum(day_values))} days")
     week_contexts = [
         _numeric_context_text(context)
         for context in _query_relevant_numeric_contexts(query, contexts)

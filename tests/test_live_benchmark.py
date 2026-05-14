@@ -1901,6 +1901,57 @@ async def test_zaxy_retriever_deduplicates_numeric_values_from_eventloom_context
     assert "day_total=16 days" not in bundle
 
 
+async def test_zaxy_retriever_normalizes_duration_candidates_across_units() -> None:
+    """Duration evidence should normalize mixed minute/hour sources with support ids."""
+    source_contexts = [
+        "content=longmemeval_session_id=answer-1 I played chess for 90 minutes.",
+        "content=longmemeval_session_id=answer-2 I practiced piano for 2 hours.",
+        "content=longmemeval_session_id=distractor-1 I bought a book for $12.",
+    ]
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, embedding
+            return [
+                SimpleNamespace(content=f"graph distractor {index}")
+                for index in range(limit or 10)
+            ]
+
+    class SourceLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return source_contexts
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=SourceLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "How many hours did I spend on chess and piano practice?",
+        limit=5,
+    )
+
+    bundle = results[0]
+    assert "duration_values=2 hours,90 minutes" in bundle
+    assert "duration_total_minutes=210 minutes" in bundle
+    assert "duration_total_hours=3.5 hours" in bundle
+    assert "duration_source_ids=answer-2,answer-1" in bundle
+    assert "source_id=distractor-1" not in bundle
+
+
 async def test_zaxy_retriever_formats_large_currency_totals_for_synthesis() -> None:
     """Currency aggregation should preserve thousands separators in answer candidates."""
     source_contexts = [

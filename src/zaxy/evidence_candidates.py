@@ -39,6 +39,10 @@ def aggregate_candidate_projection(query: str, contexts: list[str]) -> EvidenceP
     if currency:
         lines.extend(_currency_candidate_lines(currency))
         source_groups.extend(candidate.source_group for candidate in currency)
+    duration = _duration_candidates(query, contexts)
+    if duration:
+        lines.extend(_duration_candidate_lines(duration))
+        source_groups.extend(candidate.source_group for candidate in duration)
     return EvidenceProjection(
         lines=tuple(lines),
         source_groups=tuple(dict.fromkeys(source_groups)),
@@ -115,6 +119,8 @@ def _currency_candidate_lines(candidates: list[EvidenceCandidate]) -> list[str]:
 
 
 def _currency_candidates(query: str, contexts: list[str]) -> list[EvidenceCandidate]:
+    if not _currency_query(query):
+        return []
     items: list[EvidenceCandidate] = []
     seen: set[tuple[str, str, str]] = set()
     for context in contexts:
@@ -142,6 +148,135 @@ def _currency_candidates(query: str, contexts: list[str]) -> list[EvidenceCandid
     return _filter_focused_candidates(query, items)
 
 
+def _duration_candidate_lines(candidates: list[EvidenceCandidate]) -> list[str]:
+    values = [_duration_display(candidate) for candidate in candidates]
+    total_minutes = sum(float(candidate.value) for candidate in candidates)
+    lines = [
+        "duration_values=" + ",".join(values),
+        f"duration_total_minutes={_format_number(total_minutes)} minutes",
+        f"duration_total_hours={_format_number(total_minutes / 60)} hours",
+        "duration_source_ids="
+        + ",".join(candidate.source_group for candidate in candidates),
+    ]
+    if len(candidates) >= 2:
+        raw_values = [float(candidate.value) for candidate in candidates]
+        lines.append(
+            "duration_difference_minutes="
+            f"{_format_number(max(raw_values) - min(raw_values))} minutes"
+        )
+    lines.extend(_duration_compatibility_lines(candidates))
+    return lines
+
+
+def _duration_compatibility_lines(candidates: list[EvidenceCandidate]) -> list[str]:
+    by_unit: dict[str, list[float]] = {}
+    for candidate in candidates:
+        raw_value, raw_unit = _duration_raw_value_unit(candidate)
+        by_unit.setdefault(raw_unit, []).append(raw_value)
+    lines: list[str] = []
+    if minute_values := by_unit.get("minutes"):
+        lines.append(
+            "minute_values=" + ",".join(_format_number(value) for value in minute_values)
+        )
+        lines.append(
+            f"minute_total_hours={_format_number(sum(minute_values) / 60)} hours"
+        )
+    if hour_values := by_unit.get("hours"):
+        lines.append(
+            "hour_values=" + ",".join(_format_number(value) for value in hour_values)
+        )
+        lines.append(f"hour_total={_format_number(sum(hour_values))} hours")
+    if day_values := by_unit.get("days"):
+        lines.append(
+            "day_values=" + ",".join(_format_number(value) for value in day_values)
+        )
+        lines.append(f"day_total={_format_number(sum(day_values))} days")
+    return lines
+
+
+def _duration_raw_value_unit(candidate: EvidenceCandidate) -> tuple[float, str]:
+    match = re.match(r"(?P<value>\d+(?:\.\d+)?)\s+(?P<unit>[a-z]+)", candidate.label)
+    if not match:
+        return float(candidate.value), candidate.unit
+    return float(match.group("value")), match.group("unit")
+
+
+def _duration_candidates(query: str, contexts: list[str]) -> list[EvidenceCandidate]:
+    items: list[EvidenceCandidate] = []
+    seen: set[tuple[str, str, str]] = set()
+    focus_terms = _duration_focus_terms(query)
+    for context in contexts:
+        text = _context_text(context)
+        group = _source_group(context)
+        relevance = _relevance(focus_terms, text)
+        for match in re.finditer(
+            r"\b(?P<value>\d+(?:\.\d+)?)\s*[- ]?(?P<unit>minutes?|mins?|hours?|hrs?|days?|weeks?|months?)\b",
+            text,
+            flags=re.IGNORECASE,
+        ):
+            unit = _canonical_duration_unit(match.group("unit"))
+            minutes = float(match.group("value")) * _duration_unit_minutes(unit)
+            raw = f"{_format_number(float(match.group('value')))} {unit}"
+            identity = (group, str(minutes), raw)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            items.append(
+                EvidenceCandidate(
+                    kind="duration",
+                    value=str(minutes),
+                    unit="minutes",
+                    source_group=group,
+                    label=raw,
+                    context=text,
+                    relevance=relevance,
+                )
+            )
+    return _filter_duration_candidates(query, items)
+
+
+def _filter_duration_candidates(
+    query: str,
+    items: list[EvidenceCandidate],
+) -> list[EvidenceCandidate]:
+    if len(items) < 2:
+        return items
+    focus_terms = _duration_focus_terms(query)
+    if not focus_terms:
+        return items
+    if max((item.relevance for item in items), default=0) <= 0:
+        return items
+    selected = [item for item in items if item.relevance > 0]
+    return selected if len(selected) >= 2 else items
+
+
+def _duration_display(candidate: EvidenceCandidate) -> str:
+    return candidate.label or f"{_format_number(float(candidate.value))} minutes"
+
+
+def _canonical_duration_unit(unit: str) -> str:
+    normalized = unit.casefold()
+    if normalized in {"min", "mins", "minute", "minutes"}:
+        return "minutes"
+    if normalized in {"hr", "hrs", "hour", "hours"}:
+        return "hours"
+    if normalized in {"day", "days"}:
+        return "days"
+    if normalized in {"week", "weeks"}:
+        return "weeks"
+    return "months"
+
+
+def _duration_unit_minutes(unit: str) -> float:
+    return {
+        "minutes": 1,
+        "hours": 60,
+        "days": 60 * 24,
+        "weeks": 60 * 24 * 7,
+        "months": 60 * 24 * 28,
+    }[unit]
+
+
 def _filter_focused_candidates(
     query: str,
     items: list[EvidenceCandidate],
@@ -160,6 +295,15 @@ def _filter_focused_candidates(
 def _count_query(query: str) -> bool:
     tokens = set(_tokens(query))
     return bool(tokens & {"many", "number", "count", "total"}) and "how" in tokens
+
+
+def _currency_query(query: str) -> bool:
+    tokens = set(_tokens(query))
+    if tokens & {"hours", "hour", "minutes", "minute", "days", "day", "weeks", "week", "months", "month"}:
+        return bool(tokens & {"money", "amount", "cost", "costs", "price", "prices"})
+    return bool(
+        tokens & {"money", "amount", "cost", "costs", "spent", "spend", "price", "prices", "much"}
+    )
 
 
 def _expanded_focus_terms(query: str) -> set[str]:
@@ -189,6 +333,18 @@ def _numeric_focus_terms(query: str) -> set[str]:
         "groceries": {"grocery", "groceries", "market", "store", "foods", "trader", "joe"},
         "store": {"store", "market", "foods", "trader", "joe"},
         "luxury": {"luxury", "designer", "premium", "bag", "shoes", "jewelry", "watch"},
+    }
+    for term in terms:
+        expanded.update(semantic_groups.get(term, set()))
+    return expanded
+
+
+def _duration_focus_terms(query: str) -> set[str]:
+    terms = _query_specific_terms(query)
+    expanded = set(terms)
+    semantic_groups = {
+        "practice": {"practice", "practiced", "practicing"},
+        "spent": {"spent", "spend"},
     }
     for term in terms:
         expanded.update(semantic_groups.get(term, set()))
@@ -279,6 +435,12 @@ def _format_currency(value: float) -> str:
     return f"${whole:,}.{fraction}"
 
 
+def _format_number(value: float) -> str:
+    if value.is_integer():
+        return str(int(value))
+    return f"{value:.2f}".rstrip("0").rstrip(".")
+
+
 _QUERY_STOPWORDS = {
     "about",
     "after",
@@ -291,6 +453,7 @@ _QUERY_STOPWORDS = {
     "did",
     "for",
     "from",
+    "hours",
     "how",
     "many",
     "money",
