@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from zaxy.synthesis import (
+    build_count_ledger,
     build_currency_ledger,
     build_duration_ledger,
     build_synthesis_plan,
+    render_count_result,
     render_currency_result,
     render_duration_result,
 )
@@ -45,6 +47,76 @@ def test_build_synthesis_plan_does_not_treat_duration_spent_as_currency() -> Non
     assert plan.answer_type == "sum"
     assert plan.operation == "sum_values"
     assert plan.required_kinds == ("duration",)
+
+
+def test_count_ledger_counts_distinct_relevant_sources() -> None:
+    """Count evidence should preserve exclusions for duplicate cited sources."""
+    ledger = build_count_ledger(
+        "How many movie festivals did I attend, and which were they?",
+        [
+            "content=longmemeval_session_id=answer-1 I attended the Spring Film Festival. festival festival.",
+            "content=longmemeval_session_id=answer-2 I attended the Lakeside Film Festival.",
+            "content=longmemeval_session_id=answer-3 I attended the Indie Film Festival.",
+            "content=longmemeval_session_id=answer-4 I attended the Documentary Film Festival.",
+            "content=longmemeval_session_id=answer-4 I attended the Documentary Film Festival again.",
+            "content=longmemeval_session_id=distractor-1 I watched a movie at home.",
+        ],
+    )
+
+    included = ledger.included(kind="event")
+    excluded = ledger.excluded(kind="event")
+
+    assert [row.source_group for row in included] == [
+        "answer-1",
+        "answer-2",
+        "answer-3",
+        "answer-4",
+    ]
+    assert [row.value for row in included] == ["1", "1", "1", "1"]
+    assert [row.label for row in included] == [
+        "attended the Spring Film Festival",
+        "attended the Lakeside Film Festival",
+        "attended the Indie Film Festival",
+        "attended the Documentary Film Festival",
+    ]
+    assert {row.source_group for row in excluded} == {"answer-4", "distractor-1"}
+    assert {row.exclude_reason for row in excluded} == {
+        "duplicate_source_group",
+        "query_focus_mismatch",
+    }
+
+
+def test_render_count_result_projects_list_details_from_ledger() -> None:
+    """Count/list synthesis should render the existing model-facing answer surface."""
+    ledger = build_count_ledger(
+        "How many weddings did I attend and who were the couples?",
+        [
+            "session_id=answer-1 I attended Rachel and Mike's wedding.",
+            "session_id=answer-2 I attended Emily and Sarah's wedding.",
+            "session_id=answer-3 I attended Jen and Tom's wedding.",
+            "session_id=distractor-1 I planned a birthday dinner.",
+        ],
+    )
+
+    result = render_count_result(
+        ledger,
+        "How many weddings did I attend and who were the couples?",
+        rank=2,
+    )
+
+    assert "candidate_rank=2 candidate_type=count" in result.lines
+    assert "count_answer=3" in result.lines
+    assert "count_unit=events" in result.lines
+    assert "count_source_ids=answer-1,answer-2,answer-3" in result.lines
+    assert "count_answer_text=I attended three weddings." in result.lines
+    assert "list_item_count=3" in result.lines
+    assert (
+        "list_items=attended Rachel and Mike's wedding | "
+        "attended Emily and Sarah's wedding | attended Jen and Tom's wedding"
+    ) in result.lines
+    assert "list_source_ids=answer-1,answer-2,answer-3" in result.lines
+    assert result.support_source_groups == ("answer-1", "answer-2", "answer-3")
+    assert result.excluded_source_groups == ("distractor-1",)
 
 
 def test_currency_ledger_deduplicates_repeated_items_with_exclusions() -> None:

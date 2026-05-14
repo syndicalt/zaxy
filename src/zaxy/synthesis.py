@@ -102,6 +102,21 @@ _QUERY_STOPWORDS = {
     "year",
 }
 
+_COUNT_STOPWORDS = _QUERY_STOPWORDS | {
+    "after",
+    "amount",
+    "attend",
+    "attended",
+    "before",
+    "hours",
+    "money",
+    "most",
+    "much",
+    "past",
+    "spent",
+    "total",
+}
+
 
 def build_synthesis_plan(query: str, *, limit: int = 10) -> SynthesisPlan:
     """Build a deterministic answer-shape plan for a memory query."""
@@ -259,6 +274,86 @@ def render_currency_result(ledger: EvidenceLedger, *, rank: int) -> SynthesisRes
         difference = max(values) - min(values)
         lines.append(f"currency_difference={format_currency(difference)}")
         lines.append(f"currency_difference_answer={format_currency(difference)}")
+    return SynthesisResult(
+        lines=tuple(lines),
+        support_source_groups=tuple(dict.fromkeys(row.source_group for row in candidates)),
+        excluded_source_groups=tuple(dict.fromkeys(row.source_group for row in excluded)),
+    )
+
+
+def build_count_ledger(query: str, contexts: list[str]) -> EvidenceLedger:
+    """Extract distinct cited-event evidence for count/list synthesis."""
+    plan = build_synthesis_plan(query)
+    if "event" not in plan.required_kinds:
+        return EvidenceLedger(plan=plan, rows=())
+    focus_terms = _count_focus_terms(query)
+    rows: list[EvidenceLedgerRow] = []
+    seen_groups: set[str] = set()
+    provisional: list[EvidenceLedgerRow] = []
+    for context_index, context in enumerate(contexts):
+        text = context_text(context)
+        group = source_group(context)
+        citation = source_citation(context)
+        relevance = _relevance(focus_terms, text)
+        label = count_label(text)
+        duplicate = group in seen_groups
+        if relevance > 0 and not duplicate:
+            seen_groups.add(group)
+        exclude_reason = ""
+        if duplicate:
+            exclude_reason = "duplicate_source_group"
+        elif relevance <= 0:
+            exclude_reason = "query_focus_mismatch"
+        row = EvidenceLedgerRow(
+            fact_id=f"count:{context_index}",
+            source_group=group,
+            citation=citation,
+            kind="event",
+            value="1",
+            unit="event",
+            label=label,
+            raw_span=text,
+            context=text,
+            normalized_identity=f"source_group={group}",
+            relevance=relevance,
+            include_reason="relevant_source_event",
+            exclude_reason=exclude_reason,
+            confidence=_row_confidence(relevance=relevance, has_label=bool(label)),
+        )
+        if exclude_reason:
+            rows.append(row)
+        else:
+            provisional.append(row)
+    if not provisional:
+        return EvidenceLedger(plan=plan, rows=tuple(rows))
+    best = max(row.relevance for row in provisional)
+    threshold = 2 if best >= 2 else best
+    rows.extend(_apply_count_threshold(provisional, threshold=threshold))
+    return EvidenceLedger(plan=plan, rows=tuple(rows))
+
+
+def render_count_result(
+    ledger: EvidenceLedger,
+    query: str,
+    *,
+    rank: int,
+) -> SynthesisResult:
+    """Render count/list synthesis lines from an evidence ledger."""
+    candidates = ledger.included(kind="event")
+    excluded = ledger.excluded(kind="event")
+    if len(candidates) < ledger.plan.required_source_groups:
+        return SynthesisResult(lines=(), support_source_groups=())
+    source_ids = ",".join(row.source_group for row in candidates)
+    lines = [
+        *_candidate_diagnostic_lines("count", candidates, rank=rank),
+        f"count_answer={len(candidates)}",
+        "count_unit=events",
+        f"count_source_ids={source_ids}",
+    ]
+    if answer_text := count_answer_text(query, candidates):
+        lines.append(f"count_answer_text={answer_text}")
+    if list_detail_query(query):
+        lines.extend(list_candidate_lines(candidates))
     return SynthesisResult(
         lines=tuple(lines),
         support_source_groups=tuple(dict.fromkeys(row.source_group for row in candidates)),
@@ -502,6 +597,117 @@ def duration_raw_value_unit(row: EvidenceLedgerRow) -> tuple[float, str]:
     return float(match.group("value")), match.group("unit")
 
 
+def count_answer_text(query: str, candidates: tuple[EvidenceLedgerRow, ...]) -> str:
+    """Render a compact natural-language answer for count synthesis."""
+    subject = count_subject_phrase(query)
+    if not subject:
+        return ""
+    action = common_count_action(candidates)
+    count = count_display(len(candidates))
+    if action:
+        return f"I {action} {count} {subject}."
+    return f"There are {count} {subject}."
+
+
+def count_subject_phrase(query: str) -> str:
+    """Extract the counted subject phrase from a question."""
+    match = re.search(
+        r"\bhow\s+many\s+(?P<subject>.+?)(?:\s+(?:did|do|does|that|have|has|had|"
+        r"were|was|are|is|can|could|should|would)\b|[?.,]|$)",
+        query,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    return " ".join(match.group("subject").strip(" .,'\"").casefold().split())
+
+
+def common_count_action(candidates: tuple[EvidenceLedgerRow, ...]) -> str:
+    """Return the common leading action across count labels, when stable."""
+    actions: list[str] = []
+    for row in candidates:
+        label = rendered_list_label(row)
+        if not label:
+            continue
+        first = label.split(maxsplit=1)[0].casefold()
+        if first:
+            actions.append(first)
+    if not actions:
+        return ""
+    first_action = actions[0]
+    if all(action == first_action for action in actions):
+        return first_action
+    return ""
+
+
+def count_display(value: int) -> str:
+    """Render small count values as words for answer text."""
+    words = {
+        0: "zero",
+        1: "one",
+        2: "two",
+        3: "three",
+        4: "four",
+        5: "five",
+        6: "six",
+        7: "seven",
+        8: "eight",
+        9: "nine",
+        10: "ten",
+        11: "eleven",
+        12: "twelve",
+    }
+    return words.get(value, str(value))
+
+
+def list_detail_query(query: str) -> bool:
+    """Return true when count synthesis should include item labels."""
+    tokens = set(source_tokens(query))
+    return bool(
+        tokens
+        & {
+            "which",
+            "who",
+            "what",
+            "list",
+            "name",
+            "names",
+            "were",
+            "they",
+            "them",
+            "items",
+        }
+    )
+
+
+def list_candidate_lines(candidates: tuple[EvidenceLedgerRow, ...]) -> list[str]:
+    """Render itemized count details from labeled count rows."""
+    labeled_candidates = [row for row in candidates if rendered_list_label(row)]
+    if not labeled_candidates:
+        return []
+    return [
+        f"list_item_count={len(labeled_candidates)}",
+        "list_items="
+        + " | ".join(rendered_list_label(row) for row in labeled_candidates),
+        "list_source_ids=" + ",".join(row.source_group for row in labeled_candidates),
+    ]
+
+
+def count_label(text: str) -> str:
+    """Extract a compact event label for count/list synthesis."""
+    cleaned = re.sub(r"\bcontent=\S+\s*", "", text)
+    cleaned = re.sub(r"\bcitation=\S+\s*", "", cleaned)
+    match = re.search(r"\bI\s+(?P<label>.+?)(?:[.?!]|$)", cleaned)
+    if match:
+        return " ".join(match.group("label").split()[:12])
+    return ""
+
+
+def rendered_list_label(row: EvidenceLedgerRow) -> str:
+    """Return a display-safe list label."""
+    return " ".join(row.label.strip(" .,'\"").split())
+
+
 def clean_label(label: str) -> str:
     """Return a bounded label with trailing clauses removed."""
     label = re.split(r"\b(?:on|in|for|with|and|but|because|when)\b", label, maxsplit=1)[0]
@@ -602,6 +808,37 @@ def _filter_duration_ledger(
     return EvidenceLedger(plan=ledger.plan, rows=tuple(rows))
 
 
+def _apply_count_threshold(
+    rows: list[EvidenceLedgerRow],
+    *,
+    threshold: int,
+) -> list[EvidenceLedgerRow]:
+    filtered: list[EvidenceLedgerRow] = []
+    for row in rows:
+        if row.relevance >= threshold:
+            filtered.append(row)
+            continue
+        filtered.append(
+            EvidenceLedgerRow(
+                fact_id=row.fact_id,
+                source_group=row.source_group,
+                citation=row.citation,
+                kind=row.kind,
+                value=row.value,
+                unit=row.unit,
+                label=row.label,
+                raw_span=row.raw_span,
+                context=row.context,
+                normalized_identity=row.normalized_identity,
+                relevance=row.relevance,
+                include_reason=row.include_reason,
+                exclude_reason="query_focus_mismatch",
+                confidence=row.confidence,
+            )
+        )
+    return filtered
+
+
 def _candidate_diagnostic_lines(
     candidate_type: str,
     candidates: tuple[EvidenceLedgerRow, ...],
@@ -656,6 +893,29 @@ def _duration_focus_terms(query: str) -> set[str]:
     }
     for term in terms:
         expanded.update(semantic_groups.get(term, set()))
+    return expanded
+
+
+def _count_focus_terms(query: str) -> set[str]:
+    terms = {
+        token
+        for token in source_tokens(query)
+        if len(token) > 2 and token not in _COUNT_STOPWORDS and not token.isdigit()
+    }
+    expanded = set(terms)
+    semantic_groups = {
+        "movie": {"movie", "movies", "film", "films", "cinema"},
+        "festival": {"festival", "festivals"},
+        "festivals": {"festival", "festivals"},
+        "wedding": {"wedding", "weddings"},
+        "weddings": {"wedding", "weddings"},
+    }
+    for term in terms:
+        expanded.update(semantic_groups.get(term, set()))
+        if term.endswith("s") and len(term) > 3:
+            expanded.add(term[:-1])
+        else:
+            expanded.add(f"{term}s")
     return expanded
 
 

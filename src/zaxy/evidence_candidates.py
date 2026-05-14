@@ -7,8 +7,10 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from zaxy.synthesis import (
+    build_count_ledger,
     build_currency_ledger,
     build_duration_ledger,
+    render_count_result,
     render_currency_result,
     render_duration_result,
 )
@@ -40,10 +42,11 @@ def aggregate_candidate_projection(query: str, contexts: list[str]) -> EvidenceP
     lines: list[str] = []
     source_groups: list[str] = []
     rank = 1
-    count = _count_candidates(query, contexts)
-    if len(count) >= 2:
-        lines.extend(_count_candidate_lines(query, count, rank=rank))
-        source_groups.extend(candidate.source_group for candidate in count)
+    count_ledger = build_count_ledger(query, contexts)
+    count_projection = render_count_result(count_ledger, query, rank=rank)
+    if count_projection.lines:
+        lines.extend(count_projection.lines)
+        source_groups.extend(count_projection.support_source_groups)
         rank += 1
     currency_ledger = build_currency_ledger(query, contexts)
     currency_projection = render_currency_result(currency_ledger, rank=rank)
@@ -70,138 +73,6 @@ def aggregate_candidate_projection(query: str, contexts: list[str]) -> EvidenceP
 def aggregate_candidate_lines(query: str, contexts: list[str]) -> list[str]:
     """Render deterministic aggregate answer candidates from cited contexts."""
     return list(aggregate_candidate_projection(query, contexts).lines)
-
-
-def _count_candidate_lines(
-    query: str,
-    candidates: list[EvidenceCandidate],
-    *,
-    rank: int,
-) -> list[str]:
-    source_ids = ",".join(candidate.source_group for candidate in candidates)
-    lines = [
-        *_candidate_diagnostic_lines("count", candidates, rank=rank),
-        f"count_answer={len(candidates)}",
-        "count_unit=events",
-        f"count_source_ids={source_ids}",
-    ]
-    if answer_text := _count_answer_text(query, candidates):
-        lines.append(f"count_answer_text={answer_text}")
-    if _list_detail_query(query):
-        lines.extend(_list_candidate_lines(candidates))
-    return lines
-
-
-def _list_candidate_lines(candidates: list[EvidenceCandidate]) -> list[str]:
-    labeled_candidates = [
-        candidate for candidate in candidates if _rendered_list_label(candidate)
-    ]
-    if not labeled_candidates:
-        return []
-    return [
-        f"list_item_count={len(labeled_candidates)}",
-        "list_items="
-        + " | ".join(_rendered_list_label(candidate) for candidate in labeled_candidates),
-        "list_source_ids="
-        + ",".join(candidate.source_group for candidate in labeled_candidates),
-    ]
-
-
-def _count_answer_text(query: str, candidates: list[EvidenceCandidate]) -> str:
-    subject = _count_subject_phrase(query)
-    if not subject:
-        return ""
-    action = _common_count_action(candidates)
-    count = _count_display(len(candidates))
-    if action:
-        return f"I {action} {count} {subject}."
-    return f"There are {count} {subject}."
-
-
-def _count_subject_phrase(query: str) -> str:
-    match = re.search(
-        r"\bhow\s+many\s+(?P<subject>.+?)(?:\s+(?:did|do|does|that|have|has|had|"
-        r"were|was|are|is|can|could|should|would)\b|[?.,]|$)",
-        query,
-        flags=re.IGNORECASE,
-    )
-    if not match:
-        return ""
-    return " ".join(match.group("subject").strip(" .,'\"").casefold().split())
-
-
-def _common_count_action(candidates: list[EvidenceCandidate]) -> str:
-    actions: list[str] = []
-    for candidate in candidates:
-        label = _rendered_list_label(candidate)
-        if not label:
-            continue
-        first = label.split(maxsplit=1)[0].casefold()
-        if first:
-            actions.append(first)
-    if not actions:
-        return ""
-    first_action = actions[0]
-    if all(action == first_action for action in actions):
-        return first_action
-    return ""
-
-
-def _count_display(value: int) -> str:
-    words = {
-        0: "zero",
-        1: "one",
-        2: "two",
-        3: "three",
-        4: "four",
-        5: "five",
-        6: "six",
-        7: "seven",
-        8: "eight",
-        9: "nine",
-        10: "ten",
-        11: "eleven",
-        12: "twelve",
-    }
-    return words.get(value, str(value))
-
-
-def _count_candidates(query: str, contexts: list[str]) -> list[EvidenceCandidate]:
-    if not _count_query(query):
-        return []
-    focus_terms = _expanded_focus_terms(query)
-    candidates: list[EvidenceCandidate] = []
-    seen_groups: set[str] = set()
-    scored: list[EvidenceCandidate] = []
-    for context in contexts:
-        text = _context_text(context)
-        group = _source_group(context)
-        if group in seen_groups:
-            continue
-        relevance = _relevance(focus_terms, text)
-        if relevance <= 0:
-            continue
-        scored.append(
-            EvidenceCandidate(
-                kind="count",
-                value="1",
-                unit="event",
-                source_group=group,
-                label=_count_label(text),
-                context=text,
-                relevance=relevance,
-            )
-        )
-    if not scored:
-        return []
-    best = max(candidate.relevance for candidate in scored)
-    threshold = 2 if best >= 2 else best
-    for candidate in scored:
-        if candidate.relevance < threshold:
-            continue
-        candidates.append(candidate)
-        seen_groups.add(candidate.source_group)
-    return candidates
 
 
 def _date_interval_projection(
@@ -428,32 +299,6 @@ def _candidate_confidence(candidates: list[EvidenceCandidate]) -> str:
     return f"{confidence:.2f}".rstrip("0").rstrip(".")
 
 
-def _count_query(query: str) -> bool:
-    tokens = set(_tokens(query))
-    if tokens & {"hours", "hour", "minutes", "minute", "days", "day", "weeks", "week", "months", "month"}:
-        return False
-    return bool(tokens & {"many", "number", "count", "total"}) and "how" in tokens
-
-
-def _list_detail_query(query: str) -> bool:
-    tokens = set(_tokens(query))
-    return bool(
-        tokens
-        & {
-            "which",
-            "who",
-            "what",
-            "list",
-            "name",
-            "names",
-            "were",
-            "they",
-            "them",
-            "items",
-        }
-    )
-
-
 def _expanded_focus_terms(query: str) -> set[str]:
     terms = _query_specific_terms(query)
     expanded = set(terms)
@@ -505,19 +350,6 @@ def _source_group(context: str) -> str:
         if match:
             return match.group("value").casefold()
     return context[:160].casefold()
-
-
-def _count_label(text: str) -> str:
-    cleaned = re.sub(r"\bcontent=\S+\s*", "", text)
-    cleaned = re.sub(r"\bcitation=\S+\s*", "", cleaned)
-    match = re.search(r"\bI\s+(?P<label>.+?)(?:[.?!]|$)", cleaned)
-    if match:
-        return " ".join(match.group("label").split()[:12])
-    return ""
-
-
-def _rendered_list_label(candidate: EvidenceCandidate) -> str:
-    return " ".join(candidate.label.strip(" .,'\"").split())
 
 
 def _tokens(text: str) -> list[str]:
