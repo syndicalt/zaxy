@@ -43,7 +43,16 @@ def test_package_version_source_fallback_is_independent_of_cwd(
     monkeypatch.setattr(release.metadata, "version", missing_distribution)
     monkeypatch.chdir(tmp_path)
 
-    assert package_version() == "0.1.0"
+    assert package_version() == "0.2.0b1"
+
+
+def test_package_version_prefers_source_tree_version_in_editable_checkout(monkeypatch) -> None:
+    """Editable installs should not report stale metadata after a release version bump."""
+    from zaxy import release
+
+    monkeypatch.setattr(release.metadata, "version", lambda _name: "0.1.0")
+
+    assert package_version() == "0.2.0b1"
 
 
 def test_changelog_records_initial_pypi_release() -> None:
@@ -51,6 +60,8 @@ def test_changelog_records_initial_pypi_release() -> None:
     changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
 
     assert "# Changelog" in changelog
+    assert "## 0.2.0b1 - 2026-05-15" in changelog
+    assert "Answer@5 0.950" in changelog
     assert "## 0.1.0 - 2026-05-11" in changelog
     assert "PyPI" in changelog
     assert "Trusted Publishing" in changelog
@@ -88,6 +99,9 @@ def test_build_dist_runs_build_and_twine_check_in_order(tmp_path: Path) -> None:
     root = tmp_path / "project"
     dist = tmp_path / "dist"
     root.mkdir()
+    dist.mkdir()
+    stale_artifact = dist / "zaxy_memory-0.1.0-py3-none-any.whl"
+    stale_artifact.write_text("stale", encoding="utf-8")
     build_stub = tmp_path / "build.sh"
     twine_stub = tmp_path / "twine.sh"
     build_stub.write_text(
@@ -124,6 +138,7 @@ def test_build_dist_runs_build_and_twine_check_in_order(tmp_path: Path) -> None:
     )
 
     assert "Package artifacts passed" in result.stdout
+    assert not stale_artifact.exists()
     assert log_path.read_text(encoding="utf-8").splitlines() == [
         f"build --sdist --wheel --outdir {dist} {root}",
         f"twine check {dist}/*",

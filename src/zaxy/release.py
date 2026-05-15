@@ -13,15 +13,13 @@ PACKAGE_NAME = "zaxy-memory"
 
 def package_version(*, project_root: Path | None = None) -> str:
     """Return the installed package version, falling back to local pyproject metadata."""
+    root = project_root or _source_project_root()
+    if root is not None:
+        return pyproject_version(root)
     try:
         return metadata.version(PACKAGE_NAME)
     except metadata.PackageNotFoundError:
-        if project_root is not None:
-            return pyproject_version(project_root)
-        root = _source_project_root()
-        if root is None:
-            return "0+unknown"
-        return pyproject_version(root)
+        return "0+unknown"
 
 
 def pyproject_version(project_root: Path) -> str:

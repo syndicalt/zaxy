@@ -49,6 +49,7 @@ done
 echo "Building package artifacts..."
 
 mkdir -p "${DIST_DIR}"
+find "${DIST_DIR}" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 ${BUILD_CMD} --sdist --wheel --outdir "${DIST_DIR}" "${ROOT}"
 ${TWINE_CMD} check "${DIST_DIR}"/*
 
