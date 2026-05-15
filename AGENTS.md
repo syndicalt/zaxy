@@ -358,5 +358,9 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 ## Next Steps
 
-1. Use LangGraph and CrewAI native-preview usage to choose the next maintained adapter or model-facing UX hardening target.
-2. Run and archive full MemPalace-comparable benchmark reports for all four lanes with `zaxy benchmark-compare` guardrails.
+1. Run and archive the full 500-question LongMemEval-compatible report with explicit workload hash, query order, retrieval limits, citation requirements, and scoring version.
+2. Keep same-harness BM25 baselines in every public benchmark report, including latency and returned-token tradeoffs.
+3. Build or document feasible same-harness competitor adapters for MemPalace, Mem0, and Agent Memory; if an adapter is not practical, publish the blocker and keep the result in the external-disclosure table.
+4. Expand clean-repo onboarding and model-facing UAT with fresh Codex and Claude Code workspaces: `zaxy init`, Memory Bootstrap, deterministic capture, Memory Checkout, feedback, and doctor status.
+5. Keep public benchmark scripts fully reproducible from a clean checkout, with cached datasets, archived reports, guardrail commands, and no hidden manual steps.
+6. Use LangGraph and CrewAI native-preview usage to choose the next maintained adapter or model-facing UX hardening target.

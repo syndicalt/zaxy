@@ -51,6 +51,20 @@ not same-harness Zaxy results.
 
 ## Near-Term Roadmap
 
+- Run and archive a full 500-question LongMemEval-compatible report with the
+  workload hash, query order, retrieval limits, citation rules, scoring version,
+  and `zaxy benchmark-compare` guardrails.
+- Keep same-harness BM25 baselines in public benchmark reports so Zaxy claims
+  show both retrieval quality and latency/token tradeoffs against a strong
+  lexical baseline.
+- Build or document feasible same-harness competitor adapters for MemPalace,
+  Mem0, and Agent Memory. If a same-harness adapter is not practical, document
+  the blocker and keep the competitor number in the external-disclosure table.
+- Expand clean-repo onboarding and model-facing UAT across fresh Codex and
+  Claude Code workspaces: `zaxy init`, Memory Bootstrap, deterministic capture,
+  Memory Checkout, retrieval feedback, and doctor status.
+- Keep public benchmark scripts reproducible from a clean checkout with cached
+  datasets, archived reports, guardrail commands, and no hidden manual steps.
 - Keep LangGraph and CrewAI native-preview adapters dependency-light and use
   them to learn the maintained adapter interface.
 - Keep AutoGen template-only until the right runtime hooks are clear.
