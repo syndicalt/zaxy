@@ -2,6 +2,15 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 0.2.1 - 2026-05-15
+
+- Added first-class Hermes Agent MCP config rendering and explicit `config.yaml`
+  merge support through `zaxy ide-config hermes`.
+- Kept Hermes Agent onboarding workspace-neutral so global MCP config does not
+  pin `EVENTLOOM_PATH`, `EVENTLOOM_THREAD`, or `ZAXY_DOMAIN` to one repository.
+- Added PyYAML packaging support and documentation for Hermes Agent MCP install
+  targets.
+
 ## 0.2.0 - 2026-05-15
 
 - Promoted the beta release to a stable package so default `pip install zaxy-memory` resolves to the current Zaxy release without prerelease flags.
