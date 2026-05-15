@@ -203,12 +203,28 @@
           Agent Memory numbers below are external disclosures; they are not same-harness results.
         </p>
       </div>
-      <div class="value-grid">
-        <article><h3>0.990 R@5</h3><p>Zaxy checkout on the archived 100-query LongMemEval-compatible run with cited memory output.</p></article>
-        <article><h3>0.840 R@5</h3><p>BM25 baseline on the same 100-query LongMemEval-compatible comparison run.</p></article>
-        <article><h3>1.000</h3><p>Mean Zaxy score with OpenAI <code>text-embedding-3-small</code> on the suite-v1 workload: 850 events and 650 paired queries, a +0.480 mean delta versus vector and markdown+vector baselines.</p></article>
+      <div class="benchmark-metrics">
+        <article class="benchmark-card benchmark-card-primary">
+          <span class="benchmark-card-label">Zaxy checkout</span>
+          <h3>0.990 R@5</h3>
+          <p>Archived 100-query LongMemEval-compatible run with cited memory output.</p>
+        </article>
+        <article class="benchmark-card">
+          <span class="benchmark-card-label">BM25 baseline</span>
+          <h3>0.840 R@5</h3>
+          <p>Same 100-query LongMemEval-compatible comparison run and scoring protocol.</p>
+        </article>
+        <article class="benchmark-card">
+          <span class="benchmark-card-label">Context suite</span>
+          <h3>1.000</h3>
+          <p>Mean Zaxy score with OpenAI <code>text-embedding-3-small</code> on 850 events and 650 paired queries, a +0.480 mean delta versus vector and markdown+vector baselines.</p>
+        </article>
       </div>
-      <div class="benchmark-table" role="region" aria-label="Benchmark comparison table">
+      <div class="benchmark-comparison" role="region" aria-label="Benchmark comparison table">
+        <div class="benchmark-comparison-heading">
+          <h3>Comparison Evidence</h3>
+          <p>Local rows are archived Zaxy harness results. Competitor rows are public disclosures with different harnesses or metrics.</p>
+        </div>
         <table>
           <thead>
             <tr>
@@ -219,21 +235,51 @@
             </tr>
           </thead>
           <tbody>
-            <tr><td>Zaxy</td><td>LongMemEval-compatible R@5</td><td>0.990</td><td>Same-harness archived report</td></tr>
-            <tr><td>Zaxy</td><td>LongMemEval-compatible Answer@5</td><td>0.950 headline; 0.880 in BM25 comparison</td><td>Same-harness archived reports</td></tr>
-            <tr><td>BM25 baseline</td><td>LongMemEval-compatible R@5</td><td>0.840</td><td>Same-harness archived report</td></tr>
-            <tr><td>MemPalace</td><td>LongMemEval R@5</td><td>96.6% raw; 98.4% held-out hybrid</td><td>External disclosure</td></tr>
-            <tr><td>Agent Memory</td><td>LongMemEval-S R@5</td><td>95.2%</td><td>External disclosure</td></tr>
-            <tr><td>Mem0</td><td>LOCOMO accuracy</td><td>+26% Accuracy over OpenAI Memory</td><td>External disclosure; different metric</td></tr>
+            <tr>
+              <td><strong>Zaxy</strong></td>
+              <td>LongMemEval-compatible R@5</td>
+              <td><span class="benchmark-result">0.990</span></td>
+              <td><span class="evidence-badge evidence-badge-local">Same harness</span><span class="evidence-note">Archived report</span></td>
+            </tr>
+            <tr>
+              <td><strong>Zaxy</strong></td>
+              <td>LongMemEval-compatible Answer@5</td>
+              <td><span class="benchmark-result">0.950</span><span class="result-note">0.880 in BM25 comparison</span></td>
+              <td><span class="evidence-badge evidence-badge-local">Same harness</span><span class="evidence-note">Archived reports</span></td>
+            </tr>
+            <tr>
+              <td><strong>BM25 baseline</strong></td>
+              <td>LongMemEval-compatible R@5</td>
+              <td><span class="benchmark-result">0.840</span></td>
+              <td><span class="evidence-badge evidence-badge-local">Same harness</span><span class="evidence-note">Archived report</span></td>
+            </tr>
+            <tr>
+              <td><strong>MemPalace</strong></td>
+              <td>LongMemEval R@5</td>
+              <td>96.6% raw; 98.4% held-out hybrid</td>
+              <td><span class="evidence-badge evidence-badge-external">External</span><span class="evidence-note">Public disclosure</span></td>
+            </tr>
+            <tr>
+              <td><strong>Agent Memory</strong></td>
+              <td>LongMemEval-S R@5</td>
+              <td>95.2%</td>
+              <td><span class="evidence-badge evidence-badge-external">External</span><span class="evidence-note">Public disclosure</span></td>
+            </tr>
+            <tr>
+              <td><strong>Mem0</strong></td>
+              <td>LOCOMO accuracy</td>
+              <td>+26% Accuracy over OpenAI Memory</td>
+              <td><span class="evidence-badge evidence-badge-external">External</span><span class="evidence-note">Different metric</span></td>
+            </tr>
           </tbody>
         </table>
       </div>
-      <p>
-        <a href="docs/benchmarks.md">Read the benchmark hub</a> ·
-        <a href="reports/benchmarks/live-benchmark.md">Read the Zaxy LongMemEval-compatible report</a> ·
-        <a href="reports/benchmarks/longmemeval-100-comparison/live-benchmark.md">Read the BM25 comparison</a> ·
-        <a href="docs/benchmark-review.md">Read the suite-v1 review</a>
-      </p>
+      <div class="benchmark-links" aria-label="Benchmark reports">
+        <a href="docs/benchmarks.md"><span>Benchmark hub</span><small>Methodology and disclosure policy</small></a>
+        <a href="reports/benchmarks/live-benchmark.md"><span>Zaxy report</span><small>LongMemEval-compatible run</small></a>
+        <a href="reports/benchmarks/longmemeval-100-comparison/live-benchmark.md"><span>BM25 comparison</span><small>Same-harness baseline</small></a>
+        <a href="docs/benchmark-review.md"><span>Suite-v1 review</span><small>650-query context suite</small></a>
+      </div>
     </section>
 
     <section id="install" class="section install">

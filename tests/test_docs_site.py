@@ -147,6 +147,12 @@ def test_public_site_benchmark_claim_is_scoped_to_fixture() -> None:
     assert "650 paired queries" in html
     assert "external disclosures" in html
     assert "not same-harness results" in html
+    assert 'class="benchmark-metrics"' in html
+    assert 'class="benchmark-card benchmark-card-primary"' in html
+    assert 'class="benchmark-comparison"' in html
+    assert 'class="evidence-badge evidence-badge-local"' in html
+    assert 'class="evidence-badge evidence-badge-external"' in html
+    assert 'class="benchmark-links"' in html
     assert "reports/benchmarks/live-benchmark.md" in html
     assert "reports/benchmarks/longmemeval-100-comparison/live-benchmark.md" in html
     assert "docs/benchmarks.md" in html

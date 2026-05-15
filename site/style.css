@@ -308,36 +308,194 @@ pre {
   font-weight: 750;
 }
 
-.benchmark-table {
+.benchmark-metrics {
+  display: grid;
+  grid-template-columns: 1.12fr 0.94fr 0.94fr;
+  gap: 16px;
+}
+
+.benchmark-card {
+  position: relative;
+  min-height: 184px;
+  overflow: hidden;
+}
+
+.benchmark-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 4px;
+  background: var(--line);
+}
+
+.benchmark-card-primary {
+  background: #112018;
+  color: white;
+  border-color: #112018;
+}
+
+.benchmark-card-primary::before {
+  background: linear-gradient(90deg, var(--accent), var(--blue));
+}
+
+.benchmark-card h3 {
+  margin-bottom: 18px;
+  font-size: 30px;
+  letter-spacing: 0;
+}
+
+.benchmark-card p {
+  margin-bottom: 0;
+}
+
+.benchmark-card-primary p {
+  color: #c6d8cc;
+}
+
+.benchmark-card-label {
+  display: block;
+  margin-bottom: 28px;
+  color: var(--accent-dark);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.benchmark-card-primary .benchmark-card-label {
+  color: #9de5ba;
+}
+
+.benchmark-comparison {
   overflow-x: auto;
   border: 1px solid var(--line);
   background: white;
   border-radius: 8px;
   margin: 18px 0;
+  box-shadow: 0 18px 60px rgba(19, 32, 24, 0.08);
 }
 
-.benchmark-table table {
+.benchmark-comparison-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 22px 24px;
+  border-bottom: 1px solid var(--line);
+  background: #fbfdfb;
+}
+
+.benchmark-comparison-heading h3,
+.benchmark-comparison-heading p {
+  margin-bottom: 0;
+}
+
+.benchmark-comparison-heading p {
+  max-width: 680px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.benchmark-comparison table {
   width: 100%;
   border-collapse: collapse;
-  min-width: 760px;
+  min-width: 900px;
 }
 
-.benchmark-table th,
-.benchmark-table td {
+.benchmark-comparison th,
+.benchmark-comparison td {
   text-align: left;
-  vertical-align: top;
-  padding: 14px 16px;
+  vertical-align: middle;
+  padding: 16px 24px;
   border-bottom: 1px solid var(--line);
   line-height: 1.45;
 }
 
-.benchmark-table th {
+.benchmark-comparison th {
   color: var(--ink);
-  background: var(--band);
+  background: #f0f6f1;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
-.benchmark-table tr:last-child td {
+.benchmark-comparison tbody tr:nth-child(even) {
+  background: #fbfdfb;
+}
+
+.benchmark-comparison tr:last-child td {
   border-bottom: 0;
+}
+
+.benchmark-result {
+  display: block;
+  font-size: 24px;
+  font-weight: 850;
+  color: var(--ink);
+  letter-spacing: 0;
+}
+
+.result-note,
+.evidence-note {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.evidence-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.evidence-badge-local {
+  color: #0f5132;
+  background: #dff5e7;
+  border: 1px solid #a8dfbc;
+}
+
+.evidence-badge-external {
+  color: #6f4d08;
+  background: #fff3cf;
+  border: 1px solid #eed48c;
+}
+
+.benchmark-links {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.benchmark-links a {
+  display: block;
+  padding: 15px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  text-decoration: none;
+}
+
+.benchmark-links span,
+.benchmark-links small {
+  display: block;
+}
+
+.benchmark-links span {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.benchmark-links small {
+  margin-top: 5px;
+  color: var(--muted);
+  line-height: 1.35;
 }
 
 footer {
@@ -381,11 +539,21 @@ footer a {
 
   .proof-strip,
   .value-grid,
+  .benchmark-metrics,
+  .benchmark-links,
   .tool-grid,
   .checkout-example,
   .docs-grid,
   .install-grid,
   .flow {
     grid-template-columns: 1fr;
+  }
+
+  .benchmark-comparison-heading {
+    display: block;
+  }
+
+  .benchmark-comparison-heading h3 {
+    margin-bottom: 10px;
   }
 }
