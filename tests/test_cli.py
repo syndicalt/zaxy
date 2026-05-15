@@ -22,7 +22,7 @@ def test_version_option_reports_project_version() -> None:
     result = runner.invoke(app, ["--version"])
 
     assert result.exit_code == 0
-    assert result.output.strip() == "zaxy 0.2.0b1"
+    assert result.output.strip() == "zaxy 0.2.0"
 
 
 def test_memory_status_prints_eventloom_sessions(tmp_path: Path) -> None:
@@ -2052,7 +2052,7 @@ def test_doctor_beta_readiness_fails_nonzero_for_unready_project(tmp_path: Path)
     """Beta readiness should be shell-gatable when a project is missing beta gates."""
     runner = CliRunner()
     (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname = "zaxy-memory"\nversion = "0.2.0b1"\n',
+        '[project]\nname = "zaxy-memory"\nversion = "0.2.0"\n',
         encoding="utf-8",
     )
 
@@ -2072,11 +2072,11 @@ def test_doctor_release_smoke_uses_explicit_project_root(tmp_path: Path) -> None
     """Release smoke should support checking a repo root different from cwd."""
     runner = CliRunner()
     (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname = "zaxy-memory"\nversion = "0.2.0b1"\n',
+        '[project]\nname = "zaxy-memory"\nversion = "0.2.0"\n',
         encoding="utf-8",
     )
     (tmp_path / "CHANGELOG.md").write_text(
-        "# Changelog\n\n## 0.2.0b1 - 2026-05-11\n\n- Beta release.\n",
+        "# Changelog\n\n## 0.2.0 - 2026-05-11\n\n- Stable release.\n",
         encoding="utf-8",
     )
     (tmp_path / ".github" / "workflows").mkdir(parents=True)

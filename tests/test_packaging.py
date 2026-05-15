@@ -43,7 +43,7 @@ def test_package_version_source_fallback_is_independent_of_cwd(
     monkeypatch.setattr(release.metadata, "version", missing_distribution)
     monkeypatch.chdir(tmp_path)
 
-    assert package_version() == "0.2.0b1"
+    assert package_version() == "0.2.0"
 
 
 def test_package_version_prefers_source_tree_version_in_editable_checkout(monkeypatch) -> None:
@@ -52,7 +52,7 @@ def test_package_version_prefers_source_tree_version_in_editable_checkout(monkey
 
     monkeypatch.setattr(release.metadata, "version", lambda _name: "0.1.0")
 
-    assert package_version() == "0.2.0b1"
+    assert package_version() == "0.2.0"
 
 
 def test_changelog_records_initial_pypi_release() -> None:
@@ -60,6 +60,8 @@ def test_changelog_records_initial_pypi_release() -> None:
     changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
 
     assert "# Changelog" in changelog
+    assert "## 0.2.0 - 2026-05-15" in changelog
+    assert "default `pip install zaxy-memory`" in changelog
     assert "## 0.2.0b1 - 2026-05-15" in changelog
     assert "Answer@5 0.950" in changelog
     assert "## 0.1.0 - 2026-05-11" in changelog
@@ -246,11 +248,11 @@ def test_beta_readiness_reports_missing_clean_repo_uat(tmp_path: Path) -> None:
     (tmp_path / "scripts").mkdir()
     (tmp_path / ".github" / "workflows").mkdir(parents=True)
     (tmp_path / "pyproject.toml").write_text(
-        '[project]\nname = "zaxy-memory"\nversion = "0.2.0b1"\n',
+        '[project]\nname = "zaxy-memory"\nversion = "0.2.0"\n',
         encoding="utf-8",
     )
     (tmp_path / "CHANGELOG.md").write_text(
-        "# Changelog\n\n## 0.2.0b1 - 2026-05-11\n\n- Beta release.\n",
+        "# Changelog\n\n## 0.2.0 - 2026-05-11\n\n- Stable release.\n",
         encoding="utf-8",
     )
     (tmp_path / ".github" / "workflows" / "publish.yml").write_text(
@@ -295,11 +297,11 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
     (root / ".github" / "workflows").mkdir(parents=True)
     (root / "docs").mkdir()
     (root / "pyproject.toml").write_text(
-        '[project]\nname = "zaxy-memory"\nversion = "0.2.0b1"\n',
+        '[project]\nname = "zaxy-memory"\nversion = "0.2.0"\n',
         encoding="utf-8",
     )
     (root / "CHANGELOG.md").write_text(
-        "# Changelog\n\n## 0.2.0b1 - 2026-05-11\n\n- Beta release.\n",
+        "# Changelog\n\n## 0.2.0 - 2026-05-11\n\n- Stable release.\n",
         encoding="utf-8",
     )
     (root / ".github" / "workflows" / "publish.yml").write_text(

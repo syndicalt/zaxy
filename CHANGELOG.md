@@ -2,6 +2,11 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 0.2.0 - 2026-05-15
+
+- Promoted the beta release to a stable package so default `pip install zaxy-memory` resolves to the current Zaxy release without prerelease flags.
+- Preserved the 0.2.0 beta release evidence and benchmark claims while making the same production-ready memory, capture, checkout, graph, and benchmark hardening available as the latest stable PyPI version.
+
 ## 0.2.0b1 - 2026-05-15
 
 - Promoted Zaxy to its first beta packaging track with clean CI, release smoke, beta readiness, and trusted PyPI publishing gates.
