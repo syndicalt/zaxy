@@ -64,8 +64,10 @@ from zaxy.live_benchmark import (
 from zaxy.query import ContextChunk
 from zaxy.retrieval_intent import classify_retrieval_intent
 from zaxy.retrieval_plan import (
+    absence_check_bundle,
     bridge_source_lane_queries,
     source_lane_candidate_limit,
+    source_lane_queries,
     source_lane_query,
 )
 
@@ -1537,6 +1539,19 @@ def test_source_lane_query_ignores_date_header_noise() -> None:
     )
 
 
+def test_source_lane_queries_expand_aggregation_event_actions() -> None:
+    """Aggregation source lookup should search likely memory phrasings, not just query wording."""
+    queries = source_lane_queries(
+        "How many model kits have I worked on or bought?",
+        [],
+    )
+
+    assert queries == (
+        "How many model kits have I worked on or bought?",
+        "model kits finished started picked up got bought scale",
+    )
+
+
 async def test_zaxy_retriever_uses_graph_answer_concepts_for_source_lane() -> None:
     """Source backfill should recover provenance for graph-discovered answer concepts."""
     source_contexts = [
@@ -1581,6 +1596,72 @@ async def test_zaxy_retriever_uses_graph_answer_concepts_for_source_lane() -> No
     assert seen_queries[0] == "What breed is my dog?"
     assert any("Golden Retriever" in query for query in seen_queries[1:])
     assert any("longmemeval_session_id=answer-3" in result for result in results)
+
+
+async def test_zaxy_retriever_merges_expanded_source_queries_before_truncation() -> None:
+    """Expanded aggregation recall should not be starved by the original query results."""
+    original_contexts = [
+        f"longmemeval_session_id=distractor-{index} model kit discussion {index}"
+        for index in range(1, 9)
+    ]
+    expanded_contexts = [
+        "longmemeval_session_id=answer-1 I finished a simple Revell F-15 Eagle kit.",
+        "longmemeval_session_id=answer-2 I started a Tamiya 1/48 scale Spitfire Mk.V.",
+    ]
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, limit, embedding
+            return [SimpleNamespace(content="graph distractor")]
+
+    class QueryAwareLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del temporal_point
+            if "finished started picked up" in query:
+                return expanded_contexts[:limit]
+            return original_contexts[:limit]
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=QueryAwareLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "How many model kits have I worked on or bought?",
+        limit=5,
+    )
+
+    assert any("answer-1" in result for result in results)
+    assert any("answer-2" in result for result in results)
+
+
+def test_absence_check_ignores_direct_fact_question_words() -> None:
+    """Absence guidance should not fire when direct fact terms are present in evidence."""
+    bundle = absence_check_bundle(
+        query="What brand are my favorite running shoes?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=answer Nike has been my favourite brand "
+                "so far for running shoes."
+            )
+        ],
+        limit=5,
+    )
+
+    assert bundle is None
 
 
 async def test_zaxy_retriever_preserves_original_source_query_when_graph_concepts_are_noisy() -> None:

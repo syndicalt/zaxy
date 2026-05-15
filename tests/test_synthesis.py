@@ -88,6 +88,164 @@ def test_count_ledger_counts_distinct_relevant_sources() -> None:
     }
 
 
+def test_count_ledger_requires_query_action_for_event_counts() -> None:
+    """Count synthesis should not count broad topical overlap without the queried action."""
+    ledger = build_count_ledger(
+        "How many movie festivals that I attended?",
+        [
+            "session_id=answer-1 I attended the Sundance Film Festival.",
+            "session_id=answer-2 I went to AFI Fest in LA.",
+            "session_id=distractor-1 I watched all 22 Marvel movies in two weeks.",
+            (
+                "session_id=distractor-2 Film festival distribution strategy "
+                "is interesting, but I did not attend one."
+            ),
+        ],
+    )
+
+    included = ledger.included(kind="event")
+    excluded = ledger.excluded(kind="event")
+
+    assert [row.source_group for row in included] == ["answer-1", "answer-2"]
+    assert [row.label for row in included] == [
+        "attended the Sundance Film Festival",
+        "went to AFI Fest in LA",
+    ]
+    assert {row.source_group for row in excluded} == {"distractor-1", "distractor-2"}
+
+
+def test_count_ledger_uses_relevant_user_span_inside_noisy_session() -> None:
+    """Count evidence should choose a compact user memory span from noisy sessions."""
+    ledger = build_count_ledger(
+        "How many properties did I view before making an offer?",
+        [
+            (
+                "session_id=answer-1 assistant: You can compare mortgage rates. "
+                "user: I viewed a bungalow, but the kitchen needed renovation. "
+                "assistant: Neighborhood research can help."
+            ),
+            (
+                "session_id=answer-2 assistant: I can suggest listings. "
+                "user: I toured a condo near the highway and passed because of the noise."
+            ),
+            (
+                "session_id=distractor-1 assistant: Property taxes vary by city. "
+                "user: I made an offer on the Brookside townhouse."
+            ),
+        ],
+    )
+
+    included = ledger.included(kind="event")
+
+    assert [row.source_group for row in included] == ["answer-1", "answer-2"]
+    assert [row.label for row in included] == [
+        "viewed a bungalow, but the kitchen needed renovation",
+        "toured a condo near the highway and passed because of the noise",
+    ]
+
+
+def test_count_ledger_rejects_music_festival_for_movie_festival_query() -> None:
+    """Count facets should distinguish film festivals from generic festival mentions."""
+    ledger = build_count_ledger(
+        "How many movie festivals did I attend?",
+        [
+            "session_id=answer-1 I attended Sundance.",
+            "session_id=answer-2 I went to AFI Fest in LA.",
+            "session_id=distractor-1 I attended the iHeartRadio Music Festival.",
+            "session_id=distractor-2 I went to a neighborhood food festival.",
+        ],
+    )
+
+    included = ledger.included(kind="event")
+    excluded = ledger.excluded(kind="event")
+
+    assert [row.source_group for row in included] == ["answer-1", "answer-2"]
+    assert {row.source_group for row in excluded} == {"distractor-1", "distractor-2"}
+
+
+def test_count_ledger_excludes_target_offer_when_query_asks_viewed_before_offer() -> None:
+    """Property count synthesis should not count the final offer as a prior viewing."""
+    ledger = build_count_ledger(
+        "How many properties did I view before making an offer?",
+        [
+            "session_id=answer-1 I viewed a bungalow, but the kitchen needed renovation.",
+            "session_id=answer-2 I toured a condo near the highway and passed.",
+            "session_id=distractor-1 I made an offer on the Brookside townhouse.",
+        ],
+    )
+
+    assert [row.source_group for row in ledger.included(kind="event")] == [
+        "answer-1",
+        "answer-2",
+    ]
+    assert [row.source_group for row in ledger.excluded(kind="event")] == ["distractor-1"]
+
+
+def test_count_ledger_rejects_request_to_see_doctor_without_visit() -> None:
+    """Doctor visit counts should require an actual visit or appointment event."""
+    ledger = build_count_ledger(
+        "How many doctors did I visit?",
+        [
+            "session_id=answer-1 I visited my primary care physician.",
+            "session_id=answer-2 I saw an ENT about my sinus infection.",
+            "session_id=answer-3 I had an appointment with a dermatologist.",
+            "session_id=distractor-1 I requested to see a specific doctor.",
+        ],
+    )
+
+    assert [row.source_group for row in ledger.included(kind="event")] == [
+        "answer-1",
+        "answer-2",
+        "answer-3",
+    ]
+    assert [row.source_group for row in ledger.excluded(kind="event")] == ["distractor-1"]
+
+
+def test_count_ledger_counts_multiple_model_kits_in_one_span() -> None:
+    """A single cited memory can contain multiple countable items."""
+    ledger = build_count_ledger(
+        "How many model kits have I worked on, and which were they?",
+        [
+            (
+                "session_id=answer-1 I got a 1/72 scale B-29 bomber model kit "
+                "and a 1/24 scale '69 Camaro."
+            ),
+            "session_id=answer-2 I finished a Tamiya 1/48 scale Spitfire Mk.V.",
+            "session_id=distractor-1 I bought paint for my model kits.",
+        ],
+    )
+
+    included = ledger.included(kind="event")
+
+    assert [row.source_group for row in included] == ["answer-1", "answer-1", "answer-2"]
+    assert [row.label for row in included] == [
+        "1/72 scale B-29 bomber model kit",
+        "1/24 scale '69 Camaro",
+        "Tamiya 1/48 scale Spitfire Mk.V",
+    ]
+    assert [row.value for row in included] == ["1", "1", "1"]
+
+
+def test_count_ledger_handles_first_person_contractions() -> None:
+    """Count evidence should parse common first-person contractions."""
+    ledger = build_count_ledger(
+        "How many model kits have I worked on, and which were they?",
+        [
+            "session_id=answer-1 I've recently finished a simple Revell F-15 Eagle kit.",
+            "session_id=answer-2 I'm starting a Tamiya 1/48 scale Spitfire Mk.V.",
+            "session_id=distractor-1 I'd recommend checking local hobby stores.",
+        ],
+    )
+
+    included = ledger.included(kind="event")
+
+    assert [row.source_group for row in included] == ["answer-1", "answer-2"]
+    assert [row.label for row in included] == [
+        "Revell F-15 Eagle kit",
+        "Tamiya 1/48 scale Spitfire Mk.V",
+    ]
+
+
 def test_render_count_result_projects_list_details_from_ledger() -> None:
     """Count/list synthesis should render the existing model-facing answer surface."""
     ledger = build_count_ledger(

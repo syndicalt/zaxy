@@ -700,8 +700,8 @@ class ZaxyRetriever:
 
         ordered_candidates = [
             *bridge_results,
-            *primary_results,
             *expanded_results,
+            *primary_results,
         ]
         results: list[str] = []
         seen: set[str] = set()

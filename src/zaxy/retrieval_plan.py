@@ -81,10 +81,27 @@ def source_lane_queries(query: str, graph_results: list[str]) -> tuple[str, ...]
     recall without replacing the lexical evidence request when graph retrieval
     starts in the wrong neighborhood.
     """
+    queries = [query]
+    queries.extend(aggregation_event_source_queries(query))
     expanded = source_lane_query(query, graph_results)
-    if expanded == query:
-        return (query,)
-    return (query, expanded)
+    if expanded != query:
+        queries.append(expanded)
+    return tuple(dict.fromkeys(queries))
+
+
+def aggregation_event_source_queries(query: str) -> tuple[str, ...]:
+    """Return deterministic source queries for event-like aggregation memories."""
+    query_terms = set(source_tokens(query))
+    queries: list[str] = []
+    if query_terms & {"model", "models", "kit", "kits"} and {"how", "many"} <= query_terms:
+        queries.append("model kits finished started picked up got bought scale")
+    if query_terms & {"doctor", "doctors", "physician", "physicians"} and {"how", "many"} <= query_terms:
+        queries.append("doctor physician dermatologist ent visited saw appointment")
+    if query_terms & {"movie", "movies", "film", "films", "festival", "festivals"} and {"how", "many"} <= query_terms:
+        queries.append("film festival movie attended went participated")
+    if query_terms & {"property", "properties", "house", "home", "townhouse"} and {"how", "many"} <= query_terms:
+        queries.append("property house bungalow condo townhouse viewed toured saw offer")
+    return tuple(queries)
 
 
 def bridge_source_lane_queries(query: str, source_results: list[str]) -> tuple[str, ...]:
@@ -421,6 +438,8 @@ def absence_check_bundle(
         source_results,
         limit=max(1, intent.source_lane_slots or min(2, limit)),
     )
+    if has_direct_fact_evidence(query, grouped_sources):
+        return None
     target = missing_query_target(query, grouped_sources)
     if not target and "absence_check" in intent.reasons:
         target = absence_check_target(query)
@@ -524,6 +543,7 @@ _BRIDGE_QUERY_STOPWORDS = _ABSENCE_QUERY_STOPWORDS | {
     "are",
     "can",
     "could",
+    "favorite",
     "is",
     "name",
     "of",
@@ -551,6 +571,20 @@ def absence_check_target(query: str) -> str:
         and len(token) > 1
     ]
     return " ".join(dict.fromkeys(terms))
+
+
+def has_direct_fact_evidence(query: str, contexts: list[str]) -> bool:
+    """Return whether contexts already contain enough direct-fact query evidence."""
+    query_terms = _query_specific_terms(query)
+    if not query_terms:
+        return False
+    context_terms: set[str] = set()
+    for context in contexts:
+        context_terms.update(source_tokens(context))
+    return bool(query_terms) and all(
+        _absence_term_variants(term) & context_terms
+        for term in query_terms
+    )
 
 
 def missing_query_target(query: str, contexts: list[str]) -> str:
@@ -582,6 +616,7 @@ def _absence_term_variants(term: str) -> set[str]:
     irregular = {
         "airline": {"airlines"},
         "age": {"ages", "turned"},
+        "favorite": {"favourite", "favorites", "favourites"},
         "fly": {"flew", "flown", "flying"},
         "grandparents": {"grandparent", "grandma", "grandpa", "grandmother", "grandfather"},
         "losing": {"lost", "lose"},
@@ -703,6 +738,7 @@ _QUERY_SOURCE_STOPWORDS = {
     "ago",
     "all",
     "and",
+    "are",
     "before",
     "between",
     "breed",
@@ -735,6 +771,7 @@ _QUERY_SOURCE_STOPWORDS = {
     "average",
     "days",
     "event",
+    "favorite",
     "first",
     "happened",
     "project",

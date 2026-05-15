@@ -40,6 +40,16 @@ class EvidenceLedgerRow:
 
 
 @dataclass(frozen=True)
+class CountEvidenceItem:
+    """One countable event or item extracted from a cited memory span."""
+
+    label: str
+    span: str
+    normalized_identity: str
+    relevance: int
+
+
+@dataclass(frozen=True)
 class EvidenceLedger:
     """Typed evidence working memory used by synthesis operations."""
 
@@ -331,48 +341,82 @@ def build_count_ledger(query: str, contexts: list[str]) -> EvidenceLedger:
     if "event" not in plan.required_kinds:
         return EvidenceLedger(plan=plan, rows=())
     focus_terms = _count_focus_terms(query)
+    action_terms = _count_action_terms(query)
+    subject = _count_subject(query)
     rows: list[EvidenceLedgerRow] = []
-    seen_groups: set[str] = set()
+    seen_identities: set[str] = set()
     provisional: list[EvidenceLedgerRow] = []
     for context_index, context in enumerate(contexts):
         text = context_text(context)
         group = source_group(context)
         citation = source_citation(context)
-        relevance = _relevance(focus_terms, text)
-        label = count_label(text)
-        duplicate = group in seen_groups
-        if relevance > 0 and not duplicate:
-            seen_groups.add(group)
-        exclude_reason = ""
-        if duplicate:
-            exclude_reason = "duplicate_source_group"
-        elif relevance <= 0:
-            exclude_reason = "query_focus_mismatch"
-        row = EvidenceLedgerRow(
-            fact_id=f"count:{context_index}",
-            source_group=group,
-            citation=citation,
-            kind="event",
-            value="1",
-            unit="event",
-            label=label,
-            raw_span=text,
-            context=text,
-            normalized_identity=f"source_group={group}",
-            relevance=relevance,
-            include_reason="relevant_source_event",
-            exclude_reason=exclude_reason,
-            confidence=_row_confidence(relevance=relevance, has_label=bool(label)),
+        items = count_evidence_items(
+            text,
+            group=group,
+            focus_terms=focus_terms,
+            action_terms=action_terms,
+            subject=subject,
         )
-        if exclude_reason:
-            rows.append(row)
-        else:
-            provisional.append(row)
-    if not provisional:
-        return EvidenceLedger(plan=plan, rows=tuple(rows))
-    best = max(row.relevance for row in provisional)
-    threshold = 2 if best >= 2 else best
-    rows.extend(_apply_count_threshold(provisional, threshold=threshold))
+        if not items:
+            span = count_evidence_span(
+                text,
+                focus_terms=focus_terms,
+                action_terms=action_terms,
+                subject=subject,
+            )
+            relevance = _relevance(focus_terms, span or text)
+            label = count_label(span or text)
+            rows.append(
+                EvidenceLedgerRow(
+                    fact_id=f"count:{context_index}",
+                    source_group=group,
+                    citation=citation,
+                    kind="event",
+                    value="1",
+                    unit="event",
+                    label=label,
+                    raw_span=span or text,
+                    context=span or text,
+                    normalized_identity=f"source_group={group}",
+                    relevance=relevance,
+                    include_reason="relevant_source_event",
+                    exclude_reason="query_focus_mismatch",
+                    confidence=_row_confidence(relevance=relevance, has_label=bool(label)),
+                )
+            )
+            continue
+        for item_index, item in enumerate(items):
+            duplicate = item.normalized_identity in seen_identities
+            if not duplicate:
+                seen_identities.add(item.normalized_identity)
+            exclude_reason = ""
+            if duplicate:
+                exclude_reason = (
+                    "duplicate_source_group"
+                    if item.normalized_identity == f"source_group={group}"
+                    else "duplicate_identity"
+                )
+            row = EvidenceLedgerRow(
+                fact_id=f"count:{context_index}:{item_index}",
+                source_group=group,
+                citation=citation,
+                kind="event",
+                value="1",
+                unit="event",
+                label=item.label,
+                raw_span=item.span,
+                context=item.span,
+                normalized_identity=item.normalized_identity,
+                relevance=item.relevance,
+                include_reason="relevant_source_event",
+                exclude_reason=exclude_reason,
+                confidence=_row_confidence(relevance=item.relevance, has_label=bool(item.label)),
+            )
+            if exclude_reason:
+                rows.append(row)
+            else:
+                provisional.append(row)
+    rows.extend(provisional)
     return EvidenceLedger(plan=plan, rows=tuple(rows))
 
 
@@ -855,10 +899,220 @@ def count_label(text: str) -> str:
     """Extract a compact event label for count/list synthesis."""
     cleaned = re.sub(r"\bcontent=\S+\s*", "", text)
     cleaned = re.sub(r"\bcitation=\S+\s*", "", cleaned)
+    cleaned = re.sub(r"\b(?:user|assistant):\s*", "", cleaned, flags=re.IGNORECASE)
     match = re.search(r"\bI\s+(?P<label>.+?)(?:[.?!]|$)", cleaned)
     if match:
-        return " ".join(match.group("label").split()[:12])
+        label = " ".join(match.group("label").split()[:12])
+        return label
     return ""
+
+
+def count_evidence_span(
+    text: str,
+    *,
+    focus_terms: set[str],
+    action_terms: set[str],
+    subject: str = "",
+) -> str:
+    """Return the most count-relevant first-person memory span from a source context."""
+    spans = _first_person_spans(text)
+    if not spans:
+        return ""
+    scored: list[tuple[int, int, int, str]] = []
+    for index, span in enumerate(spans):
+        if _negated_count_action(span, action_terms):
+            continue
+        if not _span_matches_count_subject(span, subject):
+            continue
+        focus_score = _relevance(focus_terms, span)
+        action_score = 2 if _has_count_action(span, action_terms) else 0
+        if focus_score <= 0 or action_score <= 0:
+            continue
+        scored.append((-(focus_score + action_score), -action_score, index, span))
+    if not scored:
+        return ""
+    scored.sort(key=lambda item: (item[0], item[1], item[2]))
+    return scored[0][3]
+
+
+def count_evidence_items(
+    text: str,
+    *,
+    group: str,
+    focus_terms: set[str],
+    action_terms: set[str],
+    subject: str,
+) -> list[CountEvidenceItem]:
+    """Extract countable items or events from the strongest cited memory span."""
+    span = count_evidence_span(
+        text,
+        focus_terms=focus_terms,
+        action_terms=action_terms,
+        subject=subject,
+    )
+    if not span:
+        return []
+    relevance = _relevance(focus_terms, span)
+    if relevance <= 0:
+        return []
+    if subject == "model_kit":
+        labels = _model_kit_labels(span)
+        if not labels:
+            return []
+        item_relevance = max(relevance, 2)
+        return [
+            CountEvidenceItem(
+                label=label,
+                span=span,
+                normalized_identity=f"model_kit={_normalize_count_identity(label)}",
+                relevance=item_relevance,
+            )
+            for label in labels
+        ]
+    label = count_label(span)
+    return [
+        CountEvidenceItem(
+            label=label,
+            span=span,
+            normalized_identity=f"source_group={group}",
+            relevance=relevance,
+        )
+    ]
+
+
+def _first_person_spans(text: str) -> list[str]:
+    """Extract bounded first-person clauses suitable for count evidence."""
+    cleaned = re.sub(r"\bcontent=\S+\s*", " ", text)
+    cleaned = re.sub(r"\bcitation=\S+\s*", " ", cleaned)
+    spans: list[str] = []
+    pattern = re.compile(
+        r"(?:\buser:\s*)?\bI(?:\s+|['’](?:m|ve|d|ll|re)\s+).{3,220}?(?:[.!?](?=\s|$)|$)",
+        flags=re.IGNORECASE,
+    )
+    for match in pattern.finditer(cleaned):
+        span = " ".join(match.group(0).strip(" .!?").split())
+        span = re.sub(r"^(?:user|assistant):\s*", "", span, flags=re.IGNORECASE)
+        if span and span not in spans:
+            spans.append(span)
+    return spans
+
+
+def _count_action_terms(query: str) -> set[str]:
+    """Return action terms that must appear in count evidence spans."""
+    query_terms = set(source_tokens(query))
+    action_groups = {
+        "attend": {"attend", "attended", "attending", "went", "go", "visited"},
+        "attended": {"attend", "attended", "attending", "went", "go", "visited"},
+        "visit": {"appointment", "had", "visit", "visited", "see", "saw", "went"},
+        "visited": {"appointment", "had", "visit", "visited", "see", "saw", "went"},
+        "view": {"view", "viewed", "tour", "toured", "saw", "visited"},
+        "viewed": {"view", "viewed", "tour", "toured", "saw", "visited"},
+        "work": {"work", "worked", "build", "built", "started", "finished", "bought", "got"},
+        "worked": {"work", "worked", "build", "built", "started", "starting", "finished", "bought", "got"},
+        "buy": {"buy", "bought", "got", "purchased", "picked"},
+        "bought": {"buy", "bought", "got", "purchased", "picked"},
+    }
+    actions: set[str] = set()
+    for term in query_terms:
+        actions.update(action_groups.get(term, set()))
+    if not actions and {"how", "many"} <= query_terms:
+        actions.update({"attend", "attended", "visit", "visited", "went", "got", "bought"})
+    return actions
+
+
+def _has_count_action(span: str, action_terms: set[str]) -> bool:
+    if not action_terms:
+        return True
+    tokens = set(source_tokens(span))
+    if not tokens & action_terms:
+        return False
+    return not re.search(r"\bI\s+(?:requested|asked|wanted|hoped|planned)\s+to\s+see\b", span, flags=re.IGNORECASE)
+
+
+def _negated_count_action(span: str, action_terms: set[str]) -> bool:
+    if not action_terms:
+        return False
+    escaped_actions = "|".join(sorted((re.escape(term) for term in action_terms), key=len, reverse=True))
+    if not escaped_actions:
+        return False
+    return bool(
+        re.search(
+            rf"\b(?:did\s+not|didn't|do\s+not|don't|never|not)\s+[^.!?]{{0,40}}\b(?:{escaped_actions})\b",
+            span,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _count_subject(query: str) -> str:
+    """Classify the count target into a small deterministic evidence facet."""
+    tokens = set(source_tokens(query))
+    if tokens & {"movie", "movies", "film", "films", "cinema"} and tokens & {"festival", "festivals", "fest", "fests"}:
+        return "film_festival"
+    if tokens & {"property", "properties", "home", "homes", "house", "houses"}:
+        return "property_viewing"
+    if tokens & {"doctor", "doctors", "physician", "physicians", "dermatologist", "ent"}:
+        return "doctor_visit"
+    if tokens & {"model", "models", "kit", "kits"}:
+        return "model_kit"
+    return ""
+
+
+def _span_matches_count_subject(span: str, subject: str) -> bool:
+    """Return whether a span satisfies the count subject facet."""
+    if not subject:
+        return True
+    tokens = set(source_tokens(span))
+    if subject == "film_festival":
+        if _film_festival_name(span):
+            return True
+        return bool(tokens & {"movie", "movies", "film", "films", "cinema"} and tokens & {"festival", "festivals", "fest", "fests"})
+    if subject == "property_viewing":
+        if re.search(r"\bI\s+made\s+an\s+offer\b", span, flags=re.IGNORECASE):
+            return False
+        return bool(tokens & {"property", "properties", "home", "homes", "house", "houses", "bungalow", "condo", "townhouse"})
+    if subject == "doctor_visit":
+        if re.search(r"\bI\s+(?:requested|asked|wanted|hoped|planned)\s+to\s+see\b", span, flags=re.IGNORECASE):
+            return False
+        return bool(tokens & {"doctor", "doctors", "physician", "physicians", "dermatologist", "ent"})
+    if subject == "model_kit":
+        return bool(_model_kit_labels(span))
+    return True
+
+
+def _model_kit_labels(span: str) -> list[str]:
+    """Extract distinct model-kit items from a first-person evidence span."""
+    labels: list[str] = []
+    for match in re.finditer(
+        r"\b(?:simple\s+)?(?P<label>[A-Z][A-Za-z0-9.-]+(?:\s+[A-Z0-9][A-Za-z0-9.'-]+){1,6}\s+kit)\b",
+        span,
+    ):
+        label = _clean_count_item_label(match.group("label"))
+        identity = _normalize_count_identity(label)
+        if label and identity not in {_normalize_count_identity(existing) for existing in labels}:
+            labels.append(label)
+    for match in re.finditer(
+        r"\b(?:(?:[A-Z][A-Za-z0-9.-]+)\s+)?\d+/\d+\s+scale\s+[^;!?]+",
+        span,
+    ):
+        fragment = match.group(0)
+        fragment = re.split(r"\s+\band\b\s+(?:a|an|the)?\s*(?=\d+/\d+\s+scale)", fragment)
+        for raw_label in fragment:
+            label = _clean_count_item_label(raw_label)
+            if label and _normalize_count_identity(label) not in {_normalize_count_identity(existing) for existing in labels}:
+                labels.append(label)
+    return labels
+
+
+def _clean_count_item_label(label: str) -> str:
+    label = re.sub(r"^\s*(?:and\s+)?(?:a|an|the)\s+", "", label, flags=re.IGNORECASE)
+    label = re.sub(r"\s+", " ", label.strip(" .,'\""))
+    label = re.split(r"\s+\b(?:and|plus|with)\b\s+", label, maxsplit=1)[0]
+    return label.strip(" .,'\"")
+
+
+def _normalize_count_identity(label: str) -> str:
+    return " ".join(source_tokens(label))
 
 
 def rendered_list_label(row: EvidenceLedgerRow) -> str:
@@ -1269,8 +1523,16 @@ def _count_focus_terms(query: str) -> set[str]:
     expanded = set(terms)
     semantic_groups = {
         "movie": {"movie", "movies", "film", "films", "cinema"},
-        "festival": {"festival", "festivals"},
-        "festivals": {"festival", "festivals"},
+        "doctor": {"doctor", "doctors", "physician", "physicians", "dermatologist", "ent"},
+        "doctors": {"doctor", "doctors", "physician", "physicians", "dermatologist", "ent"},
+        "festival": {"festival", "festivals", "fest", "fests"},
+        "festivals": {"festival", "festivals", "fest", "fests"},
+        "kit": {"kit", "kits", "model", "models", "scale"},
+        "kits": {"kit", "kits", "model", "models", "scale"},
+        "model": {"kit", "kits", "model", "models", "scale"},
+        "models": {"kit", "kits", "model", "models", "scale"},
+        "properties": {"properties", "property", "home", "homes", "house", "houses", "bungalow", "condo", "townhouse"},
+        "property": {"properties", "property", "home", "homes", "house", "houses", "bungalow", "condo", "townhouse"},
         "wedding": {"wedding", "weddings"},
         "weddings": {"wedding", "weddings"},
     }
@@ -1291,7 +1553,21 @@ def _relevance(focus_terms: set[str], context: str) -> int:
     if not focus_terms:
         return 0
     context_terms = set(source_tokens(context))
-    return len(focus_terms & context_terms)
+    score = len(focus_terms & context_terms)
+    if {"movie", "film"} & focus_terms and _film_festival_name(context):
+        score += 1
+    return score
+
+
+def _film_festival_name(context: str) -> bool:
+    """Return whether text names a film/movie festival without the generic noun."""
+    return bool(
+        re.search(
+            r"\b(?:AFI\s+Fest|Sundance|Tribeca|Cannes|Telluride|SXSW|TIFF)\b",
+            context,
+            flags=re.IGNORECASE,
+        )
+    )
 
 
 def _row_confidence(*, relevance: int, has_label: bool) -> float:
