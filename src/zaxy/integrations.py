@@ -6,19 +6,30 @@ import json
 import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import tomlkit
+import yaml
 
 from zaxy.core import HandoffBundle
 from zaxy.domain import derive_domain, domain_default_session, slug_domain
 from zaxy.install import resolve_zaxy_executable
 
-MCPClient = Literal["claude-desktop", "claude-code", "codex", "cursor", "vscode"]
+MCPClient = Literal["claude-desktop", "claude-code", "codex", "cursor", "hermes", "vscode"]
 CodexConfigScope = Literal["project", "user"]
 HandoffAdapter = Literal["generic", "langgraph", "crewai", "autogen"]
 AgentFramework = Literal["langgraph", "crewai", "autogen"]
 FrameworkExtra = Literal["langgraph", "crewai", "autogen", "frameworks"]
+
+HERMES_MODEL_FACING_TOOLS: tuple[str, ...] = (
+    "memory_capabilities",
+    "memory_bootstrap",
+    "memory_checkout",
+    "memory_feedback",
+    "memory_query",
+    "memory_verbatim",
+    "memory_append",
+)
 
 
 @dataclass(frozen=True)
@@ -82,6 +93,18 @@ def render_mcp_client_config(
 ) -> dict[str, Any]:
     """Render a copyable MCP client config fragment for a first-run setup."""
     normalized = _normalize_client(client)
+    resolved_executable = resolve_zaxy_executable(zaxy_executable)
+    if normalized == "codex":
+        raise ValueError("Codex uses `codex mcp add`; use render_codex_mcp_add_command")
+    if normalized == "hermes":
+        if transport.casefold() != "stdio":
+            raise ValueError("Hermes first-class install currently supports stdio MCP only")
+        return {
+            "mcp_servers": {
+                "zaxy": _hermes_server_config(zaxy_executable=resolved_executable)
+            }
+        }
+
     resolved_domain = slug_domain(domain) if domain else derive_domain()
     server = _server_config(
         eventloom_path=eventloom_path,
@@ -89,12 +112,10 @@ def render_mcp_client_config(
         host=host,
         port=port,
         domain=resolved_domain,
-        zaxy_executable=resolve_zaxy_executable(zaxy_executable),
+        zaxy_executable=resolved_executable,
     )
     if normalized == "vscode":
         return {"servers": {"zaxy": server}}
-    if normalized == "codex":
-        raise ValueError("Codex uses `codex mcp add`; use render_codex_mcp_add_command")
     return {"mcpServers": {"zaxy": server}}
 
 
@@ -192,6 +213,56 @@ def write_codex_mcp_config(
     return target
 
 
+def write_hermes_mcp_config(
+    *,
+    config_path: str | Path | None = None,
+    hermes_home: str | Path | None = None,
+    zaxy_executable: str | None = None,
+    force: bool = False,
+    domain: str | None = None,
+) -> Path:
+    """Merge Zaxy into a Hermes Agent config.yaml MCP server block.
+
+    Hermes MCP config is global YAML under ``mcp_servers``. Zaxy therefore
+    writes a workspace-neutral server: `zaxy serve` resolves the active
+    workspace and Eventloom defaults at runtime instead of pinning one repo into
+    the global Hermes config.
+    """
+    _ = domain
+    target = hermes_mcp_config_path(config_path=config_path, hermes_home=hermes_home)
+    document = _read_yaml_document(target)
+    raw_servers = document.setdefault("mcp_servers", {})
+    if not isinstance(raw_servers, dict):
+        raise ValueError(f"{target} field 'mcp_servers' must contain a YAML mapping")
+    servers = cast(dict[str, Any], raw_servers)
+    if "zaxy" in servers and not force:
+        raise FileExistsError(
+            f"{target} already contains a zaxy MCP server; pass --force to replace it"
+        )
+    servers["zaxy"] = _hermes_server_config(
+        zaxy_executable=resolve_zaxy_executable(zaxy_executable)
+    )
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(yaml.safe_dump(document, sort_keys=False), encoding="utf-8")
+    return target
+
+
+def hermes_mcp_config_path(
+    *,
+    config_path: str | Path | None = None,
+    hermes_home: str | Path | None = None,
+) -> Path:
+    """Return the Hermes Agent YAML config path."""
+    if config_path is not None:
+        return Path(config_path)
+    home = (
+        Path(hermes_home)
+        if hermes_home is not None
+        else Path(os.environ.get("HERMES_HOME", "~/.hermes")).expanduser()
+    )
+    return home / "config.yaml"
+
+
 def codex_mcp_config_path(
     *,
     scope: CodexConfigScope | str,
@@ -214,6 +285,8 @@ def project_mcp_client_config_path(client: MCPClient | str, *, workspace: str | 
         return root / ".mcp.json"
     if normalized == "codex":
         raise ValueError("Codex does not have a safe JSON project config target")
+    if normalized == "hermes":
+        raise ValueError("Hermes uses global config.yaml; use write_hermes_mcp_config")
     if normalized == "cursor":
         return root / ".cursor" / "mcp.json"
     return root / ".vscode" / "mcp.json"
@@ -418,6 +491,24 @@ def _codex_server_config(*, zaxy_executable: str) -> dict[str, Any]:
     }
 
 
+def _hermes_server_config(*, zaxy_executable: str) -> dict[str, Any]:
+    """Return a workspace-neutral Hermes MCP server config."""
+    server = _codex_server_config(zaxy_executable=zaxy_executable)
+    return {
+        "command": server["command"],
+        "args": server["args"],
+        "env": server["env"],
+        "enabled": True,
+        "timeout": 120,
+        "connect_timeout": 60,
+        "tools": {
+            "include": list(HERMES_MODEL_FACING_TOOLS),
+            "resources": False,
+            "prompts": False,
+        },
+    }
+
+
 def _bundle_payload(bundle: HandoffBundle) -> dict[str, Any]:
     return {
         "session_id": bundle.session_id,
@@ -439,9 +530,13 @@ def _normalize_client(client: str) -> MCPClient:
         return "codex"
     if normalized == "cursor":
         return "cursor"
+    if normalized == "hermes":
+        return "hermes"
     if normalized in {"vscode", "vs-code", "visual-studio-code"}:
         return "vscode"
-    raise ValueError("client must be one of: claude-desktop, claude-code, codex, cursor, vscode")
+    raise ValueError(
+        "client must be one of: claude-desktop, claude-code, codex, cursor, hermes, vscode"
+    )
 
 
 def _normalize_codex_scope(scope: str) -> CodexConfigScope:
@@ -460,9 +555,25 @@ def _read_toml_document(path: Path) -> Any:
         raise ValueError(f"{path} contains invalid TOML; repair it before installing Zaxy") from exc
 
 
+def _read_yaml_document(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        parsed = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise ValueError(f"{path} contains invalid YAML; repair it before installing Zaxy") from exc
+    if parsed is None:
+        return {}
+    if not isinstance(parsed, dict):
+        raise ValueError(f"{path} must contain a YAML mapping")
+    return cast(dict[str, Any], parsed)
+
+
 def _mcp_root_key(client: MCPClient) -> str:
     if client == "vscode":
         return "servers"
+    if client == "hermes":
+        return "mcp_servers"
     return "mcpServers"
 
 

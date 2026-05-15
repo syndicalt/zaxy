@@ -890,6 +890,63 @@ def test_ide_config_command_prints_codex_cli_command_without_install_flag() -> N
     assert "render_codex_mcp_add_command" not in result.output
 
 
+def test_ide_config_command_prints_hermes_yaml_config() -> None:
+    """Hermes print mode should emit the config.yaml shape without repo-local state."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "ide-config",
+            "hermes",
+            "--eventloom-path",
+            ".eventloom",
+            "--domain",
+            "zaxy",
+            "--zaxy-executable",
+            "/opt/zaxy/bin/zaxy",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "mcp_servers:" in result.output
+    assert "zaxy:" in result.output
+    assert "command: /opt/zaxy/bin/zaxy" in result.output
+    assert "- serve" in result.output
+    assert "memory_checkout" in result.output
+    assert "EVENTLOOM_PATH" not in result.output
+    assert "EVENTLOOM_THREAD" not in result.output
+    assert "ZAXY_DOMAIN" not in result.output
+
+
+def test_ide_config_command_writes_hermes_config(tmp_path: Path) -> None:
+    """Hermes install should merge into an explicit config.yaml path."""
+    runner = CliRunner()
+    target = tmp_path / "config.yaml"
+    target.write_text("model:\n  default: anthropic/claude-opus-4.6\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "ide-config",
+            "hermes",
+            "--install",
+            "--hermes-config",
+            str(target),
+            "--zaxy-executable",
+            "/opt/zaxy/bin/zaxy",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert f"Wrote Hermes MCP config to {target}" in result.output
+    config = target.read_text(encoding="utf-8")
+    assert "mcp_servers:" in config
+    assert "zaxy:" in config
+    assert "command: /opt/zaxy/bin/zaxy" in config
+    assert "EVENTLOOM_PATH" not in config
+
+
 def test_ide_config_command_writes_trusted_project_codex_config(tmp_path: Path) -> None:
     """Codex direct config writes should require explicit project trust acknowledgement."""
     runner = CliRunner()

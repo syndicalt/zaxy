@@ -6,6 +6,8 @@ import json
 import tomllib
 from pathlib import Path
 
+import yaml
+
 from zaxy.core import Context, HandoffBundle
 from zaxy.integrations import (
     list_framework_integration_specs,
@@ -15,6 +17,7 @@ from zaxy.integrations import (
     render_handoff_adapter,
     render_mcp_client_config,
     write_codex_mcp_config,
+    write_hermes_mcp_config,
     write_project_mcp_client_config,
 )
 
@@ -71,6 +74,71 @@ def test_renders_sse_config_with_domain_session_header() -> None:
 
     server = config["mcpServers"]["zaxy"]
     assert server["headers"]["x-zaxy-session-id"] == "gallerie-default"
+
+
+def test_renders_hermes_mcp_config_as_workspace_neutral_yaml_shape() -> None:
+    """Hermes uses global YAML, so Zaxy should not bake repo-local session state into it."""
+    config = render_mcp_client_config(
+        "hermes",
+        eventloom_path=".eventloom",
+        domain="zaxy",
+        zaxy_executable="/opt/zaxy/bin/zaxy",
+    )
+
+    server = config["mcp_servers"]["zaxy"]
+    assert server["command"] == "/opt/zaxy/bin/zaxy"
+    assert server["args"] == ["serve"]
+    assert server["timeout"] == 120
+    assert server["connect_timeout"] == 60
+    assert server["enabled"] is True
+    assert server["tools"]["resources"] is False
+    assert server["tools"]["prompts"] is False
+    assert "memory_checkout" in server["tools"]["include"]
+    assert server["env"]["NEO4J_URI"] == "bolt://localhost:7687"
+    assert "EVENTLOOM_PATH" not in server["env"]
+    assert "EVENTLOOM_THREAD" not in server["env"]
+    assert "ZAXY_DOMAIN" not in server["env"]
+
+
+def test_writes_hermes_mcp_config_without_removing_existing_settings(tmp_path: Path) -> None:
+    """Hermes install should merge into config.yaml and preserve unrelated YAML data."""
+    target = tmp_path / "config.yaml"
+    target.write_text(
+        "model:\n  default: anthropic/claude-opus-4.6\n"
+        "mcp_servers:\n"
+        "  filesystem:\n"
+        "    command: npx\n"
+        "    args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp']\n",
+        encoding="utf-8",
+    )
+
+    written = write_hermes_mcp_config(
+        config_path=target,
+        domain="zaxy",
+        zaxy_executable="/opt/zaxy/bin/zaxy",
+    )
+
+    config = yaml.safe_load(written.read_text(encoding="utf-8"))
+    assert written == target
+    assert config["model"]["default"] == "anthropic/claude-opus-4.6"
+    assert config["mcp_servers"]["filesystem"]["command"] == "npx"
+    assert config["mcp_servers"]["zaxy"]["command"] == "/opt/zaxy/bin/zaxy"
+    assert config["mcp_servers"]["zaxy"]["args"] == ["serve"]
+    assert "EVENTLOOM_PATH" not in config["mcp_servers"]["zaxy"]["env"]
+
+
+def test_hermes_mcp_config_refuses_existing_zaxy_without_force(tmp_path: Path) -> None:
+    """Hermes install should not replace an existing zaxy server unless forced."""
+    target = tmp_path / "config.yaml"
+    target.write_text("mcp_servers:\n  zaxy:\n    command: old-zaxy\n", encoding="utf-8")
+
+    try:
+        write_hermes_mcp_config(config_path=target, zaxy_executable="/opt/zaxy/bin/zaxy")
+    except FileExistsError as exc:
+        assert "already contains a zaxy MCP server" in str(exc)
+    else:  # pragma: no cover - assertion branch
+        raise AssertionError("existing Hermes zaxy server should require force")
+    assert "old-zaxy" in target.read_text(encoding="utf-8")
 
 
 def test_writes_cursor_project_mcp_config(tmp_path: Path) -> None:

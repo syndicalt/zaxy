@@ -27,6 +27,9 @@ zaxy init . \
   --preset local-codex \
   --capture start
 
+# Hermes Agent can use the first-class MCP config merge path.
+zaxy ide-config hermes --install
+
 # Optional: explicit local development setup if you want shell commands too.
 ./scripts/setup.sh
 

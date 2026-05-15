@@ -36,6 +36,7 @@ Installer helpers must follow these constraints:
 | Cursor | Project `.cursor/mcp.json`; global `~/.cursor/mcp.json` | top-level `mcpServers` | Project-local `.cursor/mcp.json` is safe. Global config should require an explicit global flag. |
 | VS Code | Workspace `.vscode/mcp.json`; user-profile `mcp.json` opened by command | top-level `servers` | Workspace `.vscode/mcp.json` is safe. User profile writes should prefer VS Code commands or an explicit global flag. |
 | Codex | User `~/.codex/config.toml`; trusted project `.codex/config.toml` | TOML tables under `[mcp_servers.<name>]` | CLI-assisted through `codex mcp add` by default. Direct TOML merge is available only for explicit user or trusted project scope. |
+| Hermes Agent | Global `~/.hermes/config.yaml` or `HERMES_HOME/config.yaml` | YAML mapping under `mcp_servers.<name>` | Global YAML merge is explicit through `zaxy ide-config hermes --install`; the generated server is workspace-neutral and does not pin repo-local Eventloom/session values. |
 
 ## Client Notes
 
@@ -76,6 +77,17 @@ project acknowledgement. The TOML merge preserves unrelated server entries,
 rejects malformed TOML, and refuses to replace an existing `zaxy` entry unless
 `--force` is passed.
 
+Hermes Agent documents MCP servers in the global YAML config at
+`~/.hermes/config.yaml`, under the top-level `mcp_servers` mapping. Zaxy treats
+that as a global integration point, so `zaxy ide-config hermes` renders YAML
+with `zaxy serve`, local Neo4j startup defaults, and model-facing memory tools,
+but without `EVENTLOOM_PATH`, `EVENTLOOM_THREAD`, or `ZAXY_DOMAIN`. At runtime,
+`zaxy serve` resolves the active workspace and default session from the process
+working directory, which prevents one repository from leaking into another.
+`zaxy ide-config hermes --install` merges into the Hermes YAML file, preserves
+unrelated settings and servers, rejects malformed YAML, and refuses to replace
+an existing `zaxy` entry unless `--force` is passed.
+
 ## Implementation Order
 
 1. Add Claude Code local hook detection/write coverage using the existing hook
@@ -84,7 +96,9 @@ rejects malformed TOML, and refuses to replace an existing `zaxy` entry unless
 Completed: the shared JSON merge engine and project-local write helpers now
 cover Cursor, VS Code, and Claude Code project MCP targets. Codex is now
 supported through CLI-assisted `codex mcp add` command rendering and explicit
-TOML merge support for user and trusted-project scopes.
+TOML merge support for user and trusted-project scopes. Hermes Agent is
+supported through workspace-neutral YAML rendering and explicit global
+`config.yaml` merge support.
 
 ## Sources
 
@@ -96,6 +110,7 @@ TOML merge support for user and trusted-project scopes.
 - [VS Code MCP servers](https://code.visualstudio.com/docs/copilot/customization/mcp-servers)
 - [Codex MCP](https://developers.openai.com/codex/mcp)
 - [Codex config reference](https://developers.openai.com/codex/config-reference)
+- [Hermes Agent MCP](https://github.com/NousResearch/hermes-agent/blob/main/website/docs/user-guide/features/mcp.md)
 
 See [mcp.md](mcp.md), [hooks.md](hooks.md), and [README.md](../README.md) for
 the current generated config and onboarding commands.

@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Any
 
 import typer
+import yaml
 
 from zaxy.benchmark import build_competitive_event_log, competitive_cases
 from zaxy.capabilities import (
@@ -77,6 +78,7 @@ from zaxy.integrations import (
     render_framework_install_command,
     render_mcp_client_config,
     write_codex_mcp_config,
+    write_hermes_mcp_config,
     write_project_mcp_client_config,
 )
 from zaxy.lifecycle import build_compaction_completed_event
@@ -585,7 +587,7 @@ def memory_refs_list(
 
 @app.command("ide-config")
 def ide_config(
-    client: str = typer.Argument(..., help="MCP client: claude-desktop, claude-code, codex, cursor, or vscode"),  # noqa: B008
+    client: str = typer.Argument(..., help="MCP client: claude-desktop, claude-code, codex, cursor, hermes, or vscode"),  # noqa: B008
     eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory for this client"),
     transport: str = typer.Option("stdio", help="Transport: stdio or sse"),
     host: str = typer.Option("127.0.0.1", help="SSE host when transport=sse"),
@@ -598,6 +600,7 @@ def ide_config(
     codex_config_scope: str | None = typer.Option(None, help="Codex direct config scope: project or user"),  # noqa: B008
     codex_home: Path | None = typer.Option(None, help="CODEX_HOME override for Codex user config"),  # noqa: B008
     codex_trusted_project: bool = typer.Option(False, "--codex-trusted-project", help="Acknowledge that Codex trusts this project config"),  # noqa: B008
+    hermes_config: Path | None = typer.Option(None, help="Hermes config.yaml path for --install"),  # noqa: B008
 ) -> None:
     """Print or install a first-run MCP client configuration fragment."""
     try:
@@ -623,6 +626,15 @@ def ide_config(
                 )
                 typer.echo("Run this Codex MCP install command:")
                 typer.echo(_shell_join(command))
+                return
+            if client.casefold().replace("_", "-") == "hermes":
+                written = write_hermes_mcp_config(
+                    config_path=hermes_config,
+                    zaxy_executable=zaxy_executable,
+                    force=force,
+                    domain=domain,
+                )
+                typer.echo(f"Wrote Hermes MCP config to {written}")
                 return
             written = write_project_mcp_client_config(
                 client,
@@ -657,6 +669,9 @@ def ide_config(
         )
     except (FileExistsError, PermissionError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
+    if client.casefold().replace("_", "-") == "hermes":
+        typer.echo(yaml.safe_dump(config, sort_keys=False).rstrip())
+        return
     typer.echo(json.dumps(config, indent=2, sort_keys=True))
 
 

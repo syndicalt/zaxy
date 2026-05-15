@@ -234,15 +234,17 @@ zaxy ide-config vscode --eventloom-path .eventloom
 zaxy ide-config vscode --install --workspace .
 zaxy ide-config codex --install --domain zaxy
 zaxy ide-config codex --install --codex-config-scope project --codex-trusted-project --workspace .
+zaxy ide-config hermes --install
 zaxy ide-config claude-desktop --eventloom-path .eventloom --domain zaxy
 ```
 
 By default, `ide-config` prints copyable config. The `--install` flag is
-limited to verified project-local JSON targets: `.mcp.json` for Claude Code,
-`.cursor/mcp.json` for Cursor, and `.vscode/mcp.json` for VS Code. Install mode
-merges the `zaxy` server entry into the documented root object, preserves
-unrelated servers, and refuses to replace an existing `zaxy` entry unless
-`--force` is passed.
+limited to verified targets: project-local `.mcp.json` for Claude Code,
+`.cursor/mcp.json` for Cursor, `.vscode/mcp.json` for VS Code, explicit Codex
+TOML scopes, and Hermes Agent's global `config.yaml`. Install mode merges the
+`zaxy` server entry into the documented root object, preserves unrelated
+servers, and refuses to replace an existing `zaxy` entry unless `--force` is
+passed.
 
 Codex is CLI-assisted by default: `zaxy ide-config codex --install` prints the
 official `codex mcp add zaxy -- zaxy serve` command. Codex config is kept
@@ -260,6 +262,17 @@ loads project config from trusted projects. User-scoped writes target
 `zaxy ide-config codex` without `--install` also prints the Codex CLI command,
 because Codex does not use the JSON config shapes consumed by Claude, Cursor, or
 VS Code.
+
+Hermes Agent uses a global YAML config, normally `~/.hermes/config.yaml` or
+`HERMES_HOME/config.yaml`, with MCP servers under `mcp_servers`. Zaxy keeps the
+Hermes server workspace-neutral for the same reason as Codex: the global config
+may be reused across repositories. `zaxy ide-config hermes` prints the YAML
+fragment. `zaxy ide-config hermes --install` merges it into the Hermes config,
+or `--hermes-config /path/to/config.yaml` can target an explicit file. The
+generated entry exposes the model-facing memory tools and local Neo4j startup
+defaults, but does not write repo-specific `EVENTLOOM_PATH`, `EVENTLOOM_THREAD`,
+or `ZAXY_DOMAIN`; `zaxy serve` derives those from the current workspace at
+startup.
 
 Codex troubleshooting: prefer launching restored work with terminal-level
 `codex resume ...` rather than calling `/resume` from inside an already running

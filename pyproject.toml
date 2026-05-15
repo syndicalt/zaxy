@@ -36,6 +36,7 @@ dependencies = [
     "prometheus-client>=0.20.0",
     "PyJWT[crypto]>=2.8.0",
     "tomlkit>=0.13.0",
+    "PyYAML>=6.0.0",
 ]
 
 [project.optional-dependencies]
@@ -68,6 +69,7 @@ dev = [
     "ruff>=0.4.0",
     "mypy>=1.10.0",
     "types-requests>=2.32.0",
+    "types-PyYAML>=6.0.12",
 ]
 
 [project.scripts]

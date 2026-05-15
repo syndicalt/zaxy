@@ -287,6 +287,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Safe project-local MCP config write-and-merge helpers for Claude Code, Cursor, and VS Code
 - [x] Codex MCP install command rendering via `codex mcp add`
 - [x] Explicit Codex TOML merge support for user and trusted-project config scopes
+- [x] First-class Hermes Agent MCP config rendering and workspace-neutral YAML merge support
 - [x] Claude Code local hook merge and parsed install detection coverage
 - [x] Focused full-suite integration check helper that starts, requires, or skips Neo4j test services explicitly
 - [x] Optional framework extras and install hints for LangGraph, CrewAI, and AutoGen
@@ -350,8 +351,8 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 | Metric | Value |
 |--------|-------|
-| Tests | 797 passed, 9 deselected |
-| Coverage | 92.36% |
+| Tests | 1010 passed, 10 deselected |
+| Coverage | 91.97% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
