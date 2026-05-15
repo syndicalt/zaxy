@@ -218,7 +218,13 @@ zaxy benchmark-compare reports/benchmarks/live-benchmark.json \
 
 For the full 100-question LongMemEval-compatible run, use the same quality
 floors and set latency budgets from the release environment. The current beta
-floor report is archived at `reports/benchmarks/live-benchmark.json`.
+floor report is archived at `reports/benchmarks/live-benchmark.json`: mean
+score 0.950, Answer@5 0.950, citation coverage 1.000, and R@1/R@5/R@10 0.990.
+The current same-harness BM25 comparison is archived at
+`reports/benchmarks/longmemeval-100-comparison/live-benchmark.json`: BM25 R@5
+0.840 versus Zaxy checkout R@5 0.990 on the same 100-question slice. See
+[benchmarks.md](benchmarks.md) for public copy rules and external disclosure
+links for MemPalace, Mem0, and Agent Memory.
 
 For consolidation safety checks, use the identity-collapse workload. It creates
 near-duplicate source records with distinct durable identifiers and adds an

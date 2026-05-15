@@ -34,6 +34,21 @@ surface first. The benchmark lane should stay architecture-driven:
 5. Auditability: replay how a memory was written, projected, retrieved, and
    reinforced.
 
+## Public Benchmark Posture
+
+The current Zaxy public benchmark hub is [benchmarks.md](benchmarks.md). Zaxy's
+same-harness evidence should lead with the archived LongMemEval-compatible
+100-question run: mean score 0.950, Answer@5 0.950, citation coverage 1.000,
+and R@1/R@5/R@10 0.990. The same-harness BM25 comparison should be cited as a
+separate run: BM25 R@5 0.840 versus Zaxy checkout R@5 0.990.
+
+Competitor numbers belong in an external-disclosure table, not a universal
+leaderboard. MemPalace publicly reports 96.6% raw LongMemEval R@5 and 98.4%
+held-out hybrid R@5. Agent Memory publicly reports 95.2% R@5 on LongMemEval-S.
+Mem0 publicly reports +26% Accuracy over OpenAI Memory on LOCOMO, which is a
+different metric family. These claims are important market context, but they are
+not same-harness Zaxy results.
+
 ## Near-Term Roadmap
 
 - Keep LangGraph and CrewAI native-preview adapters dependency-light and use
@@ -45,4 +60,5 @@ surface first. The benchmark lane should stay architecture-driven:
   retrieval settings, and exact scoring rules.
 
 Related pages: [benchmark-review.md](benchmark-review.md),
-[integrations.md](integrations.md), and [architecture.md](architecture.md).
+[benchmarks.md](benchmarks.md), [integrations.md](integrations.md), and
+[architecture.md](architecture.md).

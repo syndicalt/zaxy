@@ -1,5 +1,10 @@
 # Zaxy Suite-v1 Benchmark Review
 
+This page preserves the suite-v1 representative context benchmark review. For
+the current public LongMemEval-compatible headline, BM25 comparison, and
+external MemPalace, Mem0, and Agent Memory disclosures, start with
+[benchmarks.md](benchmarks.md).
+
 Author: Nicholas Blanchard
 
 Generated result reviewed: May 8, 2026
@@ -137,9 +142,11 @@ Paired comparisons:
 | Zaxy vs md+vector | +0.4795 | [0.4431, 0.5154] | 0.0001 |
 | Zaxy vs vector | +0.4795 | [0.4431, 0.5154] | 0.0001 |
 
-The full machine-readable and Markdown reports are available in
-[live-benchmark.json](../reports/benchmarks/live-benchmark.json) and
-[live-benchmark.md](../reports/benchmarks/live-benchmark.md).
+The current `reports/benchmarks/live-benchmark.*` files now hold the latest
+LongMemEval-compatible release evidence. The suite-v1 figures above are retained
+in this review as the audited representative-context result; regenerate them
+with the suite workload described in [testing.md](testing.md) when a fresh
+same-file report is needed.
 
 ## Why Zaxy Succeeds On This Workload
 

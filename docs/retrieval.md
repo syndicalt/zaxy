@@ -138,6 +138,14 @@ live retrieval run. It emits the four MemPalace-comparable lanes, frozen
 versions, fingerprints, event/query counts, product claims, and required metrics
 without requiring Neo4j or provider quota.
 
+The current public LongMemEval-compatible evidence is summarized in
+[benchmarks.md](benchmarks.md). The archived Zaxy-only 100-question report
+shows mean score 0.950, Answer@5 0.950, citation coverage 1.000, and
+R@1/R@5/R@10 0.990. The archived same-harness BM25 comparison shows BM25 R@5
+0.840 versus Zaxy checkout R@5 0.990. External MemPalace, Mem0, and Agent Memory
+numbers should be described as external disclosures until those systems run
+through the same Zaxy harness.
+
 The next retrieval-quality work should close the practical ergonomics gap with
 QMD-style search sidecars: richer assembly lifecycle hooks, stronger local
 embedding providers, and broader degraded-mode observability. These should

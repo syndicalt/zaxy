@@ -308,6 +308,38 @@ pre {
   font-weight: 750;
 }
 
+.benchmark-table {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  background: white;
+  border-radius: 8px;
+  margin: 18px 0;
+}
+
+.benchmark-table table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 760px;
+}
+
+.benchmark-table th,
+.benchmark-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+  line-height: 1.45;
+}
+
+.benchmark-table th {
+  color: var(--ink);
+  background: var(--band);
+}
+
+.benchmark-table tr:last-child td {
+  border-bottom: 0;
+}
+
 footer {
   display: flex;
   justify-content: space-between;

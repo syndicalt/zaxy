@@ -86,6 +86,7 @@ See [LLM Packet Analyzer](docs/packet-analyzer.md).
 - Eventloom contract: `docs/eventloom.md`
 - Graph schema: `docs/graph-schema.md`
 - Retrieval: `docs/retrieval.md`
+- Benchmarks: `docs/benchmarks.md`
 - LLM packet analyzer: `docs/packet-analyzer.md`
 - Embeddings: `docs/embeddings.md`
 - Security: `docs/security.md`
@@ -160,6 +161,18 @@ scripts/live-benchmark.sh --embedding-provider openai --workload frozen --runs 1
 
 # Representative benchmark suite: temporal memory + docs + transcripts + mixed context
 scripts/live-benchmark.sh --embedding-provider openai --workload suite --subjects 100 --documents 250 --sessions 50 --runs 1 --reset-graph
+
+# LongMemEval-compatible memory benchmark and BM25 comparison
+zaxy benchmark --embedding-provider hash --workload longmemeval \
+  --dataset .cache/zaxy/benchmarks/longmemeval_oracle.json \
+  --questions 100 --runs 1 --limit 10 --zaxy-backend checkout \
+  --baseline-backends bm25 --embedding-cache .cache/zaxy/longmemeval-embeddings.json
+zaxy benchmark --output-dir reports/benchmarks/longmemeval-100-comparison \
+  --embedding-provider hash --workload longmemeval \
+  --dataset .cache/zaxy/benchmarks/longmemeval_oracle.json \
+  --questions 100 --runs 1 --limit 5 --baseline-backends bm25 \
+  --zaxy-backend checkout --reuse-projection \
+  --embedding-cache .cache/zaxy/longmemeval-embeddings.json
 
 # Production deployment preflight
 scripts/validate-deployment.sh --root .

@@ -25,6 +25,7 @@ REQUIRED_DOCS = [
     "docs/operations.md",
     "docs/deployment.md",
     "docs/testing.md",
+    "docs/benchmarks.md",
     "docs/benchmark-review.md",
     "docs/consolidation.md",
     "docs/api.md",
@@ -131,16 +132,53 @@ def test_public_site_benchmark_claim_is_scoped_to_fixture() -> None:
     """Benchmark copy should not overclaim against broad markdown/vector systems."""
     html = Path("site/index.html").read_text(encoding="utf-8")
 
-    assert "Representative context benchmark" in html
+    assert "Benchmark evidence" in html
+    assert "LongMemEval-compatible" in html
+    assert "BM25 baseline" in html
+    assert "MemPalace" in html
+    assert "Mem0" in html
+    assert "Agent Memory" in html
     assert "text-embedding-3-small" in html
     assert "1.000" in html
     assert "+0.480" in html
+    assert "0.950" in html
+    assert "0.990" in html
+    assert "0.840" in html
     assert "650 paired queries" in html
-    assert "not a universal benchmark" in html
+    assert "external disclosures" in html
+    assert "not same-harness results" in html
     assert "reports/benchmarks/live-benchmark.md" in html
+    assert "reports/benchmarks/longmemeval-100-comparison/live-benchmark.md" in html
+    assert "docs/benchmarks.md" in html
     assert "docs/benchmark-review.md" in html
     assert "production-grade vector RAG" not in html
     assert "destroyed" not in html.casefold()
+
+
+def test_benchmark_docs_disclose_harness_external_claims_and_sources() -> None:
+    """Benchmark docs should separate Zaxy-run evidence from competitor disclosures."""
+    text = Path("docs/benchmarks.md").read_text(encoding="utf-8")
+
+    assert "LongMemEval-compatible" in text
+    assert "0.950" in text
+    assert "0.990" in text
+    assert "0.840" in text
+    assert "BM25" in text
+    assert "same-harness" in text
+    assert "external disclosures" in text
+    assert "MemPalace" in text
+    assert "96.6%" in text
+    assert "98.4%" in text
+    assert "Agent Memory" in text
+    assert "95.2%" in text
+    assert "Mem0" in text
+    assert "+26% Accuracy" in text
+    assert "https://www.agent-memory.dev/" in text
+    assert "https://github.com/MemPalace/mempalace/blob/develop/benchmarks/BENCHMARKS.md" in text
+    assert "https://github.com/mem0ai/mem0/blob/main/LLM.md" in text
+    assert "../reports/benchmarks/live-benchmark.md" in text
+    assert "../reports/benchmarks/longmemeval-100-comparison/live-benchmark.md" in text
+    assert "not same-harness results" in text
 
 
 def test_public_site_links_to_all_core_docs() -> None:

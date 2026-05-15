@@ -59,11 +59,11 @@
     </section>
 
     <section class="proof-strip" aria-label="Project status">
-      <span>696 tests</span>
-      <span>&gt;=91.89% coverage</span>
+      <span>1005 tests</span>
+      <span>92.04% coverage</span>
       <span>ruff clean</span>
       <span>mypy clean</span>
-      <span>release gate ready</span>
+      <span>PyPI 0.2.0</span>
     </section>
 
     <section id="why" class="section">
@@ -192,21 +192,48 @@
 
     <section id="benchmarks" class="section">
       <div class="section-heading">
-        <p class="eyebrow">Representative context benchmark</p>
-        <h2>Zaxy wins on a 650-query suite across memory, docs, transcripts, and mixed context.</h2>
+        <p class="eyebrow">Benchmark evidence</p>
+        <h2>Zaxy now publishes LongMemEval-compatible memory results alongside the 650-query context suite.</h2>
         <p>
-          This is not a universal benchmark against every markdown or vector RAG
-          implementation. It is a paired OpenAI embedding evaluation over a
-          generated suite with current facts, historical facts, graph traversal,
-          cited documents, session transcripts, and mixed cross-lane context.
+          The headline Zaxy run scores <strong>0.950</strong> mean,
+          <strong>0.950</strong> Answer@5, <strong>1.000</strong> citation
+          coverage, and <strong>0.990</strong> R@1/R@5/R@10 on a 100-question
+          LongMemEval-compatible slice. A same-harness BM25 baseline reaches
+          <strong>0.840</strong> R@5 on the same slice. MemPalace, Mem0, and
+          Agent Memory numbers below are external disclosures; they are not same-harness results.
         </p>
       </div>
       <div class="value-grid">
-        <article><h3>1.000</h3><p>Mean Zaxy score with OpenAI <code>text-embedding-3-small</code> on the suite-v1 workload: 850 events and 650 paired queries.</p></article>
-        <article><h3>+0.480</h3><p>Mean score delta versus markdown+vector and vector baselines; paired randomization p-value was 0.0001.</p></article>
-        <article><h3>404 tokens</h3><p>Approximate returned context for Zaxy, versus 960 tokens for vector and markdown+vector on the same workload.</p></article>
+        <article><h3>0.990 R@5</h3><p>Zaxy checkout on the archived 100-query LongMemEval-compatible run with cited memory output.</p></article>
+        <article><h3>0.840 R@5</h3><p>BM25 baseline on the same 100-query LongMemEval-compatible comparison run.</p></article>
+        <article><h3>1.000</h3><p>Mean Zaxy score with OpenAI <code>text-embedding-3-small</code> on the suite-v1 workload: 850 events and 650 paired queries, a +0.480 mean delta versus vector and markdown+vector baselines.</p></article>
       </div>
-      <p><a href="reports/benchmarks/live-benchmark.md">Read the full benchmark report</a> · <a href="docs/benchmark-review.md">Read the academic review</a></p>
+      <div class="benchmark-table" role="region" aria-label="Benchmark comparison table">
+        <table>
+          <thead>
+            <tr>
+              <th>System</th>
+              <th>Metric</th>
+              <th>Reported result</th>
+              <th>Evidence type</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Zaxy</td><td>LongMemEval-compatible R@5</td><td>0.990</td><td>Same-harness archived report</td></tr>
+            <tr><td>Zaxy</td><td>LongMemEval-compatible Answer@5</td><td>0.950 headline; 0.880 in BM25 comparison</td><td>Same-harness archived reports</td></tr>
+            <tr><td>BM25 baseline</td><td>LongMemEval-compatible R@5</td><td>0.840</td><td>Same-harness archived report</td></tr>
+            <tr><td>MemPalace</td><td>LongMemEval R@5</td><td>96.6% raw; 98.4% held-out hybrid</td><td>External disclosure</td></tr>
+            <tr><td>Agent Memory</td><td>LongMemEval-S R@5</td><td>95.2%</td><td>External disclosure</td></tr>
+            <tr><td>Mem0</td><td>LOCOMO accuracy</td><td>+26% Accuracy over OpenAI Memory</td><td>External disclosure; different metric</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        <a href="docs/benchmarks.md">Read the benchmark hub</a> ·
+        <a href="reports/benchmarks/live-benchmark.md">Read the Zaxy LongMemEval-compatible report</a> ·
+        <a href="reports/benchmarks/longmemeval-100-comparison/live-benchmark.md">Read the BM25 comparison</a> ·
+        <a href="docs/benchmark-review.md">Read the suite-v1 review</a>
+      </p>
     </section>
 
     <section id="install" class="section install">
@@ -248,6 +275,7 @@ scripts/release-check.sh --root .</code></pre>
         <a href="docs/operations.md">Operations</a>
         <a href="docs/deployment.md">Deployment</a>
         <a href="docs/testing.md">Testing</a>
+        <a href="docs/benchmarks.md">Benchmarks</a>
         <a href="docs/benchmark-review.md">Benchmark review</a>
         <a href="docs/consolidation.md">Consolidation</a>
         <a href="docs/api.md">Python API</a>
@@ -256,7 +284,7 @@ scripts/release-check.sh --root .</code></pre>
   </main>
 
   <footer>
-    <span>Zaxy v0.1.0 - MIT</span>
+    <span>Zaxy v0.2.0 - MIT</span>
     <span><a href="README.md">README</a> <a href="docs/runbook.md">Runbook</a></span>
   </footer>
 </body>
