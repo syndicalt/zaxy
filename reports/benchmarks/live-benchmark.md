@@ -1,56 +1,29 @@
 # Live Retrieval Benchmark
 
-- Generated: `2026-05-08T04:29:10Z`
-- Embedding provider: `openai:text-embedding-3-small`
-- Workload: `suite-v1`
-- Workload SHA-256: `fd3e2679e37b0953bb2c2ca90f5b98b803a3983b7f0661a6a706e0ef2b41acae`
-- Events: `850`
-- Queries: `650`
+- Generated: `2026-05-15T13:05:54Z`
+- Embedding provider: `hash:1536`
+- Workload: `longmemeval-cleaned-v1`
+- Workload SHA-256: `7bfb3ce4f3d5b87d1fc8045bb84e40b3195eb13ed711950365efbb721b9de10e`
+- Events: `1559`
+- Queries: `100`
 - Subjects: `100`
-- Documents: `250`
-- Sessions: `50`
-- Lanes: `current, temporal, traversal, document, transcript, mixed`
+- Sessions: `265`
+- Lanes: `longmemeval`
 
-| Backend | Mean score | p50 ms | p95 ms | p99 ms | Returned bytes | Approx tokens |
-|---------|------------|--------|--------|--------|----------------|---------------|
-| md | 0.005 | 0.01 | 0.22 | 0.22 | 2371 | 593 |
-| md+vector | 0.520 | 39.91 | 84.40 | 92.60 | 3839 | 960 |
-| vector | 0.520 | 260.24 | 559.89 | 2325.21 | 3839 | 960 |
-| zaxy | 1.000 | 94.01 | 126.26 | 133.60 | 1634 | 404 |
+| Backend | Mean score | Identity recall | Source recall | Citation coverage | Answer@5 | Recall@1 | Recall@5 | Recall@10 | p50 ms | p95 ms | p99 ms | Returned bytes | Approx tokens |
+|---------|------------|-----------------|---------------|-------------------|----------|----------|----------|-----------|--------|--------|--------|----------------|---------------|
+| zaxy | 0.950 | 0.949 |  | 1.000 | 0.950 | 0.990 | 0.990 | 0.990 | 1415.99 | 2007.56 | 3171.29 | 15808 | 3951 |
 
 ## Category summaries
 
-| Backend | Category | Queries | Mean score | Misses |
-|---------|----------|---------|------------|--------|
-| md | current | 100 | 0.000 | 100 |
-| md | document | 250 | 0.000 | 250 |
-| md | mixed | 50 | 0.000 | 50 |
-| md | temporal | 100 | 0.000 | 100 |
-| md | transcript | 50 | 0.000 | 50 |
-| md | traversal | 100 | 0.035 | 97 |
-| md+vector | current | 100 | 0.510 | 49 |
-| md+vector | document | 250 | 0.456 | 158 |
-| md+vector | mixed | 50 | 0.307 | 50 |
-| md+vector | temporal | 100 | 0.160 | 84 |
-| md+vector | transcript | 50 | 0.980 | 1 |
-| md+vector | traversal | 100 | 0.930 | 7 |
-| vector | current | 100 | 0.510 | 49 |
-| vector | document | 250 | 0.456 | 158 |
-| vector | mixed | 50 | 0.307 | 50 |
-| vector | temporal | 100 | 0.160 | 84 |
-| vector | transcript | 50 | 0.980 | 1 |
-| vector | traversal | 100 | 0.930 | 7 |
-| zaxy | current | 100 | 1.000 | 0 |
-| zaxy | document | 250 | 1.000 | 0 |
-| zaxy | mixed | 50 | 1.000 | 0 |
-| zaxy | temporal | 100 | 1.000 | 0 |
-| zaxy | transcript | 50 | 1.000 | 0 |
-| zaxy | traversal | 100 | 1.000 | 0 |
+| Backend | Category | Queries | Mean score | Misses | Source recall | Citation coverage | Answer@5 | Recall@1 | Recall@5 | Recall@10 |
+|---------|----------|---------|------------|--------|---------------|-------------------|----------|----------|----------|-----------|
+| zaxy | longmemeval:multi-session | 40 | 0.975 | 1 |  | 1.000 | 0.975 | 1.000 | 1.000 | 1.000 |
+| zaxy | longmemeval:temporal-reasoning | 60 | 0.933 | 4 |  | 1.000 | 0.933 | 0.983 | 0.983 | 0.983 |
 
-## Paired comparisons
+## Miss taxonomy
 
-| Target | Baseline | Mean score delta | 95% CI | p-value | Significant |
-|--------|----------|------------------|--------|---------|-------------|
-| zaxy | md | 0.9946 | [0.9885, 0.9992] | 0.0001 | yes |
-| zaxy | md+vector | 0.4795 | [0.4431, 0.5154] | 0.0001 | yes |
-| zaxy | vector | 0.4795 | [0.4431, 0.5154] | 0.0001 | yes |
+| Backend | Miss category | Count |
+|---------|---------------|-------|
+| zaxy | retrieval_miss | 1 |
+| zaxy | synthesis_miss | 4 |

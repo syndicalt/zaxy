@@ -58,6 +58,23 @@ def aggregate_candidate_projection(query: str, contexts: list[str]) -> EvidenceP
     )
 
 
+def aggregate_evidence_score(query: str, context: str) -> int:
+    """Return whether one context contains typed evidence before full synthesis succeeds."""
+    score = 0
+    for ledger in (
+        build_count_ledger(query, [context]),
+        build_currency_ledger(query, [context]),
+        build_duration_ledger(query, [context]),
+        build_date_ledger(query, [context]),
+    ):
+        included = ledger.included()
+        if not included:
+            continue
+        score += len(included) * 3
+        score += max(row.relevance for row in included)
+    return score
+
+
 def aggregate_candidate_lines(query: str, contexts: list[str]) -> list[str]:
     """Render deterministic aggregate answer candidates from cited contexts."""
     return list(aggregate_candidate_projection(query, contexts).lines)

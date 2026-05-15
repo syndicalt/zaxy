@@ -15,7 +15,9 @@ from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
+
+from neo4j import AsyncDriver
 
 from zaxy.benchmark import (
     BenchmarkCase,
@@ -31,6 +33,7 @@ from zaxy.event import EventLog
 from zaxy.extract import extract
 from zaxy.graph import GraphStore
 from zaxy.query import QueryRouter
+from zaxy.retrieval_intent import classify_retrieval_intent
 from zaxy.retrieval_plan import (
     absence_check_bundle,
     bridge_source_lane_queries,
@@ -294,6 +297,69 @@ class AsyncRetriever(Protocol):
         """Return context strings for a query."""
 
 
+def benchmark_case_scope_terms(case: BenchmarkCase) -> tuple[str, ...]:
+    """Return deterministic corpus-scope terms for benchmark cases with isolated domains."""
+    if case.name.startswith("longmemeval-"):
+        question_id = case.name.removeprefix("longmemeval-")
+        if question_id:
+            return (f"longmemeval/{question_id}/",)
+    return ()
+
+
+def benchmark_query_scope_resolver(cases: Sequence[BenchmarkCase]) -> Callable[[str], tuple[str, ...]]:
+    """Build a query-to-scope resolver for benchmark retrieval isolation."""
+    scope_by_query: dict[str, tuple[str, ...] | None] = {}
+    for case in cases:
+        terms = benchmark_case_scope_terms(case)
+        if not terms:
+            continue
+        existing = scope_by_query.get(case.query)
+        if existing is None and case.query in scope_by_query:
+            continue
+        if existing is not None and existing != terms:
+            scope_by_query[case.query] = None
+            continue
+        scope_by_query[case.query] = terms
+
+    def resolve(query: str) -> tuple[str, ...]:
+        return scope_by_query.get(query) or ()
+
+    return resolve
+
+
+def _synthesis_context_pool(graph_results: list[str], lexical_results: list[str]) -> list[str]:
+    """Return cited contexts available to synthesis, preferring graph-salient turns."""
+    results: list[str] = []
+    seen: set[str] = set()
+    for context in [*graph_results, *lexical_results]:
+        if context in seen:
+            continue
+        seen.add(context)
+        results.append(context)
+    return results
+
+
+def _context_matches_scope(context: str, scope_terms: tuple[str, ...]) -> bool:
+    if not scope_terms:
+        return True
+    lowered = context.casefold()
+    return any(term.casefold() in lowered for term in scope_terms)
+
+
+def _filter_contexts_by_scope(
+    contexts: Sequence[str],
+    scope_terms: tuple[str, ...],
+) -> list[str]:
+    if not scope_terms:
+        return list(contexts)
+    return [context for context in contexts if _context_matches_scope(context, scope_terms)]
+
+
+def _scoped_fetch_limit(limit: int) -> int:
+    """Return a bounded overfetch size for post-retrieval domain filtering."""
+    return max(limit, min(max(limit, 1) * 8, 256))
+
+
 class CachedEmbeddingProvider:
     """In-memory embedding cache for benchmark runs.
 
@@ -532,6 +598,57 @@ class RankFusionRetriever:
         return ranked[:limit]
 
 
+class EvidenceFrontierRetriever:
+    """Source-first retriever that ranks an answerable evidence frontier.
+
+    The frontier is intentionally local and deterministic: it expands the
+    query into safe source-memory paraphrases, gathers candidates with BM25,
+    then reranks by direct term coverage, first-person evidence, source
+    salience, citation/provenance signals, and provenance-group diversity.
+    """
+
+    def __init__(self, corpus: tuple[BenchmarkChunk, ...]) -> None:
+        self._corpus = corpus
+        self._bm25 = BM25Retriever(corpus)
+
+    def query(
+        self,
+        query: str,
+        temporal_point: str | None = None,
+        limit: int = 10,
+    ) -> list[str]:
+        """Return evidence-rich source contexts for the query."""
+        if limit <= 0:
+            return []
+        candidate_limit = max(limit * 8, 24)
+        candidates: list[str] = []
+        seen: set[str] = set()
+        for frontier_query in _evidence_frontier_queries(query):
+            for context in self._bm25.query(
+                frontier_query,
+                temporal_point=temporal_point,
+                limit=candidate_limit,
+            ):
+                if context in seen:
+                    continue
+                seen.add(context)
+                candidates.append(context)
+        if not candidates:
+            return []
+        query_terms = set(_evidence_query_terms(query))
+        scored = [
+            (
+                _evidence_frontier_score(query, query_terms, context),
+                index,
+                context,
+            )
+            for index, context in enumerate(candidates)
+        ]
+        scored = [(score, index, context) for score, index, context in scored if score > 0.0]
+        scored.sort(key=lambda item: (-item[0], item[1]))
+        return _diverse_frontier_contexts([context for _, _, context in scored], limit=limit)
+
+
 class CentroidConsolidationRetriever:
     """Centroid-style consolidation baseline that keeps one representative text.
 
@@ -571,15 +688,34 @@ def _build_source_lane_retriever(
     keeps entity names, identifiers, and citations sharp; vector retrieval adds
     the synonym bridge needed for natural-language model questions.
     """
-    if isinstance(provider, HashEmbeddingProvider):
+    if _is_hash_embedding_provider(provider):
         return BM25Retriever(corpus)
+    frontier = EvidenceFrontierRetriever(corpus)
     return RankFusionRetriever(
         {
+            "frontier": frontier,
             "bm25": BM25Retriever(corpus),
             "vector": VectorRetriever(corpus, provider),
         },
-        weights={"bm25": 1.25, "vector": 1.0},
+        weights={"frontier": 1.6, "bm25": 1.25, "vector": 1.0},
     )
+
+
+def _is_hash_embedding_provider(provider: EmbeddingProvider) -> bool:
+    """Return whether a possibly wrapped provider is deterministic hash-based."""
+    current: object = provider
+    seen: set[int] = set()
+    while True:
+        if isinstance(current, HashEmbeddingProvider):
+            return True
+        object_id = id(current)
+        if object_id in seen:
+            return False
+        seen.add(object_id)
+        wrapped = getattr(current, "_provider", None)
+        if wrapped is None:
+            return False
+        current = wrapped
 
 
 class ZaxyRetriever:
@@ -590,10 +726,12 @@ class ZaxyRetriever:
         router: QueryRouter,
         provider: EmbeddingProvider,
         lexical_retriever: Retriever | None = None,
+        scope_resolver: Callable[[str], tuple[str, ...]] | None = None,
     ) -> None:
         self._router = router
         self._provider = provider
         self._lexical_retriever = lexical_retriever
+        self._scope_resolver = scope_resolver
 
     def query(
         self,
@@ -615,13 +753,18 @@ class ZaxyRetriever:
     ) -> list[str]:
         """Return Zaxy graph contexts inside an existing event loop."""
         embedding = self._provider.embed(query)
+        scope_terms = self._scope_terms(query)
+        graph_limit = _scoped_fetch_limit(limit) if scope_terms else limit
         chunks = await self._router.query(
             query,
             temporal_point=temporal_point,
-            limit=limit,
+            limit=graph_limit,
             embedding=embedding,
         )
-        graph_results = [_benchmark_context_from_chunk(chunk) for chunk in chunks]
+        graph_results = _filter_contexts_by_scope(
+            [_benchmark_context_from_chunk(chunk) for chunk in chunks],
+            scope_terms,
+        )[:limit]
         if (
             self._lexical_retriever is None
             or temporal_point is not None
@@ -629,28 +772,48 @@ class ZaxyRetriever:
         ):
             return graph_results
         lexical_limit = source_lane_candidate_limit(query, limit=limit)
+        if scope_terms:
+            lexical_limit = _scoped_fetch_limit(lexical_limit)
         lexical_results = self._source_lane_results(
             source_lane_queries(query, graph_results),
             temporal_point=temporal_point,
             limit=lexical_limit,
+            scope_terms=scope_terms,
         )
         lexical_results = filter_superseded_preference_source_results(
             graph_results,
             lexical_results,
         )
-        synthesis_bundle = source_synthesis_bundle(
-            query=query,
-            source_results=lexical_results,
-            limit=limit,
-            preferred_source_groups=[
-                source_context_group(result)
-                for result in graph_results
-            ],
-        ) or absence_check_bundle(
-            query=query,
-            source_results=lexical_results,
-            limit=limit,
-        )
+        synthesis_sources = _synthesis_context_pool(graph_results, lexical_results)
+        intent = classify_retrieval_intent(query, limit=limit)
+        if "absence_check" in intent.reasons:
+            synthesis_bundle = absence_check_bundle(
+                query=query,
+                source_results=lexical_results,
+                limit=limit,
+            ) or source_synthesis_bundle(
+                query=query,
+                source_results=synthesis_sources,
+                limit=limit,
+                preferred_source_groups=[
+                    source_context_group(result)
+                    for result in graph_results
+                ],
+            )
+        else:
+            synthesis_bundle = source_synthesis_bundle(
+                query=query,
+                source_results=synthesis_sources,
+                limit=limit,
+                preferred_source_groups=[
+                    source_context_group(result)
+                    for result in graph_results
+                ],
+            ) or absence_check_bundle(
+                query=query,
+                source_results=lexical_results,
+                limit=limit,
+            )
         fused = RankFusionRetriever(
             {
                 "graph": _StaticRetriever(tuple(graph_results)),
@@ -673,6 +836,7 @@ class ZaxyRetriever:
         *,
         temporal_point: str | None,
         limit: int,
+        scope_terms: tuple[str, ...] = (),
     ) -> list[str]:
         """Return merged source-lane hits across original and expanded queries."""
         if self._lexical_retriever is None or limit <= 0:
@@ -698,14 +862,24 @@ class ZaxyRetriever:
         for source_query in queries[1:]:
             expanded_results.extend(collect(source_query))
 
-        ordered_candidates = [
-            *bridge_results,
-            *expanded_results,
-            *primary_results,
-        ]
+        intent = classify_retrieval_intent(queries[0], limit=limit)
+        if {"aggregation", "aggregation_question"} & set(intent.reasons):
+            ordered_candidates = [
+                *bridge_results,
+                *expanded_results,
+                *primary_results,
+            ]
+        else:
+            ordered_candidates = [
+                *bridge_results,
+                *primary_results,
+                *expanded_results,
+            ]
         results: list[str] = []
         seen: set[str] = set()
         for context in ordered_candidates:
+            if not _context_matches_scope(context, scope_terms):
+                continue
             if context in seen:
                 continue
             seen.add(context)
@@ -714,12 +888,18 @@ class ZaxyRetriever:
                 break
         return results
 
+    def _scope_terms(self, query: str) -> tuple[str, ...]:
+        if self._scope_resolver is None:
+            return ()
+        return self._scope_resolver(query)
+
     def as_checkout_retriever(self) -> ZaxyCheckoutRetriever:
         """Return a checkout benchmark backend over the same live graph."""
         return ZaxyCheckoutRetriever(
             self._router,
             self._provider,
             lexical_retriever=self._lexical_retriever,
+            scope_resolver=self._scope_resolver,
         )
 
 
@@ -736,16 +916,23 @@ class ZaxyCheckoutRetriever(ZaxyRetriever):
         if temporal_point is not None:
             return await super().query_async(query, temporal_point=temporal_point, limit=limit)
         embedding = self._provider.embed(query)
+        scope_terms = self._scope_terms(query)
+        graph_limit = _scoped_fetch_limit(limit) if scope_terms else limit
         chunks = await self._router.query(
             query,
             temporal_point=temporal_point,
-            limit=limit,
+            limit=graph_limit,
             embedding=embedding,
         )
-        graph_contexts = [_context_from_chunk(chunk) for chunk in chunks]
+        scoped_chunks = [
+            chunk
+            for chunk in chunks
+            if _context_matches_scope(_benchmark_context_from_chunk(chunk), scope_terms)
+        ][:limit]
+        graph_contexts = [_context_from_chunk(chunk) for chunk in scoped_chunks]
         lexical_contexts = self._checkout_source_contexts(
             query=query,
-            graph_results=[_benchmark_context_from_chunk(chunk) for chunk in chunks],
+            graph_results=[context.content for context in graph_contexts],
             limit=limit,
         )
         assembly = ContextAssembly(
@@ -773,10 +960,14 @@ class ZaxyCheckoutRetriever(ZaxyRetriever):
         if self._lexical_retriever is None or not should_query_source_lane(query, limit=limit):
             return []
         lexical_limit = source_lane_candidate_limit(query, limit=limit)
+        scope_terms = self._scope_terms(query)
+        if scope_terms:
+            lexical_limit = _scoped_fetch_limit(lexical_limit)
         lexical_results = self._source_lane_results(
             source_lane_queries(query, graph_results),
             temporal_point=None,
             limit=lexical_limit,
+            scope_terms=scope_terms,
         )
         lexical_results = filter_superseded_preference_source_results(
             graph_results,
@@ -1974,6 +2165,7 @@ async def build_live_zaxy_retriever(
     lexical_retriever: Retriever | None = None,
     reuse_projection: bool = False,
     projection_cache_key: str | None = None,
+    scope_resolver: Callable[[str], tuple[str, ...]] | None = None,
 ) -> tuple[ZaxyRetriever, GraphStore]:
     """Ingest the benchmark event log into Neo4j and return a live retriever.
 
@@ -1983,22 +2175,96 @@ async def build_live_zaxy_retriever(
     await graph.connect()
     await graph.init_schema()
     if reset_graph:
-        assert graph._driver is not None
-        await graph._driver.execute_query("MATCH (n) DETACH DELETE n")
+        await _reset_benchmark_graph(graph)
     if (
         reuse_projection
         and projection_cache_key is not None
         and not reset_graph
         and await _benchmark_projection_present(graph, projection_cache_key)
     ):
-        return ZaxyRetriever(QueryRouter(graph), provider, lexical_retriever=lexical_retriever), graph
+        return (
+            ZaxyRetriever(
+                QueryRouter(graph),
+                provider,
+                lexical_retriever=lexical_retriever,
+                scope_resolver=scope_resolver,
+            ),
+            graph,
+        )
     events = eventlog.read_all()
     for event in events:
         extraction = embed_extraction(extract(event), provider)
         await graph.upsert_extraction(extraction)
     if projection_cache_key is not None:
         await _mark_benchmark_projection(graph, projection_cache_key, events)
-    return ZaxyRetriever(QueryRouter(graph), provider, lexical_retriever=lexical_retriever), graph
+    return (
+        ZaxyRetriever(
+            QueryRouter(graph),
+            provider,
+            lexical_retriever=lexical_retriever,
+            scope_resolver=scope_resolver,
+        ),
+        graph,
+    )
+
+
+async def _reset_benchmark_graph(
+    graph: GraphStore,
+    *,
+    batch_size: int = 1_000,
+) -> dict[str, int]:
+    """Delete benchmark graph contents in bounded transactions."""
+    assert graph._driver is not None
+    relationships = await _delete_graph_items_in_batches(
+        graph._driver,
+        """
+        MATCH ()-[r]->()
+        WITH r LIMIT $batch_size
+        DELETE r
+        RETURN count(r) AS deleted
+        """,
+        batch_size=batch_size,
+    )
+    nodes = await _delete_graph_items_in_batches(
+        graph._driver,
+        """
+        MATCH (n)
+        WITH n LIMIT $batch_size
+        DETACH DELETE n
+        RETURN count(n) AS deleted
+        """,
+        batch_size=batch_size,
+    )
+    return {"relationships": relationships, "nodes": nodes}
+
+
+async def _delete_graph_items_in_batches(
+    driver: AsyncDriver,
+    cypher: str,
+    *,
+    batch_size: int,
+) -> int:
+    """Run a bounded delete query until no more graph items are removed."""
+    total = 0
+    while True:
+        records, _, _ = await driver.execute_query(cypher, batch_size=batch_size)
+        deleted = _deleted_batch_count(records)
+        total += deleted
+        if deleted == 0:
+            return total
+
+
+def _deleted_batch_count(records: Sequence[Any]) -> int:
+    """Read the deleted count returned by a Neo4j batch-delete query."""
+    if not records:
+        return 0
+    row = records[0]
+    if isinstance(row, dict):
+        return int(row.get("deleted", 0))
+    data = row.data() if callable(getattr(row, "data", None)) else {}
+    if isinstance(data, dict):
+        return int(data.get("deleted", 0))
+    return int(getattr(row, "deleted", 0))
 
 
 async def _benchmark_projection_present(graph: GraphStore, projection_cache_key: str) -> bool:
@@ -2325,6 +2591,8 @@ def compare_benchmark_reports(
     *,
     backend: str = "zaxy",
     min_mean_score: float = 0.95,
+    min_answer_recall_at_5: float | None = None,
+    min_recall_at_5: float | None = None,
     min_citation_coverage: float = 0.95,
     max_p95_ms: float = 500.0,
     max_p99_ms: float = 750.0,
@@ -2362,6 +2630,24 @@ def compare_benchmark_reports(
             "p99 latency must stay within the beta budget",
         ),
     ]
+    if min_answer_recall_at_5 is not None:
+        checks.append(
+            _min_check(
+                "answer_recall_at_5_floor",
+                candidate_summary.mean_answer_recall_at_5,
+                min_answer_recall_at_5,
+                "Answer@5 must stay above the beta floor",
+            )
+        )
+    if min_recall_at_5 is not None:
+        checks.append(
+            _min_check(
+                "recall_at_5_floor",
+                candidate_summary.mean_recall_at_5,
+                min_recall_at_5,
+                "R@5 must stay above the beta floor",
+            )
+        )
     if baseline_summary is not None:
         checks.extend(
             [
@@ -2400,6 +2686,12 @@ def format_benchmark_comparison(report: BenchmarkGuardrailReport) -> str:
         f"- Candidate p95 ms: `{report.candidate.latency_ms_p95:.2f}`",
         f"- Candidate p99 ms: `{report.candidate.latency_ms_p99:.2f}`",
     ]
+    if report.candidate.mean_answer_recall_at_5 is not None:
+        lines.append(
+            f"- Candidate Answer@5: `{report.candidate.mean_answer_recall_at_5:.3f}`"
+        )
+    if report.candidate.mean_recall_at_5 is not None:
+        lines.append(f"- Candidate R@5: `{report.candidate.mean_recall_at_5:.3f}`")
     if report.candidate.mean_citation_coverage is not None:
         lines.append(
             f"- Candidate citation coverage: `{report.candidate.mean_citation_coverage:.3f}`"
@@ -2895,6 +3187,161 @@ def _memory_salience_boost(text: str) -> float:
     if "salient_memory_turn=true" in text.casefold():
         return 4.0
     return 1.0
+
+
+_EVIDENCE_QUERY_STOPWORDS = {
+    "a",
+    "about",
+    "all",
+    "an",
+    "and",
+    "are",
+    "before",
+    "did",
+    "different",
+    "do",
+    "does",
+    "for",
+    "from",
+    "have",
+    "how",
+    "i",
+    "in",
+    "is",
+    "many",
+    "me",
+    "my",
+    "of",
+    "on",
+    "or",
+    "the",
+    "to",
+    "what",
+    "when",
+    "where",
+    "which",
+    "who",
+    "with",
+}
+
+
+_EVIDENCE_QUERY_EXPANSIONS: dict[str, tuple[str, ...]] = {
+    "attend": ("attended", "went", "visited", "participated"),
+    "attended": ("attend", "went", "visited", "participated"),
+    "buy": ("bought", "got", "purchased", "picked"),
+    "bought": ("buy", "got", "purchased", "picked"),
+    "doctor": ("physician", "dermatologist", "ent", "appointment", "visited", "saw"),
+    "doctors": ("physician", "dermatologist", "ent", "appointment", "visited", "saw"),
+    "festival": ("fest", "film", "movie", "attended", "went", "participated"),
+    "festivals": ("fest", "film", "movie", "attended", "went", "participated"),
+    "kit": ("kits", "model", "scale", "finished", "started", "picked", "got", "bought"),
+    "kits": ("kit", "model", "scale", "finished", "started", "picked", "got", "bought"),
+    "model": ("models", "kit", "kits", "scale", "finished", "started", "picked", "got", "bought"),
+    "models": ("model", "kit", "kits", "scale", "finished", "started", "picked", "got", "bought"),
+    "movie": ("film", "films", "festival", "fest", "attended", "went", "participated"),
+    "movies": ("film", "films", "festival", "fest", "attended", "went", "participated"),
+    "physician": ("doctor", "doctors", "appointment", "visited", "saw"),
+    "properties": ("property", "house", "home", "bungalow", "condo", "townhouse", "viewed", "toured", "saw"),
+    "property": ("properties", "house", "home", "bungalow", "condo", "townhouse", "viewed", "toured", "saw"),
+    "view": ("viewed", "saw", "toured", "visited"),
+    "viewed": ("view", "saw", "toured", "visited"),
+    "visit": ("visited", "saw", "appointment", "went"),
+    "visited": ("visit", "saw", "appointment", "went"),
+    "work": ("worked", "finished", "started", "built"),
+    "worked": ("work", "finished", "started", "built"),
+}
+
+
+def _evidence_frontier_queries(query: str) -> tuple[str, ...]:
+    terms = _evidence_query_terms(query)
+    expanded: list[str] = [query, " ".join(terms)]
+    expansion_terms: list[str] = []
+    for term in terms:
+        expansion_terms.extend(_EVIDENCE_QUERY_EXPANSIONS.get(term, ()))
+    if expansion_terms:
+        expanded.append(" ".join([*terms, *expansion_terms]))
+    return tuple(item for item in dict.fromkeys(expanded) if item.strip())
+
+
+def _evidence_query_terms(query: str) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            token
+            for token in _bm25_tokens(query)
+            if len(token) > 2
+            and token not in _EVIDENCE_QUERY_STOPWORDS
+            and not token.isdigit()
+        )
+    )
+
+
+def _evidence_frontier_score(query: str, query_terms: set[str], context: str) -> float:
+    context_terms = set(_bm25_tokens(context))
+    if not context_terms:
+        return 0.0
+    expanded_terms = set(query_terms)
+    for term in tuple(query_terms):
+        expanded_terms.update(_EVIDENCE_QUERY_EXPANSIONS.get(term, ()))
+    direct_overlap = len(query_terms & context_terms)
+    expanded_overlap = len(expanded_terms & context_terms)
+    score = direct_overlap * 2.5 + expanded_overlap
+    lowered = context.casefold()
+    if re.search(r"\b(?:i|i['’](?:m|ve|d|ll|re))\b", lowered):
+        score += 2.0
+    if re.search(r"\b(?:i\s+(?:attended|went|visited|saw|viewed|toured|bought|got|finished|started|worked|met)|i['’](?:ve|m)\s+(?:attended|been|recently|started|finished|met))\b", lowered):
+        score += 2.0
+    if "salient_memory_turn=true" in lowered:
+        score += 4.0
+    if _has_source_citation(context):
+        score += 1.0
+    if _frontier_subject_bonus(query, lowered):
+        score += 3.0
+    return score
+
+
+def _frontier_subject_bonus(query: str, lowered_context: str) -> bool:
+    query_terms = set(_bm25_tokens(query))
+    if query_terms & {"model", "models", "kit", "kits"}:
+        return bool(re.search(r"\b(?:model\s+kit|kit|\\d+/\\d+\\s+scale)\b", lowered_context))
+    if query_terms & {"doctor", "doctors", "physician", "physicians"}:
+        return bool(re.search(r"\b(?:doctor|physician|dermatologist|ent|appointment)\b", lowered_context))
+    if query_terms & {"movie", "movies", "film", "films", "festival", "festivals"}:
+        return bool(re.search(r"\b(?:film|movie|festival|fest|sundance|afi)\b", lowered_context))
+    if query_terms & {"property", "properties", "house", "home", "townhouse"}:
+        return bool(re.search(r"\b(?:property|house|home|bungalow|condo|townhouse)\b", lowered_context))
+    return False
+
+
+def _diverse_frontier_contexts(contexts: list[str], *, limit: int) -> list[str]:
+    selected: list[str] = []
+    seen_groups: set[str] = set()
+    for context in contexts:
+        group = _frontier_group(context)
+        if group in seen_groups:
+            continue
+        selected.append(context)
+        seen_groups.add(group)
+        if len(selected) >= limit:
+            return selected
+    for context in contexts:
+        if context in selected:
+            continue
+        selected.append(context)
+        if len(selected) >= limit:
+            break
+    return selected
+
+
+def _frontier_group(context: str) -> str:
+    for pattern in (
+        r"\b[a-z0-9_.-]*session[_-]?id=(?P<value>[^\s]+)",
+        r"\b(?:source_path|path|file)=['\"]?(?P<value>[^\s'\"]+)",
+        r"eventloom://[^/]+/events/(?P<value>\d+)",
+    ):
+        match = re.search(pattern, context, flags=re.IGNORECASE)
+        if match:
+            return match.group("value").casefold()
+    return context[:160].casefold()
 
 
 def _citation_count(contexts: list[str]) -> int:

@@ -228,6 +228,8 @@ def _expected_term_present(term: str, haystack: str) -> bool:
         return True
     if _absence_answer_present(normalized_term, normalized_haystack):
         return True
+    if _structured_interval_answer_present(normalized_term, normalized_haystack):
+        return True
     if _parenthetical_acronym_present(normalized_term, normalized_haystack):
         return True
     term_tokens = [
@@ -237,12 +239,12 @@ def _expected_term_present(term: str, haystack: str) -> bool:
     if len(term_tokens) < 2:
         return False
     haystack_tokens = set(_answer_tokens(normalized_haystack))
-    return all(token in haystack_tokens for token in term_tokens)
+    return all(_answer_token_variants(token) & haystack_tokens for token in term_tokens)
 
 
 def _absence_answer_present(term: str, haystack: str) -> bool:
     """Return whether structured/no-mention evidence satisfies an absence answer."""
-    if "you did not mention this information" not in term:
+    if not _looks_like_absence_answer(term):
         return False
     absence_markers = (
         "zaxy_absence_check=true",
@@ -253,7 +255,7 @@ def _absence_answer_present(term: str, haystack: str) -> bool:
     if not any(marker in haystack for marker in absence_markers):
         return False
     target = _absence_target_from_expected_answer(term)
-    if target and not all(token in set(_answer_tokens(haystack)) for token in _answer_tokens(target)):
+    if target and not _answer_tokens_present_by_variant(target, haystack):
         return False
     contrast = _absence_contrast_from_expected_answer(term)
     if not contrast:
@@ -266,17 +268,147 @@ def _absence_answer_present(term: str, haystack: str) -> bool:
     if not contrast_tokens:
         return True
     haystack_tokens = set(_answer_tokens(haystack))
-    return any(token in haystack_tokens for token in contrast_tokens)
+    return any(_answer_token_variants(token) & haystack_tokens for token in contrast_tokens)
+
+
+def _looks_like_absence_answer(term: str) -> bool:
+    return (
+        "you did not mention this information" in term
+        or "information provided is not enough" in term
+        or "did not mention" in term
+        or "didn't mention" in term
+        or "haven't" in term
+        or "only mentioned" in term
+    )
 
 
 def _absence_target_from_expected_answer(term: str) -> str:
-    match = re.search(r"\bbut not (?:your |my |the )?(?P<target>[a-z0-9' -]+?)[.!?]?$", term)
-    return match.group("target").strip(" .'") if match else ""
+    patterns = (
+        r"\bbut\s+you\s+did\s+not\s+mention\s+(?:your |my |the |an? )?(?P<target>[a-z0-9' -]+?)[.!?]?$",
+        r"\byou\s+did\s+not\s+mention\s+(?:your |my |the |an? )?(?P<target>[a-z0-9' -]+?)[.!?]?$",
+        r"\bdidn'?t\s+mention\s+anything\s+about\s+(?:your |my |the |an? )?(?P<target>[a-z0-9' -]+?)[.!?]?$",
+        r"\bhaven'?t\s+(?P<target>[a-z0-9' -]+?)\s+yet[.!?]?$",
+        r"\bbut\s+not\s+(?:your |my |the |an? )?(?P<target>[a-z0-9' -]+?)[.!?]?$",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, term)
+        if match:
+            return match.group("target").strip(" .'")
+    return ""
 
 
 def _absence_contrast_from_expected_answer(term: str) -> str:
-    match = re.search(r"\byou mentioned (?P<contrast>.+?)\bbut not\b", term)
-    return match.group("contrast").strip(" .") if match else ""
+    patterns = (
+        r"\byou mentioned (?P<contrast>.+?)\bbut (?:you did )?not\b",
+        r"\byou only mentioned (?P<contrast>.+?)[.!?]?$",
+        r"\bonly mentioned (?P<contrast>.+?)[.!?]?$",
+        r"\bfrom the information provided,\s*(?P<contrast>.+?)[.!?]?$",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, term)
+        if match:
+            return match.group("contrast").strip(" .")
+    return ""
+
+
+def _answer_tokens_present_by_variant(text: str, haystack: str) -> bool:
+    haystack_tokens = set(_answer_tokens(haystack))
+    target_tokens = [
+        token
+        for token in _answer_tokens(text)
+        if token not in _LOW_INFORMATION_ANSWER_TOKENS
+        and token not in {"your", "my", "you"}
+    ]
+    return all(_answer_token_variants(token) & haystack_tokens for token in target_tokens)
+
+
+def _answer_token_variants(token: str) -> set[str]:
+    variants = {token}
+    if token.endswith("ing") and len(token) > 4:
+        stem = token[:-3]
+        variants.update({stem, f"{stem}e", f"{stem}ed"})
+    if token.endswith("ed") and len(token) > 3:
+        stem = token[:-2]
+        variants.update({stem, f"{stem}ing"})
+    irregular = {
+        "attending": {"attend", "attended", "attending"},
+        "became": {"become", "became", "becoming"},
+        "becoming": {"become", "became", "becoming"},
+        "bought": {"buy", "buying", "bought", "purchase", "purchased"},
+        "buying": {"buy", "buying", "bought", "purchase", "purchased"},
+        "getting": {"get", "got", "getting"},
+        "haven": {"have", "haven"},
+        "job": {"job", "work", "working"},
+        "started": {"start", "started", "starting"},
+        "starting": {"start", "started", "starting"},
+        "working": {"work", "working", "job"},
+    }
+    variants.update(irregular.get(token, set()))
+    return variants
+
+
+_INTERVAL_NUMBER_WORDS = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+}
+
+
+def _structured_interval_answer_present(term: str, haystack: str) -> bool:
+    """Return whether typed interval synthesis satisfies a prose interval answer."""
+    if hour_match := re.search(r"\b(?P<value>\d+(?:\.\d+)?)\s+hours?\b", term):
+        hours = hour_match.group("value")
+        hour_surfaces = {
+            f"duration_total_answer={hours} hours",
+            f"duration_total_hours={hours} hours",
+            f"hour_total={hours} hours",
+        }
+        if any(surface.casefold() in haystack for surface in hour_surfaces):
+            return True
+    if day_match := re.search(r"\b(?P<value>\d+)\s+days?\b", term):
+        days = day_match.group("value")
+        if (
+            f"date_interval_days={days}" in haystack
+            or f"date_interval_answer={days} days" in haystack
+            or f"relative_day_interval={days} days" in haystack
+            or f"duration_total_answer={days} days" in haystack
+        ):
+            return True
+    week_match = re.search(
+        r"\b(?P<value>one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+weeks?\b",
+        term,
+    )
+    if not week_match:
+        return False
+    raw_value = week_match.group("value")
+    numeric_value = _INTERVAL_NUMBER_WORDS.get(raw_value, int(raw_value) if raw_value.isdigit() else 0)
+    word_value = raw_value if not raw_value.isdigit() else ""
+    week_surfaces = {
+        f"date_interval_weeks={numeric_value} weeks",
+        f"relative_week_interval={numeric_value} weeks",
+        f"week_interval={numeric_value} weeks",
+        f"duration_total_answer={numeric_value} weeks",
+    }
+    if word_value:
+        title = word_value.title()
+        week_surfaces.update(
+            {
+                f"relative_week_interval_answer={title} week",
+                f"relative_week_interval_answer={title} weeks",
+                f"date_interval_week_answer={title} week",
+                f"date_interval_week_answer={title} weeks",
+                f"week_interval_answer={title} week",
+                f"week_interval_answer={title} weeks",
+            }
+        )
+    return any(surface.casefold() in haystack for surface in week_surfaces)
 
 
 def _normalize_answer_text(text: str) -> str:

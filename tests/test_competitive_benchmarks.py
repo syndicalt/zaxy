@@ -81,6 +81,23 @@ def test_score_retrieval_accepts_semantic_answer_surface_forms() -> None:
     assert distributed_location.score == 1.0
 
 
+def test_score_retrieval_accepts_inflected_action_answer_surface_forms() -> None:
+    """Action answers should match cited evidence across ordinary inflections."""
+    case = BenchmarkCase(
+        name="fence-repair",
+        query="What outdoor task did I complete?",
+        expected_terms=("Fixing the fence",),
+    )
+
+    score = score_retrieval(
+        case,
+        ["I just fixed that broken fence in the backyard."],
+    )
+
+    assert score.score == 1.0
+    assert score.expected_hits == case.expected_terms
+
+
 def test_score_retrieval_accepts_structured_absence_guidance() -> None:
     """Absence answers should not require exact prose reproduction."""
     case = BenchmarkCase(
@@ -100,6 +117,93 @@ def test_score_retrieval_accepts_structured_absence_guidance() -> None:
                 "answer_guidance=You did not mention this information. "
                 "source_id=answer citation=eventloom://benchmark/events/1#abc "
                 "snippet=I mentioned my cat Luna during the conversation."
+            )
+        ],
+    )
+
+    assert score.score == 1.0
+    assert score.expected_hits == case.expected_terms
+
+
+def test_score_retrieval_accepts_structured_interval_answers() -> None:
+    """Typed interval synthesis should satisfy equivalent long-form expected answers."""
+    day_case = BenchmarkCase(
+        name="walk-cleanup",
+        query="How many days had passed between the Walk for Hunger and Coastal Cleanup?",
+        expected_terms=("14 days. 8 days (including the last day) is also acceptable.",),
+    )
+    week_case = BenchmarkCase(
+        name="rug-room",
+        query="How long had I been using the new rug when I rearranged the room?",
+        expected_terms=("One week. Answers ranging from 7 days to 10 days are also acceptable.",),
+    )
+
+    day_score = score_retrieval(
+        day_case,
+        [
+            (
+                "zaxy_synthesis_bundle=true candidate_type=date_interval "
+                "date_interval_days=14 "
+                "date_interval_answer=14 days. 15 days (including the last day) is also acceptable."
+            )
+        ],
+    )
+    week_score = score_retrieval(
+        week_case,
+        [
+            (
+                "zaxy_synthesis_bundle=true relative_day_interval=7 days "
+                "relative_week_interval=1 weeks relative_week_interval_answer=One week"
+            )
+        ],
+    )
+
+    assert day_score.score == 1.0
+    assert week_score.score == 1.0
+
+
+def test_score_retrieval_accepts_structured_duration_hour_answers() -> None:
+    """Typed duration totals should satisfy prose hour-total expected answers."""
+    case = BenchmarkCase(
+        name="roadtrip-hours",
+        query="How many hours did I spend driving?",
+        expected_terms=("15 hours for getting to the destinations (or 30 hours round trip)",),
+    )
+
+    score = score_retrieval(
+        case,
+        [
+            (
+                "zaxy_synthesis_bundle=true candidate_type=duration "
+                "duration_values=6 hours,4 hours,5 hours "
+                "duration_total_answer=15 hours"
+            )
+        ],
+    )
+
+    assert score.score == 1.0
+
+
+def test_score_retrieval_accepts_inflected_structured_absence_answers() -> None:
+    """Absence scoring should compare missing targets by variants, not exact prose."""
+    case = BenchmarkCase(
+        name="missing-ipad",
+        query="How many days before I bought my iPad did I attend the Holiday Market?",
+        expected_terms=(
+            "The information provided is not enough. You mentioned getting the iPhone 13 Pro "
+            "and attending the market, but you did not mention buying an iPad.",
+        ),
+    )
+
+    score = score_retrieval(
+        case,
+        [
+            (
+                "zaxy_absence_check=true synthesis_mode=absence_check "
+                "not_mentioned_candidate=bought ipad "
+                "known_related_evidence=attend holiday market "
+                "answer_guidance=The information provided is not enough. "
+                "snippet=I got the iPhone 13 Pro and attended the Holiday Market."
             )
         ],
     )

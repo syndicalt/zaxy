@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from zaxy.evidence_candidates import aggregate_candidate_projection
+from zaxy.evidence_candidates import aggregate_candidate_projection, aggregate_evidence_score
 from zaxy.retrieval_intent import RetrievalIntent, classify_retrieval_intent
 
 
@@ -101,6 +101,10 @@ def aggregation_event_source_queries(query: str) -> tuple[str, ...]:
         queries.append("film festival movie attended went participated")
     if query_terms & {"property", "properties", "house", "home", "townhouse"} and {"how", "many"} <= query_terms:
         queries.append("property house bungalow condo townhouse viewed toured saw offer")
+    if query_terms & {"instrument", "instruments", "guitar", "piano"} and {"how", "many"} <= query_terms:
+        queries.append(
+            "musical instruments guitar piano drum set acoustic electric korg yamaha fender pearl owned had playing"
+        )
     return tuple(queries)
 
 
@@ -346,26 +350,39 @@ def source_synthesis_bundle(
         not {"aggregation", "aggregation_question"} & set(intent.reasons)
         and not _issue_query(query)
         and not _average_query(query)
+        and not _age_at_event_query(query)
         and not _numeric_comparison_query(query)
         and not _time_offset_query(query)
         and not _temporal_order_query(query)
+        and not _possessive_attribute_query_target(query)
     ):
         return None
-    group_limit = max(limit, intent.source_lane_slots)
+    group_limit = source_synthesis_candidate_limit(intent, limit=limit)
+    if _average_query(query):
+        group_limit = max(group_limit, 8)
     ordered_sources = query_specific_source_order(query, source_results)
     if preferred_source_groups:
         ordered_sources = preferred_source_group_order(
             ordered_sources,
             preferred_source_groups,
         )
+    ordered_sources = evidence_source_order(query, ordered_sources)
     grouped_sources = diverse_source_contexts(
         ordered_sources,
         limit=group_limit,
         preserve_order=True,
     )
-    if len(grouped_sources) < 2:
+    direct_attribute = _possessive_attribute_query_target(query)
+    if len(grouped_sources) < 2 and not direct_attribute:
         return None
-    aggregation_query = bool({"aggregation", "aggregation_question"} & set(intent.reasons))
+    if (
+        (
+            (_numeric_comparison_query(query) or _temporal_order_query(query))
+            and _query_alternatives(query)
+        )
+        or _temporal_interval_query(query)
+    ) and should_defer_to_absence_check(query, grouped_sources, intent):
+        return None
     aggregate_projection = aggregate_candidate_projection(query, grouped_sources)
     derived_lines = [
         *_numeric_synthesis_lines(
@@ -375,22 +392,26 @@ def source_synthesis_bundle(
         ),
         *_temporal_order_synthesis_lines(query, grouped_sources),
         *_issue_synthesis_lines(query, grouped_sources),
+        *_direct_fact_synthesis_lines(query, grouped_sources),
     ]
-    if not aggregation_query and not derived_lines and missing_query_target(query, grouped_sources):
+    if not derived_lines and should_defer_to_absence_check(query, grouped_sources, intent):
         return None
-    if not aggregation_query and not derived_lines:
+    if not derived_lines and missing_query_target(query, grouped_sources):
         return None
-    lines = [
-        "zaxy_synthesis_bundle=true",
-        "synthesis_mode=multi_source_aggregation",
-        f"query={query}",
-        f"source_count={len(grouped_sources)}",
-    ]
-    lines.extend(derived_lines)
+    if not derived_lines:
+        return None
     support_sources = _supporting_synthesis_sources(
         grouped_sources,
         source_groups=aggregate_projection.source_groups,
     )
+    lines = [
+        "zaxy_synthesis_bundle=true",
+        "synthesis_mode=multi_source_aggregation",
+        f"query={query}",
+        f"source_count={len(support_sources)}",
+    ]
+    lines.extend(derived_lines)
+    support_source_limit = min(group_limit, max(limit, 8))
     for index, context in enumerate(support_sources, start=1):
         lines.append(
             "- "
@@ -398,9 +419,16 @@ def source_synthesis_bundle(
             f"citation={source_context_citation(context)} "
             f"snippet={source_context_snippet(context)}"
         )
-        if index >= group_limit:
+        if index >= support_source_limit:
             break
     return "\n".join(lines)
+
+
+def source_synthesis_candidate_limit(intent: RetrievalIntent, *, limit: int) -> int:
+    """Return the internal source pool size used before compact synthesis."""
+    if {"aggregation", "aggregation_question"} & set(intent.reasons):
+        return max(limit, intent.source_lane_slots * 4, 16)
+    return max(limit, intent.source_lane_slots)
 
 
 def preferred_source_group_order(
@@ -424,6 +452,53 @@ def preferred_source_group_order(
     return [context for _, context in indexed]
 
 
+def evidence_source_order(query: str, contexts: list[str]) -> list[str]:
+    """Prefer snippets that can produce typed synthesis evidence for the query."""
+    query_terms = _query_specific_terms(query)
+    indexed = list(enumerate(contexts))
+    indexed.sort(
+        key=lambda item: (
+            -source_evidence_score(query, item[1]),
+            -_query_overlap_score(query_terms, item[1]),
+            -source_lane_priority(item[1]),
+            item[0],
+        )
+    )
+    return [context for _, context in indexed]
+
+
+def source_evidence_score(query: str, context: str) -> int:
+    """Return a deterministic evidence score for synthesis source selection."""
+    projection = aggregate_candidate_projection(query, [context])
+    score = aggregate_evidence_score(query, context)
+    score += _query_action_object_evidence_score(query, context)
+    for line in projection.lines:
+        if line.startswith("candidate_type=") or " candidate_type=" in line:
+            score += 3
+        elif line.endswith("_answer=") or "_answer=" in line or line.startswith(("currency_values=", "duration_values=", "count_answer=", "date_values=")):
+            score += 2
+        else:
+            score += 1
+    return score
+
+
+def _query_action_object_evidence_score(query: str, context: str) -> int:
+    """Prefer contexts carrying the queried action-object evidence over nearby context."""
+    if re.search(r"\bhow\s+long\s+had\b", query, flags=re.IGNORECASE):
+        return 0
+    context_terms = set(source_tokens(context))
+    score = 0
+    for target in _concrete_query_targets(query):
+        terms = tuple(source_tokens(target))
+        if not terms:
+            continue
+        action, *objects = terms
+        if _absence_term_variants(action) & context_terms:
+            score += 3
+        score += sum(1 for term in objects if _absence_term_variants(term) & context_terms)
+    return score
+
+
 def absence_check_bundle(
     *,
     query: str,
@@ -438,11 +513,13 @@ def absence_check_bundle(
         source_results,
         limit=max(1, intent.source_lane_slots or min(2, limit)),
     )
-    if has_direct_fact_evidence(query, grouped_sources):
+    target = high_precision_missing_target(query, grouped_sources)
+    if not target and has_direct_fact_evidence(query, grouped_sources):
         return None
-    target = missing_query_target(query, grouped_sources)
     if not target and "absence_check" in intent.reasons:
-        target = absence_check_target(query)
+        target = missing_query_target(query, grouped_sources) or absence_check_target(query)
+    if not target and {"aggregation", "aggregation_question"} & set(intent.reasons):
+        target = _missing_location_target(query, grouped_sources)
     if not target:
         return None
     if not grouped_sources or target_terms_present(target, grouped_sources):
@@ -459,6 +536,8 @@ def absence_check_bundle(
             f"You mentioned cited evidence below, but not {target}."
         ),
     ]
+    if known_evidence := known_related_evidence_summary(query, grouped_sources, target):
+        lines.append(f"known_related_evidence={known_evidence}")
     for context in grouped_sources:
         lines.append(
             "- "
@@ -467,6 +546,18 @@ def absence_check_bundle(
             f"snippet={source_context_snippet(context)}"
         )
     return "\n".join(lines)
+
+
+def should_defer_to_absence_check(
+    query: str,
+    contexts: list[str],
+    intent: RetrievalIntent,
+) -> bool:
+    """Return whether missing evidence should outrank numeric/order synthesis."""
+    if not intent.needs_source_lane or not contexts:
+        return False
+    target = high_precision_missing_target(query, contexts)
+    return bool(target and not target_terms_present(target, contexts))
 
 
 _ABSENCE_QUERY_STOPWORDS = {
@@ -589,6 +680,8 @@ def has_direct_fact_evidence(query: str, contexts: list[str]) -> bool:
 
 def missing_query_target(query: str, contexts: list[str]) -> str:
     """Return query-specific terms absent from all cited source contexts."""
+    if target := high_precision_missing_target(query, contexts):
+        return target
     query_terms = _query_specific_terms(query)
     if not query_terms:
         return ""
@@ -600,6 +693,249 @@ def missing_query_target(query: str, contexts: list[str]) -> str:
         if not (_absence_term_variants(term) & context_terms)
     ]
     return " ".join(missing)
+
+
+def high_precision_missing_target(query: str, contexts: list[str]) -> str:
+    """Return concrete missing query targets with low false-positive risk."""
+    if target := _missing_alternative_target(query, contexts):
+        return target
+    return _missing_concrete_query_target(query, contexts)
+
+
+def known_related_evidence_summary(
+    query: str,
+    contexts: list[str],
+    missing_target: str,
+) -> str:
+    """Return compact query evidence that is present while another target is absent."""
+    del missing_target
+    if present := _present_alternative_target(query, contexts):
+        return present
+    if present := _present_concrete_query_target(query, contexts):
+        return present
+    query_terms = _query_specific_terms(query)
+    context_terms: set[str] = set()
+    for context in contexts:
+        context_terms.update(source_tokens(context))
+    present_terms = [
+        term for term in sorted(query_terms)
+        if _absence_term_variants(term) & context_terms
+    ]
+    return " ".join(dict.fromkeys(present_terms[:6]))
+
+
+def _missing_alternative_target(query: str, contexts: list[str]) -> str:
+    alternatives = _query_alternatives(query)
+    if len(alternatives) < 2:
+        return ""
+    for alternative in alternatives:
+        terms = _alternative_terms(alternative)
+        if terms and not _terms_present_in_contexts(terms, contexts):
+            return " ".join(terms)
+    return ""
+
+
+def _missing_concrete_query_target(query: str, contexts: list[str]) -> str:
+    """Return a missing action-object target from the query, if one is precise enough."""
+    for target in _concrete_query_targets(query):
+        target_tokens = tuple(source_tokens(target))
+        if not target_tokens or target_tokens[0] not in _MISSING_CONCRETE_ACTIONS:
+            continue
+        missing_terms = _missing_target_terms(target_tokens, contexts)
+        if not missing_terms:
+            continue
+        if len(target_tokens) > 2 and len(missing_terms) < len(target_tokens) - 1:
+            return " ".join(missing_terms)
+        if not _terms_present_in_contexts(target_tokens, contexts):
+            return target
+    return ""
+
+
+def _missing_location_target(query: str, contexts: list[str]) -> str:
+    """Return a missing proper location target from a duration/location query."""
+    match = re.search(
+        r"\b(?:in|to|from)\s+(?P<location>[A-Z][A-Za-z0-9' -]{1,60})(?:\s+for)?[?.,]?$",
+        query,
+    )
+    if not match:
+        return ""
+    location = " ".join(match.group("location").strip(" .,'\"").split())
+    terms = tuple(source_tokens(location))
+    if not terms or _terms_present_in_contexts(terms, contexts):
+        return ""
+    return location.casefold()
+
+
+def _present_alternative_target(query: str, contexts: list[str]) -> str:
+    for alternative in _query_alternatives(query):
+        terms = _alternative_terms(alternative)
+        if terms and _terms_present_in_contexts(terms, contexts):
+            return _clean_alternative_summary(alternative)
+    return ""
+
+
+def _present_concrete_query_target(query: str, contexts: list[str]) -> str:
+    """Return the first concrete query target supported by the cited contexts."""
+    for target in _concrete_query_targets(query):
+        if _terms_present_in_contexts(tuple(source_tokens(target)), contexts):
+            return target
+    return ""
+
+
+def _concrete_query_targets(query: str) -> tuple[str, ...]:
+    """Extract bounded action-object targets that are safe for absence checks."""
+    targets: list[str] = []
+    action_pattern = re.compile(
+        r"\b(?P<verb>bought|buy|purchased|purchase|purchasing|booked|book|booking|"
+        r"started|start|starting|joined|join|joining|visited|visit|visiting)\s+"
+        r"(?P<object>[a-z0-9][a-z0-9' -]{1,100}?)"
+        r"(?=\s+(?:did|do|does|before|after|when|while|and|or)\b|[?.,;]|$)",
+        flags=re.IGNORECASE,
+    )
+    for match in action_pattern.finditer(query):
+        target = _normalize_concrete_query_target(
+            match.group("verb"),
+            match.group("object"),
+        )
+        if target:
+            targets.append(target)
+    return tuple(dict.fromkeys(targets))
+
+
+def _normalize_concrete_query_target(verb: str, object_text: str) -> str:
+    """Normalize a concrete action-object phrase without widening it to generic words."""
+    verb_token = _canonical_absence_action(verb)
+    object_terms = [
+        token
+        for token in source_tokens(object_text)
+        if token not in _CONCRETE_TARGET_STOPWORDS
+        and not token.isdigit()
+        and len(token) > 1
+    ]
+    if not verb_token or not object_terms:
+        return ""
+    return " ".join([verb_token, *dict.fromkeys(object_terms)])
+
+
+def _canonical_absence_action(verb: str) -> str:
+    normalized = verb.casefold()
+    canonical = {
+        "buy": "bought",
+        "bought": "bought",
+        "purchase": "purchased",
+        "purchased": "purchased",
+        "purchasing": "purchased",
+        "book": "booked",
+        "booked": "booked",
+        "booking": "booked",
+        "start": "started",
+        "started": "started",
+        "starting": "started",
+        "join": "joined",
+        "joined": "joined",
+        "joining": "joined",
+        "visit": "visit",
+        "visited": "visit",
+        "visiting": "visit",
+    }
+    return canonical.get(normalized, "")
+
+
+def _query_alternatives(query: str) -> tuple[str, ...]:
+    normalized = re.sub(r"[?!.]+$", "", query.strip())
+    parts = re.split(r"\s+or\s+", normalized, flags=re.IGNORECASE)
+    if len(parts) < 2:
+        return ()
+    first = re.sub(r"^.*?(?:first|between|which|whether)\b", "", parts[0], flags=re.IGNORECASE).strip()
+    alternatives = [first, *parts[1:]]
+    return tuple(part for part in alternatives if part)
+
+
+def _alternative_terms(text: str) -> tuple[str, ...]:
+    stopwords = _ABSENCE_QUERY_STOPWORDS | {
+        "became",
+        "complete",
+        "completed",
+        "current",
+        "did",
+        "event",
+        "first",
+        "from",
+        "happened",
+        "or",
+        "parent",
+        "project",
+        "start",
+        "started",
+        "task",
+        "the",
+        "which",
+    }
+    single_letter_identifiers = {
+        match.group(0).casefold()
+        for match in re.finditer(r"\b[A-Z]\b", text)
+    }
+    terms = [
+        token
+        for token in source_tokens(text)
+        if token not in stopwords
+        and (
+            token.isdigit()
+            or len(token) > 1
+            or token in single_letter_identifiers
+        )
+    ]
+    return tuple(dict.fromkeys(terms))
+
+
+def _missing_target_terms(terms: tuple[str, ...], contexts: list[str]) -> tuple[str, ...]:
+    missing: list[str] = []
+    for term in terms:
+        if _terms_present_in_contexts((term,), contexts):
+            continue
+        missing.append(term)
+    return tuple(missing)
+
+
+def _clean_alternative_summary(text: str) -> str:
+    text = re.sub(r"^[,;:\s]+", "", text)
+    text = re.sub(
+        r"^(?:task\s+)?(?:did\s+)?(?:i\s+)?(?:complete\s+)?(?:first[\s,]+)?",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    return " ".join(text.strip(" ,;:.").split())
+
+
+def _terms_present_in_contexts(terms: tuple[str, ...], contexts: list[str]) -> bool:
+    if not terms:
+        return False
+    for context in contexts:
+        if _negated_target_context(terms, context):
+            continue
+        context_terms = set(source_tokens(context))
+        if all(_absence_term_variants(term) & context_terms for term in terms):
+            return True
+    return False
+
+
+def _negated_target_context(terms: tuple[str, ...], context: str) -> bool:
+    text = source_context_snippet(context, max_chars=1_200).casefold()
+    for term in terms:
+        variants = sorted(_absence_term_variants(term), key=len, reverse=True)
+        variant_pattern = "|".join(re.escape(variant) for variant in variants)
+        if re.search(
+            rf"\b(?:no|not|never|without)\b[^.!?]{{0,80}}\b(?:{variant_pattern})\b",
+            text,
+        ):
+            return True
+        if re.search(
+            rf"\b(?:{variant_pattern})\b[^.!?]{{0,80}}\b(?:not|never|wasn'?t|isn'?t|didn'?t)\b",
+            text,
+        ):
+            return True
+    return False
 
 
 def _absence_term_variants(term: str) -> set[str]:
@@ -623,6 +959,13 @@ def _absence_term_variants(term: str) -> set[str]:
         "parents": {"parent", "mom", "dad", "mother", "father"},
         "purchasing": {"purchased", "purchase"},
         "receiving": {"received", "receive"},
+        "bought": {"buy", "bought", "got", "purchase", "purchased", "purchasing"},
+        "purchased": {"buy", "bought", "purchase", "purchased", "purchasing"},
+        "booked": {"book", "booking", "booked"},
+        "ceremony": {"ceremony", "graduation"},
+        "started": {"start", "starting", "started", "began"},
+        "joined": {"join", "joining", "joined", "became"},
+        "visit": {"visit", "visited", "visiting"},
     }
     variants.update(irregular.get(term, set()))
     return variants
@@ -639,7 +982,7 @@ def target_terms_present(target: str, contexts: list[str]) -> bool:
         return False
     for context in contexts:
         context_terms = set(source_tokens(context))
-        if all(term in context_terms for term in target_terms):
+        if all(_absence_term_variants(term) & context_terms for term in target_terms):
             return True
     return False
 
@@ -741,6 +1084,7 @@ _QUERY_SOURCE_STOPWORDS = {
     "are",
     "before",
     "between",
+    "been",
     "breed",
     "did",
     "do",
@@ -755,6 +1099,7 @@ _QUERY_SOURCE_STOPWORDS = {
     "it",
     "many",
     "me",
+    "member",
     "money",
     "most",
     "my",
@@ -775,9 +1120,30 @@ _QUERY_SOURCE_STOPWORDS = {
     "first",
     "happened",
     "project",
+    "long",
     "spent",
     "task",
     "total",
+}
+
+_CONCRETE_TARGET_STOPWORDS = _QUERY_SOURCE_STOPWORDS | {
+    "an",
+    "at",
+    "current",
+    "most",
+    "new",
+    "old",
+    "our",
+    "recently",
+    "using",
+}
+
+_MISSING_CONCRETE_ACTIONS = {
+    "booked",
+    "bought",
+    "joined",
+    "purchased",
+    "started",
 }
 
 
@@ -846,6 +1212,81 @@ def _supporting_synthesis_sources(
     return selected if len(selected) >= 2 else contexts
 
 
+def _direct_fact_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    """Project compact direct-attribute answers from cited source snippets."""
+    attribute = _possessive_attribute_query_target(query)
+    if not attribute:
+        return []
+    for context in contexts:
+        snippet = source_context_snippet(context)
+        if answer := _mixed_attribute_answer(snippet, attribute):
+            return [
+                "direct_fact_type=attribute",
+                f"direct_fact_attribute={attribute}",
+                f"direct_answer={answer}",
+                f"direct_fact_source_id={source_context_group(context)}",
+            ]
+        if answer := _literal_attribute_answer(snippet, attribute):
+            return [
+                "direct_fact_type=attribute",
+                f"direct_fact_attribute={attribute}",
+                f"direct_answer={answer}",
+                f"direct_fact_source_id={source_context_group(context)}",
+            ]
+    return []
+
+
+def _possessive_attribute_query_target(query: str) -> str:
+    """Return the attribute noun in direct questions like 'what is my X?'."""
+    match = re.search(
+        r"\bwhat\s+(?:is|are|was|were)\s+(?:my|our)\s+(?P<attribute>[a-z][a-z0-9_-]*)\b",
+        query,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    attribute = match.group("attribute").casefold()
+    if attribute in _QUERY_SOURCE_STOPWORDS:
+        return ""
+    return attribute
+
+
+def _mixed_attribute_answer(text: str, attribute: str) -> str:
+    """Normalize 'mixed <attribute> - A and B' into an answer sentence."""
+    pattern = re.compile(
+        rf"\bmixed\s+{re.escape(attribute)}\s*[-:]\s*"
+        r"(?P<left>[A-Z][A-Za-z' -]{1,40}?)\s+and\s+"
+        r"(?P<right>[A-Z][A-Za-z' -]{1,40}?)(?:\s*[-.,;!?)]|$)",
+        flags=re.IGNORECASE,
+    )
+    match = pattern.search(text)
+    if not match:
+        return ""
+    left = _clean_direct_fact_value(match.group("left"))
+    right = _clean_direct_fact_value(match.group("right"))
+    if not left or not right:
+        return ""
+    return f"A mix of {left} and {right}"
+
+
+def _literal_attribute_answer(text: str, attribute: str) -> str:
+    """Extract bounded literal possessive attribute assignments."""
+    pattern = re.compile(
+        rf"\b(?:my|our)\s+{re.escape(attribute)}\s+(?:is|was|are|were)\s+"
+        r"(?P<value>[^.!?;\n]{1,120})",
+        flags=re.IGNORECASE,
+    )
+    match = pattern.search(text)
+    if not match:
+        return ""
+    return _clean_direct_fact_value(match.group("value"))
+
+
+def _clean_direct_fact_value(value: str) -> str:
+    value = re.split(r"\b(?:because|but|although|while|whereas)\b", value, maxsplit=1)[0]
+    return " ".join(value.strip(" .,'\"()").split())
+
+
 def _numeric_synthesis_lines(
     query: str,
     contexts: list[str],
@@ -856,6 +1297,7 @@ def _numeric_synthesis_lines(
     numeric_contexts = [_numeric_context_text(context) for context in contexts]
     lines: list[str] = list(aggregate_lines or [])
     has_typed_duration = any(line.startswith("duration_values=") for line in lines)
+    lines.extend(_age_at_event_synthesis_lines(query, numeric_contexts))
     lines.extend(_age_average_synthesis_lines(query, numeric_contexts))
     if not has_typed_duration:
         minute_values = _unit_values(numeric_contexts, unit_pattern=r"minutes?|mins?")
@@ -925,7 +1367,38 @@ def _query_relevant_numeric_contexts(query: str, contexts: list[str]) -> list[st
         for score, _, context in scored
         if score >= threshold
     ]
+    selected_groups = {source_context_group(context) for context in selected}
+    available_groups = {source_context_group(context) for _, _, context in scored}
+    if len(selected_groups) < min(2, len(available_groups)):
+        for _score, _index, context in sorted(scored, key=lambda item: (-item[0], item[1])):
+            group = source_context_group(context)
+            if group in selected_groups:
+                continue
+            selected.append(context)
+            selected_groups.add(group)
+            if len(selected_groups) >= min(2, len(available_groups)):
+                break
+    selected_set = set(selected)
+    for score, _index, context in scored:
+        if context in selected_set:
+            continue
+        if score <= 0 or not _relative_time_evidence(context):
+            continue
+        selected.append(context)
+        selected_set.add(context)
     return selected if len(selected) >= 2 else contexts
+
+
+def _relative_time_evidence(context: str) -> bool:
+    return bool(
+        re.search(
+            r"\b(?:last\s+week(?:end)?|"
+            r"(?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d+)\s+"
+            r"(?:days?|weeks?|months?)\s+ago)\b",
+            context,
+            flags=re.IGNORECASE,
+        )
+    )
 
 
 def _numeric_context_text(context: str) -> str:
@@ -949,10 +1422,73 @@ def _age_average_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
     ]
 
 
+def _age_at_event_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    """Project age-at-event arithmetic from current age and elapsed years."""
+    if not _age_at_event_query(query):
+        return []
+    current_ages = _personal_current_age_values(contexts)
+    elapsed_years = _elapsed_year_values(contexts)
+    for current_age in current_ages:
+        for elapsed_years_value in elapsed_years:
+            if elapsed_years_value <= 0 or elapsed_years_value >= current_age:
+                continue
+            event_age = current_age - elapsed_years_value
+            return [
+                f"age_current={current_age}",
+                f"age_elapsed_years={elapsed_years_value}",
+                f"age_at_event_operation={current_age}-{elapsed_years_value}",
+                f"age_at_event_answer={event_age}",
+            ]
+    return []
+
+
+def _personal_current_age_values(contexts: list[str]) -> list[int]:
+    values: list[int] = []
+    patterns = (
+        r"\b(?:i\s+am|i'm|im)\s+(?P<value>\d{1,3})\s*[- ]?(?:years?\s+old|year[- ]old)\b",
+        r"\bi\s+(?:just\s+)?turned\s+(?P<value>\d{1,3})\b",
+        r"\bmy\s+age\s+(?:is|was)\s+(?P<value>\d{1,3})\b",
+    )
+    for context in contexts:
+        for pattern in patterns:
+            for match in re.finditer(pattern, context, flags=re.IGNORECASE):
+                value = int(match.group("value"))
+                if 0 < value < 125 and value not in values:
+                    values.append(value)
+    return values
+
+
+def _elapsed_year_values(contexts: list[str]) -> list[int]:
+    values: list[int] = []
+    number_pattern = (
+        r"\d{1,3}|a|an|one|two|three|four|five|six|seven|eight|nine|ten|"
+        r"eleven|twelve"
+    )
+    patterns = (
+        rf"\b(?:for\s+)?(?:the\s+)?past\s+(?P<value>{number_pattern})\s+years?\b",
+        rf"\bfor\s+(?P<value>{number_pattern})\s+years?\b",
+        rf"\b(?P<value>{number_pattern})\s+years?\s+ago\b",
+    )
+    for context in contexts:
+        for pattern in patterns:
+            for match in re.finditer(pattern, context, flags=re.IGNORECASE):
+                value = _integer_number_value(match.group("value"))
+                if 0 < value < 125 and value not in values:
+                    values.append(value)
+    return values
+
+
+def _integer_number_value(raw_value: str) -> int:
+    normalized = raw_value.casefold()
+    if normalized.isdigit():
+        return int(normalized)
+    return int(_NUMBER_WORDS.get(normalized, 0))
+
+
 def _age_values(contexts: list[str]) -> list[int]:
     values: list[int] = []
     patterns = (
-        r"\b(?:turned|am|is)\s+(?P<value>\d{1,3})\b",
+        r"\b(?:just\s+turned|turned|am|is)\s+(?P<value>\d{1,3})\b",
         r"\b(?P<person>mom|dad|mother|father|grandma|grandpa|grandmother|grandfather)\s+is\s+(?P<value>\d{1,3})\b",
     )
     for context in contexts:
@@ -1003,6 +1539,8 @@ def _week_values(contexts: list[str]) -> list[float]:
     for context in contexts:
         for match in pattern.finditer(context):
             _append_unique_number(values, float(_NUMBER_WORDS[match.group("value").casefold()]))
+        if re.search(r"\blast\s+week(?:end)?\b", context, flags=re.IGNORECASE):
+            _append_unique_number(values, 1.0)
     return values
 
 
@@ -1085,6 +1623,20 @@ def _average_query(query: str) -> bool:
     return "average" in query_tokens
 
 
+def _age_at_event_query(query: str) -> bool:
+    query_text = query.casefold()
+    if not re.search(r"\b(?:how\s+old|age)\b", query_text):
+        return False
+    if "when" not in set(source_tokens(query)):
+        return False
+    return bool(
+        re.search(
+            r"\b(?:became|began|born|graduated|joined|moved?|started|turned)\b",
+            query_text,
+        )
+    )
+
+
 def _numeric_comparison_query(query: str) -> bool:
     query_tokens = set(source_tokens(query))
     return bool(query_tokens & {"most", "least", "more", "less", "highest", "lowest"}) and bool(
@@ -1095,6 +1647,26 @@ def _numeric_comparison_query(query: str) -> bool:
 def _time_offset_query(query: str) -> bool:
     query_tokens = set(source_tokens(query))
     return "time" in query_tokens
+
+
+def _temporal_interval_query(query: str) -> bool:
+    """Return whether a query asks for elapsed time between cited events."""
+    query_tokens = set(source_tokens(query))
+    return bool(
+        query_tokens
+        & {
+            "day",
+            "days",
+            "hour",
+            "hours",
+            "minute",
+            "minutes",
+            "month",
+            "months",
+            "week",
+            "weeks",
+        }
+    ) and bool(query_tokens & {"after", "before", "between", "since", "until"})
 
 
 def _clock_time_values(contexts: list[str]) -> list[int]:

@@ -12,7 +12,7 @@ from zaxy.evidence import build_evidence_set
 from zaxy.retrieval_intent import classify_retrieval_intent
 
 _COMPACT_CONTEXT_LIMIT = 8
-_COMPACT_SNIPPET_LIMIT = 800
+_COMPACT_SNIPPET_LIMIT = 500
 
 
 def build_checkout_diagnostics(

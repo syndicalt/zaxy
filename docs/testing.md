@@ -209,10 +209,16 @@ or p99 exceed latency budgets, or latency regresses too far from a baseline:
 zaxy benchmark-compare reports/benchmarks/live-benchmark.json \
   --baseline reports/benchmarks/baseline-live-benchmark.json \
   --min-mean-score 0.95 \
+  --min-answer-recall-at-5 0.95 \
+  --min-recall-at-5 0.99 \
   --min-citation-coverage 0.95 \
   --max-p95-ms 500 \
   --max-p99-ms 750
 ```
+
+For the full 100-question LongMemEval-compatible run, use the same quality
+floors and set latency budgets from the release environment. The current beta
+floor report is archived at `reports/benchmarks/live-benchmark.json`.
 
 For consolidation safety checks, use the identity-collapse workload. It creates
 near-duplicate source records with distinct durable identifiers and adds an

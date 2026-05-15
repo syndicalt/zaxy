@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 from typer.testing import CliRunner
 
-from zaxy.__main__ import app
+from zaxy.__main__ import _parse_benchmark_baselines, app
 from zaxy.benchmark import build_competitive_event_log, competitive_cases
 from zaxy.embedding import HashEmbeddingProvider
 from zaxy.event import EventLog
@@ -31,6 +31,7 @@ from zaxy.live_benchmark import (
     BM25Retriever,
     CachedEmbeddingProvider,
     CentroidConsolidationRetriever,
+    EvidenceFrontierRetriever,
     MarkdownRetriever,
     MarkdownVectorRetriever,
     RankFusionRetriever,
@@ -40,6 +41,8 @@ from zaxy.live_benchmark import (
     _benchmark_projection_present,
     _build_source_lane_retriever,
     _mark_benchmark_projection,
+    _reset_benchmark_graph,
+    benchmark_case_scope_terms,
     benchmark_live_retrievers,
     benchmark_projection_cache_key,
     benchmark_retrievers,
@@ -66,9 +69,12 @@ from zaxy.retrieval_intent import classify_retrieval_intent
 from zaxy.retrieval_plan import (
     absence_check_bundle,
     bridge_source_lane_queries,
+    source_evidence_score,
     source_lane_candidate_limit,
     source_lane_queries,
     source_lane_query,
+    source_synthesis_bundle,
+    source_synthesis_candidate_limit,
 )
 
 
@@ -116,6 +122,11 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "source-recall" in script
     assert "temporal-recall" in script
     assert "zaxy benchmark" in script
+
+
+def test_parse_benchmark_baselines_allows_zaxy_only_runs() -> None:
+    """Operators should be able to skip baselines once release floors are established."""
+    assert _parse_benchmark_baselines("none", allow_centroid=False) == ()
 
 
 def test_graph_traversal_workload_is_frozen_and_requires_linked_events(tmp_path: Path) -> None:
@@ -974,6 +985,34 @@ async def test_benchmark_projection_marker_round_trips() -> None:
     assert marker_call[1]["latest_hash"] == "def"
 
 
+async def test_reset_benchmark_graph_deletes_in_relationship_and_node_batches() -> None:
+    """Benchmark reset should not delete a large graph in one transaction."""
+    calls: list[tuple[str, dict[str, object]]] = []
+
+    class FakeDriver:
+        def __init__(self) -> None:
+            self.relationship_counts = [1000, 500, 0]
+            self.node_counts = [1000, 1, 0]
+
+        async def execute_query(self, cypher: str, **kwargs: object) -> tuple[list[dict[str, int]], None, None]:
+            calls.append((cypher, kwargs))
+            if "MATCH ()-[r]->()" in cypher:
+                return ([{"deleted": self.relationship_counts.pop(0)}], None, None)
+            if "MATCH (n)" in cypher:
+                return ([{"deleted": self.node_counts.pop(0)}], None, None)
+            raise AssertionError(f"unexpected reset query: {cypher}")
+
+    totals = await _reset_benchmark_graph(
+        SimpleNamespace(_driver=FakeDriver()),  # type: ignore[arg-type]
+        batch_size=1000,
+    )
+
+    assert totals == {"relationships": 1500, "nodes": 1001}
+    assert len(calls) == 6
+    assert all(call[1]["batch_size"] == 1000 for call in calls)
+    assert "MATCH (n) DETACH DELETE n" not in "\n".join(call[0] for call in calls)
+
+
 def test_benchmark_projection_cache_key_ignores_eventloom_seal(tmp_path: Path) -> None:
     """Projection reuse should survive regenerated Eventloom timestamps and hashes."""
     first_log = EventLog(tmp_path / "first.jsonl")
@@ -1552,6 +1591,19 @@ def test_source_lane_queries_expand_aggregation_event_actions() -> None:
     )
 
 
+def test_source_lane_queries_expand_instrument_ownership_actions() -> None:
+    """Instrument aggregation should search owned instrument brands and families."""
+    queries = source_lane_queries(
+        "How many musical instruments do I currently own?",
+        [],
+    )
+
+    assert queries == (
+        "How many musical instruments do I currently own?",
+        "musical instruments guitar piano drum set acoustic electric korg yamaha fender pearl owned had playing",
+    )
+
+
 async def test_zaxy_retriever_uses_graph_answer_concepts_for_source_lane() -> None:
     """Source backfill should recover provenance for graph-discovered answer concepts."""
     source_contexts = [
@@ -1647,6 +1699,60 @@ async def test_zaxy_retriever_merges_expanded_source_queries_before_truncation()
     assert any("answer-2" in result for result in results)
 
 
+async def test_zaxy_retriever_uses_graph_evidence_for_temporal_synthesis() -> None:
+    """Synthesis should use graph-retrieved cited turns as well as lexical backfill."""
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, limit, embedding
+            return [
+                SimpleNamespace(
+                    content=(
+                        "longmemeval_session_id=answer-1 "
+                        "I got my new binoculars exactly three weeks ago."
+                    )
+                )
+            ]
+
+    class QueryAwareLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point
+            return [
+                (
+                    "longmemeval_session_id=answer-2 I saw the American goldfinches "
+                    "returning to the area a week ago."
+                ),
+                (
+                    "longmemeval_session_id=answer-1 I waited months for the "
+                    "binoculars to arrive."
+                ),
+            ][:limit]
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=QueryAwareLexical(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "How long did I use my new binoculars before I saw the American goldfinches returning to the area?",
+        limit=5,
+    )
+
+    assert "week_interval=2 weeks" in results[0]
+    assert "week_interval_answer=Two weeks" in results[0]
+
+
 def test_absence_check_ignores_direct_fact_question_words() -> None:
     """Absence guidance should not fire when direct fact terms are present in evidence."""
     bundle = absence_check_bundle(
@@ -1662,6 +1768,428 @@ def test_absence_check_ignores_direct_fact_question_words() -> None:
     )
 
     assert bundle is None
+
+
+def test_source_synthesis_bundle_requires_typed_evidence_for_aggregation() -> None:
+    """Unsupported aggregation should fall through to absence guidance instead of hallucinating."""
+    contexts = [
+        (
+            "citation=eventloom://benchmark/events/1#abc "
+            "longmemeval_session_id=answer I spent two weeks traveling solo around Japan."
+        )
+    ]
+
+    bundle = source_synthesis_bundle(
+        query="How long was I in Korea for?",
+        source_results=contexts,
+        limit=5,
+    )
+
+    assert bundle is None
+    absence = absence_check_bundle(
+        query="How long was I in Korea for?",
+        source_results=contexts,
+        limit=5,
+    )
+    assert absence is not None
+    assert "not_mentioned_candidate=korea" in absence
+    assert "Japan" in absence
+
+
+def test_source_synthesis_bundle_defers_to_absence_when_comparison_target_is_missing() -> None:
+    """Alternative questions should not synthesize an answer when one side lacks user evidence."""
+    contexts = [
+        (
+            "citation=eventloom://benchmark/events/1#abc "
+            "longmemeval_session_id=answer-1 "
+            "user: I just fixed the broken fence on the east side of my property three weeks ago."
+        ),
+        (
+            "citation=eventloom://benchmark/events/2#abc "
+            "longmemeval_session_id=answer-2 "
+            "assistant: Peter can advise you about dairy cows, but no purchase was mentioned."
+        ),
+    ]
+
+    bundle = source_synthesis_bundle(
+        query="Which task did I complete first, fixing the fence or purchasing three cows from Peter?",
+        source_results=contexts,
+        limit=5,
+    )
+    absence = absence_check_bundle(
+        query="Which task did I complete first, fixing the fence or purchasing three cows from Peter?",
+        source_results=contexts,
+        limit=5,
+    )
+
+    assert bundle is None
+    assert absence is not None
+    assert "not_mentioned_candidate=purchasing three cows peter" in absence
+    assert "fixing the fence" in absence
+
+
+def test_source_synthesis_bundle_defers_to_absence_when_temporal_anchor_is_missing() -> None:
+    """Temporal calculations should not proceed when an explicit event anchor is absent."""
+    contexts = [
+        (
+            "citation=eventloom://benchmark/events/1#abc "
+            "longmemeval_session_id=answer-1 "
+            "user: I attended the annual Holiday Market at the local mall a week before Black Friday."
+        ),
+        (
+            "citation=eventloom://benchmark/events/2#abc "
+            "longmemeval_session_id=answer-2 "
+            "user: I got the iPhone 13 Pro for my sister's birthday."
+        ),
+    ]
+
+    bundle = source_synthesis_bundle(
+        query="How many days before I bought my iPad did I attend the Holiday Market?",
+        source_results=contexts,
+        limit=5,
+    )
+    absence = absence_check_bundle(
+        query="How many days before I bought my iPad did I attend the Holiday Market?",
+        source_results=contexts,
+        limit=5,
+    )
+
+    assert bundle is None
+    assert absence is not None
+    assert "not_mentioned_candidate=bought ipad" in absence
+    assert "holiday market" in absence.casefold()
+
+
+def test_source_evidence_score_detects_single_property_evidence() -> None:
+    """Source ordering should prefer single cited evidence rows before aggregation is complete."""
+    query = "How many properties did I view before making an offer on the townhouse in Brookside?"
+    evidence = (
+        "longmemeval_session_id=answer-1 "
+        "user: I viewed a 1-bedroom condo on February 10th, "
+        "but the noise from the highway was a deal-breaker."
+    )
+    topical_non_evidence = (
+        "longmemeval_session_id=answer-2 "
+        "assistant: Research helps you understand condo fees, taxes, insurance, "
+        "and other expenses before buying a property."
+    )
+
+    assert source_evidence_score(query, evidence) > source_evidence_score(
+        query,
+        topical_non_evidence,
+    )
+
+
+def test_absence_check_bundle_preserves_model_identifier_targets() -> None:
+    """Missing alternative targets should keep numeric and single-letter model identifiers."""
+    absence = absence_check_bundle(
+        query="Which project did I start first, the Ferrari model or the Porsche 991 Turbo S model?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=answer-1 "
+                "user: I started the Ferrari F40 model kit last month."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#abc "
+                "longmemeval_session_id=answer-2 "
+                "assistant: The Porsche 911 Turbo is an interesting sports car, but no project was mentioned."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert absence is not None
+    assert "not_mentioned_candidate=porsche 991 turbo s model" in absence
+
+
+def test_source_synthesis_bundle_projects_last_week_relative_interval() -> None:
+    """Relative-time synthesis should derive elapsed intervals instead of summing anchors."""
+    bundle = source_synthesis_bundle(
+        query="How long had I been a member of Book Lovers Unite when I attended the meetup?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=joined "
+                "user: I joined Book Lovers Unite three weeks ago."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#abc "
+                "longmemeval_session_id=meetup "
+                "user: I attended a meetup organized by Book Lovers Unite last week."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "week_values=" in bundle
+    assert "week_interval_answer=Two weeks" in bundle
+
+
+def test_source_synthesis_bundle_preserves_cross_source_relative_week_evidence() -> None:
+    """Relative-time filtering should keep both event anchors across sources."""
+    bundle = source_synthesis_bundle(
+        query="How long did I use my new binoculars before I saw the American goldfinches returning to the area?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=goldfinches "
+                "user: I've been listening to bird calls online for about a month. "
+                "I noticed the American goldfinches returning to the area a week ago."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#abc "
+                "longmemeval_session_id=goldfinches "
+                "user: The American goldfinches returning to the area a week ago "
+                "made bird identification practice more exciting."
+            ),
+            (
+                "citation=eventloom://benchmark/events/3#abc "
+                "longmemeval_session_id=binoculars "
+                "user: The binoculars arrived exactly three weeks ago."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "week_interval_answer=Two weeks" in bundle
+
+
+def test_source_synthesis_bundle_keeps_temporal_synthesis_for_generic_missing_words() -> None:
+    """Generic query words should not trigger absence routing when temporal evidence is present."""
+    bundle = source_synthesis_bundle(
+        query="How many days before Rachel's party did I find the house I loved?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=answer-1 "
+                "user: On 2026/03/01 I found the perfect house for the party."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#abc "
+                "longmemeval_session_id=answer-2 "
+                "user: Rachel's party happened on 2026/03/15."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "zaxy_absence_check=true" not in bundle
+    assert "date_interval_answer=14 days. 15 days (including the last day) is also acceptable." in bundle
+
+
+def test_absence_check_bundle_uses_missing_concrete_action_target() -> None:
+    """Direct absence questions should cite nearby memories without inventing absent actions."""
+    absence = absence_check_bundle(
+        query="How many days before I bought my iPad did I visit Seattle?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=answer-1 "
+                "user: I visited Seattle on 2026/02/01 and had dinner downtown."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#abc "
+                "longmemeval_session_id=answer-2 "
+                "assistant: I can help compare tablet models, but no purchase was mentioned."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert absence is not None
+    assert "not_mentioned_candidate=bought ipad" in absence
+    assert "visit seattle" in absence
+
+
+def test_absence_check_bundle_does_not_route_generic_count_gaps() -> None:
+    """Count/list synthesis should not become absence just because generic query words are absent."""
+    absence = absence_check_bundle(
+        query="How many musical instruments do I currently own?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=answer-1 "
+                "user: I've been playing my Fender Stratocaster electric guitar for years."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#abc "
+                "longmemeval_session_id=answer-2 "
+                "user: I'm thinking of selling my old Pearl Export drum set."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert absence is None
+
+
+def test_source_synthesis_bundle_keeps_model_kit_count_evidence_out_of_absence() -> None:
+    """Countable aggregation evidence should not be replaced by absence guidance."""
+    bundle = source_synthesis_bundle(
+        query="How many model kits have I worked on or bought?",
+        source_results=[
+            "session_id=answer-1 I recently finished a simple Revell F-15 Eagle kit.",
+            "session_id=answer-2 I finished a Tamiya 1/48 scale Spitfire Mk.V.",
+            "session_id=answer-3 I started working on a 1/16 scale German Tiger I tank.",
+            "session_id=answer-4 I just got this kit and a 1/24 scale '69 Camaro at a model show.",
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "zaxy_synthesis_bundle=true" in bundle
+    assert "zaxy_absence_check=true" not in bundle
+    assert "count_answer=4" in bundle
+
+
+def test_absence_check_bundle_does_not_route_missing_generic_temporal_words() -> None:
+    """Temporal source recall needs more evidence, not a false absence answer."""
+    absence = absence_check_bundle(
+        query="Which streaming service did I start using most recently?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=answer-1 "
+                "user: I started using Hulu a few months ago."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#abc "
+                "longmemeval_session_id=answer-2 "
+                "user: I started using Apple TV+ last month."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert absence is None
+
+
+def test_source_synthesis_bundle_treats_got_gift_as_bought_gift_evidence() -> None:
+    """Concrete absence routing should not reject equivalent first-person gift wording."""
+    contexts = [
+        (
+            "citation=eventloom://benchmark/events/1#abc "
+            "longmemeval_session_id=graduation "
+            "longmemeval_session_date=2023/03/29 (Wed) "
+            "user: I recently got a wireless headphone for my brother as a graduation gift on the 3/8."
+        ),
+        (
+            "citation=eventloom://benchmark/events/2#abc "
+            "longmemeval_session_id=birthday "
+            "longmemeval_session_date=2023/03/29 (Wed) "
+            "user: I bought a birthday gift for my best friend on 3/15."
+        ),
+    ]
+
+    absence = absence_check_bundle(
+        query=(
+            "How many days had passed between the day I bought a gift for my brother's "
+            "graduation ceremony and the day I bought a birthday gift for my best friend?"
+        ),
+        source_results=contexts,
+        limit=5,
+    )
+    bundle = source_synthesis_bundle(
+        query=(
+            "How many days had passed between the day I bought a gift for my brother's "
+            "graduation ceremony and the day I bought a birthday gift for my best friend?"
+        ),
+        source_results=contexts,
+        limit=5,
+    )
+
+    assert absence is None
+    assert bundle is not None
+    assert "date_interval_days=7" in bundle
+
+
+def test_source_synthesis_bundle_projects_direct_attribute_answers() -> None:
+    """Direct facts should expose a compact answer when source wording is paraphrastic."""
+    bundle = source_synthesis_bundle(
+        query="What is my ethnicity?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=answer "
+                "I've been thinking about my mixed ethnicity - Irish and Italian - lately."
+            )
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "direct_fact_type=attribute" in bundle
+    assert "direct_fact_attribute=ethnicity" in bundle
+    assert "direct_answer=A mix of Irish and Italian" in bundle
+
+
+def test_source_synthesis_bundle_prefers_typed_evidence_within_source_groups() -> None:
+    """Aggregation synthesis should choose evidence-bearing snippets per source group."""
+    bundle = source_synthesis_bundle(
+        query="How much total money have I spent on bike-related expenses since the start of the year?",
+        source_results=[
+            (
+                "longmemeval/gpt4_d84a3211/answer_1/chunk-0001.md "
+                "longmemeval_session_id=answer_1 bike trails and route planning without expenses."
+            ),
+            *[
+                (
+                    f"longmemeval/gpt4_d84a3211/distractor_{index}/chunk-0001.md "
+                    f"longmemeval_session_id=distractor_{index} bike route planning context."
+                )
+                for index in range(1, 15)
+            ],
+            (
+                "longmemeval/gpt4_d84a3211/answer_1/salient-turn.md "
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=answer_1 I bought my Bell Zephyr bike helmet for $120."
+            ),
+            (
+                "longmemeval/gpt4_d84a3211/answer_2/salient-turn.md "
+                "citation=eventloom://benchmark/events/2#abc "
+                "longmemeval_session_id=answer_2 I replaced my bike chain, which cost $25."
+            ),
+            (
+                "longmemeval/gpt4_d84a3211/answer_3/salient-turn.md "
+                "citation=eventloom://benchmark/events/3#abc "
+                "longmemeval_session_id=answer_3 I got bike lights installed for $40."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "currency_total_answer=$185" in bundle
+
+
+def test_source_synthesis_bundle_derives_age_at_event_from_elapsed_years() -> None:
+    """Age-at-event queries should expose deterministic cited arithmetic."""
+    bundle = source_synthesis_bundle(
+        query="How old was I when I moved to the United States?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=answer_1 "
+                "I'm 32-year-old male and have been updating my immigration paperwork."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#def "
+                "longmemeval_session_id=answer_2 "
+                "I've been living in the United States for the past five years on a work visa."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "age_current=32" in bundle
+    assert "age_elapsed_years=5" in bundle
+    assert "age_at_event_operation=32-5" in bundle
+    assert "age_at_event_answer=27" in bundle
 
 
 async def test_zaxy_retriever_preserves_original_source_query_when_graph_concepts_are_noisy() -> None:
@@ -1722,6 +2250,49 @@ async def test_zaxy_retriever_preserves_original_source_query_when_graph_concept
 
     assert seen_queries[0] == "What play did I attend at the local community theater?"
     assert any("The Glass Menagerie" in result for result in results)
+
+
+def test_source_lane_results_preserve_literal_personal_recall_before_expansion() -> None:
+    """Literal personal-memory evidence should not be evicted by expanded-query distractors."""
+    query = "What play did I attend at the local community theater?"
+    graph_results = ["graph says Provenance Story Netflix Adding"]
+    primary_answer = (
+        "citation=eventloom://benchmark/events/2#abc "
+        "longmemeval_session_id=answer_355c48bb "
+        "I attended The Glass Menagerie at the local community theater."
+    )
+
+    class QueryAwareLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del temporal_point
+            if "Provenance Story Netflix Adding" in query:
+                return [
+                    f"citation=eventloom://benchmark/events/{index}#abc expanded distractor {index}"
+                    for index in range(10, 10 + limit)
+                ]
+            return [
+                "citation=eventloom://benchmark/events/1#abc topical theater distractor",
+                primary_answer,
+            ][:limit]
+
+    retriever = ZaxyRetriever(
+        SimpleNamespace(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=QueryAwareLexical(),  # type: ignore[arg-type]
+    )
+
+    results = retriever._source_lane_results(
+        source_lane_queries(query, graph_results),
+        temporal_point=None,
+        limit=5,
+    )
+
+    assert primary_answer in results
 
 
 def test_bridge_source_lane_queries_expands_possessive_pet_mentions() -> None:
@@ -1926,6 +2497,82 @@ async def test_zaxy_retriever_reserves_multiple_source_lanes_for_aggregation() -
     assert sum("session_id=answer-" in result for result in results) == 4
 
 
+def test_longmemeval_case_scope_terms_are_path_scoped() -> None:
+    """LongMemEval benchmark cases should resolve to their per-question document namespace."""
+    case = BenchmarkCase(
+        name="longmemeval-gpt4_d84a3211",
+        query="How much total money have I spent on bike-related expenses?",
+        expected_terms=("$185",),
+    )
+
+    assert benchmark_case_scope_terms(case) == ("longmemeval/gpt4_d84a3211/",)
+
+
+async def test_zaxy_retriever_scopes_source_synthesis_before_aggregation() -> None:
+    """Source synthesis should not mix unrelated benchmark/user domains."""
+    corpus = (
+        BenchmarkChunk(
+            "target-1",
+            (
+                "longmemeval/gpt4_d84a3211/answer_1/salient-turn.md "
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=answer_1 I bought a Bell Zephyr bike helmet for $120."
+            ),
+        ),
+        BenchmarkChunk(
+            "target-2",
+            (
+                "longmemeval/gpt4_d84a3211/answer_2/salient-turn.md "
+                "citation=eventloom://benchmark/events/2#abc "
+                "longmemeval_session_id=answer_2 I replaced my bike chain, which was $25."
+            ),
+        ),
+        BenchmarkChunk(
+            "target-3",
+            (
+                "longmemeval/gpt4_d84a3211/answer_3/salient-turn.md "
+                "citation=eventloom://benchmark/events/3#abc "
+                "longmemeval_session_id=answer_3 I got bike lights installed for $40."
+            ),
+        ),
+        BenchmarkChunk(
+            "distractor",
+            (
+                "longmemeval/129d1232/answer_distractor/salient-turn.md "
+                "citation=eventloom://benchmark/events/4#abc "
+                "longmemeval_session_id=answer_distractor "
+                "I participated in a Bike-a-Thon for Cancer Research and raised $5,000."
+            ),
+        ),
+    )
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, limit, embedding
+            return []
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=BM25Retriever(corpus),
+        scope_resolver=lambda query: ("longmemeval/gpt4_d84a3211/",),
+    )
+
+    results = await retriever.query_async(
+        "How much total money have I spent on bike-related expenses since the start of the year?",
+        limit=5,
+    )
+
+    assert "$185" in results[0]
+    assert "$5,000" not in results[0]
+
+
 def test_aggregation_intent_reserves_larger_source_set() -> None:
     """Aggregation questions should allocate enough source slots for collection."""
     intent = classify_retrieval_intent("How many weddings did I attend?", limit=10)
@@ -1933,6 +2580,7 @@ def test_aggregation_intent_reserves_larger_source_set() -> None:
     assert intent.needs_source_lane
     assert intent.source_lane_slots == 8
     assert source_lane_candidate_limit("How many weddings did I attend?", limit=10) == 48
+    assert source_synthesis_candidate_limit(intent, limit=10) == 32
 
 
 async def test_zaxy_retriever_overfetches_salient_sources_for_aggregation() -> None:
@@ -2038,12 +2686,12 @@ async def test_zaxy_retriever_projects_aggregation_source_bundle() -> None:
     assert "synthesis_mode=multi_source_aggregation" in bundle
     assert "candidate_rank=1 candidate_type=count" in bundle
     assert "candidate_confidence=" in bundle
-    assert "candidate_support=answer-1,answer-2,answer-3,answer-4,answer-5" in bundle
-    assert "source_count=5" in bundle
-    assert "count_answer=5" in bundle
+    assert "candidate_support=answer-1,answer-2,answer-3,answer-4,answer-5,answer-6" in bundle
+    assert "source_count=6" in bundle
+    assert "count_answer=6" in bundle
     assert "session_id=answer-1" in bundle
-    assert "session_id=answer-5" in bundle
-    assert "\n".join(results).count("session_id=answer-") >= 5
+    assert "session_id=answer-6" in bundle
+    assert "\n".join(results).count("session_id=answer-") >= 6
 
 
 async def test_zaxy_retriever_counts_distinct_event_sources_not_duplicate_mentions() -> None:
@@ -3582,6 +4230,8 @@ def _report_with_zaxy_summary(
     citation_coverage: float,
     p95_ms: float,
     p99_ms: float,
+    answer_recall_at_5: float | None = None,
+    recall_at_5: float | None = None,
 ) -> BenchmarkReport:
     return BenchmarkReport(
         generated_at="2026-05-11T00:00:00Z",
@@ -3600,6 +4250,8 @@ def _report_with_zaxy_summary(
                 mean_returned_bytes=950.0,
                 mean_approx_tokens=236.0,
                 mean_citation_coverage=citation_coverage,
+                mean_recall_at_5=recall_at_5,
+                mean_answer_recall_at_5=answer_recall_at_5,
             ),
         ),
     )
@@ -3665,6 +4317,43 @@ def test_benchmark_compare_passes_latency_improvement() -> None:
     assert comparison.passed is True
     assert all(check.passed for check in comparison.checks)
     assert "PASS" in format_benchmark_comparison(comparison)
+
+
+def test_benchmark_compare_enforces_answer_and_retrieval_recall_floors() -> None:
+    """Benchmark guardrails should treat Answer@5 and R@5 as beta quality floors."""
+    candidate = _report_with_zaxy_summary(
+        mean_score=0.99,
+        citation_coverage=1.0,
+        p95_ms=250.0,
+        p99_ms=300.0,
+        answer_recall_at_5=0.94,
+        recall_at_5=0.98,
+    )
+
+    comparison = compare_benchmark_reports(
+        None,
+        candidate,
+        backend="zaxy",
+        min_mean_score=0.95,
+        min_citation_coverage=0.95,
+        min_answer_recall_at_5=0.95,
+        min_recall_at_5=0.99,
+        max_p95_ms=500.0,
+        max_p99_ms=750.0,
+    )
+
+    assert comparison.passed is False
+    assert any(
+        check.name == "answer_recall_at_5_floor" and check.passed is False
+        for check in comparison.checks
+    )
+    assert any(
+        check.name == "recall_at_5_floor" and check.passed is False
+        for check in comparison.checks
+    )
+    markdown = format_benchmark_comparison(comparison)
+    assert "answer_recall_at_5_floor" in markdown
+    assert "recall_at_5_floor" in markdown
 
 
 def test_frozen_statistical_workload_has_stable_identity(tmp_path: Path) -> None:
@@ -3866,8 +4555,8 @@ def test_source_lane_retriever_uses_semantic_candidates_when_bm25_misses() -> No
     assert "primary care physician" in source_results[0]
 
 
-def test_source_lane_retriever_keeps_hash_provider_lexical() -> None:
-    """Hash embeddings should not be treated as independent semantic evidence."""
+def test_source_lane_retriever_keeps_hash_provider_lexical_by_default() -> None:
+    """Hash embeddings should not activate experimental frontier evidence by default."""
     corpus = (
         BenchmarkChunk("target", "I met with my primary care physician yesterday."),
         BenchmarkChunk("distractor", "I bought a lamp for the office yesterday."),
@@ -3879,6 +4568,61 @@ def test_source_lane_retriever_keeps_hash_provider_lexical() -> None:
     ).query("doctor?", limit=2)
 
     assert source_results == []
+
+
+def test_source_lane_retriever_keeps_cached_hash_provider_lexical() -> None:
+    """Benchmark caching should preserve hash-provider capability detection."""
+    corpus = (
+        BenchmarkChunk("target", "I met with my primary care physician yesterday."),
+        BenchmarkChunk("distractor", "I bought a lamp for the office yesterday."),
+    )
+
+    retriever = _build_source_lane_retriever(
+        corpus,
+        CachedEmbeddingProvider(HashEmbeddingProvider(dimension=8)),
+    )
+
+    assert type(retriever) is BM25Retriever
+
+
+def test_evidence_frontier_prefers_first_person_evidence_over_topical_overlap() -> None:
+    """Frontier retrieval should rank answerable memory evidence above topical text."""
+    corpus = (
+        BenchmarkChunk(
+            "distractor",
+            "This document compares film festival distribution strategies and movie marketing.",
+        ),
+        BenchmarkChunk(
+            "answer",
+            "longmemeval_salient_memory_turn=true session_id=answer I went to AFI Fest in LA.",
+        ),
+    )
+
+    results = EvidenceFrontierRetriever(corpus).query(
+        "How many movie festivals did I attend?",
+        limit=1,
+    )
+
+    assert results == [corpus[1].text]
+
+
+def test_evidence_frontier_recovers_model_kit_action_paraphrases() -> None:
+    """Frontier retrieval should search how memories are written, not only query wording."""
+    corpus = (
+        BenchmarkChunk("distractor", "model kit manufacturers and custom kit maker advice"),
+        BenchmarkChunk(
+            "answer",
+            "longmemeval_salient_memory_turn=true session_id=answer "
+            "I've recently finished a simple Revell F-15 Eagle kit.",
+        ),
+    )
+
+    results = EvidenceFrontierRetriever(corpus).query(
+        "How many model kits have I worked on or bought?",
+        limit=1,
+    )
+
+    assert results == [corpus[1].text]
 
 
 def test_live_benchmark_script_help_mentions_frozen_workload() -> None:

@@ -93,6 +93,7 @@ from zaxy.live_benchmark import (
     _build_source_lane_retriever,
     benchmark_live_retrievers,
     benchmark_projection_cache_key,
+    benchmark_query_scope_resolver,
     build_benchmark_suite_workload,
     build_consolidation_collapse_workload,
     build_context_collapse_workload,
@@ -1791,6 +1792,8 @@ def _parse_benchmark_baselines(value: str, *, allow_centroid: bool) -> tuple[str
     allowed = {"md", "bm25", "vector", "md+vector"}
     if allow_centroid:
         allowed.add("centroid")
+    if value.strip().casefold() in {"none", "zaxy-only", "zaxy_only"}:
+        return ()
     selected = tuple(dict.fromkeys(part.strip() for part in value.split(",") if part.strip()))
     if not selected:
         raise typer.BadParameter("--baseline-backends must include at least one backend")
@@ -1893,7 +1896,7 @@ def benchmark(
     baseline_backends: str = typer.Option(
         "md,bm25,vector,md+vector",
         "--baseline-backends",
-        help="Comma-separated non-Zaxy baselines to run: md,bm25,vector,md+vector,centroid",
+        help="Comma-separated non-Zaxy baselines to run: md,bm25,vector,md+vector,centroid,none",
     ),
     zaxy_backend: str = typer.Option(
         "graph",
@@ -2055,6 +2058,7 @@ def benchmark(
                 lexical_retriever=_build_source_lane_retriever(corpus, provider),
                 reuse_projection=reuse_projection,
                 projection_cache_key=projection_cache_key,
+                scope_resolver=benchmark_query_scope_resolver(cases),
             )
             try:
                 checkout_retriever: ZaxyCheckoutRetriever | None = None
@@ -2157,6 +2161,14 @@ def benchmark_compare(
     ),
     backend: str = typer.Option("zaxy", help="Backend to guard, usually zaxy"),
     min_mean_score: float = typer.Option(0.95, help="Minimum acceptable mean score"),
+    min_answer_recall_at_5: float | None = typer.Option(
+        0.95,
+        help="Minimum acceptable Answer@5 when reported",
+    ),
+    min_recall_at_5: float | None = typer.Option(
+        0.99,
+        help="Minimum acceptable Recall@5 when reported",
+    ),
     min_citation_coverage: float = typer.Option(
         0.95,
         help="Minimum acceptable citation coverage when reported",
@@ -2177,6 +2189,8 @@ def benchmark_compare(
         candidate_report,
         backend=backend,
         min_mean_score=min_mean_score,
+        min_answer_recall_at_5=min_answer_recall_at_5,
+        min_recall_at_5=min_recall_at_5,
         min_citation_coverage=min_citation_coverage,
         max_p95_ms=max_p95_ms,
         max_p99_ms=max_p99_ms,
