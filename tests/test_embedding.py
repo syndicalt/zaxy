@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import types
 
 import httpx
 import pytest
@@ -13,6 +14,7 @@ from zaxy.embedding import (
     LocalHTTPEmbeddingProvider,
     OpenAIEmbeddingProvider,
     SentenceTransformersEmbeddingProvider,
+    _load_sentence_transformer,
     build_embedding_provider,
     embed_extraction,
     entity_embedding_text,
@@ -487,6 +489,45 @@ class TestLocalHTTPEmbeddingProvider:
 
 class TestSentenceTransformersEmbeddingProvider:
     """Tests for the optional in-process local semantic embedding adapter."""
+
+    def test_loader_uses_optional_dependency_when_available(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        captured: dict[str, str] = {}
+
+        class FakeModel:
+            def encode(self, text: str, *, normalize_embeddings: bool) -> list[float]:
+                del text, normalize_embeddings
+                return [0.1]
+
+        def fake_factory(model_name: str) -> FakeModel:
+            captured["model_name"] = model_name
+            return FakeModel()
+
+        def fake_import_module(name: str) -> types.SimpleNamespace:
+            assert name == "sentence_transformers"
+            return types.SimpleNamespace(SentenceTransformer=fake_factory)
+
+        monkeypatch.setattr("zaxy.embedding.importlib.import_module", fake_import_module)
+
+        model = _load_sentence_transformer("sentence-transformers/all-MiniLM-L6-v2")
+
+        assert model.encode("query", normalize_embeddings=True) == [0.1]
+        assert captured == {"model_name": "sentence-transformers/all-MiniLM-L6-v2"}
+
+    def test_loader_raises_actionable_error_when_dependency_missing(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        def fake_import_module(name: str) -> types.SimpleNamespace:
+            assert name == "sentence_transformers"
+            raise ImportError("missing")
+
+        monkeypatch.setattr("zaxy.embedding.importlib.import_module", fake_import_module)
+
+        with pytest.raises(ValueError, match=r"zaxy-memory\[local-embeddings\]"):
+            _load_sentence_transformer("sentence-transformers/all-MiniLM-L6-v2")
 
     def test_embed_uses_sentence_transformers_model(self) -> None:
         captured: dict[str, object] = {}

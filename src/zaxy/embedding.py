@@ -8,10 +8,11 @@ core write path.
 from __future__ import annotations
 
 import hashlib
+import importlib
 import math
 import time
 from dataclasses import replace
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import httpx
 
@@ -25,6 +26,20 @@ class EmbeddingProvider(Protocol):
 
     def embed(self, text: str) -> list[float]:
         """Return an embedding vector for text."""
+
+
+class SentenceTransformerModel(Protocol):
+    """Minimal protocol for sentence-transformers compatible models."""
+
+    def encode(self, text: str, *, normalize_embeddings: bool) -> Any:
+        """Return a vector-like embedding for text."""
+
+
+class SentenceTransformerFactory(Protocol):
+    """Callable constructor exposed by the optional sentence-transformers package."""
+
+    def __call__(self, model_name: str) -> SentenceTransformerModel:
+        """Build a local sentence-transformers model."""
 
 
 class HashEmbeddingProvider:
@@ -208,7 +223,7 @@ class SentenceTransformersEmbeddingProvider:
         model_name: str,
         *,
         dimension: int,
-        model: Any | None = None,
+        model: SentenceTransformerModel | None = None,
     ) -> None:
         if not model_name:
             raise ValueError("EMBEDDING_SENTENCE_TRANSFORMER_MODEL is required")
@@ -231,17 +246,23 @@ class SentenceTransformersEmbeddingProvider:
         return vector
 
 
-def _load_sentence_transformer(model_name: str) -> Any:
+def _load_sentence_transformer(model_name: str) -> SentenceTransformerModel:
     """Load a sentence-transformers model with an actionable dependency error."""
     try:
-        from sentence_transformers import SentenceTransformer
+        module = importlib.import_module("sentence_transformers")
     except ImportError as exc:  # pragma: no cover - exercised through factory behavior
         raise ValueError(
             "sentence-transformers is required when "
             "EMBEDDING_PROVIDER=sentence-transformers; install "
             "zaxy-memory[local-embeddings]"
         ) from exc
-    return SentenceTransformer(model_name)
+    factory = getattr(module, "SentenceTransformer", None)
+    if factory is None:
+        raise ValueError(
+            "sentence-transformers did not expose SentenceTransformer; reinstall "
+            "zaxy-memory[local-embeddings]"
+        )
+    return cast(SentenceTransformerFactory, factory)(model_name)
 
 
 def build_embedding_provider(settings: Any) -> EmbeddingProvider | None:
