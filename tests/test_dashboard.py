@@ -261,6 +261,149 @@ def test_neo4j_dashboard_provider_uses_direct_reads_without_transaction_retry() 
     assert "execute_read" not in Neo4jDashboardGraphProvider.path_to_event.__code__.co_names
 
 
+def test_neo4j_dashboard_summary_returns_renderable_elements() -> None:
+    class FakeNeo4jDateTime:
+        def iso_format(self) -> str:
+            return "2026-05-16T00:00:00Z"
+
+    class FakeNode:
+        element_id = "n1"
+        labels = ["Entity"]
+
+        def items(self) -> list[tuple[str, object]]:
+            return [("name", "Decision"), ("created_at", FakeNeo4jDateTime())]
+
+    class FakeCountRecord(dict[str, object]):
+        pass
+
+    class FakePathRecord(dict[str, object]):
+        pass
+
+    class FakeSession:
+        def __enter__(self) -> FakeSession:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def run(self, query: str, **_params: object) -> object:
+            if "count(n)" in query:
+                return _FakeResult([FakeCountRecord(count=1)])
+            if "count(r)" in query:
+                return _FakeResult([FakeCountRecord(count=0)])
+            return _FakeResult([FakePathRecord(n=FakeNode())])
+
+    class FakeDriver:
+        def session(self) -> FakeSession:
+            return FakeSession()
+
+    provider = Neo4jDashboardGraphProvider.__new__(Neo4jDashboardGraphProvider)
+    provider._driver = FakeDriver()
+
+    result = provider.summary(session_id="agent-1")
+
+    assert result["source"] == "neo4j"
+    assert result["nodes"] == 1
+    assert result["edges"] == 0
+    assert result["elements"] == {
+        "nodes": [
+            {
+                "id": "n1",
+                "label": "Decision",
+                "labels": ["Entity"],
+                "properties": {"created_at": "2026-05-16T00:00:00Z", "name": "Decision"},
+            }
+        ],
+        "edges": [],
+    }
+
+
+def test_neo4j_dashboard_summary_accepts_record_get_paths() -> None:
+    class FakeNode:
+        def __init__(self, element_id: str, name: str) -> None:
+            self.element_id = element_id
+            self.labels = ["Entity"]
+            self.name = name
+
+        def items(self) -> list[tuple[str, object]]:
+            return [("name", self.name)]
+
+    class FakeRelationship:
+        element_id = "r1"
+        type = "RELATES"
+
+        def __init__(self, start_node: FakeNode, end_node: FakeNode) -> None:
+            self.start_node = start_node
+            self.end_node = end_node
+
+        def items(self) -> list[tuple[str, object]]:
+            return []
+
+    class FakePath:
+        def __init__(self) -> None:
+            start = FakeNode("n1", "Start")
+            end = FakeNode("n2", "End")
+            self.nodes = [start, end]
+            self.relationships = [FakeRelationship(start, end)]
+
+    class FakeRecord:
+        def __contains__(self, _key: object) -> bool:
+            return False
+
+        def get(self, key: str) -> object:
+            if key == "p":
+                return FakePath()
+            raise KeyError(key)
+
+    class FakeCountRecord(dict[str, object]):
+        pass
+
+    class FakeSession:
+        def __enter__(self) -> FakeSession:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def run(self, query: str, **_params: object) -> object:
+            if "count(n)" in query:
+                return _FakeResult([FakeCountRecord(count=2)])
+            if "count(r)" in query:
+                return _FakeResult([FakeCountRecord(count=1)])
+            return _FakeResult([FakeRecord()])
+
+    class FakeDriver:
+        def session(self) -> FakeSession:
+            return FakeSession()
+
+    provider = Neo4jDashboardGraphProvider.__new__(Neo4jDashboardGraphProvider)
+    provider._driver = FakeDriver()
+
+    result = provider.summary(session_id=None)
+
+    assert result["elements"]["edges"] == [
+        {
+            "id": "r1",
+            "label": "RELATES",
+            "properties": {},
+            "source": "n1",
+            "target": "n2",
+            "type": "RELATES",
+        }
+    ]
+
+
+class _FakeResult:
+    def __init__(self, records: list[dict[str, object]]) -> None:
+        self.records = records
+
+    def single(self) -> dict[str, object] | None:
+        return self.records[0] if self.records else None
+
+    def __iter__(self) -> object:
+        return iter(self.records)
+
+
 def test_dashboard_index_html_references_core_tabs_and_api() -> None:
     html = render_dashboard_html()
 

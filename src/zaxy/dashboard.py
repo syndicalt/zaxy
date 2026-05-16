@@ -379,9 +379,16 @@ class Neo4jDashboardGraphProvider:
             with self._driver.session() as session:
                 node_count = self._count_nodes(session, session_id)
                 edge_count = self._count_edges(session, session_id)
+                elements = self._overview_elements(session, session_id, limit=100)
         except Exception as exc:  # pragma: no cover - exercised in integration environments
             return _graph_error(exc)
-        return {"available": True, "nodes": node_count, "edges": edge_count}
+        return {
+            "available": True,
+            "source": "neo4j",
+            "nodes": node_count,
+            "edges": edge_count,
+            "elements": elements,
+        }
 
     def neighborhood(
         self,
@@ -468,6 +475,46 @@ class Neo4jDashboardGraphProvider:
             session_id=session_id,
         ).single()
         return int(record["count"]) if record else 0
+
+    @staticmethod
+    def _overview_elements(
+        tx: Any, session_id: str | None, limit: int
+    ) -> dict[str, list[dict[str, Any]]]:
+        path_records = tx.run(
+            """
+            MATCH p=(a)-[r]->(b)
+            WHERE $session_id IS NULL
+               OR a.session_id = $session_id
+               OR b.session_id = $session_id
+               OR r.session_id = $session_id
+            RETURN p
+            LIMIT $limit
+            """,
+            session_id=session_id,
+            limit=limit,
+        )
+        paths = [path for record in path_records if (path := record.get("p")) is not None]
+        if paths:
+            payload = _paths_payload(paths, limit=limit)
+            nodes = payload["nodes"]
+            edges = payload["edges"]
+            if not isinstance(nodes, list) or not isinstance(edges, list):
+                return {"nodes": [], "edges": []}
+            return {
+                "nodes": nodes,
+                "edges": edges,
+            }
+        node_records = tx.run(
+            """
+            MATCH (n)
+            WHERE $session_id IS NULL OR n.session_id = $session_id OR n.thread = $session_id
+            RETURN n
+            LIMIT $limit
+            """,
+            session_id=session_id,
+            limit=limit,
+        )
+        return {"nodes": [_node_payload(record["n"]) for record in node_records], "edges": []}
 
     @staticmethod
     def _search(
@@ -840,15 +887,20 @@ def _edge_payload(relationship: Any) -> dict[str, Any]:
 def _json_safe_properties(properties: dict[str, Any]) -> dict[str, Any]:
     safe: dict[str, Any] = {}
     for key, value in properties.items():
-        if isinstance(value, datetime | date):
-            safe[key] = value.isoformat()
-        elif isinstance(value, list):
-            safe[key] = [
-                item.isoformat() if isinstance(item, datetime | date) else item for item in value
-            ]
-        else:
-            safe[key] = value
+        safe[key] = _json_safe_value(value)
     return safe
+
+
+def _json_safe_value(value: Any) -> Any:
+    if isinstance(value, datetime | date):
+        return value.isoformat()
+    if hasattr(value, "iso_format"):
+        return value.iso_format()
+    if isinstance(value, list):
+        return [_json_safe_value(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _json_safe_value(item) for key, item in value.items()}
+    return value
 
 
 def render_dashboard_html() -> str:
