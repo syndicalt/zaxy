@@ -2760,3 +2760,13 @@ def test_viewer_command_writes_static_html(tmp_path: Path) -> None:
     assert f"Wrote Eventloom viewer: {output}" in result.output
     assert output.exists()
     assert "Eventloom Session Viewer" in output.read_text(encoding="utf-8")
+
+
+def test_dashboard_cli_help_exposes_localhost_default() -> None:
+    """dashboard should expose the local read-only web app command."""
+    runner = CliRunner()
+    result = runner.invoke(app, ["dashboard", "--help"])
+
+    assert result.exit_code == 0
+    assert "127.0.0.1" in result.output
+    assert "8765" in result.output

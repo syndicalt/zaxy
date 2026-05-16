@@ -1313,6 +1313,42 @@ def viewer(
     typer.echo(f"Wrote Eventloom viewer: {written}")
 
 
+@app.command("dashboard")
+def dashboard(
+    workspace: Path | None = typer.Option(None, help="Workspace root to inspect"),  # noqa: B008
+    eventloom_path: Path | None = typer.Option(None, help="Eventloom directory to inspect"),  # noqa: B008
+    session_id: str | None = typer.Option(None, help="Session ID to select by default"),  # noqa: B008
+    domain: str | None = typer.Option(None, help="Domain scope to display"),  # noqa: B008
+    host: str = typer.Option("127.0.0.1", help="Dashboard bind host"),
+    port: int = typer.Option(8765, min=1, max=65535, help="Dashboard bind port"),
+    neo4j_uri: str | None = typer.Option(None, help="Neo4j Bolt URI for graph visualization"),  # noqa: B008
+    neo4j_user: str | None = typer.Option(None, help="Neo4j username for graph visualization"),  # noqa: B008
+    neo4j_password: str | None = typer.Option(None, help="Neo4j password for graph visualization"),  # noqa: B008
+) -> None:
+    """Start the read-only local runtime dashboard."""
+    from zaxy.dashboard import DashboardConfig, resolve_dashboard_scope, run_dashboard
+
+    settings = get_settings()
+    scope = resolve_dashboard_scope(
+        DashboardConfig(
+            workspace=workspace,
+            eventloom_path=eventloom_path,
+            session_id=session_id,
+            domain=domain,
+            host=host,
+            port=port,
+            neo4j_uri=neo4j_uri or settings.neo4j_uri,
+            neo4j_user=neo4j_user or settings.neo4j_user,
+            neo4j_password=neo4j_password or settings.neo4j_password,
+        )
+    )
+    typer.echo(f"Zaxy dashboard listening on http://{scope.host}:{scope.port}")
+    typer.echo(f"Workspace: {scope.workspace}")
+    typer.echo(f"Eventloom: {scope.eventloom_path}")
+    typer.echo("Mode: read-only")
+    run_dashboard(scope)
+
+
 @app.command("schema-plan")
 def schema_plan() -> None:
     """Print the current Neo4j schema migration plan."""
