@@ -428,7 +428,7 @@ class Neo4jDashboardGraphProvider:
                 nodes = self._search(session, session_id, query, view, limit)
         except Exception as exc:  # pragma: no cover - exercised in integration environments
             return _graph_error(exc)
-        return {"available": True, "nodes": nodes, "edges": []}
+        return {"available": True, "source": "neo4j", "nodes": nodes, "edges": []}
 
     def path_to_event(
         self,
@@ -525,13 +525,19 @@ class Neo4jDashboardGraphProvider:
             MATCH (n)
             WHERE ($session_id IS NULL OR n.session_id = $session_id OR n.thread = $session_id)
               AND any(value IN [
-                n.name, n.summary, n.type, n.entity_type, n.path, n.source_path, n.actor
-              ] WHERE value IS NOT NULL AND toLower(toString(value)) CONTAINS toLower($query))
+                properties(n)["name"],
+                properties(n)["summary"],
+                properties(n)["type"],
+                properties(n)["entity_type"],
+                properties(n)["path"],
+                properties(n)["source_path"],
+                properties(n)["actor"]
+              ] WHERE value IS NOT NULL AND toLower(toString(value)) CONTAINS toLower($search_text))
             RETURN n
             LIMIT $limit
             """,
             session_id=session_id,
-            query=query,
+            search_text=query,
             view=view,
             limit=limit,
         )
@@ -976,7 +982,25 @@ def render_dashboard_html() -> str:
     .panel { padding: 12px; margin-bottom: 14px; }
     .tab { display: none; }
     .tab.active { display: block; }
+    .graph-layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 12px; }
+    .graph-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+    .graph-toolbar input {
+      flex: 1;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font: inherit;
+    }
+    .graph-toolbar button {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fbfcfe;
+      padding: 8px 10px;
+      font: inherit;
+      cursor: pointer;
+    }
     #graph-canvas { height: 560px; border: 1px solid var(--line); border-radius: 8px; background: #ffffff; }
+    #graph-detail { max-height: 560px; overflow: auto; }
     table { width: 100%; border-collapse: collapse; }
     th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
     th { color: var(--muted); font-size: 12px; }
@@ -987,6 +1011,7 @@ def render_dashboard_html() -> str:
       header { grid-template-columns: 1fr; }
       nav { overflow-x: auto; }
       .grid { grid-template-columns: 1fr 1fr; }
+      .graph-layout { grid-template-columns: 1fr; }
       #graph-canvas { height: 420px; }
     }
   </style>
@@ -1017,7 +1042,19 @@ def render_dashboard_html() -> str:
       <div class="panel"><pre id="status-json">{}</pre></div>
     </section>
     <section class="tab" id="sessions"><div class="panel"><table><thead><tr><th>Session</th><th>Events</th><th>Latest</th><th>Integrity</th></tr></thead><tbody id="sessions-body"></tbody></table></div></section>
-    <section class="tab" id="graph"><div class="panel warning" id="graph-warning"></div><div id="graph-canvas"></div></section>
+    <section class="tab" id="graph">
+      <div class="panel warning" id="graph-warning"></div>
+      <div class="graph-toolbar">
+        <input id="graph-search" type="search" placeholder="Search graph nodes">
+        <button id="graph-search-button" type="button">Search</button>
+        <button id="graph-reset-button" type="button">Overview</button>
+        <button id="graph-expand-button" type="button">Expand</button>
+      </div>
+      <div class="graph-layout">
+        <div id="graph-canvas"></div>
+        <div class="panel" id="graph-detail"><pre>Select a node or edge.</pre></div>
+      </div>
+    </section>
     <section class="tab" id="checkout"><div class="panel"><pre>Checkout diagnostics endpoint is reserved for the next dashboard slice.</pre></div></section>
     <section class="tab" id="events"><div class="panel"><table><thead><tr><th>Session</th><th>Seq</th><th>Type</th><th>Actor</th><th>Summary</th></tr></thead><tbody id="events-body"></tbody></table></div></section>
   </main>
@@ -1025,6 +1062,9 @@ def render_dashboard_html() -> str:
     const statusUrl = "/api/status";
     const eventsUrl = "/api/events?limit=25";
     const graphUrl = "/api/graph/summary";
+    const graphSearchUrl = "/api/graph/search";
+    const graphNeighborhoodUrl = "/api/graph/neighborhood";
+    let selectedGraphNodeId = null;
 
     document.querySelectorAll("nav button").forEach((button) => {
       button.addEventListener("click", () => {
@@ -1041,10 +1081,18 @@ def render_dashboard_html() -> str:
         container: document.getElementById("graph-canvas"),
         elements: [],
         style: [
-          { selector: "node", style: { "label": "data(label)", "background-color": "#1663c7", "color": "#17202a", "font-size": 10 } },
-          { selector: "edge", style: { "line-color": "#8c98a8", "target-arrow-color": "#8c98a8", "target-arrow-shape": "triangle", "curve-style": "bezier" } }
+          { selector: "node", style: { "label": "data(label)", "background-color": "#1663c7", "color": "#17202a", "font-size": 10, "width": 18, "height": 18 } },
+          { selector: "node:selected", style: { "border-width": 3, "border-color": "#1d7f5f" } },
+          { selector: "edge", style: { "label": "data(label)", "line-color": "#8c98a8", "target-arrow-color": "#8c98a8", "target-arrow-shape": "triangle", "curve-style": "bezier", "font-size": 8 } }
         ],
         layout: { name: "grid" }
+      });
+      cy.on("tap", "node", (event) => {
+        selectedGraphNodeId = event.target.id();
+        renderGraphDetail(event.target.data());
+      });
+      cy.on("tap", "edge", (event) => {
+        renderGraphDetail(event.target.data());
       });
     }
 
@@ -1067,15 +1115,90 @@ def render_dashboard_html() -> str:
       document.getElementById("metric-nodes").textContent = graph.graph.nodes || 0;
       document.getElementById("metric-edges").textContent = graph.graph.edges || 0;
       document.getElementById("graph-warning").textContent = graph.graph.warning || "";
-      if (cy && graph.graph.elements) {
-        cy.elements().remove();
-        cy.add([
-          ...graph.graph.elements.nodes.map((node) => ({ data: { id: node.id, label: node.label } })),
-          ...graph.graph.elements.edges.map((edge) => ({ data: { id: edge.id, source: edge.source, target: edge.target, label: edge.label } }))
-        ]);
-        cy.layout({ name: "breadthfirst", directed: true, padding: 24 }).run();
-      }
+      renderGraphPayload(graph.graph);
     }
+    async function searchGraph() {
+      const query = document.getElementById("graph-search").value.trim();
+      if (!query) {
+        await refreshGraph();
+        return;
+      }
+      const graph = await fetch(`${graphSearchUrl}?q=${encodeURIComponent(query)}&limit=80`).then((response) => response.json());
+      renderGraphPayload(graph.graph);
+    }
+    async function expandSelectedNode() {
+      if (!selectedGraphNodeId) {
+        document.getElementById("graph-detail").innerHTML = "<pre>Select a node before expanding.</pre>";
+        return;
+      }
+      const graph = await fetch(`${graphNeighborhoodUrl}?node_id=${encodeURIComponent(selectedGraphNodeId)}&hops=1&limit=120`).then((response) => response.json());
+      renderGraphPayload(graph.graph);
+    }
+    function renderGraphPayload(graph) {
+      const elements = graph.elements || { nodes: graph.nodes || [], edges: graph.edges || [] };
+      if (!cy || !elements.nodes) {
+        return;
+      }
+      cy.elements().remove();
+      cy.add([
+        ...elements.nodes.map((node) => ({ data: graphNodeData(node) })),
+        ...(elements.edges || []).map((edge) => ({ data: graphEdgeData(edge) }))
+      ]);
+      cy.layout({ name: "breadthfirst", directed: true, padding: 24 }).run();
+      document.getElementById("graph-warning").textContent = graph.warning || "";
+    }
+    function graphNodeData(node) {
+      return {
+        id: node.id,
+        label: node.label || node.id,
+        labels: node.labels || [],
+        kind: node.kind || "node",
+        properties: node.properties || {}
+      };
+    }
+    function graphEdgeData(edge) {
+      return {
+        id: edge.id,
+        source: edge.source,
+        target: edge.target,
+        label: edge.label || edge.type || "",
+        type: edge.type || edge.label || "",
+        properties: edge.properties || {}
+      };
+    }
+    function renderGraphDetail(data) {
+      document.getElementById("graph-detail").innerHTML = `<pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre>`;
+    }
+    function escapeHtml(value) {
+      return value.replace(/[&<>"']/g, (character) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      }[character]));
+    }
+    document.getElementById("graph-search-button").addEventListener("click", () => {
+      searchGraph().catch((error) => {
+        document.getElementById("graph-warning").textContent = String(error);
+      });
+    });
+    document.getElementById("graph-search").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        document.getElementById("graph-search-button").click();
+      }
+    });
+    document.getElementById("graph-reset-button").addEventListener("click", () => {
+      refreshGraph().catch((error) => {
+        document.getElementById("graph-warning").textContent = String(error);
+      });
+    });
+    document.getElementById("graph-expand-button").addEventListener("click", () => {
+      expandSelectedNode().catch((error) => {
+        document.getElementById("graph-warning").textContent = String(error);
+      });
+    });
     refresh().catch((error) => {
       document.getElementById("status-json").textContent = String(error);
     });

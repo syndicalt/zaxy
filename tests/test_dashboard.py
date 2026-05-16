@@ -393,6 +393,40 @@ def test_neo4j_dashboard_summary_accepts_record_get_paths() -> None:
     ]
 
 
+def test_neo4j_dashboard_search_avoids_driver_query_parameter_collision() -> None:
+    class FakeNode:
+        element_id = "n1"
+        labels = ["Entity"]
+
+        def items(self) -> list[tuple[str, object]]:
+            return [("name", "Decision")]
+
+    class FakeSession:
+        def __enter__(self) -> FakeSession:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def run(self, query: str, **params: object) -> object:
+            assert "query" not in params
+            assert params["search_text"] == "decision"
+            return _FakeResult([{"n": FakeNode()}])
+
+    class FakeDriver:
+        def session(self) -> FakeSession:
+            return FakeSession()
+
+    provider = Neo4jDashboardGraphProvider.__new__(Neo4jDashboardGraphProvider)
+    provider._driver = FakeDriver()
+
+    result = provider.search(session_id=None, query="decision", view="memory", limit=5)
+
+    assert result["available"] is True
+    assert result["source"] == "neo4j"
+    assert result["nodes"][0]["label"] == "Decision"
+
+
 class _FakeResult:
     def __init__(self, records: list[dict[str, object]]) -> None:
         self.records = records
@@ -415,6 +449,12 @@ def test_dashboard_index_html_references_core_tabs_and_api() -> None:
     assert "Events" in html
     assert "/api/status" in html
     assert "/api/graph/summary" in html
+    assert "/api/graph/search" in html
+    assert "/api/graph/neighborhood" in html
+    assert "graph-search" in html
+    assert "graph-detail" in html
+    assert "expandSelectedNode" in html
+    assert 'cy.on("tap", "node"' in html
     assert "refreshGraph().catch" in html
     assert "cy.add" in html
     assert "cytoscape" in html.lower()
