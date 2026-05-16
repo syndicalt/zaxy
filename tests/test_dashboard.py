@@ -5,6 +5,7 @@ from pathlib import Path
 from zaxy.dashboard import (
     DashboardApp,
     DashboardConfig,
+    Neo4jDashboardGraphProvider,
     create_dashboard_handler,
     render_dashboard_html,
     resolve_dashboard_scope,
@@ -230,6 +231,13 @@ def test_dashboard_checkout_endpoint_is_read_only_placeholder(tmp_path: Path) ->
     assert body["checkout"]["query"] == "hello"
 
 
+def test_neo4j_dashboard_provider_uses_direct_reads_without_transaction_retry() -> None:
+    assert "execute_read" not in Neo4jDashboardGraphProvider.summary.__code__.co_names
+    assert "execute_read" not in Neo4jDashboardGraphProvider.neighborhood.__code__.co_names
+    assert "execute_read" not in Neo4jDashboardGraphProvider.search.__code__.co_names
+    assert "execute_read" not in Neo4jDashboardGraphProvider.path_to_event.__code__.co_names
+
+
 def test_dashboard_index_html_references_core_tabs_and_api() -> None:
     html = render_dashboard_html()
 
@@ -241,6 +249,7 @@ def test_dashboard_index_html_references_core_tabs_and_api() -> None:
     assert "Events" in html
     assert "/api/status" in html
     assert "/api/graph/summary" in html
+    assert "refreshGraph().catch" in html
     assert "cytoscape" in html.lower()
 
 

@@ -163,14 +163,19 @@ class Neo4jDashboardGraphProvider:
     """Read-only Neo4j graph provider for the local dashboard."""
 
     def __init__(self, uri: str, user: str, password: str) -> None:
-        self._driver = GraphDatabase.driver(uri, auth=(user, password))
+        self._driver = GraphDatabase.driver(
+            uri,
+            auth=(user, password),
+            connection_timeout=1.0,
+            max_transaction_retry_time=0.0,
+        )
 
     def summary(self, *, session_id: str | None) -> dict[str, object]:
         """Return node and edge counts for the selected graph scope."""
         try:
             with self._driver.session() as session:
-                node_count = session.execute_read(self._count_nodes, session_id)
-                edge_count = session.execute_read(self._count_edges, session_id)
+                node_count = self._count_nodes(session, session_id)
+                edge_count = self._count_edges(session, session_id)
         except Exception as exc:  # pragma: no cover - exercised in integration environments
             return _graph_error(exc)
         return {"available": True, "nodes": node_count, "edges": edge_count}
@@ -187,8 +192,8 @@ class Neo4jDashboardGraphProvider:
         """Return a bounded neighborhood around one graph node."""
         try:
             with self._driver.session() as session:
-                elements = session.execute_read(
-                    self._neighborhood,
+                elements = self._neighborhood(
+                    session,
                     session_id,
                     node_id,
                     view,
@@ -210,7 +215,7 @@ class Neo4jDashboardGraphProvider:
         """Search graph nodes by common text-bearing properties."""
         try:
             with self._driver.session() as session:
-                nodes = session.execute_read(self._search, session_id, query, view, limit)
+                nodes = self._search(session, session_id, query, view, limit)
         except Exception as exc:  # pragma: no cover - exercised in integration environments
             return _graph_error(exc)
         return {"available": True, "nodes": nodes, "edges": []}
@@ -225,7 +230,7 @@ class Neo4jDashboardGraphProvider:
         """Return a bounded provenance path from a selected node to Eventloom events."""
         try:
             with self._driver.session() as session:
-                elements = session.execute_read(self._path_to_event, session_id, node_id, limit)
+                elements = self._path_to_event(session, session_id, node_id, limit)
         except Exception as exc:  # pragma: no cover - exercised in integration environments
             return _graph_error(exc)
         return elements
@@ -719,14 +724,10 @@ def render_dashboard_html() -> str:
     async function refresh() {
       const status = await fetch(statusUrl).then((response) => response.json());
       const events = await fetch(eventsUrl).then((response) => response.json());
-      const graph = await fetch(graphUrl).then((response) => response.json());
       document.getElementById("scope").textContent = `${status.scope.workspace} | ${status.scope.eventloom_path} | session=${status.scope.session_id || "all"}`;
       document.getElementById("metric-sessions").textContent = status.memory.session_count;
       document.getElementById("metric-events").textContent = status.memory.total_events;
-      document.getElementById("metric-nodes").textContent = graph.graph.nodes || 0;
-      document.getElementById("metric-edges").textContent = graph.graph.edges || 0;
       document.getElementById("status-json").textContent = JSON.stringify(status, null, 2);
-      document.getElementById("graph-warning").textContent = graph.graph.warning || "";
       document.getElementById("sessions-body").innerHTML = status.memory.sessions.map((session) => `
         <tr><td><code>${session.session_id}</code></td><td>${session.event_count}</td><td>${session.latest_type || ""}</td><td>${session.integrity_ok ? "OK" : "FAILED"}</td></tr>
       `).join("");
@@ -734,8 +735,17 @@ def render_dashboard_html() -> str:
         <tr><td><code>${event.session_id}</code></td><td>${event.seq}</td><td>${event.type}</td><td>${event.actor}</td><td>${event.summary || ""}</td></tr>
       `).join("");
     }
+    async function refreshGraph() {
+      const graph = await fetch(graphUrl).then((response) => response.json());
+      document.getElementById("metric-nodes").textContent = graph.graph.nodes || 0;
+      document.getElementById("metric-edges").textContent = graph.graph.edges || 0;
+      document.getElementById("graph-warning").textContent = graph.graph.warning || "";
+    }
     refresh().catch((error) => {
       document.getElementById("status-json").textContent = String(error);
+    });
+    refreshGraph().catch((error) => {
+      document.getElementById("graph-warning").textContent = String(error);
     });
   </script>
 </body>
