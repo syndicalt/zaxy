@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlparse
 
 from neo4j import GraphDatabase
 
+from zaxy.event import Event, EventLog
 from zaxy.memory_status import inspect_memory_log, inspect_memory_status
 
 
@@ -157,6 +158,208 @@ class UnavailableGraphProvider:
             "edges": [],
             "warning": "graph provider unavailable",
         }
+
+
+class EventloomDashboardGraphProvider:
+    """Read-only graph provider backed by local Eventloom provenance."""
+
+    def __init__(self, eventloom_path: str | Path, *, max_events: int = 100) -> None:
+        self.eventloom_path = Path(eventloom_path)
+        self.max_events = max_events
+
+    def summary(self, *, session_id: str | None) -> dict[str, object]:
+        """Return a bounded Eventloom provenance graph."""
+        events = self._events(session_id=session_id, limit=self.max_events)
+        nodes = [_event_node(session_id, event) for session_id, event in events]
+        edges = [
+            _event_edge(previous_session, previous, current)
+            for (previous_session, previous), (current_session, current) in zip(
+                events,
+                events[1:],
+                strict=False,
+            )
+            if previous_session == current_session
+        ]
+        return {
+            "available": True,
+            "source": "eventloom",
+            "nodes": len(nodes),
+            "edges": len(edges),
+            "elements": {"nodes": nodes, "edges": edges},
+            "warning": None,
+        }
+
+    def neighborhood(
+        self,
+        *,
+        session_id: str | None,
+        node_id: str,
+        view: str,
+        hops: int,
+        limit: int,
+    ) -> dict[str, object]:
+        """Return nearby Eventloom events for the selected event node."""
+        _view = view
+        _hops = hops
+        try:
+            _prefix, selected_session, raw_seq = node_id.split(":", 2)
+            selected_seq = int(raw_seq)
+        except ValueError:
+            return self.summary(session_id=session_id)
+        if session_id is not None and selected_session != session_id:
+            return {"available": True, "source": "eventloom", "nodes": [], "edges": []}
+        events = [
+            item
+            for item in self._events(session_id=selected_session, limit=max(limit, self.max_events))
+            if abs(item[1].seq - selected_seq) <= 2
+        ][:limit]
+        nodes = [_event_node(item_session, event) for item_session, event in events]
+        edges = [
+            _event_edge(previous_session, previous, current)
+            for (previous_session, previous), (current_session, current) in zip(
+                events,
+                events[1:],
+                strict=False,
+            )
+            if previous_session == current_session
+        ]
+        return {
+            "available": True,
+            "source": "eventloom",
+            "nodes": nodes,
+            "edges": edges,
+            "omitted_nodes": 0,
+            "omitted_edges": 0,
+        }
+
+    def search(
+        self,
+        *,
+        session_id: str | None,
+        query: str,
+        view: str,
+        limit: int,
+    ) -> dict[str, object]:
+        """Search Eventloom event summaries and metadata."""
+        _view = view
+        needle = query.casefold()
+        nodes = [
+            _event_node(item_session, event)
+            for item_session, event in self._events(session_id=session_id, limit=self.max_events)
+            if needle in _event_search_text(item_session, event)
+        ][:limit]
+        return {"available": True, "source": "eventloom", "nodes": nodes, "edges": []}
+
+    def path_to_event(
+        self,
+        *,
+        session_id: str | None,
+        node_id: str,
+        limit: int,
+    ) -> dict[str, object]:
+        """Eventloom nodes are already provenance nodes, so return their neighborhood."""
+        return self.neighborhood(
+            session_id=session_id,
+            node_id=node_id,
+            view="provenance",
+            hops=1,
+            limit=limit,
+        )
+
+    def _events(self, *, session_id: str | None, limit: int) -> list[tuple[str, Event]]:
+        paths = (
+            [_session_log_path(self.eventloom_path, session_id)]
+            if session_id
+            else _eventlog_paths(self.eventloom_path)
+        )
+        events: list[tuple[str, Event]] = []
+        for path in paths:
+            for event in EventLog(path).read_all():
+                events.append((path.stem, event))
+        events.sort(key=lambda item: (item[0], item[1].seq))
+        return events[-limit:]
+
+
+class FallbackDashboardGraphProvider:
+    """Use a primary graph provider, falling back to Eventloom when unavailable."""
+
+    def __init__(self, primary: DashboardGraphProvider, fallback: DashboardGraphProvider) -> None:
+        self.primary = primary
+        self.fallback = fallback
+
+    def summary(self, *, session_id: str | None) -> dict[str, object]:
+        result = self.primary.summary(session_id=session_id)
+        return (
+            result
+            if result.get("available") is not False
+            else self.fallback.summary(session_id=session_id)
+        )
+
+    def neighborhood(
+        self,
+        *,
+        session_id: str | None,
+        node_id: str,
+        view: str,
+        hops: int,
+        limit: int,
+    ) -> dict[str, object]:
+        result = self.primary.neighborhood(
+            session_id=session_id,
+            node_id=node_id,
+            view=view,
+            hops=hops,
+            limit=limit,
+        )
+        return (
+            result
+            if result.get("available") is not False
+            else self.fallback.neighborhood(
+                session_id=session_id,
+                node_id=node_id,
+                view=view,
+                hops=hops,
+                limit=limit,
+            )
+        )
+
+    def search(
+        self,
+        *,
+        session_id: str | None,
+        query: str,
+        view: str,
+        limit: int,
+    ) -> dict[str, object]:
+        result = self.primary.search(session_id=session_id, query=query, view=view, limit=limit)
+        return (
+            result
+            if result.get("available") is not False
+            else self.fallback.search(
+                session_id=session_id,
+                query=query,
+                view=view,
+                limit=limit,
+            )
+        )
+
+    def path_to_event(
+        self,
+        *,
+        session_id: str | None,
+        node_id: str,
+        limit: int,
+    ) -> dict[str, object]:
+        result = self.primary.path_to_event(session_id=session_id, node_id=node_id, limit=limit)
+        return (
+            result
+            if result.get("available") is not False
+            else self.fallback.path_to_event(
+                session_id=session_id,
+                node_id=node_id,
+                limit=limit,
+            )
+        )
 
 
 class Neo4jDashboardGraphProvider:
@@ -357,7 +560,9 @@ class DashboardApp:
         graph_provider: DashboardGraphProvider | None = None,
     ) -> None:
         self.scope = scope
-        self.graph_provider = graph_provider or UnavailableGraphProvider()
+        self.graph_provider = graph_provider or EventloomDashboardGraphProvider(
+            scope.eventloom_path
+        )
 
     def handle_api(
         self, method: str, path: str, query: str
@@ -500,10 +705,14 @@ def _int_param(
 
 
 def build_dashboard_graph_provider(scope: DashboardScope) -> DashboardGraphProvider:
-    """Build the configured graph provider, degrading when credentials are incomplete."""
+    """Build the configured graph provider with Eventloom as the local fallback."""
+    fallback = EventloomDashboardGraphProvider(scope.eventloom_path)
     if not (scope.neo4j_uri and scope.neo4j_user and scope.neo4j_password):
-        return UnavailableGraphProvider()
-    return Neo4jDashboardGraphProvider(scope.neo4j_uri, scope.neo4j_user, scope.neo4j_password)
+        return fallback
+    return FallbackDashboardGraphProvider(
+        Neo4jDashboardGraphProvider(scope.neo4j_uri, scope.neo4j_user, scope.neo4j_password),
+        fallback,
+    )
 
 
 def _graph_error(exc: Exception) -> dict[str, object]:
@@ -513,6 +722,72 @@ def _graph_error(exc: Exception) -> dict[str, object]:
         "edges": [],
         "warning": str(exc),
     }
+
+
+def _eventlog_paths(base: Path) -> list[Path]:
+    if base.is_file():
+        return [base]
+    if not base.exists():
+        return []
+    return sorted(path for path in base.glob("*.jsonl") if path.is_file())
+
+
+def _session_log_path(base: Path, session_id: str | None) -> Path:
+    if base.is_file():
+        return base
+    if session_id is None:
+        raise ValueError("session_id is required")
+    return base / f"{session_id}.jsonl"
+
+
+def _event_node(session_id: str, event: Event) -> dict[str, Any]:
+    return {
+        "id": f"event:{session_id}:{event.seq}",
+        "label": f"{event.type} #{event.seq}",
+        "kind": "event",
+        "properties": {
+            "actor": event.actor,
+            "hash": event.hash,
+            "seq": event.seq,
+            "session_id": session_id,
+            "summary": _event_summary(event),
+            "timestamp": event.timestamp,
+            "type": event.type,
+        },
+    }
+
+
+def _event_edge(session_id: str, previous: Event, current: Event) -> dict[str, Any]:
+    return {
+        "id": f"event-edge:{session_id}:{previous.seq}:{current.seq}",
+        "source": f"event:{session_id}:{previous.seq}",
+        "target": f"event:{session_id}:{current.seq}",
+        "label": "NEXT_EVENT",
+        "type": "NEXT_EVENT",
+        "properties": {"session_id": session_id},
+    }
+
+
+def _event_search_text(session_id: str, event: Event) -> str:
+    return " ".join(
+        [
+            session_id,
+            event.type,
+            event.actor,
+            _event_summary(event),
+            json.dumps(event.payload, sort_keys=True, default=str),
+        ]
+    ).casefold()
+
+
+def _event_summary(event: Event) -> str:
+    for key in ("summary", "decision", "title", "content", "text", "task"):
+        value = event.payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return " ".join(value.split())
+    if event.payload:
+        return ", ".join(sorted(str(key) for key in event.payload))
+    return ""
 
 
 def _paths_payload(paths: list[Any], *, limit: int) -> dict[str, object]:
@@ -740,6 +1015,14 @@ def render_dashboard_html() -> str:
       document.getElementById("metric-nodes").textContent = graph.graph.nodes || 0;
       document.getElementById("metric-edges").textContent = graph.graph.edges || 0;
       document.getElementById("graph-warning").textContent = graph.graph.warning || "";
+      if (cy && graph.graph.elements) {
+        cy.elements().remove();
+        cy.add([
+          ...graph.graph.elements.nodes.map((node) => ({ data: { id: node.id, label: node.label } })),
+          ...graph.graph.elements.edges.map((edge) => ({ data: { id: edge.id, source: edge.source, target: edge.target, label: edge.label } }))
+        ]);
+        cy.layout({ name: "breadthfirst", directed: true, padding: 24 }).run();
+      }
     }
     refresh().catch((error) => {
       document.getElementById("status-json").textContent = String(error);

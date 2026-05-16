@@ -5,6 +5,7 @@ from pathlib import Path
 from zaxy.dashboard import (
     DashboardApp,
     DashboardConfig,
+    EventloomDashboardGraphProvider,
     Neo4jDashboardGraphProvider,
     create_dashboard_handler,
     render_dashboard_html,
@@ -73,6 +74,28 @@ def test_dashboard_status_and_events_use_resolved_eventloom(tmp_path: Path) -> N
     assert status_code == 200
     assert body["events"][0]["type"] == "decision.recorded"
     assert body["events"][0]["summary"] == "Build dashboard."
+
+
+def test_default_dashboard_graph_uses_eventloom_when_neo4j_is_absent(tmp_path: Path) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    log = EventLog(workspace / ".eventloom" / "default.jsonl")
+    first = log.append("session.genesis", actor="zaxy", payload={"session_id": "default"})
+    second = log.append(
+        "decision.recorded", actor="tester", payload={"decision": "Use fallback graph."}
+    )
+    app = DashboardApp(resolve_dashboard_scope(DashboardConfig(workspace=workspace)))
+
+    status_code, _headers, body = app.handle_api("GET", "/api/graph/summary", "")
+
+    assert status_code == 200
+    assert body["graph"]["available"] is True
+    assert body["graph"]["source"] == "eventloom"
+    assert body["graph"]["nodes"] == 2
+    assert body["graph"]["edges"] == 1
+    assert body["graph"]["elements"]["nodes"][0]["id"] == f"event:default:{first.seq}"
+    assert body["graph"]["elements"]["nodes"][1]["id"] == f"event:default:{second.seq}"
+    assert body["graph"]["elements"]["edges"][0]["label"] == "NEXT_EVENT"
 
 
 def test_dashboard_rejects_non_get_api_methods(tmp_path: Path) -> None:
@@ -250,7 +273,35 @@ def test_dashboard_index_html_references_core_tabs_and_api() -> None:
     assert "/api/status" in html
     assert "/api/graph/summary" in html
     assert "refreshGraph().catch" in html
+    assert "cy.add" in html
     assert "cytoscape" in html.lower()
+
+
+def test_eventloom_graph_provider_supports_search(tmp_path: Path) -> None:
+    log = EventLog(tmp_path / ".eventloom" / "default.jsonl")
+    log.append("decision.recorded", actor="tester", payload={"decision": "Use fallback graph."})
+    provider = EventloomDashboardGraphProvider(tmp_path / ".eventloom")
+
+    result = provider.search(session_id=None, query="fallback", view="provenance", limit=5)
+
+    assert result["available"] is True
+    assert result["source"] == "eventloom"
+    assert result["nodes"] == [
+        {
+            "id": "event:default:1",
+            "label": "decision.recorded #1",
+            "kind": "event",
+            "properties": {
+                "actor": "tester",
+                "hash": log.read_all()[0].hash,
+                "seq": 1,
+                "session_id": "default",
+                "summary": "Use fallback graph.",
+                "timestamp": log.read_all()[0].timestamp,
+                "type": "decision.recorded",
+            },
+        }
+    ]
 
 
 def test_dashboard_handler_keeps_app_reference(tmp_path: Path) -> None:
