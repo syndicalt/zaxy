@@ -60,6 +60,12 @@ not same-harness Zaxy results.
 - Build or document feasible same-harness competitor adapters for MemPalace,
   Mem0, and Agent Memory. If a same-harness adapter is not practical, document
   the blocker and keep the competitor number in the external-disclosure table.
+- Add Skill Memory as a first-class procedural layer: skill lifecycle events,
+  skill-version graph projection, checkout skill routing, outcome tracking, and
+  eval-gated promotion/rollback.
+- Evaluate pgGraph as an experimental Postgres-backed projection backend behind
+  a backend-neutral contract, with Neo4j remaining the default until same-harness
+  benchmark and operations gates prove parity or better.
 - Expand clean-repo onboarding and model-facing UAT across fresh Codex and
   Claude Code workspaces: `zaxy init`, Memory Bootstrap, deterministic capture,
   Memory Checkout, retrieval feedback, and doctor status.

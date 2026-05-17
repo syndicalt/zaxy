@@ -362,6 +362,8 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 1. Run and archive the full 500-question LongMemEval-compatible report with explicit workload hash, query order, retrieval limits, citation requirements, and scoring version.
 2. Keep same-harness BM25 baselines in every public benchmark report, including latency and returned-token tradeoffs.
 3. Build or document feasible same-harness competitor adapters for MemPalace, Mem0, and Agent Memory; if an adapter is not practical, publish the blocker and keep the result in the external-disclosure table.
-4. Expand clean-repo onboarding and model-facing UAT with fresh Codex and Claude Code workspaces: `zaxy init`, Memory Bootstrap, deterministic capture, Memory Checkout, feedback, and doctor status.
-5. Keep public benchmark scripts fully reproducible from a clean checkout, with cached datasets, archived reports, guardrail commands, and no hidden manual steps.
-6. Use LangGraph and CrewAI native-preview usage to choose the next maintained adapter or model-facing UX hardening target.
+4. Add Skill Memory as the procedural world-model layer: skill lifecycle events, skill-version graph projection, checkout skill routing, outcome tracking, and eval-gated promotion/rollback.
+5. Evaluate pgGraph as an experimental Postgres-backed projection backend behind a backend-neutral contract while keeping Neo4j as the default until same-harness quality, citation, temporal, latency, and operations gates prove parity or better.
+6. Expand clean-repo onboarding and model-facing UAT with fresh Codex and Claude Code workspaces: `zaxy init`, Memory Bootstrap, deterministic capture, Memory Checkout, feedback, and doctor status.
+7. Keep public benchmark scripts fully reproducible from a clean checkout, with cached datasets, archived reports, guardrail commands, and no hidden manual steps.
+8. Use LangGraph and CrewAI native-preview usage to choose the next maintained adapter or model-facing UX hardening target.
