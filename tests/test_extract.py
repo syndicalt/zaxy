@@ -237,6 +237,84 @@ class TestTaskProposed:
         )
 
 
+class TestSkillMemory:
+    """Tests for skill lifecycle event extractors."""
+
+    def test_skill_proposed_projects_skill_and_version(self) -> None:
+        """skill.proposed should create a reusable procedure and its first version."""
+        ev = _make_event(
+            "skill.proposed",
+            {
+                "skill_id": "python-test-first",
+                "name": "Python test-first implementation",
+                "version": "1",
+                "summary": "Write the failing pytest before implementation.",
+                "procedure": ["Write focused failing test", "Run pytest", "Implement minimum code"],
+                "applicability": ["Python feature work", "bug fixes"],
+                "citations": ["eventloom://zaxy-default/events/12#abc"],
+            },
+            actor="agent",
+        )
+
+        result = extract(ev)
+
+        skill = next(entity for entity in result.entities if entity.entity_type == "skill")
+        version = next(entity for entity in result.entities if entity.entity_type == "skill_version")
+        assert skill.name == "skill:python-test-first"
+        assert skill.summary == "Python test-first implementation"
+        assert skill.properties == {"skill_id": "python-test-first"}
+        assert version.name == "skill:python-test-first:v1"
+        assert version.summary == "Write the failing pytest before implementation."
+        assert version.properties == {
+            "skill_id": "python-test-first",
+            "version": "1",
+            "procedure": ["Write focused failing test", "Run pytest", "Implement minimum code"],
+            "applicability": ["Python feature work", "bug fixes"],
+            "citations": ["eventloom://zaxy-default/events/12#abc"],
+            "status": "proposed",
+        }
+        assert any(
+            edge.source == "skill:python-test-first"
+            and edge.target == "skill:python-test-first:v1"
+            and edge.relation_type == "has_version"
+            for edge in result.edges
+        )
+
+    def test_skill_outcome_records_application_metrics(self) -> None:
+        """skill.outcome_recorded should connect a skill version to audited outcome data."""
+        ev = _make_event(
+            "skill.outcome_recorded",
+            {
+                "skill_id": "python-test-first",
+                "version": "1",
+                "task": "fix retrieval scoring",
+                "success_score": 0.95,
+                "feedback": "used",
+                "evidence": ["pytest tests/test_query.py::test_scoring -q"],
+            },
+            actor="agent",
+        )
+
+        result = extract(ev)
+
+        outcome = next(entity for entity in result.entities if entity.entity_type == "skill_outcome")
+        assert outcome.name == "skill:python-test-first:v1:outcome:1"
+        assert outcome.properties == {
+            "skill_id": "python-test-first",
+            "version": "1",
+            "task": "fix retrieval scoring",
+            "success_score": 0.95,
+            "feedback": "used",
+            "evidence": ["pytest tests/test_query.py::test_scoring -q"],
+        }
+        assert any(
+            edge.source == "skill:python-test-first:v1"
+            and edge.target == "skill:python-test-first:v1:outcome:1"
+            and edge.relation_type == "recorded_outcome"
+            for edge in result.edges
+        )
+
+
 class TestTaskClaimed:
     """Tests for task.claimed extractor."""
 

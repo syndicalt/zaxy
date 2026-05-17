@@ -379,6 +379,203 @@ def _extract_memory_reinforced(event: Event) -> ExtractionResult:
     )
 
 
+@register("skill.proposed")
+def _extract_skill_proposed(event: Event) -> ExtractionResult:
+    """Extract a proposed reusable procedural skill and its version."""
+    return _extract_skill_version_event(event, status="proposed", relation_type="proposed_skill")
+
+
+@register("skill.validated")
+def _extract_skill_validated(event: Event) -> ExtractionResult:
+    """Extract a validated reusable procedural skill version."""
+    return _extract_skill_version_event(event, status="validated", relation_type="validated_skill")
+
+
+@register("skill.revised")
+def _extract_skill_revised(event: Event) -> ExtractionResult:
+    """Extract a revised skill version while preserving earlier versions."""
+    return _extract_skill_version_event(event, status="revised", relation_type="revised_skill")
+
+
+@register("skill.deprecated")
+def _extract_skill_deprecated(event: Event) -> ExtractionResult:
+    """Extract skill deprecation metadata without deleting old versions."""
+    return _extract_skill_version_event(event, status="deprecated", relation_type="deprecated_skill")
+
+
+@register("skill.contradicted")
+def _extract_skill_contradicted(event: Event) -> ExtractionResult:
+    """Extract a contradicted skill version for audit and rollback."""
+    return _extract_skill_version_event(event, status="contradicted", relation_type="contradicted_skill")
+
+
+@register("skill.applied")
+def _extract_skill_applied(event: Event) -> ExtractionResult:
+    """Extract a task application of a skill version."""
+    skill_id = _skill_id(event)
+    version = _skill_version(event.payload)
+    skill, version_entity = _skill_entities(event, skill_id=skill_id, version=version, status="applied")
+    application_name = f"skill:{skill_id}:v{version}:application:{event.seq}"
+    application = ExtractedEntity(
+        name=application_name,
+        entity_type="skill_application",
+        observed_at=event.timestamp,
+        summary=_join_summary(event.payload.get("task"), event.payload.get("summary")),
+        properties=_compact_properties(
+            {
+                "skill_id": skill_id,
+                "version": version,
+                "task": _optional_text(event.payload.get("task")),
+                "task_id": _optional_text(event.payload.get("task_id") or event.payload.get("taskId")),
+                "context": _optional_text(event.payload.get("context")),
+            }
+        ),
+    )
+    return ExtractionResult(
+        entities=[skill, version_entity, application],
+        edges=[
+            _skill_version_edge(skill, version_entity, event),
+            ExtractedEdge(
+                source=version_entity.name,
+                target=application.name,
+                relation_type="applied_to_task",
+                valid_from=event.timestamp,
+            ),
+        ],
+        source_event_seq=event.seq,
+    )
+
+
+@register("skill.outcome_recorded")
+def _extract_skill_outcome_recorded(event: Event) -> ExtractionResult:
+    """Extract outcome metrics for an applied skill version."""
+    skill_id = _skill_id(event)
+    version = _skill_version(event.payload)
+    skill, version_entity = _skill_entities(event, skill_id=skill_id, version=version, status="outcome_recorded")
+    outcome_name = f"skill:{skill_id}:v{version}:outcome:{event.seq}"
+    outcome = ExtractedEntity(
+        name=outcome_name,
+        entity_type="skill_outcome",
+        observed_at=event.timestamp,
+        summary=_join_summary(event.payload.get("task"), event.payload.get("feedback")),
+        properties=_compact_properties(
+            {
+                "skill_id": skill_id,
+                "version": version,
+                "task": _optional_text(event.payload.get("task")),
+                "success_score": _bounded_float(event.payload.get("success_score")),
+                "feedback": _optional_text(event.payload.get("feedback")),
+                "evidence": _string_list(event.payload.get("evidence")),
+            }
+        ),
+    )
+    return ExtractionResult(
+        entities=[skill, version_entity, outcome],
+        edges=[
+            _skill_version_edge(skill, version_entity, event),
+            ExtractedEdge(
+                source=version_entity.name,
+                target=outcome.name,
+                relation_type="recorded_outcome",
+                valid_from=event.timestamp,
+            ),
+        ],
+        source_event_seq=event.seq,
+    )
+
+
+def _extract_skill_version_event(event: Event, *, status: str, relation_type: str) -> ExtractionResult:
+    """Extract a skill lifecycle event that creates or updates a version node."""
+    skill_id = _skill_id(event)
+    version = _skill_version(event.payload)
+    skill, version_entity = _skill_entities(event, skill_id=skill_id, version=version, status=status)
+    actor = ExtractedEntity(name=event.actor, entity_type="actor", observed_at=event.timestamp)
+    return ExtractionResult(
+        entities=[skill, version_entity, actor],
+        edges=[
+            _skill_version_edge(skill, version_entity, event),
+            ExtractedEdge(
+                source=event.actor,
+                target=version_entity.name,
+                relation_type=relation_type,
+                valid_from=event.timestamp,
+            ),
+        ],
+        source_event_seq=event.seq,
+    )
+
+
+def _skill_id(event: Event) -> str:
+    if skill_id := _optional_text(event.payload.get("skill_id")):
+        return skill_id
+    raise ValueError(f"{event.type} event {event.seq} missing required skill_id")
+
+
+def _skill_version(payload: dict[str, Any]) -> str:
+    return _optional_text(payload.get("version")) or "1"
+
+
+def _skill_entities(
+    event: Event,
+    *,
+    skill_id: str,
+    version: str,
+    status: str,
+) -> tuple[ExtractedEntity, ExtractedEntity]:
+    skill = ExtractedEntity(
+        name=f"skill:{skill_id}",
+        entity_type="skill",
+        observed_at=event.timestamp,
+        summary=_optional_text(event.payload.get("name")) or skill_id,
+        properties={"skill_id": skill_id},
+    )
+    version_entity = ExtractedEntity(
+        name=f"skill:{skill_id}:v{version}",
+        entity_type="skill_version",
+        observed_at=event.timestamp,
+        summary=_optional_text(event.payload.get("summary")),
+        properties=_compact_properties(
+            {
+                "skill_id": skill_id,
+                "version": version,
+                "procedure": _string_list(event.payload.get("procedure")),
+                "applicability": _string_list(event.payload.get("applicability")),
+                "citations": _string_list(event.payload.get("citations")),
+                "failure_modes": _string_list(event.payload.get("failure_modes")),
+                "status": status,
+            }
+        ),
+    )
+    return skill, version_entity
+
+
+def _skill_version_edge(
+    skill: ExtractedEntity,
+    version: ExtractedEntity,
+    event: Event,
+) -> ExtractedEdge:
+    return ExtractedEdge(
+        source=skill.name,
+        target=version.name,
+        relation_type="has_version",
+        valid_from=event.timestamp,
+    )
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [text for item in value if (text := _optional_text(item))]
+
+
+def _compact_properties(properties: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: value
+        for key, value in properties.items()
+        if value is not None and value != []
+    }
+
+
 @register("hook.checkpoint")
 def _extract_hook_checkpoint(event: Event) -> ExtractionResult:
     """Extract a searchable observer checkpoint."""
