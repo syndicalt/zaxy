@@ -96,6 +96,20 @@ def test_mcp_docs_show_memory_checkout_consumption_contract() -> None:
     assert '"answerability": "refresh_recommended"' in text
 
 
+def test_docs_describe_skill_memory_contract_and_guardrail() -> None:
+    """Docs should cover Skill Memory event, MCP, checkout, and benchmark contracts."""
+    agent_events = Path("docs/agent-events.md").read_text(encoding="utf-8")
+    mcp = Path("docs/mcp.md").read_text(encoding="utf-8")
+    benchmarks = Path("docs/benchmarks.md").read_text(encoding="utf-8")
+
+    assert "skill.proposed" in agent_events
+    assert "skill.outcome_recorded" in agent_events
+    assert "SkillVersion" in agent_events
+    assert "memory_skill(action, skill_id, ...)" in mcp
+    assert "Applicable Skills" in mcp
+    assert "Skill Memory changes must pass the full 500-question guardrail" in benchmarks
+
+
 def test_memory_checkout_docs_and_site_match_golden_contract_fixture() -> None:
     """Published checkout examples should stay aligned with the canonical tool contract."""
     fixture = json.loads(Path("docs/examples/memory-checkout-contract.json").read_text(encoding="utf-8"))

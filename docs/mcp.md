@@ -36,6 +36,17 @@ or decay existing memory. Fabric-level feedback for assembled `packet_memory`
 context also preserves source packet projection metadata. The tool uses the same
 session scoping rules as append and query.
 
+`memory_skill(action, skill_id, ...)` is a typed helper for procedural memory.
+It appends one of the deterministic skill lifecycle events
+`skill.proposed`, `skill.validated`, `skill.revised`, `skill.deprecated`,
+`skill.contradicted`, `skill.applied`, or `skill.outcome_recorded`, then
+projects the event through the same extractor and graph path as
+`memory_append`. Use it when an agent learns, validates, revises, applies, or
+records outcomes for a reusable procedure. The helper accepts `version`, `name`,
+`summary`, `procedure`, `applicability`, `citations`, `task`, `success_score`,
+`feedback`, `evidence`, `reason`, and `supersedes_version` as relevant to the
+action. Skill updates are never implicit checkout side effects.
+
 `memory_replay(session_id, from_seq?)` rebuilds session history from the
 Eventloom log. This is useful for handoffs, audits, and debugging. In remote SSE
 mode, the authenticated session scope is enforced so a client cannot replay a
@@ -68,7 +79,11 @@ exclude superseded context, cited evidence, provenance parsed from
 set, and Checkout diagnostics. Diagnostics include source lane counts, total
 citation count, current-fact citation count, current fact count, excluded
 superseded context count, warning count, and a `memory_feedback` recommendation
-when cited context is returned. This is the preferred tool when a model needs a
+when cited context is returned. When applicable Skill Memory is retrieved,
+diagnostics also include a `skills` block and the prompt includes an
+`Applicable Skills` section with cited procedure steps. This lane is read-only:
+models may follow the guidance, but revisions require a new `memory_skill` or
+`memory_append` event. This is the preferred tool when a model needs a
 bounded, auditable working state rather than a raw list of retrieval hits. The
 response also includes `guidance` with
 model-facing trust and ignore instructions, a recommended follow-up
@@ -111,7 +126,19 @@ fixture when changing the tool response.
     "superseded_contexts_excluded": 0,
     "warning_count": 0,
     "feedback_recommended": true,
-    "feedback_tool": "memory_feedback"
+    "feedback_tool": "memory_feedback",
+    "skills": {
+      "count": 1,
+      "items": [
+        {
+          "skill_id": "python-test-first",
+          "version": "1",
+          "status": "validated",
+          "procedure": ["Write failing test", "Run pytest"],
+          "citation": "eventloom://zaxy-default/events/1883#def456abc123"
+        }
+      ]
+    }
   },
   "quality": {
     "answerability": "answer_from_memory",

@@ -141,6 +141,54 @@ Projection: unknown-event fallback today, preserving the feedback as an
 Eventloom-backed audit record without deleting, invalidating, or downranking the
 target entity.
 
+## Skill Memory
+
+Use `skill.*` events for procedural memory that should be retrieved as
+applicable guidance, not mixed into factual truth. Checkout is read-only: agents
+must append an explicit lifecycle event to change a skill.
+
+Supported lifecycle events:
+
+- `skill.proposed`: draft a new skill version.
+- `skill.validated`: mark a version as trusted by cited evidence.
+- `skill.revised`: add a new version that supersedes prior guidance.
+- `skill.deprecated`: stop recommending a skill version.
+- `skill.contradicted`: record evidence that a skill no longer holds.
+- `skill.applied`: record that a skill was used on a task.
+- `skill.outcome_recorded`: record success, failure, and evidence after use.
+
+Skill definition event:
+
+```json
+{
+  "skill_id": "python-test-first",
+  "name": "Python test-first implementation",
+  "version": "1",
+  "summary": "Write the failing pytest before implementation.",
+  "procedure": ["Write focused failing test", "Run pytest", "Implement minimum code"],
+  "applicability": ["Python feature work", "bug fixes"],
+  "citations": ["eventloom://agent-1/events/12#abcdef123456"]
+}
+```
+
+Outcome event:
+
+```json
+{
+  "skill_id": "python-test-first",
+  "version": "1",
+  "task": "fix retrieval scoring",
+  "success_score": 0.95,
+  "feedback": "used",
+  "evidence": ["pytest tests/test_query.py::test_scoring -q"]
+}
+```
+
+Projection: `Skill` and `SkillVersion` entities linked with `HAS_VERSION`
+style edges, plus lifecycle and outcome entities for application metrics.
+Graph properties preserve procedure, applicability, status, citations, outcome
+evidence, and version identifiers.
+
 ## Hook Checkpoints
 
 Use `hook.checkpoint` for observer-hook milestones that should remain

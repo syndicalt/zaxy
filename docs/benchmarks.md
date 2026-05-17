@@ -53,6 +53,13 @@ had 22 retrieval misses and 174 synthesis misses. Future retrieval, checkout,
 Skill Memory, or backend changes should not reduce the full-set quality or
 citation floors while they work down the synthesis-miss count.
 
+Skill Memory changes must pass the full 500-question guardrail before release,
+because the checkout skill lane shares ranking, evidence selection, prompt
+formatting, and MCP tool surfaces with factual memory. The Skill Memory lane may
+add cited procedural guidance, but it must not lower Zaxy checkout mean score,
+Answer@5, Recall@5, citation coverage, or the archived latency envelope unless a
+new public benchmark report explicitly replaces these floors.
+
 ## BM25 Comparison
 
 The current same-harness BM25 comparison is archived at
