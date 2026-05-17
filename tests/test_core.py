@@ -1233,6 +1233,44 @@ class TestContextAssembly:
         assert "Checkout includes inferred graph paths." in checkout.quality["reasons"]
         assert "Inferred graph context: contexts=1, edges=1, average_trust=0.86" in checkout.prompt
 
+    def test_memory_checkout_surfaces_applicable_skills(self) -> None:
+        """build_memory_checkout() should expose applicable procedural memory separately."""
+        assembly = ContextAssembly(
+            session_id="agent-1",
+            prompt="# Active Memory Working Set",
+            contexts=[
+                Context(
+                    content="Skill Python test-first implementation applies to Python feature work.",
+                    source="graph",
+                    score=0.95,
+                    valid_from="2026-05-17T00:00:00Z",
+                    valid_to=None,
+                    metadata={
+                        "entity_name": "skill:python-test-first:v1",
+                        "entity_type": "skill_version",
+                        "citation": "eventloom://agent-1/events/4#abcd",
+                        "skill_id": "python-test-first",
+                        "procedure": ["Write failing test", "Run pytest", "Implement minimum code"],
+                        "applicability": ["Python feature work"],
+                        "status": "validated",
+                    },
+                ),
+            ],
+            working_set={"items": []},
+            context_counts={"graph": 1},
+            replay_event_count=0,
+            compacted=False,
+            warnings=[],
+            assembly_policy={},
+        )
+
+        checkout = build_memory_checkout(query="implement a Python feature", assembly=assembly)
+
+        assert checkout.diagnostics["skills"]["count"] == 1
+        assert checkout.diagnostics["skills"]["items"][0]["skill_id"] == "python-test-first"
+        assert "## Applicable Skills" in checkout.prompt
+        assert "Write failing test" in checkout.prompt
+
     async def test_checkout_memory_prioritizes_exact_recent_task_context(
         self,
         fabric: MemoryFabric,

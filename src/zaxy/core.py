@@ -1209,6 +1209,9 @@ def build_memory_checkout(
         retention=retention,
         warnings=warnings,
     )
+    skills = _checkout_skills(ranked_contexts, query)
+    if skills:
+        diagnostics = {**diagnostics, "skills": {"count": len(skills), "items": skills}}
     retrieval_profile = assembly.working_set.get("retrieval_profile")
     if isinstance(retrieval_profile, dict):
         diagnostics = {**diagnostics, "retrieval_profile": retrieval_profile}
@@ -1323,6 +1326,66 @@ def _checkout_source_lanes(contexts: list[Context]) -> dict[str, int]:
         lane = _checkout_source_lane(context)
         source_lanes[lane] = source_lanes.get(lane, 0) + 1
     return source_lanes
+
+
+def _checkout_skills(contexts: list[Context], query: str, *, limit: int = 3) -> list[dict[str, Any]]:
+    query_tokens = _checkout_tokens(query)
+    skills: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for context in contexts:
+        metadata = context.metadata or {}
+        if metadata.get("entity_type") != "skill_version":
+            continue
+        skill_id = metadata.get("skill_id")
+        entity_name = metadata.get("entity_name")
+        if not isinstance(skill_id, str) or not skill_id:
+            if isinstance(entity_name, str) and entity_name.startswith("skill:"):
+                skill_id = entity_name.removeprefix("skill:").split(":v", 1)[0]
+            else:
+                continue
+        version = str(metadata.get("version") or _skill_version_from_entity(entity_name) or "1")
+        key = (skill_id, version)
+        if key in seen:
+            continue
+        applicability = _metadata_text_list(metadata.get("applicability"))
+        procedure = _metadata_text_list(metadata.get("procedure"))
+        haystack = " ".join([context.content, *applicability, str(metadata.get("summary") or "")])
+        if query_tokens and not (_checkout_tokens(haystack) & query_tokens):
+            continue
+        seen.add(key)
+        skills.append(
+            {
+                "skill_id": skill_id,
+                "version": version,
+                "status": str(metadata.get("status") or "unknown"),
+                "summary": str(metadata.get("summary") or context.content),
+                "procedure": procedure,
+                "applicability": applicability,
+                "citation": _context_citation(context),
+                "score": context.score,
+            }
+        )
+        if len(skills) >= limit:
+            break
+    return skills
+
+
+def _metadata_text_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    texts: list[str] = []
+    for item in value:
+        text = str(item).strip()
+        if text:
+            texts.append(text)
+    return texts
+
+
+def _skill_version_from_entity(value: object) -> str | None:
+    if not isinstance(value, str) or ":v" not in value:
+        return None
+    version = value.rsplit(":v", 1)[1].strip()
+    return version or None
 
 
 def _checkout_recall_limit(query: str, limit: int) -> int:

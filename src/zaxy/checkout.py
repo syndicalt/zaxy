@@ -235,6 +235,7 @@ def format_memory_checkout_prompt(
             lines.append(f"- {item['citation']}: {item['content']}")
     else:
         lines.append("- No cited evidence was retrieved.")
+    _append_applicable_skills(lines, diagnostics.get("skills"))
     lines.extend(["", "## Checkout Quality"])
     lines.append(f"- Answerability: {quality.get('answerability')}")
     lines.append(f"- Confidence: {quality.get('confidence')}")
@@ -643,6 +644,26 @@ def _append_synthesis_evidence(lines: list[str], synthesis: Any) -> None:
             f"source_lanes={lane_text}; "
             f"snippet={group.get('snippet', '')}"
         )
+
+
+def _append_applicable_skills(lines: list[str], skills: Any) -> None:
+    if not isinstance(skills, dict):
+        return
+    items = skills.get("items")
+    if not isinstance(items, list) or not items:
+        return
+    lines.extend(["", "## Applicable Skills"])
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        skill_id = str(item.get("skill_id") or "unknown").strip()
+        version = str(item.get("version") or "1").strip()
+        status = str(item.get("status") or "unknown").strip()
+        citation = str(item.get("citation") or "").strip()
+        suffix = f" ({citation})" if citation else ""
+        lines.append(f"- {skill_id} v{version} [{status}]{suffix}")
+        for step in _text_list(item.get("procedure"))[:5]:
+            lines.append(f"  - {step}")
 
 
 def _int_metric(value: Any) -> int:
