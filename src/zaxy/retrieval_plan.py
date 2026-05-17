@@ -1299,6 +1299,7 @@ def _numeric_synthesis_lines(
     has_typed_duration = any(line.startswith("duration_values=") for line in lines)
     lines.extend(_age_at_event_synthesis_lines(query, numeric_contexts))
     lines.extend(_age_average_synthesis_lines(query, numeric_contexts))
+    lines.extend(_career_prior_duration_synthesis_lines(query, numeric_contexts))
     if not has_typed_duration:
         minute_values = _unit_values(numeric_contexts, unit_pattern=r"minutes?|mins?")
         if minute_values:
@@ -1440,6 +1441,97 @@ def _age_at_event_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
                 f"age_at_event_answer={event_age}",
             ]
     return []
+
+
+def _career_prior_duration_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    """Project total-career minus current-role duration for career history queries."""
+    if not _career_prior_duration_query(query):
+        return []
+    total_months = _career_total_months(contexts)
+    current_role_months = _current_role_months(query, contexts)
+    if total_months is None or current_role_months is None:
+        return []
+    if current_role_months <= 0 or current_role_months >= total_months:
+        return []
+    prior_months = total_months - current_role_months
+    return [
+        f"career_total_months={total_months}",
+        f"career_current_role_months={current_role_months}",
+        f"career_prior_duration_operation={total_months}-{current_role_months}",
+        f"career_prior_duration_answer={_format_year_month_duration(prior_months)}",
+    ]
+
+
+def _career_prior_duration_query(query: str) -> bool:
+    query_tokens = set(source_tokens(query))
+    query_text = query.casefold()
+    return bool(query_tokens & {"work", "working", "professionally", "field", "career"}) and bool(
+        re.search(r"\bbefore\b.*\b(?:current\s+job|started|start)\b", query_text)
+        or re.search(r"\b(?:current\s+job|started|start)\b.*\bbefore\b", query_text)
+    )
+
+
+def _career_total_months(contexts: list[str]) -> int | None:
+    patterns = (
+        r"\b(?:working\s+professionally|been\s+in\s+this\s+field|in\s+this\s+field|in\s+my\s+career)\s+"
+        r"(?:for\s+)?(?P<years>\d{1,2})\s+years?\b",
+        r"\b(?P<years>\d{1,2})\s+years?\s+of\s+(?:professional\s+)?(?:experience|work)\b",
+    )
+    for context in contexts:
+        for pattern in patterns:
+            match = re.search(pattern, context, flags=re.IGNORECASE)
+            if match:
+                years = int(match.group("years"))
+                if 0 < years < 80:
+                    return years * 12
+    return None
+
+
+def _current_role_months(query: str, contexts: list[str]) -> int | None:
+    employer_terms = {
+        token
+        for token in re.findall(r"\b[A-Z][A-Za-z0-9&.-]{2,}\b", query)
+        if token.casefold() not in {"How"}
+    }
+    for context in contexts:
+        if employer_terms and not any(term.casefold() in context.casefold() for term in employer_terms):
+            continue
+        months = _role_duration_months(context)
+        if months is not None:
+            return months
+    for context in contexts:
+        months = _role_duration_months(context)
+        if months is not None:
+            return months
+    return None
+
+
+def _role_duration_months(text: str) -> int | None:
+    patterns = (
+        r"\b(?:working|worked|been)\s+(?:at|for|with)\s+[A-Z][A-Za-z0-9&.-]*\s+"
+        r"for\s+(?:about\s+)?(?P<years>\d{1,2})\s+years?\s+and\s+(?P<months>\d{1,2})\s+months?\b",
+        r"\b(?:working|worked|been)\s+(?:at|for|with)\s+[A-Z][A-Za-z0-9&.-]*\s+"
+        r"for\s+(?:about\s+)?(?P<years>\d{1,2})\s+years?\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if not match:
+            continue
+        years = int(match.group("years"))
+        months = int(match.groupdict().get("months") or 0)
+        if 0 <= months < 12 and 0 < years < 80:
+            return (years * 12) + months
+    return None
+
+
+def _format_year_month_duration(total_months: int) -> str:
+    years, months = divmod(total_months, 12)
+    parts: list[str] = []
+    if years:
+        parts.append(f"{years} {'year' if years == 1 else 'years'}")
+    if months:
+        parts.append(f"{months} {'month' if months == 1 else 'months'}")
+    return " and ".join(parts) if parts else "0 months"
 
 
 def _personal_current_age_values(contexts: list[str]) -> list[int]:

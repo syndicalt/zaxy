@@ -2192,6 +2192,31 @@ def test_source_synthesis_bundle_derives_age_at_event_from_elapsed_years() -> No
     assert "age_at_event_answer=27" in bundle
 
 
+def test_source_synthesis_bundle_derives_prior_work_duration_from_current_role_tenure() -> None:
+    """Career-duration queries should subtract current role tenure from total experience."""
+    bundle = source_synthesis_bundle(
+        query="How long have I been working before I started my current job at NovaTech?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=answer_1 "
+                "I've been working professionally for 9 years and I'm currently using a notebook."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#def "
+                "longmemeval_session_id=answer_2 "
+                "I've been working at NovaTech for about 4 years and 3 months now."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "career_total_months=108" in bundle
+    assert "career_current_role_months=51" in bundle
+    assert "career_prior_duration_answer=4 years and 9 months" in bundle
+
+
 async def test_zaxy_retriever_preserves_original_source_query_when_graph_concepts_are_noisy() -> None:
     """Graph-expanded source lookup should supplement, not replace, original recall."""
     source_contexts = [
