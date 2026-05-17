@@ -37,10 +37,13 @@ surface first. The benchmark lane should stay architecture-driven:
 ## Public Benchmark Posture
 
 The current Zaxy public benchmark hub is [benchmarks.md](benchmarks.md). Zaxy's
-same-harness evidence should lead with the archived LongMemEval-compatible
-100-question run: mean score 0.950, Answer@5 0.950, citation coverage 1.000,
-and R@1/R@5/R@10 0.990. The same-harness BM25 comparison should be cited as a
-separate run: BM25 R@5 0.840 versus Zaxy checkout R@5 0.990.
+same-harness evidence should distinguish the archived LongMemEval-compatible
+100-question headline from the full 500-question archive. The 100-question run
+remains the strongest headline: mean score 0.950, Answer@5 0.950, citation
+coverage 1.000, and R@1/R@5/R@10 0.990. The full 500-question hash run is a
+separate no-regression floor: Zaxy checkout mean score 0.626, Answer@5 0.608,
+citation coverage 1.000, and R@1/R@5/R@10 of 0.944/0.956/0.956 versus BM25
+mean score 0.560, Answer@5 0.516, and R@5 0.770.
 
 Competitor numbers belong in an external-disclosure table, not a universal
 leaderboard. MemPalace publicly reports 96.6% raw LongMemEval R@5 and 98.4%
@@ -51,9 +54,9 @@ not same-harness Zaxy results.
 
 ## Near-Term Roadmap
 
-- Run and archive a full 500-question LongMemEval-compatible report with the
-  workload hash, query order, retrieval limits, citation rules, scoring version,
-  and `zaxy benchmark-compare` guardrails.
+- Treat the archived full 500-question LongMemEval-compatible report as the
+  no-regression floor, and work down synthesis misses without reducing citation
+  coverage or R@5.
 - Keep same-harness BM25 baselines in public benchmark reports so Zaxy claims
   show both retrieval quality and latency/token tradeoffs against a strong
   lexical baseline.

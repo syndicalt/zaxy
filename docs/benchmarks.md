@@ -32,6 +32,27 @@ retrieval across multi-session and temporal-reasoning questions. The report is
 not a full 500-question LongMemEval publication yet, and it should not be
 described as one.
 
+## Full 500-Question LongMemEval Run
+
+The full 500-question LongMemEval-compatible hash run is archived at
+[reports/benchmarks/longmemeval-500-hash/live-benchmark.md](../reports/benchmarks/longmemeval-500-hash/live-benchmark.md).
+It uses the cleaned LongMemEval workload, deterministic local hash embeddings,
+`limit=10`, BM25 as the same-harness lexical baseline, and Zaxy checkout
+retrieval over 5,372 Eventloom events, 500 queries, 500 subjects, and 948
+sessions.
+
+| Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | Recall@10 | p95 ms | p99 ms |
+|---------|------------|----------|-------------------|----------|----------|-----------|--------|--------|
+| BM25 | 0.560 | 0.516 | 1.000 | 0.592 | 0.770 | 0.802 | 348.99 | 422.83 |
+| Zaxy checkout | 0.626 | 0.608 | 1.000 | 0.944 | 0.956 | 0.956 | 14686.65 | 22359.76 |
+
+This full-set result should be treated as the current no-regression floor for
+LongMemEval-wide work, not as a replacement for the stronger 100-question
+headline. The miss taxonomy shows the next quality target clearly: Zaxy checkout
+had 22 retrieval misses and 174 synthesis misses. Future retrieval, checkout,
+Skill Memory, or backend changes should not reduce the full-set quality or
+citation floors while they work down the synthesis-miss count.
+
 ## BM25 Comparison
 
 The current same-harness BM25 comparison is archived at
@@ -117,6 +138,38 @@ zaxy benchmark \
   --reuse-projection \
   --embedding-cache .cache/zaxy/longmemeval-embeddings.json \
   --progress
+```
+
+Run the full 500-question archive:
+
+```bash
+zaxy benchmark \
+  --output-dir reports/benchmarks/longmemeval-500-hash \
+  --embedding-provider hash \
+  --workload longmemeval \
+  --dataset .cache/zaxy/benchmarks/longmemeval_oracle.json \
+  --questions 500 \
+  --runs 1 \
+  --limit 10 \
+  --zaxy-backend checkout \
+  --baseline-backends bm25 \
+  --embedding-cache .cache/zaxy/longmemeval-embeddings.json \
+  --reset-graph \
+  --progress
+```
+
+Guard the full 500-question archive with floors pinned to the current observed
+result:
+
+```bash
+zaxy benchmark-compare reports/benchmarks/longmemeval-500-hash/live-benchmark.json \
+  --backend zaxy-checkout \
+  --min-mean-score 0.626 \
+  --min-answer-recall-at-5 0.608 \
+  --min-recall-at-5 0.956 \
+  --min-citation-coverage 1.0 \
+  --max-p95-ms 15000 \
+  --max-p99-ms 23000
 ```
 
 For release gates, compare reports with `zaxy benchmark-compare` and keep the

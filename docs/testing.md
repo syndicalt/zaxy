@@ -226,6 +226,13 @@ The current same-harness BM25 comparison is archived at
 [benchmarks.md](benchmarks.md) for public copy rules and external disclosure
 links for MemPalace, Mem0, and Agent Memory.
 
+The full 500-question LongMemEval-compatible archive is
+`reports/benchmarks/longmemeval-500-hash/live-benchmark.json`. Its current
+Zaxy checkout floor is mean score 0.626, Answer@5 0.608, citation coverage
+1.000, R@5 0.956, p95 14686.65 ms, and p99 22359.76 ms. Use those floors as
+the no-regression guardrail for full-set work until a stronger full-set report
+is archived.
+
 For consolidation safety checks, use the identity-collapse workload. It creates
 near-duplicate source records with distinct durable identifiers and adds an
 identity-recall metric to the report. The `centroid` baseline intentionally

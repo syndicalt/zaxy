@@ -346,6 +346,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Local Neo4j UAT coverage for inferred-edge projection, retrieval scoring, and Memory Checkout diagnostics
 - [x] Model-facing clean-repo UAT proving init, Memory Bootstrap guidance, cited Memory Checkout, feedback guidance, capture status, and capture-soak coverage
 - [x] MemPalace-comparable benchmark inventory CLI for frozen lane fingerprints, product claims, and required release metrics
+- [x] Full 500-question LongMemEval-compatible hash report with BM25 baseline and no-regression guardrails
 
 ## Metrics
 
@@ -356,10 +357,11 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
+| LongMemEval 500 hash | Zaxy checkout mean 0.626, Answer@5 0.608, R@5 0.956, citation coverage 1.000 |
 
 ## Next Steps
 
-1. Run and archive the full 500-question LongMemEval-compatible report with explicit workload hash, query order, retrieval limits, citation requirements, and scoring version.
+1. Improve full-set LongMemEval synthesis without reducing the archived 500-question no-regression floors: mean score 0.626, Answer@5 0.608, R@5 0.956, and citation coverage 1.000.
 2. Keep same-harness BM25 baselines in every public benchmark report, including latency and returned-token tradeoffs.
 3. Build or document feasible same-harness competitor adapters for MemPalace, Mem0, and Agent Memory; if an adapter is not practical, publish the blocker and keep the result in the external-disclosure table.
 4. Add Skill Memory as the procedural world-model layer: skill lifecycle events, skill-version graph projection, checkout skill routing, outcome tracking, and eval-gated promotion/rollback.
