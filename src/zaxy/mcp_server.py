@@ -165,6 +165,61 @@ TOOLS = [
         },
     ),
     Tool(
+        name="memory_skill",
+        description="Append a typed skill lifecycle event and project it into Skill Memory.",
+        inputSchema={
+            "type": "object",
+            "required": ["action", "skill_id"],
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "proposed",
+                        "validated",
+                        "revised",
+                        "deprecated",
+                        "contradicted",
+                        "applied",
+                        "outcome_recorded",
+                    ],
+                    "description": "Skill lifecycle action to record.",
+                },
+                "skill_id": {"type": "string", "description": "Stable skill identifier"},
+                "version": {"type": "string", "description": "Skill version", "default": "1"},
+                "name": {"type": "string", "description": "Human-readable skill name"},
+                "summary": {"type": "string", "description": "Short skill summary"},
+                "procedure": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Ordered procedural steps",
+                },
+                "applicability": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Situations where the skill applies",
+                },
+                "citations": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Eventloom citations supporting the skill",
+                },
+                "task": {"type": "string", "description": "Task where the skill was applied"},
+                "success_score": {"type": "number", "description": "Outcome score from 0 to 1"},
+                "feedback": {"type": "string", "description": "Outcome feedback label"},
+                "evidence": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Outcome evidence such as commands or citations",
+                },
+                "reason": {"type": "string", "description": "Reason for status changes"},
+                "supersedes_version": {"type": "string", "description": "Version replaced by this event"},
+                "actor": {"type": "string", "description": "Actor recording the skill event", "default": "zaxy"},
+                "session_id": {"type": "string", "description": "Session ID for multi-agent sharding"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
         name="memory_replay",
         description="Replay events from a session starting at a sequence number.",
         inputSchema={
@@ -689,6 +744,51 @@ class ZaxyMCPServer:
         else:
             payload["feedback"] = feedback
         payload = {key: value for key, value in payload.items() if value is not None}
+
+        eventlog = self.session_manager.get(session_id).eventlog
+        event = eventlog.append(
+            event_type,
+            actor=actor,
+            payload=validate_payload(payload),
+            thread=session_id,
+        )
+        extraction = extract(event)
+        await self.graph.upsert_extraction(extraction, session_id=session_id)
+        await self.tracer.trace_append(event_type, actor, event.seq)
+
+        return [
+            TextContent(
+                type="text",
+                text=json.dumps({"seq": event.seq, "hash": event.hash, "event_type": event_type}),
+            )
+        ]
+
+    async def handle_memory_skill(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_skill lifecycle helper calls."""
+        event_type = _skill_event_type(arguments.get("action"))
+        skill_id = _required_text(arguments.get("skill_id"), "skill_id")
+        actor = _optional_text(arguments.get("actor")) or "zaxy"
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
+        payload: dict[str, Any] = {"skill_id": skill_id}
+        for key in (
+            "version",
+            "name",
+            "summary",
+            "task",
+            "feedback",
+            "reason",
+            "supersedes_version",
+        ):
+            value = _optional_text(arguments.get(key))
+            if value is not None:
+                payload[key] = value
+        for key in ("procedure", "applicability", "citations", "evidence"):
+            values = _optional_text_list(arguments.get(key))
+            if values:
+                payload[key] = values
+        success_score = arguments.get("success_score")
+        if success_score is not None:
+            payload["success_score"] = max(0.0, min(1.0, float(success_score)))
 
         eventlog = self.session_manager.get(session_id).eventlog
         event = eventlog.append(
@@ -1348,6 +1448,22 @@ def _normalize_feedback(feedback: object) -> str:
     return normalized
 
 
+def _skill_event_type(action: object) -> str:
+    normalized = str(action).casefold().strip()
+    allowed = {
+        "proposed",
+        "validated",
+        "revised",
+        "deprecated",
+        "contradicted",
+        "applied",
+        "outcome_recorded",
+    }
+    if normalized not in allowed:
+        raise ValueError("skill action must be one of: " + ", ".join(sorted(allowed)))
+    return f"skill.{normalized}"
+
+
 def _required_text(value: object, field: str) -> str:
     text = _optional_text(value)
     if text is None:
@@ -1360,6 +1476,17 @@ def _optional_text(value: object) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _optional_text_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    texts: list[str] = []
+    for item in value:
+        text = _optional_text(item)
+        if text is not None:
+            texts.append(text)
+    return texts
 
 
 # ------------------------------------------------------------------
@@ -1382,6 +1509,8 @@ async def _dispatch_tool_call(
         return await active_server.handle_memory_verbatim(arguments)
     if name == "memory_feedback":
         return await active_server.handle_memory_feedback(arguments)
+    if name == "memory_skill":
+        return await active_server.handle_memory_skill(arguments)
     if name == "memory_replay":
         return await active_server.handle_memory_replay(arguments)
     if name == "memory_invalidate":

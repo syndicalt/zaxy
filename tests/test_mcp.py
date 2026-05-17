@@ -64,7 +64,7 @@ class TestToolSchema:
 
     def test_tools_list_length(self) -> None:
         """Should expose the memory and context lifecycle tools."""
-        assert len(TOOLS) == 12
+        assert len(TOOLS) == 13
 
     def test_tool_names(self) -> None:
         """Tool names should match the expected contract."""
@@ -74,6 +74,7 @@ class TestToolSchema:
             "memory_query",
             "memory_verbatim",
             "memory_feedback",
+            "memory_skill",
             "memory_replay",
             "memory_invalidate",
             "memory_capabilities",
@@ -111,6 +112,21 @@ class TestToolSchema:
         tool = next(t for t in TOOLS if t.name == "memory_feedback")
         assert tool.inputSchema["required"] == ["entity_name", "entity_type", "feedback"]
         assert "importance" in tool.inputSchema["properties"]
+
+    def test_memory_skill_has_lifecycle_action_schema(self) -> None:
+        """memory_skill should expose validated skill lifecycle capture."""
+        tool = next(t for t in TOOLS if t.name == "memory_skill")
+        assert tool.inputSchema["required"] == ["action", "skill_id"]
+        assert tool.inputSchema["properties"]["action"]["enum"] == [
+            "proposed",
+            "validated",
+            "revised",
+            "deprecated",
+            "contradicted",
+            "applied",
+            "outcome_recorded",
+        ]
+        assert "procedure" in tool.inputSchema["properties"]
 
     def test_context_after_turn_has_required_fields(self) -> None:
         """context_after_turn should require role and content."""
@@ -625,6 +641,54 @@ class TestMemoryFeedback:
         assert call.kwargs["payload"]["reason"] == "Superseded by later decision"
         assert "importance" not in call.kwargs["payload"]
         assert json_loads(result[0].text)["event_type"] == "memory.feedback"
+
+
+class TestMemorySkill:
+    """Tests for memory_skill handler."""
+
+    async def test_appends_skill_lifecycle_event(self, server: ZaxyMCPServer) -> None:
+        """Skill lifecycle helper should append and project deterministic skill events."""
+        result = await server.handle_memory_skill({
+            "action": "validated",
+            "skill_id": "python-test-first",
+            "name": "Python test-first implementation",
+            "version": "2",
+            "summary": "Write the failing pytest before implementation.",
+            "procedure": ["Write focused failing test", "Run pytest"],
+            "applicability": ["Python feature work"],
+            "citations": ["eventloom://agent-1/events/4#abcd"],
+            "actor": "assistant",
+            "session_id": "agent-1",
+        })
+
+        log = server.session_manager.get.return_value.eventlog
+        log.append.assert_called_once()
+        call = log.append.call_args
+        assert call.args == ("skill.validated",)
+        assert call.kwargs["actor"] == "assistant"
+        assert call.kwargs["thread"] == "agent-1"
+        assert call.kwargs["payload"] == {
+            "skill_id": "python-test-first",
+            "version": "2",
+            "name": "Python test-first implementation",
+            "summary": "Write the failing pytest before implementation.",
+            "procedure": ["Write focused failing test", "Run pytest"],
+            "applicability": ["Python feature work"],
+            "citations": ["eventloom://agent-1/events/4#abcd"],
+        }
+        server.graph.upsert_extraction.assert_awaited_once()
+        server.tracer.trace_append.assert_awaited_once_with("skill.validated", "assistant", 1)
+        payload = json_loads(result[0].text)
+        assert payload["event_type"] == "skill.validated"
+        assert payload["seq"] == 1
+
+    async def test_rejects_unknown_skill_action(self, server: ZaxyMCPServer) -> None:
+        """Skill helper should only allow known lifecycle event types."""
+        with pytest.raises(ValueError, match="skill action"):
+            await server.handle_memory_skill({
+                "action": "invented",
+                "skill_id": "python-test-first",
+            })
 
     async def test_rejects_unknown_feedback(self, server: ZaxyMCPServer) -> None:
         """Feedback values should stay constrained to known retrieval outcomes."""
