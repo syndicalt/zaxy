@@ -4,14 +4,18 @@ from __future__ import annotations
 
 from typing import assert_type
 
+import pytest
+
 from zaxy.extract import ExtractionResult
 from zaxy.graph import (
     GraphEntity,
     GraphEventProjectionStatus,
     GraphInferredEdgeStatus,
+    GraphStore,
     SearchResult,
 )
 from zaxy.projection import ProjectionStore
+from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
 
 
 class FakeProjectionStore:
@@ -107,3 +111,32 @@ async def _type_probe(store: ProjectionStore) -> None:
     assert_type(keyword, list[SearchResult])
     assert_type(traversal, list[GraphEntity])
     assert_type(vector, list[SearchResult])
+
+
+def test_build_projection_store_defaults_to_neo4j() -> None:
+    store = build_projection_store(
+        ProjectionBackendConfig(
+            backend="neo4j",
+            neo4j_uri="bolt://localhost:7687",
+            neo4j_user="neo4j",
+            neo4j_password="testpassword",
+            neo4j_ca_cert=None,
+            neo4j_trust_all=False,
+        )
+    )
+
+    assert isinstance(store, GraphStore)
+
+
+def test_build_projection_store_rejects_pggraph_until_adapter_exists() -> None:
+    with pytest.raises(NotImplementedError, match="pgGraph backend is experimental"):
+        build_projection_store(
+            ProjectionBackendConfig(
+                backend="pggraph",
+                neo4j_uri="bolt://localhost:7687",
+                neo4j_user="neo4j",
+                neo4j_password="testpassword",
+                neo4j_ca_cert=None,
+                neo4j_trust_all=False,
+            )
+        )

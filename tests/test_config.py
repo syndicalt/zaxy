@@ -29,6 +29,12 @@ def test_domain_default_is_optional() -> None:
     assert settings.zaxy_domain is None
 
 
+def test_projection_backend_defaults_to_neo4j() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.projection_backend == "neo4j"
+
+
 def test_retention_policy_defaults_are_non_destructive() -> None:
     settings = Settings(_env_file=None)
 

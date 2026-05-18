@@ -97,6 +97,14 @@ class Settings(BaseSettings):
     )
 
     # ------------------------------------------------------------------
+    # Projection backend
+    # ------------------------------------------------------------------
+    projection_backend: str = Field(
+        default="neo4j",
+        description="Projection backend: neo4j or experimental pggraph",
+    )
+
+    # ------------------------------------------------------------------
     # Pathlight
     # ------------------------------------------------------------------
     pathlight_url: str = Field(
