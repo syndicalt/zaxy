@@ -206,11 +206,13 @@ def test_benchmark_docs_disclose_harness_external_claims_and_sources() -> None:
     text = Path("docs/benchmarks.md").read_text(encoding="utf-8")
 
     assert "LongMemEval-compatible" in text
-    assert "0.950" in text
-    assert "0.990" in text
+    assert "0.970" in text
+    assert "1.000" in text
+    assert "0.540" in text
     assert "0.840" in text
     assert "BM25" in text
     assert "same-harness" in text
+    assert "Approx tokens" in text
     assert "external disclosures" in text
     assert "MemPalace" in text
     assert "96.6%" in text
@@ -225,6 +227,39 @@ def test_benchmark_docs_disclose_harness_external_claims_and_sources() -> None:
     assert "../reports/benchmarks/live-benchmark.md" in text
     assert "../reports/benchmarks/longmemeval-100-comparison/live-benchmark.md" in text
     assert "not same-harness results" in text
+
+
+def test_public_longmemeval_reports_keep_bm25_tradeoff_baseline() -> None:
+    """Public LongMemEval reports should include BM25 latency and token tradeoffs."""
+    report_paths = [
+        path
+        for path in Path("reports/benchmarks").glob("*/live-benchmark.json")
+        if "longmemeval" in path.as_posix()
+    ]
+    report_paths.append(Path("reports/benchmarks/live-benchmark.json"))
+
+    for report_path in report_paths:
+        payload = json.loads(report_path.read_text(encoding="utf-8"))
+        workload = payload.get("workload") or {}
+        if "longmemeval" not in str(workload.get("version", "")).casefold():
+            continue
+        summaries = {
+            str(summary.get("backend")): summary
+            for summary in payload.get("summaries", [])
+            if isinstance(summary, dict)
+        }
+        assert "bm25" in summaries, f"{report_path} is missing the BM25 baseline"
+        bm25 = summaries["bm25"]
+        assert isinstance(bm25.get("latency_ms_p95"), int | float)
+        assert isinstance(bm25.get("mean_returned_bytes"), int | float)
+        assert isinstance(bm25.get("mean_approx_tokens"), int | float)
+
+        markdown_path = report_path.with_suffix(".md")
+        markdown = markdown_path.read_text(encoding="utf-8")
+        assert "| bm25 |" in markdown.casefold()
+        assert "p95 ms" in markdown
+        assert "Returned bytes" in markdown
+        assert "Approx tokens" in markdown
 
 
 def test_public_site_links_to_all_core_docs() -> None:

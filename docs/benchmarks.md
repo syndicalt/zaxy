@@ -14,23 +14,20 @@ The current public Zaxy result is the archived 100-question
 LongMemEval-compatible run at
 [reports/benchmarks/live-benchmark.md](../reports/benchmarks/live-benchmark.md).
 It uses the cleaned LongMemEval workload, deterministic local hash embeddings,
-and Zaxy checkout retrieval over 1,559 Eventloom events, 100 queries, 100
-subjects, and 265 sessions.
+BM25 as the same-harness lexical baseline, and graph-backed Zaxy retrieval over
+1,559 Eventloom events, 100 queries, 100 subjects, and 265 sessions.
 
-| Metric | Zaxy |
-|--------|------|
-| Mean score | 0.950 |
-| Answer@5 | 0.950 |
-| Citation coverage | 1.000 |
-| Recall@1 | 0.990 |
-| Recall@5 | 0.990 |
-| Recall@10 | 0.990 |
-| Identity recall | 0.949 |
+| Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | Recall@10 | p95 ms | Approx tokens |
+|---------|------------|----------|-------------------|----------|----------|-----------|--------|---------------|
+| BM25 | 0.540 | 0.500 | 1.000 | 0.710 | 0.840 | 0.870 | 85.77 | 5493 |
+| Zaxy | 0.970 | 0.950 | 1.000 | 1.000 | 1.000 | 1.000 | 816.71 | 11038 |
 
 This is the strongest public claim because it tests conversational long-memory
 retrieval across multi-session and temporal-reasoning questions. The report is
 not a full 500-question LongMemEval publication yet, and it should not be
-described as one.
+described as one. The tradeoff is explicit in the same report: BM25 is much
+faster and returns fewer tokens, while Zaxy substantially improves answer and
+multi-hop recall.
 
 ## Full 500-Question LongMemEval Run
 
