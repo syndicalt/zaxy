@@ -38,6 +38,7 @@ from zaxy.live_benchmark import (
     VectorRetriever,
     ZaxyCheckoutRetriever,
     ZaxyRetriever,
+    _benchmark_contexts_from_checkout,
     _benchmark_projection_present,
     _build_source_lane_retriever,
     _mark_benchmark_projection,
@@ -122,6 +123,39 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "source-recall" in script
     assert "temporal-recall" in script
     assert "zaxy benchmark" in script
+
+
+def test_benchmark_checkout_contexts_prioritize_synthesis_evidence() -> None:
+    """Answer-bearing synthesis evidence should stay inside Answer@5."""
+    checkout = SimpleNamespace(
+        quality={"answerability": "answer_from_memory", "confidence": 0.9},
+        diagnostics={},
+        current_facts=[
+            {
+                "content": f"ordinary fact {index}",
+                "citation": f"eventloom://benchmark/events/{index}#hash",
+                "source_lane": "verbatim",
+                "score": 1.0,
+            }
+            for index in range(1, 6)
+        ],
+        evidence=[
+            {
+                "content": (
+                    "zaxy_synthesis_bundle=true\n"
+                    "issue_candidate=GPS system not functioning correctly"
+                ),
+                "citation": "eventloom://benchmark/events/99#hash",
+                "source_lane": "verbatim",
+                "score": 1.2,
+            }
+        ],
+    )
+
+    contexts = _benchmark_contexts_from_checkout(checkout)
+
+    assert "issue_candidate=GPS system not functioning correctly" in contexts[0]
+    assert "checkout_item=evidence" in contexts[0]
 
 
 def test_parse_benchmark_baselines_allows_zaxy_only_runs() -> None:

@@ -1086,13 +1086,25 @@ def _benchmark_contexts_from_checkout(checkout: object) -> list[str]:
             f"observed_source_groups={_dict_value(evidence_status, 'observed_source_groups')}",
         ]
     )
-    contexts: list[str] = []
+    ranked_contexts: list[tuple[int, int, str]] = []
+    order = 0
     for fact in getattr(checkout, "current_facts", []):
         if isinstance(fact, dict):
-            contexts.append(_benchmark_context_from_checkout_item("current_fact", fact))
+            context = _benchmark_context_from_checkout_item("current_fact", fact)
+            ranked_contexts.append((_benchmark_checkout_context_priority(context), order, context))
+            order += 1
     for item in getattr(checkout, "evidence", []):
         if isinstance(item, dict):
-            contexts.append(_benchmark_context_from_checkout_item("evidence", item))
+            context = _benchmark_context_from_checkout_item("evidence", item)
+            ranked_contexts.append((_benchmark_checkout_context_priority(context), order, context))
+            order += 1
+    contexts: list[str] = []
+    seen_contexts: set[str] = set()
+    for _priority, _order, context in sorted(ranked_contexts):
+        if context in seen_contexts:
+            continue
+        seen_contexts.add(context)
+        contexts.append(context)
     contexts.append(diagnostics_context)
     evidence_set = diagnostics.get("evidence_set") if isinstance(diagnostics, dict) else None
     groups = evidence_set.get("groups") if isinstance(evidence_set, dict) else None
@@ -1111,6 +1123,15 @@ def _benchmark_contexts_from_checkout(checkout: object) -> list[str]:
                     )
                 )
     return contexts
+
+
+def _benchmark_checkout_context_priority(context: str) -> int:
+    lowered = context.casefold()
+    if "zaxy_synthesis_bundle=true" in lowered or "zaxy_absence_check=true" in lowered:
+        return 0
+    if "checkout_item=current_fact" in lowered:
+        return 1
+    return 2
 
 
 def _benchmark_context_from_checkout_item(kind: str, item: dict[str, object]) -> str:
