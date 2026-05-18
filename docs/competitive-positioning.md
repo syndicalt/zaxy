@@ -47,8 +47,8 @@ score 0.626, Answer@5 0.608, citation coverage 1.000, and R@1/R@5/R@10 of
 0.944/0.956/0.956 versus BM25 mean score 0.560, Answer@5 0.516, and R@5 0.770.
 The current same-harness `limit=5` backend-evaluation control uses workload
 SHA-256 `0dc36a139bb9a4fdc7c6cd34400737a58a1eb7410517341f015e9fbfc76ed854`
-and sets the projection-backend floor at Zaxy checkout mean score 0.616,
-Answer@5 0.602, citation coverage 1.000, and R@5 0.958.
+and sets the projection-backend floor at Zaxy checkout mean score 0.712,
+Answer@5 0.620, citation coverage 1.000, and R@5 0.958.
 
 Competitor numbers belong in an external-disclosure table, not a universal
 leaderboard. MemPalace publicly reports 96.6% raw LongMemEval R@5 and 98.4%

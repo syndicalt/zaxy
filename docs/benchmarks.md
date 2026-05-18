@@ -64,8 +64,8 @@ matching the pgGraph full-set comparison below.
 
 | Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | Recall@10 | p95 ms | p99 ms |
 |---------|------------|----------|-------------------|----------|----------|-----------|--------|--------|
-| BM25 | 0.514 | 0.514 | 1.000 | 0.592 | 0.770 | 0.770 | 315.19 | 374.10 |
-| Zaxy checkout | 0.616 | 0.602 | 1.000 | 0.946 | 0.958 | 0.958 | 1060.37 | 2259.28 |
+| BM25 | 0.514 | 0.514 | 1.000 | 0.592 | 0.770 | 0.770 | 329.24 | 385.19 |
+| Zaxy checkout | 0.712 | 0.620 | 1.000 | 0.946 | 0.958 | 0.958 | 1076.40 | 2436.42 |
 
 Use this current backend-evaluation floor when comparing projection backends or
 other `limit=5` full-set reports. Do not compare a `limit=5` backend run
@@ -126,17 +126,18 @@ stale benchmark projections.
 
 | Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | p95 ms | Approx tokens |
 |---------|------------|----------|-------------------|----------|----------|--------|---------------|
-| BM25 | 0.514 | 0.514 | 1.000 | 0.592 | 0.770 | 319.84 | 2661 |
-| pgGraph Zaxy | 0.696 | 0.696 | 1.000 | 0.958 | 0.958 | 951.12 | 4193 |
-| pgGraph checkout | 0.624 | 0.610 | 1.000 | 0.948 | 0.958 | 947.77 | 5595 |
-| Neo4j checkout control | 0.616 | 0.602 | 1.000 | 0.946 | 0.958 | 1060.37 | 5664 |
+| BM25 | 0.518 | 0.518 | 1.000 | 0.592 | 0.770 | 330.79 | 2661 |
+| pgGraph Zaxy | 0.694 | 0.694 | 1.000 | 0.958 | 0.958 | 998.17 | 4193 |
+| pgGraph checkout | 0.714 | 0.624 | 1.000 | 0.948 | 0.958 | 1057.91 | 12970 |
+| Neo4j checkout control | 0.712 | 0.620 | 1.000 | 0.946 | 0.958 | 1076.40 | 13383 |
 
 The clean pgGraph run restored the full-set Recall@5 floor and passed Answer@5,
-citation coverage, and latency. Its checkout mean score is still below the
-older archived `0.626` no-regression floor, but the same-harness Neo4j checkout
-control on the current workload hash scored `0.616`, below pgGraph's `0.624`.
-That makes the remaining mean-score miss a benchmark-harness comparability issue
-rather than evidence of a pgGraph-specific retrieval regression. pgGraph remains
+citation coverage, and latency. The same-harness Neo4j checkout control on the
+current workload hash scored `0.712`, and pgGraph checkout scored `0.714`, so
+the current adapter comparison no longer shows a pgGraph-specific quality
+regression. Checkout token volume is higher than the previous archive because
+the benchmark now includes supporting facts and evidence from the model-facing
+Memory Checkout object even when compact contexts are present. pgGraph remains
 an evaluation backend only until the full 500-question floor is re-baselined on
 a frozen same-harness workload and operational coverage covers container
 bootstrap, schema reset, graph rebuild, and failure recovery.
@@ -281,8 +282,8 @@ Neo4j checkout control:
 ```bash
 zaxy benchmark-compare reports/benchmarks/longmemeval-500-neo4j-current-checkout/live-benchmark.json \
   --backend zaxy-checkout \
-  --min-mean-score 0.616 \
-  --min-answer-recall-at-5 0.602 \
+  --min-mean-score 0.712 \
+  --min-answer-recall-at-5 0.620 \
   --min-recall-at-5 0.958 \
   --min-citation-coverage 1.0 \
   --max-p95-ms 1200 \

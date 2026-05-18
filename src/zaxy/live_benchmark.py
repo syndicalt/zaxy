@@ -1116,8 +1116,11 @@ def _benchmark_contexts_from_checkout(checkout: object) -> list[str]:
     quality = getattr(checkout, "quality", {})
     diagnostics = getattr(checkout, "diagnostics", {})
     compact_contexts = diagnostics.get("compact_contexts") if isinstance(diagnostics, dict) else None
-    if isinstance(compact_contexts, list) and compact_contexts:
-        return [context for context in compact_contexts if isinstance(context, str)]
+    compact_prefix = (
+        [context for context in compact_contexts if isinstance(context, str)]
+        if isinstance(compact_contexts, list)
+        else []
+    )
     evidence_plan = diagnostics.get("evidence_plan") if isinstance(diagnostics, dict) else None
     evidence_status = (
         diagnostics.get("evidence_plan_status") if isinstance(diagnostics, dict) else None
@@ -1147,6 +1150,11 @@ def _benchmark_contexts_from_checkout(checkout: object) -> list[str]:
             order += 1
     contexts: list[str] = []
     seen_contexts: set[str] = set()
+    for context in compact_prefix:
+        if context in seen_contexts:
+            continue
+        seen_contexts.add(context)
+        contexts.append(context)
     for _priority, _order, context in sorted(ranked_contexts):
         if context in seen_contexts:
             continue

@@ -367,12 +367,12 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
 | LongMemEval 500 hash | Zaxy checkout mean 0.640, Answer@5 0.612, R@5 0.972, citation coverage 1.000, p95 1155.88 ms, p99 2440.32 ms |
-| LongMemEval 500 pgGraph | Zaxy mean 0.696, Answer@5 0.696, R@5 0.958; checkout mean 0.624, Answer@5 0.610, R@5 0.958; same-harness Neo4j checkout control mean 0.616, Answer@5 0.602, R@5 0.958; citation coverage 1.000 |
+| LongMemEval 500 pgGraph | Zaxy mean 0.694, Answer@5 0.694, R@5 0.958; checkout mean 0.714, Answer@5 0.624, R@5 0.958; same-harness Neo4j checkout control mean 0.712, Answer@5 0.620, R@5 0.958; citation coverage 1.000 |
 
 ## Next Steps
 
 1. Improve full-set LongMemEval synthesis without reducing the archived 500-question no-regression floors: mean score 0.626, Answer@5 0.608, R@5 0.956, and citation coverage 1.000.
-2. Re-baseline the full 500-question no-regression floor on a frozen same-harness workload hash before treating pgGraph's current checkout mean-score delta as a backend quality regression.
+2. Keep pgGraph experimental while repeating the full 500-question same-harness comparison and expanding operational coverage for bootstrap, reset, graph rebuild, and failure recovery.
 3. Expand clean-repo onboarding and model-facing UAT with fresh Codex and Claude Code workspaces: `zaxy init`, Memory Bootstrap, deterministic capture, Memory Checkout, feedback, and doctor status.
 4. Keep public benchmark scripts fully reproducible from a clean checkout, with cached datasets, archived reports, guardrail commands, and no hidden manual steps.
 5. Use LangGraph and CrewAI native-preview usage to choose the next maintained adapter or model-facing UX hardening target.

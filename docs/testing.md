@@ -235,16 +235,16 @@ The current same-harness `limit=5` backend-evaluation archive is
 `reports/benchmarks/longmemeval-500-neo4j-current-checkout/live-benchmark.json`.
 Its workload SHA-256 is
 `0dc36a139bb9a4fdc7c6cd34400737a58a1eb7410517341f015e9fbfc76ed854`. Its Zaxy
-checkout floor is mean score 0.616, Answer@5 0.602, citation coverage 1.000,
-R@5 0.958, p95 1060.37 ms, and p99 2259.28 ms. Use the floor matching the
+checkout floor is mean score 0.712, Answer@5 0.620, citation coverage 1.000,
+R@5 0.958, p95 1076.40 ms, and p99 2436.42 ms. Use the floor matching the
 candidate harness; projection-backend work should use the current same-harness
 control unless it also reruns the legacy `limit=10` harness.
 
 ```bash
 zaxy benchmark-compare reports/benchmarks/longmemeval-500-neo4j-current-checkout/live-benchmark.json \
   --backend zaxy-checkout \
-  --min-mean-score 0.616 \
-  --min-answer-recall-at-5 0.602 \
+  --min-mean-score 0.712 \
+  --min-answer-recall-at-5 0.620 \
   --min-recall-at-5 0.958 \
   --min-citation-coverage 1.0 \
   --max-p95-ms 1200 \

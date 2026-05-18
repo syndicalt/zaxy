@@ -140,14 +140,15 @@ def test_pggraph_backend_roadmap_records_contract_first_state() -> None:
     assert "longmemeval-500-neo4j-current-checkout" in benchmarks
     assert "pgGraph checkout" in benchmarks
     assert "0.910" in benchmarks
+    assert "0.714" in benchmarks
     assert "0.624" in benchmarks
-    assert "0.610" in benchmarks
     assert "0.958" in benchmarks
     assert "same-harness Neo4j checkout control" in benchmarks
     assert "Neo4j checkout" in benchmarks
     assert "0.930" in benchmarks
-    assert "0.616" in benchmarks
-    assert "benchmark-harness comparability issue" in benchmarks
+    assert "0.712" in benchmarks
+    assert "no longer shows a pgGraph-specific quality" in benchmarks
+    assert "regression" in benchmarks
 
 
 def test_full_set_guardrail_docs_distinguish_legacy_and_same_harness_floors() -> None:
@@ -162,8 +163,8 @@ def test_full_set_guardrail_docs_distinguish_legacy_and_same_harness_floors() ->
     assert "Current same-harness backend-evaluation floor" in benchmarks
     assert "0dc36a139bb9a4fdc7c6cd34400737a58a1eb7410517341f015e9fbfc76ed854" in combined
     assert "longmemeval-500-neo4j-current-checkout/live-benchmark.json" in testing
-    assert "--min-mean-score 0.616" in testing
-    assert "--min-answer-recall-at-5 0.602" in testing
+    assert "--min-mean-score 0.712" in testing
+    assert "--min-answer-recall-at-5 0.620" in testing
     assert "--min-recall-at-5 0.958" in testing
     assert "legacy `limit=10`" in competitive
     assert "current same-harness `limit=5`" in competitive

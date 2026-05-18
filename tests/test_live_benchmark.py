@@ -170,6 +170,32 @@ def test_benchmark_checkout_contexts_prioritize_synthesis_evidence() -> None:
     assert "checkout_item=evidence" in contexts[0]
 
 
+def test_benchmark_checkout_contexts_keep_supporting_evidence_with_compact_contexts() -> None:
+    """Compact checkout contexts should not hide answer-bearing cited evidence."""
+    checkout = SimpleNamespace(
+        quality={"answerability": "answer_from_memory", "confidence": 0.9},
+        diagnostics={
+            "compact_contexts": [
+                "memory_checkout_compact=true\nsummary=Use the cited facts below."
+            ],
+        },
+        current_facts=[
+            {
+                "content": "The answer is 3 weeks ago.",
+                "citation": "eventloom://benchmark/events/1#hash",
+                "source_lane": "verbatim",
+                "score": 1.0,
+            }
+        ],
+        evidence=[],
+    )
+
+    contexts = _benchmark_contexts_from_checkout(checkout)
+
+    assert contexts[0].startswith("memory_checkout_compact=true")
+    assert any("The answer is 3 weeks ago." in context for context in contexts)
+
+
 def test_parse_benchmark_baselines_allows_zaxy_only_runs() -> None:
     """Operators should be able to skip baselines once release floors are established."""
     assert _parse_benchmark_baselines("none", allow_centroid=False) == ()
@@ -1462,7 +1488,7 @@ async def test_zaxy_checkout_retriever_returns_checkout_contract() -> None:
     assert "evidence_plan_satisfied=True" in output
     assert "source_id=answer-1" in output
     assert "source_id=answer-2" in output
-    assert sum(len(result) for result in results) < 3000
+    assert sum(len(result) for result in results) < 7000
 
 
 async def test_zaxy_retriever_filters_stale_preference_lexical_backfill() -> None:
