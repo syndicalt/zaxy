@@ -24,6 +24,7 @@
       <a href="#why">Why</a>
       <a href="#architecture">Architecture</a>
       <a href="#mcp">MCP</a>
+      <a href="#dashboard">Dashboard</a>
       <a href="#benchmarks">Benchmarks</a>
       <a href="#docs">Docs</a>
       <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
@@ -36,9 +37,9 @@
         <p class="eyebrow">Git for LLM memory</p>
         <h1>Temporal memory for AI agents.</h1>
         <p class="tagline">
-          Zaxy turns agent work into durable memory: an Eventloom log for audit,
-          hash-linked provenance for replay, a Neo4j temporal graph for reasoning,
-          Memory Checkout for compact context, and MCP tools for model-facing
+          Zaxy turns agent work into inspectable memory: local Eventloom logs for
+          audit, hash-linked provenance for replay, graph projections for connected
+          reasoning, Memory Checkout for compact context, and MCP tools for
           retrieval, capture, and feedback.
         </p>
         <div class="cta-row">
@@ -59,11 +60,11 @@
     </section>
 
     <section class="proof-strip" aria-label="Project status">
-      <span>1005 tests</span>
-      <span>92.04% coverage</span>
+      <span>1063 tests</span>
+      <span>91.97% coverage</span>
       <span>ruff clean</span>
       <span>mypy clean</span>
-      <span>PyPI 0.2.1</span>
+      <span>PyPI 0.2.3</span>
     </section>
 
     <section id="why" class="section">
@@ -166,6 +167,24 @@
       </p>
     </section>
 
+    <section id="backend" class="section">
+      <div class="section-heading">
+        <p class="eyebrow">Projection backends</p>
+        <h2>Eventloom stays canonical. Graph backends are projections.</h2>
+        <p>
+          Neo4j remains the default production graph projection. pgGraph is experimental
+          behind <code>PROJECTION_BACKEND=pggraph</code> for teams
+          evaluating Postgres-local graph traversal, pgvector ranking, and temporal
+          retrieval without moving the source of truth out of Eventloom.
+        </p>
+      </div>
+      <div class="value-grid">
+        <article><h3>Default: Neo4j</h3><p>Battle-tested graph projection for temporal entities, source citations, inferred edges, and traversal-backed retrieval.</p></article>
+        <article><h3>Experimental: pgGraph</h3><p>Available behind an explicit backend selector and guarded by same-harness quality, citation, latency, and operations comparisons.</p></article>
+        <article><h3>Recoverable projection</h3><p>Rebuild a selected backend from Eventloom with <code>zaxy reproject --projection-backend pggraph --reset-projection</code>.</p></article>
+      </div>
+    </section>
+
     <section id="capture" class="section">
       <div class="section-heading">
         <p class="eyebrow">Deterministic capture</p>
@@ -175,6 +194,25 @@
         <article><h3>local-codex</h3><p>The Codex preset renders the official MCP install command, writes local session JSONL capture config, and supports a managed <code>zaxy capture start</code> watcher.</p></article>
         <article><h3>Observer hooks</h3><p>Stable hook sinks record lifecycle, command, file-edit, tool-call, and transcript observations when the client supports them.</p></article>
         <article><h3>Packet analyzer</h3><p>Provider packet capture remains opt-in for diagnostics and high-fidelity audit because it can consume API quota.</p></article>
+      </div>
+    </section>
+
+    <section id="dashboard" class="section band">
+      <div class="section-heading">
+        <p class="eyebrow">Runtime debugging</p>
+        <h2>Read-only local dashboard for memory inspection.</h2>
+        <p>
+          Run <code>zaxy dashboard --host 127.0.0.1 --port 8765</code> to inspect
+          the active workspace without giving the browser a mutation path. The
+          dashboard resolves one workspace by default and shows Eventloom sessions,
+          graph projection status, recent events, graph neighborhoods, Checkout
+          diagnostics, and degraded-state warnings.
+        </p>
+      </div>
+      <div class="value-grid">
+        <article><h3>Read-only by design</h3><p>API routes reject writes; the dashboard is for runtime memory/debugging, not editing facts or invalidating history.</p></article>
+        <article><h3>Local scope</h3><p>The header shows workspace, Eventloom path, domain, session, read-only mode, and graph connection status.</p></article>
+        <article><h3>Useful when degraded</h3><p>If Neo4j is unreachable, Eventloom still renders a fallback provenance graph so sessions are not blank.</p></article>
       </div>
     </section>
 
@@ -193,31 +231,40 @@
     <section id="benchmarks" class="section">
       <div class="section-heading">
         <p class="eyebrow">Benchmark evidence</p>
-        <h2>Zaxy now publishes LongMemEval-compatible memory results alongside the 650-query context suite.</h2>
+        <h2>Reproducible guardrails, not just a headline score.</h2>
         <p>
-          The headline Zaxy run scores <strong>0.950</strong> mean,
-          <strong>0.950</strong> Answer@5, <strong>1.000</strong> citation
-          coverage, and <strong>0.990</strong> R@1/R@5/R@10 on a 100-question
-          LongMemEval-compatible slice. A same-harness BM25 baseline reaches
-          <strong>0.840</strong> R@5 on the same slice. MemPalace, Mem0, and
-          Agent Memory numbers below are external disclosures; they are not same-harness results.
+          Full 500-question LongMemEval-compatible guardrail: the current run reports
+          Zaxy checkout mean <strong>0.724</strong>, Answer@5
+          <strong>0.628</strong>, R@5 <strong>0.972</strong>, citation coverage
+          <strong>1.000</strong>, p95 <strong>1472.11 ms</strong>, and p99
+          <strong>2652.55 ms</strong>. The 100-question headline remains archived
+          evidence, not the only release gate. Competitor numbers below are public
+          external disclosures with different harnesses or metrics; they are
+          not same-harness results.
+        </p>
+        <p>
+          The older 650 paired queries context suite still matters as fixture
+          evidence: with OpenAI <code>text-embedding-3-small</code>, Zaxy reached
+          1.000 mean score, a +0.480 mean delta versus vector and markdown+vector
+          baselines. The archived 100-question LongMemEval-compatible report also
+          keeps the same-harness BM25 baseline visible at 0.840 R@5.
         </p>
       </div>
       <div class="benchmark-metrics">
         <article class="benchmark-card benchmark-card-primary">
-          <span class="benchmark-card-label">Zaxy checkout</span>
-          <h3>0.990 R@5</h3>
-          <p>Archived 100-query LongMemEval-compatible run with cited memory output.</p>
+          <span class="benchmark-card-label">Full 500-question guardrail</span>
+          <h3>0.972 R@5</h3>
+          <p>Current hash-backed checkout run with 1.000 citation coverage and archived latency.</p>
         </article>
         <article class="benchmark-card">
-          <span class="benchmark-card-label">BM25 baseline</span>
-          <h3>0.840 R@5</h3>
-          <p>Same 100-query LongMemEval-compatible comparison run and scoring protocol.</p>
+          <span class="benchmark-card-label">Archived headline</span>
+          <h3>0.970 mean</h3>
+          <p>100-question LongMemEval-compatible run with 0.950 Answer@5 and same-harness BM25 baseline.</p>
         </article>
         <article class="benchmark-card">
-          <span class="benchmark-card-label">Context suite</span>
-          <h3>1.000</h3>
-          <p>Mean Zaxy score with OpenAI <code>text-embedding-3-small</code> on 850 events and 650 paired queries, a +0.480 mean delta versus vector and markdown+vector baselines.</p>
+          <span class="benchmark-card-label">pgGraph evaluation</span>
+          <h3>0.958 R@5</h3>
+          <p>pgGraph remains experimental; same-harness checkout control currently reports 0.714 mean and 1.000 citation coverage.</p>
         </article>
       </div>
       <div class="benchmark-comparison" role="region" aria-label="Benchmark comparison table">
@@ -237,20 +284,26 @@
           <tbody>
             <tr>
               <td><strong>Zaxy</strong></td>
-              <td>LongMemEval-compatible R@5</td>
-              <td><span class="benchmark-result">0.990</span></td>
+              <td>Full 500-question LongMemEval-compatible R@5</td>
+              <td><span class="benchmark-result">0.972</span><span class="result-note">Mean 0.724; Answer@5 0.628; citation coverage 1.000</span></td>
               <td><span class="evidence-badge evidence-badge-local">Same harness</span><span class="evidence-note">Archived report</span></td>
             </tr>
             <tr>
               <td><strong>Zaxy</strong></td>
-              <td>LongMemEval-compatible Answer@5</td>
-              <td><span class="benchmark-result">0.950</span><span class="result-note">0.880 in BM25 comparison</span></td>
+              <td>100-question headline remains archived evidence</td>
+              <td><span class="benchmark-result">0.970</span><span class="result-note">Answer@5 0.950; R@5 1.000</span></td>
               <td><span class="evidence-badge evidence-badge-local">Same harness</span><span class="evidence-note">Archived reports</span></td>
             </tr>
             <tr>
               <td><strong>BM25 baseline</strong></td>
-              <td>LongMemEval-compatible R@5</td>
-              <td><span class="benchmark-result">0.840</span></td>
+              <td>Legacy full-set LongMemEval-compatible R@5</td>
+              <td><span class="benchmark-result">0.770</span><span class="result-note">Same 500-question hash workload baseline</span></td>
+              <td><span class="evidence-badge evidence-badge-local">Same harness</span><span class="evidence-note">Archived report</span></td>
+            </tr>
+            <tr>
+              <td><strong>pgGraph checkout</strong></td>
+              <td>Backend-evaluation R@5</td>
+              <td><span class="benchmark-result">0.958</span><span class="result-note">Mean 0.714; Answer@5 0.632; experimental backend</span></td>
               <td><span class="evidence-badge evidence-badge-local">Same harness</span><span class="evidence-note">Archived report</span></td>
             </tr>
             <tr>
@@ -285,17 +338,24 @@
     <section id="install" class="section install">
       <div class="section-heading">
         <p class="eyebrow">Install</p>
-        <h2>Run Zaxy locally, then expose memory through MCP.</h2>
+        <h2>Five-minute local smoke test, then expose memory through MCP.</h2>
       </div>
       <div class="install-grid">
-        <pre><code>pip install zaxy-memory
-./scripts/setup.sh
-docker compose up -d
-zaxy status</code></pre>
-        <pre><code>pip install -e ".[dev]"
-zaxy serve
-zaxy serve --transport sse --port 8080
+        <pre><code>pipx install zaxy-memory
+zaxy init . --domain my-project --preset local-codex --capture start --infra check
+zaxy memory log --eventloom-path .eventloom --session-id my-project-default --limit 5
+zaxy memory bootstrap --eventloom-path .eventloom --session-id my-project-default
+zaxy doctor --eventloom-path .eventloom</code></pre>
+        <pre><code>Data lives in .eventloom/
+MCP config is generated or printed by zaxy init
+Graph posture is explicit: check first, start when needed
+Production uses Docker secrets and deployment preflight
 scripts/release-check.sh --root .</code></pre>
+      </div>
+      <div class="value-grid install-notes">
+        <article><h3>What happens when you run init</h3><p>Zaxy writes `.env.local`, records session genesis and heartbeat, checks graph posture, and prints the MCP command or config path for the selected client.</p></article>
+        <article><h3>What stays local</h3><p>Session history lives in `.eventloom/` as append-only JSONL. Neo4j or pgGraph can be rebuilt from that log because the graph is a projection.</p></article>
+        <article><h3>How you prove it worked</h3><p><code>memory log</code> shows recent events, <code>memory bootstrap</code> shows model-facing startup guidance, and <code>doctor</code> reports missing capture or backend posture.</p></article>
       </div>
     </section>
 
@@ -305,6 +365,7 @@ scripts/release-check.sh --root .</code></pre>
         <h2>Full operator and integrator documentation.</h2>
       </div>
       <div class="docs-grid">
+        <a href="docs/why-zaxy.md">Why Zaxy</a>
         <a href="docs/getting-started.md">Getting started</a>
         <a href="docs/architecture.md">Architecture</a>
         <a href="docs/configuration.md">Configuration</a>
@@ -330,7 +391,7 @@ scripts/release-check.sh --root .</code></pre>
   </main>
 
   <footer>
-    <span>Zaxy v0.2.1 - MIT</span>
+    <span>Zaxy v0.2.3 - MIT</span>
     <span><a href="README.md">README</a> <a href="docs/runbook.md">Runbook</a></span>
   </footer>
 </body>

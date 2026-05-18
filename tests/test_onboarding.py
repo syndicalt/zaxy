@@ -163,7 +163,12 @@ async def test_run_onboarding_writes_requested_configs_and_registers_session(tmp
     assert events[-1].payload["source"] == "zaxy-init"
     assert result.next_steps[0] == f"Add {mcp_output} to your claude-desktop MCP client config."
     assert result.next_steps[1] == "Restart the MCP client so it loads the Zaxy server config."
+    assert f"Data lives in {eventloom_path}; each session is an append-only JSONL log." in result.next_steps
     assert f"Run zaxy hook-status --eventloom-path {eventloom_path}" in result.next_steps
+    assert (
+        f"Smoke test recent memory: zaxy memory log --eventloom-path {eventloom_path} "
+        "--session-id demo-default --limit 5"
+    ) in result.next_steps
     assert (
         f"Inspect model-facing memory bootstrap: zaxy memory bootstrap "
         f"--eventloom-path {eventloom_path} --session-id demo-default"

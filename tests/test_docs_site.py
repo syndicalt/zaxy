@@ -9,6 +9,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 REQUIRED_DOCS = [
+    "docs/why-zaxy.md",
     "docs/getting-started.md",
     "docs/architecture.md",
     "docs/configuration.md",
@@ -71,12 +72,17 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     assert "memory_append" in html
     assert "memory_query" in html
     assert "scripts/release-check.sh --root ." in html
+    assert "PyPI 0.2.3" in html
+    assert "1063 tests" in html
+    assert "91.97% coverage" in html
 
     for section_id in (
         "why",
         "architecture",
         "mcp",
         "retrieval",
+        "backend",
+        "dashboard",
         "security",
         "install",
         "docs",
@@ -157,6 +163,77 @@ def test_pggraph_backend_roadmap_records_contract_first_state() -> None:
     assert "failure recovery" in spec
     assert "zaxy memory status --graph --projection-backend pggraph" in spec
     assert "zaxy memory inferred-status --projection-backend pggraph" in spec
+
+
+def test_install_docs_offer_zero_surprise_first_run_path() -> None:
+    """Install docs should make local setup verifiable without guessing where state went."""
+    readme = Path("README.md").read_text(encoding="utf-8")
+    getting_started = Path("docs/getting-started.md").read_text(encoding="utf-8")
+    site = Path("site/index.html").read_text(encoding="utf-8")
+
+    combined = "\n".join([readme, getting_started, site])
+    assert "Five-minute local smoke test" in combined
+    assert "pipx install zaxy-memory" in combined
+    assert "zaxy init . --domain my-project --preset local-codex --capture start --infra check" in combined
+    assert ".eventloom/" in combined
+    assert "zaxy memory log --eventloom-path .eventloom --session-id my-project-default --limit 5" in combined
+    assert "zaxy memory bootstrap --eventloom-path .eventloom --session-id my-project-default" in combined
+    assert "zaxy doctor --eventloom-path .eventloom" in combined
+    assert "MCP config" in combined
+
+
+def test_public_site_reflects_current_onboarding_and_runtime_surfaces() -> None:
+    """The public site should explain the current install, backend, and dashboard surfaces."""
+    html = Path("site/index.html").read_text(encoding="utf-8")
+
+    assert "What happens when you run init" in html
+    assert "writes `.env.local`" in html
+    assert "records session genesis and heartbeat" in html
+    assert "prints the MCP command or config path" in html
+    assert "Neo4j remains the default production graph projection" in html
+    assert "pgGraph is experimental" in html
+    assert "PROJECTION_BACKEND=pggraph" in html
+    assert "zaxy reproject --projection-backend pggraph --reset-projection" in html
+    assert "Read-only local dashboard" in html
+    assert "zaxy dashboard --host 127.0.0.1 --port 8765" in html
+    assert "Eventloom sessions" in html
+    assert "graph projection" in html
+    assert "Checkout diagnostics" in html
+
+
+def test_public_site_benchmark_claims_use_current_full_set_guardrails() -> None:
+    """The public site should lead with current reproducible floors, not stale headline-only claims."""
+    html = Path("site/index.html").read_text(encoding="utf-8")
+
+    assert "Full 500-question LongMemEval-compatible guardrail" in html
+    assert "0.724" in html
+    assert "0.628" in html
+    assert "0.972" in html
+    assert "p95" in html
+    assert "1472.11 ms" in html
+    assert "100-question headline remains archived evidence" in html
+    assert "0.970" in html
+    assert "0.950" in html
+    assert "pgGraph remains experimental" in html
+    assert "0.958" in html
+    assert "0.714" in html
+    assert "PyPI 0.2.1" not in html
+    assert "1005 tests" not in html
+    assert "92.04% coverage" not in html
+
+
+def test_why_zaxy_doc_explains_markdown_vector_tradeoffs() -> None:
+    """The docs should explain why Zaxy is heavier than markdown or vector memory."""
+    text = Path("docs/why-zaxy.md").read_text(encoding="utf-8").casefold()
+
+    assert "markdown" in text
+    assert "vector" in text
+    assert "temporal" in text
+    assert "provenance" in text
+    assert "multi-hop" in text
+    assert "pipx install zaxy-memory" in text
+    assert "neo4j" in text
+    assert "pggraph" in text
 
 
 def test_framework_integration_docs_record_next_hardening_target() -> None:
@@ -240,8 +317,9 @@ def test_public_site_benchmark_claim_is_scoped_to_fixture() -> None:
     assert "1.000" in html
     assert "+0.480" in html
     assert "0.950" in html
-    assert "0.990" in html
+    assert "0.972" in html
     assert "0.840" in html
+    assert "0.770" in html
     assert "650 paired queries" in html
     assert "external disclosures" in html
     assert "not same-harness results" in html

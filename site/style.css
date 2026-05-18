@@ -498,6 +498,10 @@ pre {
   line-height: 1.35;
 }
 
+.install-notes {
+  margin-top: 16px;
+}
+
 footer {
   display: flex;
   justify-content: space-between;

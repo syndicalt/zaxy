@@ -2749,7 +2749,9 @@ def test_init_command_json_includes_next_steps_and_capture_summary(tmp_path: Pat
     assert result.exit_code == 0
     payload = json.loads(result.output)
     assert payload["session_id"] == "demo-default"
+    assert any(step.startswith("Data lives in") for step in payload["next_steps"])
     assert any(step.startswith("Run zaxy hook-status") for step in payload["next_steps"])
+    assert any(step.startswith("Smoke test recent memory: zaxy memory log") for step in payload["next_steps"])
     assert payload["capture"]["configured"] is True
     assert payload["capture"]["running"] is False
     assert payload["capture"]["pids"] == []

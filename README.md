@@ -8,54 +8,44 @@ Pathlight tracing.
 
 ## Quick Start
 
+### Five-minute local smoke test
+
 ```bash
 # Install the Zaxy CLI before generating MCP config. The distribution is
 # zaxy-memory; the import package and console command remain zaxy.
 pipx install zaxy-memory
 # or: pip install zaxy-memory
 
-# 1. Initialize local memory, MCP config, hooks, session genesis, and heartbeat.
-# Local stdio MCP auto-starts a localhost Neo4j container when Docker is
-# available, so average users do not need to manage a sidecar manually.
-zaxy init . \
-  --domain my-project \
-  --preset local-claude
+# Initialize local memory, MCP config guidance, profile, genesis, and heartbeat.
+# This checks graph infrastructure posture without starting containers.
+zaxy init . --domain my-project --preset local-codex --capture start --infra check
 
-# Codex local capture can use the managed deterministic watcher.
-zaxy init . \
-  --domain my-project \
-  --preset local-codex \
-  --capture start
-
-# Hermes Agent can use the first-class MCP config merge path.
-zaxy ide-config hermes --install
-
-# Optional: explicit local development setup if you want shell commands too.
-./scripts/setup.sh
-
-# Production setup writes Docker secret files under ./secrets/.
-./scripts/setup.sh --production
-./scripts/generate-certs.sh .certs
-docker compose -f docker-compose.prod.yml up -d
-
-# 2. Explicitly start Neo4j + Zaxy MCP server for development outside an MCP client
-docker compose up -d
-
-# 3. Verify
-zaxy status
-zaxy memory status --eventloom-path .eventloom
-zaxy memory log --eventloom-path .eventloom --limit 20
-zaxy memory diff --eventloom-path .eventloom --session-id my-project-default --from-seq 1 --to-seq 10
-pytest
-
-# Integration-only runs need --no-cov because the project-level coverage gate
-# is intended for the full suite.
-pytest -m integration --no-cov
-
-# 4. Validate local onboarding and hook posture.
+# Prove the local Eventloom log and model bootstrap are readable.
+zaxy memory log --eventloom-path .eventloom --session-id my-project-default --limit 5
+zaxy memory bootstrap --eventloom-path .eventloom --session-id my-project-default
 zaxy doctor --eventloom-path .eventloom
-
 ```
+
+Your local data lives under `.eventloom/` as one append-only JSONL file per
+session. `zaxy init` prints the MCP config or install command for your selected
+client, shows the selected graph backend posture, and ends with copyable local
+verification commands.
+
+For Claude Code instead of Codex:
+
+```bash
+zaxy init . --domain my-project --preset local-claude --infra check
+```
+
+For Hermes Agent:
+
+```bash
+zaxy ide-config hermes --install
+```
+
+For repository development, use `pip install -e ".[dev]"`, `./scripts/setup.sh`,
+and `docker compose up -d`. Production setup writes Docker secret files under
+`./secrets/`; see [docs/deployment.md](docs/deployment.md).
 
 ## Architecture
 
@@ -82,6 +72,7 @@ See [LLM Packet Analyzer](docs/packet-analyzer.md).
 ## Public Site and Documentation
 
 - Public static site: `site/index.html`
+- Why Zaxy: `docs/why-zaxy.md`
 - Getting started: `docs/getting-started.md`
 - Architecture: `docs/architecture.md`
 - Configuration: `docs/configuration.md`
