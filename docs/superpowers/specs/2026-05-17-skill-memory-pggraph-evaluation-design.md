@@ -65,7 +65,15 @@ gates. Install the optional adapter with `pip install "zaxy-memory[pggraph]"`,
 then set `PROJECTION_BACKEND=pggraph` and `PGGRAPH_DSN=...`.
 
 The current pgGraph adapter supports projection, exact search, keyword search, vector search, invalidation, and traversal
-over Zaxy-owned PostgreSQL projection tables.
+over Zaxy-owned PostgreSQL projection tables. Local bootstrap is available with:
+
+```bash
+zaxy init --projection-backend pggraph --pggraph-repo /path/to/pggraph --infra start
+```
+
+`PGGRAPH_REPO` must point at a local pgGraph checkout containing
+`scripts/quickstart.sh` so Zaxy can install the graph extension instead of
+silently running plain PostgreSQL.
 pgGraph vector search uses pgvector ranking over stored entity embeddings. It
 remains experimental until the pgGraph backend passes same-harness quality,
 citation, temporal, latency, and operations gates against Neo4j. Retrieval can

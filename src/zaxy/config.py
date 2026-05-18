@@ -107,6 +107,22 @@ class Settings(BaseSettings):
         default="postgresql://postgres:postgres@localhost:5432/zaxy",
         description="Experimental pgGraph PostgreSQL DSN",
     )
+    pggraph_auto_start: bool = Field(
+        default=True,
+        description="Automatically start local pgGraph/PostgreSQL for development when selected",
+    )
+    pggraph_auto_start_image: str = Field(
+        default="pgvector/pgvector:pg17",
+        description="Docker image used for local pgGraph/PostgreSQL bootstrap",
+    )
+    pggraph_auto_start_container: str = Field(
+        default="zaxy-pggraph",
+        description="Docker container name used for local pgGraph/PostgreSQL bootstrap",
+    )
+    pggraph_repo: str | None = Field(
+        default=None,
+        description="Local pgGraph checkout containing scripts/quickstart.sh for extension bootstrap",
+    )
 
     # ------------------------------------------------------------------
     # Pathlight

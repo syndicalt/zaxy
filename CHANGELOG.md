@@ -2,6 +2,14 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 0.2.3 - 2026-05-18
+
+- Added an explicit local pgGraph bootstrap path for `zaxy init --infra`.
+- Fixed MCP startup so `PROJECTION_BACKEND=pggraph` bootstraps pgGraph instead
+  of trying to start Neo4j.
+- Documented the `PGGRAPH_REPO` installer requirement so Zaxy does not silently
+  run plain PostgreSQL without graph traversal support.
+
 ## 0.2.2 - 2026-05-18
 
 - Added pgGraph projection integrity and inferred-edge audit status support.

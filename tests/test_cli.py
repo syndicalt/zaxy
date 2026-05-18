@@ -22,7 +22,7 @@ def test_version_option_reports_project_version() -> None:
     result = runner.invoke(app, ["--version"])
 
     assert result.exit_code == 0
-    assert result.output.strip() == "zaxy 0.2.2"
+    assert result.output.strip() == "zaxy 0.2.3"
 
 
 def test_memory_status_prints_eventloom_sessions(tmp_path: Path) -> None:
@@ -2590,6 +2590,38 @@ def test_init_command_passes_infra_action(mock_run_onboarding: AsyncMock, tmp_pa
 
     assert result.exit_code == 0
     assert mock_run_onboarding.await_args.kwargs["infra"] == "check"
+
+
+@patch("zaxy.__main__.run_onboarding")
+def test_init_command_passes_pggraph_bootstrap_options(mock_run_onboarding: AsyncMock, tmp_path: Path) -> None:
+    """init should expose pgGraph bootstrap inputs to the onboarding orchestrator."""
+    result_obj = MagicMock()
+    result_obj.status = "ok"
+    mock_run_onboarding.return_value = result_obj
+    repo = tmp_path / "pggraph"
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            str(tmp_path),
+            "--infra",
+            "check",
+            "--projection-backend",
+            "pggraph",
+            "--pggraph-dsn",
+            "postgresql://postgres:postgres@localhost:5432/zaxy",
+            "--pggraph-repo",
+            str(repo),
+        ],
+    )
+
+    assert result.exit_code == 0
+    kwargs = mock_run_onboarding.await_args.kwargs
+    assert kwargs["projection_backend"] == "pggraph"
+    assert kwargs["pggraph_dsn"] == "postgresql://postgres:postgres@localhost:5432/zaxy"
+    assert kwargs["pggraph_repo"] == repo
 
 
 @patch("zaxy.__main__.run_onboarding")

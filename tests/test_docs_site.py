@@ -150,6 +150,8 @@ def test_pggraph_backend_roadmap_records_contract_first_state() -> None:
     assert "no longer shows a pgGraph-specific quality" in benchmarks
     assert "regression" in benchmarks
     assert "zaxy reproject" in spec
+    assert "zaxy init --projection-backend pggraph --pggraph-repo" in spec
+    assert "PGGRAPH_REPO" in spec
     assert "--projection-backend pggraph" in spec
     assert "--reset-projection" in spec
     assert "failure recovery" in spec

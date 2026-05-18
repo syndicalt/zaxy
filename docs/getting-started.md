@@ -135,11 +135,24 @@ available, and the doctor capture-health result. The same block is available in
 `zaxy init --json` as `capture`.
 
 Generated output files are non-destructive by default. Pass `--force` only when
-you intentionally want to replace generated config. `--infra check` reports
-local Neo4j and Docker posture without starting containers. Use
-`--infra start` when you explicitly want onboarding to start the local Neo4j
-runtime. The command prints a `Next:` section with the client install and
-verification steps still required after files are generated.
+you intentionally want to replace generated config. `--infra check` reports the
+selected local projection backend and Docker posture without starting
+containers. Use `--infra start` when you explicitly want onboarding to start the
+local runtime. Neo4j remains the default backend. For experimental pgGraph
+bootstrap, install the optional extra and point Zaxy at a local pgGraph checkout
+so it can run the extension installer instead of starting plain Postgres:
+
+```bash
+pip install "zaxy-memory[pggraph]"
+zaxy init . \
+  --projection-backend pggraph \
+  --pggraph-dsn postgresql://postgres:postgres@localhost:5432/zaxy \
+  --pggraph-repo /path/to/pggraph \
+  --infra start
+```
+
+The command prints a `Next:` section with the client install and verification
+steps still required after files are generated.
 
 Packet capture is optional diagnostic/high-fidelity mode because it can consume
 provider quota and requires runtime/provider wire compatibility. Opt in with
@@ -152,11 +165,15 @@ To start the default stdio MCP server:
 zaxy serve
 ```
 
-When stdio starts in local development mode, Zaxy checks
-`bolt://localhost:7687`. If Neo4j is not reachable and Docker is available, it
-starts a `zaxy-neo4j` container automatically and waits for Bolt before serving
-MCP tools. This is the default in generated MCP client config. Set
-`NEO4J_AUTO_START=false` to opt out.
+When stdio starts in local development mode, Zaxy checks the selected projection
+backend. With the default Neo4j backend, it checks `bolt://localhost:7687`. If
+Neo4j is not reachable and Docker is available, it starts a `zaxy-neo4j`
+container automatically and waits for Bolt before serving MCP tools. With
+`PROJECTION_BACKEND=pggraph`, it checks `PGGRAPH_DSN`; local automatic startup
+requires `PGGRAPH_REPO` to point at a pgGraph checkout containing
+`scripts/quickstart.sh`, because Zaxy must install pgGraph into the local
+PostgreSQL container before graph traversal is available. Set
+`NEO4J_AUTO_START=false` or `PGGRAPH_AUTO_START=false` to opt out.
 
 To run the SSE transport for daemon-style clients:
 

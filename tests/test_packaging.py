@@ -43,7 +43,7 @@ def test_package_version_source_fallback_is_independent_of_cwd(
     monkeypatch.setattr(release.metadata, "version", missing_distribution)
     monkeypatch.chdir(tmp_path)
 
-    assert package_version() == "0.2.2"
+    assert package_version() == "0.2.3"
 
 
 def test_package_version_prefers_source_tree_version_in_editable_checkout(monkeypatch) -> None:
@@ -52,7 +52,7 @@ def test_package_version_prefers_source_tree_version_in_editable_checkout(monkey
 
     monkeypatch.setattr(release.metadata, "version", lambda _name: "0.1.0")
 
-    assert package_version() == "0.2.2"
+    assert package_version() == "0.2.3"
 
 
 def test_changelog_records_initial_pypi_release() -> None:
@@ -60,6 +60,7 @@ def test_changelog_records_initial_pypi_release() -> None:
     changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
 
     assert "# Changelog" in changelog
+    assert "## 0.2.3 - 2026-05-18" in changelog
     assert "## 0.2.2 - 2026-05-18" in changelog
     assert "## 0.2.0 - 2026-05-15" in changelog
     assert "default `pip install zaxy-memory`" in changelog

@@ -41,6 +41,15 @@ def test_pggraph_dsn_defaults_to_local_postgres() -> None:
     assert settings.pggraph_dsn == "postgresql://postgres:postgres@localhost:5432/zaxy"
 
 
+def test_pggraph_bootstrap_defaults_are_local_and_explicit() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.pggraph_auto_start is True
+    assert settings.pggraph_auto_start_image == "pgvector/pgvector:pg17"
+    assert settings.pggraph_auto_start_container == "zaxy-pggraph"
+    assert settings.pggraph_repo is None
+
+
 def test_retention_policy_defaults_are_non_destructive() -> None:
     settings = Settings(_env_file=None)
 

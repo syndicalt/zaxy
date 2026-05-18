@@ -1298,6 +1298,9 @@ def init(
     hook_output: Path | None = typer.Option(None, help="Write hook config to this file"),  # noqa: B008
     local_profile_output: Path | None = typer.Option(None, help="Write local retrieval profile to this file"),  # noqa: B008
     infra: str = typer.Option("none", help="Local infra action: none, check, or start"),  # noqa: B008
+    projection_backend: str = typer.Option("neo4j", "--projection-backend", help="Projection backend for infra bootstrap: neo4j or pggraph"),  # noqa: B008
+    pggraph_dsn: str | None = typer.Option(None, "--pggraph-dsn", help="pgGraph/PostgreSQL DSN for --projection-backend pggraph"),  # noqa: B008
+    pggraph_repo: Path | None = typer.Option(None, "--pggraph-repo", help="Local pgGraph checkout containing scripts/quickstart.sh"),  # noqa: B008
     capture_mode: str = typer.Option("deterministic", help="Capture mode: deterministic, packet, or hybrid"),  # noqa: B008
     capture_action: str = typer.Option("none", "--capture", help="Capture action after init: none or start"),  # noqa: B008
     packet_capture: bool = typer.Option(False, "--packet-capture", help="Include packet analyzer/projector activation steps"),  # noqa: B008
@@ -1333,6 +1336,9 @@ def init(
             hook_output=preset_options["hook_output"],
             local_profile_output=preset_options["local_profile_output"],
             infra=preset_options["infra"],
+            projection_backend=projection_backend,
+            pggraph_dsn=pggraph_dsn,
+            pggraph_repo=pggraph_repo,
             capture_mode=preset_options["capture_mode"],
             packet_capture=packet_capture,
             packet_upstream_base_url=packet_upstream_base_url,

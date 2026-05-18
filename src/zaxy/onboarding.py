@@ -26,7 +26,7 @@ from zaxy.install import resolve_zaxy_executable
 from zaxy.integrations import render_codex_mcp_add_command, render_mcp_client_config
 from zaxy.local_profile import write_local_profile
 from zaxy.packet_guidance import build_packet_capture_guidance
-from zaxy.runtime import LocalNeo4jRuntime
+from zaxy.runtime import LocalNeo4jRuntime, LocalPgGraphRuntime
 from zaxy.session import SessionManager
 
 
@@ -129,6 +129,9 @@ async def run_onboarding(
     hook_output: str | Path | None = None,
     local_profile_output: str | Path | None = None,
     infra: str = "none",
+    projection_backend: str | None = None,
+    pggraph_dsn: str | None = None,
+    pggraph_repo: str | Path | None = None,
     capture_mode: str = "deterministic",
     packet_capture: bool = False,
     packet_upstream_base_url: str = "https://api.openai.com/v1",
@@ -215,7 +218,14 @@ async def run_onboarding(
                 steps.append(OnboardingStep("hook_config", "preview", f"{hook_client} hook config rendered"))
 
     if infra_action != "none":
-        settings = _onboarding_settings(eventloom=eventloom, session_id=sid, domain=resolved_domain)
+        settings = _onboarding_settings(
+            eventloom=eventloom,
+            session_id=sid,
+            domain=resolved_domain,
+            projection_backend=projection_backend,
+            pggraph_dsn=pggraph_dsn,
+            pggraph_repo=pggraph_repo,
+        )
         runtime = runtime_factory() if runtime_factory is not None else _build_runtime(settings)
         steps.append(_run_infra_action(runtime, infra_action))
 
@@ -246,7 +256,14 @@ async def run_onboarding(
             except (FileNotFoundError, ValueError) as exc:
                 steps.append(OnboardingStep("capture_runtime", "error", str(exc)))
 
-    settings = _onboarding_settings(eventloom=eventloom, session_id=sid, domain=resolved_domain)
+    settings = _onboarding_settings(
+        eventloom=eventloom,
+        session_id=sid,
+        domain=resolved_domain,
+        projection_backend=projection_backend,
+        pggraph_dsn=pggraph_dsn,
+        pggraph_repo=pggraph_repo,
+    )
     doctor = run_doctor(settings=settings, workspace_root=root, zaxy_executable=executable)
     capture = _build_capture_summary(workspace=root, doctor=doctor)
     steps.append(
@@ -279,6 +296,7 @@ async def run_onboarding(
             mcp_output=mcp_output,
             mcp_install_command=mcp_install_command,
             infra_action=infra_action,
+            projection_backend=projection_backend or settings.projection_backend,
             capture_mode=normalized_capture_mode,
             packet_capture=packet_capture,
             packet_upstream_base_url=packet_upstream_base_url,
@@ -363,7 +381,15 @@ def _normalize_hook_client_name(client: str) -> str:
     return client.casefold().strip().replace("_", "-")
 
 
-def _build_runtime(settings: Settings) -> LocalNeo4jRuntime:
+def _build_runtime(settings: Settings) -> LocalNeo4jRuntime | LocalPgGraphRuntime:
+    if settings.projection_backend.casefold().strip() == "pggraph":
+        return LocalPgGraphRuntime(
+            dsn=settings.pggraph_dsn,
+            enabled=settings.pggraph_auto_start and settings.zaxy_env.lower() != "production",
+            image=settings.pggraph_auto_start_image,
+            container_name=settings.pggraph_auto_start_container,
+            pggraph_repo=settings.pggraph_repo,
+        )
     return LocalNeo4jRuntime(
         uri=settings.neo4j_uri,
         user=settings.neo4j_user,
@@ -379,7 +405,8 @@ def _run_infra_action(runtime: Any, infra: str) -> OnboardingStep:
         check = runtime.check()
         return OnboardingStep("infra", str(_runtime_field(check, "status")), str(_runtime_field(check, "message")))
     runtime.ensure_available()
-    return OnboardingStep("infra", "ok", "Neo4j local runtime is available")
+    display_name = getattr(runtime, "display_name", "selected")
+    return OnboardingStep("infra", "ok", f"{display_name} local runtime is available")
 
 
 def _runtime_field(check: Any, field: str) -> Any:
@@ -397,6 +424,7 @@ def _build_next_steps(
     mcp_output: str | Path | None,
     mcp_install_command: str | None,
     infra_action: str,
+    projection_backend: str,
     capture_mode: str,
     packet_capture: bool,
     packet_upstream_base_url: str,
@@ -433,7 +461,14 @@ def _build_next_steps(
         )
     infra_step = next((step for step in steps if step.name == "infra"), None)
     if infra_action == "check" and infra_step is not None and infra_step.status != "ok":
-        next_steps.append(f"Run zaxy init {workspace} --infra start if you want Zaxy to start local Neo4j now.")
+        backend = projection_backend.casefold().strip()
+        if backend == "pggraph":
+            next_steps.append(
+                f"Run zaxy init {workspace} --projection-backend pggraph --infra start "
+                "if you want Zaxy to start local pgGraph/PostgreSQL now."
+            )
+        else:
+            next_steps.append(f"Run zaxy init {workspace} --infra start if you want Zaxy to start local Neo4j now.")
     return next_steps
 
 
@@ -489,7 +524,15 @@ def _format_capture_summary(capture: dict[str, Any]) -> list[str]:
     return lines
 
 
-def _onboarding_settings(*, eventloom: Path, session_id: str, domain: str) -> Settings:
+def _onboarding_settings(
+    *,
+    eventloom: Path,
+    session_id: str,
+    domain: str,
+    projection_backend: str | None = None,
+    pggraph_dsn: str | None = None,
+    pggraph_repo: str | Path | None = None,
+) -> Settings:
     settings_values: dict[str, Any] = {
         "_env_file": None,
         "eventloom_path": str(eventloom),
@@ -498,6 +541,12 @@ def _onboarding_settings(*, eventloom: Path, session_id: str, domain: str) -> Se
         "zaxy_env": "development",
         "mcp_lifecycle_capture_enabled": True,
     }
+    if projection_backend is not None:
+        settings_values["projection_backend"] = projection_backend
+    if pggraph_dsn is not None:
+        settings_values["pggraph_dsn"] = pggraph_dsn
+    if pggraph_repo is not None:
+        settings_values["pggraph_repo"] = str(pggraph_repo)
     return Settings(**settings_values)
 
 

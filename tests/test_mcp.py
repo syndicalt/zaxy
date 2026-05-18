@@ -744,6 +744,32 @@ class TestServerSetup:
         mock_graph.init_schema.assert_awaited_once()
         mock_tracer.connect.assert_awaited_once()
 
+    async def test_setup_bootstraps_pggraph_runtime_when_backend_is_pggraph(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """MCP bootstrap should not require Neo4j when pgGraph is the selected backend."""
+        monkeypatch.setenv("PROJECTION_BACKEND", "pggraph")
+        monkeypatch.setenv("PGGRAPH_DSN", "postgresql://postgres:postgres@localhost:5432/zaxy")
+        with (
+            patch("zaxy.mcp_server.build_projection_store") as mock_build_projection_store,
+            patch("zaxy.mcp_server.MemoryTracer") as mock_tracer_cls,
+            patch("zaxy.mcp_server.SessionManager"),
+            patch("zaxy.mcp_server.LocalNeo4jRuntime") as mock_neo4j_runtime_cls,
+            patch("zaxy.mcp_server.LocalPgGraphRuntime") as mock_pggraph_runtime_cls,
+        ):
+            mock_graph = AsyncMock()
+            mock_build_projection_store.return_value = mock_graph
+            mock_tracer = AsyncMock()
+            mock_tracer_cls.return_value = mock_tracer
+            mock_pggraph_runtime = MagicMock()
+            mock_pggraph_runtime_cls.return_value = mock_pggraph_runtime
+
+            srv = ZaxyMCPServer()
+            await srv.setup()
+
+        mock_neo4j_runtime_cls.assert_not_called()
+        mock_pggraph_runtime.ensure_available.assert_called_once()
+        mock_graph.connect.assert_awaited_once()
+        mock_graph.init_schema.assert_awaited_once()
+
     async def test_setup_appends_workspace_genesis_once(self, tmp_path: Path) -> None:
         """setup() should bootstrap the default session with one workspace genesis event."""
         (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")

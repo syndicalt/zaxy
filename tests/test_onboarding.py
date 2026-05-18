@@ -8,10 +8,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from zaxy.config import Settings
 from zaxy.event import EventLog
 from zaxy.onboarding import (
     OnboardingResult,
     OnboardingStep,
+    _build_runtime,
     apply_onboarding_preset,
     format_onboarding_result,
     run_onboarding,
@@ -26,6 +28,7 @@ class FakeRuntime:
         self.message = message
         self.checked = False
         self.started = False
+        self.display_name = "Neo4j"
 
     def check(self) -> object:
         self.checked = True
@@ -462,6 +465,51 @@ async def test_run_onboarding_can_start_explicit_local_infra(tmp_path: Path) -> 
     infra_step = next(step for step in result.steps if step.name == "infra")
     assert infra_step.status == "ok"
     assert "Neo4j local runtime is available" in infra_step.message
+
+
+@pytest.mark.asyncio
+async def test_run_onboarding_can_check_pggraph_infra(tmp_path: Path) -> None:
+    """pgGraph onboarding should render backend-specific bootstrap guidance."""
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    fabric = MagicMock()
+    fabric.ensure_session_initialized = AsyncMock()
+    fabric.ensure_session_initialized.return_value.workspace_type = "generic_workspace"
+    fabric.ensure_session_initialized.return_value.confidence = 0.2
+    fabric.ensure_session_initialized.return_value.signals = []
+    fabric.ensure_session_initialized.return_value.instructions_profile = "generic"
+    fabric.close = AsyncMock()
+    runtime = FakeRuntime(status="warning", message="pgGraph is not reachable; Docker is available")
+
+    result = await run_onboarding(
+        workspace,
+        eventloom_path=workspace / ".eventloom",
+        domain="demo",
+        infra="check",
+        projection_backend="pggraph",
+        pggraph_dsn="postgresql://postgres:postgres@localhost:5432/zaxy",
+        fabric_factory=lambda eventloom_path: fabric,
+        runtime_factory=lambda: runtime,
+    )
+
+    infra_step = next(step for step in result.steps if step.name == "infra")
+    assert infra_step.status == "warning"
+    assert "pgGraph is not reachable" in infra_step.message
+    assert any("--projection-backend pggraph --infra start" in step for step in result.next_steps)
+
+
+def test_build_runtime_uses_pggraph_bootstrapper_for_pggraph_backend() -> None:
+    """Runtime factory should follow the selected projection backend, not Neo4j unconditionally."""
+    settings = Settings(
+        _env_file=None,
+        projection_backend="pggraph",
+        pggraph_dsn="postgresql://postgres:postgres@localhost:5432/zaxy",
+        pggraph_repo="/opt/pggraph",
+    )
+
+    runtime = _build_runtime(settings)
+
+    assert runtime.display_name == "pgGraph"
 
 
 def test_format_onboarding_result_includes_next_section(tmp_path: Path) -> None:

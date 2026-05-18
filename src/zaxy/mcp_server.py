@@ -47,7 +47,7 @@ from zaxy.projection_backends import ProjectionBackendConfig, build_projection_s
 from zaxy.query import QueryRouter, build_retention_policy
 from zaxy.refs import MemoryRef, MemoryRefStore
 from zaxy.remote_security import AuditEventExporter, RemoteAuditEvent, SessionRateLimiter
-from zaxy.runtime import LocalNeo4jRuntime
+from zaxy.runtime import LocalNeo4jRuntime, LocalPgGraphRuntime
 from zaxy.security import (
     MAX_QUERY_LIMIT,
     MAX_REPLAY_EVENTS,
@@ -380,13 +380,11 @@ class ZaxyMCPServer:
         self._neo4j_uri = neo4j_uri or settings.neo4j_uri
         self._neo4j_user = neo4j_user or settings.neo4j_user
         self._neo4j_password = neo4j_password or settings.neo4j_password
-        self.local_neo4j = LocalNeo4jRuntime(
-            uri=self._neo4j_uri,
-            user=self._neo4j_user,
-            password=self._neo4j_password,
-            enabled=settings.neo4j_auto_start and settings.zaxy_env.lower() != "production",
-            image=settings.neo4j_auto_start_image,
-            container_name=settings.neo4j_auto_start_container,
+        self.local_projection_runtime = self._build_local_projection_runtime(settings)
+        self.local_neo4j = (
+            self.local_projection_runtime
+            if settings.projection_backend.casefold().strip() != "pggraph"
+            else None
         )
         self.graph = build_projection_store(
             ProjectionBackendConfig(
@@ -410,9 +408,27 @@ class ZaxyMCPServer:
             verbatim_slots=settings.context_verbatim_slots,
         )
 
+    def _build_local_projection_runtime(self, settings: Any) -> LocalNeo4jRuntime | LocalPgGraphRuntime:
+        if settings.projection_backend.casefold().strip() == "pggraph":
+            return LocalPgGraphRuntime(
+                dsn=settings.pggraph_dsn,
+                enabled=settings.pggraph_auto_start and settings.zaxy_env.lower() != "production",
+                image=settings.pggraph_auto_start_image,
+                container_name=settings.pggraph_auto_start_container,
+                pggraph_repo=settings.pggraph_repo,
+            )
+        return LocalNeo4jRuntime(
+            uri=self._neo4j_uri,
+            user=self._neo4j_user,
+            password=self._neo4j_password,
+            enabled=settings.neo4j_auto_start and settings.zaxy_env.lower() != "production",
+            image=settings.neo4j_auto_start_image,
+            container_name=settings.neo4j_auto_start_container,
+        )
+
     async def setup(self) -> None:
-        """Connect to Neo4j and initialize schema."""
-        self.local_neo4j.ensure_available()
+        """Connect to the selected projection backend and initialize schema."""
+        self.local_projection_runtime.ensure_available()
         await self.graph.connect()
         await self.graph.init_schema()
         await self.tracer.connect()

@@ -1,6 +1,6 @@
 [project]
 name = "zaxy-memory"
-version = "0.2.2"
+version = "0.2.3"
 description = "Event-sourced temporal knowledge graph fabric for AI agent memory"
 readme = "README.md"
 requires-python = ">=3.11"
