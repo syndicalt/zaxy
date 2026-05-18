@@ -200,3 +200,39 @@ async def test_pggraph_store_invalidate_entity_closes_active_rows() -> None:
     assert "UPDATE zaxy_pggraph_entities" in sql
     assert "valid_to = %(invalid_at)s" in sql
     assert connection.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_pggraph_store_search_traversal_uses_pggraph_traverse() -> None:
+    connection = FakeConnection()
+    connection.cursor_obj.rows = [
+        {
+            "node": {
+                "name": "pgGraph",
+                "entity_type": "backend",
+                "valid_from": "2026-05-18T00:00:00Z",
+                "valid_to": None,
+                "summary": "Postgres graph extension",
+                "properties": {},
+                "session_id": "agent-1",
+            }
+        }
+    ]
+    store = PgGraphStore("postgresql://test", connection=connection)
+
+    results = await store.search_traversal(
+        "Zaxy",
+        relation_type="evaluates",
+        session_id="agent-1",
+    )
+
+    assert results[0].name == "pgGraph"
+    assert "graph.traverse" in connection.statements[-1][0]
+
+
+@pytest.mark.asyncio
+async def test_pggraph_store_search_vector_is_explicitly_unavailable() -> None:
+    store = PgGraphStore("postgresql://test", connection=FakeConnection())
+
+    with pytest.raises(RuntimeError, match="pgGraph vector search requires pgvector"):
+        await store.search_vector([0.1, 0.2])

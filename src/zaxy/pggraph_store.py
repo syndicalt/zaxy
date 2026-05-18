@@ -12,7 +12,7 @@ from zaxy.graph import (
     GraphInferredEdgeStatus,
     SearchResult,
 )
-from zaxy.security import validate_limit, validate_session_id
+from zaxy.security import validate_limit, validate_session_id, validate_traversal_depth
 
 PGGRAPH_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS zaxy_pggraph_events (
@@ -351,7 +351,55 @@ class PgGraphStore:
         session_id: str = "default",
     ) -> list[GraphEntity]:
         """Search graph neighbors from a starting entity."""
-        raise NotImplementedError("pgGraph traversal search is not implemented yet")
+        rows = await self._fetch_all(
+            """
+            WITH seed AS (
+                SELECT node_key
+                FROM zaxy_pggraph_entities
+                WHERE session_id = %(session_id)s
+                  AND name = %(start_name)s
+                  AND (
+                    (%(temporal_point)s IS NULL AND valid_to IS NULL)
+                    OR (
+                        %(temporal_point)s IS NOT NULL
+                        AND valid_from <= %(temporal_point)s
+                        AND (valid_to IS NULL OR valid_to > %(temporal_point)s)
+                    )
+                  )
+                ORDER BY valid_from DESC
+                LIMIT 1
+            )
+            SELECT traversal.node
+            FROM seed
+            CROSS JOIN LATERAL graph.traverse(
+                seed_table := 'zaxy_pggraph_entities'::regclass,
+                seed_id := seed.node_key,
+                max_depth := %(depth)s,
+                edge_types := CASE
+                    WHEN %(relation_type)s IS NULL THEN NULL
+                    ELSE ARRAY[%(relation_type)s]
+                END,
+                direction := 'out',
+                node_tables := ARRAY['zaxy_pggraph_entities'::regclass],
+                filter := NULL,
+                tenant := %(session_id)s,
+                strategy := 'bfs',
+                uniqueness := 'node_global',
+                include_start := false,
+                hydrate := true,
+                max_rows := 100,
+                row_offset := 0
+            ) AS traversal
+            """,
+            {
+                "session_id": validate_session_id(session_id),
+                "start_name": start_name,
+                "relation_type": relation_type,
+                "depth": validate_traversal_depth(depth),
+                "temporal_point": temporal_point,
+            },
+        )
+        return [_row_to_entity(_node_row(row)) for row in rows]
 
     async def search_vector(
         self,
@@ -361,7 +409,9 @@ class PgGraphStore:
         session_id: str = "default",
     ) -> list[SearchResult]:
         """Search by vector similarity."""
-        raise RuntimeError("pgGraph vector search requires pgvector support and benchmark gates")
+        raise RuntimeError(
+            "pgGraph vector search requires pgvector support and has not passed Zaxy benchmark gates"
+        )
 
     async def invalidate_entity(
         self,
@@ -447,6 +497,13 @@ def _row_to_entity(row: dict[str, Any]) -> GraphEntity:
         properties=properties,
         session_id=str(row.get("session_id") or "default"),
     )
+
+
+def _node_row(row: dict[str, Any]) -> dict[str, Any]:
+    node = row.get("node")
+    if isinstance(node, dict):
+        return node
+    return row
 
 
 def _properties_from_row(row: dict[str, Any]) -> dict[str, Any]:
