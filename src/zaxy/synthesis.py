@@ -1246,6 +1246,9 @@ def count_answer_text(query: str, candidates: tuple[EvidenceLedgerRow, ...]) -> 
             return f"I visited {count} different doctors: {labels}."
         return f"I visited {count} different doctors."
     if count_subject == "wedding":
+        couples = _joined_wedding_couples(candidates)
+        if couples:
+            return f"I attended {count} weddings. The couples were {couples}."
         return f"I attended {count} weddings."
     if count_subject == "property_viewing" and query_tokens & {"view", "viewed"}:
         return f"I viewed {count} properties."
@@ -1263,6 +1266,34 @@ def _joined_count_labels(candidates: tuple[EvidenceLedgerRow, ...]) -> str:
     if len(labels) == 1:
         return labels[0]
     return ", ".join(labels[:-1]) + f", and {labels[-1]}"
+
+
+def _joined_wedding_couples(candidates: tuple[EvidenceLedgerRow, ...]) -> str:
+    couples = [
+        couple
+        for row in candidates
+        if (couple := _wedding_couple_from_label(rendered_list_label(row)))
+    ]
+    if not couples:
+        return ""
+    if len(couples) == 1:
+        return couples[0]
+    return ", ".join(couples[:-1]) + f", and {couples[-1]}"
+
+
+def _wedding_couple_from_label(label: str) -> str:
+    value = re.sub(
+        r"^\s*(?:i\s+)?(?:attended|went to|been to|returned from|got back from)\s+",
+        "",
+        label,
+        flags=re.IGNORECASE,
+    )
+    value = re.sub(r"(?:'s)?\s+wedding\b.*$", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"^\s*(?:my|a|an|the)\s+", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s+", " ", value.strip(" .,'\""))
+    if not value or " and " not in value.casefold():
+        return ""
+    return value
 
 
 def count_subject_phrase(query: str) -> str:

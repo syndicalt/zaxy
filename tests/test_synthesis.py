@@ -461,7 +461,10 @@ def test_render_count_result_projects_list_details_from_ledger() -> None:
     assert "count_answer=3" in result.lines
     assert "count_unit=events" in result.lines
     assert "count_source_ids=answer-1,answer-2,answer-3" in result.lines
-    assert "count_answer_text=I attended three weddings." in result.lines
+    assert (
+        "count_answer_text=I attended three weddings. The couples were "
+        "Rachel and Mike, Emily and Sarah, and Jen and Tom."
+    ) in result.lines
     assert "list_item_count=3" in result.lines
     assert (
         "list_items=attended Rachel and Mike's wedding | "

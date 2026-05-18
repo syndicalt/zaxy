@@ -228,8 +228,10 @@ links for MemPalace, Mem0, and Agent Memory.
 
 The legacy `limit=10` full 500-question LongMemEval-compatible archive is
 `reports/benchmarks/longmemeval-500-hash/live-benchmark.json`. Its Zaxy checkout
-floor is mean score 0.626, Answer@5 0.608, citation coverage 1.000, R@5 0.956,
-p95 14686.65 ms, and p99 22359.76 ms.
+floor remains mean score 0.626, Answer@5 0.608, citation coverage 1.000, and
+R@5 0.956. The current archived report clears that floor at mean score 0.724,
+Answer@5 0.628, citation coverage 1.000, R@5 0.972, p95 1472.11 ms, and p99
+2652.55 ms.
 
 The current same-harness `limit=5` backend-evaluation archive is
 `reports/benchmarks/longmemeval-500-neo4j-current-checkout/live-benchmark.json`.

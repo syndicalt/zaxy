@@ -143,10 +143,10 @@ The current public LongMemEval-compatible evidence is summarized in
 shows mean score 0.950, Answer@5 0.950, citation coverage 1.000, and
 R@1/R@5/R@10 0.990. The archived same-harness BM25 comparison shows BM25 R@5
 0.840 versus Zaxy checkout R@5 0.990. The archived legacy `limit=10` full
-500-question hash run is the broader checkout no-regression floor: Zaxy checkout
-mean score 0.626, Answer@5 0.608, citation coverage 1.000, and R@5 0.956. The
-current backend-evaluation floor is the same-harness `limit=5` Neo4j checkout
-control with workload SHA-256
+500-question hash run is the broader checkout no-regression floor: the current
+Zaxy checkout archive clears it at mean score 0.724, Answer@5 0.628, citation
+coverage 1.000, and R@5 0.972, while the public floor remains mean score 0.626,
+Answer@5 0.608, citation coverage 1.000, and R@5 0.956. The current backend-evaluation floor is the same-harness `limit=5` Neo4j checkout control with workload SHA-256
 `0dc36a139bb9a4fdc7c6cd34400737a58a1eb7410517341f015e9fbfc76ed854`: mean
 score 0.714, Answer@5 0.626, citation coverage 1.000, and R@5 0.958. External
 MemPalace, Mem0, and Agent Memory numbers should be described as external

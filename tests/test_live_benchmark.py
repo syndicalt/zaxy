@@ -3160,7 +3160,10 @@ async def test_zaxy_retriever_projects_count_list_answer_details() -> None:
 
     bundle = results[0]
     assert "count_answer=3" in bundle
-    assert "count_answer_text=I attended three weddings." in bundle
+    assert (
+        "count_answer_text=I attended three weddings. The couples were "
+        "Rachel and Mike, Emily and Sarah, and Jen and Tom."
+    ) in bundle
     assert "list_item_count=3" in bundle
     assert (
         "list_items=attended Rachel and Mike's wedding | "

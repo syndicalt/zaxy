@@ -360,6 +360,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Public benchmark guardrail script for cached LongMemEval artifacts and archived report floors
 - [x] Common native-preview adapter contract chosen as the next model-facing UX hardening target, with AutoGen held at template-only until runtime hooks are validated
 - [x] pgGraph operational rebuild path through `zaxy reproject --projection-backend pggraph --reset-projection` with backend cleanup on projection failure
+- [x] Full-set LongMemEval synthesis improved without floor regression: archived hash checkout mean 0.724, Answer@5 0.628, R@5 0.972, citation coverage 1.000
 
 ## Metrics
 
@@ -370,9 +371,9 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
-| LongMemEval 500 hash | Zaxy checkout mean 0.640, Answer@5 0.612, R@5 0.972, citation coverage 1.000, p95 1155.88 ms, p99 2440.32 ms |
+| LongMemEval 500 hash | Zaxy checkout mean 0.724, Answer@5 0.628, R@5 0.972, citation coverage 1.000, p95 1472.11 ms, p99 2652.55 ms |
 | LongMemEval 500 pgGraph | Zaxy mean 0.698, Answer@5 0.698, R@5 0.958; checkout mean 0.714, Answer@5 0.632, R@5 0.958; same-harness Neo4j checkout control mean 0.714, Answer@5 0.626, R@5 0.958; citation coverage 1.000 |
 
 ## Next Steps
 
-1. Improve full-set LongMemEval synthesis without reducing the archived 500-question no-regression floors: mean score 0.626, Answer@5 0.608, R@5 0.956, and citation coverage 1.000.
+No open items for the current roadmap sprint.

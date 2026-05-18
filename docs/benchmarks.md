@@ -39,20 +39,21 @@ It uses the cleaned LongMemEval workload, deterministic local hash embeddings,
 `limit=10`, BM25 as the same-harness lexical baseline, and Zaxy checkout
 retrieval over 5,372 Eventloom events, 500 queries, 500 subjects, and 948
 sessions. Its workload SHA-256 is
-`a4d229ecd831abec57ac2a7c365fcf5903b1815ab84c383183e0a39512afe829`.
+`0dc36a139bb9a4fdc7c6cd34400737a58a1eb7410517341f015e9fbfc76ed854`.
 
 | Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | Recall@10 | p95 ms | p99 ms |
 |---------|------------|----------|-------------------|----------|----------|-----------|--------|--------|
-| BM25 | 0.560 | 0.516 | 1.000 | 0.592 | 0.770 | 0.802 | 348.99 | 422.83 |
-| Zaxy checkout | 0.626 | 0.608 | 1.000 | 0.944 | 0.956 | 0.956 | 14686.65 | 22359.76 |
+| BM25 | 0.560 | 0.516 | 1.000 | 0.592 | 0.770 | 0.802 | 356.67 | 433.55 |
+| Zaxy checkout | 0.724 | 0.628 | 1.000 | 0.960 | 0.972 | 0.972 | 1472.11 | 2652.55 |
 
 This legacy full-set result remains the `limit=10` no-regression floor for
 checkout-wide changes that still run that archived harness. It is not a
 replacement for the stronger 100-question headline. The miss taxonomy shows the
-next quality target clearly: Zaxy checkout had 22 retrieval misses and 174
-synthesis misses. Future retrieval, checkout, Skill Memory, or backend changes
-should not reduce the relevant full-set quality or citation floors while they
-work down the synthesis-miss count.
+quality target clearly: Zaxy checkout now has 14 retrieval misses and 172
+synthesis misses after the wedding-list answer-surface improvement. Future
+retrieval, checkout, Skill Memory, or backend changes should not reduce the
+published floor of mean score 0.626, Answer@5 0.608, citation coverage 1.000,
+and R@5 0.956 while they work down the synthesis-miss count.
 
 ### Current same-harness backend-evaluation floor
 
