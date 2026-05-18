@@ -110,6 +110,40 @@ def test_local_neo4j_runtime_check_does_not_start_container_when_port_closed() -
     assert runner.calls == [["docker", "version", "--format", "{{.Server.Version}}"]]
 
 
+def test_local_neo4j_runtime_check_reports_disabled_remote_reachable_and_missing_docker() -> None:
+    disabled = LocalNeo4jRuntime(
+        uri="bolt://localhost:7687",
+        user="neo4j",
+        password="testpassword",
+        enabled=False,
+    )
+    remote = LocalNeo4jRuntime(
+        uri="bolt://neo4j.internal:7687",
+        user="neo4j",
+        password="testpassword",
+        runner=FakeRunner(),
+    )
+    reachable = LocalNeo4jRuntime(
+        uri="bolt://localhost:7687",
+        user="neo4j",
+        password="testpassword",
+        runner=FakeRunner(),
+        port_probe=lambda _host, _port: True,
+    )
+    missing_docker = LocalNeo4jRuntime(
+        uri="bolt://localhost:7687",
+        user="neo4j",
+        password="testpassword",
+        runner=FakeRunner([result(returncode=1)]),
+        port_probe=lambda _host, _port: False,
+    )
+
+    assert disabled.check().message == "Local Neo4j auto-start is disabled"
+    assert remote.check().status == "ok"
+    assert reachable.check().message == "Neo4j is reachable at localhost:7687"
+    assert missing_docker.check().message == "Neo4j is not reachable; Docker is unavailable"
+
+
 def test_local_neo4j_runtime_ignores_non_local_uris() -> None:
     runner = FakeRunner()
     runtime = LocalNeo4jRuntime(
@@ -123,6 +157,125 @@ def test_local_neo4j_runtime_ignores_non_local_uris() -> None:
     runtime.ensure_available()
 
     assert runner.calls == []
+
+
+def test_local_neo4j_runtime_ignores_unsupported_scheme_and_non_default_port() -> None:
+    unsupported_runner = FakeRunner()
+    non_default_port_runner = FakeRunner()
+
+    LocalNeo4jRuntime(
+        uri="http://localhost:7687",
+        user="neo4j",
+        password="testpassword",
+        runner=unsupported_runner,
+    ).ensure_available()
+    LocalNeo4jRuntime(
+        uri="bolt://localhost:17687",
+        user="neo4j",
+        password="testpassword",
+        runner=non_default_port_runner,
+    ).ensure_available()
+
+    assert unsupported_runner.calls == []
+    assert non_default_port_runner.calls == []
+
+
+def test_local_neo4j_runtime_starts_existing_container_when_stopped() -> None:
+    runner = FakeRunner([
+        result(stdout="24.0.0\n"),
+        result(stdout="false\n"),
+        result(stdout="/zaxy-neo4j\n"),
+        result(),
+    ])
+    port_states = iter([False, True])
+    runtime = LocalNeo4jRuntime(
+        uri="bolt://localhost:7687",
+        user="neo4j",
+        password="testpassword",
+        runner=runner,
+        port_probe=lambda _host, _port: next(port_states),
+        sleeper=lambda _seconds: None,
+    )
+
+    runtime.ensure_available()
+
+    assert runner.calls == [
+        ["docker", "version", "--format", "{{.Server.Version}}"],
+        ["docker", "inspect", "-f", "{{.State.Running}}", "zaxy-neo4j"],
+        ["docker", "inspect", "-f", "{{.Name}}", "zaxy-neo4j"],
+        ["docker", "start", "zaxy-neo4j"],
+    ]
+
+
+def test_local_neo4j_runtime_reports_docker_command_failures() -> None:
+    runner = FakeRunner([
+        result(stdout="24.0.0\n"),
+        result(stdout="false\n"),
+        result(stdout="/zaxy-neo4j\n"),
+        result(returncode=1, stderr="start failed"),
+    ])
+    runtime = LocalNeo4jRuntime(
+        uri="bolt://localhost:7687",
+        user="neo4j",
+        password="testpassword",
+        runner=runner,
+        port_probe=lambda _host, _port: False,
+    )
+
+    try:
+        runtime.ensure_available()
+    except RuntimeError as exc:
+        assert "docker start zaxy-neo4j" in str(exc)
+        assert "start failed" in str(exc)
+    else:
+        raise AssertionError("expected RuntimeError")
+
+
+def test_local_neo4j_runtime_times_out_when_started_container_never_opens_port() -> None:
+    runner = FakeRunner([
+        result(stdout="24.0.0\n"),
+        result(returncode=1),
+        result(returncode=1),
+        result(),
+    ])
+    runtime = LocalNeo4jRuntime(
+        uri="bolt://localhost:7687",
+        user="neo4j",
+        password="testpassword",
+        runner=runner,
+        port_probe=lambda _host, _port: False,
+        sleeper=lambda _seconds: None,
+        startup_timeout_seconds=0.01,
+    )
+
+    try:
+        runtime.ensure_available()
+    except RuntimeError as exc:
+        assert "did not become reachable" in str(exc)
+    else:
+        raise AssertionError("expected RuntimeError")
+
+
+def test_local_neo4j_runtime_socket_probe_reports_open_port(monkeypatch) -> None:
+    class FakeSocket:
+        def __enter__(self) -> object:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    def open_connection(_address: tuple[str, int], timeout: float) -> object:
+        return FakeSocket()
+
+    monkeypatch.setattr(socket, "create_connection", open_connection)
+    runtime = LocalNeo4jRuntime(
+        uri="bolt://localhost:7687",
+        user="neo4j",
+        password="testpassword",
+        runner=FakeRunner(),
+    )
+
+    runtime.ensure_available()
 
 
 def test_local_neo4j_runtime_reports_missing_docker_actionably() -> None:
