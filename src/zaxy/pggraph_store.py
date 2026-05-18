@@ -12,6 +12,82 @@ from zaxy.graph import (
     SearchResult,
 )
 
+PGGRAPH_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS zaxy_pggraph_events (
+    session_id text NOT NULL,
+    seq bigint NOT NULL,
+    hash text,
+    prev_hash text,
+    event_type text,
+    source_thread text,
+    projected_at timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (session_id, seq)
+);
+
+CREATE TABLE IF NOT EXISTS zaxy_pggraph_entities (
+    node_key text PRIMARY KEY,
+    session_id text NOT NULL,
+    name text NOT NULL,
+    entity_type text NOT NULL,
+    valid_from timestamptz NOT NULL,
+    valid_to timestamptz,
+    summary text,
+    embedding jsonb,
+    properties jsonb NOT NULL DEFAULT '{}'::jsonb,
+    source_event_seq bigint,
+    source_event_hash text,
+    source_event_type text,
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS zaxy_pggraph_edges (
+    edge_key text PRIMARY KEY,
+    session_id text NOT NULL,
+    source_node_key text NOT NULL,
+    target_node_key text NOT NULL,
+    source_name text NOT NULL,
+    target_name text NOT NULL,
+    relation_type text NOT NULL,
+    valid_from timestamptz NOT NULL,
+    valid_to timestamptz,
+    inferred boolean NOT NULL DEFAULT false,
+    confidence double precision NOT NULL DEFAULT 1.0,
+    inference_method text,
+    properties jsonb NOT NULL DEFAULT '{}'::jsonb,
+    source_event_seq bigint,
+    source_event_hash text,
+    source_event_type text,
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS zaxy_pggraph_entities_lookup_idx
+    ON zaxy_pggraph_entities (session_id, name, entity_type, valid_to);
+CREATE INDEX IF NOT EXISTS zaxy_pggraph_entities_keyword_idx
+    ON zaxy_pggraph_entities USING gin (to_tsvector('simple', coalesce(name, '') || ' ' || coalesce(summary, '')));
+CREATE INDEX IF NOT EXISTS zaxy_pggraph_edges_source_idx
+    ON zaxy_pggraph_edges (session_id, source_node_key, relation_type, valid_to);
+
+SELECT graph.add_table(
+    table_name := 'zaxy_pggraph_entities'::regclass,
+    id_column := 'node_key',
+    columns := ARRAY['name', 'summary', 'entity_type'],
+    tenant_column := 'session_id'
+);
+
+SELECT graph.add_edge(
+    from_table := 'zaxy_pggraph_edges'::regclass,
+    from_column := 'source_node_key',
+    to_table := 'zaxy_pggraph_entities'::regclass,
+    to_column := 'node_key',
+    label := 'relates',
+    bidirectional := false,
+    weight_column := NULL,
+    label_column := 'relation_type'
+);
+
+SELECT * FROM graph.build();
+"""
+
 
 class PgGraphStore:
     """Async PostgreSQL/pgGraph projection backend.
@@ -48,7 +124,9 @@ class PgGraphStore:
 
     async def init_schema(self) -> None:
         """Initialize projection schema."""
-        raise NotImplementedError("pgGraph schema initialization is not implemented yet")
+        connection = self._require_connection()
+        await connection.execute(PGGRAPH_SCHEMA_SQL)
+        await connection.commit()
 
     async def upsert_extraction(self, result: ExtractionResult, session_id: str = "default") -> None:
         """Project an extracted event."""
@@ -123,3 +201,8 @@ class PgGraphStore:
     ) -> GraphInferredEdgeStatus:
         """Inspect inferred-edge audit status."""
         raise NotImplementedError("pgGraph inferred-edge status is not implemented yet")
+
+    def _require_connection(self) -> Any:
+        if self._connection is None:
+            raise AssertionError("Call connect() first")
+        return self._connection
