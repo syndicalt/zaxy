@@ -442,7 +442,12 @@ def _build_next_steps(
             f"Start managed deterministic Codex capture: zaxy capture start --workspace {workspace}"
         )
         next_steps.append("Add --graph to the capture start command when Neo4j should receive live projections.")
+    next_steps.append(f"Data lives in {eventloom}; each session is an append-only JSONL log.")
     next_steps.append(f"Run zaxy hook-status --eventloom-path {eventloom}")
+    next_steps.append(
+        "Smoke test recent memory: "
+        f"zaxy memory log --eventloom-path {eventloom} --session-id {session_id} --limit 5"
+    )
     next_steps.append(
         "Inspect model-facing memory bootstrap: "
         f"zaxy memory bootstrap --eventloom-path {eventloom} --session-id {session_id}"

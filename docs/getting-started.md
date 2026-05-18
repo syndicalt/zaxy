@@ -3,8 +3,9 @@
 Zaxy is a local-first memory fabric for AI agents. It keeps the immutable
 work history in Eventloom JSONL files and projects structured facts into Neo4j
 so agents can retrieve connected, temporal context through MCP tools. The
-fastest path is to run Neo4j with Docker, start the MCP server, append a few
-typed events, and query them back.
+fastest path is to install the CLI, run one local onboarding command, and
+verify that Eventloom plus the model-facing bootstrap are readable. For the
+architecture tradeoffs behind this shape, see [why-zaxy.md](why-zaxy.md).
 
 Start from the repository root:
 
@@ -19,6 +20,45 @@ machine. Generated MCP config uses the resolved CLI executable path so GUI
 clients do not have to inherit the same shell `PATH` as your terminal. Zaxy
 prefers the installed `zaxy` console script and falls back to the current
 process path when no console script is discoverable.
+
+## Five-minute local smoke test
+
+Use this path when you want to know whether Zaxy is viable on a workstation
+without committing to a full graph deployment. It writes local config, records
+session genesis and heartbeat events, checks infrastructure posture, and prints
+copyable next steps. It does not require a hosted API key.
+
+```bash
+pipx install zaxy-memory
+zaxy init . --domain my-project --preset local-codex --capture start --infra check
+zaxy memory log --eventloom-path .eventloom --session-id my-project-default --limit 5
+zaxy memory bootstrap --eventloom-path .eventloom --session-id my-project-default
+zaxy doctor --eventloom-path .eventloom
+```
+
+Expected local artifacts:
+
+- `.eventloom/`: append-only Eventloom JSONL logs, one file per session.
+- `.env.local`: local embedding, reranker, and graph defaults.
+- `.codex/zaxy-capture.json`: deterministic local Codex capture config when
+  `--preset local-codex` is used.
+- `zaxy-mcp.json` or a printed `codex mcp add` command: MCP config guidance for
+  the selected client.
+
+The first smoke-test command should show recent genesis or heartbeat events.
+The bootstrap command should print the model-facing Memory Bootstrap packet for
+`my-project-default`, including the recommended first checkout and capture
+trust policy. `zaxy doctor --eventloom-path .eventloom` should make any missing
+MCP config, hook, capture, or graph posture explicit before you start relying on
+the memory layer. The same local data can be inspected later with
+`zaxy memory status --eventloom-path .eventloom` and
+`zaxy memory diff --eventloom-path .eventloom --session-id my-project-default --from-seq 1 --to-seq 10`.
+
+For Claude Code, swap the init command:
+
+```bash
+zaxy init . --domain my-project --preset local-claude --infra check
+```
 
 For local development from a checkout:
 
