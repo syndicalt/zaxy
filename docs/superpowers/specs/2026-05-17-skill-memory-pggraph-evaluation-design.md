@@ -72,6 +72,23 @@ citation, temporal, latency, and operations gates against Neo4j. Retrieval can
 still proceed when a lane fails because the query router already degrades
 unavailable lanes explicitly.
 
+Operational coverage now includes the rebuild path used for backend recovery:
+
+```bash
+zaxy reproject .eventloom/default.jsonl \
+  --projection-backend pggraph \
+  --pggraph-dsn postgresql://postgres:postgres@localhost:5432/zaxy \
+  --reset-projection
+```
+
+That command connects to the selected projection backend, bootstraps schema and
+indexes with `init_schema()`, optionally clears projection tables before replay,
+then replays Eventloom into the backend-neutral projection contract. The command
+always closes backend resources in `finally`, so pgGraph connection cleanup is
+covered even when projection raises an operational failure. The failure recovery
+path keeps Eventloom as the durable source of truth for the experimental
+backend.
+
 pgGraph should be evaluated as a Postgres-local graph acceleration layer over
 Zaxy-owned relational tables. Zaxy would still own temporal semantics through
 schema design: entity versions, edge versions, sources, Eventloom projections,
@@ -136,5 +153,6 @@ The first implementation plan should be benchmark-driven:
 Skill Memory has moved from roadmap item to first procedural context lane.
 pgGraph remains a research/backend track: the adapter exists for local
 experimentation, including optional integration coverage with
-`PGGRAPH_INTEGRATION_DSN` and pgvector-backed vector retrieval, but production
-support still requires benchmark proof.
+`PGGRAPH_INTEGRATION_DSN`, pgvector-backed vector retrieval, and reproject-based
+bootstrap/reset/rebuild recovery, but production support still requires
+benchmark proof.

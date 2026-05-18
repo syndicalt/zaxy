@@ -2611,8 +2611,8 @@ def test_init_command_json_includes_next_steps_and_capture_summary(tmp_path: Pat
     assert payload["capture"]["doctor_status"] == "warning"
 
 
-@patch("zaxy.__main__.GraphStore")
-def test_reproject_command_replays_log_into_graph(mock_graph_store: MagicMock, tmp_path: Path) -> None:
+@patch("zaxy.__main__.build_projection_store")
+def test_reproject_command_replays_log_into_graph(mock_build_projection_store: MagicMock, tmp_path: Path) -> None:
     """reproject should rebuild graph projections from an Eventloom log."""
     log_path = tmp_path / "default.jsonl"
     log = EventLog(log_path)
@@ -2626,7 +2626,7 @@ def test_reproject_command_replays_log_into_graph(mock_graph_store: MagicMock, t
         thread="default",
     )
     store = AsyncMock()
-    mock_graph_store.return_value = store
+    mock_build_projection_store.return_value = store
     runner = CliRunner()
 
     result = runner.invoke(
@@ -2644,14 +2644,101 @@ def test_reproject_command_replays_log_into_graph(mock_graph_store: MagicMock, t
     )
 
     assert result.exit_code == 0
-    assert "Reprojected 1 events into session default" in result.output
-    mock_graph_store.assert_called_once_with("bolt://test:7687", "neo4j", "testpassword")
+    assert "Reprojected 1 events into session default using neo4j" in result.output
+    config = mock_build_projection_store.call_args.args[0]
+    assert config.backend == "neo4j"
+    assert config.neo4j_uri == "bolt://test:7687"
+    assert config.neo4j_user == "neo4j"
+    assert config.neo4j_password == "testpassword"
     store.connect.assert_awaited_once()
     store.init_schema.assert_awaited_once()
     store.upsert_extraction.assert_awaited_once()
     extraction = store.upsert_extraction.await_args.args[0]
     assert extraction.entities[0].entity_type == "decision"
     assert store.upsert_extraction.await_args.kwargs == {"session_id": "default"}
+    store.close.assert_awaited_once()
+
+
+@patch("zaxy.__main__.build_projection_store")
+def test_reproject_command_can_reset_and_rebuild_pggraph_backend(
+    mock_build_projection_store: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """reproject should operationally cover pgGraph bootstrap, reset, and rebuild."""
+    log_path = tmp_path / "default.jsonl"
+    EventLog(log_path).append(
+        "goal.created",
+        actor="assistant",
+        payload={"title": "Evaluate pgGraph"},
+        thread="default",
+    )
+    store = AsyncMock()
+    mock_build_projection_store.return_value = store
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "reproject",
+            str(log_path),
+            "--session-id",
+            "default",
+            "--projection-backend",
+            "pggraph",
+            "--pggraph-dsn",
+            "postgresql://postgres:postgres@localhost:5432/zaxy",
+            "--reset-projection",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Reprojected 1 events into session default using pggraph" in result.output
+    config = mock_build_projection_store.call_args.args[0]
+    assert config.backend == "pggraph"
+    assert config.pggraph_dsn == "postgresql://postgres:postgres@localhost:5432/zaxy"
+    store.connect.assert_awaited_once()
+    store.init_schema.assert_awaited_once()
+    store.reset_benchmark_projection.assert_awaited_once()
+    store.upsert_extraction.assert_awaited_once()
+    store.close.assert_awaited_once()
+
+
+@patch("zaxy.__main__.build_projection_store")
+def test_reproject_command_closes_pggraph_backend_after_projection_failure(
+    mock_build_projection_store: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """reproject failure recovery should close experimental backend resources."""
+    log_path = tmp_path / "default.jsonl"
+    EventLog(log_path).append(
+        "goal.created",
+        actor="assistant",
+        payload={"title": "Evaluate pgGraph"},
+        thread="default",
+    )
+    store = AsyncMock()
+    store.upsert_extraction.side_effect = RuntimeError("pgGraph unavailable")
+    mock_build_projection_store.return_value = store
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "reproject",
+            str(log_path),
+            "--session-id",
+            "default",
+            "--projection-backend",
+            "pggraph",
+            "--pggraph-dsn",
+            "postgresql://postgres:postgres@localhost:5432/zaxy",
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "pgGraph unavailable" in str(result.exception)
+    store.connect.assert_awaited_once()
+    store.init_schema.assert_awaited_once()
     store.close.assert_awaited_once()
 
 

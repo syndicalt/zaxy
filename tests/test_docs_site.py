@@ -149,6 +149,10 @@ def test_pggraph_backend_roadmap_records_contract_first_state() -> None:
     assert "0.626" in benchmarks
     assert "no longer shows a pgGraph-specific quality" in benchmarks
     assert "regression" in benchmarks
+    assert "zaxy reproject" in spec
+    assert "--projection-backend pggraph" in spec
+    assert "--reset-projection" in spec
+    assert "failure recovery" in spec
 
 
 def test_framework_integration_docs_record_next_hardening_target() -> None:

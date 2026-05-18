@@ -146,7 +146,7 @@ from zaxy.packet_projection import (
     project_packet_events_to_graph,
     watch_packet_events,
 )
-from zaxy.projection_backends import ProjectionBackendConfig
+from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
 from zaxy.refs import MemoryRefStore
 from zaxy.release import package_version, run_beta_readiness, run_release_smoke
 from zaxy.schema import (
@@ -1499,25 +1499,52 @@ def reproject(
     log_path: Path = typer.Argument(..., help="Path to Eventloom JSONL file"),  # noqa: B008
     from_seq: int = typer.Option(1, help="Start sequence number"),
     session_id: str = typer.Option("default", help="Graph session ID to project into"),
+    projection_backend: str = typer.Option(
+        "neo4j",
+        "--projection-backend",
+        help="Projection backend to rebuild: neo4j or pggraph",
+    ),
+    pggraph_dsn: str | None = typer.Option(  # noqa: B008
+        None,
+        "--pggraph-dsn",
+        help="Experimental pgGraph/PostgreSQL DSN for --projection-backend pggraph",
+    ),
+    reset_projection: bool = typer.Option(
+        False,
+        "--reset-projection",
+        help="Clear backend projection tables before replaying the log",
+    ),
     neo4j_uri: str | None = typer.Option(None, help="Neo4j Bolt URI"),
     neo4j_user: str | None = typer.Option(None, help="Neo4j username"),
     neo4j_password: str | None = typer.Option(None, help="Neo4j password"),
 ) -> None:
-    """Replay an Eventloom log and rebuild its Neo4j graph projection."""
+    """Replay an Eventloom log and rebuild its graph projection."""
     import asyncio
 
     from zaxy.config import get_settings
 
     async def _run() -> int:
         settings = get_settings()
-        store = GraphStore(
-            neo4j_uri or settings.neo4j_uri,
-            neo4j_user or settings.neo4j_user,
-            neo4j_password or settings.neo4j_password,
+        backend = projection_backend.casefold().strip()
+        store = build_projection_store(
+            ProjectionBackendConfig(
+                backend=backend,
+                neo4j_uri=neo4j_uri or settings.neo4j_uri,
+                neo4j_user=neo4j_user or settings.neo4j_user,
+                neo4j_password=neo4j_password or settings.neo4j_password,
+                neo4j_ca_cert=settings.neo4j_ca_cert,
+                neo4j_trust_all=settings.neo4j_trust_all,
+                pggraph_dsn=pggraph_dsn or settings.pggraph_dsn,
+            )
         )
         await store.connect()
         try:
             await store.init_schema()
+            if reset_projection:
+                reset_backend = getattr(store, "reset_benchmark_projection", None)
+                if reset_backend is None:
+                    raise typer.BadParameter("--reset-projection requires backend reset support")
+                await reset_backend()
             replay_result = EventLog(str(log_path)).replay(from_seq=from_seq)
             if not replay_result.integrity.ok:
                 reason = replay_result.integrity.broken_reason or "unknown integrity failure"
@@ -1529,7 +1556,7 @@ def reproject(
             await store.close()
 
     count = asyncio.run(_run())
-    typer.echo(f"Reprojected {count} events into session {session_id}")
+    typer.echo(f"Reprojected {count} events into session {session_id} using {projection_backend.casefold().strip()}")
 
 
 @app.command()
