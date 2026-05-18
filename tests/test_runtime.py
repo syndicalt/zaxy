@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import socket
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -322,6 +323,33 @@ def test_local_pggraph_runtime_skips_when_disabled_remote_or_open() -> None:
     assert open_runner.calls == []
 
 
+def test_local_pggraph_runtime_skips_unsupported_dsn_scheme() -> None:
+    runner = FakeRunner()
+    runtime = LocalPgGraphRuntime(
+        dsn="sqlite:///tmp/zaxy.db",
+        runner=runner,
+        port_probe=lambda _host, _port: False,
+    )
+
+    assert runtime.check().status == "ok"
+    runtime.ensure_available()
+
+    assert runner.calls == []
+
+
+def test_local_pggraph_runtime_socket_probe_reports_closed_port(monkeypatch) -> None:
+    def closed_connection(_address: tuple[str, int], timeout: float) -> object:
+        raise OSError("closed")
+
+    monkeypatch.setattr(socket, "create_connection", closed_connection)
+    runtime = LocalPgGraphRuntime(
+        dsn="postgresql://postgres:postgres@localhost:5432/zaxy",
+        runner=FakeRunner([result(returncode=1)]),
+    )
+
+    assert runtime.check().message == "pgGraph is not reachable; Docker is unavailable"
+
+
 def test_local_pggraph_runtime_reports_missing_docker_actionably(tmp_path: Path) -> None:
     runner = FakeRunner([
         result(returncode=1, stderr="docker unavailable"),
@@ -432,7 +460,7 @@ def test_local_pggraph_runtime_times_out_when_started_container_never_opens_port
         runner=runner,
         port_probe=lambda _host, _port: False,
         sleeper=lambda _seconds: None,
-        startup_timeout_seconds=0,
+        startup_timeout_seconds=0.01,
     )
 
     try:

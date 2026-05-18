@@ -171,5 +171,6 @@ check_untyped_defs = true
 show_error_codes = true
 
 [[tool.mypy.overrides]]
-module = ["neo4j.*", "mcp.*", "pathlight.*"]
+module = ["neo4j.*", "mcp.*", "pathlight.*", "psycopg.*"]
 follow_untyped_imports = true
+ignore_missing_imports = true
