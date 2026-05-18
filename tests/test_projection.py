@@ -1,42 +1,42 @@
-"""Projection-store contracts for Eventloom-backed memory indexes."""
+"""Tests for projection-store backend contracts."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from typing import assert_type
 
 from zaxy.extract import ExtractionResult
+from zaxy.graph import (
+    GraphEntity,
+    GraphEventProjectionStatus,
+    GraphInferredEdgeStatus,
+    SearchResult,
+)
+from zaxy.projection import ProjectionStore
 
-if TYPE_CHECKING:
-    from zaxy.graph import (
-        GraphEntity,
-        GraphEventProjectionStatus,
-        GraphInferredEdgeStatus,
-        SearchResult,
-    )
 
-
-class ProjectionStore(Protocol):
-    """Backend contract for projecting Eventloom facts into a queryable index."""
+class FakeProjectionStore:
+    """Small structural implementation used to pin the projection contract."""
 
     async def connect(self) -> None:
-        """Open backend resources."""
-        ...
+        pass
 
     async def close(self) -> None:
-        """Close backend resources."""
-        ...
+        pass
 
     async def init_schema(self) -> None:
-        """Initialize backend schema and indexes."""
-        ...
+        pass
 
-    async def upsert_extraction(
+    async def upsert_extraction(self, result: ExtractionResult, session_id: str = "default") -> None:
+        pass
+
+    async def invalidate_entity(
         self,
-        result: ExtractionResult,
+        name: str,
+        entity_type: str,
+        invalid_at: str,
         session_id: str = "default",
     ) -> None:
-        """Project an extracted event into a queryable memory index."""
-        ...
+        pass
 
     async def search_exact(
         self,
@@ -45,8 +45,7 @@ class ProjectionStore(Protocol):
         temporal_point: str | None = None,
         session_id: str = "default",
     ) -> list[GraphEntity]:
-        """Search by exact entity identity."""
-        ...
+        return []
 
     async def search_keyword(
         self,
@@ -55,8 +54,7 @@ class ProjectionStore(Protocol):
         temporal_point: str | None = None,
         session_id: str = "default",
     ) -> list[SearchResult]:
-        """Search by lexical relevance."""
-        ...
+        return []
 
     async def search_traversal(
         self,
@@ -66,8 +64,7 @@ class ProjectionStore(Protocol):
         temporal_point: str | None = None,
         session_id: str = "default",
     ) -> list[GraphEntity]:
-        """Search graph neighbors from a starting entity."""
-        ...
+        return []
 
     async def search_vector(
         self,
@@ -76,18 +73,7 @@ class ProjectionStore(Protocol):
         temporal_point: str | None = None,
         session_id: str = "default",
     ) -> list[SearchResult]:
-        """Search by vector similarity."""
-        ...
-
-    async def invalidate_entity(
-        self,
-        name: str,
-        entity_type: str,
-        invalid_at: str,
-        session_id: str = "default",
-    ) -> None:
-        """Close the validity window for a projected entity."""
-        ...
+        return []
 
     async def inspect_event_projection_status(
         self,
@@ -96,8 +82,7 @@ class ProjectionStore(Protocol):
         eventloom_latest_seq: int | None = None,
         eventloom_latest_hash: str | None = None,
     ) -> GraphEventProjectionStatus:
-        """Inspect Eventloom-to-graph projection integrity for one session."""
-        ...
+        raise NotImplementedError
 
     async def inspect_inferred_edge_status(
         self,
@@ -105,5 +90,20 @@ class ProjectionStore(Protocol):
         *,
         limit: int = 10,
     ) -> GraphInferredEdgeStatus:
-        """Inspect inferred-edge audit status for one session."""
-        ...
+        raise NotImplementedError
+
+def test_fake_projection_store_satisfies_contract() -> None:
+    store: ProjectionStore = FakeProjectionStore()
+    assert store is not None
+
+
+async def _type_probe(store: ProjectionStore) -> None:
+    exact = await store.search_exact("Alice")
+    keyword = await store.search_keyword("ship memory")
+    traversal = await store.search_traversal("Alice")
+    vector = await store.search_vector([0.1, 0.2])
+
+    assert_type(exact, list[GraphEntity])
+    assert_type(keyword, list[SearchResult])
+    assert_type(traversal, list[GraphEntity])
+    assert_type(vector, list[SearchResult])
