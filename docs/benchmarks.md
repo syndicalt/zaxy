@@ -124,6 +124,21 @@ When writing public copy, do not collapse these into a single leaderboard.
 Metric families differ: R@5 retrieval, Answer@5 expected-term recall, LOCOMO
 judge accuracy, and token/latency reductions answer different questions.
 
+## Same-Harness Adapter Feasibility
+
+As of May 18, 2026, competitor adapters have different readiness levels:
+
+| System | Status | Evidence | Same-harness blocker |
+|--------|--------|----------|----------------------|
+| MemPalace | adapter candidate | The public repo documents `benchmarks/longmemeval_bench.py`, committed per-question results, and a no-API-key raw LongMemEval path. | Build a wrapper that exports per-query top-k contexts into Zaxy's `BenchmarkRun` schema without changing MemPalace ranking settings. |
+| Mem0 | benchmark harness candidate | `mem0ai/memory-benchmarks` includes LongMemEval scripts, but the OSS path requires Docker, Qdrant, model configuration, and LLM answer/judge settings. | Separate retrieval-only evidence from answer/judge accuracy, pin backend config, and preserve token/latency accounting. |
+| Agent Memory | external disclosure only | The product page reports LongMemEval-S R@5 and the retrieval stack, but it does not document a stable same-harness CLI/API contract for Zaxy to call. | Keep the claim in external disclosures until a reproducible benchmark command, dataset contract, and result export are available. |
+
+No same-harness adapter should be published without a pinned install command,
+dataset mapping, retrieval limit, score mapping, latency/tokens capture, and a
+clear statement about whether the competitor result is retrieval recall,
+answer/judge accuracy, or another metric family.
+
 ## Reproduction
 
 Run the current LongMemEval-compatible release evidence with BM25 included as a

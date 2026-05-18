@@ -229,6 +229,24 @@ def test_benchmark_docs_disclose_harness_external_claims_and_sources() -> None:
     assert "not same-harness results" in text
 
 
+def test_benchmark_docs_record_competitor_adapter_feasibility() -> None:
+    """Docs should say which competitor adapters are buildable and which remain disclosures."""
+    benchmarks = Path("docs/benchmarks.md").read_text(encoding="utf-8")
+    positioning = Path("docs/competitive-positioning.md").read_text(encoding="utf-8")
+    combined = f"{benchmarks}\n{positioning}"
+
+    assert "Same-Harness Adapter Feasibility" in combined
+    assert "MemPalace" in combined
+    assert "adapter candidate" in combined
+    assert "benchmarks/longmemeval_bench.py" in combined
+    assert "Mem0" in combined
+    assert "benchmark harness candidate" in combined
+    assert "requires Docker" in combined
+    assert "Agent Memory" in combined
+    assert "external disclosure only" in combined
+    assert "No same-harness adapter should be published without" in combined
+
+
 def test_public_longmemeval_reports_keep_bm25_tradeoff_baseline() -> None:
     """Public LongMemEval reports should include BM25 latency and token tradeoffs."""
     report_paths = [

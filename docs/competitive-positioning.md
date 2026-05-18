@@ -39,18 +39,39 @@ surface first. The benchmark lane should stay architecture-driven:
 The current Zaxy public benchmark hub is [benchmarks.md](benchmarks.md). Zaxy's
 same-harness evidence should distinguish the archived LongMemEval-compatible
 100-question headline from the full 500-question archive. The 100-question run
-remains the strongest headline: mean score 0.950, Answer@5 0.950, citation
-coverage 1.000, and R@1/R@5/R@10 0.990. The full 500-question hash run is a
-separate no-regression floor: Zaxy checkout mean score 0.626, Answer@5 0.608,
-citation coverage 1.000, and R@1/R@5/R@10 of 0.944/0.956/0.956 versus BM25
-mean score 0.560, Answer@5 0.516, and R@5 0.770.
+remains the strongest headline: Zaxy mean score 0.970, Answer@5 0.950,
+citation coverage 1.000, and R@1/R@5/R@10 1.000, with BM25 in the same report
+at mean score 0.540, Answer@5 0.500, and R@5 0.840. The full 500-question hash
+run is a separate no-regression floor: Zaxy checkout mean score 0.626,
+Answer@5 0.608, citation coverage 1.000, and R@1/R@5/R@10 of
+0.944/0.956/0.956 versus BM25 mean score 0.560, Answer@5 0.516, and R@5 0.770.
 
 Competitor numbers belong in an external-disclosure table, not a universal
 leaderboard. MemPalace publicly reports 96.6% raw LongMemEval R@5 and 98.4%
 held-out hybrid R@5. Agent Memory publicly reports 95.2% R@5 on LongMemEval-S.
-Mem0 publicly reports +26% Accuracy over OpenAI Memory on LOCOMO, which is a
-different metric family. These claims are important market context, but they are
-not same-harness Zaxy results.
+Mem0 publicly reports 94.4% LongMemEval accuracy and lower-token memory
+retrieval, plus LoCoMo accuracy gains; those are different metric families from
+Zaxy's local retrieval reports unless run through the same harness. These claims
+are important market context, but they are not same-harness Zaxy results.
+
+## Same-Harness Adapter Feasibility
+
+MemPalace is the strongest adapter candidate because its public repo documents
+a local `benchmarks/longmemeval_bench.py` path and committed per-question
+result files. A Zaxy adapter should wrap that command, pin the mode and top-k
+settings, and import per-question retrieval hits into Zaxy's report schema.
+
+Mem0 is a benchmark harness candidate rather than a drop-in retrieval adapter:
+the public `mem0ai/memory-benchmarks` project can run LongMemEval, but the OSS
+path requires Docker, Qdrant, model configuration, and LLM answer/judge choices.
+The first Zaxy integration should document those inputs and separate
+retrieval-only comparisons from judge-scored answer accuracy.
+
+Agent Memory remains external disclosure only for now. Its product page reports
+LongMemEval-S R@5 and a BM25/vector/graph retrieval stack, but the public page
+does not provide a stable same-harness CLI/API contract for Zaxy to call. Keep
+the number in the disclosure table until a reproducible command and result
+export are available.
 
 ## Near-Term Roadmap
 

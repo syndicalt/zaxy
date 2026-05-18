@@ -348,6 +348,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] MemPalace-comparable benchmark inventory CLI for frozen lane fingerprints, product claims, and required release metrics
 - [x] Full 500-question LongMemEval-compatible hash report with BM25 baseline and no-regression guardrails
 - [x] Public benchmark report contract requiring same-harness BM25 latency and token tradeoffs in LongMemEval artifacts
+- [x] Same-harness competitor adapter feasibility matrix for MemPalace, Mem0, and Agent Memory with blockers kept in external disclosures
 - [x] Skill Memory procedural world-model layer with lifecycle events, checkout routing, MCP helper, docs, and full-set quality guardrail verification
 - [x] Skill Memory outcome analytics for promotion candidates, rollback candidates, and contradiction diagnostics
 - [x] Projection backend contract and Neo4j factory for pgGraph evaluation without changing the default backend
@@ -367,8 +368,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 ## Next Steps
 
 1. Improve full-set LongMemEval synthesis without reducing the archived 500-question no-regression floors: mean score 0.626, Answer@5 0.608, R@5 0.956, and citation coverage 1.000.
-2. Build or document feasible same-harness competitor adapters for MemPalace, Mem0, and Agent Memory; if an adapter is not practical, publish the blocker and keep the result in the external-disclosure table.
-3. Run same-harness pgGraph quality, citation, temporal, latency, and operations comparisons against Neo4j before considering any default-backend change.
-4. Expand clean-repo onboarding and model-facing UAT with fresh Codex and Claude Code workspaces: `zaxy init`, Memory Bootstrap, deterministic capture, Memory Checkout, feedback, and doctor status.
-5. Keep public benchmark scripts fully reproducible from a clean checkout, with cached datasets, archived reports, guardrail commands, and no hidden manual steps.
-6. Use LangGraph and CrewAI native-preview usage to choose the next maintained adapter or model-facing UX hardening target.
+2. Run same-harness pgGraph quality, citation, temporal, latency, and operations comparisons against Neo4j before considering any default-backend change.
+3. Expand clean-repo onboarding and model-facing UAT with fresh Codex and Claude Code workspaces: `zaxy init`, Memory Bootstrap, deterministic capture, Memory Checkout, feedback, and doctor status.
+4. Keep public benchmark scripts fully reproducible from a clean checkout, with cached datasets, archived reports, guardrail commands, and no hidden manual steps.
+5. Use LangGraph and CrewAI native-preview usage to choose the next maintained adapter or model-facing UX hardening target.
