@@ -345,6 +345,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Checkout-level inferred graph context diagnostics and prompt guidance
 - [x] Local Neo4j UAT coverage for inferred-edge projection, retrieval scoring, and Memory Checkout diagnostics
 - [x] Model-facing clean-repo UAT proving init, Memory Bootstrap guidance, cited Memory Checkout, feedback guidance, capture status, and capture-soak coverage
+- [x] Dual clean-repo Codex and Claude Code UAT with isolated `zaxy init`, Memory Bootstrap, Memory Checkout, feedback guidance, doctor, hook status, capture status, and capture-soak checks
 - [x] MemPalace-comparable benchmark inventory CLI for frozen lane fingerprints, product claims, and required release metrics
 - [x] Full 500-question LongMemEval-compatible hash report with BM25 baseline and no-regression guardrails
 - [x] Public benchmark report contract requiring same-harness BM25 latency and token tradeoffs in LongMemEval artifacts
@@ -373,6 +374,5 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 1. Improve full-set LongMemEval synthesis without reducing the archived 500-question no-regression floors: mean score 0.626, Answer@5 0.608, R@5 0.956, and citation coverage 1.000.
 2. Keep pgGraph experimental while repeating the full 500-question same-harness comparison and expanding operational coverage for bootstrap, reset, graph rebuild, and failure recovery.
-3. Expand clean-repo onboarding and model-facing UAT with fresh Codex and Claude Code workspaces: `zaxy init`, Memory Bootstrap, deterministic capture, Memory Checkout, feedback, and doctor status.
-4. Keep public benchmark scripts fully reproducible from a clean checkout, with cached datasets, archived reports, guardrail commands, and no hidden manual steps.
-5. Use LangGraph and CrewAI native-preview usage to choose the next maintained adapter or model-facing UX hardening target.
+3. Keep public benchmark scripts fully reproducible from a clean checkout, with cached datasets, archived reports, guardrail commands, and no hidden manual steps.
+4. Use LangGraph and CrewAI native-preview usage to choose the next maintained adapter or model-facing UX hardening target.

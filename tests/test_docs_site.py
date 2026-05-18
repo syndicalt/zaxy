@@ -358,6 +358,14 @@ def test_required_docs_are_substantial_and_cross_linked() -> None:
         assert "README.md" in text or "runbook.md" in text or "site/index.html" in text, doc
 
 
+def test_agents_roadmap_records_dual_clean_repo_uat() -> None:
+    """Roadmap should track Codex and Claude Code clean-workspace UAT coverage."""
+    agents = Path("AGENTS.md").read_text(encoding="utf-8")
+
+    assert "Dual clean-repo Codex and Claude Code UAT" in agents
+    assert "fresh Codex and Claude Code workspaces" not in agents
+
+
 def test_hooks_docs_explain_capture_readiness() -> None:
     """Hook docs should explain the automatic-capture readiness signal."""
     text = Path("docs/hooks.md").read_text(encoding="utf-8")
