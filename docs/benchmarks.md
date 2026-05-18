@@ -60,6 +60,13 @@ add cited procedural guidance, but it must not lower Zaxy checkout mean score,
 Answer@5, Recall@5, citation coverage, or the archived latency envelope unless a
 new public benchmark report explicitly replaces these floors.
 
+Projection backend changes must pass the full 500-question guardrail before
+release, because backend swaps can alter exact, keyword, vector, traversal,
+temporal, and citation behavior even when Eventloom remains the source of truth.
+Neo4j is the default backend until an experimental backend matches or beats the
+archived quality, citation, temporal, latency, and operations gates on the same
+harness.
+
 ## BM25 Comparison
 
 The current same-harness BM25 comparison is archived at

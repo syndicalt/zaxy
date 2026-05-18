@@ -110,6 +110,22 @@ def test_docs_describe_skill_memory_contract_and_guardrail() -> None:
     assert "Skill Memory changes must pass the full 500-question guardrail" in benchmarks
 
 
+def test_pggraph_backend_roadmap_records_contract_first_state() -> None:
+    """Docs should keep pgGraph behind the projection contract and Neo4j default."""
+    agents = Path("AGENTS.md").read_text(encoding="utf-8")
+    benchmarks = Path("docs/benchmarks.md").read_text(encoding="utf-8")
+    spec = Path("docs/superpowers/specs/2026-05-17-skill-memory-pggraph-evaluation-design.md").read_text(
+        encoding="utf-8",
+    )
+
+    assert "Skill Memory procedural world-model layer" in agents
+    assert "Projection backend contract and Neo4j factory" in agents
+    assert "Build the experimental pgGraph adapter behind `PROJECTION_BACKEND=pggraph`" in agents
+    assert "pgGraph backend is experimental and has no adapter yet" in spec
+    assert "version 0.1.0, PostgreSQL 13-18 support, and alpha status" in spec
+    assert "Projection backend changes must pass the full 500-question guardrail" in benchmarks
+
+
 def test_memory_checkout_docs_and_site_match_golden_contract_fixture() -> None:
     """Published checkout examples should stay aligned with the canonical tool contract."""
     fixture = json.loads(Path("docs/examples/memory-checkout-contract.json").read_text(encoding="utf-8"))

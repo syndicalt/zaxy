@@ -8,16 +8,16 @@ cited, prompt-ready context. A recent product thesis argues that memory and
 skills should be treated as one routed world model instead of separate static
 files, plugins, or APIs.
 
-Zaxy mostly satisfies the evidence and provenance side of that thesis, but it
-does not yet treat reusable procedures as first-class memory. Separately,
-pgGraph is worth evaluating because it could combine Postgres full-text,
-pgvector, relational constraints, transactions, and graph traversal in one
-operational backend. pgGraph is currently alpha software, so this must be an
-evaluation track, not a default backend migration.
+Zaxy mostly satisfies the evidence and provenance side of that thesis, and now
+treats reusable procedures as first-class Skill Memory. Separately, pgGraph is
+worth evaluating because it could combine Postgres full-text, pgvector,
+relational constraints, transactions, and graph traversal in one operational
+backend. pgGraph is currently alpha software, so this must be an evaluation
+track, not a default backend migration.
 
 ## Goals
 
-- Add Skill Memory to the roadmap as the procedural layer of Zaxy's world model.
+- Keep Skill Memory as the procedural layer of Zaxy's world model.
 - Evaluate pgGraph as an experimental backend without risking current Neo4j
   retrieval quality.
 - Preserve Eventloom as the immutable source of truth for every backend.
@@ -34,8 +34,8 @@ evaluation track, not a default backend migration.
 
 ## Skill Memory Roadmap
 
-Skill Memory should treat procedures as memory objects with lifecycle,
-provenance, outcomes, and versions. The initial event taxonomy should include:
+Skill Memory treats procedures as memory objects with lifecycle, provenance,
+outcomes, and versions. The initial event taxonomy includes:
 
 - `skill.proposed`
 - `skill.validated`
@@ -57,6 +57,12 @@ evaluation. Each active skill version needs citations, scope, confidence,
 outcome history, rollback metadata, and a supersession path.
 
 ## pgGraph Evaluation Roadmap
+
+As of May 18, 2026, pgGraph docs describe version 0.1.0, PostgreSQL 13-18 support, and alpha status
+for experimentation, demos, benchmarks, and early feedback. Zaxy therefore keeps `PROJECTION_BACKEND=neo4j` as the default and
+treats `PROJECTION_BACKEND=pggraph` as unavailable until an adapter passes the
+benchmark gates. The current factory raises `pgGraph backend is experimental and has no adapter yet`
+for explicit pgGraph selection.
 
 pgGraph should be evaluated as a Postgres-local graph acceleration layer over
 Zaxy-owned relational tables. Zaxy would still own temporal semantics through
@@ -118,7 +124,6 @@ The first implementation plan should be benchmark-driven:
 
 ## Roadmap Placement
 
-Skill Memory should be a product roadmap item after current benchmark and UAT
-work because it extends Memory Checkout into procedural context. pgGraph should
-be a research/backend track that starts with contract extraction and benchmark
-proof, not with a migration.
+Skill Memory has moved from roadmap item to first procedural context lane.
+pgGraph remains a research/backend track that starts with contract extraction
+and benchmark proof, not with a migration.
