@@ -44,11 +44,11 @@ from zaxy.embedding import build_embedding_provider, embed_extraction
 from zaxy.event import EventLog, ReplayResult  # noqa: F401 - compatibility for existing tests
 from zaxy.evidence import select_checkout_evidence
 from zaxy.extract import extract
-from zaxy.graph import GraphStore
 from zaxy.inference import build_inferred_edge_events
 from zaxy.lifecycle import build_subagent_completed_event
 from zaxy.metrics import get_metrics
 from zaxy.pagination import encode_query_cursor, validate_query_cursor
+from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
 from zaxy.query import QueryRouter, build_reranker, build_retention_policy
 from zaxy.recall import RecallCandidateSet, build_recall_candidate_set, empty_recall_candidate_set
 from zaxy.refs import MemoryRef, MemoryRefStore
@@ -218,12 +218,15 @@ class MemoryFabric:
 
         self.session_manager = SessionManager(base_path=eventloom_path or resolved_settings.eventloom_path)
         self.eventloom = self.session_manager.get("default").eventlog
-        self.graph = GraphStore(
-            neo4j_uri or resolved_settings.neo4j_uri,
-            neo4j_user or resolved_settings.neo4j_user,
-            neo4j_password or resolved_settings.neo4j_password,
-            ca_cert=neo4j_ca_cert if neo4j_ca_cert is not None else resolved_settings.neo4j_ca_cert,
-            trust_all=neo4j_trust_all if neo4j_trust_all is not None else resolved_settings.neo4j_trust_all,
+        self.graph = build_projection_store(
+            ProjectionBackendConfig(
+                backend=resolved_settings.projection_backend,
+                neo4j_uri=neo4j_uri or resolved_settings.neo4j_uri,
+                neo4j_user=neo4j_user or resolved_settings.neo4j_user,
+                neo4j_password=neo4j_password or resolved_settings.neo4j_password,
+                neo4j_ca_cert=neo4j_ca_cert if neo4j_ca_cert is not None else resolved_settings.neo4j_ca_cert,
+                neo4j_trust_all=neo4j_trust_all if neo4j_trust_all is not None else resolved_settings.neo4j_trust_all,
+            )
         )
         self.query_router = QueryRouter(
             self.graph,

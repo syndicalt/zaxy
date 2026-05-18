@@ -16,8 +16,9 @@ from typing import Any, Protocol
 
 import httpx
 
-from zaxy.graph import GraphEntity, GraphStore, SearchResult
+from zaxy.graph import GraphEntity, SearchResult
 from zaxy.metrics import get_metrics
+from zaxy.projection import ProjectionStore
 from zaxy.security import validate_limit, validate_query, validate_session_id
 
 QUERY_EXPANSIONS: dict[str, tuple[str, ...]] = {
@@ -256,14 +257,14 @@ class QueryRouter:
     """Routes natural-language queries to the graph store and fuses results.
 
     Args:
-        store: Connected GraphStore instance.
+        store: Connected projection store instance.
         default_limit: Max results per sub-query.
         fusion_weights: Dict of {source: weight} for score normalization.
     """
 
     def __init__(
         self,
-        store: GraphStore,
+        store: ProjectionStore,
         default_limit: int = 10,
         session_id: str = "default",
         fusion_weights: dict[str, float] | None = None,

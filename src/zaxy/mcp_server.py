@@ -35,7 +35,6 @@ from zaxy.config import get_settings
 from zaxy.context import Context, ContextAssemblyPolicy, context_counts
 from zaxy.core import ContextAssembly, build_memory_checkout
 from zaxy.extract import extract
-from zaxy.graph import GraphStore
 from zaxy.lifecycle import (
     build_session_ended_event,
     build_subagent_completed_event,
@@ -44,6 +43,7 @@ from zaxy.lifecycle import (
 from zaxy.log import get_logger, setup_logging
 from zaxy.metrics import get_metrics
 from zaxy.pagination import encode_query_cursor, validate_query_cursor
+from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
 from zaxy.query import QueryRouter, build_retention_policy
 from zaxy.refs import MemoryRef, MemoryRefStore
 from zaxy.remote_security import AuditEventExporter, RemoteAuditEvent, SessionRateLimiter
@@ -388,12 +388,15 @@ class ZaxyMCPServer:
             image=settings.neo4j_auto_start_image,
             container_name=settings.neo4j_auto_start_container,
         )
-        self.graph = GraphStore(
-            self._neo4j_uri,
-            self._neo4j_user,
-            self._neo4j_password,
-            ca_cert=settings.neo4j_ca_cert,
-            trust_all=settings.neo4j_trust_all,
+        self.graph = build_projection_store(
+            ProjectionBackendConfig(
+                backend=settings.projection_backend,
+                neo4j_uri=self._neo4j_uri,
+                neo4j_user=self._neo4j_user,
+                neo4j_password=self._neo4j_password,
+                neo4j_ca_cert=settings.neo4j_ca_cert,
+                neo4j_trust_all=settings.neo4j_trust_all,
+            )
         )
         self.tracer = MemoryTracer(
             base_url=settings.pathlight_url,

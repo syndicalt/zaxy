@@ -32,12 +32,12 @@ def json_loads(value: str) -> Any:
 def server() -> ZaxyMCPServer:
     """Return a server with mocked graph, tracer, and session manager."""
     with (
-        patch("zaxy.mcp_server.GraphStore") as mock_graph_cls,
+        patch("zaxy.mcp_server.build_projection_store") as mock_build_projection_store,
         patch("zaxy.mcp_server.MemoryTracer") as mock_tracer_cls,
         patch("zaxy.mcp_server.SessionManager") as mock_session_cls,
     ):
         mock_graph = AsyncMock()
-        mock_graph_cls.return_value = mock_graph
+        mock_build_projection_store.return_value = mock_graph
         mock_tracer = AsyncMock()
         mock_tracer_cls.return_value = mock_tracer
 
@@ -244,6 +244,22 @@ class TestMemoryBootstrap:
         assert payload["startup_sequence"][1]["arguments"]["query"] == "resume roadmap"
         assert payload["capabilities"]["status"]["eventloom"]["latest_seq"] == 1
         assert "Call memory_checkout before answering roadmap or implementation questions." in payload["prompt"]
+
+
+def test_mcp_server_constructs_projection_store_through_factory(tmp_path: Path) -> None:
+    """ZaxyMCPServer should use the backend-neutral projection factory."""
+    with (
+        patch("zaxy.mcp_server.build_projection_store") as mock_build,
+        patch("zaxy.mcp_server.MemoryTracer"),
+        patch("zaxy.mcp_server.SessionManager"),
+        patch("zaxy.mcp_server.LocalNeo4jRuntime"),
+    ):
+        mock_build.return_value = AsyncMock()
+
+        srv = ZaxyMCPServer(eventloom_path=str(tmp_path / ".eventloom"))
+
+    assert srv.graph is mock_build.return_value
+    assert mock_build.call_args.args[0].backend == "neo4j"
 
 
 class TestSessionDefaults:
@@ -708,13 +724,13 @@ class TestServerSetup:
     async def test_setup_bootstraps_local_neo4j_before_graph_schema(self) -> None:
         """Local stdio startup should make its Neo4j dependency transparent."""
         with (
-            patch("zaxy.mcp_server.GraphStore") as mock_graph_cls,
+            patch("zaxy.mcp_server.build_projection_store") as mock_build_projection_store,
             patch("zaxy.mcp_server.MemoryTracer") as mock_tracer_cls,
             patch("zaxy.mcp_server.SessionManager"),
             patch("zaxy.mcp_server.LocalNeo4jRuntime") as mock_runtime_cls,
         ):
             mock_graph = AsyncMock()
-            mock_graph_cls.return_value = mock_graph
+            mock_build_projection_store.return_value = mock_graph
             mock_tracer = AsyncMock()
             mock_tracer_cls.return_value = mock_tracer
             mock_runtime = MagicMock()
@@ -737,13 +753,13 @@ class TestServerSetup:
         mock_log.read_all.return_value = []
         mock_log.append.side_effect = eventlog.append
         with (
-            patch("zaxy.mcp_server.GraphStore") as mock_graph_cls,
+            patch("zaxy.mcp_server.build_projection_store") as mock_build_projection_store,
             patch("zaxy.mcp_server.MemoryTracer") as mock_tracer_cls,
             patch("zaxy.mcp_server.SessionManager") as mock_session_cls,
             patch("zaxy.mcp_server.LocalNeo4jRuntime"),
         ):
             mock_graph = AsyncMock()
-            mock_graph_cls.return_value = mock_graph
+            mock_build_projection_store.return_value = mock_graph
             mock_tracer = AsyncMock()
             mock_tracer_cls.return_value = mock_tracer
             mock_session_mgr = MagicMock()
@@ -1441,17 +1457,17 @@ class TestEntrypoint:
     """Tests for the MCP stdio server main() function."""
 
     @patch("zaxy.mcp_server.stdio_server")
-    @patch("zaxy.mcp_server.GraphStore")
+    @patch("zaxy.mcp_server.build_projection_store")
     @patch("zaxy.mcp_server.MemoryTracer")
     async def test_main_setup_and_teardown(
         self,
         mock_tracer_cls: MagicMock,
-        mock_graph_cls: MagicMock,
+        mock_build_projection_store: MagicMock,
         mock_stdio: MagicMock,
     ) -> None:
         """main() should setup server, register handlers, and teardown on exit."""
         mock_graph = AsyncMock()
-        mock_graph_cls.return_value = mock_graph
+        mock_build_projection_store.return_value = mock_graph
         mock_tracer = AsyncMock()
         mock_tracer_cls.return_value = mock_tracer
 
@@ -1726,18 +1742,18 @@ class TestLifecycle:
         assert log.append.call_args.args == ("session.ended",)
         assert log.append.call_args.kwargs["payload"]["reason"] == "teardown"
 
-    @patch("zaxy.mcp_server.GraphStore")
+    @patch("zaxy.mcp_server.build_projection_store")
     @patch("zaxy.mcp_server.MemoryTracer")
     @patch("zaxy.mcp_server.SessionManager")
     async def test_setup_connects_all(
         self,
         mock_session_cls: MagicMock,
         mock_tracer_cls: MagicMock,
-        mock_graph_cls: MagicMock,
+        mock_build_projection_store: MagicMock,
     ) -> None:
         """setup() should connect graph and tracer."""
         mock_graph = AsyncMock()
-        mock_graph_cls.return_value = mock_graph
+        mock_build_projection_store.return_value = mock_graph
         mock_tracer = AsyncMock()
         mock_tracer_cls.return_value = mock_tracer
 
@@ -1747,18 +1763,18 @@ class TestLifecycle:
         mock_graph.init_schema.assert_awaited_once()
         mock_tracer.connect.assert_awaited_once()
 
-    @patch("zaxy.mcp_server.GraphStore")
+    @patch("zaxy.mcp_server.build_projection_store")
     @patch("zaxy.mcp_server.MemoryTracer")
     @patch("zaxy.mcp_server.SessionManager")
     async def test_teardown_closes_all(
         self,
         mock_session_cls: MagicMock,
         mock_tracer_cls: MagicMock,
-        mock_graph_cls: MagicMock,
+        mock_build_projection_store: MagicMock,
     ) -> None:
         """teardown() should close graph and tracer."""
         mock_graph = AsyncMock()
-        mock_graph_cls.return_value = mock_graph
+        mock_build_projection_store.return_value = mock_graph
         mock_tracer = AsyncMock()
         mock_tracer_cls.return_value = mock_tracer
 
@@ -1777,19 +1793,19 @@ class TestSSEEntrypoint:
     """Tests for the MCP SSE server main_sse() function."""
 
     @patch("uvicorn.Server")
-    @patch("zaxy.mcp_server.GraphStore")
+    @patch("zaxy.mcp_server.build_projection_store")
     @patch("zaxy.mcp_server.MemoryTracer")
     @patch("zaxy.mcp_server.SessionManager")
     async def test_main_sse_setup_and_teardown(
         self,
         mock_session_cls: MagicMock,
         mock_tracer_cls: MagicMock,
-        mock_graph_cls: MagicMock,
+        mock_build_projection_store: MagicMock,
         mock_uvicorn_cls: MagicMock,
     ) -> None:
         """main_sse() should setup server, run uvicorn, and teardown."""
         mock_graph = AsyncMock()
-        mock_graph_cls.return_value = mock_graph
+        mock_build_projection_store.return_value = mock_graph
         mock_tracer = AsyncMock()
         mock_tracer_cls.return_value = mock_tracer
 

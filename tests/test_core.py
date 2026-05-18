@@ -35,6 +35,22 @@ class BrokenEmbeddingProvider:
         raise RuntimeError("embedding down")
 
 
+def test_memory_fabric_constructs_projection_store_through_factory(tmp_path: Path) -> None:
+    """MemoryFabric should use the backend-neutral projection factory."""
+    with (
+        patch("zaxy.core.build_projection_store") as mock_build,
+        patch("zaxy.core.QueryRouter"),
+        patch("zaxy.core.build_reranker", return_value=None),
+        patch("zaxy.core.MemoryTracer"),
+    ):
+        mock_build.return_value = AsyncMock()
+
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+
+    assert fabric.graph is mock_build.return_value
+    assert mock_build.call_args.args[0].backend == "neo4j"
+
+
 async def test_memory_fabric_queries_verbatim_eventloom_sources(tmp_path: Path) -> None:
     """Fabric should expose verbatim source recall without requiring Neo4j."""
     fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
@@ -114,7 +130,7 @@ def fabric() -> MemoryFabric:
     """Return a MemoryFabric with mocked dependencies."""
     with (
         patch("zaxy.core.EventLog") as mock_log_cls,
-        patch("zaxy.core.GraphStore") as mock_graph_cls,
+        patch("zaxy.core.build_projection_store") as mock_build_projection_store,
         patch("zaxy.core.QueryRouter") as mock_router_cls,
         patch("zaxy.core.build_reranker") as mock_build_reranker,
         patch("zaxy.core.MemoryTracer") as mock_tracer_cls,
@@ -129,7 +145,7 @@ def fabric() -> MemoryFabric:
         mock_session_cls.return_value = session_mgr
 
         graph = AsyncMock()
-        mock_graph_cls.return_value = graph
+        mock_build_projection_store.return_value = graph
 
         router = AsyncMock()
         mock_router_cls.return_value = router
@@ -165,7 +181,7 @@ class TestLifecycle:
 
         get_settings.cache_clear()
         with (
-            patch("zaxy.core.GraphStore"),
+            patch("zaxy.core.build_projection_store"),
             patch("zaxy.core.QueryRouter") as mock_router_cls,
             patch("zaxy.core.build_reranker") as mock_build_reranker,
             patch("zaxy.core.MemoryTracer"),
@@ -189,7 +205,7 @@ class TestLifecycle:
 
         get_settings.cache_clear()
         with (
-            patch("zaxy.core.GraphStore"),
+            patch("zaxy.core.build_projection_store"),
             patch("zaxy.core.QueryRouter") as mock_router_cls,
             patch("zaxy.core.build_embedding_provider") as mock_build_embedding_provider,
             patch("zaxy.core.build_reranker") as mock_build_reranker,
@@ -1863,7 +1879,7 @@ class TestContextAssembly:
         )
 
         with (
-            patch("zaxy.core.GraphStore") as mock_graph_cls,
+            patch("zaxy.core.build_projection_store") as mock_build_projection_store,
             patch("zaxy.core.QueryRouter") as mock_router_cls,
             patch("zaxy.core.build_reranker") as mock_build_reranker,
             patch("zaxy.core.build_embedding_provider") as mock_build_embedding_provider,
@@ -1873,7 +1889,7 @@ class TestContextAssembly:
             session_mgr = MagicMock()
             session_mgr.get.return_value.eventlog = MagicMock()
             mock_session_cls.return_value = session_mgr
-            mock_graph_cls.return_value = AsyncMock()
+            mock_build_projection_store.return_value = AsyncMock()
             router = AsyncMock()
             router.query.return_value = []
             mock_router_cls.return_value = router
@@ -1919,7 +1935,7 @@ class TestContextAssembly:
         )
 
         with (
-            patch("zaxy.core.GraphStore") as mock_graph_cls,
+            patch("zaxy.core.build_projection_store") as mock_build_projection_store,
             patch("zaxy.core.QueryRouter") as mock_router_cls,
             patch("zaxy.core.build_reranker") as mock_build_reranker,
             patch("zaxy.core.MemoryTracer") as mock_tracer_cls,
@@ -1928,7 +1944,7 @@ class TestContextAssembly:
             session_mgr = MagicMock()
             session_mgr.get.return_value.eventlog = MagicMock()
             mock_session_cls.return_value = session_mgr
-            mock_graph_cls.return_value = AsyncMock()
+            mock_build_projection_store.return_value = AsyncMock()
             router = AsyncMock()
             router.query.return_value = []
             mock_router_cls.return_value = router
