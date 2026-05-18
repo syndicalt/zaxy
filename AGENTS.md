@@ -348,6 +348,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] MemPalace-comparable benchmark inventory CLI for frozen lane fingerprints, product claims, and required release metrics
 - [x] Full 500-question LongMemEval-compatible hash report with BM25 baseline and no-regression guardrails
 - [x] Skill Memory procedural world-model layer with lifecycle events, checkout routing, MCP helper, docs, and full-set quality guardrail verification
+- [x] Skill Memory outcome analytics for promotion candidates, rollback candidates, and contradiction diagnostics
 - [x] Projection backend contract and Neo4j factory for pgGraph evaluation without changing the default backend
 - [x] Experimental pgGraph adapter behind `PROJECTION_BACKEND=pggraph` for projection, exact search, keyword search, pgvector-backed vector search, invalidation, and traversal, with optional integration coverage
 
@@ -355,12 +356,12 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 | Metric | Value |
 |--------|-------|
-| Tests | 1010 passed, 10 deselected |
+| Tests | 1063 passed, 11 deselected |
 | Coverage | 91.97% |
 | Lint | ruff clean |
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
-| LongMemEval 500 hash | Zaxy checkout mean 0.626, Answer@5 0.608, R@5 0.956, citation coverage 1.000 |
+| LongMemEval 500 hash | Zaxy checkout mean 0.640, Answer@5 0.612, R@5 0.972, citation coverage 1.000, p95 1155.88 ms, p99 2440.32 ms |
 
 ## Next Steps
 
@@ -368,7 +369,6 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 2. Keep same-harness BM25 baselines in every public benchmark report, including latency and returned-token tradeoffs.
 3. Build or document feasible same-harness competitor adapters for MemPalace, Mem0, and Agent Memory; if an adapter is not practical, publish the blocker and keep the result in the external-disclosure table.
 4. Run same-harness pgGraph quality, citation, temporal, latency, and operations comparisons against Neo4j before considering any default-backend change.
-5. Extend Skill Memory outcome tracking with promotion, rollback, and contradiction analytics once the first procedural lane has more real usage history.
-6. Expand clean-repo onboarding and model-facing UAT with fresh Codex and Claude Code workspaces: `zaxy init`, Memory Bootstrap, deterministic capture, Memory Checkout, feedback, and doctor status.
-7. Keep public benchmark scripts fully reproducible from a clean checkout, with cached datasets, archived reports, guardrail commands, and no hidden manual steps.
-8. Use LangGraph and CrewAI native-preview usage to choose the next maintained adapter or model-facing UX hardening target.
+5. Expand clean-repo onboarding and model-facing UAT with fresh Codex and Claude Code workspaces: `zaxy init`, Memory Bootstrap, deterministic capture, Memory Checkout, feedback, and doctor status.
+6. Keep public benchmark scripts fully reproducible from a clean checkout, with cached datasets, archived reports, guardrail commands, and no hidden manual steps.
+7. Use LangGraph and CrewAI native-preview usage to choose the next maintained adapter or model-facing UX hardening target.

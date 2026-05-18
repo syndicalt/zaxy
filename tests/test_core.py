@@ -1287,6 +1287,103 @@ class TestContextAssembly:
         assert "## Applicable Skills" in checkout.prompt
         assert "Write failing test" in checkout.prompt
 
+    def test_memory_checkout_reports_skill_outcome_analytics(self) -> None:
+        """Skill Memory checkout should summarize promotion, rollback, and contradiction signals."""
+        assembly = ContextAssembly(
+            session_id="agent-1",
+            prompt="# Active Memory Working Set",
+            contexts=[
+                Context(
+                    content="Skill Python test-first implementation applies to Python feature work.",
+                    source="graph",
+                    score=0.95,
+                    metadata={
+                        "entity_name": "skill:python-test-first:v2",
+                        "entity_type": "skill_version",
+                        "citation": "eventloom://agent-1/events/10#aaaa",
+                        "skill_id": "python-test-first",
+                        "version": "2",
+                        "status": "validated",
+                        "procedure": ["Write failing test", "Run pytest"],
+                        "applicability": ["Python feature work"],
+                    },
+                ),
+                Context(
+                    content="Outcome for python-test-first passed with high confidence.",
+                    source="graph",
+                    score=0.9,
+                    metadata={
+                        "entity_name": "skill:python-test-first:v2:outcome:12",
+                        "entity_type": "skill_outcome",
+                        "citation": "eventloom://agent-1/events/12#bbbb",
+                        "skill_id": "python-test-first",
+                        "version": "2",
+                        "success_score": 0.96,
+                        "feedback": "used",
+                        "task": "fix benchmark regression",
+                    },
+                ),
+                Context(
+                    content="Skill deploy-cache-check was contradicted after a failed rollout.",
+                    source="graph",
+                    score=0.88,
+                    metadata={
+                        "entity_name": "skill:deploy-cache-check:v1",
+                        "entity_type": "skill_version",
+                        "citation": "eventloom://agent-1/events/18#cccc",
+                        "skill_id": "deploy-cache-check",
+                        "version": "1",
+                        "status": "contradicted",
+                        "failure_modes": ["misses cache invalidation race"],
+                        "rollback": "Use deploy-cache-check v0 until cache race is resolved.",
+                    },
+                ),
+                Context(
+                    content="Outcome for deploy-cache-check failed during release validation.",
+                    source="graph",
+                    score=0.85,
+                    metadata={
+                        "entity_name": "skill:deploy-cache-check:v1:outcome:19",
+                        "entity_type": "skill_outcome",
+                        "citation": "eventloom://agent-1/events/19#dddd",
+                        "skill_id": "deploy-cache-check",
+                        "version": "1",
+                        "success_score": 0.2,
+                        "feedback": "failed",
+                        "task": "release cache validation",
+                    },
+                ),
+            ],
+            working_set={"items": []},
+            context_counts={"graph": 4},
+            replay_event_count=0,
+            compacted=False,
+            warnings=[],
+            assembly_policy={},
+        )
+
+        checkout = build_memory_checkout(query="implement a Python feature", assembly=assembly)
+
+        analytics = checkout.diagnostics["skill_analytics"]
+        assert analytics["outcome_count"] == 2
+        assert analytics["contradiction_count"] == 1
+        assert analytics["promotion_candidates"] == [
+            {
+                "skill_id": "python-test-first",
+                "version": "2",
+                "status": "validated",
+                "success_count": 1,
+                "failure_count": 0,
+                "average_success_score": 0.96,
+                "latest_citation": "eventloom://agent-1/events/12#bbbb",
+            }
+        ]
+        assert analytics["rollback_candidates"][0]["skill_id"] == "deploy-cache-check"
+        assert analytics["rollback_candidates"][0]["reason"] == "contradicted"
+        assert "## Skill Analytics" in checkout.prompt
+        assert "promotion_candidate=python-test-first v2" in checkout.prompt
+        assert "rollback_candidate=deploy-cache-check v1" in checkout.prompt
+
     async def test_checkout_memory_prioritizes_exact_recent_task_context(
         self,
         fabric: MemoryFabric,

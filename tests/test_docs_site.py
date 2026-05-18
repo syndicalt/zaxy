@@ -107,6 +107,9 @@ def test_docs_describe_skill_memory_contract_and_guardrail() -> None:
     assert "SkillVersion" in agent_events
     assert "memory_skill(action, skill_id, ...)" in mcp
     assert "Applicable Skills" in mcp
+    assert "Skill Analytics" in mcp
+    assert "rollback" in agent_events
+    assert "contradiction analytics" in benchmarks
     assert "Skill Memory changes must pass the full 500-question guardrail" in benchmarks
 
 

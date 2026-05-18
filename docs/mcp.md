@@ -83,7 +83,12 @@ when cited context is returned. When applicable Skill Memory is retrieved,
 diagnostics also include a `skills` block and the prompt includes an
 `Applicable Skills` section with cited procedure steps. This lane is read-only:
 models may follow the guidance, but revisions require a new `memory_skill` or
-`memory_append` event. This is the preferred tool when a model needs a
+`memory_append` event. When retrieved skill versions and outcomes include enough
+history, diagnostics also include `skill_analytics` and the prompt includes a
+`Skill Analytics` section. That section reports read-only promotion candidates,
+rollback candidates, contradiction counts, outcome counts, scores, and citations
+so the model can decide whether to apply, avoid, or explicitly revise a skill.
+This is the preferred tool when a model needs a
 bounded, auditable working state rather than a raw list of retrieval hits. The
 response also includes `guidance` with
 model-facing trust and ignore instructions, a recommended follow-up

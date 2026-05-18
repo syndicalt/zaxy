@@ -578,6 +578,8 @@ class MemoryFabric:
                 metadata["entity_name"] = c.entity_name
             if c.entity_type:
                 metadata["entity_type"] = c.entity_type
+            if c.metadata:
+                metadata.update(c.metadata)
             contexts.append(
                 Context(
                     content=c.content,
@@ -1216,6 +1218,9 @@ def build_memory_checkout(
     skills = _checkout_skills(ranked_contexts, query)
     if skills:
         diagnostics = {**diagnostics, "skills": {"count": len(skills), "items": skills}}
+    skill_analytics = _checkout_skill_analytics(ranked_contexts)
+    if skill_analytics["version_count"] or skill_analytics["outcome_count"]:
+        diagnostics = {**diagnostics, "skill_analytics": skill_analytics}
     retrieval_profile = assembly.working_set.get("retrieval_profile")
     if isinstance(retrieval_profile, dict):
         diagnostics = {**diagnostics, "retrieval_profile": retrieval_profile}
@@ -1377,6 +1382,176 @@ def _checkout_skills(contexts: list[Context], query: str, *, limit: int = 3) -> 
         if len(skills) >= limit:
             break
     return skills
+
+
+def _checkout_skill_analytics(contexts: list[Context]) -> dict[str, Any]:
+    """Summarize skill outcome history without mutating Skill Memory."""
+    versions: dict[tuple[str, str], dict[str, Any]] = {}
+    outcomes: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for context in contexts:
+        metadata = context.metadata or {}
+        entity_type = metadata.get("entity_type")
+        if entity_type not in {"skill_version", "skill_outcome"}:
+            continue
+        key = _skill_context_key(metadata)
+        if key is None:
+            continue
+        if entity_type == "skill_version":
+            versions[key] = {
+                "skill_id": key[0],
+                "version": key[1],
+                "status": str(metadata.get("status") or "unknown"),
+                "citation": _context_citation(context),
+                "failure_modes": _metadata_text_list(metadata.get("failure_modes")),
+                "rollback": str(metadata.get("rollback") or "").strip(),
+            }
+        else:
+            outcomes.setdefault(key, []).append(
+                {
+                    "success_score": _optional_float(metadata.get("success_score")),
+                    "feedback": str(metadata.get("feedback") or "").casefold().strip(),
+                    "citation": _context_citation(context),
+                }
+            )
+
+    promotion_candidates: list[dict[str, Any]] = []
+    rollback_candidates: list[dict[str, Any]] = []
+    contradicted_keys = {
+        key for key, version in versions.items() if version["status"] == "contradicted"
+    }
+    for key in sorted(set(versions) | set(outcomes)):
+        version = versions.get(
+            key,
+            {
+                "skill_id": key[0],
+                "version": key[1],
+                "status": "unknown",
+                "citation": "",
+                "failure_modes": [],
+                "rollback": "",
+            },
+        )
+        outcome_items = outcomes.get(key, [])
+        scores = [
+            score
+            for item in outcome_items
+            if (score := item.get("success_score")) is not None
+        ]
+        average_score = round(sum(scores) / len(scores), 4) if scores else None
+        success_count = sum(
+            1
+            for item in outcome_items
+            if _skill_outcome_is_success(item.get("feedback"), item.get("success_score"))
+        )
+        failure_count = sum(
+            1
+            for item in outcome_items
+            if _skill_outcome_is_failure(item.get("feedback"), item.get("success_score"))
+        )
+        latest_citation = _latest_skill_citation(version, outcome_items)
+        status = version["status"]
+        if (
+            status in {"validated", "revised", "outcome_recorded"}
+            and key not in contradicted_keys
+            and success_count > 0
+            and failure_count == 0
+            and (average_score is None or average_score >= 0.8)
+        ):
+            promotion_candidates.append(
+                {
+                    "skill_id": key[0],
+                    "version": key[1],
+                    "status": status,
+                    "success_count": success_count,
+                    "failure_count": failure_count,
+                    "average_success_score": average_score,
+                    "latest_citation": latest_citation,
+                }
+            )
+        rollback_reason = _skill_rollback_reason(status, success_count, failure_count, average_score)
+        if rollback_reason is not None:
+            rollback_candidates.append(
+                {
+                    "skill_id": key[0],
+                    "version": key[1],
+                    "status": status,
+                    "reason": rollback_reason,
+                    "success_count": success_count,
+                    "failure_count": failure_count,
+                    "average_success_score": average_score,
+                    "failure_modes": version["failure_modes"],
+                    "rollback": version["rollback"],
+                    "latest_citation": latest_citation,
+                }
+            )
+
+    return {
+        "version_count": len(versions),
+        "outcome_count": sum(len(items) for items in outcomes.values()),
+        "contradiction_count": len(contradicted_keys),
+        "promotion_candidates": promotion_candidates[:5],
+        "rollback_candidates": rollback_candidates[:5],
+    }
+
+
+def _skill_context_key(metadata: dict[str, Any]) -> tuple[str, str] | None:
+    skill_id = metadata.get("skill_id")
+    entity_name = metadata.get("entity_name")
+    if not isinstance(skill_id, str) or not skill_id:
+        if isinstance(entity_name, str) and entity_name.startswith("skill:"):
+            skill_id = entity_name.removeprefix("skill:").split(":v", 1)[0]
+        else:
+            return None
+    version = str(metadata.get("version") or _skill_version_from_entity(entity_name) or "1")
+    return skill_id, version
+
+
+def _optional_float(value: object) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    return None
+
+
+def _skill_outcome_is_success(feedback: object, score: object) -> bool:
+    normalized = str(feedback or "").casefold().strip()
+    numeric_score = score if isinstance(score, float) else None
+    return normalized in {"used", "helpful", "passed", "success"} or (
+        numeric_score is not None and numeric_score >= 0.8
+    )
+
+
+def _skill_outcome_is_failure(feedback: object, score: object) -> bool:
+    normalized = str(feedback or "").casefold().strip()
+    numeric_score = score if isinstance(score, float) else None
+    return normalized in {"failed", "failure", "irrelevant", "regressed"} or (
+        numeric_score is not None and numeric_score < 0.5
+    )
+
+
+def _latest_skill_citation(version: dict[str, Any], outcomes: list[dict[str, Any]]) -> str:
+    for outcome in reversed(outcomes):
+        citation = outcome.get("citation")
+        if isinstance(citation, str) and citation:
+            return citation
+    citation = version.get("citation")
+    return citation if isinstance(citation, str) else ""
+
+
+def _skill_rollback_reason(
+    status: str,
+    success_count: int,
+    failure_count: int,
+    average_score: float | None,
+) -> str | None:
+    if status in {"contradicted", "deprecated"}:
+        return status
+    if failure_count > success_count:
+        return "failed_outcomes"
+    if average_score is not None and average_score < 0.5:
+        return "low_success_score"
+    return None
 
 
 def _metadata_text_list(value: object) -> list[str]:

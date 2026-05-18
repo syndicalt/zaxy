@@ -69,6 +69,10 @@ class ProjectionStore(Protocol):
         """Search graph neighbors from a starting entity."""
         ...
 
+    async def has_traversal_edges(self, session_id: str = "default") -> bool:
+        """Return whether the session has active graph relationship edges."""
+        ...
+
     async def search_vector(
         self,
         embedding: list[float],

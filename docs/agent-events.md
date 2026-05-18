@@ -184,10 +184,15 @@ Outcome event:
 }
 ```
 
+Contradiction or deprecation events may also include `failure_modes`,
+`rollback`, `contradiction_reason`, and `evidence`. These fields are preserved
+on the `SkillVersion` projection so checkout can identify rollback candidates
+without deleting the old version or changing the active procedure implicitly.
+
 Projection: `Skill` and `SkillVersion` entities linked with `HAS_VERSION`
 style edges, plus lifecycle and outcome entities for application metrics.
 Graph properties preserve procedure, applicability, status, citations, outcome
-evidence, and version identifiers.
+evidence, rollback guidance, contradiction reasons, and version identifiers.
 
 ## Hook Checkpoints
 

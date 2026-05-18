@@ -13,8 +13,10 @@ from zaxy.query import (
     LexicalReranker,
     OpenAICompatibleReranker,
     QueryRouter,
+    _entity_similarity,
     _mmr_rank,
     _prompt_visible_properties,
+    _to_chunk,
     build_reranker,
     build_retention_policy,
 )
@@ -64,6 +66,58 @@ class TestQueryRouting:
         assert results[0].source == "exact"
         assert results[0].score == 1.0
         assert mock_store.search_exact.await_args.kwargs["session_id"] == "agent-1"
+
+    def test_context_chunk_preserves_skill_memory_metadata(self) -> None:
+        """Skill Memory analytics need structured graph properties after query routing."""
+        chunk = _to_chunk(
+            SearchResult(
+                entity=GraphEntity(
+                    name="skill:python-test-first:v2",
+                    entity_type="skill_version",
+                    valid_from="2026-05-17T00:00:00Z",
+                    valid_to=None,
+                    properties={
+                        "skill_id": "python-test-first",
+                        "version": "2",
+                        "status": "validated",
+                        "procedure": ["Write failing test", "Run pytest"],
+                        "success_score": 0.96,
+                    },
+                ),
+                score=0.9,
+                source="keyword",
+            )
+        )
+
+        assert chunk.metadata == {
+            "skill_id": "python-test-first",
+            "version": "2",
+            "status": "validated",
+            "procedure": ["Write failing test", "Run pytest"],
+            "success_score": 0.96,
+        }
+
+    def test_context_chunk_does_not_copy_document_payload_metadata(self) -> None:
+        """Large document payloads should stay in content, not hidden checkout metadata."""
+        chunk = _to_chunk(
+            SearchResult(
+                entity=GraphEntity(
+                    name="doc-1",
+                    entity_type="document",
+                    valid_from="2026-05-17T00:00:00Z",
+                    valid_to=None,
+                    properties={
+                        "content": "large document body" * 500,
+                        "source_path": "docs/large.md",
+                        "sha256": "abc123",
+                    },
+                ),
+                score=0.9,
+                source="keyword",
+            )
+        )
+
+        assert chunk.metadata is None
 
     async def test_keyword_results_included(self, router: QueryRouter, mock_store: AsyncMock) -> None:
         """Keyword hits should be included with keyword weight."""
@@ -179,6 +233,36 @@ class TestQueryRouting:
         assert "keyword" in sources
         assert "traversal" in sources
         assert mock_store.search_traversal.await_args.kwargs["session_id"] == "agent-1"
+
+    async def test_traversal_skipped_when_backend_has_no_relationship_edges(self) -> None:
+        """Routers should not issue per-seed traversal queries against edge-empty projections."""
+        store = AsyncMock()
+        store.search_exact = AsyncMock(return_value=[])
+        store.search_vector = AsyncMock(return_value=[])
+        store.search_keyword = AsyncMock(
+            return_value=[
+                SearchResult(
+                    entity=GraphEntity(
+                        name="session-0001:turn-2",
+                        entity_type="transcript_turn",
+                        valid_from="2024-09-01T00:01:00Z",
+                        valid_to=None,
+                        properties={"summary": "assistant: We decided decision-code-0001."},
+                    ),
+                    score=1.0,
+                    source="keyword",
+                )
+            ]
+        )
+        store.search_traversal = AsyncMock(return_value=[])
+        store.has_traversal_edges = AsyncMock(return_value=False)
+        router = QueryRouter(store=store, default_limit=5, session_id="agent-1")
+
+        results = await router.query("What decision code was recorded in session-0001?")
+
+        assert [result.source for result in results] == ["keyword"]
+        store.has_traversal_edges.assert_awaited_once_with(session_id="agent-1")
+        store.search_traversal.assert_not_awaited()
 
     async def test_direct_traversal_neighbors_from_exact_hits_survive_mmr(
         self,
@@ -909,6 +993,60 @@ class TestQueryRouting:
 
         assert len(ranked) == 5
         assert len(tokenized_names) == len(results)
+
+    def test_entity_similarity_avoids_allocating_set_operations(self) -> None:
+        """MMR similarity should not allocate intersection/union sets for every pair."""
+
+        class NoAllocSet(set[str]):
+            def __and__(self, other: object) -> set[str]:
+                raise AssertionError("intersection allocation should not be used")
+
+            def __or__(self, other: object) -> set[str]:
+                raise AssertionError("union allocation should not be used")
+
+        left = GraphEntity(
+            name="left",
+            entity_type="document",
+            valid_from="2024-01-01T00:00:00Z",
+            valid_to=None,
+            properties={},
+        )
+        right = GraphEntity(
+            name="right",
+            entity_type="document",
+            valid_from="2024-01-01T00:00:00Z",
+            valid_to=None,
+            properties={},
+        )
+        cache = {
+            ("left", "document", "2024-01-01T00:00:00Z"): NoAllocSet({"alpha", "beta", "gamma"}),
+            ("right", "document", "2024-01-01T00:00:00Z"): NoAllocSet({"beta", "gamma", "delta"}),
+        }
+
+        assert _entity_similarity(left, right, cache) == 0.5
+
+    def test_mmr_ranking_updates_similarity_penalties_incrementally(self) -> None:
+        """MMR should not recompute old selected-candidate similarities every round."""
+        results = [
+            SearchResult(
+                entity=GraphEntity(
+                    name=f"memory-{index:04d}",
+                    entity_type="document",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={"summary": f"memory {index} shared context"},
+                ),
+                score=1.0 - (index * 0.01),
+                source="keyword",
+            )
+            for index in range(20)
+        ]
+
+        with patch("zaxy.query._entity_similarity", return_value=0.0) as similarity:
+            ranked = _mmr_rank(results, limit=5)
+
+        assert len(ranked) == 5
+        assert similarity.call_count <= 75
 
     async def test_keyword_query_expansion_adds_domain_synonyms(
         self,

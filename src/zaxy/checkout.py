@@ -236,6 +236,7 @@ def format_memory_checkout_prompt(
     else:
         lines.append("- No cited evidence was retrieved.")
     _append_applicable_skills(lines, diagnostics.get("skills"))
+    _append_skill_analytics(lines, diagnostics.get("skill_analytics"))
     lines.extend(["", "## Checkout Quality"])
     lines.append(f"- Answerability: {quality.get('answerability')}")
     lines.append(f"- Confidence: {quality.get('confidence')}")
@@ -664,6 +665,49 @@ def _append_applicable_skills(lines: list[str], skills: Any) -> None:
         lines.append(f"- {skill_id} v{version} [{status}]{suffix}")
         for step in _text_list(item.get("procedure"))[:5]:
             lines.append(f"  - {step}")
+
+
+def _append_skill_analytics(lines: list[str], analytics: Any) -> None:
+    if not isinstance(analytics, dict):
+        return
+    promotions = analytics.get("promotion_candidates")
+    rollbacks = analytics.get("rollback_candidates")
+    if not isinstance(promotions, list):
+        promotions = []
+    if not isinstance(rollbacks, list):
+        rollbacks = []
+    if not promotions and not rollbacks and not analytics.get("contradiction_count"):
+        return
+    lines.extend(["", "## Skill Analytics"])
+    lines.append(
+        "- "
+        f"outcomes={analytics.get('outcome_count', 0)}; "
+        f"contradictions={analytics.get('contradiction_count', 0)}"
+    )
+    for item in promotions[:3]:
+        if not isinstance(item, dict):
+            continue
+        citation = str(item.get("latest_citation") or "").strip()
+        suffix = f"; citation={citation}" if citation else ""
+        lines.append(
+            "- "
+            f"promotion_candidate={item.get('skill_id')} v{item.get('version')}; "
+            f"successes={item.get('success_count', 0)}; "
+            f"average_success_score={item.get('average_success_score')}"
+            f"{suffix}"
+        )
+    for item in rollbacks[:3]:
+        if not isinstance(item, dict):
+            continue
+        citation = str(item.get("latest_citation") or "").strip()
+        suffix = f"; citation={citation}" if citation else ""
+        lines.append(
+            "- "
+            f"rollback_candidate={item.get('skill_id')} v{item.get('version')}; "
+            f"reason={item.get('reason')}; "
+            f"failures={item.get('failure_count', 0)}"
+            f"{suffix}"
+        )
 
 
 def _int_metric(value: Any) -> int:

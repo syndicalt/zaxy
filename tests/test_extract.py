@@ -314,6 +314,31 @@ class TestSkillMemory:
             for edge in result.edges
         )
 
+    def test_skill_contradicted_preserves_rollback_metadata(self) -> None:
+        """skill.contradicted should keep rollback and contradiction evidence on the version."""
+        ev = _make_event(
+            "skill.contradicted",
+            {
+                "skill_id": "deploy-cache-check",
+                "version": "1",
+                "summary": "Old cache validation process misses invalidation races.",
+                "failure_modes": ["misses cache invalidation race"],
+                "rollback": "Use deploy-cache-check v0 until cache race is resolved.",
+                "contradiction_reason": "Failed release validation after cache race.",
+                "evidence": ["pytest tests/test_release.py::test_cache_race -q"],
+            },
+            actor="agent",
+        )
+
+        result = extract(ev)
+
+        version = next(entity for entity in result.entities if entity.entity_type == "skill_version")
+        assert version.properties["status"] == "contradicted"
+        assert version.properties["failure_modes"] == ["misses cache invalidation race"]
+        assert version.properties["rollback"] == "Use deploy-cache-check v0 until cache race is resolved."
+        assert version.properties["contradiction_reason"] == "Failed release validation after cache race."
+        assert version.properties["evidence"] == ["pytest tests/test_release.py::test_cache_race -q"]
+
 
 class TestTaskClaimed:
     """Tests for task.claimed extractor."""

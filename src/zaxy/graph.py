@@ -229,6 +229,22 @@ class GraphStore(ProjectionStore):
             await self._driver.close()
             self._driver = None
 
+    async def has_traversal_edges(self, session_id: str = "default") -> bool:
+        """Return whether a session has active RELATES edges for traversal."""
+        assert self._driver is not None, "Call connect() first"
+        records, _, _ = await self._driver.execute_query(
+            """
+            MATCH (source:Entity {session_id: $session_id})-[r:RELATES]->(target:Entity {session_id: $session_id})
+            WHERE r.valid_to IS NULL
+              AND source.valid_to IS NULL
+              AND target.valid_to IS NULL
+            RETURN true AS has_edges
+            LIMIT 1
+            """,
+            session_id=validate_session_id(session_id),
+        )
+        return bool(records)
+
     # ------------------------------------------------------------------
     # Schema
     # ------------------------------------------------------------------

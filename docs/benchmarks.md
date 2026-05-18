@@ -58,7 +58,10 @@ because the checkout skill lane shares ranking, evidence selection, prompt
 formatting, and MCP tool surfaces with factual memory. The Skill Memory lane may
 add cited procedural guidance, but it must not lower Zaxy checkout mean score,
 Answer@5, Recall@5, citation coverage, or the archived latency envelope unless a
-new public benchmark report explicitly replaces these floors.
+new public benchmark report explicitly replaces these floors. Skill Memory
+outcome analytics are read-only checkout diagnostics: promotion candidates,
+rollback candidates, and contradiction analytics can guide an agent, but they do
+not revise, delete, or promote a skill without an explicit `skill.*` event.
 
 Projection backend changes must pass the full 500-question guardrail before
 release, because backend swaps can alter exact, keyword, vector, traversal,

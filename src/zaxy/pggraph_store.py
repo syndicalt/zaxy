@@ -463,6 +463,24 @@ class PgGraphStore:
             for row in rows
         ]
 
+    async def has_traversal_edges(self, session_id: str = "default") -> bool:
+        """Return whether a session has active pgGraph edges for traversal."""
+        rows = await self._fetch_all(
+            """
+            SELECT true AS has_edges
+            FROM zaxy_pggraph_edges edge
+            JOIN zaxy_pggraph_entities source ON source.node_key = edge.source_node_key
+            JOIN zaxy_pggraph_entities target ON target.node_key = edge.target_node_key
+            WHERE edge.session_id = %(session_id)s
+              AND edge.valid_to IS NULL
+              AND source.valid_to IS NULL
+              AND target.valid_to IS NULL
+            LIMIT 1
+            """,
+            {"session_id": validate_session_id(session_id)},
+        )
+        return bool(rows)
+
     async def invalidate_entity(
         self,
         name: str,

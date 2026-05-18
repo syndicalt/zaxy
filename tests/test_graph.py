@@ -755,6 +755,17 @@ class TestRetrieval:
         assert "neighbor.session_id = $session_id" in call.args[0]
         assert call.kwargs["session_id"] == "agent-1"
 
+    async def test_has_traversal_edges_checks_active_relates_edges(self, store: GraphStore) -> None:
+        """Traversal capability should reflect active session RELATES edges."""
+        store._driver.execute_query.return_value = ([{"has_edges": True}], None, None)
+
+        assert await store.has_traversal_edges(session_id="agent-1") is True
+
+        call = store._driver.execute_query.await_args
+        assert "RELATES" in call.args[0]
+        assert "r.valid_to IS NULL" in call.args[0]
+        assert call.kwargs["session_id"] == "agent-1"
+
     async def test_search_traversal_crosses_incoming_and_outgoing_edges(
         self,
         store: GraphStore,

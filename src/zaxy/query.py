@@ -130,6 +130,7 @@ class ContextChunk:
     score_explanation: dict[str, Any] | None = None
     entity_name: str | None = None
     entity_type: str | None = None
+    metadata: dict[str, Any] | None = None
 
 
 class LexicalReranker:
@@ -286,6 +287,7 @@ class QueryRouter:
             decay_half_life_days=retention_decay_half_life_days,
             expired_weight=retention_expired_weight,
         )
+        self._traversal_available_by_session: dict[str, bool] = {}
 
     async def query(
         self,
@@ -412,35 +414,36 @@ class QueryRouter:
             keyword_hits=keyword_hits,
             identifier_terms=identifier_terms,
         )
-        for hit in traversal_seeds:
-            try:
-                neighbors = await self.store.search_traversal(
-                    hit.entity.name,
-                    depth=2,
-                    temporal_point=temporal_point,
-                    session_id=scope,
-                )
-            except Exception:
-                get_metrics().record_degraded_operation("query", "traversal_search_unavailable")
-                warnings.append("traversal search unavailable")
-                continue
-            for neighbor in neighbors:
-                if neighbor.name in seen and hit.source != "exact":
+        if traversal_seeds and await self._has_traversal_edges(scope):
+            for hit in traversal_seeds:
+                try:
+                    neighbors = await self.store.search_traversal(
+                        hit.entity.name,
+                        depth=2,
+                        temporal_point=temporal_point,
+                        session_id=scope,
+                    )
+                except Exception:
+                    get_metrics().record_degraded_operation("query", "traversal_search_unavailable")
+                    warnings.append("traversal search unavailable")
                     continue
-                raw_score = _traversal_raw_score(query, hit, neighbor)
-                results.append(
-                    _apply_salience_score(
-                        SearchResult(
-                            entity=neighbor,
-                            score=raw_score * self.fusion_weights["traversal"],
-                            source="traversal",
-                            raw_score=raw_score,
-                            source_weight=self.fusion_weights["traversal"],
-                            scoring_profile=self.scoring_profile.name,
+                for neighbor in neighbors:
+                    if neighbor.name in seen and hit.source != "exact":
+                        continue
+                    raw_score = _traversal_raw_score(query, hit, neighbor)
+                    results.append(
+                        _apply_salience_score(
+                            SearchResult(
+                                entity=neighbor,
+                                score=raw_score * self.fusion_weights["traversal"],
+                                source="traversal",
+                                raw_score=raw_score,
+                                source_weight=self.fusion_weights["traversal"],
+                                scoring_profile=self.scoring_profile.name,
+                            )
                         )
                     )
-                )
-                seen.add(neighbor.name)
+                    seen.add(neighbor.name)
 
         # 5. Deduplicate by (name, type), keep highest score
         best: dict[tuple[str, str], SearchResult] = {}
@@ -463,6 +466,23 @@ class QueryRouter:
         ranked = await self._rank(query, [_with_warnings(r, warnings) for r in filtered], lim)
 
         return [_to_chunk(r) for r in ranked]
+
+    async def _has_traversal_edges(self, session_id: str) -> bool:
+        """Return cached traversal availability, defaulting open for older stores."""
+        cached = self._traversal_available_by_session.get(session_id)
+        if cached is not None:
+            return cached
+        checker = getattr(self.store, "has_traversal_edges", None)
+        if checker is None:
+            self._traversal_available_by_session[session_id] = True
+            return True
+        try:
+            available = bool(await checker(session_id=session_id))
+        except Exception:
+            get_metrics().record_degraded_operation("query", "traversal_capability_unavailable")
+            available = True
+        self._traversal_available_by_session[session_id] = available
+        return available
 
     async def _rank(self, query: str, results: list[SearchResult], limit: int) -> list[SearchResult]:
         candidates = _mmr_rank(
@@ -545,6 +565,7 @@ def _to_chunk(result: SearchResult) -> ContextChunk:
         score_explanation=_score_explanation(result),
         entity_name=ent.name,
         entity_type=ent.entity_type,
+        metadata=_diagnostic_metadata(ent),
     )
 
 
@@ -597,6 +618,33 @@ def _prompt_visible_properties(properties: dict[str, Any], *, limit: int = 3) ->
         if len(selected) >= max(limit, len(priority)):
             break
     return selected
+
+
+def _diagnostic_metadata(entity: GraphEntity) -> dict[str, Any] | None:
+    """Return bounded structured properties needed by downstream diagnostics."""
+    if entity.entity_type not in {"skill_version", "skill_outcome"}:
+        return None
+    allowed_keys = {
+        "applicability",
+        "contradiction_reason",
+        "evidence",
+        "failure_modes",
+        "feedback",
+        "procedure",
+        "rollback",
+        "skill_id",
+        "status",
+        "success_score",
+        "summary",
+        "task",
+        "version",
+    }
+    metadata = {
+        key: value
+        for key, value in entity.properties.items()
+        if key in allowed_keys
+    }
+    return metadata or None
 
 
 def _exact_candidates(query: str) -> list[str]:
@@ -961,20 +1009,28 @@ def _mmr_rank(
         (result.entity.name, result.entity.entity_type, result.entity.valid_from): _entity_tokens(result.entity)
         for result in results
     }
+    max_similarity_by_candidate = [0.0 for _ in candidates]
+    latest_selected: SearchResult | None = None
 
     while candidates and len(selected) < limit:
         if not selected:
             first = candidates.pop(0)
+            max_similarity_by_candidate.pop(0)
             selected.append(replace(first, ranking_score=first.score))
+            latest_selected = first
             continue
+
+        if latest_selected is not None:
+            for index, candidate in enumerate(candidates):
+                max_similarity_by_candidate[index] = max(
+                    max_similarity_by_candidate[index],
+                    _entity_similarity(candidate.entity, latest_selected.entity, token_cache),
+                )
 
         best_index = 0
         best_score = float("-inf")
         for index, candidate in enumerate(candidates):
-            similarity = max(
-                _entity_similarity(candidate.entity, hit.entity, token_cache)
-                for hit in selected
-            )
+            similarity = max_similarity_by_candidate[index]
             ranking_score = (
                 lambda_score * candidate.score
                 - (1.0 - lambda_score) * similarity
@@ -984,7 +1040,10 @@ def _mmr_rank(
                 best_index = index
                 best_score = ranking_score
 
-        selected.append(replace(candidates.pop(best_index), ranking_score=best_score))
+        best = candidates.pop(best_index)
+        max_similarity_by_candidate.pop(best_index)
+        selected.append(replace(best, ranking_score=best_score))
+        latest_selected = best
 
     return selected
 
@@ -1003,7 +1062,14 @@ def _entity_similarity(
         right_tokens = token_cache[(right.name, right.entity_type, right.valid_from)]
     if not left_tokens or not right_tokens:
         return 0.0
-    return len(left_tokens & right_tokens) / len(left_tokens | right_tokens)
+    smaller, larger = (
+        (left_tokens, right_tokens)
+        if len(left_tokens) <= len(right_tokens)
+        else (right_tokens, left_tokens)
+    )
+    intersection_count = sum(1 for token in smaller if token in larger)
+    union_count = len(left_tokens) + len(right_tokens) - intersection_count
+    return intersection_count / union_count if union_count else 0.0
 
 
 def _entity_tokens(entity: GraphEntity) -> set[str]:

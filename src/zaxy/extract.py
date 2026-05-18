@@ -542,6 +542,9 @@ def _skill_entities(
                 "applicability": _string_list(event.payload.get("applicability")),
                 "citations": _string_list(event.payload.get("citations")),
                 "failure_modes": _string_list(event.payload.get("failure_modes")),
+                "rollback": _optional_text(event.payload.get("rollback")),
+                "contradiction_reason": _optional_text(event.payload.get("contradiction_reason")),
+                "evidence": _string_list(event.payload.get("evidence")),
                 "status": status,
             }
         ),

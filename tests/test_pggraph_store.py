@@ -243,6 +243,20 @@ async def test_pggraph_store_search_traversal_uses_pggraph_traverse() -> None:
 
 
 @pytest.mark.asyncio
+async def test_pggraph_store_has_traversal_edges_checks_active_edges() -> None:
+    connection = FakeConnection()
+    connection.cursor_obj.rows = [{"has_edges": True}]
+    store = PgGraphStore("postgresql://test", connection=connection)
+
+    assert await store.has_traversal_edges(session_id="agent-1") is True
+
+    sql, params = connection.statements[-1]
+    assert "zaxy_pggraph_edges" in sql
+    assert "edge.valid_to IS NULL" in sql
+    assert params == {"session_id": "agent-1"}
+
+
+@pytest.mark.asyncio
 async def test_pggraph_store_search_vector_uses_pgvector_cosine_distance() -> None:
     connection = FakeConnection()
     connection.cursor_obj.rows = [
