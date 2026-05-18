@@ -33,6 +33,8 @@ class FakeCursor:
         self.connection.statements.append((sql, params))
 
     async def fetchall(self) -> list[dict[str, Any]]:
+        if self.connection.row_sets:
+            return self.connection.row_sets.pop(0)
         return self.rows
 
 
@@ -42,6 +44,7 @@ class FakeConnection:
     def __init__(self) -> None:
         self.statements: list[tuple[str, object | None]] = []
         self.cursor_obj = FakeCursor(self)
+        self.row_sets: list[list[dict[str, Any]]] = []
         self.commits = 0
         self.closed = False
 
@@ -298,6 +301,110 @@ async def test_pggraph_store_reset_benchmark_projection_clears_projection_tables
     assert "zaxy_pggraph_events" in sql
     assert "graph.build" in sql
     assert connection.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_pggraph_store_inspect_event_projection_status_reports_lag_and_missing_links() -> None:
+    connection = FakeConnection()
+    connection.cursor_obj.rows = [
+        {
+            "event_count": 3,
+            "latest_seq": 3,
+            "latest_hash": "b" * 64,
+            "next_event_edges": 1,
+            "previous_event_edges": 1,
+            "missing_chain_links": 1,
+        }
+    ]
+    store = PgGraphStore("postgresql://test", connection=connection)
+
+    status = await store.inspect_event_projection_status(
+        "agent-1",
+        eventloom_latest_seq=4,
+        eventloom_latest_hash="c" * 64,
+    )
+
+    assert status.session_id == "agent-1"
+    assert status.event_count == 3
+    assert status.latest_seq == 3
+    assert status.latest_hash == "b" * 64
+    assert status.eventloom_latest_seq == 4
+    assert status.eventloom_latest_hash == "c" * 64
+    assert status.projection_lag == 1
+    assert status.latest_hash_matches is False
+    assert status.next_event_edges == 1
+    assert status.previous_event_edges == 1
+    assert status.missing_chain_links == 1
+    assert status.integrity_ok is False
+    sql, params = connection.statements[-1]
+    assert "zaxy_pggraph_events" in sql
+    assert "prev.hash = event.prev_hash" in sql
+    assert params == {"session_id": "agent-1"}
+
+
+@pytest.mark.asyncio
+async def test_pggraph_store_inspect_inferred_edge_status_reports_method_and_evidence_coverage() -> None:
+    connection = FakeConnection()
+    connection.row_sets = [
+        [
+            {
+                "method": "task_completed_decision_citation_v1",
+                "edge_count": 2,
+                "relation_types": ["likely_implemented_decision"],
+                "average_confidence": 0.85,
+                "minimum_confidence": 0.8,
+                "evidence_count": 1,
+                "missing_evidence_count": 1,
+                "missing_source_event_count": 0,
+            },
+            {
+                "method": "unknown",
+                "edge_count": 1,
+                "relation_types": ["likely_informed"],
+                "average_confidence": None,
+                "minimum_confidence": None,
+                "evidence_count": 0,
+                "missing_evidence_count": 1,
+                "missing_source_event_count": 1,
+            },
+        ],
+        [
+            {
+                "source": "task-7",
+                "target": "decision:Use graph audit",
+                "relation_type": "likely_implemented_decision",
+                "confidence": 0.86,
+                "method": "task_completed_decision_citation_v1",
+                "source_event_seq": 12,
+                "source_event_hash": "a" * 64,
+                "evidence_keys": ["evidence_reason", "evidence_source_event_seq"],
+            }
+        ],
+    ]
+    store = PgGraphStore("postgresql://test", connection=connection)
+
+    status = await store.inspect_inferred_edge_status("agent-1", limit=5)
+
+    assert status.session_id == "agent-1"
+    assert status.total_edges == 3
+    assert status.method_count == 2
+    assert status.evidence_count == 1
+    assert status.missing_evidence_count == 2
+    assert status.missing_source_event_count == 1
+    assert status.evidence_coverage == pytest.approx(1 / 3)
+    assert status.methods[0].method == "task_completed_decision_citation_v1"
+    assert status.methods[0].edge_count == 2
+    assert status.methods[0].average_confidence == pytest.approx(0.85)
+    assert status.methods[1].method == "unknown"
+    assert status.samples[0].source == "task-7"
+    assert status.samples[0].evidence_keys == (
+        "evidence_reason",
+        "evidence_source_event_seq",
+    )
+    sql = "\n".join(statement for statement, _params in connection.statements)
+    assert "zaxy_pggraph_edges" in sql
+    assert "jsonb_object_keys(properties)" in sql
+    assert "inferred = true" in sql
 
 
 @pytest.mark.asyncio

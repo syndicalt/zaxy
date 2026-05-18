@@ -5,12 +5,15 @@ from __future__ import annotations
 import json
 import math
 import re
+from decimal import Decimal
 from typing import Any
 
 from zaxy.extract import ExtractionResult
 from zaxy.graph import (
     GraphEntity,
     GraphEventProjectionStatus,
+    GraphInferredEdgeMethodStatus,
+    GraphInferredEdgeSample,
     GraphInferredEdgeStatus,
     SearchResult,
 )
@@ -617,7 +620,85 @@ class PgGraphStore:
         eventloom_latest_hash: str | None = None,
     ) -> GraphEventProjectionStatus:
         """Inspect Eventloom-to-projection integrity."""
-        raise NotImplementedError("pgGraph projection status is not implemented yet")
+        validated_session_id = validate_session_id(session_id)
+        rows = await self._fetch_all(
+            """
+            WITH events AS (
+                SELECT session_id, seq, hash, prev_hash
+                FROM zaxy_pggraph_events
+                WHERE session_id = %(session_id)s
+            ),
+            aggregate AS (
+                SELECT
+                    count(*)::int AS event_count,
+                    max(seq)::bigint AS latest_seq
+                FROM events
+            ),
+            latest AS (
+                SELECT event.hash AS latest_hash
+                FROM events event
+                JOIN aggregate ON event.seq = aggregate.latest_seq
+                LIMIT 1
+            ),
+            chain AS (
+                SELECT
+                    count(*) FILTER (
+                        WHERE event.seq > 1 AND prev.hash IS NOT NULL
+                    )::int AS linked_event_edges,
+                    count(*) FILTER (
+                        WHERE event.seq > 1 AND prev.hash IS NULL
+                    )::int AS missing_chain_links
+                FROM events event
+                LEFT JOIN events prev ON prev.hash = event.prev_hash
+            )
+            SELECT
+                aggregate.event_count,
+                aggregate.latest_seq,
+                latest.latest_hash,
+                chain.linked_event_edges AS next_event_edges,
+                chain.linked_event_edges AS previous_event_edges,
+                chain.missing_chain_links
+            FROM aggregate
+            LEFT JOIN latest ON true
+            CROSS JOIN chain
+            """,
+            {"session_id": validated_session_id},
+        )
+        row = rows[0] if rows else {}
+        event_count = _int_value(row.get("event_count"))
+        latest_seq = _optional_int_value(row.get("latest_seq"))
+        latest_hash = _optional_str_value(row.get("latest_hash"))
+        next_event_edges = _int_value(row.get("next_event_edges"))
+        previous_event_edges = _int_value(row.get("previous_event_edges"))
+        missing_chain_links = _int_value(row.get("missing_chain_links"))
+        projection_lag = (
+            max(0, eventloom_latest_seq - (latest_seq or 0))
+            if eventloom_latest_seq is not None
+            else None
+        )
+        latest_hash_matches = latest_hash == eventloom_latest_hash if eventloom_latest_hash else True
+        expected_edges = max(0, event_count - 1)
+        integrity_ok = (
+            missing_chain_links == 0
+            and latest_hash_matches
+            and (projection_lag is None or projection_lag == 0)
+            and next_event_edges == expected_edges
+            and previous_event_edges == expected_edges
+        )
+        return GraphEventProjectionStatus(
+            session_id=validated_session_id,
+            event_count=event_count,
+            latest_seq=latest_seq,
+            latest_hash=latest_hash,
+            eventloom_latest_seq=eventloom_latest_seq,
+            eventloom_latest_hash=eventloom_latest_hash,
+            projection_lag=projection_lag,
+            latest_hash_matches=latest_hash_matches,
+            next_event_edges=next_event_edges,
+            previous_event_edges=previous_event_edges,
+            missing_chain_links=missing_chain_links,
+            integrity_ok=integrity_ok,
+        )
 
     async def inspect_inferred_edge_status(
         self,
@@ -626,7 +707,102 @@ class PgGraphStore:
         limit: int = 10,
     ) -> GraphInferredEdgeStatus:
         """Inspect inferred-edge audit status."""
-        raise NotImplementedError("pgGraph inferred-edge status is not implemented yet")
+        validated_session_id = validate_session_id(session_id)
+        validated_limit = validate_limit(limit)
+        method_rows = await self._fetch_all(
+            """
+            WITH inferred AS (
+                SELECT
+                    relation_type,
+                    confidence,
+                    coalesce(inference_method, 'unknown') AS method,
+                    source_event_seq,
+                    source_event_hash,
+                    coalesce(
+                        (
+                            SELECT array_agg(key ORDER BY key)
+                            FROM jsonb_object_keys(properties) AS key
+                            WHERE key LIKE 'evidence_%'
+                        ),
+                        ARRAY[]::text[]
+                    ) AS evidence_keys
+                FROM zaxy_pggraph_edges
+                WHERE session_id = %(session_id)s
+                  AND inferred = true
+            )
+            SELECT
+                method,
+                count(*)::int AS edge_count,
+                array_agg(DISTINCT relation_type ORDER BY relation_type) AS relation_types,
+                avg(confidence)::float AS average_confidence,
+                min(confidence)::float AS minimum_confidence,
+                count(*) FILTER (WHERE cardinality(evidence_keys) > 0)::int AS evidence_count,
+                count(*) FILTER (WHERE cardinality(evidence_keys) = 0)::int AS missing_evidence_count,
+                count(*) FILTER (
+                    WHERE source_event_seq IS NULL OR source_event_hash IS NULL
+                )::int AS missing_source_event_count
+            FROM inferred
+            GROUP BY method
+            ORDER BY edge_count DESC, method ASC
+            """,
+            {"session_id": validated_session_id},
+        )
+        sample_rows = await self._fetch_all(
+            """
+            WITH inferred AS (
+                SELECT
+                    source_name AS source,
+                    target_name AS target,
+                    relation_type,
+                    confidence,
+                    coalesce(inference_method, 'unknown') AS method,
+                    source_event_seq,
+                    source_event_hash,
+                    coalesce(
+                        (
+                            SELECT array_agg(key ORDER BY key)
+                            FROM jsonb_object_keys(properties) AS key
+                            WHERE key LIKE 'evidence_%'
+                        ),
+                        ARRAY[]::text[]
+                    ) AS evidence_keys
+                FROM zaxy_pggraph_edges
+                WHERE session_id = %(session_id)s
+                  AND inferred = true
+            )
+            SELECT
+                source,
+                target,
+                relation_type,
+                confidence,
+                method,
+                source_event_seq,
+                source_event_hash,
+                evidence_keys
+            FROM inferred
+            ORDER BY source_event_seq DESC NULLS LAST, source ASC, target ASC
+            LIMIT %(limit)s
+            """,
+            {"session_id": validated_session_id, "limit": validated_limit},
+        )
+        methods = tuple(_row_to_inferred_edge_method(row) for row in method_rows)
+        samples = tuple(_row_to_inferred_edge_sample(row) for row in sample_rows)
+        total_edges = sum(method.edge_count for method in methods)
+        evidence_count = sum(method.evidence_count for method in methods)
+        missing_evidence_count = sum(method.missing_evidence_count for method in methods)
+        missing_source_event_count = sum(method.missing_source_event_count for method in methods)
+        evidence_coverage = evidence_count / total_edges if total_edges else 1.0
+        return GraphInferredEdgeStatus(
+            session_id=validated_session_id,
+            total_edges=total_edges,
+            method_count=len(methods),
+            evidence_count=evidence_count,
+            missing_evidence_count=missing_evidence_count,
+            missing_source_event_count=missing_source_event_count,
+            evidence_coverage=evidence_coverage,
+            methods=methods,
+            samples=samples,
+        )
 
     def _require_connection(self) -> Any:
         if self._connection is None:
@@ -683,6 +859,78 @@ def _properties_from_row(row: dict[str, Any]) -> dict[str, Any]:
         if isinstance(decoded, dict):
             return decoded
     return {}
+
+
+def _row_to_inferred_edge_method(row: dict[str, Any]) -> GraphInferredEdgeMethodStatus:
+    relation_types = row.get("relation_types") or []
+    if not isinstance(relation_types, list | tuple):
+        relation_types = []
+    return GraphInferredEdgeMethodStatus(
+        method=str(row.get("method") or "unknown"),
+        edge_count=_int_value(row.get("edge_count")),
+        relation_types=tuple(str(relation_type) for relation_type in relation_types),
+        average_confidence=_optional_float_value(row.get("average_confidence")),
+        minimum_confidence=_optional_float_value(row.get("minimum_confidence")),
+        evidence_count=_int_value(row.get("evidence_count")),
+        missing_evidence_count=_int_value(row.get("missing_evidence_count")),
+        missing_source_event_count=_int_value(row.get("missing_source_event_count")),
+    )
+
+
+def _row_to_inferred_edge_sample(row: dict[str, Any]) -> GraphInferredEdgeSample:
+    evidence_keys = row.get("evidence_keys") or []
+    if not isinstance(evidence_keys, list | tuple):
+        evidence_keys = []
+    return GraphInferredEdgeSample(
+        source=str(row.get("source") or ""),
+        target=str(row.get("target") or ""),
+        relation_type=str(row.get("relation_type") or ""),
+        confidence=_optional_float_value(row.get("confidence")),
+        method=str(row.get("method") or "unknown"),
+        source_event_seq=_optional_int_value(row.get("source_event_seq")),
+        source_event_hash=_optional_str_value(row.get("source_event_hash")),
+        evidence_keys=tuple(sorted(str(key) for key in evidence_keys)),
+    )
+
+
+def _int_value(value: object) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if value is None:
+        return 0
+    if isinstance(value, float | Decimal | str):
+        return int(value)
+    raise TypeError(f"expected int-compatible value, got {type(value).__name__}")
+
+
+def _optional_int_value(value: object) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float | Decimal | str):
+        return int(value)
+    raise TypeError(f"expected int-compatible value, got {type(value).__name__}")
+
+
+def _optional_str_value(value: object) -> str | None:
+    if value is None:
+        return None
+    return str(value)
+
+
+def _optional_float_value(value: object) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return float(value)
+    if isinstance(value, int | float | Decimal):
+        return float(value)
+    return float(str(value))
 
 
 def _pgvector_literal(embedding: list[float] | None) -> str | None:
