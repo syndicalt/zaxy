@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LLM Packet Analyzer - Zaxy Docs</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../index.html">Overview</a>
+      <a href="getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="llm-packet-analyzer">LLM Packet Analyzer</h1>
+      <p>Zaxy can run an observe-only OpenAI-compatible packet analyzer. This is optional diagnostic/high-fidelity capture, not the default memory path. The analyzer forwards each request to one configured upstream endpoint and records request/response provenance to Eventloom, so it can consume provider quota and requires the runtime and upstream to support the same wire API.</p>
+      <pre><code class="language-bash">zaxy packet-analyzer \
+  --upstream-base-url https://api.openai.com/v1 \
+  --upstream-api-key &quot;$OPENAI_API_KEY&quot; \
+  --eventloom-path .eventloom \
+  --session-id zaxy-default \
+  --host 127.0.0.1 \
+  --port 8787</code></pre>
+      <p>Point an OpenAI-compatible client at <code>http://127.0.0.1:8787/v1</code>. The analyzer streams upstream response chunks back to the client, then appends an <code>llm.packet.completed</code> event with:</p>
+      <ul>
+        <li>provider path, method, status code, model, and usage counts;</li>
+        <li>request and response hashes;</li>
+        <li>captured request/response JSON bodies;</li>
+        <li>a small allowlist of non-secret headers.</li>
+      </ul>
+      <p>The append is handled by a background Eventloom writer after the response body is observed. Expensive work such as graph projection, embeddings, consolidation, and memory summarization should run from the cold path after packet capture, not in the request forwarding path.</p>
+      <h2 id="cold-path-projection">Cold-Path Projection</h2>
+      <p>Default <code>zaxy init</code> uses deterministic capture through MCP lifecycle events, observer hooks, transcript turns, command/file observations, and <code>memory_checkout</code>. To include packet capture commands in first-run onboarding output, opt in explicitly:</p>
+      <pre><code class="language-bash">zaxy init . --capture-mode packet
+# or: zaxy init . --capture-mode hybrid</code></pre>
+      <p>Run the projection worker separately to turn completed packet captures into compact, retrieval-ready <code>llm.packet.projected</code> events:</p>
+      <pre><code class="language-bash">zaxy packet-project \
+  --eventloom-path .eventloom \
+  --session-id zaxy-default</code></pre>
+      <p>For a local supervisor or terminal session, run the same worker in watch mode:</p>
+      <pre><code class="language-bash">zaxy packet-project \
+  --eventloom-path .eventloom \
+  --session-id zaxy-default \
+  --watch</code></pre>
+      <p>Add <code>--graph</code> when Neo4j is available and the worker should upsert each newly projected packet immediately:</p>
+      <pre><code class="language-bash">zaxy packet-project \
+  --eventloom-path .eventloom \
+  --session-id zaxy-default \
+  --graph</code></pre>
+      <p>Projection is idempotent by source event hash. It extracts bounded request and response summaries, preserves the source packet sequence and hash, and leaves the raw packet capture available for audit replay.</p>
+      <p>Projected packets participate in source-aware retrieval as <code>packet_projection</code> context. Context assembly can cite the projection event back to Eventloom and include it in the active memory working set as <code>memory</code>. By default, one recent projected packet memory can be selected proactively during context assembly via <code>CONTEXT_PACKET_MEMORY_ENABLED=true</code> and <code>CONTEXT_PACKET_MEMORY_SLOTS=1</code>. Packet memories reinforced through context feedback receive a deterministic selection boost over merely recent packet memories while keeping the original packet and projection events immutable.</p>
+      <p><code>zaxy doctor</code> reports packet-memory status for the active session. It warns when captured packets have not been projected yet, and <code>zaxy init</code> includes optional next steps for starting both the analyzer and projector. The doctor report also prints counters for <code>captured</code>, <code>projected</code>, <code>unprojected</code>, <code>reinforced</code>, and currently <code>eligible</code> packet memories.</p>
+      <p>For focused inspection without the full doctor report:</p>
+      <pre><code class="language-bash">zaxy packet-status \
+  --eventloom-path .eventloom \
+  --session-id zaxy-default</code></pre>
+      <p>When no packets have been captured yet, <code>packet-status</code> prints concrete analyzer and projector commands plus the local OpenAI-compatible base URL to configure in the client.</p>
+      <h2 id="modes">Modes</h2>
+      <p>The first implementation is observe-only. It does not inject memory, choose a model, retry provider calls, or transform responses. Future modes can add cached memory injection while keeping live retrieval and graph writes out of the hot path.</p>
+    </article>
+  </main>
+</body>
+</html>

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Operations - Zaxy Docs</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../index.html">Overview</a>
+      <a href="getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="operations">Operations</h1>
+      <p>Zaxy operations center on four tasks: keep Eventloom logs durable, keep Neo4j healthy, validate deployments before exposure, and preserve enough observability to debug memory behavior. The full incident checklist remains in <a href="runbook.html">runbook.md</a>; this page is the day-to-day operator summary.</p>
+      <p>Backups should include Eventloom logs, relevant configuration, and any Neo4j data that is expensive to rebuild. Eventloom is the required source of truth. Neo4j can be rebuilt by replay, but backing it up can reduce recovery time for large deployments. Use <code>scripts/backup.sh</code> and <code>scripts/restore.sh</code> for tested local archive flows.</p>
+      <p>Log rotation is available through <code>scripts/rotate-logs.sh</code>. Rotation should not discard active history until backups are verified. After rotation, run replay on the archived log to confirm hash-chain integrity. A corrupted archive is not a backup.</p>
+      <p>Deployment validation is run with:</p>
+      <pre><code class="language-bash">scripts/validate-deployment.sh --root .</code></pre>
+      <p>This checks production mode, Neo4j TLS configuration, remote MCP auth, and secret-file permissions. The broader release gate is:</p>
+      <pre><code class="language-bash">scripts/release-check.sh --root .</code></pre>
+      <p>That gate runs ruff, mypy, pytest with coverage, package artifact validation, documentation validation, and deployment validation.</p>
+      <p>PyPI publishing is handled by the <code>Publish Python Package</code> GitHub Actions workflow. Publish a GitHub release after the release gate passes; the workflow builds artifacts, checks them with Twine, and uploads the <code>zaxy-memory</code> distribution using the <code>PYPI_API_TOKEN</code> repository secret.</p>
+      <p>Metrics are exposed through the Prometheus collector when enabled. Track append counts, query counts, query latency, graph upserts, and invalidations. Sudden changes in query latency often mean index health, vector settings, or traversal fanout changed.</p>
+      <p>Graceful degradation is tracked separately through <code>zaxy_degraded_operations_total{operation,reason}</code>. Alert on sustained increases for <code>graph_unavailable</code>, <code>graph_retrieval_unavailable</code>, <code>graph_projection_unavailable</code>, <code>embedding_provider_unavailable</code>, <code>vector_search_unavailable</code>, and <code>reranker_unavailable</code>. Fallbacks keep agents working, but any nonzero production rate means an operator should verify graph health, embedding credentials, vector indexes, and reranker endpoints.</p>
+      <p>Pathlight tracing is optional but recommended for production debugging. It gives span-level visibility into append, query, replay, and invalidate operations. Pathlight is not the storage layer; it is the inspection layer. If tracing is down, memory operations should continue.</p>
+      <p>Related documents: <a href="deployment.html">deployment.md</a>, <a href="security.html">security.md</a>, <a href="configuration.html">configuration.md</a>, <a href="testing.html">testing.md</a>, and <a href="../README.html">README.md</a>. Public product positioning is in <a href="../index.html">site/index.html</a>.</p>
+    </article>
+  </main>
+</body>
+</html>

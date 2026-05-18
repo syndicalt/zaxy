@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Event Taxonomy - Zaxy Docs</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../index.html">Overview</a>
+      <a href="getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="agent-event-taxonomy">Agent Event Taxonomy</h1>
+      <p>Zaxy retrieves best when agents emit typed events with stable payload fields. These built-in event shapes are deterministic, searchable, and replayable. Events may also carry optional retrieval-retention metadata such as <code>expires_at</code>, <code>importance</code>, <code>last_reinforced_at</code>, and <code>reinforcement_count</code>. Retention policies use this metadata only while ranking or filtering retrieved context; they do not mutate the underlying Eventloom record. Built-in extractors project this metadata for goals, tasks, decisions, context policies, and unknown fallback events.</p>
+      <h2 id="decisions">Decisions</h2>
+      <p>Use <code>decision.made</code> for durable choices.</p>
+      <pre><code class="language-json">{
+  &quot;decision&quot;: &quot;Preserve previous chat as a structured Eventloom trace.&quot;,
+  &quot;summary&quot;: &quot;Optional short context.&quot;,
+  &quot;rationale&quot;: [&quot;Typed events are replayable.&quot;, &quot;Raw transcript remains available.&quot;],
+  &quot;alternatives_considered&quot;: [&quot;Do nothing&quot;, &quot;Store the raw transcript&quot;]
+}</code></pre>
+      <p>Projection: <code>decision</code> entity linked from the actor with <code>made_decision</code>.</p>
+      <h2 id="diagnosed-issues">Diagnosed Issues</h2>
+      <p>Use <code>issue.diagnosed</code> after root cause is known. Avoid recording speculative hypotheses as diagnosed issues.</p>
+      <pre><code class="language-json">{
+  &quot;issue&quot;: &quot;memory_query returned no results for recent decisions&quot;,
+  &quot;root_cause&quot;: &quot;Decision payload text was not projected into graph summaries.&quot;,
+  &quot;evidence&quot;: [&quot;memory_replay showed the event existed&quot;, &quot;Exact event lookup worked&quot;],
+  &quot;fix&quot;: &quot;Add typed extractors and reproject Eventloom.&quot;
+}</code></pre>
+      <p>Projection: <code>issue</code> entity with <code>status=diagnosed</code>, linked from the actor with <code>diagnosed_issue</code>.</p>
+      <h2 id="verification">Verification</h2>
+      <p>Use <code>verification.recorded</code> for test, lint, build, smoke, and operational checks that should survive handoff.</p>
+      <pre><code class="language-json">{
+  &quot;command&quot;: &quot;pytest --no-cov -m \&quot;not integration\&quot;&quot;,
+  &quot;outcome&quot;: &quot;passed&quot;,
+  &quot;summary&quot;: &quot;382 passed, 5 deselected&quot;,
+  &quot;evidence&quot;: [&quot;exit code 0&quot;, &quot;ruff clean&quot;]
+}</code></pre>
+      <p>Projection: <code>verification</code> entity with <code>outcome</code>, linked from the actor with <code>recorded_verification</code>.</p>
+      <h2 id="handoffs">Handoffs</h2>
+      <p>Use <code>handoff.created</code> when a session, subagent, or branch needs compact state for a future agent.</p>
+      <pre><code class="language-json">{
+  &quot;title&quot;: &quot;optional stable handoff title&quot;,
+  &quot;summary&quot;: &quot;Zaxy MCP is online with temporal memory.&quot;,
+  &quot;next_steps&quot;: [&quot;Add remote MCP rate limiting&quot;, &quot;Add local-first embedding setup&quot;],
+  &quot;risks&quot;: [&quot;Pathlight traces are currently sparse&quot;]
+}</code></pre>
+      <p>Projection: <code>handoff</code> entity with <code>status=created</code>, linked from the actor with <code>created_handoff</code>.</p>
+      <h2 id="policies">Policies</h2>
+      <p>Use <code>context.policy</code> for standing project/session guidance that should shape future behavior. If the instruction should apply to all agents in the repo, also consider updating <code>AGENTS.md</code>.</p>
+      <pre><code class="language-json">{
+  &quot;source&quot;: &quot;AGENTS.md&quot;,
+  &quot;project&quot;: &quot;Zaxy&quot;,
+  &quot;status&quot;: &quot;Active project guidance loaded from resumed chat context.&quot;,
+  &quot;instructions&quot;: [&quot;Write tests first.&quot;, &quot;Do not store secrets in Eventloom.&quot;]
+}</code></pre>
+      <p>Projection: <code>context_policy</code> entity linked from the actor with <code>set_context_policy</code>.</p>
+      <h2 id="reinforcement">Reinforcement</h2>
+      <p>Use <code>memory.reinforced</code> when a still-relevant memory should resist decay. This does not rewrite the original event; it appends a new event that projects ranking metadata onto the named entity.</p>
+      <pre><code class="language-json">{
+  &quot;entity_name&quot;: &quot;Use event-sourced retention metadata.&quot;,
+  &quot;entity_type&quot;: &quot;decision&quot;,
+  &quot;summary&quot;: &quot;Still relevant after roadmap review.&quot;,
+  &quot;importance&quot;: 0.9,
+  &quot;reinforcement_count&quot;: 3
+}</code></pre>
+      <p>Projection: target entity with <code>last_reinforced_at</code>, <code>reinforcement_count</code>, and optional <code>importance</code>, linked from the actor with <code>reinforced_memory</code>. Packet-memory reinforcement may also carry <code>source_kind=packet_projection</code>, <code>source_event_seq</code>, <code>source_event_hash</code>, <code>provider_path</code>, and <code>model</code> so the reinforcement remains tied to the captured packet provenance.</p>
+      <p>Retention fields are intentionally small and typed:</p>
+      <ul>
+        <li><code>expires_at</code>: ISO-8601 timestamp after which <code>filter_expired</code> hides a result.</li>
+        <li><code>importance</code>: float from <code>0.0</code> to <code>1.0</code> used by decay scoring.</li>
+        <li><code>last_reinforced_at</code>: ISO-8601 timestamp used as decay age reference.</li>
+        <li><code>reinforcement_count</code>: positive integer that adds a bounded decay boost.</li>
+      </ul>
+      <p>Use <code>memory.feedback</code> for audit-only retrieval feedback that should not update retention metadata. <code>MemoryFabric.record_context_feedback(..., feedback=&quot;irrelevant&quot;)</code> emits this event.</p>
+      <pre><code class="language-json">{
+  &quot;entity_name&quot;: &quot;Outdated deployment note&quot;,
+  &quot;entity_type&quot;: &quot;decision&quot;,
+  &quot;feedback&quot;: &quot;irrelevant&quot;,
+  &quot;source&quot;: &quot;keyword&quot;,
+  &quot;score&quot;: 0.42,
+  &quot;citation&quot;: &quot;eventloom://agent-1/events/42#abcdef123456&quot;
+}</code></pre>
+      <p>Projection: unknown-event fallback today, preserving the feedback as an Eventloom-backed audit record without deleting, invalidating, or downranking the target entity.</p>
+      <h2 id="skill-memory">Skill Memory</h2>
+      <p>Use <code>skill.*</code> events for procedural memory that should be retrieved as applicable guidance, not mixed into factual truth. Checkout is read-only: agents must append an explicit lifecycle event to change a skill.</p>
+      <p>Supported lifecycle events:</p>
+      <ul>
+        <li><code>skill.proposed</code>: draft a new skill version.</li>
+        <li><code>skill.validated</code>: mark a version as trusted by cited evidence.</li>
+        <li><code>skill.revised</code>: add a new version that supersedes prior guidance.</li>
+        <li><code>skill.deprecated</code>: stop recommending a skill version.</li>
+        <li><code>skill.contradicted</code>: record evidence that a skill no longer holds.</li>
+        <li><code>skill.applied</code>: record that a skill was used on a task.</li>
+        <li><code>skill.outcome_recorded</code>: record success, failure, and evidence after use.</li>
+      </ul>
+      <p>Skill definition event:</p>
+      <pre><code class="language-json">{
+  &quot;skill_id&quot;: &quot;python-test-first&quot;,
+  &quot;name&quot;: &quot;Python test-first implementation&quot;,
+  &quot;version&quot;: &quot;1&quot;,
+  &quot;summary&quot;: &quot;Write the failing pytest before implementation.&quot;,
+  &quot;procedure&quot;: [&quot;Write focused failing test&quot;, &quot;Run pytest&quot;, &quot;Implement minimum code&quot;],
+  &quot;applicability&quot;: [&quot;Python feature work&quot;, &quot;bug fixes&quot;],
+  &quot;citations&quot;: [&quot;eventloom://agent-1/events/12#abcdef123456&quot;]
+}</code></pre>
+      <p>Outcome event:</p>
+      <pre><code class="language-json">{
+  &quot;skill_id&quot;: &quot;python-test-first&quot;,
+  &quot;version&quot;: &quot;1&quot;,
+  &quot;task&quot;: &quot;fix retrieval scoring&quot;,
+  &quot;success_score&quot;: 0.95,
+  &quot;feedback&quot;: &quot;used&quot;,
+  &quot;evidence&quot;: [&quot;pytest tests/test_query.py::test_scoring -q&quot;]
+}</code></pre>
+      <p>Contradiction or deprecation events may also include <code>failure_modes</code>, <code>rollback</code>, <code>contradiction_reason</code>, and <code>evidence</code>. These fields are preserved on the <code>SkillVersion</code> projection so checkout can identify rollback candidates without deleting the old version or changing the active procedure implicitly.</p>
+      <p>Projection: <code>Skill</code> and <code>SkillVersion</code> entities linked with <code>HAS_VERSION</code> style edges, plus lifecycle and outcome entities for application metrics. Graph properties preserve procedure, applicability, status, citations, outcome evidence, rollback guidance, contradiction reasons, and version identifiers.</p>
+      <h2 id="hook-checkpoints">Hook Checkpoints</h2>
+      <p>Use <code>hook.checkpoint</code> for observer-hook milestones that should remain searchable during future context assembly.</p>
+      <pre><code class="language-json">{
+  &quot;trigger&quot;: &quot;checkpoint&quot;,
+  &quot;source&quot;: &quot;codex&quot;,
+  &quot;summary&quot;: &quot;Finished hook install mode.&quot;,
+  &quot;reason&quot;: &quot;manual&quot;,
+  &quot;turn_count&quot;: 7,
+  &quot;workspace&quot;: &quot;/repo&quot;
+}</code></pre>
+      <p>Projection: <code>hook_checkpoint</code> entity linked from the session with <code>recorded_checkpoint</code>. The summary is indexed for retrieval, while source, reason, turn count, and workspace remain structured graph properties.</p>
+      <h2 id="lifecycle-hooks">Lifecycle Hooks</h2>
+      <p>Use lifecycle events for automatic capture around agent execution. These events store durable metadata and bounded summaries, not raw tool arguments, full command output, or source file bodies.</p>
+      <p>Tool call completion:</p>
+      <pre><code class="language-json">{
+  &quot;tool_name&quot;: &quot;shell&quot;,
+  &quot;status&quot;: &quot;succeeded&quot;,
+  &quot;session_id&quot;: &quot;zaxy-default&quot;,
+  &quot;call_id&quot;: &quot;call-123&quot;,
+  &quot;arguments_redacted&quot;: true,
+  &quot;argument_keys&quot;: [&quot;cmd&quot;],
+  &quot;result_summary&quot;: &quot;443 passed&quot;
+}</code></pre>
+      <p>Projection: <code>tool_call</code> entity linked from the session with <code>completed_tool_call</code>.</p>
+      <p>Command completion:</p>
+      <pre><code class="language-json">{
+  &quot;command&quot;: &quot;pytest -m \&quot;not integration\&quot; --benchmark-disable --no-cov&quot;,
+  &quot;exit_code&quot;: 0,
+  &quot;outcome&quot;: &quot;passed&quot;,
+  &quot;session_id&quot;: &quot;zaxy-default&quot;,
+  &quot;duration_ms&quot;: 2600,
+  &quot;stdout_excerpt&quot;: &quot;443 passed, 5 deselected&quot;,
+  &quot;stderr_excerpt&quot;: &quot;&quot;
+}</code></pre>
+      <p>Projection: <code>command_run</code> entity linked from the session with <code>completed_command</code>.</p>
+      <p>File edit application:</p>
+      <pre><code class="language-json">{
+  &quot;path&quot;: &quot;src/zaxy/core.py&quot;,
+  &quot;operation&quot;: &quot;modified&quot;,
+  &quot;session_id&quot;: &quot;zaxy-default&quot;,
+  &quot;summary&quot;: &quot;Added lifecycle hook.&quot;,
+  &quot;line_count&quot;: 12
+}</code></pre>
+      <p>Projection: <code>file_edit</code> entity linked from the session with <code>applied_file_edit</code>.</p>
+      <p>Compaction completion:</p>
+      <pre><code class="language-json">{
+  &quot;session_id&quot;: &quot;zaxy-default&quot;,
+  &quot;mode&quot;: &quot;rewrite&quot;,
+  &quot;status&quot;: &quot;succeeded&quot;,
+  &quot;log_path&quot;: &quot;.eventloom/zaxy-default.jsonl&quot;,
+  &quot;event_count&quot;: 120,
+  &quot;output_path&quot;: &quot;.eventloom/zaxy-default.jsonl&quot;,
+  &quot;snapshot_path&quot;: &quot;.eventloom/zaxy-default.snapshot-120.json&quot;
+}</code></pre>
+      <p>Projection: <code>compaction_run</code> entity linked from the session with <code>completed_compaction</code>.</p>
+      <p>Subagent completion:</p>
+      <pre><code class="language-json">{
+  &quot;parent_session_id&quot;: &quot;main&quot;,
+  &quot;subagent_session_id&quot;: &quot;worker-1&quot;,
+  &quot;status&quot;: &quot;succeeded&quot;,
+  &quot;summary&quot;: &quot;Worker finished retrieval.&quot;
+}</code></pre>
+      <p>Projection: <code>subagent_run</code> entity linked from the parent session with <code>completed_subagent</code>.</p>
+      <p>Session end:</p>
+      <pre><code class="language-json">{
+  &quot;session_id&quot;: &quot;zaxy-default&quot;,
+  &quot;reason&quot;: &quot;teardown&quot;,
+  &quot;status&quot;: &quot;succeeded&quot;
+}</code></pre>
+      <p>Projection: <code>session_end</code> entity linked from the session with <code>ended_session</code>.</p>
+      <h2 id="unknown-events">Unknown Events</h2>
+      <p>Unknown event types still project as <code>event</code> entities. Zaxy includes safe top-level scalar and list payload text in their summaries, while skipping common secret-bearing keys and nested objects. Add a typed extractor when an unknown event becomes part of a public or repeated taxonomy.</p>
+      <p>Related pages: <a href="eventloom.html">eventloom.md</a>, <a href="retrieval.html">retrieval.md</a>, <a href="api.html">api.md</a>, and <a href="../README.html">../README.md</a>.</p>
+    </article>
+  </main>
+</body>
+</html>

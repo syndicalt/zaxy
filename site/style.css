@@ -516,6 +516,86 @@ footer a {
   margin-left: 14px;
 }
 
+.doc-page {
+  background: white;
+}
+
+.doc-layout {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 56px 24px 88px;
+}
+
+.doc-content {
+  border: 0;
+  padding: 0;
+}
+
+.doc-content h1 {
+  font-size: 48px;
+  line-height: 1.08;
+}
+
+.doc-content h2 {
+  margin-top: 42px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  font-size: 30px;
+}
+
+.doc-content h3 {
+  margin-top: 28px;
+}
+
+.doc-content p,
+.doc-content li,
+.doc-content blockquote,
+.doc-content td,
+.doc-content th {
+  line-height: 1.65;
+}
+
+.doc-content p,
+.doc-content li,
+.doc-content blockquote,
+.doc-content td {
+  color: var(--muted);
+}
+
+.doc-content pre {
+  margin: 18px 0;
+  background: #102117;
+  color: #e8f4eb;
+  border-color: #102117;
+}
+
+.doc-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 18px 0;
+  border: 1px solid var(--line);
+}
+
+.doc-content th,
+.doc-content td {
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.doc-content th {
+  color: var(--ink);
+  background: var(--band);
+}
+
+.doc-content blockquote {
+  margin: 18px 0;
+  padding: 12px 18px;
+  border-left: 4px solid var(--accent);
+  background: var(--paper);
+}
+
 @media (max-width: 900px) {
   .nav {
     align-items: flex-start;

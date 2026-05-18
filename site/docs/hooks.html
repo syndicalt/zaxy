@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Hook Protocol - Zaxy Docs</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../index.html">Overview</a>
+      <a href="getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="hook-protocol">Hook Protocol</h1>
+      <p>Zaxy hooks are observer adapters. Agents and tools execute normally; hooks only record lifecycle checkpoints into Eventloom. This keeps Zaxy out of the execution path while preserving durable provenance for session boundaries, checkpoints, and compaction.</p>
+      <p>Generate client-specific adapter config:</p>
+      <pre><code class="language-bash">zaxy hooks claude-code --eventloom-path .eventloom --domain my-project
+zaxy hooks codex --eventloom-path .eventloom --domain my-project</code></pre>
+      <p>For Codex, the preferred deterministic path is not provider packet capture and not an assumed project-local hook schema. <code>zaxy init --preset local-codex</code> writes <code>.codex/zaxy-capture.json</code>, then <code>zaxy capture start --workspace .</code> starts a managed watcher that imports Codex&#x27;s own local session JSONL into Eventloom as normalized transcript, tool-call, command, and file-edit observations. This keeps capture local, idempotent, and out of the model request path. Use <code>zaxy capture status</code> and <code>zaxy capture stop</code> to inspect or stop the managed watcher. Add <code>--graph</code> to <code>capture start</code> when Neo4j is reachable and newly captured observations should be projected immediately. The underlying <code>zaxy codex-capture --watch</code> command remains available for supervisors that need direct control; use <code>--watch-iterations &lt;n&gt;</code> for bounded health checks and tests.</p>
+      <p>Write config directly during onboarding:</p>
+      <pre><code class="language-bash">zaxy hooks claude-code \
+  --eventloom-path .eventloom \
+  --domain my-project \
+  --output .claude/settings.local.json</code></pre>
+      <p><code>--output</code> creates parent directories and refuses to overwrite existing files. For Claude Code JSON settings, <code>--output</code> merges Zaxy&#x27;s hook groups into the existing settings file and preserves unrelated settings and hook handlers. It refuses to add duplicate Zaxy handlers unless <code>--force</code> is passed, in which case only existing Zaxy hook handlers are replaced. Generic hook outputs remain whole-file writes and keep the no-overwrite default.</p>
+      <p>Inspect the current observer posture:</p>
+      <pre><code class="language-bash">zaxy hook-status --eventloom-path .eventloom
+zaxy hook-status --json
+zaxy hook-status --eventloom-path .eventloom --json
+zaxy capture-soak --eventloom-path .eventloom --session-id my-project-default
+zaxy hook-event heartbeat --eventloom-path .eventloom --session-id my-project-default --source manual</code></pre>
+      <p><code>hook-status</code> reports supported client install detection, the latest observed hook event, and observation coverage by high-value capture type. Missing <code>command.completed</code>, <code>file.edit.applied</code>, <code>tool.call.completed</code>, or <code>transcript.turn</code> coverage means Zaxy can see lifecycle checkpoints but is not yet seeing the richer activity needed for durable session reconstruction. For Codex, install detection and live capture are separate signals: <code>.codex/zaxy-capture.json</code> means local capture is configured, while a running managed <code>zaxy capture start</code> watcher means this session is actively importing new observations. If Codex capture is configured but the watcher is stopped, <code>hook-status</code> reports a warning and prints the managed command needed to resume it. The same report includes a capture readiness summary. In JSON output, inspect <code>capture_readiness.status</code>, <code>active_observation_types</code>, and <code>missing_observation_types</code> to decide whether automatic capture is healthy or which adapter sinks still need to be wired. <code>zaxy doctor</code> also surfaces the same signal as <code>capture_health</code>, making it the single first-run health row for whether deterministic capture is installed, running when needed, and producing usable observations. For beta evidence, <code>zaxy capture-soak</code> turns the same observation data into a release-gate report with latest seq/hash, stale lane detection, missing lane remediation, and a pass/fail <code>beta_criteria</code> field. Claude Code detection parses JSON hook command handlers rather than matching arbitrary text, so comments or unrelated string fields do not count as an installation. <code>heartbeat</code> is a health probe: it proves the Eventloom observer path can write without pretending that a real task or compaction happened.</p>
+      <h2 id="supported-clients">Supported Clients</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Client</th>
+            <th>Generated Output</th>
+            <th>Install Detection</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Claude Code</td>
+            <td>JSON settings fragment</td>
+            <td><code>.claude/settings.local.json</code>, <code>.claude/settings.json</code></td>
+            <td>Preferred first target for repository-local hook config.</td>
+          </tr>
+          <tr>
+            <td>Codex</td>
+            <td>Local capture config plus optional shell snippet</td>
+            <td><code>.codex/zaxy-capture.json</code>, valid <code>.codex/hooks.json</code></td>
+            <td>Preferred path is <code>zaxy capture start</code>, which manages a local watcher without proxying provider traffic.</td>
+          </tr>
+          <tr>
+            <td>Generic</td>
+            <td>Shell snippet</td>
+            <td>Any explicit file you wire manually</td>
+            <td>Use for clients that can run lifecycle shell commands.</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>The generated commands call the stable sink:</p>
+      <pre><code class="language-bash">zaxy hook-event precompact \
+  --eventloom-path .eventloom \
+  --session-id my-project-default \
+  --source claude-code</code></pre>
+      <h2 id="triggers">Triggers</h2>
+      <p>Supported triggers are:</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Trigger</th>
+            <th>Event Type</th>
+            <th>Purpose</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>session-start</code></td>
+            <td><code>hook.session_started</code></td>
+            <td>Mark the start of a client session.</td>
+          </tr>
+          <tr>
+            <td><code>stop</code></td>
+            <td><code>hook.stop</code></td>
+            <td>Record a normal response/session checkpoint.</td>
+          </tr>
+          <tr>
+            <td><code>precompact</code></td>
+            <td><code>hook.precompact</code></td>
+            <td>Record that context compaction is about to happen.</td>
+          </tr>
+          <tr>
+            <td><code>checkpoint</code></td>
+            <td><code>hook.checkpoint</code></td>
+            <td>Record a manual or periodic save/checkpoint.</td>
+          </tr>
+          <tr>
+            <td><code>heartbeat</code></td>
+            <td><code>hook.heartbeat</code></td>
+            <td>Prove the hook write path is healthy.</td>
+          </tr>
+          <tr>
+            <td><code>command</code></td>
+            <td><code>command.completed</code></td>
+            <td>Record a bounded, redacted shell command result.</td>
+          </tr>
+          <tr>
+            <td><code>file-edit</code></td>
+            <td><code>file.edit.applied</code></td>
+            <td>Record file edit metadata without source content.</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>Unknown triggers are rejected before writing.</p>
+      <p>Checkpoint hooks can include retrieval-useful metadata:</p>
+      <pre><code class="language-bash">zaxy hook-event checkpoint \
+  --eventloom-path .eventloom \
+  --session-id my-project-default \
+  --source codex \
+  --summary &quot;Finished hook install mode.&quot; \
+  --reason manual \
+  --turn-count 7</code></pre>
+      <p><code>hook.checkpoint</code> events are projected into graph <code>hook_checkpoint</code> entities so future retrieval can find durable session milestones.</p>
+      <p>Command, file-edit, tool-call, and transcript-turn hooks write first-class observation events instead of generic <code>hook.*</code> checkpoints:</p>
+      <pre><code class="language-bash">zaxy hook-event command \
+  --eventloom-path .eventloom \
+  --session-id my-project-default \
+  --source codex \
+  --workspace &quot;$PWD&quot; \
+  --command &quot;pytest&quot; \
+  --exit-code 0 \
+  --stdout &quot;557 passed&quot;
+
+zaxy hook-event file-edit \
+  --eventloom-path .eventloom \
+  --session-id my-project-default \
+  --source codex \
+  --workspace &quot;$PWD&quot; \
+  --path src/zaxy/core.py \
+  --operation modified \
+  --summary &quot;Updated context assembly&quot;
+
+zaxy hook-event tool-call \
+  --eventloom-path .eventloom \
+  --session-id my-project-default \
+  --source codex \
+  --workspace &quot;$PWD&quot; \
+  --tool-name memory_append \
+  --tool-status ok \
+  --arguments-json &#x27;{&quot;event_type&quot;:&quot;task.completed&quot;}&#x27; \
+  --result-summary &quot;seq=42&quot;
+
+zaxy hook-event transcript-turn \
+  --eventloom-path .eventloom \
+  --session-id my-project-default \
+  --source codex \
+  --role assistant \
+  --content &quot;Recorded the implementation decision.&quot; \
+  --turn-index 12</code></pre>
+      <p>Command observations redact common secret-bearing arguments and bound stdout and stderr excerpts. File-edit observations persist path, operation, summary, and line count metadata; they do not persist source content. Tool-call observations persist argument keys but not raw argument values. Transcript-turn observations sanitize content before append so they can serve as source-recall material without storing obvious secrets.</p>
+      <h2 id="payload">Payload</h2>
+      <p>Hook events use actor <code>zaxy-hook</code> and append to the selected session log. The payload is intentionally small:</p>
+      <pre><code class="language-json">{
+  &quot;trigger&quot;: &quot;precompact&quot;,
+  &quot;source&quot;: &quot;claude-code&quot;,
+  &quot;workspace&quot;: &quot;/path/to/project&quot;,
+  &quot;transcript_path&quot;: &quot;/path/to/transcript.jsonl&quot;,
+  &quot;summary&quot;: &quot;Finished hook install mode.&quot;,
+  &quot;reason&quot;: &quot;manual&quot;,
+  &quot;turn_count&quot;: 7
+}</code></pre>
+      <p>Required fields:</p>
+      <ul>
+        <li><code>trigger</code>: normalized hook trigger.</li>
+        <li><code>source</code>: client or adapter name.</li>
+      </ul>
+      <p>Optional fields:</p>
+      <ul>
+        <li><code>workspace</code>: workspace root associated with the hook.</li>
+        <li><code>transcript_path</code>: transcript file associated with the hook.</li>
+        <li><code>summary</code>: short checkpoint summary.</li>
+        <li><code>reason</code>: checkpoint reason such as <code>manual</code>, <code>interval</code>, <code>precompact</code>, or <code>shutdown</code>.</li>
+        <li><code>turn_count</code>: client turn count at the checkpoint.</li>
+      </ul>
+      <h2 id="failure-behavior">Failure Behavior</h2>
+      <p><code>zaxy hook-event</code> writes directly to Eventloom and does not require Neo4j, Pathlight, embeddings, or a running MCP server. This is deliberate: stop and pre-compaction hooks should remain fast and should still preserve provenance when graph projection is unavailable. Clients should treat hook failures as non-fatal and continue normal execution.</p>
+      <h2 id="custom-adapters">Custom Adapters</h2>
+      <p>Custom clients can implement hooks by invoking <code>zaxy hook-event</code> with one of the supported triggers, or by appending equivalent typed events through <code>memory_append</code>. Prefer <code>zaxy hook-event</code> for lifecycle hooks because it avoids graph startup work and keeps the hook path deterministic.</p>
+      <p>Related pages: <a href="../README.html">README.md</a>, <a href="mcp.html">mcp.md</a>, <a href="eventloom.html">eventloom.md</a>, <a href="agent-events.html">agent-events.md</a>, <a href="workspace-genesis.html">workspace-genesis.md</a>.</p>
+    </article>
+  </main>
+</body>
+</html>

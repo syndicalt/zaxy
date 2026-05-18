@@ -331,8 +331,8 @@ def test_public_site_benchmark_claim_is_scoped_to_fixture() -> None:
     assert 'class="benchmark-links"' in html
     assert "reports/benchmarks/live-benchmark.md" in html
     assert "reports/benchmarks/longmemeval-100-comparison/live-benchmark.md" in html
-    assert "docs/benchmarks.md" in html
-    assert "docs/benchmark-review.md" in html
+    assert "docs/benchmarks.html" in html
+    assert "docs/benchmark-review.html" in html
     assert "production-grade vector RAG" not in html
     assert "destroyed" not in html.casefold()
 
@@ -423,8 +423,37 @@ def test_public_site_links_to_all_core_docs() -> None:
     parser.feed(html)
 
     for doc in REQUIRED_DOCS:
-        assert doc in parser.links
+        rendered_doc = str(Path(doc).with_suffix(".html"))
+        assert rendered_doc in parser.links
+        assert doc not in parser.links
     assert "../docs/architecture.md" not in parser.links
+
+
+def test_public_site_docs_are_rendered_html_not_raw_markdown() -> None:
+    """Published docs links should stay on the site as rendered HTML pages."""
+    for doc in REQUIRED_DOCS:
+        rendered_path = Path("site") / Path(doc).with_suffix(".html")
+        html = rendered_path.read_text(encoding="utf-8")
+        title = Path(doc).read_text(encoding="utf-8").splitlines()[0].lstrip("# ")
+
+        assert rendered_path.exists(), doc
+        assert "<!doctype html>" in html
+        assert "<h1" in html
+        assert title in html
+        assert f'href="{Path(doc).name}"' not in html
+
+
+def test_site_docs_generator_keeps_rendered_pages_current() -> None:
+    """Generated docs should match the checked-in markdown sources."""
+    result = subprocess.run(
+        ["python", "scripts/build-site-docs.py", "--check"],
+        cwd=Path.cwd(),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr + result.stdout
 
 
 def test_site_local_links_resolve() -> None:
@@ -440,7 +469,9 @@ def test_site_local_links_resolve() -> None:
             continue
         path_part, _, anchor = href.partition("#")
         if path_part:
-            if path_part.startswith(("docs/", "README.md", "reports/")):
+            if (path_part.startswith("docs/") and path_part.endswith(".html")) or path_part == "README.html":
+                target = (site_path.parent / path_part).resolve()
+            elif path_part.startswith(("docs/", "README.md", "reports/")):
                 target = Path(path_part).resolve()
             else:
                 target = (site_path.parent / path_part).resolve()
@@ -531,10 +562,12 @@ def test_github_pages_workflow_publishes_site_directory() -> None:
     assert "pages: write" in workflow
     assert "id-token: write" in workflow
     assert "cp -R site/. _site/" in workflow
-    assert "cp -R docs _site/docs" in workflow
-    assert "cp README.md _site/README.md" in workflow
+    assert "python scripts/build-site-docs.py --check" in workflow
+    assert "cp -R docs _site/docs" not in workflow
+    assert "cp README.md _site/README.md" not in workflow
+    assert "cp README.md _site/README.html" not in workflow
     assert "cp -R reports _site/reports" in workflow
-    assert "cp -R reports _site/site/reports" in workflow
+    assert "cp -R reports _site/site/reports" not in workflow
     assert "actions/upload-pages-artifact@v3" in workflow
     assert "path: _site" in workflow
     assert "actions/deploy-pages@v4" in workflow

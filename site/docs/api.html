@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Python API - Zaxy Docs</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../index.html">Overview</a>
+      <a href="getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="python-api">Python API</h1>
+      <p>The primary Python entry point is <code>zaxy.core.MemoryFabric</code>. It wires the event log, session manager, graph store, query router, embedding provider, metrics, and tracer. The MCP server uses the same underlying orchestration, so Python and MCP callers share behavior.</p>
+      <p>Create a fabric:</p>
+      <pre><code class="language-python">from zaxy import MemoryFabric
+
+fabric = MemoryFabric()
+await fabric.connect()</code></pre>
+      <p>Append an event:</p>
+      <pre><code class="language-python">event = await fabric.append(
+    event_type=&quot;goal.created&quot;,
+    actor=&quot;planner&quot;,
+    payload={&quot;title&quot;: &quot;Ship memory integration&quot;},
+    session_id=&quot;agent-1&quot;,
+)</code></pre>
+      <p>Initialize a workspace session with a durable genesis profile:</p>
+      <pre><code class="language-python">profile = await fabric.initialize_session(&quot;.&quot;, session_id=&quot;zaxy-default&quot;)</code></pre>
+      <p>Query memory:</p>
+      <pre><code class="language-python">context = await fabric.query(
+    &quot;Ship memory integration&quot;,
+    temporal_filter=None,
+    limit=5,
+    session_id=&quot;agent-1&quot;,
+)</code></pre>
+      <p>Returned context metadata includes Eventloom citations when available and <code>score_explanation</code> details for retrieval debugging. Score explanations include source weights, the matched query, query-expansion weights when applicable, and temporal scoring fields for as-of queries.</p>
+      <p>Query exact source chunks:</p>
+      <pre><code class="language-python">sources = await fabric.query_verbatim(
+    &quot;Which transcript turn mentioned identity-preserving chunks?&quot;,
+    session_id=&quot;agent-1&quot;,
+    limit=5,
+)</code></pre>
+      <p><code>query_verbatim()</code> reads the Eventloom log directly and does not require Neo4j. It returns raw document, transcript, or event payload chunks with <code>eventloom://...</code> citations and source metadata. Use it when the agent needs the exact text that produced a memory rather than a compact graph summary.</p>
+      <p>Ingest local project documents:</p>
+      <pre><code class="language-python">count = await fabric.ingest_documents(
+    &quot;docs&quot;,
+    session_id=&quot;agent-1&quot;,
+    max_lines=80,
+)</code></pre>
+      <p>Document ingestion currently supports Markdown, plain text, and reStructuredText files. It skips hidden directories, chunks content by line range, writes <code>document.indexed</code> Eventloom events, and projects each chunk as a <code>document</code> entity. Retrieved document chunks cite their original file and starting line with <code>file://path:line</code> citations.</p>
+      <p>Ingest a sanitized transcript:</p>
+      <pre><code class="language-python">count = await fabric.ingest_transcript(
+    [
+        {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What did we decide?&quot;},
+        {&quot;role&quot;: &quot;assistant&quot;, &quot;content&quot;: &quot;Use MMR for diversity.&quot;},
+    ],
+    source=&quot;codex&quot;,
+    session_id=&quot;agent-1&quot;,
+)</code></pre>
+      <p>Transcript ingestion writes one <code>transcript.turn</code> event per non-empty turn. Secret-looking content is redacted before the event is appended, and redaction paths are retained on the event payload for auditability.</p>
+      <p>Assemble prompt-ready context:</p>
+      <pre><code class="language-python">assembly = await fabric.assemble_context(
+    &quot;What did we decide about retrieval?&quot;,
+    session_id=&quot;agent-1&quot;,
+    replay_from_seq=1,
+    limit=5,
+)
+print(assembly.prompt)</code></pre>
+      <p>Context assembly combines recent replayed events, ranked graph retrieval, and a reserved verbatim Eventloom source-recall lane. It is the first lifecycle API for building an LLM context window from durable session history, temporal graph memory, and exact cited source chunks. Returned context metadata includes <code>assembly_lane</code> so clients can distinguish <code>graph</code> context from <code>verbatim</code> source recall. The prompt begins with <code># Active Memory Working Set</code>, a bounded deterministic projection of goals, decisions, tasks, artifacts, blockers, and cited source anchors. This gives the model task-relevant memory structure without injecting the whole event log or graph. <code>assembly.assembly_policy</code> records the policy in force for the call, and <code>assembly.context_counts</code> records graph, verbatim, and replay counts for observability. <code>assembly.working_set</code> exposes the same working-set items as structured data.</p>
+      <p>Run lifecycle hooks after a turn or subagent handoff:</p>
+      <pre><code class="language-python">next_context = await fabric.after_turn(
+    role=&quot;assistant&quot;,
+    content=&quot;Use MMR for diversity.&quot;,
+    session_id=&quot;agent-1&quot;,
+    query=&quot;retrieval decisions&quot;,
+    max_recent_events=20,
+)
+
+handoff = await fabric.handoff_bundle(
+    session_id=&quot;agent-1&quot;,
+    query=&quot;current goals and open tasks&quot;,
+)
+
+subagent = await fabric.cleanup_subagent(
+    parent_session_id=&quot;main&quot;,
+    subagent_session_id=&quot;worker-1&quot;,
+    summary=&quot;Indexed retrieval docs and found no blockers.&quot;,
+)</code></pre>
+      <p><code>after_turn</code> preserves the turn as a <code>transcript.turn</code> event before assembling bounded context. <code>handoff_bundle</code> includes summary data, prompt-ready context, and Eventloom integrity status. <code>cleanup_subagent</code> records <code>subagent.cleaned</code> in the subagent session and returns a bundle the parent can import or inspect.</p>
+      <p>Record feedback for retrieved context:</p>
+      <pre><code class="language-python">contexts = await fabric.query(&quot;retention decisions&quot;, session_id=&quot;agent-1&quot;)
+await fabric.record_context_feedback(
+    contexts[:2],
+    feedback=&quot;used&quot;,
+    session_id=&quot;agent-1&quot;,
+    actor=&quot;assistant&quot;,
+    importance=0.8,
+)</code></pre>
+      <p>Positive feedback (<code>used</code> or <code>helpful</code>) appends <code>memory.reinforced</code> events for the retrieved entity. Negative feedback (<code>irrelevant</code>) appends audit-only <code>memory.feedback</code> events and does not delete or decay existing memory. Feedback for <code>packet_memory</code> context preserves the packet projection citation plus source packet sequence/hash, provider path, and model when available.</p>
+      <p>Render first-run integration payloads:</p>
+      <pre><code class="language-python">from zaxy import render_agent_integration_template, render_handoff_adapter, render_mcp_client_config
+
+config = render_mcp_client_config(&quot;claude-desktop&quot;, eventloom_path=&quot;.eventloom&quot;)
+handoff_payload = render_handoff_adapter(handoff, &quot;langgraph&quot;)
+template = render_agent_integration_template(&quot;langgraph&quot;, session_id=&quot;agent-1&quot;)</code></pre>
+      <p><code>render_mcp_client_config()</code> supports <code>claude-desktop</code>, <code>cursor</code>, and <code>vscode</code> JSON fragments for local MCP setup. <code>render_handoff_adapter()</code> supports <code>generic</code>, <code>langgraph</code>, <code>crewai</code>, and <code>autogen</code> payload shapes without importing those frameworks.</p>
+      <p>Customize retrieval policy:</p>
+      <pre><code class="language-python">from zaxy.query import HTTPReranker, LexicalReranker, QueryRouter
+
+router = QueryRouter(
+    fabric.graph,
+    scoring_profile=&quot;precision&quot;,
+    reranker=LexicalReranker(),
+)
+chunks = await router.query(&quot;auth decision rationale&quot;, session_id=&quot;agent-1&quot;)</code></pre>
+      <p>Built-in scoring profiles are <code>balanced</code>, <code>precision</code>, <code>recall</code>, and <code>temporal</code>. Rerankers implement an async <code>rerank(query, results, limit=...)</code> method and receive fused, deduplicated graph candidates before final truncation. Use <code>LexicalReranker</code> for deterministic local reranking, <code>HTTPReranker</code> for local/self-hosted model endpoints, or <code>OpenAICompatibleReranker</code> for OpenAI-compatible chat-completions reranking.</p>
+      <p>Replay a session:</p>
+      <pre><code class="language-python">replay = fabric.replay(session_id=&quot;agent-1&quot;, from_seq=0)</code></pre>
+      <p>Invalidate a graph fact:</p>
+      <pre><code class="language-python">await fabric.invalidate(
+    entity_name=&quot;Ship memory integration&quot;,
+    entity_type=&quot;Goal&quot;,
+    invalid_at=&quot;2026-05-06T12:00:00Z&quot;,
+)</code></pre>
+      <p>Always close long-lived clients:</p>
+      <pre><code class="language-python">await fabric.close()</code></pre>
+      <p><code>MemoryFabric</code> validates inputs before writing events or querying the graph. Session IDs are passed through the same safety rules used by MCP. Payload size, query length, traversal depth, and limits are bounded in <code>src/zaxy/security.py</code>. At the durable <code>EventLog.append</code> boundary, payloads are also classified and common secret fields or secret-looking values are redacted before the event hash is sealed.</p>
+      <p>Lower-level modules are public enough for advanced integration but should be used carefully: <code>EventLog</code> for direct JSONL operations, <code>extract</code> for rule-based projection, <code>GraphStore</code> for Neo4j operations, <code>QueryRouter</code> for retrieval, and <code>MemoryTracer</code> for Pathlight spans. Prefer <code>MemoryFabric</code> unless you are building tests, migrations, or specialized tooling.</p>
+      <p>For extractor and schema authoring, use the CLI helpers before editing production code:</p>
+      <pre><code class="language-bash">zaxy extractor-template decision.recorded --entity-type decision --name-key title
+zaxy schema-plan</code></pre>
+      <p>Extractor templates validate event names and identifiers before rendering code. Schema migrations are named, checksum-addressed, and still applied through <code>GraphStore.init_schema()</code> so existing callers keep the same lifecycle.</p>
+      <p>Errors should be treated as operational signals. Validation errors normally mean the caller sent an unsafe session ID, oversized payload, invalid limit, or empty query. Graph errors usually mean Neo4j is unavailable, indexes are missing, or credentials are wrong. Event log errors usually mean filesystem permissions, lock contention, or integrity verification failed. In all cases, the Eventloom log should remain the recovery anchor: fix the environment, replay the log, and rebuild projections rather than inventing graph state by hand.</p>
+      <p>For long-running processes, create one fabric per service process and reuse it. Avoid constructing a new fabric for every query because each instance owns graph and tracer clients. Tests can instantiate directly with mocks, but production callers should use the lifecycle methods consistently.</p>
+      <p>Configuration comes from <a href="configuration.html">configuration.md</a>. MCP behavior is in <a href="mcp.html">mcp.md</a>. Graph details are in <a href="graph-schema.html">graph-schema.md</a>. The quick install path is in <a href="../README.html">README.md</a>, and the public product overview is <a href="../index.html">site/index.html</a>.</p>
+    </article>
+  </main>
+</body>
+</html>

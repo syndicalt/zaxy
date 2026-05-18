@@ -9,7 +9,7 @@ usage() {
     cat <<USAGE
 Usage: scripts/validate-docs.sh [--root PATH]
 
-Checks that site/index.html exists and that local Markdown and HTML links resolve.
+Checks that site/index.html exists and that local Markdown/HTML links resolve.
 USAGE
 }
 
@@ -30,6 +30,10 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+if [[ -f "${ROOT}/scripts/build-site-docs.py" ]]; then
+    python "${ROOT}/scripts/build-site-docs.py" --check
+fi
 
 python - "$ROOT" <<'PY'
 from __future__ import annotations
@@ -68,10 +72,14 @@ def local_target(source: Path, link: str) -> tuple[Path, str]:
     path_part = unquote(path_part)
     if not path_part:
         return source, anchor
+    if source.is_relative_to(root / "site") and path_part.startswith("../reports/"):
+        return (root / path_part.removeprefix("../")).resolve(), anchor
+    if source == site_index and path_part.startswith("docs/") and path_part.endswith(".html"):
+        return (root / "site" / path_part).resolve(), anchor
+    if source == site_index and path_part == "README.html":
+        return (root / "site" / path_part).resolve(), anchor
     if source == site_index and (
-        path_part.startswith("docs/")
-        or path_part.startswith("reports/")
-        or path_part == "README.md"
+        path_part.startswith("docs/") or path_part.startswith("reports/") or path_part == "README.md"
     ):
         return (root / path_part).resolve(), anchor
     return (source.parent / path_part).resolve(), anchor
@@ -114,6 +122,8 @@ else:
     site_html = site_index.read_text(encoding="utf-8")
     if "../docs/" in site_html or "../README.md" in site_html:
         failures.append("site/index.html uses parent-relative links that break under GitHub Pages project URLs")
+    if re.search(r'href=["\']docs/[^"\']+\.md(?:#.*?)?["\']', site_html):
+        failures.append("site/index.html links to raw Markdown docs; run scripts/build-site-docs.py and link .html pages")
 
 for path in sorted([*root.glob("docs/**/*.md"), *root.glob("site/**/*.html")]):
     text = path.read_text(encoding="utf-8")

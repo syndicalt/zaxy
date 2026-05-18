@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Local-First Retrieval Setup Implementation Plan - Zaxy Docs</title>
+  <link rel="stylesheet" href="../../../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../../../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../../../index.html">Overview</a>
+      <a href="../../getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="local-first-retrieval-setup-implementation-plan">Local-First Retrieval Setup Implementation Plan</h1>
+      <blockquote><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</blockquote>
+      <p><strong>Goal:</strong> Add a <code>zaxy local-profile</code> command that prints, writes, and validates an offline deterministic retrieval profile.</p>
+      <p><strong>Architecture:</strong> Put pure profile rendering and validation in <code>src/zaxy/local_profile.py</code>, then keep <code>src/zaxy/__main__.py</code> limited to Typer argument handling. Documentation explains the offline baseline and leaves local HTTP model runtime integration for a later slice.</p>
+      <p><strong>Tech Stack:</strong> Python 3.11, Typer, Pydantic settings, pytest, ruff.</p>
+      <p>---</p>
+      <h3 id="task-1-local-profile-module">Task 1: Local Profile Module</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Create: <code>src/zaxy/local_profile.py</code></li>
+        <li>Create: <code>tests/test_local_profile.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Write failing tests</strong></li>
+      </ul>
+      <pre><code class="language-python">from pathlib import Path
+
+import pytest
+
+from zaxy.local_profile import check_local_profile, render_local_profile, write_local_profile
+
+
+def test_render_local_profile_outputs_offline_env_without_secrets() -&gt; None:
+    text = render_local_profile()
+
+    assert &quot;EMBEDDING_ENABLED=true&quot; in text
+    assert &quot;EMBEDDING_PROVIDER=hash&quot; in text
+    assert &quot;RERANKER_PROVIDER=lexical&quot; in text
+    assert &quot;NEO4J_AUTO_START=true&quot; in text
+    assert &quot;OPENAI_API_KEY&quot; not in text
+
+
+def test_write_local_profile_refuses_to_overwrite_existing_file(tmp_path: Path) -&gt; None:
+    target = tmp_path / &quot;.env.local&quot;
+    target.write_text(&quot;existing=true\n&quot;, encoding=&quot;utf-8&quot;)
+
+    with pytest.raises(FileExistsError):
+        write_local_profile(target)
+
+
+def test_check_local_profile_accepts_deterministic_defaults() -&gt; None:
+    report = check_local_profile()
+
+    assert report[&quot;embedding_provider&quot;] == &quot;hash&quot;
+    assert report[&quot;reranker_provider&quot;] == &quot;lexical&quot;
+    assert report[&quot;status&quot;] == &quot;ok&quot;</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run tests to verify failure</strong></li>
+      </ul>
+      <p>Run: <code>pytest --no-cov tests/test_local_profile.py -q</code></p>
+      <p>Expected: fail because <code>zaxy.local_profile</code> does not exist.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement module</strong></li>
+      </ul>
+      <p>Create <code>src/zaxy/local_profile.py</code> with <code>render_local_profile()</code>, <code>write_local_profile()</code>, and <code>check_local_profile()</code>. The checker should use <code>Settings(_env_file=None, embedding_provider=&quot;hash&quot;, reranker_provider=&quot;lexical&quot;)</code>, <code>build_embedding_provider()</code>, and <code>build_reranker()</code>.</p>
+      <ul>
+        <li>[ ] <strong>Step 4: Run tests to verify pass</strong></li>
+      </ul>
+      <p>Run: <code>pytest --no-cov tests/test_local_profile.py -q</code></p>
+      <p>Expected: pass.</p>
+      <h3 id="task-2-cli-command">Task 2: CLI Command</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>src/zaxy/__main__.py</code></li>
+        <li>Modify: <code>tests/test_cli.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Write failing CLI tests</strong></li>
+      </ul>
+      <p>Add tests that call <code>CliRunner</code> for:</p>
+      <pre><code class="language-python">def test_local_profile_command_prints_offline_env() -&gt; None:
+    result = runner.invoke(app, [&quot;local-profile&quot;])
+    assert result.exit_code == 0
+    assert &quot;EMBEDDING_PROVIDER=hash&quot; in result.output
+    assert &quot;RERANKER_PROVIDER=lexical&quot; in result.output
+
+
+def test_local_profile_command_writes_output_file(tmp_path: Path) -&gt; None:
+    target = tmp_path / &quot;.env.local&quot;
+    result = runner.invoke(app, [&quot;local-profile&quot;, &quot;--output&quot;, str(target)])
+    assert result.exit_code == 0
+    assert &quot;Wrote local profile&quot; in result.output
+    assert &quot;RERANKER_PROVIDER=lexical&quot; in target.read_text(encoding=&quot;utf-8&quot;)
+
+
+def test_local_profile_check_reports_success() -&gt; None:
+    result = runner.invoke(app, [&quot;local-profile&quot;, &quot;--check&quot;])
+    assert result.exit_code == 0
+    assert &#x27;&quot;status&quot;: &quot;ok&quot;&#x27; in result.output</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run tests to verify failure</strong></li>
+      </ul>
+      <p>Run: <code>pytest --no-cov tests/test_cli.py -q</code></p>
+      <p>Expected: fail because <code>local-profile</code> command does not exist.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement CLI wiring</strong></li>
+      </ul>
+      <p>Import local profile helpers and add <code>@app.command(&quot;local-profile&quot;)</code> with <code>--output</code>, <code>--force</code>, and <code>--check</code>.</p>
+      <ul>
+        <li>[ ] <strong>Step 4: Run tests to verify pass</strong></li>
+      </ul>
+      <p>Run: <code>pytest --no-cov tests/test_cli.py tests/test_local_profile.py -q</code></p>
+      <p>Expected: pass.</p>
+      <h3 id="task-3-documentation-and-verification">Task 3: Documentation And Verification</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>docs/embeddings.md</code></li>
+        <li>Modify: <code>docs/getting-started.md</code></li>
+        <li>Modify: <code>docs/runbook.md</code></li>
+        <li>Modify: <code>AGENTS.md</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Document local-first setup</strong></li>
+      </ul>
+      <p>Add the <code>zaxy local-profile</code> flow to the embedding docs, getting started guide, runbook CLI table, and mark the roadmap item complete in <code>AGENTS.md</code>.</p>
+      <ul>
+        <li>[ ] <strong>Step 2: Run focused verification</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">ruff check src/zaxy/local_profile.py src/zaxy/__main__.py tests/test_local_profile.py tests/test_cli.py
+pytest --no-cov tests/test_local_profile.py tests/test_cli.py tests/test_docs_site.py -q</code></pre>
+      <p>Expected: all checks pass.</p>
+    </article>
+  </main>
+</body>
+</html>

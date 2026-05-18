@@ -80,7 +80,7 @@ zaxy = "zaxy.__main__:main"
 
 [project.urls]
 Homepage = "https://syndicalt.github.io/zaxy/"
-Documentation = "https://syndicalt.github.io/zaxy/docs/getting-started.md"
+Documentation = "https://syndicalt.github.io/zaxy/docs/getting-started.html"
 Repository = "https://github.com/syndicalt/zaxy"
 Issues = "https://github.com/syndicalt/zaxy/issues"
 

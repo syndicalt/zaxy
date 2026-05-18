@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Projection Backend Contract Implementation Plan - Zaxy Docs</title>
+  <link rel="stylesheet" href="../../../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../../../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../../../index.html">Overview</a>
+      <a href="../../getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="projection-backend-contract-implementation-plan">Projection Backend Contract Implementation Plan</h1>
+      <blockquote><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</blockquote>
+      <p><strong>Goal:</strong> Extract a backend-neutral projection contract and backend factory so Neo4j remains the default while pgGraph can be evaluated behind the same retrieval and projection surface.</p>
+      <p><strong>Architecture:</strong> Eventloom remains the source of truth. <code>GraphStore</code> becomes the first concrete implementation of a typed <code>ProjectionStore</code> contract, and all high-level construction paths use a backend factory instead of instantiating Neo4j directly. The pgGraph path is explicitly experimental and unavailable until a real adapter passes the same contract and benchmark gates.</p>
+      <p><strong>Tech Stack:</strong> Python 3.11+, typing <code>Protocol</code>, Pydantic settings, existing Neo4j <code>GraphStore</code>, pytest/ruff/mypy, benchmark guardrail CLI.</p>
+      <p>---</p>
+      <h2 id="file-structure">File Structure</h2>
+      <ul>
+        <li>Modify <code>src/zaxy/projection.py</code>: replace loose <code>object</code> returns with concrete projection-store method signatures and add read-only/invalidation methods used by checkout, CLI, and dashboard surfaces.</li>
+        <li>Create <code>src/zaxy/projection_backends.py</code>: central projection backend factory and config dataclass.</li>
+        <li>Modify <code>src/zaxy/config.py</code>: add <code>projection_backend</code> setting with default <code>neo4j</code>.</li>
+        <li>Modify <code>src/zaxy/core.py</code>, <code>src/zaxy/mcp_server.py</code>, <code>src/zaxy/live_benchmark.py</code>, and <code>src/zaxy/__main__.py</code>: instantiate graph projection stores through the factory where behavior must stay backend-neutral.</li>
+        <li>Test in <code>tests/test_projection.py</code>, <code>tests/test_config.py</code>, <code>tests/test_core.py</code>, <code>tests/test_mcp.py</code>, and targeted benchmark CLI tests if constructor wiring changes.</li>
+        <li>Modify <code>docs/superpowers/specs/2026-05-17-skill-memory-pggraph-evaluation-design.md</code>, <code>docs/benchmarks.md</code>, and <code>AGENTS.md</code>: record Skill Memory completion and the pgGraph contract-first evaluation state.</li>
+      </ul>
+      <h2 id="task-1-typed-projection-contract">Task 1: Typed Projection Contract</h2>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>src/zaxy/projection.py</code></li>
+        <li>Test: <code>tests/test_projection.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Write failing protocol tests</strong></li>
+      </ul>
+      <p>Add <code>tests/test_projection.py</code>:</p>
+      <pre><code class="language-python">from __future__ import annotations
+
+from typing import assert_type
+
+from zaxy.extract import ExtractionResult
+from zaxy.graph import GraphEdge, GraphEntity, GraphEventProjectionStatus, GraphInferredEdgeStatus, SearchResult
+from zaxy.projection import ProjectionStore
+
+
+class FakeProjectionStore:
+    async def connect(self) -&gt; None:
+        pass
+
+    async def close(self) -&gt; None:
+        pass
+
+    async def init_schema(self) -&gt; None:
+        pass
+
+    async def upsert_extraction(self, result: ExtractionResult, session_id: str = &quot;default&quot;) -&gt; None:
+        pass
+
+    async def invalidate_entity(
+        self,
+        name: str,
+        entity_type: str,
+        invalid_at: str,
+        session_id: str = &quot;default&quot;,
+    ) -&gt; None:
+        pass
+
+    async def search_exact(
+        self,
+        name: str,
+        entity_type: str | None = None,
+        temporal_point: str | None = None,
+        session_id: str = &quot;default&quot;,
+    ) -&gt; list[GraphEntity]:
+        return []
+
+    async def search_keyword(
+        self,
+        query: str,
+        limit: int = 10,
+        temporal_point: str | None = None,
+        session_id: str = &quot;default&quot;,
+    ) -&gt; list[SearchResult]:
+        return []
+
+    async def search_traversal(
+        self,
+        start_name: str,
+        relation_type: str | None = None,
+        depth: int = 2,
+        temporal_point: str | None = None,
+        session_id: str = &quot;default&quot;,
+    ) -&gt; list[GraphEntity]:
+        return []
+
+    async def search_vector(
+        self,
+        embedding: list[float],
+        limit: int = 10,
+        temporal_point: str | None = None,
+        session_id: str = &quot;default&quot;,
+    ) -&gt; list[SearchResult]:
+        return []
+
+    async def inspect_event_projection_status(
+        self,
+        session_id: str,
+        *,
+        eventloom_latest_seq: int | None = None,
+        eventloom_latest_hash: str | None = None,
+    ) -&gt; GraphEventProjectionStatus:
+        raise NotImplementedError
+
+    async def inspect_inferred_edge_status(
+        self,
+        session_id: str,
+        *,
+        limit: int = 10,
+    ) -&gt; GraphInferredEdgeStatus:
+        raise NotImplementedError
+
+    async def get_overview_graph(self, session_id: str, *, limit: int = 100) -&gt; tuple[list[GraphEntity], list[GraphEdge]]:
+        return [], []
+
+
+def test_fake_projection_store_satisfies_contract() -&gt; None:
+    store: ProjectionStore = FakeProjectionStore()
+    assert store is not None
+
+
+def test_projection_store_search_types_are_concrete(store: ProjectionStore) -&gt; None:
+    assert_type(store, ProjectionStore)</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run test and mypy to verify RED</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">PYTHONPATH=src pytest tests/test_projection.py -q --no-cov
+PYTHONPATH=src mypy tests/test_projection.py</code></pre>
+      <p>Expected: pytest may pass structurally, but mypy fails because <code>ProjectionStore</code> still returns <code>object</code> and lacks the extended methods.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement the typed protocol</strong></li>
+      </ul>
+      <p>Update <code>src/zaxy/projection.py</code>:</p>
+      <pre><code class="language-python">from __future__ import annotations
+
+from typing import Protocol
+
+from zaxy.extract import ExtractionResult
+from zaxy.graph import GraphEdge, GraphEntity, GraphEventProjectionStatus, GraphInferredEdgeStatus, SearchResult
+
+
+class ProjectionStore(Protocol):
+    &quot;&quot;&quot;Backend contract for projecting Eventloom facts into a queryable memory index.&quot;&quot;&quot;
+
+    async def connect(self) -&gt; None: ...
+    async def close(self) -&gt; None: ...
+    async def init_schema(self) -&gt; None: ...
+
+    async def upsert_extraction(self, result: ExtractionResult, session_id: str = &quot;default&quot;) -&gt; None: ...
+
+    async def invalidate_entity(
+        self,
+        name: str,
+        entity_type: str,
+        invalid_at: str,
+        session_id: str = &quot;default&quot;,
+    ) -&gt; None: ...
+
+    async def search_exact(
+        self,
+        name: str,
+        entity_type: str | None = None,
+        temporal_point: str | None = None,
+        session_id: str = &quot;default&quot;,
+    ) -&gt; list[GraphEntity]: ...
+
+    async def search_keyword(
+        self,
+        query: str,
+        limit: int = 10,
+        temporal_point: str | None = None,
+        session_id: str = &quot;default&quot;,
+    ) -&gt; list[SearchResult]: ...
+
+    async def search_traversal(
+        self,
+        start_name: str,
+        relation_type: str | None = None,
+        depth: int = 2,
+        temporal_point: str | None = None,
+        session_id: str = &quot;default&quot;,
+    ) -&gt; list[GraphEntity]: ...
+
+    async def search_vector(
+        self,
+        embedding: list[float],
+        limit: int = 10,
+        temporal_point: str | None = None,
+        session_id: str = &quot;default&quot;,
+    ) -&gt; list[SearchResult]: ...
+
+    async def inspect_event_projection_status(
+        self,
+        session_id: str,
+        *,
+        eventloom_latest_seq: int | None = None,
+        eventloom_latest_hash: str | None = None,
+    ) -&gt; GraphEventProjectionStatus: ...
+
+    async def inspect_inferred_edge_status(
+        self,
+        session_id: str,
+        *,
+        limit: int = 10,
+    ) -&gt; GraphInferredEdgeStatus: ...
+
+    async def get_overview_graph(
+        self,
+        session_id: str,
+        *,
+        limit: int = 100,
+    ) -&gt; tuple[list[GraphEntity], list[GraphEdge]]: ...</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 4: Run tests to verify GREEN</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">PYTHONPATH=src pytest tests/test_projection.py tests/test_graph.py -q --no-cov -k &quot;projection_store or graph_store_satisfies&quot;
+PYTHONPATH=src mypy src/zaxy/projection.py tests/test_projection.py</code></pre>
+      <p>Expected: tests pass and mypy succeeds.</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Commit Task 1</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add src/zaxy/projection.py tests/test_projection.py
+git commit -m &quot;refactor: type projection store contract&quot;</code></pre>
+      <h2 id="task-2-backend-factory-and-setting">Task 2: Backend Factory And Setting</h2>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Create: <code>src/zaxy/projection_backends.py</code></li>
+        <li>Modify: <code>src/zaxy/config.py</code></li>
+        <li>Test: <code>tests/test_projection.py</code>, <code>tests/test_config.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Write failing factory tests</strong></li>
+      </ul>
+      <p>Append to <code>tests/test_projection.py</code>:</p>
+      <pre><code class="language-python">import pytest
+
+from zaxy.graph import GraphStore
+from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
+
+
+def test_build_projection_store_defaults_to_neo4j() -&gt; None:
+    store = build_projection_store(
+        ProjectionBackendConfig(
+            backend=&quot;neo4j&quot;,
+            neo4j_uri=&quot;bolt://localhost:7687&quot;,
+            neo4j_user=&quot;neo4j&quot;,
+            neo4j_password=&quot;testpassword&quot;,
+            neo4j_ca_cert=None,
+            neo4j_trust_all=False,
+        )
+    )
+
+    assert isinstance(store, GraphStore)
+
+
+def test_build_projection_store_rejects_pggraph_until_adapter_exists() -&gt; None:
+    with pytest.raises(NotImplementedError, match=&quot;pgGraph backend is experimental&quot;):
+        build_projection_store(
+            ProjectionBackendConfig(
+                backend=&quot;pggraph&quot;,
+                neo4j_uri=&quot;bolt://localhost:7687&quot;,
+                neo4j_user=&quot;neo4j&quot;,
+                neo4j_password=&quot;testpassword&quot;,
+                neo4j_ca_cert=None,
+                neo4j_trust_all=False,
+            )
+        )</code></pre>
+      <p>Add to <code>tests/test_config.py</code>:</p>
+      <pre><code class="language-python">def test_projection_backend_defaults_to_neo4j(monkeypatch: pytest.MonkeyPatch) -&gt; None:
+    monkeypatch.delenv(&quot;PROJECTION_BACKEND&quot;, raising=False)
+    get_settings.cache_clear()
+
+    assert get_settings().projection_backend == &quot;neo4j&quot;</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run tests to verify RED</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">PYTHONPATH=src pytest tests/test_projection.py tests/test_config.py -q --no-cov -k &quot;projection_backend or build_projection_store&quot;</code></pre>
+      <p>Expected: fails because <code>projection_backends.py</code> and <code>projection_backend</code> setting do not exist.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement the factory</strong></li>
+      </ul>
+      <p>Create <code>src/zaxy/projection_backends.py</code>:</p>
+      <pre><code class="language-python">&quot;&quot;&quot;Projection backend construction.
+
+Neo4j is the production default. pgGraph is exposed only as an explicit
+experimental target until an adapter passes the same contract and benchmarks.
+&quot;&quot;&quot;
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Literal
+
+from zaxy.graph import GraphStore
+from zaxy.projection import ProjectionStore
+
+ProjectionBackendName = Literal[&quot;neo4j&quot;, &quot;pggraph&quot;]
+
+
+@dataclass(frozen=True)
+class ProjectionBackendConfig:
+    backend: str
+    neo4j_uri: str
+    neo4j_user: str
+    neo4j_password: str
+    neo4j_ca_cert: str | None
+    neo4j_trust_all: bool
+
+
+def build_projection_store(config: ProjectionBackendConfig) -&gt; ProjectionStore:
+    backend = config.backend.casefold().strip()
+    if backend == &quot;neo4j&quot;:
+        return GraphStore(
+            config.neo4j_uri,
+            config.neo4j_user,
+            config.neo4j_password,
+            ca_cert=config.neo4j_ca_cert,
+            trust_all=config.neo4j_trust_all,
+        )
+    if backend == &quot;pggraph&quot;:
+        raise NotImplementedError(
+            &quot;pgGraph backend is experimental and has no adapter yet. &quot;
+            &quot;Keep PROJECTION_BACKEND=neo4j until pgGraph passes the projection contract and benchmark gates.&quot;
+        )
+    raise ValueError(&quot;projection backend must be one of: neo4j, pggraph&quot;)</code></pre>
+      <p>Add to <code>Settings</code> in <code>src/zaxy/config.py</code>:</p>
+      <pre><code class="language-python">projection_backend: str = Field(default=&quot;neo4j&quot;, validation_alias=&quot;PROJECTION_BACKEND&quot;)</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 4: Run tests to verify GREEN</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">PYTHONPATH=src pytest tests/test_projection.py tests/test_config.py -q --no-cov -k &quot;projection_backend or build_projection_store&quot;
+ruff check src/zaxy/projection_backends.py src/zaxy/config.py tests/test_projection.py tests/test_config.py
+PYTHONPATH=src mypy src/zaxy/projection_backends.py</code></pre>
+      <p>Expected: tests pass, ruff clean, mypy succeeds.</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Commit Task 2</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add src/zaxy/projection_backends.py src/zaxy/config.py tests/test_projection.py tests/test_config.py
+git commit -m &quot;feat: add projection backend factory&quot;</code></pre>
+      <h2 id="task-3-route-high-level-construction-through-the-factory">Task 3: Route High-Level Construction Through The Factory</h2>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>src/zaxy/core.py</code></li>
+        <li>Modify: <code>src/zaxy/mcp_server.py</code></li>
+        <li>Modify: <code>src/zaxy/live_benchmark.py</code></li>
+        <li>Modify: <code>src/zaxy/__main__.py</code></li>
+        <li>Test: <code>tests/test_core.py</code>, <code>tests/test_mcp.py</code>, <code>tests/test_live_benchmark.py</code>, <code>tests/test_cli.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Write failing wiring tests</strong></li>
+      </ul>
+      <p>Add tests that patch <code>zaxy.core.build_projection_store</code>, <code>zaxy.mcp_server.build_projection_store</code>, and <code>zaxy.live_benchmark.build_projection_store</code>, then instantiate or run the existing constructor paths and assert the factory receives <code>backend=&quot;neo4j&quot;</code> from settings.</p>
+      <p>Use this pattern in each file:</p>
+      <pre><code class="language-python">@patch(&quot;zaxy.core.build_projection_store&quot;)
+def test_memory_fabric_constructs_projection_store_through_factory(mock_build: MagicMock, tmp_path: Path) -&gt; None:
+    mock_build.return_value = MagicMock()
+
+    fabric = MemoryFabric(eventloom_path=str(tmp_path / &quot;.eventloom&quot;), tracer_disabled=True)
+
+    assert fabric.graph is mock_build.return_value
+    assert mock_build.call_args.args[0].backend == &quot;neo4j&quot;</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run tests to verify RED</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">PYTHONPATH=src pytest tests/test_core.py tests/test_mcp.py tests/test_live_benchmark.py -q --no-cov -k &quot;projection_store_through_factory or projection_backend&quot;</code></pre>
+      <p>Expected: fails because construction still instantiates <code>GraphStore</code> directly.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Replace direct construction where safe</strong></li>
+      </ul>
+      <p>Import and use:</p>
+      <pre><code class="language-python">from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store</code></pre>
+      <p>Build config from resolved settings:</p>
+      <pre><code class="language-python">ProjectionBackendConfig(
+    backend=resolved_settings.projection_backend,
+    neo4j_uri=neo4j_uri or resolved_settings.neo4j_uri,
+    neo4j_user=neo4j_user or resolved_settings.neo4j_user,
+    neo4j_password=neo4j_password or resolved_settings.neo4j_password,
+    neo4j_ca_cert=neo4j_ca_cert if neo4j_ca_cert is not None else resolved_settings.neo4j_ca_cert,
+    neo4j_trust_all=neo4j_trust_all if neo4j_trust_all is not None else resolved_settings.neo4j_trust_all,
+)</code></pre>
+      <p>Leave direct <code>GraphStore</code> construction in migration/schema commands that inspect Neo4j-only internals such as <code>_driver</code>, and document those as Neo4j-only until the pgGraph adapter has equivalent operations.</p>
+      <ul>
+        <li>[ ] <strong>Step 4: Run focused tests</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">PYTHONPATH=src pytest tests/test_core.py tests/test_mcp.py tests/test_live_benchmark.py -q --no-cov -k &quot;projection_store_through_factory or projection_backend&quot;
+PYTHONPATH=src pytest tests/test_core.py tests/test_mcp.py tests/test_query.py -q --no-cov
+ruff check src/zaxy/core.py src/zaxy/mcp_server.py src/zaxy/live_benchmark.py src/zaxy/__main__.py
+PYTHONPATH=src mypy src/zaxy/core.py src/zaxy/mcp_server.py src/zaxy/live_benchmark.py</code></pre>
+      <p>Expected: tests pass, ruff clean, mypy succeeds.</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Commit Task 3</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add src/zaxy/core.py src/zaxy/mcp_server.py src/zaxy/live_benchmark.py src/zaxy/__main__.py tests/test_core.py tests/test_mcp.py tests/test_live_benchmark.py
+git commit -m &quot;refactor: construct projection stores through backend factory&quot;</code></pre>
+      <h2 id="task-4-documentation-and-roadmap-state">Task 4: Documentation And Roadmap State</h2>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>AGENTS.md</code></li>
+        <li>Modify: <code>docs/benchmarks.md</code></li>
+        <li>Modify: <code>docs/superpowers/specs/2026-05-17-skill-memory-pggraph-evaluation-design.md</code></li>
+        <li>Test: <code>tests/test_docs_site.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Write failing docs assertions</strong></li>
+      </ul>
+      <p>Add to <code>tests/test_docs_site.py</code>:</p>
+      <pre><code class="language-python">def test_pggraph_docs_keep_backend_experimental_and_contract_first() -&gt; None:
+    spec = Path(&quot;docs/superpowers/specs/2026-05-17-skill-memory-pggraph-evaluation-design.md&quot;).read_text(encoding=&quot;utf-8&quot;)
+    agents = Path(&quot;AGENTS.md&quot;).read_text(encoding=&quot;utf-8&quot;)
+
+    assert &quot;PROJECTION_BACKEND=neo4j&quot; in spec
+    assert &quot;pgGraph backend is experimental&quot; in spec
+    assert &quot;Projection backend contract and Neo4j factory&quot; in agents
+    assert &quot;Skill Memory procedural world-model layer&quot; in agents</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run docs test to verify RED</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">PYTHONPATH=src pytest tests/test_docs_site.py -q --no-cov -k pggraph_docs</code></pre>
+      <p>Expected: fails because docs do not yet mention the factory state or updated roadmap completion.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Update docs</strong></li>
+      </ul>
+      <p>Update <code>AGENTS.md</code> status:</p>
+      <pre><code class="language-markdown">- [x] Skill Memory procedural world-model layer with lifecycle events, checkout routing, MCP helper, docs, and full-set quality guardrail verification
+- [x] Projection backend contract and Neo4j factory for pgGraph evaluation without changing the default backend</code></pre>
+      <p>Move the Skill Memory next step out of the active list. Update pgGraph next step to:</p>
+      <pre><code class="language-markdown">Build the experimental pgGraph adapter behind `PROJECTION_BACKEND=pggraph` only after the backend-neutral Neo4j factory and contract tests are green.</code></pre>
+      <p>Update the pgGraph spec with the current upstream posture from the docs checked on May 18, 2026:</p>
+      <pre><code class="language-markdown">As of May 18, 2026, pgGraph docs describe version 0.1.0, PostgreSQL 13-18 support, and alpha status for experimentation, demos, benchmarks, and early feedback. Zaxy therefore keeps `PROJECTION_BACKEND=neo4j` as the default and treats `PROJECTION_BACKEND=pggraph` as unavailable until an adapter passes the benchmark gates.</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 4: Run docs tests</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">PYTHONPATH=src pytest tests/test_docs_site.py -q --no-cov</code></pre>
+      <p>Expected: docs tests pass.</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Commit Task 4</strong></li>
+      </ul>
+      <pre><code class="language-bash">git add AGENTS.md docs/benchmarks.md docs/superpowers/specs/2026-05-17-skill-memory-pggraph-evaluation-design.md tests/test_docs_site.py
+git commit -m &quot;docs: update pggraph evaluation roadmap state&quot;</code></pre>
+      <h2 id="task-5-final-verification">Task 5: Final Verification</h2>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Read-only verification over changed code and docs.</li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Run focused tests</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">PYTHONPATH=src pytest tests/test_projection.py tests/test_config.py tests/test_core.py tests/test_mcp.py tests/test_query.py tests/test_docs_site.py -q --no-cov</code></pre>
+      <p>Expected: PASS.</p>
+      <ul>
+        <li>[ ] <strong>Step 2: Run static checks</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">ruff check src/zaxy/projection.py src/zaxy/projection_backends.py src/zaxy/config.py src/zaxy/core.py src/zaxy/mcp_server.py src/zaxy/live_benchmark.py tests/test_projection.py tests/test_config.py tests/test_core.py tests/test_mcp.py tests/test_docs_site.py
+PYTHONPATH=src mypy src/zaxy/projection.py src/zaxy/projection_backends.py src/zaxy/config.py src/zaxy/core.py src/zaxy/mcp_server.py src/zaxy/live_benchmark.py</code></pre>
+      <p>Expected: ruff clean and mypy succeeds.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Run benchmark quality guardrail on archived full-500 report</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">PYTHONPATH=src python -m zaxy benchmark-compare reports/benchmarks/longmemeval-500-hash/live-benchmark.json \
+  --backend zaxy-checkout \
+  --min-mean-score 0.626 \
+  --min-answer-recall-at-5 0.608 \
+  --min-recall-at-5 0.956 \
+  --min-citation-coverage 1.0 \
+  --max-p95-ms 15000 \
+  --max-p99-ms 23000</code></pre>
+      <p>Expected: PASS on the archived report. If a live run is performed, compare quality floors separately from noisy local latency and do not replace archived floors without an explicit new report.</p>
+      <ul>
+        <li>[ ] <strong>Step 4: Confirm no direct accidental pgGraph production enablement</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">rg -n &quot;PROJECTION_BACKEND|pggraph|GraphStore\\(&quot; src/zaxy tests docs AGENTS.md</code></pre>
+      <p>Expected: pgGraph is documented as experimental, default backend remains Neo4j, and any remaining direct <code>GraphStore(</code> construction is either in the Neo4j adapter/factory, tests, or Neo4j-specific CLI/schema code.</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Commit final fixes if needed</strong></li>
+      </ul>
+      <pre><code class="language-bash">git status --short</code></pre>
+      <p>Expected: clean worktree. If verification caused edits, commit them with <code>chore: finalize projection backend contract</code>.</p>
+      <h2 id="self-review">Self-Review</h2>
+      <ul>
+        <li>Spec coverage: backend-neutral contract, Neo4j default preservation, pgGraph experimental gate, same-harness guardrails, and roadmap state are mapped to tasks.</li>
+        <li>Placeholder scan: no TBD/TODO/fill-in markers remain.</li>
+        <li>Type consistency: <code>ProjectionStore</code>, <code>ProjectionBackendConfig</code>, <code>build_projection_store</code>, and <code>PROJECTION_BACKEND</code> are used consistently across tasks.</li>
+        <li>Scope check: this plan intentionally stops before a pgGraph adapter implementation. That adapter is a separate plan after this contract slice is merged and verified.</li>
+      </ul>
+    </article>
+  </main>
+</body>
+</html>

@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Testing - Zaxy Docs</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../index.html">Overview</a>
+      <a href="getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="testing">Testing</h1>
+      <p>Zaxy follows test-first development. Public behavior should have a test before implementation. The full suite has a broad 90 percent pytest coverage gate plus a coverage ratchet that currently requires at least 91.89% total line coverage from <code>coverage.xml</code>. Unit tests mock external dependencies such as Neo4j and Pathlight. Integration tests use Docker services and are marked with <code>integration</code>.</p>
+      <p>Common commands:</p>
+      <pre><code class="language-bash">pytest
+pytest -m integration --no-cov
+scripts/integration-check.sh --start
+ruff check src tests
+mypy src
+pytest tests/test_packet_memory_e2e.py --no-cov -q
+zaxy doctor --beta-readiness
+scripts/beta-uat.sh
+scripts/release-check.sh --root .</code></pre>
+      <p>The default pytest command includes coverage reporting and <code>--cov-fail-under=90</code> from <code>pyproject.toml</code>. CI and <code>scripts/release-check.sh</code> also run <code>scripts/check-coverage.py</code> against the generated XML report. The ratchet floor lives in <code>[tool.zaxy.coverage]</code>, is based on the canonical CI Python 3.13 measurement, and can be intentionally raised after coverage improvements. Integration-only runs use <code>--no-cov</code> because the project-level coverage gate is intended for the full suite. Before running integration tests, start the Neo4j services:</p>
+      <pre><code class="language-bash">./scripts/generate-certs.sh .certs
+docker compose up -d neo4j-test neo4j-tls</code></pre>
+      <p>For local full-suite checks, prefer the integration helper so the Neo4j dependency is explicit:</p>
+      <pre><code class="language-bash">scripts/integration-check.sh --start
+scripts/integration-check.sh --require
+scripts/integration-check.sh --skip-if-unavailable</code></pre>
+      <p>Use <code>--start</code> when Docker is available and the helper should generate TLS certs, boot <code>neo4j-test</code> and <code>neo4j-tls</code>, then run pytest. Use <code>--require</code> when services should already be running and absence should fail fast. Use <code>--skip-if-unavailable</code> for development loops where graph integration tests should be omitted only after the helper verifies the Neo4j test ports are not reachable.</p>
+      <p>Tests are organized by module: event log integrity, extraction, graph behavior, query routing, MCP tools, tracing, configuration, embeddings, operations scripts, packaging, and site/docs validation. New modules should get focused tests rather than relying only on high-level workflows.</p>
+      <p>The packet-memory product path has an explicit smoke check:</p>
+      <pre><code class="language-bash">pytest tests/test_packet_memory_e2e.py --no-cov -q</code></pre>
+      <p><code>scripts/release-check.sh</code> runs this packet smoke after the full pytest suite so the analyzer-to-projection-to-context workflow remains a named release gate.</p>
+      <p>The beta hardening path has two additional checks. <code>zaxy doctor --beta-readiness</code> is a fast local inventory of release metadata, release gate coverage, clean-repo UAT coverage, documentation, and deterministic capture posture. <code>scripts/beta-uat.sh</code> performs a clean first-run exercise in a throwaway workspace: install, <code>zaxy init</code>, deterministic capture startup, <code>zaxy memory bootstrap</code>, <code>zaxy memory checkout</code>, doctor, hook status, capture status, capture soak, and memory status. <code>zaxy capture-soak</code> is the beta evidence command for deterministic capture: it checks transcript, tool-call, command, and file-edit observation coverage, freshness, latest seq/hash, and remediation steps.</p>
+      <p>For graph changes, write both mock tests for Cypher behavior and integration tests against Neo4j when the real database semantics matter. For security changes, test both accepted and rejected inputs. For scripts, use temporary fixtures and injectable command stubs so tests can assert ordering and fail-fast behavior without running destructive commands.</p>
+      <p>Benchmark tests cover extraction latency, append latency, graph upsert latency, query latency, and competitive retrieval harness behavior. Benchmarks are useful for detecting large regressions, but correctness tests decide release readiness. For live comparative statistics against markdown, BM25, vector, markdown+vector, and Zaxy retrieval, run the statistically powered workload:</p>
+      <pre><code class="language-bash">./scripts/generate-certs.sh .certs
+docker compose up -d neo4j-test
+scripts/live-benchmark.sh --embedding-provider openai --workload statistical --subjects 100 --runs 1 --reset-graph</code></pre>
+      <p>OpenAI mode uses <code>OPENAI_API_KEY</code>, <code>OPENAI_EMBEDDING_MODEL</code>, and <code>EMBEDDING_DIMENSION</code>. The default model is <code>text-embedding-3-small</code>. The script writes <code>reports/benchmarks/live-benchmark.json</code> for automation and <code>reports/benchmarks/live-benchmark.md</code> for human review. Use <code>--embedding-provider hash</code> for deterministic offline smoke checks.</p>
+      <p>For publishable comparisons, use the frozen workload instead of a custom subject count:</p>
+      <pre><code class="language-bash">scripts/live-benchmark.sh --embedding-provider openai --workload frozen --runs 1 --reset-graph</code></pre>
+      <p>For MemPalace-comparable temporal recall beyond the original frozen statistical lane, use the dedicated temporal workload. It creates three time-versioned preference states per subject, queries each state with an explicit as-of point, and reports citation coverage for otherwise successful retrievals:</p>
+      <pre><code class="language-bash">scripts/live-benchmark.sh --embedding-provider openai --workload temporal-recall --subjects 100 --runs 1 --reset-graph</code></pre>
+      <p>For MemPalace-comparable source recall, use the dedicated source workload. It creates a target document and a near-miss distractor per case, then reports whether retrieval returned the exact expected source path as a separate source recall metric:</p>
+      <pre><code class="language-bash">scripts/live-benchmark.sh --embedding-provider openai --workload source-recall --documents 100 --runs 1 --reset-graph</code></pre>
+      <p>For MemPalace-comparable graph traversal, use the dedicated graph workload. It creates a goal, linked task, and completion actor per case, then asks for the actor who completed the task connected to the goal:</p>
+      <pre><code class="language-bash">scripts/live-benchmark.sh --embedding-provider openai --workload graph-traversal --subjects 100 --runs 1 --reset-graph</code></pre>
+      <p>For MemPalace-comparable context-collapse behavior, use the dedicated context-collapse workload. It creates noisy same-session transcript turns before a compact checkpoint, then asks for the preserved decision that should survive a small context window:</p>
+      <pre><code class="language-bash">scripts/live-benchmark.sh --embedding-provider openai --workload context-collapse --sessions 100 --runs 1 --reset-graph</code></pre>
+      <p>To inventory the comparable proof lanes without Neo4j or hosted embeddings, generate the frozen workload metadata directly. This is useful for release notes and CI checks that need versions, SHA-256 fingerprints, event/query counts, product claims, and required metrics without running retrieval:</p>
+      <pre><code class="language-bash">zaxy benchmark-inventory --json</code></pre>
+      <p>For public memory-benchmark comparisons against systems that report LongMemEval recall, download the cleaned LongMemEval JSON and run the <code>longmemeval</code> workload. This workload preserves answer session identifiers and reports identity recall in addition to answer-term recall:</p>
+      <pre><code class="language-bash">mkdir -p /tmp/longmemeval-data
+curl -fsSL -o /tmp/longmemeval-data/longmemeval_s_cleaned.json \
+  https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/main/longmemeval_s_cleaned.json
+
+scripts/live-benchmark.sh \
+  --embedding-provider openai \
+  --embedding-cache .cache/zaxy/longmemeval-embeddings.json \
+  --progress \
+  --workload longmemeval \
+  --dataset /tmp/longmemeval-data/longmemeval_s_cleaned.json \
+  --runs 1 \
+  --limit 5 \
+  --reset-graph</code></pre>
+      <p>Use <code>--questions 1</code> to validate credentials and service wiring, then <code>--questions 20</code> for a larger smoke run before the full 500-question pass. Keep <code>--embedding-cache</code> enabled for hosted embedding runs; LongMemEval contains many haystack chunks and reusable corpus embeddings make interrupted or repeated runs much cheaper. <code>--progress</code> prints backend/case counters to stderr so long runs do not appear stalled. The headline comparison field for this workload is identity recall at the requested limit, which corresponds to whether the answer-bearing session was retrieved.</p>
+      <p>Frozen reports include a workload version, event count, query count, source recall, citation coverage, and SHA-256 fingerprint so later runs can prove they used the same corpus. External systems such as QMD/OpenClaw, Graphiti/Zep, MemPalace, or Mem0 can be included only as operator-supplied disclosure rows via the Python CLI&#x27;s <code>--external-results</code> JSON option; those rows are not treated as harness-verified results.</p>
+      <p>For production-scale representative evaluation, use the suite workload. It keeps the same paired backends but expands the corpus to current facts, historical facts, graph traversal, indexed documents, sanitized transcript turns, and mixed cross-lane queries:</p>
+      <pre><code class="language-bash">scripts/live-benchmark.sh --embedding-provider openai --workload suite --subjects 100 --documents 250 --sessions 50 --runs 1 --reset-graph</code></pre>
+      <p>Suite reports disclose subject, document, session, lane, event, query, and SHA-256 workload metadata. Increase <code>--subjects</code>, <code>--documents</code>, and <code>--sessions</code> for capacity tests after the smoke run is stable.</p>
+      <p>Use <code>zaxy benchmark-compare</code> to enforce beta guardrails on a completed report. The command exits non-zero when quality drops below the configured floors, p95 or p99 exceed latency budgets, or latency regresses too far from a baseline:</p>
+      <pre><code class="language-bash">zaxy benchmark-compare reports/benchmarks/live-benchmark.json \
+  --baseline reports/benchmarks/baseline-live-benchmark.json \
+  --min-mean-score 0.95 \
+  --min-answer-recall-at-5 0.95 \
+  --min-recall-at-5 0.99 \
+  --min-citation-coverage 0.95 \
+  --max-p95-ms 500 \
+  --max-p99-ms 750</code></pre>
+      <p>For the full 100-question LongMemEval-compatible run, use the same quality floors and set latency budgets from the release environment. The current beta floor report is archived at <code>reports/benchmarks/live-benchmark.json</code>: mean score 0.950, Answer@5 0.950, citation coverage 1.000, and R@1/R@5/R@10 0.990. The current same-harness BM25 comparison is archived at <code>reports/benchmarks/longmemeval-100-comparison/live-benchmark.json</code>: BM25 R@5 0.840 versus Zaxy checkout R@5 0.990 on the same 100-question slice. See <a href="benchmarks.html">benchmarks.md</a> for public copy rules and external disclosure links for MemPalace, Mem0, and Agent Memory.</p>
+      <p>The legacy <code>limit=10</code> full 500-question LongMemEval-compatible archive is <code>reports/benchmarks/longmemeval-500-hash/live-benchmark.json</code>. Its Zaxy checkout floor remains mean score 0.626, Answer@5 0.608, citation coverage 1.000, and R@5 0.956. The current archived report clears that floor at mean score 0.724, Answer@5 0.628, citation coverage 1.000, R@5 0.972, p95 1472.11 ms, and p99 2652.55 ms.</p>
+      <p>The current same-harness <code>limit=5</code> backend-evaluation archive is <code>reports/benchmarks/longmemeval-500-neo4j-current-checkout/live-benchmark.json</code>. Its workload SHA-256 is <code>0dc36a139bb9a4fdc7c6cd34400737a58a1eb7410517341f015e9fbfc76ed854</code>. Its Zaxy checkout floor is mean score 0.714, Answer@5 0.626, citation coverage 1.000, R@5 0.958, p95 1089.53 ms, and p99 2456.86 ms. Use the floor matching the candidate harness; projection-backend work should use the current same-harness control unless it also reruns the legacy <code>limit=10</code> harness.</p>
+      <pre><code class="language-bash">zaxy benchmark-compare reports/benchmarks/longmemeval-500-neo4j-current-checkout/live-benchmark.json \
+  --backend zaxy-checkout \
+  --min-mean-score 0.714 \
+  --min-answer-recall-at-5 0.626 \
+  --min-recall-at-5 0.958 \
+  --min-citation-coverage 1.0 \
+  --max-p95-ms 1200 \
+  --max-p99-ms 2500</code></pre>
+      <p>To verify every archived public LongMemEval guardrail from a clean checkout, use the script wrapper. It checks the cached LongMemEval dataset, cached embeddings, archived JSON reports, benchmark inventory, and all published guardrail thresholds:</p>
+      <pre><code class="language-bash">scripts/benchmark-guardrails.sh</code></pre>
+      <p>For consolidation safety checks, use the identity-collapse workload. It creates near-duplicate source records with distinct durable identifiers and adds an identity-recall metric to the report. The <code>centroid</code> baseline intentionally models semantic consolidation that keeps one representative text, so it can look topically relevant while losing exact source identities:</p>
+      <pre><code class="language-bash">scripts/live-benchmark.sh --embedding-provider openai --workload consolidation --documents 100 --runs 1 --reset-graph</code></pre>
+      <p>Use this lane to detect whether a compaction strategy preserves exact event, document, transcript, or entity identity under retrieval, not just broad topic coverage.</p>
+      <p>Interpret the frozen temporal results narrowly. The suite workload is broader, but still synthetic; use it to measure Zaxy&#x27;s target problem before making broad market claims: current versus historical facts, stale-context avoidance, graph connections, cited document recall, transcript recall, mixed context assembly, latency, and returned context size on the same paired workload.</p>
+      <p>CI runs lint, mypy, the full test matrix, package artifact validation, and integration tests. The local release gate mirrors the important pieces. See <a href="operations.html">operations.md</a>, <a href="deployment.html">deployment.md</a>, and <a href="../README.html">README.md</a>. The public docs entry is <a href="../index.html">site/index.html</a>.</p>
+    </article>
+  </main>
+</body>
+</html>

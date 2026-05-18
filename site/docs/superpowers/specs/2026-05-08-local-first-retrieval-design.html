@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Local-First Retrieval Setup Design - Zaxy Docs</title>
+  <link rel="stylesheet" href="../../../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../../../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../../../index.html">Overview</a>
+      <a href="../../getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="local-first-retrieval-setup-design">Local-First Retrieval Setup Design</h1>
+      <h2 id="goal">Goal</h2>
+      <p>Make offline local retrieval setup a first-class Zaxy path by adding a CLI helper that emits and validates a deterministic local profile.</p>
+      <h2 id="scope">Scope</h2>
+      <p>The first slice targets a no-network baseline:</p>
+      <ul>
+        <li><code>EMBEDDING_PROVIDER=hash</code></li>
+        <li><code>RERANKER_PROVIDER=lexical</code></li>
+        <li><code>EMBEDDING_ENABLED=true</code></li>
+        <li><code>NEO4J_AUTO_START=true</code></li>
+        <li>no hosted API keys</li>
+      </ul>
+      <p>The helper should not install model runtimes or manage third-party local services. Local HTTP reranker profiles can be added later once the deterministic path is polished.</p>
+      <h2 id="cli-behavior">CLI Behavior</h2>
+      <p>Add <code>zaxy local-profile</code>.</p>
+      <p>By default it prints an <code>.env</code>-style profile to stdout. With <code>--output PATH</code>, it writes the same profile to a file. It refuses to overwrite existing files unless <code>--force</code> is supplied.</p>
+      <p>With <code>--check</code>, the command validates the current offline-local profile by constructing the configured embedding provider and reranker. It reports actionable failures and exits non-zero through Typer errors when configuration is invalid.</p>
+      <h2 id="components">Components</h2>
+      <ul>
+        <li><code>src/zaxy/local_profile.py</code>: small pure functions for rendering profile text and checking local provider construction.</li>
+        <li><code>src/zaxy/__main__.py</code>: Typer command wiring.</li>
+        <li><code>docs/embeddings.md</code>, <code>docs/getting-started.md</code>, <code>docs/runbook.md</code>: document the offline profile path.</li>
+        <li><code>tests/test_local_profile.py</code>, <code>tests/test_cli.py</code>: unit and CLI coverage.</li>
+      </ul>
+      <h2 id="error-handling">Error Handling</h2>
+      <p>The file writer refuses accidental overwrites. The checker surfaces provider construction errors as user-facing CLI errors instead of stack traces.</p>
+      <h2 id="testing">Testing</h2>
+      <p>Tests cover profile rendering, no-secret output, file overwrite protection, check success, and check failure for invalid local configuration.</p>
+    </article>
+  </main>
+</body>
+</html>

@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Agent Integration Templates Implementation Plan - Zaxy Docs</title>
+  <link rel="stylesheet" href="../../../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../../../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../../../index.html">Overview</a>
+      <a href="../../getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="agent-integration-templates-implementation-plan">Agent Integration Templates Implementation Plan</h1>
+      <blockquote><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</blockquote>
+      <p><strong>Goal:</strong> Add direct, dependency-light Python starter templates for common agent frameworks beyond MCP.</p>
+      <p><strong>Architecture:</strong> Extend the existing pure integration helper module with a template renderer that emits copyable Python snippets for LangGraph, CrewAI, and AutoGen. Add a Typer command that prints those templates, and document the direct integration path while keeping MCP as the primary interface.</p>
+      <p><strong>Tech Stack:</strong> Python 3.11, Typer, pytest, ruff, mypy.</p>
+      <p>---</p>
+      <h3 id="task-1-template-renderer">Task 1: Template Renderer</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>src/zaxy/integrations.py</code></li>
+        <li>Modify: <code>tests/test_integrations.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] Write failing tests for <code>render_agent_integration_template(&quot;langgraph&quot;, session_id=&quot;zaxy-default&quot;)</code>, <code>render_agent_integration_template(&quot;crewai&quot;)</code>, and invalid framework rejection.</li>
+        <li>[ ] Run <code>pytest --no-cov tests/test_integrations.py -q</code> and confirm the tests fail because the function is not implemented.</li>
+        <li>[ ] Add <code>AgentFramework</code> and <code>render_agent_integration_template()</code> to <code>src/zaxy/integrations.py</code>.</li>
+        <li>[ ] Keep templates dependency-light: import <code>MemoryFabric</code>, call <code>after_turn()</code> and <code>handoff_bundle()</code>, and include framework-specific function names/comments without importing framework packages.</li>
+        <li>[ ] Run <code>pytest --no-cov tests/test_integrations.py -q</code> and confirm it passes.</li>
+      </ul>
+      <h3 id="task-2-public-api-and-cli">Task 2: Public API And CLI</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>src/zaxy/__init__.py</code></li>
+        <li>Modify: <code>src/zaxy/__main__.py</code></li>
+        <li>Modify: <code>tests/test_cli.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] Write a failing CLI test for <code>zaxy integration-template langgraph --session-id zaxy-default</code>.</li>
+        <li>[ ] Run that focused test and confirm it fails because the command is missing.</li>
+        <li>[ ] Export <code>render_agent_integration_template</code> from <code>zaxy.__init__</code>.</li>
+        <li>[ ] Add a Typer <code>integration-template</code> command that prints the rendered template and maps invalid frameworks to <code>BadParameter</code>.</li>
+        <li>[ ] Run <code>pytest --no-cov tests/test_cli.py tests/test_integrations.py -q</code> and confirm it passes.</li>
+      </ul>
+      <h3 id="task-3-documentation-and-roadmap">Task 3: Documentation And Roadmap</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Create: <code>docs/integrations.md</code></li>
+        <li>Modify: <code>docs/api.md</code></li>
+        <li>Modify: <code>AGENTS.md</code></li>
+      </ul>
+      <ul>
+        <li>[ ] Document the Python direct integration template workflow and clarify that templates avoid hard runtime dependencies.</li>
+        <li>[ ] Add <code>docs/integrations.md</code> to API related references where appropriate.</li>
+        <li>[ ] Mark the roadmap item complete and update the next step to retention metadata extraction and reinforcement events.</li>
+        <li>[ ] Run <code>scripts/validate-docs.sh</code>.</li>
+      </ul>
+      <h3 id="task-4-full-verification-and-commit">Task 4: Full Verification And Commit</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>All changed files.</li>
+      </ul>
+      <ul>
+        <li>[ ] Run <code>ruff check src tests</code>.</li>
+        <li>[ ] Run <code>mypy src</code>.</li>
+        <li>[ ] Run <code>pytest -m &quot;not integration&quot; --benchmark-disable --no-cov -q</code>.</li>
+        <li>[ ] Update <code>AGENTS.md</code> test count with the passing suite result.</li>
+        <li>[ ] Re-run <code>scripts/validate-docs.sh</code>.</li>
+        <li>[ ] Commit with <code>feat: add direct agent integration templates</code>.</li>
+      </ul>
+    </article>
+  </main>
+</body>
+</html>

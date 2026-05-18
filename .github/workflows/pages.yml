@@ -31,16 +31,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      - name: Validate rendered docs
+        run: python scripts/build-site-docs.py --check
       - name: Stage static site
         run: |
           rm -rf _site
           mkdir -p _site
           cp -R site/. _site/
-          cp -R docs _site/docs
-          cp README.md _site/README.md
           cp -R reports _site/reports
-          cp -R site _site/site
-          cp -R reports _site/site/reports
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
