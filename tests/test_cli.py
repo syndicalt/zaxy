@@ -1089,6 +1089,20 @@ def test_integrations_command_can_emit_json() -> None:
     assert payload[0]["native_adapter"] == "zaxy.adapters.langgraph"
 
 
+def test_integrations_command_can_emit_recommendation_json() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["integrations", "--recommendation", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["target"] == "common-native-preview-contract"
+    assert payload["track"] == "model-facing-ux"
+    assert payload["evidence_frameworks"] == ["langgraph", "crewai"]
+    assert payload["hold_frameworks"] == ["autogen"]
+    assert "AutoGen" in payload["rationale"]
+
+
 def test_hooks_command_prints_claude_code_settings(tmp_path: Path) -> None:
     """hooks should render copyable observer hook config."""
     runner = CliRunner()

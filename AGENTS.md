@@ -358,6 +358,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Full 500-question pgGraph comparison archived with guardrail failure recorded, keeping pgGraph experimental until Recall@5 matches Neo4j-backed floors
 - [x] Reproducible pgGraph benchmark reset with full-set same-harness Neo4j checkout control
 - [x] Public benchmark guardrail script for cached LongMemEval artifacts and archived report floors
+- [x] Common native-preview adapter contract chosen as the next model-facing UX hardening target, with AutoGen held at template-only until runtime hooks are validated
 
 ## Metrics
 
@@ -375,4 +376,3 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 1. Improve full-set LongMemEval synthesis without reducing the archived 500-question no-regression floors: mean score 0.626, Answer@5 0.608, R@5 0.956, and citation coverage 1.000.
 2. Keep pgGraph experimental while repeating the full 500-question same-harness comparison and expanding operational coverage for bootstrap, reset, graph rebuild, and failure recovery.
-3. Use LangGraph and CrewAI native-preview usage to choose the next maintained adapter or model-facing UX hardening target.

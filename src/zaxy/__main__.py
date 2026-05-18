@@ -73,6 +73,7 @@ from zaxy.hooks import (
 )
 from zaxy.integrations import (
     list_framework_integration_specs,
+    recommend_framework_integration_target,
     render_agent_integration_template,
     render_codex_mcp_add_command,
     render_framework_install_command,
@@ -708,8 +709,23 @@ def integration_template(
 @app.command("integrations")
 def integrations(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable framework metadata"),
+    recommendation: bool = typer.Option(False, "--recommendation", help="Print the next maintained integration target"),
 ) -> None:
     """List direct framework integration support and install extras."""
+    if recommendation:
+        decision = recommend_framework_integration_target()
+        payload = asdict(decision)
+        if json_output:
+            typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+            return
+        typer.echo(
+            f"{decision.target}: {decision.track} "
+            f"(evidence={', '.join(decision.evidence_frameworks)}; "
+            f"hold={', '.join(decision.hold_frameworks)})"
+        )
+        typer.echo(decision.rationale)
+        return
+
     rows = []
     for spec in list_framework_integration_specs():
         command = _shell_join(render_framework_install_command(spec.framework))

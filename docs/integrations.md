@@ -38,13 +38,22 @@ To inspect the current framework support registry:
 ```bash
 zaxy integrations
 zaxy integrations --json
+zaxy integrations --recommendation --json
 ```
 
 Each entry reports the framework package, optional extra, starter function,
 current maturity, and whether a framework-native adapter package exists.
 LangGraph reports `native-preview` with `native_adapter=zaxy.adapters.langgraph`.
 CrewAI reports `native-preview` with `native_adapter=zaxy.adapters.crewai`.
-AutoGen remains `not-yet-packaged`.
+AutoGen remains template-only with `native_adapter=not-yet-packaged`.
+
+The current maintained integration recommendation is
+`common-native-preview-contract` on the model-facing UX hardening track. The
+reasoning is deliberately conservative: LangGraph and CrewAI already exercise
+the shared Memory Checkout, observation, and feedback flow, while AutoGen
+remains template-only until runtime hooks are validated in real usage. The next
+adapter work should stabilize shared payload keys and feedback behavior across
+native-preview adapters before promoting another framework-native package.
 
 ## LangGraph Native Preview
 

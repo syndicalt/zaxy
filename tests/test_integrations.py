@@ -8,9 +8,13 @@ from pathlib import Path
 
 import yaml
 
+from zaxy import (
+    recommend_framework_integration_target as public_recommend_framework_integration_target,
+)
 from zaxy.core import Context, HandoffBundle
 from zaxy.integrations import (
     list_framework_integration_specs,
+    recommend_framework_integration_target,
     render_agent_integration_template,
     render_codex_mcp_add_command,
     render_framework_install_command,
@@ -445,6 +449,26 @@ def test_lists_framework_integration_specs() -> None:
     assert specs["crewai"].maturity == "native-preview"
     assert specs["crewai"].native_adapter == "zaxy.adapters.crewai"
     assert specs["autogen"].package == "autogen-agentchat"
+
+
+def test_recommends_framework_integration_hardening_target() -> None:
+    """Native-preview usage should choose UX hardening over speculative adapters."""
+    decision = recommend_framework_integration_target()
+
+    assert decision.track == "model-facing-ux"
+    assert decision.target == "common-native-preview-contract"
+    assert decision.recommended is True
+    assert decision.evidence_frameworks == ("langgraph", "crewai")
+    assert decision.hold_frameworks == ("autogen",)
+    assert "LangGraph" in decision.rationale
+    assert "CrewAI" in decision.rationale
+    assert "AutoGen" in decision.rationale
+    assert decision.next_actions == (
+        "stabilize shared payload keys across native-preview adapters",
+        "keep AutoGen template-only until runtime hooks are validated",
+        "use adapter feedback events to decide the next native package",
+    )
+    assert public_recommend_framework_integration_target().target == decision.target
 
 
 def test_agent_integration_template_rejects_unknown_framework() -> None:

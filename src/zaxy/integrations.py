@@ -45,6 +45,19 @@ class FrameworkIntegrationSpec:
     native_adapter: str
 
 
+@dataclass(frozen=True)
+class FrameworkIntegrationDecision:
+    """Maintained adapter roadmap decision derived from preview integration state."""
+
+    target: str
+    track: Literal["native-adapter", "model-facing-ux"]
+    recommended: bool
+    evidence_frameworks: tuple[AgentFramework, ...]
+    hold_frameworks: tuple[AgentFramework, ...]
+    rationale: str
+    next_actions: tuple[str, ...]
+
+
 _FRAMEWORK_SPECS: tuple[FrameworkIntegrationSpec, ...] = (
     FrameworkIntegrationSpec(
         framework="langgraph",
@@ -79,6 +92,35 @@ _FRAMEWORK_SPECS: tuple[FrameworkIntegrationSpec, ...] = (
 def list_framework_integration_specs() -> tuple[FrameworkIntegrationSpec, ...]:
     """Return direct framework integration metadata in display order."""
     return _FRAMEWORK_SPECS
+
+
+def recommend_framework_integration_target() -> FrameworkIntegrationDecision:
+    """Return the next framework integration target from maintained preview usage.
+
+    LangGraph and CrewAI already exercise the same lifecycle surface without
+    requiring framework imports. AutoGen is still template-only because its
+    stable runtime hook shape is not yet proven by local usage.
+    """
+    return FrameworkIntegrationDecision(
+        target="common-native-preview-contract",
+        track="model-facing-ux",
+        recommended=True,
+        evidence_frameworks=("langgraph", "crewai"),
+        hold_frameworks=("autogen",),
+        rationale=(
+            "LangGraph and CrewAI native-preview adapters already prove the "
+            "shared Memory Checkout, observation, and feedback flow. AutoGen "
+            "should stay template-only until its runtime hooks are validated, "
+            "so the next maintained target is hardening the common "
+            "native-preview payload contract rather than adding another "
+            "speculative adapter."
+        ),
+        next_actions=(
+            "stabilize shared payload keys across native-preview adapters",
+            "keep AutoGen template-only until runtime hooks are validated",
+            "use adapter feedback events to decide the next native package",
+        ),
+    )
 
 
 def render_mcp_client_config(

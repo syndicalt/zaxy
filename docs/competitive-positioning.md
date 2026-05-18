@@ -100,7 +100,7 @@ export are available.
 - Keep public benchmark scripts reproducible from a clean checkout with cached
   datasets, archived reports, guardrail commands, and no hidden manual steps.
 - Keep LangGraph and CrewAI native-preview adapters dependency-light and use
-  them to learn the maintained adapter interface.
+  them to harden the common native-preview payload contract.
 - Keep AutoGen template-only until the right runtime hooks are clear.
 - Add public comparison workloads that evaluate temporal, source-recall,
   graph-traversal, and context-collapse behavior against MemPalace-style memory.

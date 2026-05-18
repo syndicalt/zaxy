@@ -151,6 +151,21 @@ def test_pggraph_backend_roadmap_records_contract_first_state() -> None:
     assert "regression" in benchmarks
 
 
+def test_framework_integration_docs_record_next_hardening_target() -> None:
+    """Docs should pin the native-preview learning into a maintained UX target."""
+    agents = Path("AGENTS.md").read_text(encoding="utf-8")
+    integrations = Path("docs/integrations.md").read_text(encoding="utf-8")
+    competitive = Path("docs/competitive-positioning.md").read_text(encoding="utf-8")
+
+    assert "Common native-preview adapter contract" in agents
+    assert "Use LangGraph and CrewAI native-preview usage" not in agents
+    assert "zaxy integrations --recommendation --json" in integrations
+    assert "common-native-preview-contract" in integrations
+    assert "model-facing UX hardening" in integrations
+    assert "AutoGen remains template-only" in integrations
+    assert "common native-preview payload contract" in competitive
+
+
 def test_full_set_guardrail_docs_distinguish_legacy_and_same_harness_floors() -> None:
     """Docs should not mix the legacy limit=10 floor with current backend-eval floors."""
     benchmarks = Path("docs/benchmarks.md").read_text(encoding="utf-8")

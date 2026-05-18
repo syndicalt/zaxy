@@ -5,8 +5,10 @@ from zaxy.adapters.langgraph import LangGraphMemoryAdapter, create_langgraph_mem
 from zaxy.context import Context, ContextAssemblyPolicy
 from zaxy.core import MemoryCheckout, MemoryFabric, QueryPage
 from zaxy.integrations import (
+    FrameworkIntegrationDecision,
     FrameworkIntegrationSpec,
     list_framework_integration_specs,
+    recommend_framework_integration_target,
     render_agent_integration_template,
     render_framework_install_command,
     render_handoff_adapter,
@@ -21,6 +23,7 @@ __version__ = package_version()
 
 __all__ = [
     "FrameworkIntegrationSpec",
+    "FrameworkIntegrationDecision",
     "CrewAIMemoryAdapter",
     "LangGraphMemoryAdapter",
     "Context",
@@ -37,6 +40,7 @@ __all__ = [
     "create_crewai_memory_step",
     "create_langgraph_memory_node",
     "list_framework_integration_specs",
+    "recommend_framework_integration_target",
     "render_agent_integration_template",
     "render_framework_install_command",
     "render_handoff_adapter",
