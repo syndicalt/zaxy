@@ -67,6 +67,11 @@ Neo4j is the default backend until an experimental backend matches or beats the
 archived quality, citation, temporal, latency, and operations gates on the same
 harness.
 
+The experimental pgGraph adapter is not a published benchmark backend yet. It
+supports projection, exact search, keyword search, invalidation, and traversal,
+but vector search remains unavailable until pgvector support passes this same
+guardrail.
+
 ## BM25 Comparison
 
 The current same-harness BM25 comparison is archived at

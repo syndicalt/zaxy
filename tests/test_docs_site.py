@@ -120,8 +120,10 @@ def test_pggraph_backend_roadmap_records_contract_first_state() -> None:
 
     assert "Skill Memory procedural world-model layer" in agents
     assert "Projection backend contract and Neo4j factory" in agents
-    assert "Build the experimental pgGraph adapter behind `PROJECTION_BACKEND=pggraph`" in agents
-    assert "pgGraph backend is experimental and has no adapter yet" in spec
+    assert "Experimental pgGraph adapter behind `PROJECTION_BACKEND=pggraph`" in agents
+    assert "pgGraph adapter supports projection, exact search, keyword search, invalidation, and traversal" in spec
+    assert "pgGraph vector search remains unavailable" in spec
+    assert 'pip install "zaxy-memory[pggraph]"' in spec
     assert "version 0.1.0, PostgreSQL 13-18 support, and alpha status" in spec
     assert "Projection backend changes must pass the full 500-question guardrail" in benchmarks
 

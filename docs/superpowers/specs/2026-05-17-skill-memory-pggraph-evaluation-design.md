@@ -60,9 +60,15 @@ outcome history, rollback metadata, and a supersession path.
 
 As of May 18, 2026, pgGraph docs describe version 0.1.0, PostgreSQL 13-18 support, and alpha status
 for experimentation, demos, benchmarks, and early feedback. Zaxy therefore keeps `PROJECTION_BACKEND=neo4j` as the default and
-treats `PROJECTION_BACKEND=pggraph` as unavailable until an adapter passes the
-benchmark gates. The current factory raises `pgGraph backend is experimental and has no adapter yet`
-for explicit pgGraph selection.
+treats `PROJECTION_BACKEND=pggraph` as experimental until it passes the benchmark
+gates. Install the optional adapter with `pip install "zaxy-memory[pggraph]"`,
+then set `PROJECTION_BACKEND=pggraph` and `PGGRAPH_DSN=...`.
+
+The current pgGraph adapter supports projection, exact search, keyword search, invalidation, and traversal
+over Zaxy-owned PostgreSQL projection tables.
+pgGraph vector search remains unavailable until pgvector ranking is implemented
+and benchmarked. Retrieval can still proceed because the query router already
+degrades unavailable lanes explicitly.
 
 pgGraph should be evaluated as a Postgres-local graph acceleration layer over
 Zaxy-owned relational tables. Zaxy would still own temporal semantics through
@@ -79,9 +85,10 @@ The evaluation should use a backend-neutral projection contract:
 - projection integrity and inferred-edge status methods needed by checkout and
   dashboard surfaces
 
-The Neo4j adapter should be wrapped behind that contract first with no behavior
-change. The pgGraph adapter should then be built as an experimental backend over
-Postgres tables, PostgreSQL full-text search, pgvector, and pgGraph traversal.
+The Neo4j adapter is wrapped behind that contract with no behavior change. The
+pgGraph adapter is experimental over Postgres tables, PostgreSQL lexical search,
+and pgGraph traversal. pgvector remains the next backend-specific feature before
+same-harness quality comparison.
 
 ## Evaluation Gates
 
@@ -125,5 +132,6 @@ The first implementation plan should be benchmark-driven:
 ## Roadmap Placement
 
 Skill Memory has moved from roadmap item to first procedural context lane.
-pgGraph remains a research/backend track that starts with contract extraction
-and benchmark proof, not with a migration.
+pgGraph remains a research/backend track: the adapter exists for local
+experimentation, but production support still requires integration coverage,
+pgvector-backed vector retrieval, and benchmark proof.
