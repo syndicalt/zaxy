@@ -155,7 +155,8 @@ def test_beta_uat_script_exercises_clean_repo_happy_path() -> None:
     assert "mktemp -d" in script
     assert "python -m pip install" in script
     assert "zaxy init" in script
-    assert "--preset local-codex" in script
+    assert 'run_workspace "codex" "local-codex" "start"' in script
+    assert 'run_workspace "claude-code" "local-claude" "status"' in script
     assert "zaxy memory bootstrap" in script
     assert "zaxy memory checkout" in script
     assert "zaxy doctor" in script
@@ -170,8 +171,9 @@ def test_beta_uat_script_uses_unique_default_domain_per_run() -> None:
     script = Path("scripts/beta-uat.sh").read_text(encoding="utf-8")
 
     assert 'basename "${WORKDIR}" | tr' in script
-    assert 'DOMAIN="${ZAXY_BETA_DOMAIN:-zaxy-beta-uat-${RUN_ID}}"' in script
-    assert 'SESSION_ID="${DOMAIN}-default"' in script
+    assert 'BASE_DOMAIN="${ZAXY_BETA_DOMAIN:-zaxy-beta-uat-${RUN_ID}}"' in script
+    assert 'local domain="${BASE_DOMAIN}-${label}"' in script
+    assert 'local session_id="${domain}-default"' in script
 
 
 def test_beta_uat_script_fails_when_checkout_has_no_memory() -> None:
@@ -332,7 +334,7 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
     (root / "scripts" / "beta-uat.sh").write_text(
         "mktemp -d\n"
         "python -m pip install\n"
-        "zaxy init --preset local-codex\n"
+        "zaxy init local-codex local-claude\n"
         "zaxy memory bootstrap\n"
         "zaxy memory checkout\n"
         "zaxy doctor\n"
