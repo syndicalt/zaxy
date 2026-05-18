@@ -367,7 +367,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
 | LongMemEval 500 hash | Zaxy checkout mean 0.640, Answer@5 0.612, R@5 0.972, citation coverage 1.000, p95 1155.88 ms, p99 2440.32 ms |
-| LongMemEval 500 pgGraph | Zaxy mean 0.694, Answer@5 0.694, R@5 0.958; checkout mean 0.714, Answer@5 0.624, R@5 0.958; same-harness Neo4j checkout control mean 0.712, Answer@5 0.620, R@5 0.958; citation coverage 1.000 |
+| LongMemEval 500 pgGraph | Zaxy mean 0.698, Answer@5 0.698, R@5 0.958; checkout mean 0.714, Answer@5 0.632, R@5 0.958; same-harness Neo4j checkout control mean 0.714, Answer@5 0.626, R@5 0.958; citation coverage 1.000 |
 
 ## Next Steps
 

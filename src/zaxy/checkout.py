@@ -329,9 +329,9 @@ def build_compact_answer_contexts(
     contract = _compact_contract(query=query, diagnostics=diagnostics, quality=quality)
     support_items = [
         *_compact_synthesis_items(current_facts, evidence),
-        *_compact_evidence_group_items(diagnostics),
     ]
     support_items.extend(_compact_fact_items(current_facts, used=len(support_items) + 1))
+    support_items.extend(_compact_evidence_group_items(diagnostics))
     if not support_items:
         return [contract]
     return [

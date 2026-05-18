@@ -64,8 +64,8 @@ matching the pgGraph full-set comparison below.
 
 | Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | Recall@10 | p95 ms | p99 ms |
 |---------|------------|----------|-------------------|----------|----------|-----------|--------|--------|
-| BM25 | 0.514 | 0.514 | 1.000 | 0.592 | 0.770 | 0.770 | 329.24 | 385.19 |
-| Zaxy checkout | 0.712 | 0.620 | 1.000 | 0.946 | 0.958 | 0.958 | 1076.40 | 2436.42 |
+| BM25 | 0.516 | 0.516 | 1.000 | 0.592 | 0.770 | 0.770 | 347.47 | 406.53 |
+| Zaxy checkout | 0.714 | 0.626 | 1.000 | 0.946 | 0.958 | 0.958 | 1089.53 | 2456.86 |
 
 Use this current backend-evaluation floor when comparing projection backends or
 other `limit=5` full-set reports. Do not compare a `limit=5` backend run
@@ -126,14 +126,14 @@ stale benchmark projections.
 
 | Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | p95 ms | Approx tokens |
 |---------|------------|----------|-------------------|----------|----------|--------|---------------|
-| BM25 | 0.518 | 0.518 | 1.000 | 0.592 | 0.770 | 330.79 | 2661 |
-| pgGraph Zaxy | 0.694 | 0.694 | 1.000 | 0.958 | 0.958 | 998.17 | 4193 |
-| pgGraph checkout | 0.714 | 0.624 | 1.000 | 0.948 | 0.958 | 1057.91 | 12970 |
-| Neo4j checkout control | 0.712 | 0.620 | 1.000 | 0.946 | 0.958 | 1076.40 | 13383 |
+| BM25 | 0.512 | 0.512 | 1.000 | 0.592 | 0.770 | 343.80 | 2661 |
+| pgGraph Zaxy | 0.698 | 0.698 | 1.000 | 0.958 | 0.958 | 1077.11 | 4193 |
+| pgGraph checkout | 0.714 | 0.632 | 1.000 | 0.948 | 0.958 | 1020.22 | 13016 |
+| Neo4j checkout control | 0.714 | 0.626 | 1.000 | 0.946 | 0.958 | 1089.53 | 13431 |
 
 The clean pgGraph run restored the full-set Recall@5 floor and passed Answer@5,
 citation coverage, and latency. The same-harness Neo4j checkout control on the
-current workload hash scored `0.712`, and pgGraph checkout scored `0.714`, so
+current workload hash scored `0.714`, and pgGraph checkout scored `0.714`, so
 the current adapter comparison no longer shows a pgGraph-specific quality
 regression. Checkout token volume is higher than the previous archive because
 the benchmark now includes supporting facts and evidence from the model-facing
@@ -282,8 +282,8 @@ Neo4j checkout control:
 ```bash
 zaxy benchmark-compare reports/benchmarks/longmemeval-500-neo4j-current-checkout/live-benchmark.json \
   --backend zaxy-checkout \
-  --min-mean-score 0.712 \
-  --min-answer-recall-at-5 0.620 \
+  --min-mean-score 0.714 \
+  --min-answer-recall-at-5 0.626 \
   --min-recall-at-5 0.958 \
   --min-citation-coverage 1.0 \
   --max-p95-ms 1200 \

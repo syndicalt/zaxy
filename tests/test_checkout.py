@@ -572,15 +572,50 @@ def test_checkout_compact_contexts_put_evidence_before_control_only_metadata() -
     )
 
     assert compact[0].startswith("memory_checkout_compact=true")
-    assert "checkout_evidence_group=true" in compact[0]
-    assert "source_id=answer-1" in compact[0]
+    assert "checkout_fact=true" in compact[0]
+    assert "longmemeval_session_id=answer-1" in compact[0]
     assert "memory_checkout=true" in compact[0]
     assert not any(
         context.startswith("memory_checkout_compact=true\nmemory_checkout=true\nquery=")
         and "checkout_evidence_group=true" not in context
+        and "checkout_fact=true" not in context
         and "checkout_synthesis=true" not in context
         for context in compact[:5]
     )
+
+
+def test_checkout_compact_contexts_keep_fact_snippets_in_top_five() -> None:
+    """Evidence group diagnostics should not push answer-bearing facts below top five."""
+    current_facts = [
+        {
+            "content": f"longmemeval_session_id=answer-{index} I attended wedding {index}.",
+            "source": "verbatim",
+            "score": 1.0 - (index * 0.01),
+            "citation": f"eventloom://agent-1/events/{index}#aaaaaaaaaaaa",
+            "source_lane": "verbatim",
+        }
+        for index in range(1, 7)
+    ]
+    diagnostics = build_checkout_diagnostics(
+        query="How many weddings did I attend?",
+        source_lanes={"verbatim": len(current_facts)},
+        current_facts=current_facts,
+        evidence=current_facts,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        warnings=[],
+    )
+
+    compact = build_compact_answer_contexts(
+        query="How many weddings did I attend?",
+        current_facts=current_facts,
+        evidence=current_facts,
+        diagnostics=diagnostics,
+        quality={"answerability": "answer_from_memory", "confidence": 0.88},
+    )
+
+    top_five = "\n".join(compact[:5])
+    assert "checkout_fact=true" in top_five
+    assert "I attended wedding 1." in top_five
 
 
 def test_checkout_guides_absence_checks_without_overclaiming() -> None:
