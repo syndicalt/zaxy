@@ -366,6 +366,18 @@ def test_agents_roadmap_records_dual_clean_repo_uat() -> None:
     assert "fresh Codex and Claude Code workspaces" not in agents
 
 
+def test_docs_reference_public_benchmark_guardrail_script() -> None:
+    """Docs and roadmap should expose the clean-checkout benchmark guardrail command."""
+    agents = Path("AGENTS.md").read_text(encoding="utf-8")
+    benchmarks = Path("docs/benchmarks.md").read_text(encoding="utf-8")
+    testing = Path("docs/testing.md").read_text(encoding="utf-8")
+
+    assert "Public benchmark guardrail script" in agents
+    assert "scripts/benchmark-guardrails.sh" in benchmarks
+    assert "scripts/benchmark-guardrails.sh" in testing
+    assert "cached LongMemEval dataset" in testing
+
+
 def test_hooks_docs_explain_capture_readiness() -> None:
     """Hook docs should explain the automatic-capture readiness signal."""
     text = Path("docs/hooks.md").read_text(encoding="utf-8")

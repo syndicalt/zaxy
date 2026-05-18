@@ -295,6 +295,13 @@ thresholds explicit. For market comparisons, keep external products in
 disclosure rows until they can run against the same dataset, query order,
 retrieval limit, scoring code, and citation requirements.
 
+From a clean checkout with the cached LongMemEval dataset and embedding cache
+present, run all archived public LongMemEval guardrails with:
+
+```bash
+scripts/benchmark-guardrails.sh
+```
+
 Related references: [testing.md](testing.md), [retrieval.md](retrieval.md),
 [competitive-positioning.md](competitive-positioning.md),
 [benchmark-review.md](benchmark-review.md), and [README.md](../README.md). The

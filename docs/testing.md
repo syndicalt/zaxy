@@ -251,6 +251,15 @@ zaxy benchmark-compare reports/benchmarks/longmemeval-500-neo4j-current-checkout
   --max-p99-ms 2500
 ```
 
+To verify every archived public LongMemEval guardrail from a clean checkout, use
+the script wrapper. It checks the cached LongMemEval dataset, cached embeddings,
+archived JSON reports, benchmark inventory, and all published guardrail
+thresholds:
+
+```bash
+scripts/benchmark-guardrails.sh
+```
+
 For consolidation safety checks, use the identity-collapse workload. It creates
 near-duplicate source records with distinct durable identifiers and adds an
 identity-recall metric to the report. The `centroid` baseline intentionally
