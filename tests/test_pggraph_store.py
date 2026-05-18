@@ -77,6 +77,7 @@ async def test_pggraph_store_init_schema_creates_projection_tables_and_registers
     assert "CREATE TABLE IF NOT EXISTS zaxy_pggraph_edges" in sql
     assert "graph.add_table" in sql
     assert "graph.add_edge" in sql
+    assert "to_column := 'target_node_key'" in sql
     assert "graph.build" in sql
     assert connection.commits == 1
 
@@ -280,6 +281,7 @@ async def test_pggraph_store_search_vector_uses_pgvector_cosine_distance() -> No
     assert results[0].score == 0.91
     sql, params = connection.statements[-1]
     assert "embedding_vector <=> %(embedding)s::vector" in sql
+    assert "%(temporal_point)s::timestamptz IS NULL" in sql
     assert "embedding_vector IS NOT NULL" in sql
     assert isinstance(params, dict)
     assert params["embedding"] == "[0.1,0.2,0.3]"

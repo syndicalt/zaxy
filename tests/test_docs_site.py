@@ -134,6 +134,12 @@ def test_pggraph_backend_roadmap_records_contract_first_state() -> None:
     assert "version 0.1.0, PostgreSQL 13-18 support, and alpha status" in spec
     assert "Projection backend changes must pass the full 500-question guardrail" in benchmarks
     assert "vector search uses pgvector" in benchmarks
+    assert "longmemeval-100-pggraph-comparison" in benchmarks
+    assert "longmemeval-100-neo4j-comparison" in benchmarks
+    assert "pgGraph checkout" in benchmarks
+    assert "0.910" in benchmarks
+    assert "Neo4j checkout" in benchmarks
+    assert "0.930" in benchmarks
 
 
 def test_memory_checkout_docs_and_site_match_golden_contract_fixture() -> None:

@@ -353,6 +353,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Skill Memory outcome analytics for promotion candidates, rollback candidates, and contradiction diagnostics
 - [x] Projection backend contract and Neo4j factory for pgGraph evaluation without changing the default backend
 - [x] Experimental pgGraph adapter behind `PROJECTION_BACKEND=pggraph` for projection, exact search, keyword search, pgvector-backed vector search, invalidation, and traversal, with optional integration coverage
+- [x] Initial same-harness pgGraph vs Neo4j LongMemEval-compatible 100-question comparison with BM25 baseline and pgvector-enabled Docker validation
 
 ## Metrics
 
@@ -368,7 +369,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 ## Next Steps
 
 1. Improve full-set LongMemEval synthesis without reducing the archived 500-question no-regression floors: mean score 0.626, Answer@5 0.608, R@5 0.956, and citation coverage 1.000.
-2. Run same-harness pgGraph quality, citation, temporal, latency, and operations comparisons against Neo4j before considering any default-backend change.
+2. Extend pgGraph evaluation to a full 500-question same-harness run and operational coverage for container bootstrap, schema reset, graph rebuild, and failure recovery before considering any default-backend change.
 3. Expand clean-repo onboarding and model-facing UAT with fresh Codex and Claude Code workspaces: `zaxy init`, Memory Bootstrap, deterministic capture, Memory Checkout, feedback, and doctor status.
 4. Keep public benchmark scripts fully reproducible from a clean checkout, with cached datasets, archived reports, guardrail commands, and no hidden manual steps.
 5. Use LangGraph and CrewAI native-preview usage to choose the next maintained adapter or model-facing UX hardening target.

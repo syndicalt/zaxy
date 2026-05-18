@@ -67,12 +67,35 @@ Neo4j is the default backend until an experimental backend matches or beats the
 archived quality, citation, temporal, latency, and operations gates on the same
 harness.
 
-The experimental pgGraph adapter is not a published benchmark backend yet. It
-supports projection, exact search, keyword search, pgvector-backed vector search,
-invalidation, and traversal. It remains behind `PROJECTION_BACKEND=pggraph`, and
-vector search uses pgvector only when the PostgreSQL endpoint has the extension
-installed. pgGraph is still not eligible as the default backend until it passes
-this same guardrail on the same harness.
+The experimental pgGraph adapter now has an initial same-harness backend
+comparison, but it remains experimental. It supports projection, exact search,
+keyword search, pgvector-backed vector search, invalidation, and traversal. It
+remains behind `PROJECTION_BACKEND=pggraph`, and vector search uses pgvector only
+when the PostgreSQL endpoint has the extension installed. pgGraph is still not
+eligible as the default backend until it passes the full guardrail on the same
+harness and has repeatable operations coverage.
+
+## pgGraph Backend Comparison
+
+The current 100-question backend comparison is archived at
+[reports/benchmarks/longmemeval-100-pggraph-comparison/live-benchmark.md](../reports/benchmarks/longmemeval-100-pggraph-comparison/live-benchmark.md)
+and
+[reports/benchmarks/longmemeval-100-neo4j-comparison/live-benchmark.md](../reports/benchmarks/longmemeval-100-neo4j-comparison/live-benchmark.md).
+Both runs use the same cleaned LongMemEval-compatible slice, deterministic hash
+embeddings, `limit=5`, BM25 as the lexical baseline, and `--zaxy-backend both`.
+
+| Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | p95 ms | Approx tokens |
+|---------|------------|----------|-------------------|----------|----------|--------|---------------|
+| BM25 | 0.500 | 0.500 | 1.000 | 0.710 | 0.840 | 98.24 | 2514 |
+| pgGraph Zaxy | 0.960 | 0.960 | 1.000 | 0.980 | 0.980 | 355.37 | 5789 |
+| pgGraph checkout | 0.910 | 0.910 | 1.000 | 0.950 | 0.980 | 312.62 | 5033 |
+| Neo4j Zaxy | 0.960 | 0.960 | 1.000 | 1.000 | 1.000 | 667.78 | 3937 |
+| Neo4j checkout | 0.930 | 0.930 | 1.000 | 0.960 | 1.000 | 625.98 | 7419 |
+
+This is enough to keep pgGraph as a serious evaluation path, not enough to make
+it the default. The open gate is a full 500-question comparison plus operational
+coverage for container bootstrap, schema reset, graph rebuild, and failure
+recovery.
 
 ## BM25 Comparison
 

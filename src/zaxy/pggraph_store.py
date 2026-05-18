@@ -89,7 +89,7 @@ SELECT graph.add_edge(
     from_table := 'zaxy_pggraph_edges'::regclass,
     from_column := 'source_node_key',
     to_table := 'zaxy_pggraph_entities'::regclass,
-    to_column := 'node_key',
+    to_column := 'target_node_key',
     label := 'relates',
     bidirectional := false,
     weight_column := NULL,
@@ -280,11 +280,11 @@ class PgGraphStore:
               AND name = %(name)s
               AND (%(entity_type)s IS NULL OR entity_type = %(entity_type)s)
               AND (
-                (%(temporal_point)s IS NULL AND valid_to IS NULL)
+                (%(temporal_point)s::timestamptz IS NULL AND valid_to IS NULL)
                 OR (
-                    %(temporal_point)s IS NOT NULL
-                    AND valid_from <= %(temporal_point)s
-                    AND (valid_to IS NULL OR valid_to > %(temporal_point)s)
+                    %(temporal_point)s::timestamptz IS NOT NULL
+                    AND valid_from <= %(temporal_point)s::timestamptz
+                    AND (valid_to IS NULL OR valid_to > %(temporal_point)s::timestamptz)
                 )
               )
             ORDER BY valid_from DESC
@@ -325,11 +325,11 @@ class PgGraphStore:
             WHERE session_id = %(session_id)s
               AND (name ILIKE %(contains_query)s OR coalesce(summary, '') ILIKE %(contains_query)s)
               AND (
-                (%(temporal_point)s IS NULL AND valid_to IS NULL)
+                (%(temporal_point)s::timestamptz IS NULL AND valid_to IS NULL)
                 OR (
-                    %(temporal_point)s IS NOT NULL
-                    AND valid_from <= %(temporal_point)s
-                    AND (valid_to IS NULL OR valid_to > %(temporal_point)s)
+                    %(temporal_point)s::timestamptz IS NOT NULL
+                    AND valid_from <= %(temporal_point)s::timestamptz
+                    AND (valid_to IS NULL OR valid_to > %(temporal_point)s::timestamptz)
                 )
               )
             ORDER BY score DESC, valid_from DESC
@@ -371,11 +371,11 @@ class PgGraphStore:
                 WHERE session_id = %(session_id)s
                   AND name = %(start_name)s
                   AND (
-                    (%(temporal_point)s IS NULL AND valid_to IS NULL)
+                    (%(temporal_point)s::timestamptz IS NULL AND valid_to IS NULL)
                     OR (
-                        %(temporal_point)s IS NOT NULL
-                        AND valid_from <= %(temporal_point)s
-                        AND (valid_to IS NULL OR valid_to > %(temporal_point)s)
+                        %(temporal_point)s::timestamptz IS NOT NULL
+                        AND valid_from <= %(temporal_point)s::timestamptz
+                        AND (valid_to IS NULL OR valid_to > %(temporal_point)s::timestamptz)
                     )
                   )
                 ORDER BY valid_from DESC
@@ -436,11 +436,11 @@ class PgGraphStore:
             WHERE session_id = %(session_id)s
               AND embedding_vector IS NOT NULL
               AND (
-                (%(temporal_point)s IS NULL AND valid_to IS NULL)
+                (%(temporal_point)s::timestamptz IS NULL AND valid_to IS NULL)
                 OR (
-                    %(temporal_point)s IS NOT NULL
-                    AND valid_from <= %(temporal_point)s
-                    AND (valid_to IS NULL OR valid_to > %(temporal_point)s)
+                    %(temporal_point)s::timestamptz IS NOT NULL
+                    AND valid_from <= %(temporal_point)s::timestamptz
+                    AND (valid_to IS NULL OR valid_to > %(temporal_point)s::timestamptz)
                 )
               )
             ORDER BY embedding_vector <=> %(embedding)s::vector, valid_from DESC
