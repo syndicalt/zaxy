@@ -98,6 +98,20 @@ async def test_pggraph_store_close_closes_existing_connection() -> None:
     assert connection.closed is True
 
 
+def test_pggraph_store_dsn_returns_configured_connection_string() -> None:
+    store = PgGraphStore("postgresql://test")
+
+    assert store.dsn == "postgresql://test"
+
+
+@pytest.mark.asyncio
+async def test_pggraph_store_requires_connection_before_operations() -> None:
+    store = PgGraphStore("postgresql://test")
+
+    with pytest.raises(AssertionError, match="Call connect"):
+        await store.init_schema()
+
+
 @pytest.mark.asyncio
 async def test_pggraph_store_upsert_extraction_writes_entities_edges_and_events() -> None:
     connection = FakeConnection()
@@ -274,6 +288,29 @@ async def test_pggraph_store_search_traversal_uses_pggraph_traverse() -> None:
 
 
 @pytest.mark.asyncio
+async def test_pggraph_store_search_traversal_accepts_flat_rows_and_json_properties() -> None:
+    connection = FakeConnection()
+    connection.cursor_obj.rows = [
+        {
+            "name": "pgGraph",
+            "entity_type": "backend",
+            "valid_from": "2026-05-18T00:00:00Z",
+            "valid_to": None,
+            "summary": "Postgres graph extension",
+            "properties": '{"path": "docs/pggraph.md"}',
+            "session_id": "agent-1",
+        }
+    ]
+    store = PgGraphStore("postgresql://test", connection=connection)
+
+    results = await store.search_traversal("Zaxy", session_id="agent-1")
+
+    assert results[0].name == "pgGraph"
+    assert results[0].properties["summary"] == "Postgres graph extension"
+    assert results[0].properties["path"] == "docs/pggraph.md"
+
+
+@pytest.mark.asyncio
 async def test_pggraph_store_has_traversal_edges_checks_active_edges() -> None:
     connection = FakeConnection()
     connection.cursor_obj.rows = [{"has_edges": True}]
@@ -405,6 +442,64 @@ async def test_pggraph_store_inspect_inferred_edge_status_reports_method_and_evi
     assert "zaxy_pggraph_edges" in sql
     assert "jsonb_object_keys(properties)" in sql
     assert "inferred = true" in sql
+
+
+@pytest.mark.asyncio
+async def test_pggraph_store_inspect_inferred_edge_status_handles_empty_projection() -> None:
+    connection = FakeConnection()
+    connection.row_sets = [[], []]
+    store = PgGraphStore("postgresql://test", connection=connection)
+
+    status = await store.inspect_inferred_edge_status("agent-1")
+
+    assert status.total_edges == 0
+    assert status.method_count == 0
+    assert status.evidence_coverage == 1.0
+    assert status.methods == ()
+    assert status.samples == ()
+
+
+@pytest.mark.asyncio
+async def test_pggraph_store_inspect_inferred_edge_status_normalizes_unexpected_array_values() -> None:
+    connection = FakeConnection()
+    connection.row_sets = [
+        [
+            {
+                "method": None,
+                "edge_count": "1",
+                "relation_types": "not-an-array",
+                "average_confidence": "0.7",
+                "minimum_confidence": "0.6",
+                "evidence_count": "0",
+                "missing_evidence_count": "1",
+                "missing_source_event_count": "1",
+            }
+        ],
+        [
+            {
+                "source": "task-7",
+                "target": "decision:Use graph audit",
+                "relation_type": "likely_informed",
+                "confidence": "0.7",
+                "method": None,
+                "source_event_seq": "12",
+                "source_event_hash": None,
+                "evidence_keys": "not-an-array",
+            }
+        ],
+    ]
+    store = PgGraphStore("postgresql://test", connection=connection)
+
+    status = await store.inspect_inferred_edge_status("agent-1")
+
+    assert status.methods[0].method == "unknown"
+    assert status.methods[0].edge_count == 1
+    assert status.methods[0].relation_types == ()
+    assert status.methods[0].average_confidence == pytest.approx(0.7)
+    assert status.samples[0].method == "unknown"
+    assert status.samples[0].source_event_seq == 12
+    assert status.samples[0].source_event_hash is None
+    assert status.samples[0].evidence_keys == ()
 
 
 @pytest.mark.asyncio

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 from zaxy.dashboard import (
     DashboardApp,
     DashboardConfig,
     EventloomDashboardGraphProvider,
+    FallbackDashboardGraphProvider,
     Neo4jDashboardGraphProvider,
+    UnavailableGraphProvider,
+    build_dashboard_graph_provider,
     create_dashboard_handler,
     render_dashboard_html,
     resolve_dashboard_scope,
@@ -74,6 +78,14 @@ def test_dashboard_status_and_events_use_resolved_eventloom(tmp_path: Path) -> N
     assert status_code == 200
     assert body["events"][0]["type"] == "decision.recorded"
     assert body["events"][0]["summary"] == "Build dashboard."
+
+    status_code, _headers, body = app.handle_api("GET", "/api/sessions", "")
+    assert status_code == 200
+    assert body["sessions"][0]["session_id"] == "default"
+
+    status_code, _headers, body = app.handle_api("GET", "/api/events", "limit=not-a-number")
+    assert status_code == 200
+    assert len(body["events"]) == 1
 
 
 def test_default_dashboard_graph_uses_eventloom_when_neo4j_is_absent(tmp_path: Path) -> None:
@@ -172,6 +184,103 @@ class FakeGraphProvider:
         return {"nodes": [{"id": node_id}], "edges": []}
 
 
+def test_unavailable_dashboard_graph_provider_reports_degraded_payloads() -> None:
+    provider = UnavailableGraphProvider()
+
+    assert provider.summary(session_id="agent-1") == {
+        "available": False,
+        "session_id": "agent-1",
+        "nodes": 0,
+        "edges": 0,
+        "warning": "graph provider unavailable",
+    }
+    assert provider.neighborhood(
+        session_id="agent-1",
+        node_id="n1",
+        view="memory",
+        hops=2,
+        limit=10,
+    ) == {
+        "available": False,
+        "session_id": "agent-1",
+        "node_id": "n1",
+        "view": "memory",
+        "hops": 2,
+        "limit": 10,
+        "nodes": [],
+        "edges": [],
+        "omitted_nodes": 0,
+        "omitted_edges": 0,
+        "warning": "graph provider unavailable",
+    }
+    assert provider.search(session_id="agent-1", query="decision", view="memory", limit=10)[
+        "available"
+    ] is False
+    assert provider.path_to_event(session_id="agent-1", node_id="n1", limit=10)[
+        "available"
+    ] is False
+
+
+def test_fallback_dashboard_graph_provider_uses_eventloom_when_primary_is_unavailable(
+    tmp_path: Path,
+) -> None:
+    log = EventLog(tmp_path / ".eventloom" / "default.jsonl")
+    event = log.append("decision.recorded", actor="tester", payload={"decision": "Use fallback."})
+    fallback = EventloomDashboardGraphProvider(tmp_path / ".eventloom")
+    provider = FallbackDashboardGraphProvider(UnavailableGraphProvider(), fallback)
+
+    summary = provider.summary(session_id="default")
+    assert summary["source"] == "eventloom"
+    assert summary["nodes"] == 1
+
+    neighborhood = provider.neighborhood(
+        session_id="default",
+        node_id=f"event:default:{event.seq}",
+        view="provenance",
+        hops=1,
+        limit=5,
+    )
+    assert neighborhood["nodes"][0]["id"] == f"event:default:{event.seq}"
+
+    search = provider.search(session_id="default", query="fallback", view="provenance", limit=5)
+    assert search["nodes"][0]["id"] == f"event:default:{event.seq}"
+
+    path = provider.path_to_event(session_id="default", node_id=f"event:default:{event.seq}", limit=5)
+    assert path["nodes"][0]["id"] == f"event:default:{event.seq}"
+
+
+def test_fallback_dashboard_graph_provider_keeps_available_primary_results() -> None:
+    primary = FakeGraphProvider()
+    provider = FallbackDashboardGraphProvider(primary, UnavailableGraphProvider())
+
+    assert provider.summary(session_id="agent-1") == {"nodes": 2, "edges": 1}
+    assert provider.neighborhood(
+        session_id="agent-1",
+        node_id="n1",
+        view="memory",
+        hops=1,
+        limit=5,
+    )["nodes"] == [{"id": "n1"}]
+    assert provider.search(session_id="agent-1", query="decision", view="memory", limit=5)[
+        "nodes"
+    ] == [{"id": "n1", "label": "decision"}]
+    assert provider.path_to_event(session_id="agent-1", node_id="n1", limit=5)["nodes"] == [
+        {"id": "n1"}
+    ]
+
+
+def test_build_dashboard_graph_provider_uses_eventloom_without_neo4j_credentials(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    scope = resolve_dashboard_scope(DashboardConfig(workspace=workspace))
+
+    provider = build_dashboard_graph_provider(scope)
+
+    assert isinstance(provider, EventloomDashboardGraphProvider)
+
+
 def test_dashboard_graph_summary_uses_session_scope(tmp_path: Path) -> None:
     workspace = tmp_path / "project"
     workspace.mkdir()
@@ -242,6 +351,28 @@ def test_dashboard_graph_search_and_path_are_bounded(tmp_path: Path) -> None:
     )
 
 
+def test_dashboard_graph_routes_validate_required_parameters(tmp_path: Path) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    app = DashboardApp(resolve_dashboard_scope(DashboardConfig(workspace=workspace)))
+
+    status_code, _headers, body = app.handle_api("GET", "/api/graph/neighborhood", "")
+    assert status_code == 400
+    assert body["error"] == "node_id_required"
+
+    status_code, _headers, body = app.handle_api("GET", "/api/graph/search", "")
+    assert status_code == 400
+    assert body["error"] == "query_required"
+
+    status_code, _headers, body = app.handle_api("GET", "/api/graph/path-to-event", "")
+    assert status_code == 400
+    assert body["error"] == "node_id_required"
+
+    status_code, _headers, body = app.handle_api("GET", "/api/unknown", "")
+    assert status_code == 404
+    assert body["error"] == "not_found"
+
+
 def test_dashboard_checkout_endpoint_is_read_only_placeholder(tmp_path: Path) -> None:
     workspace = tmp_path / "project"
     workspace.mkdir()
@@ -261,6 +392,31 @@ def test_neo4j_dashboard_provider_uses_direct_reads_without_transaction_retry() 
     assert "execute_read" not in Neo4jDashboardGraphProvider.path_to_event.__code__.co_names
 
 
+def test_eventloom_graph_provider_handles_bad_or_cross_session_node_ids(tmp_path: Path) -> None:
+    log = EventLog(tmp_path / ".eventloom" / "default.jsonl")
+    log.append("decision.recorded", actor="tester", payload={"decision": "Use fallback graph."})
+    provider = EventloomDashboardGraphProvider(tmp_path / ".eventloom")
+
+    fallback_summary = provider.neighborhood(
+        session_id="default",
+        node_id="not-an-event-node",
+        view="provenance",
+        hops=1,
+        limit=5,
+    )
+    assert fallback_summary["source"] == "eventloom"
+    assert fallback_summary["nodes"] == 1
+
+    cross_session = provider.neighborhood(
+        session_id="agent-1",
+        node_id="event:default:1",
+        view="provenance",
+        hops=1,
+        limit=5,
+    )
+    assert cross_session == {"available": True, "source": "eventloom", "nodes": [], "edges": []}
+
+
 def test_neo4j_dashboard_summary_returns_renderable_elements() -> None:
     class FakeNeo4jDateTime:
         def iso_format(self) -> str:
@@ -271,7 +427,13 @@ def test_neo4j_dashboard_summary_returns_renderable_elements() -> None:
         labels = ["Entity"]
 
         def items(self) -> list[tuple[str, object]]:
-            return [("name", "Decision"), ("created_at", FakeNeo4jDateTime())]
+            return [
+                ("name", "Decision"),
+                ("created_at", FakeNeo4jDateTime()),
+                ("business_date", date(2026, 5, 16)),
+                ("tags", [date(2026, 5, 17)]),
+                ("metadata", {"reviewed_at": date(2026, 5, 18)}),
+            ]
 
     class FakeCountRecord(dict[str, object]):
         pass
@@ -311,11 +473,31 @@ def test_neo4j_dashboard_summary_returns_renderable_elements() -> None:
                 "id": "n1",
                 "label": "Decision",
                 "labels": ["Entity"],
-                "properties": {"created_at": "2026-05-16T00:00:00Z", "name": "Decision"},
+                "properties": {
+                    "business_date": "2026-05-16",
+                    "created_at": "2026-05-16T00:00:00Z",
+                    "metadata": {"reviewed_at": "2026-05-18"},
+                    "name": "Decision",
+                    "tags": ["2026-05-17"],
+                },
             }
         ],
         "edges": [],
     }
+
+
+def test_neo4j_dashboard_provider_returns_degraded_payload_on_driver_error() -> None:
+    class FailingDriver:
+        def session(self) -> object:
+            raise RuntimeError("neo4j offline")
+
+    provider = Neo4jDashboardGraphProvider.__new__(Neo4jDashboardGraphProvider)
+    provider._driver = FailingDriver()
+
+    result = provider.summary(session_id="agent-1")
+
+    assert result["available"] is False
+    assert result["warning"] == "neo4j offline"
 
 
 def test_neo4j_dashboard_summary_accepts_record_get_paths() -> None:
@@ -391,6 +573,74 @@ def test_neo4j_dashboard_summary_accepts_record_get_paths() -> None:
             "type": "RELATES",
         }
     ]
+
+
+def test_neo4j_dashboard_neighborhood_path_and_close_use_driver() -> None:
+    class FakeNode:
+        def __init__(self, element_id: str, name: str) -> None:
+            self.element_id = element_id
+            self.labels = ["Entity"]
+            self.name = name
+
+        def items(self) -> list[tuple[str, object]]:
+            return [("name", self.name)]
+
+    class FakeRelationship:
+        element_id = "r1"
+        type = "RELATES"
+
+        def __init__(self, start_node: FakeNode, end_node: FakeNode) -> None:
+            self.start_node = start_node
+            self.end_node = end_node
+
+        def items(self) -> list[tuple[str, object]]:
+            return [("confidence", 0.9)]
+
+    class FakePath:
+        def __init__(self) -> None:
+            start = FakeNode("n1", "Start")
+            end = FakeNode("n2", "End")
+            self.nodes = [start, end]
+            self.relationships = [FakeRelationship(start, end)]
+
+    class FakeSession:
+        def __enter__(self) -> FakeSession:
+            return self
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+        def run(self, _query: str, **_params: object) -> object:
+            return _FakeResult([{"p": FakePath()}])
+
+    class FakeDriver:
+        def __init__(self) -> None:
+            self.closed = False
+
+        def session(self) -> FakeSession:
+            return FakeSession()
+
+        def close(self) -> None:
+            self.closed = True
+
+    driver = FakeDriver()
+    provider = Neo4jDashboardGraphProvider.__new__(Neo4jDashboardGraphProvider)
+    provider._driver = driver
+
+    neighborhood = provider.neighborhood(
+        session_id="agent-1",
+        node_id="n1",
+        view="memory",
+        hops=2,
+        limit=5,
+    )
+    path = provider.path_to_event(session_id="agent-1", node_id="n1", limit=5)
+    provider.close()
+
+    assert neighborhood["nodes"][0]["label"] == "Start"
+    assert neighborhood["edges"][0]["properties"] == {"confidence": 0.9}
+    assert path["edges"][0]["type"] == "RELATES"
+    assert driver.closed is True
 
 
 def test_neo4j_dashboard_search_avoids_driver_query_parameter_collision() -> None:
@@ -485,6 +735,19 @@ def test_eventloom_graph_provider_supports_search(tmp_path: Path) -> None:
             },
         }
     ]
+
+
+def test_eventloom_graph_provider_reads_single_log_files_and_empty_payloads(tmp_path: Path) -> None:
+    log_path = tmp_path / "agent.jsonl"
+    log = EventLog(log_path)
+    log.append("heartbeat", actor="tester", payload={})
+    provider = EventloomDashboardGraphProvider(log_path)
+
+    summary = provider.summary(session_id=None)
+    search = provider.search(session_id=None, query="heartbeat", view="provenance", limit=5)
+
+    assert summary["nodes"] == 1
+    assert search["nodes"][0]["properties"]["summary"] == ""
 
 
 def test_dashboard_handler_keeps_app_reference(tmp_path: Path) -> None:

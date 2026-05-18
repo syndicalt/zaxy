@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     )
 
 
-class ProjectionStore(Protocol):
+class ProjectionStore(Protocol):  # pragma: no cover
     """Backend contract for projecting Eventloom facts into a queryable index."""
 
     async def connect(self) -> None:
