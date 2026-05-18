@@ -136,8 +136,12 @@ def test_pggraph_backend_roadmap_records_contract_first_state() -> None:
     assert "vector search uses pgvector" in benchmarks
     assert "longmemeval-100-pggraph-comparison" in benchmarks
     assert "longmemeval-100-neo4j-comparison" in benchmarks
+    assert "longmemeval-500-pggraph-comparison" in benchmarks
     assert "pgGraph checkout" in benchmarks
     assert "0.910" in benchmarks
+    assert "0.604" in benchmarks
+    assert "0.926" in benchmarks
+    assert "failed the full 500-question guardrail" in benchmarks
     assert "Neo4j checkout" in benchmarks
     assert "0.930" in benchmarks
 

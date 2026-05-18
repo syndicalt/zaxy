@@ -77,7 +77,7 @@ harness and has repeatable operations coverage.
 
 ## pgGraph Backend Comparison
 
-The current 100-question backend comparison is archived at
+The 100-question backend comparison is archived at
 [reports/benchmarks/longmemeval-100-pggraph-comparison/live-benchmark.md](../reports/benchmarks/longmemeval-100-pggraph-comparison/live-benchmark.md)
 and
 [reports/benchmarks/longmemeval-100-neo4j-comparison/live-benchmark.md](../reports/benchmarks/longmemeval-100-neo4j-comparison/live-benchmark.md).
@@ -92,10 +92,25 @@ embeddings, `limit=5`, BM25 as the lexical baseline, and `--zaxy-backend both`.
 | Neo4j Zaxy | 0.960 | 0.960 | 1.000 | 1.000 | 1.000 | 667.78 | 3937 |
 | Neo4j checkout | 0.930 | 0.930 | 1.000 | 0.960 | 1.000 | 625.98 | 7419 |
 
+The full 500-question pgGraph comparison is archived at
+[reports/benchmarks/longmemeval-500-pggraph-comparison/live-benchmark.md](../reports/benchmarks/longmemeval-500-pggraph-comparison/live-benchmark.md).
+It uses the full cleaned LongMemEval-compatible workload, deterministic hash
+embeddings, `limit=5`, BM25 as the lexical baseline, and `--zaxy-backend both`.
+
+| Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | p95 ms | Approx tokens |
+|---------|------------|----------|-------------------|----------|----------|--------|---------------|
+| BM25 | 0.514 | 0.514 | 1.000 | 0.592 | 0.770 | 387.49 | 2661 |
+| pgGraph Zaxy | 0.690 | 0.690 | 1.000 | 0.926 | 0.926 | 713.31 | 4284 |
+| pgGraph checkout | 0.612 | 0.604 | 1.000 | 0.916 | 0.926 | 669.86 | 3636 |
+
+The full run failed the full 500-question guardrail, so pgGraph remains an
+evaluation backend only. `pgGraph checkout` missed the archived no-regression
+floors for mean score, Answer@5, and Recall@5. `pgGraph Zaxy` passed mean score,
+Answer@5, citation coverage, and latency, but still missed the Recall@5 floor.
 This is enough to keep pgGraph as a serious evaluation path, not enough to make
-it the default. The open gate is a full 500-question comparison plus operational
-coverage for container bootstrap, schema reset, graph rebuild, and failure
-recovery.
+it the default. The open gate is closing the full-set Recall@5 gap plus
+operational coverage for container bootstrap, schema reset, graph rebuild, and
+failure recovery.
 
 ## BM25 Comparison
 
