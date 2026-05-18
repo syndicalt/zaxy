@@ -99,14 +99,15 @@ embeddings, `limit=5`, BM25 as the lexical baseline, and `--zaxy-backend both`.
 
 | Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | p95 ms | Approx tokens |
 |---------|------------|----------|-------------------|----------|----------|--------|---------------|
-| BM25 | 0.514 | 0.514 | 1.000 | 0.592 | 0.770 | 387.49 | 2661 |
-| pgGraph Zaxy | 0.690 | 0.690 | 1.000 | 0.926 | 0.926 | 713.31 | 4284 |
-| pgGraph checkout | 0.612 | 0.604 | 1.000 | 0.916 | 0.926 | 669.86 | 3636 |
+| BM25 | 0.516 | 0.516 | 1.000 | 0.592 | 0.770 | 323.27 | 2661 |
+| pgGraph Zaxy | 0.696 | 0.696 | 1.000 | 0.950 | 0.950 | 1090.09 | 4168 |
+| pgGraph checkout | 0.622 | 0.610 | 1.000 | 0.940 | 0.950 | 1037.51 | 5680 |
 
 The full run failed the full 500-question guardrail, so pgGraph remains an
 evaluation backend only. `pgGraph checkout` missed the archived no-regression
-floors for mean score, Answer@5, and Recall@5. `pgGraph Zaxy` passed mean score,
-Answer@5, citation coverage, and latency, but still missed the Recall@5 floor.
+floors for mean score and Recall@5 while passing Answer@5, citation coverage,
+and latency. `pgGraph Zaxy` passed mean score, Answer@5, citation coverage, and
+latency, but still missed the Recall@5 floor.
 This is enough to keep pgGraph as a serious evaluation path, not enough to make
 it the default. The open gate is closing the full-set Recall@5 gap plus
 operational coverage for container bootstrap, schema reset, graph rebuild, and

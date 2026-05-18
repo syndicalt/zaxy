@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from typing import Any
 
 from zaxy.extract import ExtractionResult
@@ -39,6 +40,7 @@ CREATE TABLE IF NOT EXISTS zaxy_pggraph_entities (
     summary text,
     embedding jsonb,
     embedding_vector vector,
+    search_vector tsvector,
     properties jsonb NOT NULL DEFAULT '{}'::jsonb,
     source_event_seq bigint,
     source_event_hash text,
@@ -47,6 +49,10 @@ CREATE TABLE IF NOT EXISTS zaxy_pggraph_entities (
 );
 
 ALTER TABLE zaxy_pggraph_entities ADD COLUMN IF NOT EXISTS embedding_vector vector;
+ALTER TABLE zaxy_pggraph_entities ADD COLUMN IF NOT EXISTS search_vector tsvector;
+UPDATE zaxy_pggraph_entities
+SET search_vector = to_tsvector('simple', coalesce(name, '') || ' ' || coalesce(summary, ''))
+WHERE search_vector IS NULL;
 
 CREATE TABLE IF NOT EXISTS zaxy_pggraph_edges (
     edge_key text PRIMARY KEY,
@@ -72,6 +78,8 @@ CREATE INDEX IF NOT EXISTS zaxy_pggraph_entities_lookup_idx
     ON zaxy_pggraph_entities (session_id, name, entity_type, valid_to);
 CREATE INDEX IF NOT EXISTS zaxy_pggraph_entities_keyword_idx
     ON zaxy_pggraph_entities USING gin (to_tsvector('simple', coalesce(name, '') || ' ' || coalesce(summary, '')));
+CREATE INDEX IF NOT EXISTS zaxy_pggraph_entities_search_vector_idx
+    ON zaxy_pggraph_entities USING gin (search_vector);
 CREATE INDEX IF NOT EXISTS zaxy_pggraph_edges_source_idx
     ON zaxy_pggraph_edges (session_id, source_node_key, relation_type, valid_to);
 CREATE INDEX IF NOT EXISTS zaxy_pggraph_entities_vector_filter_idx
@@ -98,6 +106,65 @@ SELECT graph.add_edge(
 
 SELECT * FROM graph.build();
 """
+
+_KEYWORD_STOP_WORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "but",
+        "can",
+        "complement",
+        "could",
+        "did",
+        "do",
+        "does",
+        "for",
+        "from",
+        "had",
+        "has",
+        "have",
+        "how",
+        "i",
+        "in",
+        "is",
+        "it",
+        "me",
+        "my",
+        "of",
+        "on",
+        "or",
+        "planning",
+        "remind",
+        "suggest",
+        "that",
+        "the",
+        "this",
+        "to",
+        "was",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "with",
+        "would",
+        "you",
+        "another",
+        "current",
+        "currently",
+        "last",
+        "one",
+        "throughout",
+        "time",
+        "wondering",
+    }
+)
 
 
 class PgGraphStore:
@@ -168,18 +235,26 @@ class PgGraphStore:
                 """
                 INSERT INTO zaxy_pggraph_entities (
                     node_key, session_id, name, entity_type, valid_from, valid_to,
-                    summary, embedding, embedding_vector, properties,
+                    summary, embedding, embedding_vector, search_vector, properties,
                     source_event_seq, source_event_hash, source_event_type
                 )
                 VALUES (
                     %(node_key)s, %(session_id)s, %(name)s, %(entity_type)s, %(valid_from)s, NULL,
-                    %(summary)s, %(embedding)s::jsonb, %(embedding_vector)s::vector, %(properties)s::jsonb,
+                    %(summary)s,
+                    %(embedding)s::jsonb,
+                    %(embedding_vector)s::vector,
+                    to_tsvector('simple', coalesce(%(name)s, '') || ' ' || coalesce(%(summary)s, '')),
+                    %(properties)s::jsonb,
                     %(source_event_seq)s, %(source_event_hash)s, %(source_event_type)s
                 )
                 ON CONFLICT (node_key) DO UPDATE SET
                     summary = EXCLUDED.summary,
                     embedding = EXCLUDED.embedding,
                     embedding_vector = EXCLUDED.embedding_vector,
+                    search_vector = to_tsvector(
+                        'simple',
+                        coalesce(EXCLUDED.name, '') || ' ' || coalesce(EXCLUDED.summary, '')
+                    ),
                     properties = EXCLUDED.properties,
                     source_event_seq = EXCLUDED.source_event_seq,
                     source_event_hash = EXCLUDED.source_event_hash,
@@ -278,7 +353,7 @@ class PgGraphStore:
             FROM zaxy_pggraph_entities
             WHERE session_id = %(session_id)s
               AND name = %(name)s
-              AND (%(entity_type)s IS NULL OR entity_type = %(entity_type)s)
+              AND (%(entity_type)s::text IS NULL OR entity_type = %(entity_type)s::text)
               AND (
                 (%(temporal_point)s::timestamptz IS NULL AND valid_to IS NULL)
                 OR (
@@ -308,36 +383,47 @@ class PgGraphStore:
         """Search by lexical relevance."""
         rows = await self._fetch_all(
             """
+            WITH search AS (
+                SELECT to_tsquery('simple', %(tsquery)s) AS query
+            )
             SELECT
-                name,
-                entity_type,
-                valid_from,
-                valid_to,
-                summary,
-                properties,
-                session_id,
-                CASE
-                    WHEN lower(name) = lower(%(query)s) THEN 1.0
-                    WHEN name ILIKE %(prefix_query)s THEN 0.9
-                    ELSE 0.8
-                END AS score
-            FROM zaxy_pggraph_entities
-            WHERE session_id = %(session_id)s
-              AND (name ILIKE %(contains_query)s OR coalesce(summary, '') ILIKE %(contains_query)s)
+                entity.name,
+                entity.entity_type,
+                entity.valid_from,
+                entity.valid_to,
+                entity.summary,
+                entity.properties,
+                entity.session_id,
+                GREATEST(
+                    CASE
+                        WHEN lower(entity.name) = lower(%(query)s) THEN 1.0
+                        WHEN entity.name ILIKE %(prefix_query)s THEN 0.9
+                        ELSE 0.0
+                    END,
+                    ts_rank_cd(entity.search_vector, search.query)
+                ) AS score
+            FROM zaxy_pggraph_entities entity
+            CROSS JOIN search
+            WHERE entity.session_id = %(session_id)s
               AND (
-                (%(temporal_point)s::timestamptz IS NULL AND valid_to IS NULL)
+                entity.search_vector @@ search.query
+                OR entity.name ILIKE %(contains_query)s
+              )
+              AND (
+                (%(temporal_point)s::timestamptz IS NULL AND entity.valid_to IS NULL)
                 OR (
                     %(temporal_point)s::timestamptz IS NOT NULL
-                    AND valid_from <= %(temporal_point)s::timestamptz
-                    AND (valid_to IS NULL OR valid_to > %(temporal_point)s::timestamptz)
+                    AND entity.valid_from <= %(temporal_point)s::timestamptz
+                    AND (entity.valid_to IS NULL OR entity.valid_to > %(temporal_point)s::timestamptz)
                 )
               )
-            ORDER BY score DESC, valid_from DESC
+            ORDER BY score DESC, entity.valid_from DESC
             LIMIT %(limit)s
             """,
             {
                 "session_id": validate_session_id(session_id),
                 "query": query,
+                "tsquery": _keyword_tsquery(query),
                 "prefix_query": f"{query}%",
                 "contains_query": f"%{query}%",
                 "temporal_point": temporal_point,
@@ -599,6 +685,22 @@ def _pgvector_literal(embedding: list[float] | None) -> str | None:
             raise ValueError("embedding values must be finite numbers")
         values.append(f"{number:g}")
     return "[" + ",".join(values) + "]"
+
+
+def _keyword_tsquery(query: str) -> str:
+    """Return a safe OR tsquery for natural-language keyword search."""
+    tokens = re.findall(r"[A-Za-z0-9]+", query.casefold())
+    unique_tokens: list[str] = []
+    seen: set[str] = set()
+    for token in tokens:
+        if len(token) < 2 or token in _KEYWORD_STOP_WORDS:
+            continue
+        if token in seen:
+            continue
+        seen.add(token)
+        unique_tokens.append(token)
+    selected = unique_tokens[:10]
+    return " | ".join(selected) if selected else "__zaxy_no_terms__"
 
 
 def _stringify_temporal(value: Any) -> str:

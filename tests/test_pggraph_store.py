@@ -74,6 +74,9 @@ async def test_pggraph_store_init_schema_creates_projection_tables_and_registers
     assert "CREATE TABLE IF NOT EXISTS zaxy_pggraph_entities" in sql
     assert "embedding_vector vector" in sql
     assert "ALTER TABLE zaxy_pggraph_entities ADD COLUMN IF NOT EXISTS embedding_vector vector" in sql
+    assert "search_vector tsvector" in sql
+    assert "ALTER TABLE zaxy_pggraph_entities ADD COLUMN IF NOT EXISTS search_vector tsvector" in sql
+    assert "zaxy_pggraph_entities_search_vector_idx" in sql
     assert "CREATE TABLE IF NOT EXISTS zaxy_pggraph_edges" in sql
     assert "graph.add_table" in sql
     assert "graph.add_edge" in sql
@@ -132,6 +135,7 @@ async def test_pggraph_store_upsert_extraction_writes_entities_edges_and_events(
     assert "INSERT INTO zaxy_pggraph_events" in sql
     assert "INSERT INTO zaxy_pggraph_entities" in sql
     assert "%(embedding_vector)s::vector" in sql
+    assert "search_vector = to_tsvector" in sql
     assert "INSERT INTO zaxy_pggraph_edges" in sql
     entity_params = [
         params
@@ -170,6 +174,8 @@ async def test_pggraph_store_search_exact_maps_rows_to_graph_entities() -> None:
             session_id="agent-1",
         )
     ]
+    sql = connection.statements[-1][0]
+    assert "%(entity_type)s::text IS NULL" in sql
 
 
 @pytest.mark.asyncio
@@ -194,7 +200,28 @@ async def test_pggraph_store_search_keyword_returns_scored_results() -> None:
     assert results[0].entity.name == "Zaxy"
     assert results[0].source == "keyword"
     assert results[0].score == 0.8
-    assert "ILIKE" in connection.statements[-1][0]
+    sql = connection.statements[-1][0]
+    assert "to_tsquery('simple', %(tsquery)s)" in sql
+    assert "entity.search_vector @@ search.query" in sql
+    assert "ts_rank_cd" in sql
+    assert "ILIKE" in sql
+    assert isinstance(connection.statements[-1][1], dict)
+    assert connection.statements[-1][1]["tsquery"] == "memory"
+
+
+@pytest.mark.asyncio
+async def test_pggraph_store_search_keyword_builds_natural_language_tsquery() -> None:
+    connection = FakeConnection()
+    store = PgGraphStore("postgresql://test", connection=connection)
+
+    await store.search_keyword(
+        "Could you remind me of that vegan eatery with multiple locations in the city?",
+        session_id="agent-1",
+    )
+
+    _sql, params = connection.statements[-1]
+    assert isinstance(params, dict)
+    assert params["tsquery"] == "vegan | eatery | multiple | locations | city"
 
 
 @pytest.mark.asyncio
