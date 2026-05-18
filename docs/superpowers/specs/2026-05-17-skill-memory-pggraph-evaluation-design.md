@@ -64,11 +64,13 @@ treats `PROJECTION_BACKEND=pggraph` as experimental until it passes the benchmar
 gates. Install the optional adapter with `pip install "zaxy-memory[pggraph]"`,
 then set `PROJECTION_BACKEND=pggraph` and `PGGRAPH_DSN=...`.
 
-The current pgGraph adapter supports projection, exact search, keyword search, invalidation, and traversal
+The current pgGraph adapter supports projection, exact search, keyword search, vector search, invalidation, and traversal
 over Zaxy-owned PostgreSQL projection tables.
-pgGraph vector search remains unavailable until pgvector ranking is implemented
-and benchmarked. Retrieval can still proceed because the query router already
-degrades unavailable lanes explicitly.
+pgGraph vector search uses pgvector ranking over stored entity embeddings. It
+remains experimental until the pgGraph backend passes same-harness quality,
+citation, temporal, latency, and operations gates against Neo4j. Retrieval can
+still proceed when a lane fails because the query router already degrades
+unavailable lanes explicitly.
 
 pgGraph should be evaluated as a Postgres-local graph acceleration layer over
 Zaxy-owned relational tables. Zaxy would still own temporal semantics through
@@ -87,8 +89,8 @@ The evaluation should use a backend-neutral projection contract:
 
 The Neo4j adapter is wrapped behind that contract with no behavior change. The
 pgGraph adapter is experimental over Postgres tables, PostgreSQL lexical search,
-and pgGraph traversal. pgvector remains the next backend-specific feature before
-same-harness quality comparison.
+pgvector vector ranking, and pgGraph traversal. Same-harness quality comparison
+is still required before any production/default-backend decision.
 
 ## Evaluation Gates
 
@@ -133,5 +135,6 @@ The first implementation plan should be benchmark-driven:
 
 Skill Memory has moved from roadmap item to first procedural context lane.
 pgGraph remains a research/backend track: the adapter exists for local
-experimentation, but production support still requires integration coverage,
-pgvector-backed vector retrieval, and benchmark proof.
+experimentation, including optional integration coverage with
+`PGGRAPH_INTEGRATION_DSN` and pgvector-backed vector retrieval, but production
+support still requires benchmark proof.

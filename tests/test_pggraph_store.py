@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import pytest
@@ -69,7 +70,10 @@ async def test_pggraph_store_init_schema_creates_projection_tables_and_registers
     await store.init_schema()
 
     sql = "\n".join(statement for statement, _params in connection.statements)
+    assert "CREATE EXTENSION IF NOT EXISTS vector" in sql
     assert "CREATE TABLE IF NOT EXISTS zaxy_pggraph_entities" in sql
+    assert "embedding_vector vector" in sql
+    assert "ALTER TABLE zaxy_pggraph_entities ADD COLUMN IF NOT EXISTS embedding_vector vector" in sql
     assert "CREATE TABLE IF NOT EXISTS zaxy_pggraph_edges" in sql
     assert "graph.add_table" in sql
     assert "graph.add_edge" in sql
@@ -99,6 +103,7 @@ async def test_pggraph_store_upsert_extraction_writes_entities_edges_and_events(
                 observed_at="2026-05-18T00:00:00Z",
                 summary="Memory product",
                 properties={"path": "README.md"},
+                embedding=[0.1, 0.2, 0.3],
             ),
             ExtractedEntity(
                 name="pgGraph",
@@ -125,7 +130,14 @@ async def test_pggraph_store_upsert_extraction_writes_entities_edges_and_events(
     sql = "\n".join(statement for statement, _params in connection.statements)
     assert "INSERT INTO zaxy_pggraph_events" in sql
     assert "INSERT INTO zaxy_pggraph_entities" in sql
+    assert "%(embedding_vector)s::vector" in sql
     assert "INSERT INTO zaxy_pggraph_edges" in sql
+    entity_params = [
+        params
+        for statement, params in connection.statements
+        if "INSERT INTO zaxy_pggraph_entities" in statement and isinstance(params, dict)
+    ][0]
+    assert entity_params["embedding_vector"] == "[0.1,0.2,0.3]"
     assert connection.commits == 1
 
 
@@ -231,8 +243,87 @@ async def test_pggraph_store_search_traversal_uses_pggraph_traverse() -> None:
 
 
 @pytest.mark.asyncio
-async def test_pggraph_store_search_vector_is_explicitly_unavailable() -> None:
-    store = PgGraphStore("postgresql://test", connection=FakeConnection())
+async def test_pggraph_store_search_vector_uses_pgvector_cosine_distance() -> None:
+    connection = FakeConnection()
+    connection.cursor_obj.rows = [
+        {
+            "name": "Zaxy",
+            "entity_type": "project",
+            "valid_from": "2026-05-18T00:00:00Z",
+            "valid_to": None,
+            "summary": "Memory product",
+            "properties": {},
+            "session_id": "agent-1",
+            "score": 0.91,
+        }
+    ]
+    store = PgGraphStore("postgresql://test", connection=connection)
 
-    with pytest.raises(RuntimeError, match="pgGraph vector search requires pgvector"):
-        await store.search_vector([0.1, 0.2])
+    results = await store.search_vector([0.1, 0.2, 0.3], limit=3, session_id="agent-1")
+
+    assert results[0].entity.name == "Zaxy"
+    assert results[0].source == "vector"
+    assert results[0].score == 0.91
+    sql, params = connection.statements[-1]
+    assert "embedding_vector <=> %(embedding)s::vector" in sql
+    assert "embedding_vector IS NOT NULL" in sql
+    assert isinstance(params, dict)
+    assert params["embedding"] == "[0.1,0.2,0.3]"
+    assert params["limit"] == 3
+
+
+@pytest.mark.integration
+async def test_pggraph_store_real_postgres_vector_roundtrip() -> None:
+    """Real pgGraph/Postgres coverage should include pgvector ranking."""
+    dsn = os.environ.get("PGGRAPH_INTEGRATION_DSN")
+    if not dsn:
+        pytest.skip("PGGRAPH_INTEGRATION_DSN is required for pgGraph integration tests")
+    pytest.importorskip("psycopg")
+    store = PgGraphStore(dsn)
+    await store.connect()
+    try:
+        connection = store._require_connection()
+        await connection.execute("DROP TABLE IF EXISTS zaxy_pggraph_edges")
+        await connection.execute("DROP TABLE IF EXISTS zaxy_pggraph_entities")
+        await connection.execute("DROP TABLE IF EXISTS zaxy_pggraph_events")
+        await connection.commit()
+        await store.init_schema()
+        await store.upsert_extraction(
+            ExtractionResult(
+                entities=[
+                    ExtractedEntity(
+                        name="Vector Match",
+                        entity_type="memory",
+                        observed_at="2026-05-18T00:00:00Z",
+                        summary="Nearest vector entity",
+                        embedding=[1.0, 0.0, 0.0],
+                    ),
+                    ExtractedEntity(
+                        name="Vector Distractor",
+                        entity_type="memory",
+                        observed_at="2026-05-18T00:00:00Z",
+                        summary="Distant vector entity",
+                        embedding=[0.0, 1.0, 0.0],
+                    ),
+                ],
+                edges=[],
+                source_event_seq=1,
+                source_event_hash="b" * 64,
+                source_event_type="integration.vector",
+            ),
+            session_id="pggraph-integration",
+        )
+
+        results = await store.search_vector(
+            [1.0, 0.0, 0.0],
+            limit=2,
+            session_id="pggraph-integration",
+        )
+
+        assert [result.entity.name for result in results] == [
+            "Vector Match",
+            "Vector Distractor",
+        ]
+        assert results[0].score > results[1].score
+    finally:
+        await store.close()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import Any
 
 from zaxy.extract import ExtractionResult
@@ -15,6 +16,8 @@ from zaxy.graph import (
 from zaxy.security import validate_limit, validate_session_id, validate_traversal_depth
 
 PGGRAPH_SCHEMA_SQL = """
+CREATE EXTENSION IF NOT EXISTS vector;
+
 CREATE TABLE IF NOT EXISTS zaxy_pggraph_events (
     session_id text NOT NULL,
     seq bigint NOT NULL,
@@ -35,12 +38,15 @@ CREATE TABLE IF NOT EXISTS zaxy_pggraph_entities (
     valid_to timestamptz,
     summary text,
     embedding jsonb,
+    embedding_vector vector,
     properties jsonb NOT NULL DEFAULT '{}'::jsonb,
     source_event_seq bigint,
     source_event_hash text,
     source_event_type text,
     updated_at timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE zaxy_pggraph_entities ADD COLUMN IF NOT EXISTS embedding_vector vector;
 
 CREATE TABLE IF NOT EXISTS zaxy_pggraph_edges (
     edge_key text PRIMARY KEY,
@@ -68,6 +74,9 @@ CREATE INDEX IF NOT EXISTS zaxy_pggraph_entities_keyword_idx
     ON zaxy_pggraph_entities USING gin (to_tsvector('simple', coalesce(name, '') || ' ' || coalesce(summary, '')));
 CREATE INDEX IF NOT EXISTS zaxy_pggraph_edges_source_idx
     ON zaxy_pggraph_edges (session_id, source_node_key, relation_type, valid_to);
+CREATE INDEX IF NOT EXISTS zaxy_pggraph_entities_vector_filter_idx
+    ON zaxy_pggraph_entities (session_id, valid_to)
+    WHERE embedding_vector IS NOT NULL;
 
 SELECT graph.add_table(
     table_name := 'zaxy_pggraph_entities'::regclass,
@@ -159,16 +168,18 @@ class PgGraphStore:
                 """
                 INSERT INTO zaxy_pggraph_entities (
                     node_key, session_id, name, entity_type, valid_from, valid_to,
-                    summary, embedding, properties, source_event_seq, source_event_hash, source_event_type
+                    summary, embedding, embedding_vector, properties,
+                    source_event_seq, source_event_hash, source_event_type
                 )
                 VALUES (
                     %(node_key)s, %(session_id)s, %(name)s, %(entity_type)s, %(valid_from)s, NULL,
-                    %(summary)s, %(embedding)s::jsonb, %(properties)s::jsonb,
+                    %(summary)s, %(embedding)s::jsonb, %(embedding_vector)s::vector, %(properties)s::jsonb,
                     %(source_event_seq)s, %(source_event_hash)s, %(source_event_type)s
                 )
                 ON CONFLICT (node_key) DO UPDATE SET
                     summary = EXCLUDED.summary,
                     embedding = EXCLUDED.embedding,
+                    embedding_vector = EXCLUDED.embedding_vector,
                     properties = EXCLUDED.properties,
                     source_event_seq = EXCLUDED.source_event_seq,
                     source_event_hash = EXCLUDED.source_event_hash,
@@ -188,6 +199,7 @@ class PgGraphStore:
                     "valid_from": entity.observed_at,
                     "summary": entity.summary,
                     "embedding": json.dumps(entity.embedding),
+                    "embedding_vector": _pgvector_literal(entity.embedding),
                     "properties": json.dumps(entity.properties or {}),
                     "source_event_seq": result.source_event_seq,
                     "source_event_hash": result.source_event_hash,
@@ -409,9 +421,47 @@ class PgGraphStore:
         session_id: str = "default",
     ) -> list[SearchResult]:
         """Search by vector similarity."""
-        raise RuntimeError(
-            "pgGraph vector search requires pgvector support and has not passed Zaxy benchmark gates"
+        rows = await self._fetch_all(
+            """
+            SELECT
+                name,
+                entity_type,
+                valid_from,
+                valid_to,
+                summary,
+                properties,
+                session_id,
+                1.0 - (embedding_vector <=> %(embedding)s::vector) AS score
+            FROM zaxy_pggraph_entities
+            WHERE session_id = %(session_id)s
+              AND embedding_vector IS NOT NULL
+              AND (
+                (%(temporal_point)s IS NULL AND valid_to IS NULL)
+                OR (
+                    %(temporal_point)s IS NOT NULL
+                    AND valid_from <= %(temporal_point)s
+                    AND (valid_to IS NULL OR valid_to > %(temporal_point)s)
+                )
+              )
+            ORDER BY embedding_vector <=> %(embedding)s::vector, valid_from DESC
+            LIMIT %(limit)s
+            """,
+            {
+                "session_id": validate_session_id(session_id),
+                "embedding": _pgvector_literal(embedding),
+                "temporal_point": temporal_point,
+                "limit": validate_limit(limit),
+            },
         )
+        return [
+            SearchResult(
+                entity=_row_to_entity(row),
+                score=float(row.get("score") or 0.0),
+                raw_score=float(row.get("score") or 0.0),
+                source="vector",
+            )
+            for row in rows
+        ]
 
     async def invalidate_entity(
         self,
@@ -515,6 +565,22 @@ def _properties_from_row(row: dict[str, Any]) -> dict[str, Any]:
         if isinstance(decoded, dict):
             return decoded
     return {}
+
+
+def _pgvector_literal(embedding: list[float] | None) -> str | None:
+    if embedding is None:
+        return None
+    if not embedding:
+        raise ValueError("embedding must not be empty")
+    values: list[str] = []
+    for value in embedding:
+        if isinstance(value, bool):
+            raise ValueError("embedding values must be finite numbers")
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError("embedding values must be finite numbers")
+        values.append(f"{number:g}")
+    return "[" + ",".join(values) + "]"
 
 
 def _stringify_temporal(value: Any) -> str:
