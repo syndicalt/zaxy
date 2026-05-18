@@ -357,7 +357,24 @@ def _filter_contexts_by_scope(
 
 def _scoped_fetch_limit(limit: int) -> int:
     """Return a bounded overfetch size for post-retrieval domain filtering."""
+    return max(limit, min(max(limit, 1) * 10, 100))
+
+
+def _scoped_source_fetch_limit(limit: int) -> int:
+    """Return a bounded source-lane overfetch size for sparse scoped domains."""
     return max(limit, min(max(limit, 1) * 8, 256))
+
+
+def _scoped_source_fallback_limit(limit: int) -> int:
+    """Return a bounded second-pass source overfetch size after empty scoped filtering."""
+    return min(max(limit, 1), 24)
+
+
+def _scope_augmented_source_query(query: str, scope_terms: tuple[str, ...]) -> str:
+    """Return a source query constrained by deterministic scope tokens."""
+    if not scope_terms:
+        return query
+    return f"{query} {' '.join(scope_terms)}"
 
 
 class CachedEmbeddingProvider:
@@ -773,7 +790,7 @@ class ZaxyRetriever:
             return graph_results
         lexical_limit = source_lane_candidate_limit(query, limit=limit)
         if scope_terms:
-            lexical_limit = _scoped_fetch_limit(lexical_limit)
+            lexical_limit = _scoped_source_fetch_limit(lexical_limit)
         lexical_results = self._source_lane_results(
             source_lane_queries(query, graph_results),
             temporal_point=temporal_point,
@@ -844,48 +861,76 @@ class ZaxyRetriever:
         lexical_retriever = self._lexical_retriever
         per_query_limit = max(limit, 1)
 
-        def collect(source_query: str) -> list[str]:
+        def collect(source_query: str, candidate_limit: int) -> list[str]:
             return list(
                 lexical_retriever.query(
                     source_query,
                     temporal_point=temporal_point,
-                    limit=per_query_limit,
+                    limit=candidate_limit,
                 )
             )
 
-        primary_results = collect(queries[0])
-        bridge_results: list[str] = []
-        for bridge_query in bridge_source_lane_queries(queries[0], primary_results):
-            bridge_results.extend(collect(bridge_query))
+        def ordered_candidates(
+            candidate_limit: int,
+            *,
+            candidate_queries: tuple[str, ...] = queries,
+            bridge_limit: int | None = None,
+        ) -> list[str]:
+            primary_results = collect(candidate_queries[0], candidate_limit)
+            bridge_results: list[str] = []
+            if bridge_limit is None or bridge_limit > 0:
+                bridge_candidate_limit = candidate_limit if bridge_limit is None else bridge_limit
+                for bridge_query in bridge_source_lane_queries(
+                    candidate_queries[0],
+                    primary_results,
+                ):
+                    bridge_results.extend(collect(bridge_query, bridge_candidate_limit))
 
-        expanded_results: list[str] = []
-        for source_query in queries[1:]:
-            expanded_results.extend(collect(source_query))
+            expanded_results: list[str] = []
+            for source_query in candidate_queries[1:]:
+                expanded_results.extend(collect(source_query, candidate_limit))
 
-        intent = classify_retrieval_intent(queries[0], limit=limit)
-        if {"aggregation", "aggregation_question"} & set(intent.reasons):
-            ordered_candidates = [
+            intent = classify_retrieval_intent(candidate_queries[0], limit=limit)
+            if {"aggregation", "aggregation_question"} & set(intent.reasons):
+                return [
+                    *bridge_results,
+                    *expanded_results,
+                    *primary_results,
+                ]
+            return [
                 *bridge_results,
-                *expanded_results,
-                *primary_results,
-            ]
-        else:
-            ordered_candidates = [
-                *bridge_results,
                 *primary_results,
                 *expanded_results,
             ]
-        results: list[str] = []
-        seen: set[str] = set()
-        for context in ordered_candidates:
-            if not _context_matches_scope(context, scope_terms):
-                continue
-            if context in seen:
-                continue
-            seen.add(context)
-            results.append(context)
-            if len(results) >= limit:
-                break
+
+        def select_scoped(candidates: list[str]) -> list[str]:
+            results: list[str] = []
+            seen: set[str] = set()
+            for context in candidates:
+                if not _context_matches_scope(context, scope_terms):
+                    continue
+                if context in seen:
+                    continue
+                seen.add(context)
+                results.append(context)
+                if len(results) >= limit:
+                    break
+            return results
+
+        results = select_scoped(ordered_candidates(per_query_limit))
+        fallback_limit = _scoped_source_fallback_limit(per_query_limit)
+        if not results and scope_terms:
+            scoped_queries = tuple(
+                _scope_augmented_source_query(source_query, scope_terms)
+                for source_query in queries
+            )
+            results = select_scoped(
+                ordered_candidates(
+                    fallback_limit,
+                    candidate_queries=scoped_queries,
+                    bridge_limit=8,
+                )
+            )
         return results
 
     def _scope_terms(self, query: str) -> tuple[str, ...]:
@@ -962,7 +1007,7 @@ class ZaxyCheckoutRetriever(ZaxyRetriever):
         lexical_limit = source_lane_candidate_limit(query, limit=limit)
         scope_terms = self._scope_terms(query)
         if scope_terms:
-            lexical_limit = _scoped_fetch_limit(lexical_limit)
+            lexical_limit = _scoped_source_fetch_limit(lexical_limit)
         lexical_results = self._source_lane_results(
             source_lane_queries(query, graph_results),
             temporal_point=None,
@@ -1956,7 +2001,14 @@ def workload_fingerprint(
     payload = {
         "version": version,
         "events": [
-            event.model_dump(mode="json")
+            {
+                "seq": event.seq,
+                "type": event.type,
+                "actor": event.actor,
+                "thread": event.thread,
+                "payload": event.payload,
+                "security": event.security.model_dump(mode="json") if event.security else None,
+            }
             for event in eventlog.read_all()
         ],
         "cases": [asdict(case) for case in cases],

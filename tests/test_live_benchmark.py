@@ -43,6 +43,10 @@ from zaxy.live_benchmark import (
     _build_source_lane_retriever,
     _mark_benchmark_projection,
     _reset_benchmark_graph,
+    _scope_augmented_source_query,
+    _scoped_fetch_limit,
+    _scoped_source_fallback_limit,
+    _scoped_source_fetch_limit,
     benchmark_case_scope_terms,
     benchmark_live_retrievers,
     benchmark_projection_cache_key,
@@ -703,6 +707,53 @@ def test_longmemeval_workload_loads_public_memory_dataset(tmp_path: Path) -> Non
     )
 
 
+def test_longmemeval_workload_fingerprint_ignores_transient_eventloom_seal(
+    tmp_path: Path,
+) -> None:
+    """LongMemEval workload identity should be stable across regenerated logs."""
+    dataset = tmp_path / "longmemeval.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "question_id": "q1",
+                    "question_type": "single-session-user",
+                    "question": "What degree did I graduate with?",
+                    "answer": "Business Administration",
+                    "answer_session_ids": ["answer-1"],
+                    "haystack_dates": ["2023/05/20 (Sat) 02:21"],
+                    "haystack_session_ids": ["answer-1"],
+                    "haystack_sessions": [
+                        [
+                            {
+                                "role": "user",
+                                "content": "I graduated with a Business Administration degree.",
+                            }
+                        ],
+                    ],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    first_log, first_cases, first_workload = build_longmemeval_workload(
+        tmp_path / "first.jsonl",
+        dataset,
+        questions=1,
+    )
+    second_log, second_cases, second_workload = build_longmemeval_workload(
+        tmp_path / "second.jsonl",
+        dataset,
+        questions=1,
+    )
+
+    assert first_workload.sha256 == second_workload.sha256
+    assert workload_fingerprint(first_log, first_cases, LONGMEMEVAL_WORKLOAD_VERSION) == (
+        workload_fingerprint(second_log, second_cases, LONGMEMEVAL_WORKLOAD_VERSION)
+    )
+
+
 def test_longmemeval_workload_chunks_large_sessions_for_embedding_limits(tmp_path: Path) -> None:
     """LongMemEval sessions should be bounded before vector baseline embedding."""
     dataset = tmp_path / "longmemeval-large.json"
@@ -1081,7 +1132,7 @@ def test_benchmark_projection_cache_key_ignores_eventloom_seal(tmp_path: Path) -
         version="fixture-v1",
     )
 
-    assert first_workload.sha256 != second_workload.sha256
+    assert first_workload.sha256 == second_workload.sha256
     assert benchmark_projection_cache_key(
         first_log,
         cases,
@@ -2565,6 +2616,17 @@ def test_longmemeval_case_scope_terms_are_path_scoped() -> None:
     )
 
     assert benchmark_case_scope_terms(case) == ("longmemeval/gpt4_d84a3211/",)
+
+
+def test_scoped_fetch_limit_reaches_cap_for_sparse_domain_hits() -> None:
+    """Scoped post-filtering should overfetch enough for sparse LongMemEval domains."""
+    assert _scoped_fetch_limit(10) == 100
+    assert _scoped_source_fetch_limit(12) == 96
+    assert _scoped_source_fallback_limit(96) == 24
+    assert _scope_augmented_source_query(
+        "Which book did I finish a week ago?",
+        ("longmemeval/2ebe6c92/",),
+    ) == "Which book did I finish a week ago? longmemeval/2ebe6c92/"
 
 
 async def test_zaxy_retriever_scopes_source_synthesis_before_aggregation() -> None:
