@@ -153,6 +153,8 @@ def test_pggraph_backend_roadmap_records_contract_first_state() -> None:
     assert "--projection-backend pggraph" in spec
     assert "--reset-projection" in spec
     assert "failure recovery" in spec
+    assert "zaxy memory status --graph --projection-backend pggraph" in spec
+    assert "zaxy memory inferred-status --projection-backend pggraph" in spec
 
 
 def test_framework_integration_docs_record_next_hardening_target() -> None:

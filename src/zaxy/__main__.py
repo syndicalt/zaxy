@@ -214,7 +214,17 @@ async def _project_packet_result_to_graph(
 def memory_status(
     eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory or JSONL log"),  # noqa: B008
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
-    graph: bool = typer.Option(False, "--graph", help="Also inspect Neo4j graph projection integrity"),
+    graph: bool = typer.Option(False, "--graph", help="Also inspect graph projection integrity"),
+    projection_backend: str = typer.Option(
+        "neo4j",
+        "--projection-backend",
+        help="Projection backend to inspect: neo4j or pggraph",
+    ),
+    pggraph_dsn: str | None = typer.Option(  # noqa: B008
+        None,
+        "--pggraph-dsn",
+        help="Experimental pgGraph/PostgreSQL DSN for --projection-backend pggraph",
+    ),
     neo4j_uri: str | None = typer.Option(None, help="Neo4j Bolt URI"),
     neo4j_user: str | None = typer.Option(None, help="Neo4j username"),
     neo4j_password: str | None = typer.Option(None, help="Neo4j password"),
@@ -229,10 +239,16 @@ def memory_status(
 
         async def _inspect_graph() -> list[dict[str, object]]:
             settings = get_settings()
-            store = GraphStore(
-                neo4j_uri or settings.neo4j_uri,
-                neo4j_user or settings.neo4j_user,
-                neo4j_password or settings.neo4j_password,
+            store = build_projection_store(
+                ProjectionBackendConfig(
+                    backend=projection_backend,
+                    neo4j_uri=neo4j_uri or settings.neo4j_uri,
+                    neo4j_user=neo4j_user or settings.neo4j_user,
+                    neo4j_password=neo4j_password or settings.neo4j_password,
+                    neo4j_ca_cert=settings.neo4j_ca_cert,
+                    neo4j_trust_all=settings.neo4j_trust_all,
+                    pggraph_dsn=pggraph_dsn or settings.pggraph_dsn,
+                )
             )
             await store.connect()
             try:
@@ -286,6 +302,16 @@ def memory_inferred_status(
     session_id: str = typer.Option("default", help="Session ID to inspect"),
     limit: int = typer.Option(10, help="Number of representative inferred edges to show"),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+    projection_backend: str = typer.Option(
+        "neo4j",
+        "--projection-backend",
+        help="Projection backend to inspect: neo4j or pggraph",
+    ),
+    pggraph_dsn: str | None = typer.Option(  # noqa: B008
+        None,
+        "--pggraph-dsn",
+        help="Experimental pgGraph/PostgreSQL DSN for --projection-backend pggraph",
+    ),
     neo4j_uri: str | None = typer.Option(None, help="Neo4j Bolt URI"),
     neo4j_user: str | None = typer.Option(None, help="Neo4j username"),
     neo4j_password: str | None = typer.Option(None, help="Neo4j password"),
@@ -297,10 +323,16 @@ def memory_inferred_status(
 
     async def _inspect_graph() -> dict[str, object]:
         settings = get_settings()
-        store = GraphStore(
-            neo4j_uri or settings.neo4j_uri,
-            neo4j_user or settings.neo4j_user,
-            neo4j_password or settings.neo4j_password,
+        store = build_projection_store(
+            ProjectionBackendConfig(
+                backend=projection_backend,
+                neo4j_uri=neo4j_uri or settings.neo4j_uri,
+                neo4j_user=neo4j_user or settings.neo4j_user,
+                neo4j_password=neo4j_password or settings.neo4j_password,
+                neo4j_ca_cert=settings.neo4j_ca_cert,
+                neo4j_trust_all=settings.neo4j_trust_all,
+                pggraph_dsn=pggraph_dsn or settings.pggraph_dsn,
+            )
         )
         await store.connect()
         try:

@@ -80,12 +80,12 @@ def test_memory_status_json_output(tmp_path: Path) -> None:
     assert payload["sessions"][0]["integrity_ok"] is True
 
 
-@patch("zaxy.__main__.GraphStore")
+@patch("zaxy.__main__.build_projection_store")
 def test_memory_status_graph_json_reports_projection_health(
-    mock_graph_store: MagicMock,
+    mock_build_projection_store: MagicMock,
     tmp_path: Path,
 ) -> None:
-    """memory status --graph should compare Eventloom and Neo4j projection state."""
+    """memory status --graph should compare Eventloom and projection backend state."""
     event = EventLog(tmp_path / ".eventloom" / "agent.jsonl").append(
         "task.completed",
         actor="assistant",
@@ -109,7 +109,7 @@ def test_memory_status_graph_json_reports_projection_health(
         "integrity_ok": True,
     }
     graph.inspect_event_projection_status.return_value = projection
-    mock_graph_store.return_value = graph
+    mock_build_projection_store.return_value = graph
     runner = CliRunner()
 
     result = runner.invoke(
@@ -132,8 +132,72 @@ def test_memory_status_graph_json_reports_projection_health(
     payload = json.loads(result.output)
     assert payload["graph"]["sessions"][0]["session_id"] == "agent"
     assert payload["graph"]["sessions"][0]["integrity_ok"] is True
-    mock_graph_store.assert_called_once_with("bolt://test:7687", "neo4j", "testpassword")
+    config = mock_build_projection_store.call_args.args[0]
+    assert config.backend == "neo4j"
+    assert config.neo4j_uri == "bolt://test:7687"
+    assert config.neo4j_user == "neo4j"
+    assert config.neo4j_password == "testpassword"
     graph.connect.assert_awaited_once()
+    graph.inspect_event_projection_status.assert_awaited_once_with(
+        "agent",
+        eventloom_latest_seq=event.seq,
+        eventloom_latest_hash=event.hash,
+    )
+    graph.close.assert_awaited_once()
+
+
+@patch("zaxy.__main__.build_projection_store")
+def test_memory_status_graph_can_use_pggraph_backend(
+    mock_build_projection_store: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Graph status should be backend-selectable for pgGraph operational checks."""
+    event = EventLog(tmp_path / ".eventloom" / "agent.jsonl").append(
+        "task.completed",
+        actor="assistant",
+        payload={"summary": "Projected graph chain."},
+        thread="agent",
+    )
+    graph = AsyncMock()
+    projection = MagicMock()
+    projection.to_dict.return_value = {
+        "session_id": "agent",
+        "event_count": 1,
+        "latest_seq": 1,
+        "latest_hash": event.hash,
+        "eventloom_latest_seq": 1,
+        "eventloom_latest_hash": event.hash,
+        "projection_lag": 0,
+        "latest_hash_matches": True,
+        "next_event_edges": 0,
+        "previous_event_edges": 0,
+        "missing_chain_links": 0,
+        "integrity_ok": True,
+    }
+    graph.inspect_event_projection_status.return_value = projection
+    mock_build_projection_store.return_value = graph
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "status",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--graph",
+            "--projection-backend",
+            "pggraph",
+            "--pggraph-dsn",
+            "postgresql://postgres:postgres@localhost:5432/zaxy",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Graph projection:" in result.output
+    config = mock_build_projection_store.call_args.args[0]
+    assert config.backend == "pggraph"
+    assert config.pggraph_dsn == "postgresql://postgres:postgres@localhost:5432/zaxy"
     graph.inspect_event_projection_status.assert_awaited_once_with(
         "agent",
         eventloom_latest_seq=event.seq,
@@ -154,9 +218,9 @@ def test_memory_status_handles_empty_eventloom_directory(tmp_path: Path) -> None
     assert "Total events: 0" in result.output
 
 
-@patch("zaxy.__main__.GraphStore")
+@patch("zaxy.__main__.build_projection_store")
 def test_memory_inferred_status_json_reports_graph_audit(
-    mock_graph_store: MagicMock,
+    mock_build_projection_store: MagicMock,
 ) -> None:
     """memory inferred-status --json should expose inferred-edge audit metadata."""
     graph = AsyncMock()
@@ -184,7 +248,7 @@ def test_memory_inferred_status_json_reports_graph_audit(
         "samples": [],
     }
     graph.inspect_inferred_edge_status.return_value = status
-    mock_graph_store.return_value = graph
+    mock_build_projection_store.return_value = graph
     runner = CliRunner()
 
     result = runner.invoke(
@@ -209,15 +273,64 @@ def test_memory_inferred_status_json_reports_graph_audit(
     assert payload["session_id"] == "agent"
     assert payload["total_edges"] == 3
     assert payload["methods"][0]["method"] == "task_completed_decision_citation_v1"
-    mock_graph_store.assert_called_once_with("bolt://test:7687", "neo4j", "testpassword")
+    config = mock_build_projection_store.call_args.args[0]
+    assert config.backend == "neo4j"
+    assert config.neo4j_uri == "bolt://test:7687"
+    assert config.neo4j_user == "neo4j"
+    assert config.neo4j_password == "testpassword"
     graph.connect.assert_awaited_once()
     graph.inspect_inferred_edge_status.assert_awaited_once_with("agent", limit=7)
     graph.close.assert_awaited_once()
 
 
-@patch("zaxy.__main__.GraphStore")
+@patch("zaxy.__main__.build_projection_store")
+def test_memory_inferred_status_can_use_pggraph_backend(
+    mock_build_projection_store: MagicMock,
+) -> None:
+    """Inferred-edge audit status should be available through pgGraph."""
+    graph = AsyncMock()
+    status = MagicMock()
+    status.to_dict.return_value = {
+        "session_id": "agent",
+        "total_edges": 0,
+        "method_count": 0,
+        "evidence_count": 0,
+        "missing_evidence_count": 0,
+        "missing_source_event_count": 0,
+        "evidence_coverage": 1.0,
+        "methods": [],
+        "samples": [],
+    }
+    graph.inspect_inferred_edge_status.return_value = status
+    mock_build_projection_store.return_value = graph
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "inferred-status",
+            "--session-id",
+            "agent",
+            "--projection-backend",
+            "pggraph",
+            "--pggraph-dsn",
+            "postgresql://postgres:postgres@localhost:5432/zaxy",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    config = mock_build_projection_store.call_args.args[0]
+    assert config.backend == "pggraph"
+    assert config.pggraph_dsn == "postgresql://postgres:postgres@localhost:5432/zaxy"
+    graph.inspect_inferred_edge_status.assert_awaited_once_with("agent", limit=10)
+    graph.close.assert_awaited_once()
+
+
+@patch("zaxy.__main__.build_projection_store")
 def test_memory_inferred_status_text_reports_evidence_gaps(
-    mock_graph_store: MagicMock,
+    mock_build_projection_store: MagicMock,
 ) -> None:
     """The human inferred-edge status should call out evidence coverage and gaps."""
     graph = AsyncMock()
@@ -256,7 +369,7 @@ def test_memory_inferred_status_text_reports_evidence_gaps(
         ],
     }
     graph.inspect_inferred_edge_status.return_value = status
-    mock_graph_store.return_value = graph
+    mock_build_projection_store.return_value = graph
     runner = CliRunner()
 
     result = runner.invoke(

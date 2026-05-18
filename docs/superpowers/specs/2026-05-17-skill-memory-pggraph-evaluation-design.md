@@ -89,6 +89,13 @@ covered even when projection raises an operational failure. The failure recovery
 path keeps Eventloom as the durable source of truth for the experimental
 backend.
 
+Operational visibility also routes through the backend-neutral projection
+contract: `zaxy memory status --graph --projection-backend pggraph` reports
+Eventloom projection lag, latest-hash comparison, and hash-chain continuity,
+while `zaxy memory inferred-status --projection-backend pggraph` reports
+inferred-edge method counts, confidence, source-event coverage, and evidence
+coverage.
+
 pgGraph should be evaluated as a Postgres-local graph acceleration layer over
 Zaxy-owned relational tables. Zaxy would still own temporal semantics through
 schema design: entity versions, edge versions, sources, Eventloom projections,
