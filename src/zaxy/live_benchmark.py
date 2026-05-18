@@ -32,6 +32,8 @@ from zaxy.embedding import EmbeddingProvider, HashEmbeddingProvider, embed_extra
 from zaxy.event import EventLog
 from zaxy.extract import extract
 from zaxy.graph import GraphStore
+from zaxy.projection import ProjectionStore
+from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
 from zaxy.query import QueryRouter
 from zaxy.retrieval_intent import classify_retrieval_intent
 from zaxy.retrieval_plan import (
@@ -2239,21 +2241,34 @@ async def build_live_zaxy_retriever(
     reuse_projection: bool = False,
     projection_cache_key: str | None = None,
     scope_resolver: Callable[[str], tuple[str, ...]] | None = None,
-) -> tuple[ZaxyRetriever, GraphStore]:
-    """Ingest the benchmark event log into Neo4j and return a live retriever.
+    projection_backend_config: ProjectionBackendConfig | None = None,
+) -> tuple[ZaxyRetriever, ProjectionStore]:
+    """Ingest the benchmark event log into a projection backend and return a retriever.
 
-    The caller owns the returned ``GraphStore`` and must close it.
+    The caller owns the returned projection store and must close it.
     """
-    graph = GraphStore(neo4j_uri, neo4j_user, neo4j_password)
+    config = projection_backend_config or ProjectionBackendConfig(
+        backend="neo4j",
+        neo4j_uri=neo4j_uri,
+        neo4j_user=neo4j_user,
+        neo4j_password=neo4j_password,
+        neo4j_ca_cert=None,
+        neo4j_trust_all=False,
+    )
+    graph = build_projection_store(config)
     await graph.connect()
     await graph.init_schema()
+    neo4j_graph = graph if isinstance(graph, GraphStore) else None
     if reset_graph:
-        await _reset_benchmark_graph(graph)
+        if neo4j_graph is None:
+            raise ValueError("--reset-graph is only supported for Neo4j benchmark projections")
+        await _reset_benchmark_graph(neo4j_graph)
     if (
-        reuse_projection
+        neo4j_graph is not None
+        and reuse_projection
         and projection_cache_key is not None
         and not reset_graph
-        and await _benchmark_projection_present(graph, projection_cache_key)
+        and await _benchmark_projection_present(neo4j_graph, projection_cache_key)
     ):
         return (
             ZaxyRetriever(
@@ -2268,8 +2283,8 @@ async def build_live_zaxy_retriever(
     for event in events:
         extraction = embed_extraction(extract(event), provider)
         await graph.upsert_extraction(extraction)
-    if projection_cache_key is not None:
-        await _mark_benchmark_projection(graph, projection_cache_key, events)
+    if neo4j_graph is not None and projection_cache_key is not None:
+        await _mark_benchmark_projection(neo4j_graph, projection_cache_key, events)
     return (
         ZaxyRetriever(
             QueryRouter(graph),

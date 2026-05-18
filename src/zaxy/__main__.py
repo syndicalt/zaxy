@@ -145,6 +145,7 @@ from zaxy.packet_projection import (
     project_packet_events_to_graph,
     watch_packet_events,
 )
+from zaxy.projection_backends import ProjectionBackendConfig
 from zaxy.refs import MemoryRefStore
 from zaxy.release import package_version, run_beta_readiness, run_release_smoke
 from zaxy.schema import (
@@ -1944,6 +1945,16 @@ def benchmark(
         "--reuse-projection",
         help="Reuse an existing benchmark graph projection for the same workload and embedding provider",
     ),
+    projection_backend: str = typer.Option(
+        "neo4j",
+        "--projection-backend",
+        help="Projection backend for graph-backed Zaxy benchmarks: neo4j or pggraph",
+    ),
+    pggraph_dsn: str | None = typer.Option(  # noqa: B008
+        None,
+        "--pggraph-dsn",
+        help="Experimental pgGraph/PostgreSQL DSN for --projection-backend pggraph",
+    ),
     baseline_backends: str = typer.Option(
         "md,bm25,vector,md+vector",
         "--baseline-backends",
@@ -2099,6 +2110,15 @@ def benchmark(
                 benchmark_workload,
                 provider_label,
             )
+            projection_backend_config = ProjectionBackendConfig(
+                backend=projection_backend,
+                neo4j_uri=neo4j_uri,
+                neo4j_user=neo4j_user,
+                neo4j_password=neo4j_password,
+                neo4j_ca_cert=None,
+                neo4j_trust_all=False,
+                pggraph_dsn=pggraph_dsn or settings.pggraph_dsn,
+            )
             zaxy_retriever, graph = await build_live_zaxy_retriever(
                 eventlog,
                 provider,
@@ -2110,6 +2130,7 @@ def benchmark(
                 reuse_projection=reuse_projection,
                 projection_cache_key=projection_cache_key,
                 scope_resolver=benchmark_query_scope_resolver(cases),
+                projection_backend_config=projection_backend_config,
             )
             try:
                 checkout_retriever: ZaxyCheckoutRetriever | None = None

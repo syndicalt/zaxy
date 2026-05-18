@@ -56,6 +56,7 @@ from zaxy.live_benchmark import (
     build_context_collapse_workload,
     build_frozen_statistical_workload,
     build_graph_traversal_workload,
+    build_live_zaxy_retriever,
     build_longmemeval_workload,
     build_mempalace_workload_inventory,
     build_source_recall_workload,
@@ -69,6 +70,7 @@ from zaxy.live_benchmark import (
     workload_fingerprint,
     write_benchmark_report,
 )
+from zaxy.projection_backends import ProjectionBackendConfig
 from zaxy.query import ContextChunk
 from zaxy.retrieval_intent import classify_retrieval_intent
 from zaxy.retrieval_plan import (
@@ -112,6 +114,11 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "--embedding-cache" in cli
     assert "--progress" in cli
     assert "--reuse-projection" in cli
+    assert "--projection-backend" in cli
+    assert "--pggraph-dsn" in cli
+    assert "ProjectionBackendConfig(" in cli
+    assert "neo4j_ca_cert=None" in cli
+    assert "projection_backend_config=projection_backend_config" in cli
     assert "--baseline-backends" in cli
     assert "_build_benchmark_baselines" in cli
     assert "benchmark_projection_cache_key" in cli
@@ -1266,6 +1273,76 @@ async def test_live_benchmark_can_run_checkout_backend_without_graph_backend() -
     )
 
     assert [run.backend for run in report.runs] == ["zaxy-checkout"]
+
+
+async def test_build_live_zaxy_retriever_can_use_projection_backend_factory(tmp_path: Path) -> None:
+    """Live benchmarks should be able to target experimental projection backends."""
+    log = EventLog(tmp_path / "bench.jsonl")
+    log.append("tester", "goal.created", {"goalId": "goal-1", "title": "Compare pgGraph"})
+    config = ProjectionBackendConfig(
+        backend="pggraph",
+        neo4j_uri="bolt://unused",
+        neo4j_user="neo4j",
+        neo4j_password="testpassword",
+        neo4j_ca_cert=None,
+        neo4j_trust_all=False,
+        pggraph_dsn="postgresql://postgres:postgres@localhost:5432/zaxy",
+    )
+
+    class FakeProjectionStore:
+        def __init__(self) -> None:
+            self.connected = False
+            self.schema_initialized = False
+            self.upsert_count = 0
+
+        async def connect(self) -> None:
+            self.connected = True
+
+        async def init_schema(self) -> None:
+            self.schema_initialized = True
+
+        async def upsert_extraction(self, result: object, session_id: str = "default") -> None:
+            del result, session_id
+            self.upsert_count += 1
+
+        async def search_exact(self, *args: object, **kwargs: object) -> list[object]:
+            del args, kwargs
+            return []
+
+        async def search_keyword(self, *args: object, **kwargs: object) -> list[object]:
+            del args, kwargs
+            return []
+
+        async def search_vector(self, *args: object, **kwargs: object) -> list[object]:
+            del args, kwargs
+            return []
+
+        async def search_traversal(self, *args: object, **kwargs: object) -> list[object]:
+            del args, kwargs
+            return []
+
+        async def has_traversal_edges(self, session_id: str = "default") -> bool:
+            del session_id
+            return False
+
+        async def close(self) -> None:
+            return None
+
+    store = FakeProjectionStore()
+
+    with patch("zaxy.live_benchmark.build_projection_store", return_value=store) as factory:
+        retriever, returned_store = await build_live_zaxy_retriever(
+            log,
+            HashEmbeddingProvider(dimension=8),
+            projection_backend_config=config,
+        )
+
+    assert isinstance(retriever, ZaxyRetriever)
+    assert returned_store is store
+    assert store.connected is True
+    assert store.schema_initialized is True
+    assert store.upsert_count == 1
+    factory.assert_called_once_with(config)
 
 
 async def test_zaxy_checkout_retriever_returns_checkout_contract() -> None:
