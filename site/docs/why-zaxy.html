@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Why Zaxy - Zaxy Docs</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../index.html">Overview</a>
+      <a href="getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="why-zaxy">Why Zaxy</h1>
+      <p>Zaxy is heavier than a markdown file and heavier than a standalone vector database on purpose. It is for agents that need memory to be replayable, auditable, temporal, and connected across sessions. If the only requirement is &quot;remember a few preferences,&quot; markdown or a hosted memory feature is probably enough. If the agent needs to explain what it knew, when it knew it, which source supported it, and how a decision followed from prior work, flat notes and vector chunks stop being a reliable substrate.</p>
+      <p>Markdown works well as human-authored notes, but it has weak operational semantics. Updates overwrite prior wording unless every change is manually preserved. Relationships are implicit. A model can read the file, but it cannot replay the sequence of events that produced the file or verify a hash-linked history. That makes markdown convenient for summaries and poor as the source of truth for long-running autonomous work.</p>
+      <p>Vector memory solves a different problem: it retrieves text that is close to a query. That is useful, and Zaxy can still use embeddings and rerankers, but similarity is not the same thing as provenance, temporal validity, or multi-hop reasoning. A vector hit can say &quot;this chunk sounds related.&quot; It does not, by itself, answer whether the fact was superseded, which session produced it, which source line backs it, or which task and decision chain it belongs to.</p>
+      <p>Zaxy splits those responsibilities:</p>
+      <ul>
+        <li>Eventloom is the immutable append-only source of truth.</li>
+        <li>Neo4j is the default temporal graph projection for traversal and retrieval.</li>
+        <li>pgGraph is an experimental projection backend for teams evaluating PostgreSQL plus graph semantics.</li>
+        <li>MCP is the agent-facing interface, so clients call stable tools rather than reading private files directly.</li>
+        <li>Memory Bootstrap and Memory Checkout give models explicit guidance about what to trust, refresh, ignore, and cite.</li>
+      </ul>
+      <p>That architecture has an activation cost. A user must install a Python package, wire an MCP client, and choose a local graph posture. The intended local entry point keeps that cost visible rather than hiding it:</p>
+      <pre><code class="language-bash">pipx install zaxy-memory
+zaxy init . --domain my-project --preset local-codex --capture start --infra check
+zaxy memory log --eventloom-path .eventloom --session-id my-project-default --limit 5
+zaxy memory bootstrap --eventloom-path .eventloom --session-id my-project-default
+zaxy doctor --eventloom-path .eventloom</code></pre>
+      <p>After that flow, local data lives in <code>.eventloom/</code> as append-only JSONL, and the generated MCP config or install command tells the client how to launch the same <code>zaxy</code> executable. The graph backend can remain unchecked during the first smoke test, or it can be started explicitly when graph-backed retrieval is needed.</p>
+      <p>Use Zaxy when memory quality depends on temporal state, citations, operational debugging, or graph traversal. Use markdown or simple vector recall when the workload is casual, single-session, or easy to reconstruct by rereading notes.</p>
+      <p>See also <a href="getting-started.html">getting-started.md</a>, <a href="retrieval.html">retrieval.md</a>, and <a href="../README.html">README.md</a>.</p>
+    </article>
+  </main>
+</body>
+</html>

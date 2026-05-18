@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zaxy Merge Sprint Implementation Plan - Zaxy Docs</title>
+  <link rel="stylesheet" href="../../../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../../../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../../../index.html">Overview</a>
+      <a href="../../getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="zaxy-merge-sprint-implementation-plan">Zaxy Merge Sprint Implementation Plan</h1>
+      <blockquote><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</blockquote>
+      <p><strong>Goal:</strong> Consolidate the accumulated Zaxy memory, onboarding, graph, and documentation work into a clean merge-ready release.</p>
+      <p><strong>Architecture:</strong> Treat this as an integration sprint, not a feature sprint. First freeze the current working tree, then split commits by product capability, update the public site/docs narrative, run the release gate, and push/merge only after the repo tells one coherent story.</p>
+      <p><strong>Tech Stack:</strong> Python 3.13, pytest, ruff, mypy, static HTML docs site, Eventloom JSONL, Neo4j, MCP.</p>
+      <p>---</p>
+      <h3 id="task-1-freeze-and-inventory-current-work">Task 1: Freeze And Inventory Current Work</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Inspect: <code>git status --short --branch</code></li>
+        <li>Inspect: <code>git diff --stat</code></li>
+        <li>Inspect: <code>git log --oneline --decorate --max-count=12</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Confirm branch and dirty state</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">git status --short --branch</code></pre>
+      <p>Expected: <code>master</code> is ahead of <code>origin/master</code> and has tracked/untracked changes.</p>
+      <ul>
+        <li>[ ] <strong>Step 2: Capture the changed surface area</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">git diff --stat
+git diff --name-only</code></pre>
+      <p>Expected: changed files are grouped across local profile/onboarding, graph provenance, memory checkout/refs/capabilities, MCP, hooks, tests, and docs.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Run the current verification baseline</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">ruff check .
+mypy src/zaxy
+pytest -q</code></pre>
+      <p>Expected: ruff clean, mypy clean, full test suite passes with coverage above 90%.</p>
+      <h3 id="task-2-split-work-into-coherent-commits">Task 2: Split Work Into Coherent Commits</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Stage selectively from the current working tree.</li>
+        <li>Do not include unrelated generated artifacts.</li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Commit local infrastructure and onboarding cleanup</strong></li>
+      </ul>
+      <p>Stage:</p>
+      <pre><code class="language-bash">git add .env.example scripts/setup.sh src/zaxy/local_profile.py src/zaxy/onboarding.py tests/test_setup_script.py tests/test_onboarding.py docs/configuration.md docs/getting-started.md docs/packet-analyzer.md docs/hooks.md
+git commit -m &quot;feat: streamline local onboarding capture&quot;</code></pre>
+      <p>Expected: commit covers deterministic capture defaults, <code>local-codex</code>, localhost Neo4j profile, packet capture opt-in guidance, and Codex hook JSON safety.</p>
+      <ul>
+        <li>[ ] <strong>Step 2: Commit graph provenance and projection integrity</strong></li>
+      </ul>
+      <p>Stage:</p>
+      <pre><code class="language-bash">git add scripts/setup_neo4j_indexes.cypher src/zaxy/graph.py src/zaxy/schema.py src/zaxy/extract.py tests/test_graph.py tests/test_extract.py tests/test_schema_migrations.py docs/eventloom.md docs/graph-schema.md
+git commit -m &quot;feat: add graph provenance integrity checks&quot;</code></pre>
+      <p>Expected: commit covers Eventloom hash-path projection, <code>NEXT_EVENT</code>/<code>PREVIOUS_EVENT</code>, graph status checks, and schema docs.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Commit model-facing memory UX</strong></li>
+      </ul>
+      <p>Stage:</p>
+      <pre><code class="language-bash">git add src/zaxy/capabilities.py src/zaxy/refs.py src/zaxy/__init__.py src/zaxy/__main__.py src/zaxy/core.py src/zaxy/mcp_server.py src/zaxy/embedding.py tests/test_capabilities.py tests/test_refs.py tests/test_cli.py tests/test_core.py tests/test_mcp.py docs/mcp.md docs/getting-started.md AGENTS.md
+git commit -m &quot;feat: add model-facing memory checkout&quot;</code></pre>
+      <p>Expected: commit covers <code>memory_capabilities</code>, Memory Checkout, memory refs, checkout-by-ref, MCP exposure, and model-facing docs.</p>
+      <h3 id="task-3-update-public-site-narrative">Task 3: Update Public Site Narrative</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>site/index.html</code></li>
+        <li>Modify: <code>site/style.css</code> only if the content needs layout support.</li>
+        <li>Test: <code>tests/test_docs_site.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Add failing docs-site assertions</strong></li>
+      </ul>
+      <p>Modify <code>tests/test_docs_site.py</code> so the public site is required to mention:</p>
+      <pre><code class="language-python">assert &quot;Git for LLM memory&quot; in html
+assert &quot;Memory Checkout&quot; in html
+assert &quot;memory_capabilities&quot; in html
+assert &quot;deterministic capture&quot; in html
+assert &quot;local-codex&quot; in html
+assert &quot;NEXT_EVENT&quot; in html</code></pre>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_docs_site.py --no-cov -q</code></pre>
+      <p>Expected: failure until <code>site/index.html</code> is updated.</p>
+      <ul>
+        <li>[ ] <strong>Step 2: Update the site copy</strong></li>
+      </ul>
+      <p>Modify <code>site/index.html</code> so the first screen and architecture sections explain:</p>
+      <pre><code class="language-text">Zaxy is Git for LLM memory: an Eventloom-backed, hash-linked, replayable memory substrate with graph projection, Memory Checkout, deterministic capture, and MCP-native model awareness.</code></pre>
+      <p>Expected: the site now reflects the current product direction rather than only the earlier temporal graph fabric positioning.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Verify docs site</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_docs_site.py --no-cov -q
+bash scripts/validate-docs.sh --root .</code></pre>
+      <p>Expected: docs-site tests and link validation pass.</p>
+      <ul>
+        <li>[ ] <strong>Step 4: Commit public site update</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">git add site/index.html site/style.css tests/test_docs_site.py
+git commit -m &quot;docs: update public memory product narrative&quot;</code></pre>
+      <p>Expected: commit is docs/site only.</p>
+      <h3 id="task-4-release-gate-and-merge">Task 4: Release Gate And Merge</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Inspect: full repo.</li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Run release gate</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">scripts/release-check.sh --root .</code></pre>
+      <p>Expected: release checks pass. If the script requires services not currently running, capture the exact failing check and run the documented focused alternative only after confirming it is an environmental dependency.</p>
+      <ul>
+        <li>[ ] <strong>Step 2: Confirm final history</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">git status --short --branch
+git log --oneline --decorate --max-count=12</code></pre>
+      <p>Expected: clean working tree, local <code>master</code> ahead of <code>origin/master</code> by the new sprint commits plus the previous five local commits.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Push merge result</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">git push origin master
+git status --short --branch</code></pre>
+      <p>Expected: <code>master</code> is synchronized with <code>origin/master</code> and no uncommitted work remains.</p>
+    </article>
+  </main>
+</body>
+</html>

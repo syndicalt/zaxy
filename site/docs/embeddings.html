@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Embeddings - Zaxy Docs</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../index.html">Overview</a>
+      <a href="getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="embeddings">Embeddings</h1>
+      <p>Embeddings are optional but important for semantic retrieval. Zaxy supports a deterministic local hash provider and an OpenAI-compatible hosted provider. Both produce fixed-size vectors attached to extracted entities and query text, then Neo4j vector search participates in result fusion.</p>
+      <p>The hash provider is designed for tests, offline development, and deterministic behavior. It does not provide high-quality semantic meaning, but it allows vector code paths to run without network access or secrets. This is valuable for CI and for local contributors who only need to verify mechanics.</p>
+      <p>For the local-first profile:</p>
+      <pre><code class="language-bash">zaxy local-profile
+zaxy local-profile --output .env.local
+zaxy local-profile --check</code></pre>
+      <p>The generated profile uses <code>EMBEDDING_PROVIDER=hash</code>, <code>RERANKER_PROVIDER=lexical</code>, and <code>NEO4J_AUTO_START=true</code>. It intentionally omits hosted API key variables so the default local path stays offline and deterministic.</p>
+      <p>The hosted provider is selected with:</p>
+      <pre><code class="language-bash">EMBEDDING_ENABLED=true
+EMBEDDING_PROVIDER=openai
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
+OPENAI_API_KEY_FILE=secrets/openai_api_key.txt</code></pre>
+      <p><code>OPENAI_BASE_URL</code> can point at any OpenAI-compatible embeddings endpoint. Keep <code>EMBEDDING_DIMENSION</code> aligned with the model and the Neo4j vector index. If the dimension changes, rebuild the vector index and replay affected events so entity vectors are regenerated consistently.</p>
+      <p>Secrets should be supplied through <code>OPENAI_API_KEY_FILE</code> in production. Direct <code>OPENAI_API_KEY</code> is convenient for local testing but can leak through process inspection or shell history. See <a href="security.html">security.md</a> and <a href="configuration.html">configuration.md</a>.</p>
+      <p>Embedding generation happens after extraction. The provider receives structured entity text, not arbitrary raw payload dumps. This reduces the chance of embedding secrets and improves result quality by keeping the vector input close to the graph fact being stored.</p>
+      <p>If hosted embedding calls fail, treat the event log as the recovery source. Fix configuration, replay the Eventloom log, and rebuild graph projections. Do not manually patch vectors in Neo4j unless you are doing a controlled maintenance operation documented in <a href="operations.html">operations.md</a>.</p>
+      <p>Related pages: <a href="retrieval.html">retrieval.md</a>, <a href="graph-schema.html">graph-schema.md</a>, <a href="deployment.html">deployment.md</a>, and <a href="../README.html">README.md</a>. The public site summary is <a href="../index.html">site/index.html</a>.</p>
+    </article>
+  </main>
+</body>
+</html>

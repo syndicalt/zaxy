@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Deployment - Zaxy Docs</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../index.html">Overview</a>
+      <a href="getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="deployment">Deployment</h1>
+      <p>Production deployment starts with explicit configuration and secret files. Run:</p>
+      <pre><code class="language-bash">./scripts/setup.sh --production
+./scripts/generate-certs.sh .certs
+docker compose -f docker-compose.prod.yml up -d</code></pre>
+      <p>Production setup writes <code>.env</code> and secret files under <code>./secrets</code>. The <code>.env</code> file references those secret files with <code>*_FILE</code> variables. Generated local secrets are useful for validation and staging, but real deployments should replace them with platform-managed secrets or files mounted by Docker, Kubernetes, or a vault sidecar.</p>
+      <p>Neo4j must be reachable through an encrypted Bolt configuration. Production compose enables Bolt TLS and mounts certificate material. <code>NEO4J_CA_CERT</code> tells Zaxy which certificate to trust. Do not set <code>NEO4J_TRUST_ALL=true</code> in production unless you are doing a temporary emergency recovery with a written risk acceptance.</p>
+      <p>Remote MCP/SSE should only be exposed behind authentication. For single-tenant or private deployments, configure <code>MCP_REMOTE_AUTH_TOKEN_FILE</code> and require clients to send the token. For public multi-tenant deployments, configure OIDC with <code>MCP_OIDC_ISSUER</code>, <code>MCP_OIDC_AUDIENCE</code>, and <code>MCP_OIDC_JWKS_URL</code>; Zaxy validates JWTs and scopes clients from the configured session claim. Configure <code>MCP_ADMIN_TOKEN_FILE</code> as well; production config rejects deployments that leave admin replay/invalidation unprotected. Place the service behind your normal ingress controls and prefer private network exposure over direct public internet exposure unless OIDC and rate limiting are both in place.</p>
+      <p>The production container starts the SSE transport on <code>0.0.0.0:8080</code> so Docker and orchestration platforms can route traffic to it. Local development still defaults to stdio and the SSE CLI host defaults to <code>127.0.0.1</code>.</p>
+      <p>Before promoting a deployment:</p>
+      <pre><code class="language-bash">scripts/validate-deployment.sh --root .
+scripts/release-check.sh --root .</code></pre>
+      <p>The release gate must pass locally and in CI. It checks linting, types, tests, coverage, package metadata, docs links, and deployment configuration. A tagged release should use artifacts built by <code>scripts/build-dist.sh</code>. Public Python releases publish to PyPI as <code>zaxy-memory</code>; the import package and CLI remain <code>zaxy</code>.</p>
+      <p>Backups must be configured before production traffic. At minimum, persist Eventloom logs and secret material recovery procedures. Neo4j backups are recommended for faster restore, but Eventloom replay is the correctness path.</p>
+      <p>For operational recovery, see <a href="operations.html">operations.md</a> and <a href="runbook.html">runbook.md</a>. For environment variables, see <a href="configuration.html">configuration.md</a>. For threat model and secret handling, see <a href="security.html">security.md</a>. The quick setup remains in <a href="../README.html">README.md</a>.</p>
+    </article>
+  </main>
+</body>
+</html>

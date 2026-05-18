@@ -16,7 +16,7 @@ def test_pyproject_declares_typed_package_and_release_tools() -> None:
     assert pyproject["project"]["name"] == "zaxy-memory"
     assert pyproject["project"]["urls"] == {
         "Homepage": "https://syndicalt.github.io/zaxy/",
-        "Documentation": "https://syndicalt.github.io/zaxy/docs/getting-started.md",
+        "Documentation": "https://syndicalt.github.io/zaxy/docs/getting-started.html",
         "Repository": "https://github.com/syndicalt/zaxy",
         "Issues": "https://github.com/syndicalt/zaxy/issues",
     }

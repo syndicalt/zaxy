@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zaxy - Zaxy Docs</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="index.html">Overview</a>
+      <a href="docs/getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="zaxy">Zaxy</h1>
+      <p><strong>Event-sourced temporal knowledge graph fabric for AI agent memory.</strong></p>
+      <p>Zaxy replaces markdown files + vector DBs with a structured, replayable, bi-temporal memory system built on Eventloom and Neo4j, with optional Pathlight tracing.</p>
+      <h2 id="quick-start">Quick Start</h2>
+      <h3 id="five-minute-local-smoke-test">Five-minute local smoke test</h3>
+      <pre><code class="language-bash"># Install the Zaxy CLI before generating MCP config. The distribution is
+# zaxy-memory; the import package and console command remain zaxy.
+pipx install zaxy-memory
+# or: pip install zaxy-memory
+
+# Initialize local memory, MCP config guidance, profile, genesis, and heartbeat.
+# This checks graph infrastructure posture without starting containers.
+zaxy init . --domain my-project --preset local-codex --capture start --infra check
+
+# Prove the local Eventloom log and model bootstrap are readable.
+zaxy memory log --eventloom-path .eventloom --session-id my-project-default --limit 5
+zaxy memory bootstrap --eventloom-path .eventloom --session-id my-project-default
+zaxy doctor --eventloom-path .eventloom</code></pre>
+      <p>Your local data lives under <code>.eventloom/</code> as one append-only JSONL file per session. <code>zaxy init</code> prints the MCP config or install command for your selected client, shows the selected graph backend posture, and ends with copyable local verification commands.</p>
+      <p>For Claude Code instead of Codex:</p>
+      <pre><code class="language-bash">zaxy init . --domain my-project --preset local-claude --infra check</code></pre>
+      <p>For Hermes Agent:</p>
+      <pre><code class="language-bash">zaxy ide-config hermes --install</code></pre>
+      <p>For repository development, use <code>pip install -e &quot;.[dev]&quot;</code>, <code>./scripts/setup.sh</code>, and <code>docker compose up -d</code>. Production setup writes Docker secret files under <code>./secrets/</code>; see <a href="docs/deployment.html">docs/deployment.md</a>.</p>
+      <h2 id="architecture">Architecture</h2>
+      <pre><code>Agent (LangGraph / Any MCP Client)
+    |
+    v
+MCP Server — memory_append / memory_query / memory_feedback / memory_replay / memory_invalidate
+    |
+    v
+Eventloom (immutable JSONL log)  →  Hybrid Extraction  →  Neo4j (temporal KG)
+    |                                                               |
+    +—————— Optional Pathlight traces ———————————————→  Query Router
+                                                              |
+                                                    Hybrid Retrieval
+                                                    (exact + BM25 + vector + traversal)</code></pre>
+      <p>Zaxy also includes an observe-only OpenAI-compatible packet analyzer for model call provenance. It forwards packets to one configured upstream endpoint and records <code>llm.packet.completed</code> events to Eventloom without acting as a router. See <a href="docs/packet-analyzer.html">LLM Packet Analyzer</a>.</p>
+      <h2 id="public-site-and-documentation">Public Site and Documentation</h2>
+      <ul>
+        <li>Public static site: <code>site/index.html</code></li>
+        <li>Why Zaxy: <code>docs/why-zaxy.md</code></li>
+        <li>Getting started: <code>docs/getting-started.md</code></li>
+        <li>Architecture: <code>docs/architecture.md</code></li>
+        <li>Configuration: <code>docs/configuration.md</code></li>
+        <li>MCP interface: <code>docs/mcp.md</code></li>
+        <li>Eventloom contract: <code>docs/eventloom.md</code></li>
+        <li>Graph schema: <code>docs/graph-schema.md</code></li>
+        <li>Retrieval: <code>docs/retrieval.md</code></li>
+        <li>Benchmarks: <code>docs/benchmarks.md</code></li>
+        <li>LLM packet analyzer: <code>docs/packet-analyzer.md</code></li>
+        <li>Embeddings: <code>docs/embeddings.md</code></li>
+        <li>Security: <code>docs/security.md</code></li>
+        <li>Operations and deployment: <code>docs/operations.md</code>, <code>docs/deployment.md</code>, <code>docs/runbook.md</code></li>
+        <li>Python API: <code>docs/api.md</code></li>
+      </ul>
+      <h2 id="key-features">Key Features</h2>
+      <ul>
+        <li><strong>Immutable audit trail</strong>: Eventloom append-only JSONL with SHA-256 hash chains.</li>
+        <li><strong>Bi-temporal graph</strong>: Facts have validity windows (<code>valid_from</code>, <code>valid_to</code>).</li>
+        <li><strong>Hybrid extraction</strong>: Rule-based for typed events (60–80% cost reduction), LLM fallback.</li>
+        <li><strong>Hybrid retrieval</strong>: Exact + keyword + vector + graph traversal with configurable fusion weights.</li>
+        <li><strong>Session sharding</strong>: One Eventloom log per agent/session, with a shared graph.</li>
+        <li><strong>MCP-native</strong>: Drop-in memory for any MCP-compatible agent framework over stdio or SSE.</li>
+        <li><strong>Observable</strong>: Optional Pathlight traces, breakpoints, and diff support.</li>
+        <li><strong>Hardened local defaults</strong>: bounded MCP inputs, safe session IDs, localhost-bound Neo4j ports, and optional admin token support for replay/invalidation.</li>
+      </ul>
+      <h2 id="project-structure">Project Structure</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>File</th>
+            <th>Purpose</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>src/zaxy/event.py</code></td>
+            <td>Eventloom JSONL I/O + hash chain integrity</td>
+          </tr>
+          <tr>
+            <td><code>src/zaxy/extract.py</code></td>
+            <td>Hybrid extraction engine + rule registry</td>
+          </tr>
+          <tr>
+            <td><code>src/zaxy/graph.py</code></td>
+            <td>Neo4j bi-temporal wrapper</td>
+          </tr>
+          <tr>
+            <td><code>src/zaxy/query.py</code></td>
+            <td>Hybrid retrieval router</td>
+          </tr>
+          <tr>
+            <td><code>src/zaxy/mcp_server.py</code></td>
+            <td>MCP stdio/SSE server</td>
+          </tr>
+          <tr>
+            <td><code>src/zaxy/trace.py</code></td>
+            <td>Pathlight observability hooks</td>
+          </tr>
+          <tr>
+            <td><code>src/zaxy/core.py</code></td>
+            <td>MemoryFabric orchestrator</td>
+          </tr>
+          <tr>
+            <td><code>src/zaxy/session.py</code></td>
+            <td>Per-session Eventloom log manager</td>
+          </tr>
+          <tr>
+            <td><code>src/zaxy/security.py</code></td>
+            <td>Shared validation and input bounds</td>
+          </tr>
+          <tr>
+            <td><code>src/zaxy/__main__.py</code></td>
+            <td>CLI (<code>zaxy serve</code>, <code>zaxy replay</code>, etc.)</td>
+          </tr>
+        </tbody>
+      </table>
+      <h2 id="production-secrets">Production Secrets</h2>
+      <p>Zaxy supports Docker/Kubernetes-style secret files for sensitive settings:</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Variable</th>
+            <th>Secret-file variant</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>NEO4J_PASSWORD</code></td>
+            <td><code>NEO4J_PASSWORD_FILE</code></td>
+          </tr>
+          <tr>
+            <td><code>MCP_ADMIN_TOKEN</code></td>
+            <td><code>MCP_ADMIN_TOKEN_FILE</code></td>
+          </tr>
+          <tr>
+            <td><code>PATHLIGHT_ACCESS_TOKEN</code></td>
+            <td><code>PATHLIGHT_ACCESS_TOKEN_FILE</code></td>
+          </tr>
+        </tbody>
+      </table>
+      <p>Direct environment variables take precedence over their <code>*_FILE</code> variants. Use <code>docker-compose.prod.yml</code> as the production compose baseline.</p>
+      <h2 id="development">Development</h2>
+      <ul>
+        <li><strong>Tests first</strong> (Karpathy rule). Every public function has a test.</li>
+        <li><strong>Unit tests</strong> mock Neo4j/Pathlight. <strong>Integration tests</strong> use Docker.</li>
+        <li><strong>Coverage gate: ≥90%</strong> enforced by CI.</li>
+        <li><strong>Lint/format</strong>: <code>ruff</code>. <strong>Types</strong>: <code>mypy</code>.</li>
+      </ul>
+      <pre><code class="language-bash"># Run full suite with coverage gate
+pytest
+
+# Run integration tests (requires Docker)
+docker compose up -d neo4j-test
+./scripts/generate-certs.sh .certs
+docker compose up -d neo4j-tls
+pytest -m integration --no-cov
+
+# Lint and type-check
+ruff check src tests
+mypy src
+
+# Competitive retrieval benchmark harness
+pytest tests/test_competitive_benchmarks.py --benchmark-only --no-cov
+
+# Frozen live benchmark: markdown vs BM25 vs vector vs markdown+vector vs Zaxy
+scripts/live-benchmark.sh --embedding-provider openai --workload frozen --runs 1 --reset-graph
+
+# Representative benchmark suite: temporal memory + docs + transcripts + mixed context
+scripts/live-benchmark.sh --embedding-provider openai --workload suite --subjects 100 --documents 250 --sessions 50 --runs 1 --reset-graph
+
+# LongMemEval-compatible memory benchmark and BM25 comparison
+zaxy benchmark --embedding-provider hash --workload longmemeval \
+  --dataset .cache/zaxy/benchmarks/longmemeval_oracle.json \
+  --questions 100 --runs 1 --limit 10 --zaxy-backend checkout \
+  --baseline-backends bm25 --embedding-cache .cache/zaxy/longmemeval-embeddings.json
+zaxy benchmark --output-dir reports/benchmarks/longmemeval-100-comparison \
+  --embedding-provider hash --workload longmemeval \
+  --dataset .cache/zaxy/benchmarks/longmemeval_oracle.json \
+  --questions 100 --runs 1 --limit 5 --baseline-backends bm25 \
+  --zaxy-backend checkout --reuse-projection \
+  --embedding-cache .cache/zaxy/longmemeval-embeddings.json
+
+# Production deployment preflight
+scripts/validate-deployment.sh --root .
+
+# Build and validate Python release artifacts
+scripts/build-dist.sh --root .
+
+# Verify local release metadata and PyPI Trusted Publishing configuration
+zaxy doctor --release-smoke
+
+# Validate public site and documentation links
+scripts/validate-docs.sh --root .
+
+# Clean-repo beta UAT: install into a throwaway workspace and verify init,
+# bootstrap, deterministic capture, doctor, and memory checkout.
+scripts/beta-uat.sh
+
+# Summarize beta readiness gates without external services.
+zaxy doctor --beta-readiness
+
+# Go-live release gate
+scripts/release-check.sh --root .</code></pre>
+      <p>The full suite must stay at or above 90% coverage before a sprint is complete.</p>
+      <h2 id="release-publishing">Release Publishing</h2>
+      <p>The PyPI distribution name is <code>zaxy-memory</code> because <code>zaxy</code> is already occupied on PyPI. Published releases build from GitHub Actions and upload to &lt;https://pypi.org/project/zaxy-memory/&gt; using PyPI Trusted Publishing with GitHub OIDC. The import package and console command remain <code>zaxy</code>.</p>
+      <p>Before publishing, run <code>zaxy doctor --release-smoke</code> to verify the package version, changelog entry, release workflow, and tokenless publishing posture.</p>
+      <h2 id="license">License</h2>
+      <p>MIT</p>
+    </article>
+  </main>
+</body>
+</html>

@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Synthesis Context Research - Zaxy Docs</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../index.html">Overview</a>
+      <a href="getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="synthesis-context-research">Synthesis Context Research</h1>
+      <p>This note defines the next architecture target for Zaxy retrieval: a synthesis working-memory layer that sits between candidate retrieval and model-facing Memory Checkout.</p>
+      <p>The current benchmark pattern is clear: Zaxy often retrieves the relevant memory neighborhood, but still misses composed answers. In the latest 100-question LongMemEval hash run, Zaxy reached <code>Recall@5=0.870</code> and <code>Recall@10=0.900</code>, while the largest remaining miss class was still <code>synthesis_miss</code>. That means the next improvements should not add more broad retrieval surfaces first. They should make retrieved evidence easier to compose, verify, and project.</p>
+      <h2 id="research-takeaways">Research Takeaways</h2>
+      <p>Long context is not reliable context. Liu et al. show that language model performance can drop when relevant information is placed in the middle of a long prompt, even for long-context models. Zaxy should therefore avoid treating “more retrieved text” as the answer. It should produce a compact, ordered context object where the most decision-critical state is pinned at the top and cited evidence follows.</p>
+      <p>GraphRAG’s local search is the closest production pattern: combine graph-structured data with raw text units at query time, then rank and filter entity descriptions, text units, relationships, and reports into the prompt. Zaxy already has the raw ingredients, but it needs a stronger synthesis control plane over those ingredients.</p>
+      <p>SELF-RAG’s useful lesson is not its training recipe; it is the control loop. Retrieval should be adaptive, and generated answers should carry a reflection/critique signal over relevance and support. Zaxy can implement this deterministically as retrieval plan status, evidence sufficiency, contradiction checks, and answerability warnings.</p>
+      <p>ColBERT’s late interaction architecture is important because single-vector similarity loses token-level alignment. For Zaxy, this argues for a future optional late-interaction/rerank lane over compact source snippets, especially for source recall and “which item” questions. The local default can remain BM25/hash, but the interface should be able to accept multi-vector or token-interaction rerankers.</p>
+      <p>HyDE’s lesson is query-shape translation: generate or derive the answer-shaped query, then retrieve documents that would support that answer. Zaxy should do this without an LLM in the default path where possible: typed query plans should produce source-lane expansions such as candidate entities, units, expected answer type, operation, and constraints.</p>
+      <p>MemGPT’s strongest idea is virtual context management: main memory should stay small, and archival memory should be paged in deliberately. Zaxy’s “git for memory” version should make this auditable: the model gets a stable checkout with answer candidates and cited pages, not a raw dump.</p>
+      <p>A-MEM argues that memory organization should evolve dynamically through links and contextual metadata. For Zaxy, this maps to Eventloom-backed reinforcement, feedback, supersession, and learned source-selection metadata rather than untracked mutable summaries.</p>
+      <p>Recent Graph-RAG reasoning-bottleneck work is directly aligned with our benchmark failures: strong retrieval can still fail if the model cannot reason over the retrieved context. Structured prompting and graph-walk compression improved multi-hop QA while reducing context. Zaxy should treat graph traversal output as executable evidence paths, not just another text blob.</p>
+      <p>CompAct reinforces the same direction: multi-hop QA benefits from active compression that preserves key information. Zaxy’s compression must remain cited and replayable, but it should produce task-shaped evidence capsules instead of raw chunks.</p>
+      <h2 id="product-principle">Product Principle</h2>
+      <p>Zaxy should maintain context during synthesis as a typed, cited working set:</p>
+      <ol>
+        <li>Intent: what kind of answer is needed.</li>
+        <li>Evidence requirements: how many independent sources, which entities, which time window, which operation.</li>
+        <li>Candidate ledger: normalized facts, values, units, entities, source ids, confidence, and exclusions.</li>
+        <li>Composition plan: count, sum, difference, average, argmax, absence, temporal interval, list, or graph path.</li>
+        <li>Result candidates: concise answer surfaces plus machine fields.</li>
+        <li>Support packet: minimal cited snippets and graph/event paths.</li>
+        <li>Verification: missing evidence, contradictions, stale facts, dedupe decisions, and confidence.</li>
+      </ol>
+      <p>The model should see the answer candidate first, then the proof. The proof should be compact enough to prevent lost-in-the-middle behavior and complete enough to audit.</p>
+      <h2 id="proposed-architecture">Proposed Architecture</h2>
+      <h3 id="1-query-plan">1. Query Plan</h3>
+      <p>Create a first-class <code>SynthesisPlan</code> alongside the existing retrieval plan.</p>
+      <p>Fields:</p>
+      <ul>
+        <li><code>answer_type</code>: <code>direct_fact</code>, <code>count</code>, <code>list</code>, <code>sum</code>, <code>difference</code>, <code>average</code>, <code>argmax</code>, <code>absence</code>, <code>temporal_interval</code>, <code>graph_path</code>.</li>
+        <li><code>subject_terms</code>: query-specific entities and nouns.</li>
+        <li><code>constraints</code>: time range, session range, entity filters, source filters.</li>
+        <li><code>required_evidence</code>: minimum source groups and required value kinds.</li>
+        <li><code>operation</code>: typed operator with expected units.</li>
+        <li><code>projection_budget</code>: target max answer bytes and evidence bytes.</li>
+      </ul>
+      <p>This should be deterministic and testable. LLM planning can be added later as an optional adapter, not a dependency.</p>
+      <h3 id="2-evidence-ledger">2. Evidence Ledger</h3>
+      <p>Replace ad hoc candidate line construction with a structured ledger.</p>
+      <p>Rows:</p>
+      <ul>
+        <li><code>fact_id</code></li>
+        <li><code>source_group</code></li>
+        <li><code>citation</code></li>
+        <li><code>kind</code></li>
+        <li><code>entity</code></li>
+        <li><code>value</code></li>
+        <li><code>unit</code></li>
+        <li><code>time</code></li>
+        <li><code>label</code></li>
+        <li><code>raw_span</code></li>
+        <li><code>normalized_identity</code></li>
+        <li><code>include_reason</code></li>
+        <li><code>exclude_reason</code></li>
+        <li><code>confidence</code></li>
+      </ul>
+      <p>The ledger is the synthesis working memory. It should be serializable and optionally written back as an Eventloom projection artifact for audit and feedback.</p>
+      <h3 id="3-evidence-operations">3. Evidence Operations</h3>
+      <p>Each operation should be a small pure function over ledger rows.</p>
+      <p>Initial operation set:</p>
+      <ul>
+        <li><code>count_distinct</code></li>
+        <li><code>list_items</code></li>
+        <li><code>sum_values</code></li>
+        <li><code>difference_between</code></li>
+        <li><code>average_values</code></li>
+        <li><code>max_by_value</code></li>
+        <li><code>date_interval</code></li>
+        <li><code>absence_contrast</code></li>
+        <li><code>path_explain</code></li>
+      </ul>
+      <p>Each operation returns:</p>
+      <ul>
+        <li>answer fields</li>
+        <li>natural answer text</li>
+        <li>support ids</li>
+        <li>excluded rows</li>
+        <li>warnings</li>
+      </ul>
+      <p>This makes numeric synthesis debuggable and stops one-off text patterns from spreading through retrieval code.</p>
+      <h3 id="4-context-packet">4. Context Packet</h3>
+      <p>Memory Checkout should return a stable context packet:</p>
+      <pre><code class="language-text">memory_checkout=true
+answerability=answer_from_memory
+synthesis_plan=sum_values
+answer_candidate=$185
+answer_text=I spent $185 on bike-related expenses.
+confidence=0.86
+support_source_ids=answer-1,answer-2,answer-3
+excluded_source_ids=answer-4
+exclusion_reason=duplicate_item:value=$40,label=bike lights
+
+evidence:
+- source_id=answer-1 value=$120 label=Bell Zephyr bike helmet citation=...
+- source_id=answer-2 value=$25 label=bike chain citation=...
+- source_id=answer-3 value=$40 label=bike lights citation=...</code></pre>
+      <p>The model should not need to rediscover the arithmetic from raw snippets unless it wants to audit the answer.</p>
+      <h3 id="5-two-phase-retrieval">5. Two-Phase Retrieval</h3>
+      <p>World-class synthesis needs two retrieval phases:</p>
+      <ol>
+        <li>Candidate recall: overfetch broadly from graph, BM25, vector, and verbatim lanes.</li>
+        <li>Evidence assembly: rerank and filter by the synthesis plan, not by generic query similarity.</li>
+      </ol>
+      <p>This addresses current failures where the correct evidence exists somewhere in the top 10 but not in the synthesis bundle. The synthesis bundle should be built from a larger candidate pool and then projected into the top checkout packet.</p>
+      <h3 id="6-position-aware-projection">6. Position-Aware Projection</h3>
+      <p>Because long-context models are sensitive to where evidence appears, the checkout packet should use a stable order:</p>
+      <ol>
+        <li>Answer candidate and answerability.</li>
+        <li>Required actions or warnings.</li>
+        <li>Structured evidence table.</li>
+        <li>Minimal cited snippets.</li>
+        <li>Raw context fallback.</li>
+      </ol>
+      <p>Do not bury answer candidates in the middle of a large result list.</p>
+      <h3 id="7-feedback-loop">7. Feedback Loop</h3>
+      <p>When the model uses or rejects an answer candidate, write feedback:</p>
+      <ul>
+        <li><code>memory.synthesis.used</code></li>
+        <li><code>memory.synthesis.rejected</code></li>
+        <li><code>memory.synthesis.corrected</code></li>
+        <li><code>memory.evidence.excluded</code></li>
+        <li><code>memory.evidence.reinforced</code></li>
+      </ul>
+      <p>This gives Zaxy a learning surface without making the source of truth mutable.</p>
+      <h2 id="implementation-sprints">Implementation Sprints</h2>
+      <h3 id="sprint-1-structured-synthesis-ledger">Sprint 1: Structured Synthesis Ledger</h3>
+      <p>Build <code>SynthesisPlan</code>, <code>EvidenceLedger</code>, and <code>SynthesisResult</code> as pure models. Port existing count/currency/duration candidate code onto the ledger without changing external behavior.</p>
+      <p>Acceptance:</p>
+      <ul>
+        <li>Existing benchmark tests pass.</li>
+        <li>Ledger rows expose include/exclude reasons.</li>
+        <li>Memory Checkout can emit the ledger in diagnostics.</li>
+      </ul>
+      <h3 id="sprint-2-evidence-assembly-overfetch">Sprint 2: Evidence Assembly Overfetch</h3>
+      <p>Build synthesis bundles from an internal overfetch pool instead of the final top-k display set.</p>
+      <p>Acceptance:</p>
+      <ul>
+        <li>For known arithmetic misses, the ledger includes all expected source groups when they appear in top 10 retrieval.</li>
+        <li>The final packet remains bounded by budget.</li>
+      </ul>
+      <h3 id="sprint-3-operation-specific-projection">Sprint 3: Operation-Specific Projection</h3>
+      <p>Implement operation classes for sum, difference, average, list, and temporal interval.</p>
+      <p>Acceptance:</p>
+      <ul>
+        <li><code>$185</code>, <code>$270</code>, <code>140 hours</code>, <code>59.6</code>, and <code>$5,850</code> cases are explainable from the ledger.</li>
+        <li>No benchmark-specific expected-answer strings are hardcoded.</li>
+      </ul>
+      <h3 id="sprint-4-context-packet-contract">Sprint 4: Context Packet Contract</h3>
+      <p>Move synthesis output into Memory Checkout as a first-class answer candidate section with support/exclusion diagnostics.</p>
+      <p>Acceptance:</p>
+      <ul>
+        <li>The model sees answer candidate first.</li>
+        <li>Cited evidence remains available.</li>
+        <li>Checkout token budget does not regress materially.</li>
+      </ul>
+      <h3 id="sprint-5-adaptive-rerank-interfaces">Sprint 5: Adaptive Rerank Interfaces</h3>
+      <p>Add optional late-interaction and hosted reranker interfaces behind the existing reranker abstraction. Keep local default deterministic.</p>
+      <p>Acceptance:</p>
+      <ul>
+        <li>Local path remains dependency-light.</li>
+        <li>Hosted/late-interaction path can be benchmarked independently.</li>
+        <li>Retrieval reports distinguish candidate recall from evidence assembly quality.</li>
+      </ul>
+      <h2 id="references">References</h2>
+      <ul>
+        <li>Liu et al., “Lost in the Middle: How Language Models Use Long Contexts”, 2023: https://arxiv.org/abs/2307.03172</li>
+        <li>Microsoft Research, “From Local to Global: A Graph RAG Approach to Query-Focused Summarization”, 2024: https://www.microsoft.com/en-us/research/project/graphrag/publications/</li>
+        <li>GraphRAG local search docs: https://microsoft.github.io/graphrag/query/local_search/</li>
+        <li>Asai et al., “Self-RAG: Learning to Retrieve, Generate, and Critique through Self-Reflection”, 2023: https://openreview.net/pdf?id=jbNjgmE0OP</li>
+        <li>Khattab and Zaharia, “ColBERT: Efficient and Effective Passage Search via Contextualized Late Interaction over BERT”, 2020: https://arxiv.org/abs/2004.12832</li>
+        <li>Gao et al., “Precise Zero-Shot Dense Retrieval without Relevance Labels”, 2022: https://arxiv.org/abs/2212.10496</li>
+        <li>Packer et al., “MemGPT: Towards LLMs as Operating Systems”, 2023: https://arxiv.org/abs/2310.08560</li>
+        <li>Xu et al., “A-MEM: Agentic Memory for LLM Agents”, 2025: https://arxiv.org/abs/2502.12110</li>
+        <li>Yoon et al., “CompAct: Compressing Retrieved Documents Actively for Question Answering”, 2024: https://huggingface.co/papers/2407.09014</li>
+        <li>Zarrinkia et al., “The Reasoning Bottleneck in Graph-RAG”, 2026: https://huggingface.co/papers/2603.14045</li>
+      </ul>
+    </article>
+  </main>
+</body>
+</html>

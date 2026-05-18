@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Workspace Genesis - Zaxy Docs</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../index.html">Overview</a>
+      <a href="getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="workspace-genesis">Workspace Genesis</h1>
+      <p>Zaxy can initialize a session with a durable workspace profile before other memory writes or indexing work. The entrypoint is:</p>
+      <pre><code class="language-bash">zaxy init-session . --session-id zaxy-default</code></pre>
+      <p>The command inspects lightweight filesystem signals and appends a <code>session.genesis</code> event. The event records the root path, workspace type, confidence, matched signals, instructions profile, session ID, and write instructions.</p>
+      <p>The first profile is intentionally conservative. Codebase workspaces are detected from signals such as <code>pyproject.toml</code>, <code>package.json</code>, <code>go.mod</code>, <code>Cargo.toml</code>, <code>src/</code>, <code>tests/</code>, and <code>.git/</code>. If the root cannot be classified confidently, Zaxy falls back to <code>generic_workspace</code> with primitive event types such as <code>observation.recorded</code>, <code>decision.made</code>, <code>task.completed</code>, and <code>artifact.indexed</code>.</p>
+      <p>Genesis events are auditable. If Zaxy classifies a workspace incorrectly, append a <code>session.profile.corrected</code> event instead of rewriting history. That preserves the provenance trail: what Zaxy believed at session start, which write instructions that implied, and when the profile changed.</p>
+      <p>MCP startup also discovers workspace instruction files adjacent to genesis: <code>AGENTS.md</code>, <code>CLAUDE.md</code>, <code>SOUL.md</code>, and <code>.github/copilot-instructions.md</code>. Zaxy writes compact <code>workspace.instructions.discovered</code> events with per-file hashes, citations, kinds, sizes, and short summaries; it does not store full instruction file content. On later startup, if the discovered signature differs from the latest recorded signature, Zaxy appends <code>workspace.instructions.updated</code> with <code>previous_signature</code> to preserve instruction drift.</p>
+      <p>Related pages: <a href="eventloom.html">eventloom.md</a>, <a href="codebase.html">codebase.md</a>, and <a href="runbook.html">runbook.md</a>.</p>
+    </article>
+  </main>
+</body>
+</html>
