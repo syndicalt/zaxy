@@ -116,6 +116,7 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "--reuse-projection" in cli
     assert "--projection-backend" in cli
     assert "--pggraph-dsn" in cli
+    assert "Delete benchmark projection contents before ingestion" in cli
     assert "ProjectionBackendConfig(" in cli
     assert "neo4j_ca_cert=None" in cli
     assert "projection_backend_config=projection_backend_config" in cli
@@ -1343,6 +1344,76 @@ async def test_build_live_zaxy_retriever_can_use_projection_backend_factory(tmp_
     assert store.schema_initialized is True
     assert store.upsert_count == 1
     factory.assert_called_once_with(config)
+
+
+async def test_build_live_zaxy_retriever_can_reset_non_neo4j_projection_backend(tmp_path: Path) -> None:
+    """Experimental backends should be resettable for reproducible benchmark reruns."""
+    log = EventLog(tmp_path / "bench.jsonl")
+    log.append("tester", "goal.created", {"goalId": "goal-1", "title": "Compare pgGraph"})
+    config = ProjectionBackendConfig(
+        backend="pggraph",
+        neo4j_uri="bolt://unused",
+        neo4j_user="neo4j",
+        neo4j_password="testpassword",
+        neo4j_ca_cert=None,
+        neo4j_trust_all=False,
+        pggraph_dsn="postgresql://postgres:postgres@localhost:5432/zaxy",
+    )
+
+    class FakeProjectionStore:
+        def __init__(self) -> None:
+            self.reset_count = 0
+            self.upsert_count = 0
+
+        async def connect(self) -> None:
+            return None
+
+        async def init_schema(self) -> None:
+            return None
+
+        async def reset_benchmark_projection(self) -> None:
+            self.reset_count += 1
+
+        async def upsert_extraction(self, result: object, session_id: str = "default") -> None:
+            del result, session_id
+            self.upsert_count += 1
+
+        async def search_exact(self, *args: object, **kwargs: object) -> list[object]:
+            del args, kwargs
+            return []
+
+        async def search_keyword(self, *args: object, **kwargs: object) -> list[object]:
+            del args, kwargs
+            return []
+
+        async def search_vector(self, *args: object, **kwargs: object) -> list[object]:
+            del args, kwargs
+            return []
+
+        async def search_traversal(self, *args: object, **kwargs: object) -> list[object]:
+            del args, kwargs
+            return []
+
+        async def has_traversal_edges(self, session_id: str = "default") -> bool:
+            del session_id
+            return False
+
+        async def close(self) -> None:
+            return None
+
+    store = FakeProjectionStore()
+
+    with patch("zaxy.live_benchmark.build_projection_store", return_value=store):
+        _retriever, returned_store = await build_live_zaxy_retriever(
+            log,
+            HashEmbeddingProvider(dimension=8),
+            reset_graph=True,
+            projection_backend_config=config,
+        )
+
+    assert returned_store is store
+    assert store.reset_count == 1
+    assert store.upsert_count == 1
 
 
 async def test_zaxy_checkout_retriever_returns_checkout_contract() -> None:

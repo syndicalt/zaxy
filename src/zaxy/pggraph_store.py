@@ -567,6 +567,20 @@ class PgGraphStore:
         )
         return bool(rows)
 
+    async def reset_benchmark_projection(self) -> None:
+        """Clear pgGraph projection tables for a reproducible benchmark rerun."""
+        connection = self._require_connection()
+        await connection.execute(
+            """
+            TRUNCATE TABLE
+                zaxy_pggraph_edges,
+                zaxy_pggraph_entities,
+                zaxy_pggraph_events
+            """
+        )
+        await connection.execute("SELECT * FROM graph.build()")
+        await connection.commit()
+
     async def invalidate_entity(
         self,
         name: str,

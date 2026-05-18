@@ -2260,9 +2260,15 @@ async def build_live_zaxy_retriever(
     await graph.init_schema()
     neo4j_graph = graph if isinstance(graph, GraphStore) else None
     if reset_graph:
-        if neo4j_graph is None:
-            raise ValueError("--reset-graph is only supported for Neo4j benchmark projections")
-        await _reset_benchmark_graph(neo4j_graph)
+        if neo4j_graph is not None:
+            await _reset_benchmark_graph(neo4j_graph)
+        else:
+            reset_backend = getattr(graph, "reset_benchmark_projection", None)
+            if reset_backend is None:
+                raise ValueError(
+                    "--reset-graph requires a projection backend with benchmark reset support"
+                )
+            await reset_backend()
     if (
         neo4j_graph is not None
         and reuse_projection

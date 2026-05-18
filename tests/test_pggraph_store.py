@@ -285,6 +285,22 @@ async def test_pggraph_store_has_traversal_edges_checks_active_edges() -> None:
 
 
 @pytest.mark.asyncio
+async def test_pggraph_store_reset_benchmark_projection_clears_projection_tables() -> None:
+    connection = FakeConnection()
+    store = PgGraphStore("postgresql://test", connection=connection)
+
+    await store.reset_benchmark_projection()
+
+    sql = "\n".join(statement for statement, _params in connection.statements)
+    assert "TRUNCATE TABLE" in sql
+    assert "zaxy_pggraph_edges" in sql
+    assert "zaxy_pggraph_entities" in sql
+    assert "zaxy_pggraph_events" in sql
+    assert "graph.build" in sql
+    assert connection.commits == 1
+
+
+@pytest.mark.asyncio
 async def test_pggraph_store_search_vector_uses_pgvector_cosine_distance() -> None:
     connection = FakeConnection()
     connection.cursor_obj.rows = [

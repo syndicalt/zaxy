@@ -355,6 +355,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Experimental pgGraph adapter behind `PROJECTION_BACKEND=pggraph` for projection, exact search, keyword search, pgvector-backed vector search, invalidation, and traversal, with optional integration coverage
 - [x] Initial same-harness pgGraph vs Neo4j LongMemEval-compatible 100-question comparison with BM25 baseline and pgvector-enabled Docker validation
 - [x] Full 500-question pgGraph comparison archived with guardrail failure recorded, keeping pgGraph experimental until Recall@5 matches Neo4j-backed floors
+- [x] Reproducible pgGraph benchmark reset with full-set same-harness Neo4j checkout control
 
 ## Metrics
 
@@ -366,12 +367,12 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 | Types | mypy clean |
 | Python versions | 3.11, 3.12, 3.13 |
 | LongMemEval 500 hash | Zaxy checkout mean 0.640, Answer@5 0.612, R@5 0.972, citation coverage 1.000, p95 1155.88 ms, p99 2440.32 ms |
-| LongMemEval 500 pgGraph | Zaxy mean 0.696, Answer@5 0.696, R@5 0.950; checkout mean 0.622, Answer@5 0.610, R@5 0.950; citation coverage 1.000 |
+| LongMemEval 500 pgGraph | Zaxy mean 0.696, Answer@5 0.696, R@5 0.958; checkout mean 0.624, Answer@5 0.610, R@5 0.958; same-harness Neo4j checkout control mean 0.616, Answer@5 0.602, R@5 0.958; citation coverage 1.000 |
 
 ## Next Steps
 
 1. Improve full-set LongMemEval synthesis without reducing the archived 500-question no-regression floors: mean score 0.626, Answer@5 0.608, R@5 0.956, and citation coverage 1.000.
-2. Diagnose the pgGraph full-set Recall@5 gap against Neo4j before considering any default-backend change, then add operational coverage for container bootstrap, schema reset, graph rebuild, and failure recovery.
+2. Re-baseline the full 500-question no-regression floor on a frozen same-harness workload hash before treating pgGraph's current checkout mean-score delta as a backend quality regression.
 3. Expand clean-repo onboarding and model-facing UAT with fresh Codex and Claude Code workspaces: `zaxy init`, Memory Bootstrap, deterministic capture, Memory Checkout, feedback, and doctor status.
 4. Keep public benchmark scripts fully reproducible from a clean checkout, with cached datasets, archived reports, guardrail commands, and no hidden manual steps.
 5. Use LangGraph and CrewAI native-preview usage to choose the next maintained adapter or model-facing UX hardening target.

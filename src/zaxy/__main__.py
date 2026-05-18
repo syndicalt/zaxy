@@ -1896,7 +1896,7 @@ def benchmark(
     neo4j_password: str = typer.Option("testpassword", help="Benchmark Neo4j password"),
     reset_graph: bool = typer.Option(
         False,
-        help="Delete Entity nodes in the benchmark Neo4j database before ingestion",
+        help="Delete benchmark projection contents before ingestion",
     ),
     workload: str = typer.Option(
         "fixture",
