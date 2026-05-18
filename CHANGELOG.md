@@ -2,6 +2,14 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 0.2.2 - 2026-05-18
+
+- Added pgGraph projection integrity and inferred-edge audit status support.
+- Routed read-only memory graph status commands through the backend selector so
+  pgGraph can use the same operator diagnostics as Neo4j.
+- Expanded dashboard and pgGraph test coverage to preserve the release coverage
+  ratchet.
+
 ## 0.2.1 - 2026-05-15
 
 - Added first-class Hermes Agent MCP config rendering and explicit `config.yaml`
