@@ -396,6 +396,7 @@ class ZaxyMCPServer:
                 neo4j_password=self._neo4j_password,
                 neo4j_ca_cert=settings.neo4j_ca_cert,
                 neo4j_trust_all=settings.neo4j_trust_all,
+                pggraph_dsn=settings.pggraph_dsn,
             )
         )
         self.tracer = MemoryTracer(

@@ -103,6 +103,10 @@ class Settings(BaseSettings):
         default="neo4j",
         description="Projection backend: neo4j or experimental pggraph",
     )
+    pggraph_dsn: str = Field(
+        default="postgresql://postgres:postgres@localhost:5432/zaxy",
+        description="Experimental pgGraph PostgreSQL DSN",
+    )
 
     # ------------------------------------------------------------------
     # Pathlight

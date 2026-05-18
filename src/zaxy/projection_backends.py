@@ -22,6 +22,7 @@ class ProjectionBackendConfig:
     neo4j_password: str
     neo4j_ca_cert: str | None
     neo4j_trust_all: bool
+    pggraph_dsn: str | None = None
 
 
 def build_projection_store(config: ProjectionBackendConfig) -> ProjectionStore:
@@ -36,9 +37,9 @@ def build_projection_store(config: ProjectionBackendConfig) -> ProjectionStore:
             trust_all=config.neo4j_trust_all,
         )
     if backend == "pggraph":
-        raise NotImplementedError(
-            "pgGraph backend is experimental and has no adapter yet. "
-            "Keep PROJECTION_BACKEND=neo4j until pgGraph passes the projection "
-            "contract and benchmark gates."
-        )
+        from zaxy.pggraph_store import PgGraphStore
+
+        if not config.pggraph_dsn:
+            raise ValueError("pgGraph backend requires pggraph_dsn")
+        return PgGraphStore(config.pggraph_dsn)
     raise ValueError("projection backend must be one of: neo4j, pggraph")

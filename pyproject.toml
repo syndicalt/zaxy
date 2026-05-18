@@ -52,6 +52,9 @@ autogen = [
 local-embeddings = [
     "sentence-transformers>=3.0.0",
 ]
+pggraph = [
+    "psycopg[binary]>=3.2.0",
+]
 frameworks = [
     "langgraph>=0.6",
     "crewai>=0.100",

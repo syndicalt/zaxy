@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import assert_type
 
-import pytest
-
 from zaxy.extract import ExtractionResult
 from zaxy.graph import (
     GraphEntity,
@@ -14,6 +12,7 @@ from zaxy.graph import (
     GraphStore,
     SearchResult,
 )
+from zaxy.pggraph_store import PgGraphStore
 from zaxy.projection import ProjectionStore
 from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
 
@@ -128,15 +127,17 @@ def test_build_projection_store_defaults_to_neo4j() -> None:
     assert isinstance(store, GraphStore)
 
 
-def test_build_projection_store_rejects_pggraph_until_adapter_exists() -> None:
-    with pytest.raises(NotImplementedError, match="pgGraph backend is experimental"):
-        build_projection_store(
-            ProjectionBackendConfig(
-                backend="pggraph",
-                neo4j_uri="bolt://localhost:7687",
-                neo4j_user="neo4j",
-                neo4j_password="testpassword",
-                neo4j_ca_cert=None,
-                neo4j_trust_all=False,
-            )
+def test_build_projection_store_routes_pggraph_to_adapter() -> None:
+    store = build_projection_store(
+        ProjectionBackendConfig(
+            backend="pggraph",
+            neo4j_uri="bolt://localhost:7687",
+            neo4j_user="neo4j",
+            neo4j_password="testpassword",
+            neo4j_ca_cert=None,
+            neo4j_trust_all=False,
+            pggraph_dsn="postgresql://postgres:postgres@localhost:5432/zaxy",
         )
+    )
+
+    assert isinstance(store, PgGraphStore)

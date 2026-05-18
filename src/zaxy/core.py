@@ -226,6 +226,7 @@ class MemoryFabric:
                 neo4j_password=neo4j_password or resolved_settings.neo4j_password,
                 neo4j_ca_cert=neo4j_ca_cert if neo4j_ca_cert is not None else resolved_settings.neo4j_ca_cert,
                 neo4j_trust_all=neo4j_trust_all if neo4j_trust_all is not None else resolved_settings.neo4j_trust_all,
+                pggraph_dsn=resolved_settings.pggraph_dsn,
             )
         )
         self.query_router = QueryRouter(

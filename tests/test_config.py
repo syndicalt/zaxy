@@ -35,6 +35,12 @@ def test_projection_backend_defaults_to_neo4j() -> None:
     assert settings.projection_backend == "neo4j"
 
 
+def test_pggraph_dsn_defaults_to_local_postgres() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.pggraph_dsn == "postgresql://postgres:postgres@localhost:5432/zaxy"
+
+
 def test_retention_policy_defaults_are_non_destructive() -> None:
     settings = Settings(_env_file=None)
 
