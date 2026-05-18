@@ -1329,13 +1329,18 @@ def _checkout_source_lanes(contexts: list[Context]) -> dict[str, int]:
 
 
 def _checkout_skills(contexts: list[Context], query: str, *, limit: int = 3) -> list[dict[str, Any]]:
+    skill_contexts = [
+        context
+        for context in contexts
+        if (context.metadata or {}).get("entity_type") == "skill_version"
+    ]
+    if not skill_contexts:
+        return []
     query_tokens = _checkout_tokens(query)
     skills: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
-    for context in contexts:
+    for context in skill_contexts:
         metadata = context.metadata or {}
-        if metadata.get("entity_type") != "skill_version":
-            continue
         skill_id = metadata.get("skill_id")
         entity_name = metadata.get("entity_name")
         if not isinstance(skill_id, str) or not skill_id:
