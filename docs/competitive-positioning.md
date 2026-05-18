@@ -41,10 +41,14 @@ same-harness evidence should distinguish the archived LongMemEval-compatible
 100-question headline from the full 500-question archive. The 100-question run
 remains the strongest headline: Zaxy mean score 0.970, Answer@5 0.950,
 citation coverage 1.000, and R@1/R@5/R@10 1.000, with BM25 in the same report
-at mean score 0.540, Answer@5 0.500, and R@5 0.840. The full 500-question hash
-run is a separate no-regression floor: Zaxy checkout mean score 0.626,
-Answer@5 0.608, citation coverage 1.000, and R@1/R@5/R@10 of
+at mean score 0.540, Answer@5 0.500, and R@5 0.840. The legacy `limit=10` full
+500-question hash run is a separate no-regression floor: Zaxy checkout mean
+score 0.626, Answer@5 0.608, citation coverage 1.000, and R@1/R@5/R@10 of
 0.944/0.956/0.956 versus BM25 mean score 0.560, Answer@5 0.516, and R@5 0.770.
+The current same-harness `limit=5` backend-evaluation control uses workload
+SHA-256 `0dc36a139bb9a4fdc7c6cd34400737a58a1eb7410517341f015e9fbfc76ed854`
+and sets the projection-backend floor at Zaxy checkout mean score 0.616,
+Answer@5 0.602, citation coverage 1.000, and R@5 0.958.
 
 Competitor numbers belong in an external-disclosure table, not a universal
 leaderboard. MemPalace publicly reports 96.6% raw LongMemEval R@5 and 98.4%

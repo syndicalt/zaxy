@@ -226,12 +226,30 @@ The current same-harness BM25 comparison is archived at
 [benchmarks.md](benchmarks.md) for public copy rules and external disclosure
 links for MemPalace, Mem0, and Agent Memory.
 
-The full 500-question LongMemEval-compatible archive is
-`reports/benchmarks/longmemeval-500-hash/live-benchmark.json`. Its current
-Zaxy checkout floor is mean score 0.626, Answer@5 0.608, citation coverage
-1.000, R@5 0.956, p95 14686.65 ms, and p99 22359.76 ms. Use those floors as
-the no-regression guardrail for full-set work until a stronger full-set report
-is archived.
+The legacy `limit=10` full 500-question LongMemEval-compatible archive is
+`reports/benchmarks/longmemeval-500-hash/live-benchmark.json`. Its Zaxy checkout
+floor is mean score 0.626, Answer@5 0.608, citation coverage 1.000, R@5 0.956,
+p95 14686.65 ms, and p99 22359.76 ms.
+
+The current same-harness `limit=5` backend-evaluation archive is
+`reports/benchmarks/longmemeval-500-neo4j-current-checkout/live-benchmark.json`.
+Its workload SHA-256 is
+`0dc36a139bb9a4fdc7c6cd34400737a58a1eb7410517341f015e9fbfc76ed854`. Its Zaxy
+checkout floor is mean score 0.616, Answer@5 0.602, citation coverage 1.000,
+R@5 0.958, p95 1060.37 ms, and p99 2259.28 ms. Use the floor matching the
+candidate harness; projection-backend work should use the current same-harness
+control unless it also reruns the legacy `limit=10` harness.
+
+```bash
+zaxy benchmark-compare reports/benchmarks/longmemeval-500-neo4j-current-checkout/live-benchmark.json \
+  --backend zaxy-checkout \
+  --min-mean-score 0.616 \
+  --min-answer-recall-at-5 0.602 \
+  --min-recall-at-5 0.958 \
+  --min-citation-coverage 1.0 \
+  --max-p95-ms 1200 \
+  --max-p99-ms 2500
+```
 
 For consolidation safety checks, use the identity-collapse workload. It creates
 near-duplicate source records with distinct durable identifiers and adds an

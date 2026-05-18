@@ -31,24 +31,46 @@ multi-hop recall.
 
 ## Full 500-Question LongMemEval Run
 
+### Legacy limit=10 full-set floor
+
 The full 500-question LongMemEval-compatible hash run is archived at
 [reports/benchmarks/longmemeval-500-hash/live-benchmark.md](../reports/benchmarks/longmemeval-500-hash/live-benchmark.md).
 It uses the cleaned LongMemEval workload, deterministic local hash embeddings,
 `limit=10`, BM25 as the same-harness lexical baseline, and Zaxy checkout
 retrieval over 5,372 Eventloom events, 500 queries, 500 subjects, and 948
-sessions.
+sessions. Its workload SHA-256 is
+`a4d229ecd831abec57ac2a7c365fcf5903b1815ab84c383183e0a39512afe829`.
 
 | Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | Recall@10 | p95 ms | p99 ms |
 |---------|------------|----------|-------------------|----------|----------|-----------|--------|--------|
 | BM25 | 0.560 | 0.516 | 1.000 | 0.592 | 0.770 | 0.802 | 348.99 | 422.83 |
 | Zaxy checkout | 0.626 | 0.608 | 1.000 | 0.944 | 0.956 | 0.956 | 14686.65 | 22359.76 |
 
-This full-set result should be treated as the current no-regression floor for
-LongMemEval-wide work, not as a replacement for the stronger 100-question
-headline. The miss taxonomy shows the next quality target clearly: Zaxy checkout
-had 22 retrieval misses and 174 synthesis misses. Future retrieval, checkout,
-Skill Memory, or backend changes should not reduce the full-set quality or
-citation floors while they work down the synthesis-miss count.
+This legacy full-set result remains the `limit=10` no-regression floor for
+checkout-wide changes that still run that archived harness. It is not a
+replacement for the stronger 100-question headline. The miss taxonomy shows the
+next quality target clearly: Zaxy checkout had 22 retrieval misses and 174
+synthesis misses. Future retrieval, checkout, Skill Memory, or backend changes
+should not reduce the relevant full-set quality or citation floors while they
+work down the synthesis-miss count.
+
+### Current same-harness backend-evaluation floor
+
+Backend-evaluation work now uses the current `limit=5` full-set control at
+[reports/benchmarks/longmemeval-500-neo4j-current-checkout/live-benchmark.md](../reports/benchmarks/longmemeval-500-neo4j-current-checkout/live-benchmark.md).
+Its workload SHA-256 is
+`0dc36a139bb9a4fdc7c6cd34400737a58a1eb7410517341f015e9fbfc76ed854`,
+matching the pgGraph full-set comparison below.
+
+| Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | Recall@10 | p95 ms | p99 ms |
+|---------|------------|----------|-------------------|----------|----------|-----------|--------|--------|
+| BM25 | 0.514 | 0.514 | 1.000 | 0.592 | 0.770 | 0.770 | 315.19 | 374.10 |
+| Zaxy checkout | 0.616 | 0.602 | 1.000 | 0.946 | 0.958 | 0.958 | 1060.37 | 2259.28 |
+
+Use this current backend-evaluation floor when comparing projection backends or
+other `limit=5` full-set reports. Do not compare a `limit=5` backend run
+directly against the legacy `limit=10` mean-score floor without also running a
+same-command Neo4j control.
 
 Skill Memory changes must pass the full 500-question guardrail before release,
 because the checkout skill lane shares ranking, evidence selection, prompt
@@ -240,7 +262,7 @@ zaxy benchmark \
 ```
 
 Guard the full 500-question archive with floors pinned to the current observed
-result:
+legacy `limit=10` result:
 
 ```bash
 zaxy benchmark-compare reports/benchmarks/longmemeval-500-hash/live-benchmark.json \
@@ -251,6 +273,20 @@ zaxy benchmark-compare reports/benchmarks/longmemeval-500-hash/live-benchmark.js
   --min-citation-coverage 1.0 \
   --max-p95-ms 15000 \
   --max-p99-ms 23000
+```
+
+Guard current same-harness backend-evaluation reports with the `limit=5`
+Neo4j checkout control:
+
+```bash
+zaxy benchmark-compare reports/benchmarks/longmemeval-500-neo4j-current-checkout/live-benchmark.json \
+  --backend zaxy-checkout \
+  --min-mean-score 0.616 \
+  --min-answer-recall-at-5 0.602 \
+  --min-recall-at-5 0.958 \
+  --min-citation-coverage 1.0 \
+  --max-p95-ms 1200 \
+  --max-p99-ms 2500
 ```
 
 For release gates, compare reports with `zaxy benchmark-compare` and keep the
