@@ -1457,9 +1457,11 @@ def dashboard(
     domain: str | None = typer.Option(None, help="Domain scope to display"),  # noqa: B008
     host: str = typer.Option("127.0.0.1", help="Dashboard bind host"),
     port: int = typer.Option(8765, min=1, max=65535, help="Dashboard bind port"),
+    projection_backend: str | None = typer.Option(None, "--projection-backend", help="Projection backend for graph visualization: neo4j or pggraph"),  # noqa: B008
     neo4j_uri: str | None = typer.Option(None, help="Neo4j Bolt URI for graph visualization"),  # noqa: B008
     neo4j_user: str | None = typer.Option(None, help="Neo4j username for graph visualization"),  # noqa: B008
     neo4j_password: str | None = typer.Option(None, help="Neo4j password for graph visualization"),  # noqa: B008
+    pggraph_dsn: str | None = typer.Option(None, "--pggraph-dsn", help="pgGraph/PostgreSQL DSN for graph visualization"),  # noqa: B008
 ) -> None:
     """Start the read-only local runtime dashboard."""
     from zaxy.dashboard import DashboardConfig, resolve_dashboard_scope, run_dashboard
@@ -1473,9 +1475,11 @@ def dashboard(
             domain=domain,
             host=host,
             port=port,
+            projection_backend=projection_backend or settings.projection_backend,
             neo4j_uri=neo4j_uri or settings.neo4j_uri,
             neo4j_user=neo4j_user or settings.neo4j_user,
             neo4j_password=neo4j_password or settings.neo4j_password,
+            pggraph_dsn=pggraph_dsn or settings.pggraph_dsn,
         )
     )
     typer.echo(f"Zaxy dashboard listening on http://{scope.host}:{scope.port}")

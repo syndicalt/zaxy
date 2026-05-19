@@ -3,12 +3,15 @@ from __future__ import annotations
 from datetime import date
 from pathlib import Path
 
+import pytest
+
 from zaxy.dashboard import (
     DashboardApp,
     DashboardConfig,
     EventloomDashboardGraphProvider,
     FallbackDashboardGraphProvider,
     Neo4jDashboardGraphProvider,
+    ProjectionDashboardGraphProvider,
     UnavailableGraphProvider,
     build_dashboard_graph_provider,
     create_dashboard_handler,
@@ -53,6 +56,30 @@ def test_dashboard_scope_accepts_explicit_eventloom_and_session(tmp_path: Path) 
     assert scope.domain == "demo"
     assert scope.host == "localhost"
     assert scope.port == 9000
+
+
+def test_dashboard_scope_accepts_pggraph_backend(tmp_path: Path) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+
+    scope = resolve_dashboard_scope(
+        DashboardConfig(
+            workspace=workspace,
+            projection_backend="pggraph",
+            pggraph_dsn="postgresql://postgres:postgres@localhost:5432/zaxy",
+        )
+    )
+
+    assert scope.projection_backend == "pggraph"
+    assert scope.pggraph_dsn == "postgresql://postgres:postgres@localhost:5432/zaxy"
+
+
+def test_dashboard_scope_rejects_unknown_projection_backend(tmp_path: Path) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+
+    with pytest.raises(ValueError, match="projection backend"):
+        resolve_dashboard_scope(DashboardConfig(workspace=workspace, projection_backend="pggrph"))
 
 
 def test_dashboard_status_and_events_use_resolved_eventloom(tmp_path: Path) -> None:
@@ -307,6 +334,194 @@ def test_build_dashboard_graph_provider_uses_eventloom_without_neo4j_credentials
     provider = build_dashboard_graph_provider(scope)
 
     assert isinstance(provider, EventloomDashboardGraphProvider)
+
+
+def test_build_dashboard_graph_provider_can_use_pggraph_projection_store(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    scope = resolve_dashboard_scope(
+        DashboardConfig(
+            workspace=workspace,
+            projection_backend="pggraph",
+            pggraph_dsn="postgresql://postgres:postgres@localhost:5432/zaxy",
+        )
+    )
+
+    provider = build_dashboard_graph_provider(scope)
+
+    assert isinstance(provider, FallbackDashboardGraphProvider)
+    assert isinstance(provider.primary, ProjectionDashboardGraphProvider)
+
+
+def test_projection_dashboard_graph_provider_renders_pggraph_rows() -> None:
+    class FakeStore:
+        async def connect(self) -> None:
+            return None
+
+        async def close(self) -> None:
+            return None
+
+        async def _fetch_all(
+            self,
+            sql: str,
+            _params: dict[str, object],
+        ) -> list[dict[str, object]]:
+            if "node_count" in sql:
+                return [{"node_count": 1, "edge_count": 1}]
+            if "FROM zaxy_pggraph_entities" in sql:
+                return [
+                    {
+                        "node_key": "node-1",
+                        "name": "Checkout",
+                        "entity_type": "memory",
+                        "summary": "Memory Checkout",
+                        "properties": {"confidence": 0.9},
+                        "session_id": "agent-1",
+                        "source_event_seq": 7,
+                        "source_event_hash": "abc",
+                        "valid_from": "2026-05-19T00:00:00Z",
+                        "valid_to": None,
+                    }
+                ]
+            return [
+                {
+                    "edge_key": "edge-1",
+                    "source_node_key": "node-1",
+                    "target_node_key": "node-2",
+                    "relation_type": "RELATES",
+                    "properties": {"weight": 1.0},
+                    "session_id": "agent-1",
+                    "source_event_seq": 7,
+                    "source_event_hash": "abc",
+                }
+            ]
+
+    provider = ProjectionDashboardGraphProvider.__new__(ProjectionDashboardGraphProvider)
+    provider.backend = "pggraph"
+    provider._store = FakeStore()
+
+    summary = provider.summary(session_id="agent-1")
+
+    assert summary["available"] is True
+    assert summary["source"] == "pggraph"
+    assert summary["nodes"] == 1
+    assert summary["edges"] == 1
+    assert summary["elements"]["nodes"][0]["id"] == "node-1"
+    assert summary["elements"]["nodes"][0]["label"] == "Checkout"
+    assert summary["elements"]["edges"][0]["type"] == "RELATES"
+
+
+def test_projection_dashboard_graph_provider_reads_pggraph_views() -> None:
+    node_row = {
+        "node_key": "node-1",
+        "name": "Checkout",
+        "entity_type": "memory",
+        "summary": "Memory Checkout",
+        "properties": {"confidence": 0.9},
+        "session_id": "agent-1",
+        "source_event_seq": 7,
+        "source_event_hash": "abc",
+        "valid_from": "2026-05-19T00:00:00Z",
+        "valid_to": None,
+    }
+    edge_row = {
+        "edge_key": "edge-1",
+        "source_node_key": "node-1",
+        "target_node_key": "node-2",
+        "relation_type": "RELATES",
+        "properties": {"weight": 1.0},
+        "session_id": "agent-1",
+        "source_event_seq": 7,
+        "source_event_hash": "abc",
+    }
+
+    class FakeStore:
+        def __init__(self, responses: list[list[dict[str, object]]]) -> None:
+            self.responses = responses
+            self.closed = False
+
+        async def connect(self) -> None:
+            return None
+
+        async def close(self) -> None:
+            self.closed = True
+
+        async def _fetch_all(
+            self,
+            _sql: str,
+            _params: dict[str, object],
+        ) -> list[dict[str, object]]:
+            return self.responses.pop(0)
+
+    provider = ProjectionDashboardGraphProvider.__new__(ProjectionDashboardGraphProvider)
+    provider.backend = "pggraph"
+    provider._store = FakeStore([[node_row], [edge_row]])
+
+    neighborhood = provider.neighborhood(
+        session_id="agent-1",
+        node_id="node-1",
+        view="entity",
+        hops=1,
+        limit=10,
+    )
+
+    assert neighborhood["available"] is True
+    assert neighborhood["source"] == "pggraph"
+    assert neighborhood["nodes"][0]["id"] == "node-1"
+    assert neighborhood["edges"][0]["type"] == "RELATES"
+    assert provider._store.closed is True
+
+    provider._store = FakeStore([[node_row]])
+    search = provider.search(session_id="agent-1", query="checkout", view="entity", limit=10)
+
+    assert search["nodes"][0]["label"] == "Checkout"
+    assert search["edges"] == []
+
+    provider._store = FakeStore([[node_row]])
+    path = provider.path_to_event(session_id="agent-1", node_id="node-1", limit=10)
+
+    assert path["nodes"][1]["id"] == "event:agent-1:7"
+    assert path["edges"][0]["type"] == "SOURCE_EVENT"
+
+
+def test_projection_dashboard_graph_provider_handles_missing_source_event() -> None:
+    class FakeStore:
+        async def connect(self) -> None:
+            return None
+
+        async def close(self) -> None:
+            return None
+
+        async def _fetch_all(
+            self,
+            _sql: str,
+            _params: dict[str, object],
+        ) -> list[dict[str, object]]:
+            return [
+                {
+                    "node_key": "node-1",
+                    "name": "Checkout",
+                    "entity_type": "memory",
+                    "summary": "Memory Checkout",
+                    "properties": {},
+                    "session_id": "agent-1",
+                    "source_event_seq": None,
+                    "source_event_hash": None,
+                    "valid_from": "2026-05-19T00:00:00Z",
+                    "valid_to": None,
+                }
+            ]
+
+    provider = ProjectionDashboardGraphProvider.__new__(ProjectionDashboardGraphProvider)
+    provider.backend = "pggraph"
+    provider._store = FakeStore()
+
+    path = provider.path_to_event(session_id="agent-1", node_id="node-1", limit=10)
+
+    assert path["nodes"][0]["id"] == "node-1"
+    assert path["edges"] == []
 
 
 def test_dashboard_graph_summary_uses_session_scope(tmp_path: Path) -> None:
