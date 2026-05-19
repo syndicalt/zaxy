@@ -43,6 +43,10 @@ class FakeFabric:
         self.calls.append(("record_context_feedback", {"contexts": contexts, **kwargs}))
         return len(contexts)
 
+    async def checkout_memory(self, query: str, **kwargs: Any) -> Any:
+        self.calls.append(("checkout_memory", {"query": query, **kwargs}))
+        return _checkout()
+
     async def close(self) -> None:
         self.calls.append(("close", {}))
 
@@ -101,6 +105,30 @@ async def test_langgraph_memory_node_uses_adapter_before_model() -> None:
 
 
 @pytest.mark.asyncio
+async def test_langgraph_adapter_checkout_before_model_uses_memory_checkout() -> None:
+    """Opinionated middleware should inject Memory Checkout, not just generic context."""
+    calls: list[tuple[str, dict[str, Any]]] = []
+    adapter = LangGraphMemoryAdapter(
+        session_id="agent-1",
+        fabric_factory=lambda eventloom_path: FakeFabric(calls),
+    )
+
+    state = await adapter.checkout_before_model({"latest_message": "Where are we?"})
+
+    assert state["zaxy_context"] == "# Memory Checkout\nUse cited memory."
+    assert state["zaxy"]["kind"] == "memory_checkout"
+    assert calls[0] == (
+        "checkout_memory",
+        {
+            "query": "Where are we?",
+            "session_id": "agent-1",
+            "limit": 10,
+            "max_recent_events": 20,
+        },
+    )
+
+
+@pytest.mark.asyncio
 async def test_langgraph_adapter_records_tool_calls_without_argument_values() -> None:
     """record_tool_call should append redacted tool-call observations."""
     calls: list[tuple[str, dict[str, Any]]] = []
@@ -152,3 +180,18 @@ def _assembly() -> ContextAssembly:
         compacted=False,
         warnings=[],
     )
+
+
+def _checkout() -> Any:
+    class Checkout:
+        def to_dict(self) -> dict[str, Any]:
+            return {
+                "session_id": "agent-1",
+                "query": "Where are we?",
+                "prompt": "# Memory Checkout\nUse cited memory.",
+                "current_facts": [{"content": "Use cited memory.", "citation": "eventloom://agent-1/events/1#abc"}],
+                "evidence": [],
+                "warnings": [],
+            }
+
+    return Checkout()

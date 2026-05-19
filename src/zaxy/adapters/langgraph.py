@@ -64,6 +64,27 @@ class LangGraphMemoryAdapter:
         finally:
             await fabric.close()
 
+    async def checkout_before_model(
+        self,
+        state: Mapping[str, Any],
+        *,
+        query: str | None = None,
+    ) -> dict[str, Any]:
+        """Inject Memory Checkout at model/lifecycle boundaries."""
+        _role, content = _latest_message(state)
+        resolved_query = query or content or "langgraph context"
+        fabric = self.fabric_factory(self.eventloom_path)
+        try:
+            checkout = await fabric.checkout_memory(
+                resolved_query,
+                session_id=self.session_id,
+                limit=self.limit,
+                max_recent_events=self.max_recent_events,
+            )
+            return self._with_checkout(state, checkout.to_dict())
+        finally:
+            await fabric.close()
+
     async def record_assistant_turn(
         self,
         content: str,
@@ -152,6 +173,23 @@ class LangGraphMemoryAdapter:
         updated[self.metadata_key] = assembly_payload(assembly)
         return updated
 
+    def _with_checkout(
+        self,
+        state: Mapping[str, Any],
+        checkout: dict[str, Any],
+    ) -> dict[str, Any]:
+        updated = dict(state)
+        updated[self.context_key] = str(checkout.get("prompt") or "")
+        updated[self.context_list_key] = []
+        updated[self.metadata_key] = {
+            "kind": "memory_checkout",
+            "session_id": checkout.get("session_id", self.session_id),
+            "query": checkout.get("query"),
+            "current_fact_count": len(checkout.get("current_facts", []) or []),
+            "warning_count": len(checkout.get("warnings", []) or []),
+        }
+        return updated
+
 
 def create_langgraph_memory_node(
     *,
@@ -176,6 +214,31 @@ def create_langgraph_memory_node(
         return await adapter.before_model(state)
 
     return zaxy_langgraph_memory_node
+
+
+def create_langgraph_memory_checkout_node(
+    *,
+    session_id: str = "default",
+    eventloom_path: str = ".eventloom",
+    source: str = "langgraph",
+    max_recent_events: int = 20,
+    limit: int = 10,
+    fabric_factory: FabricFactory = default_fabric_factory,
+) -> LangGraphNode:
+    """Return an async node that injects Memory Checkout at model boundaries."""
+    adapter = LangGraphMemoryAdapter(
+        session_id=session_id,
+        eventloom_path=eventloom_path,
+        source=source,
+        max_recent_events=max_recent_events,
+        limit=limit,
+        fabric_factory=fabric_factory,
+    )
+
+    async def zaxy_langgraph_memory_checkout_node(state: dict[str, Any]) -> dict[str, Any]:
+        return await adapter.checkout_before_model(state)
+
+    return zaxy_langgraph_memory_checkout_node
 
 
 def _latest_message(state: Mapping[str, Any]) -> tuple[str, str]:

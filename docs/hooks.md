@@ -110,6 +110,13 @@ Supported triggers are:
 
 Unknown triggers are rejected before writing.
 
+Lifecycle hooks also run the memory persistence policy. If Zaxy has not been
+used recently, or the hook marks a session start, resume, compaction, long
+session, long tool run, or roadmap/status question, Zaxy appends
+`memory.reminder.suggested`. That event is intentionally read-only guidance for
+the agent: call `memory_bootstrap` if awareness is unclear, then call
+`memory_checkout` and trust only cited current checkout facts.
+
 Checkpoint hooks can include retrieval-useful metadata:
 
 ```bash

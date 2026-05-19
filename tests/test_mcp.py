@@ -244,6 +244,9 @@ class TestMemoryBootstrap:
         assert payload["startup_sequence"][1]["arguments"]["query"] == "resume roadmap"
         assert payload["capabilities"]["status"]["eventloom"]["latest_seq"] == 1
         assert "Call memory_checkout before answering roadmap or implementation questions." in payload["prompt"]
+        events = EventLog(eventloom / "agent-1.jsonl").read_all()
+        assert events[-1].type == "memory.bootstrap.shown"
+        assert events[-1].payload["source"] == "mcp"
 
 
 def test_mcp_server_constructs_projection_store_through_factory(tmp_path: Path) -> None:
@@ -885,11 +888,12 @@ class TestContextLifecycleTools:
             ]
             mock_router_cls.return_value = router
 
-            result = await server.handle_memory_checkout({
-                "query": "What context contract should the model use?",
-                "session_id": "agent-1",
-                "limit": 3,
-            })
+            with patch("zaxy.mcp_server.record_memory_activity") as record_activity:
+                result = await server.handle_memory_checkout({
+                    "query": "What context contract should the model use?",
+                    "session_id": "agent-1",
+                    "limit": 3,
+                })
 
         output = json_loads(result[0].text)
         assert output["session_id"] == "agent-1"
@@ -957,6 +961,13 @@ class TestContextLifecycleTools:
             "importance": 0.6,
         }
         assert "Do not treat superseded contexts as current facts." in output["guidance"]["ignore"]
+        record_activity.assert_called_once_with(
+            server._eventloom_path,
+            session_id="agent-1",
+            activity="checkout",
+            source="mcp",
+            query="What context contract should the model use?",
+        )
         assert output["quality"] == {
             "answerability": "answer_from_memory",
             "confidence": 0.95,

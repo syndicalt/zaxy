@@ -13,6 +13,7 @@ from urllib.parse import parse_qs, urlparse
 from neo4j import GraphDatabase
 
 from zaxy.event import Event, EventLog
+from zaxy.memory_persistence import inspect_memory_persistence
 from zaxy.memory_status import inspect_memory_log, inspect_memory_status
 
 
@@ -640,6 +641,18 @@ class DashboardApp:
                 limit=limit,
             )
             return 200, headers, {"events": [asdict(entry) for entry in memory_log.entries]}
+        if path == "/api/memory-persistence":
+            session_id = _str_param(params, "session_id") or self.scope.session_id or "default"
+            return (
+                200,
+                headers,
+                {
+                    "memory_persistence": inspect_memory_persistence(
+                        self.scope.eventloom_path,
+                        session_id=session_id,
+                    )
+                },
+            )
         if path == "/api/checkout":
             checkout_query = _str_param(params, "query")
             session_id = _str_param(params, "session_id") or self.scope.session_id
@@ -719,6 +732,7 @@ class DashboardApp:
 
     def _status_body(self) -> dict[str, Any]:
         status = inspect_memory_status(self.scope.eventloom_path)
+        session_id = self.scope.session_id or "default"
         return {
             "scope": {
                 "workspace": str(self.scope.workspace),
@@ -728,6 +742,10 @@ class DashboardApp:
                 "read_only": self.scope.read_only,
             },
             "memory": status.to_dict(),
+            "memory_persistence": inspect_memory_persistence(
+                self.scope.eventloom_path,
+                session_id=session_id,
+            ),
         }
 
 
@@ -1038,7 +1056,11 @@ def render_dashboard_html() -> str:
         <div class="metric"><span>Events</span><strong id="metric-events">0</strong></div>
         <div class="metric"><span>Graph nodes</span><strong id="metric-nodes">0</strong></div>
         <div class="metric"><span>Graph edges</span><strong id="metric-edges">0</strong></div>
+        <div class="metric"><span>Last bootstrap</span><strong id="metric-last-bootstrap">-</strong></div>
+        <div class="metric"><span>Last checkout</span><strong id="metric-last-checkout">-</strong></div>
+        <div class="metric"><span>Last feedback</span><strong id="metric-last-feedback">-</strong></div>
       </div>
+      <div class="panel warning" id="memory-persistence-warning"></div>
       <div class="panel"><pre id="status-json">{}</pre></div>
     </section>
     <section class="tab" id="sessions"><div class="panel"><table><thead><tr><th>Session</th><th>Events</th><th>Latest</th><th>Integrity</th></tr></thead><tbody id="sessions-body"></tbody></table></div></section>
@@ -1102,6 +1124,10 @@ def render_dashboard_html() -> str:
       document.getElementById("scope").textContent = `${status.scope.workspace} | ${status.scope.eventloom_path} | session=${status.scope.session_id || "all"}`;
       document.getElementById("metric-sessions").textContent = status.memory.session_count;
       document.getElementById("metric-events").textContent = status.memory.total_events;
+      document.getElementById("metric-last-bootstrap").textContent = status.memory_persistence.last_bootstrap_seq || "-";
+      document.getElementById("metric-last-checkout").textContent = status.memory_persistence.last_checkout_seq || "-";
+      document.getElementById("metric-last-feedback").textContent = status.memory_persistence.last_feedback_seq || "-";
+      document.getElementById("memory-persistence-warning").textContent = status.memory_persistence.warning || "";
       document.getElementById("status-json").textContent = JSON.stringify(status, null, 2);
       document.getElementById("sessions-body").innerHTML = status.memory.sessions.map((session) => `
         <tr><td><code>${session.session_id}</code></td><td>${session.event_count}</td><td>${session.latest_type || ""}</td><td>${session.integrity_ok ? "OK" : "FAILED"}</td></tr>

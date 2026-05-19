@@ -22,7 +22,7 @@ import time
 from contextlib import suppress
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import typer
 import yaml
@@ -118,6 +118,7 @@ from zaxy.live_benchmark import (
 )
 from zaxy.local_profile import check_local_profile, render_local_profile, write_local_profile
 from zaxy.mcp_server import main as mcp_main
+from zaxy.memory_persistence import append_memory_reminder_if_needed, record_memory_activity
 from zaxy.memory_status import (
     format_memory_diff,
     format_memory_log,
@@ -466,6 +467,13 @@ def memory_bootstrap(
         workspace_root=workspace_root,
         current_task=current_task,
     )
+    record_memory_activity(
+        eventloom_path,
+        session_id=session_id,
+        activity="bootstrap",
+        source="cli",
+        query=current_task,
+    )
     if json_output:
         typer.echo(json.dumps(bootstrap, indent=2, sort_keys=True))
     else:
@@ -515,6 +523,13 @@ def memory_checkout(
             await fabric.close()
 
     payload = asyncio.run(_checkout())
+    record_memory_activity(
+        eventloom_path,
+        session_id=session_id,
+        activity="checkout",
+        source="cli",
+        query=query,
+    )
     if json_output:
         typer.echo(json.dumps(payload, indent=2, sort_keys=True))
     else:
@@ -902,6 +917,15 @@ def hook_event(
             payload=event_input["payload"],
             thread=session_id,
         )
+        if duration_ms is not None and duration_ms >= 30_000:
+            append_memory_reminder_if_needed(
+                eventloom_path,
+                session_id=session_id,
+                trigger="long-tool-run",
+                source=source,
+                reason="long_tool_run",
+                current_task=summary or command,
+            )
         typer.echo(f"Recorded observation {event_input['event_type']} seq={event.seq}")
         return
     if normalized_trigger == "file-edit":
@@ -978,7 +1002,18 @@ def hook_event(
         turn_count=turn_count,
     )
     event = eventlog.append(event_type, actor="zaxy-hook", payload=payload, thread=session_id)
+    reminder = append_memory_reminder_if_needed(
+        eventloom_path,
+        session_id=session_id,
+        trigger=payload["trigger"],
+        source=source,
+        reason=reason,
+        turn_count=turn_count,
+        current_task=summary,
+    )
     typer.echo(f"Recorded hook {payload['trigger']} as {event_type} seq={event.seq}")
+    if reminder is not None:
+        typer.echo(f"Suggested memory reminder seq={reminder.seq}")
 
 
 @app.command("codex-capture")
@@ -1259,6 +1294,52 @@ def index_codebase(
 
     count = asyncio.run(_run())
     typer.echo(f"Indexed {count} codebase events into session {session_id}")
+
+
+@app.command("refresh-context")
+def refresh_context(
+    path: Path = typer.Argument(..., help="Document/codebase root to refresh"),  # noqa: B008
+    kind: str = typer.Option("documents", "--kind", help="Context kind: documents or codebase"),
+    session_id: str = typer.Option("default", help="Session ID to append refresh events into"),  # noqa: B008
+    eventloom_path: Path = typer.Option(Path(".eventloom"), help="Eventloom directory for refresh state"),  # noqa: B008
+    projection_backend: str | None = typer.Option(None, "--projection-backend", help="Projection backend: neo4j or pggraph"),  # noqa: B008
+    pggraph_dsn: str | None = typer.Option(None, "--pggraph-dsn", help="pgGraph/PostgreSQL DSN"),  # noqa: B008
+    max_lines: int = typer.Option(80, "--max-lines", min=1, help="Maximum document lines per chunk"),
+    max_bytes: int = typer.Option(512 * 1024, "--max-bytes", min=1, help="Maximum source file size to refresh"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Incrementally refresh document or codebase context from changed sources."""
+    import asyncio
+
+    async def _run() -> dict[str, object]:
+        fabric = MemoryFabric(
+            eventloom_path=str(eventloom_path),
+            projection_backend=projection_backend,
+            pggraph_dsn=pggraph_dsn,
+            tracer_disabled=False,
+        )
+        try:
+            report = await fabric.refresh_context(
+                path,
+                kind=kind,
+                session_id=session_id,
+                max_lines=max_lines,
+                max_bytes=max_bytes,
+            )
+            return report.to_dict()
+        finally:
+            await fabric.close()
+
+    report = asyncio.run(_run())
+    if json_output:
+        typer.echo(json.dumps(report, indent=2, sort_keys=True))
+        return
+    summary = cast(dict[str, object], report["summary"])
+    typer.echo(
+        f"Refreshed {report['kind']} context for session {report['session_id']}: "
+        f"{summary['indexed']} indexed, {summary['unchanged']} unchanged, "
+        f"{summary['deleted']} deleted, {report['event_count']} events"
+    )
 
 
 @app.command("init-session")

@@ -70,6 +70,15 @@ architecture decisions.
 clients that want one model-facing handoff. It embeds the capabilities manifest,
 the first recommended checkout call, deterministic capture status, and a trust
 policy for cited current facts, unsupported context, and feedback recording.
+Both `memory_bootstrap` and `memory_checkout` record lightweight activity
+markers so hooks and dashboards can tell whether Zaxy is still visible in a long
+session.
+
+Zaxy also records `memory.reminder.suggested` when lifecycle hooks detect a
+session boundary, resume, compaction, long session, long tool run, or
+roadmap/status question after stale memory activity. Treat that event as a
+runtime nudge: call `memory_bootstrap` if tool awareness is unclear, then call
+`memory_checkout` for the current task before answering.
 
 `memory_checkout(query, session_id?, ref?, replay_from_seq?, limit?, max_recent_events?)`
 returns the high-level contract an agent should condition on before a turn. It

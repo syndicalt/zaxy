@@ -450,6 +450,16 @@ class GraphStore(ProjectionStore):
             projection_steps=projection_steps,
         )
 
+        if result.source_event_type == "projection.retired":
+            source_path = _retired_source_path(result)
+            if source_path and observed_at:
+                await self.retire_source_projections(
+                    source_path=source_path,
+                    invalid_at=observed_at,
+                    session_id=safe_session_id,
+                )
+                projection_steps.append("source_projection_retirement")
+
         for ent in result.entities:
             await self._upsert_entity_version_projection(
                 ent,
@@ -896,6 +906,57 @@ class GraphStore(ProjectionStore):
             invalid_at=invalid_at,
         )
 
+    async def retire_source_projections(
+        self,
+        *,
+        source_path: str,
+        invalid_at: str,
+        session_id: str = "default",
+    ) -> None:
+        """Expire active entities and relationships derived from a source path."""
+        assert self._driver is not None
+        safe_session_id = validate_session_id(session_id)
+        await self._driver.execute_query(
+            """
+            MATCH (e:Entity)
+            WHERE e.session_id = $session_id
+              AND e.valid_to IS NULL
+              AND (
+                e.source_path = $source_path
+                OR e.target_path = $source_path
+                OR e.test_path = $source_path
+                OR e.covered_path = $source_path
+              )
+            SET e.valid_to = datetime($invalid_at),
+                e.updated_at = datetime($invalid_at)
+            """,
+            session_id=safe_session_id,
+            source_path=source_path,
+            invalid_at=invalid_at,
+        )
+        await self._driver.execute_query(
+            """
+            MATCH (source:Entity)-[r]->(target:Entity)
+            WHERE r.session_id = $session_id
+              AND r.valid_to IS NULL
+              AND (
+                source.source_path = $source_path
+                OR source.target_path = $source_path
+                OR source.test_path = $source_path
+                OR source.covered_path = $source_path
+                OR target.source_path = $source_path
+                OR target.target_path = $source_path
+                OR target.test_path = $source_path
+                OR target.covered_path = $source_path
+              )
+            SET r.valid_to = datetime($invalid_at),
+                r.updated_at = datetime($invalid_at)
+            """,
+            session_id=safe_session_id,
+            source_path=source_path,
+            invalid_at=invalid_at,
+        )
+
     # ------------------------------------------------------------------
     # Retrieval
     # ------------------------------------------------------------------
@@ -1300,6 +1361,15 @@ def _extraction_observed_at(result: ExtractionResult) -> str | None:
     values = [entity.observed_at for entity in result.entities]
     values.extend(edge.valid_from for edge in result.edges)
     return min(values) if values else None
+
+
+def _retired_source_path(result: ExtractionResult) -> str | None:
+    """Return the source path targeted by a projection retirement event."""
+    for entity in result.entities:
+        source_path = entity.properties.get("source_path") if entity.properties else None
+        if isinstance(source_path, str) and source_path:
+            return source_path
+    return None
 
 
 def _typed_relationship_label(relation_type: str) -> str:

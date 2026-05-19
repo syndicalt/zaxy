@@ -773,6 +773,7 @@ def _extract_document_indexed(event: Event) -> ExtractionResult:
                 "source_start_line": start_line,
                 "source_end_line": end_line,
                 "source_sha256": sha256,
+                **_refresh_transform_properties(event.payload),
             },
             _retrieval_salience_properties(event.payload),
         )
@@ -809,6 +810,7 @@ def _extract_code_file_indexed(event: Event) -> ExtractionResult:
             "source_sha256": sha256,
             "bytes": byte_count,
             "lines": line_count,
+            **_refresh_transform_properties(event.payload),
         },
     )
     edge = ExtractedEdge(
@@ -822,6 +824,141 @@ def _extract_code_file_indexed(event: Event) -> ExtractionResult:
         edges=[edge],
         source_event_seq=event.seq,
     )
+
+
+@register("source.discovered")
+@register("source.changed")
+@register("source.unchanged")
+@register("source.deleted")
+def _extract_source_refresh_event(event: Event) -> ExtractionResult:
+    """Extract source freshness metadata from context refresh events."""
+    path = _optional_text(event.payload.get("path")) or "source"
+    source_kind = _optional_text(event.payload.get("source_kind")) or "unknown"
+    sha256 = _optional_text(event.payload.get("sha256"))
+    previous_sha256 = _optional_text(event.payload.get("previous_sha256"))
+    byte_count = _positive_int(event.payload.get("bytes"), default=0)
+    status = event.type.removeprefix("source.")
+    refresh_properties = _refresh_transform_properties(event.payload)
+    if refresh_reason := _optional_text(event.payload.get("refresh_reason")):
+        refresh_properties["refresh_reason"] = refresh_reason
+    entity = ExtractedEntity(
+        name=path,
+        entity_type="source",
+        observed_at=event.timestamp,
+        summary=f"{source_kind} source {path} {status}",
+        properties=_merge_properties(
+            {
+                "source_path": path,
+                "source_kind": source_kind,
+                "source_sha256": sha256,
+                "previous_sha256": previous_sha256,
+                "bytes": byte_count,
+                "refresh_status": status,
+                **refresh_properties,
+            },
+            {},
+        )
+        or {},
+    )
+    return ExtractionResult(entities=[entity], edges=[], source_event_seq=event.seq)
+
+
+@register("projection.updated")
+@register("projection.retired")
+def _extract_projection_refresh_event(event: Event) -> ExtractionResult:
+    """Extract projection lifecycle metadata from context refresh events."""
+    path = _optional_text(event.payload.get("path")) or "source"
+    source_kind = _optional_text(event.payload.get("source_kind")) or "unknown"
+    projection = _optional_text(event.payload.get("projection")) or "memory"
+    status = event.type.removeprefix("projection.")
+    projection_properties = _refresh_transform_properties(event.payload)
+    if source_sha256 := _optional_text(event.payload.get("source_sha256")):
+        projection_properties["source_sha256"] = source_sha256
+    source = ExtractedEntity(
+        name=path,
+        entity_type="source",
+        observed_at=event.timestamp,
+        properties={
+            "source_path": path,
+            "source_kind": source_kind,
+        },
+    )
+    projection_entity = ExtractedEntity(
+        name=f"projection:{source_kind}:{path}",
+        entity_type="projection",
+        observed_at=event.timestamp,
+        summary=f"{projection} projection {status} for {path}",
+        properties={
+            "source_path": path,
+            "source_kind": source_kind,
+            "projection": projection,
+            "projection_status": status,
+            "source_event": _optional_text(event.payload.get("source_event")),
+            "reason": _optional_text(event.payload.get("reason")),
+            **projection_properties,
+        },
+    )
+    edge = ExtractedEdge(
+        source=source.name,
+        target=projection_entity.name,
+        relation_type=f"projection_{status}",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(
+        entities=[source, projection_entity],
+        edges=[edge],
+        source_event_seq=event.seq,
+    )
+
+
+@register("memory.bootstrap.shown")
+@register("memory.checkout.completed")
+@register("memory.feedback.recorded")
+def _extract_memory_activity_event(event: Event) -> ExtractionResult:
+    """Extract model-facing memory activity markers."""
+    activity = _optional_text(event.payload.get("activity")) or event.type.removeprefix("memory.").replace(".", "_")
+    source = _optional_text(event.payload.get("source")) or event.actor
+    query = _optional_text(event.payload.get("query"))
+    entity = ExtractedEntity(
+        name=f"{event.thread}:memory:{activity}:{event.seq}",
+        entity_type="memory_activity",
+        observed_at=event.timestamp,
+        summary=f"{activity} memory activity from {source}",
+        properties=_merge_properties(
+            {
+                "activity": activity,
+                "source": source,
+                "session_id": event.thread,
+            },
+            {"query": query} if query else None,
+        )
+        or {},
+    )
+    return ExtractionResult(entities=[entity], edges=[], source_event_seq=event.seq)
+
+
+@register("memory.reminder.suggested")
+def _extract_memory_reminder_suggested(event: Event) -> ExtractionResult:
+    """Extract suggested memory reminders for agent recall hardening."""
+    trigger = _optional_text(event.payload.get("trigger")) or "unknown"
+    recommended_tool = _optional_text(event.payload.get("recommended_tool")) or "memory_checkout"
+    query = _optional_text(event.payload.get("query"))
+    entity = ExtractedEntity(
+        name=f"{event.thread}:memory-reminder:{event.seq}",
+        entity_type="memory_reminder",
+        observed_at=event.timestamp,
+        summary=f"Memory reminder suggested after {trigger}: call {recommended_tool}",
+        properties=_merge_properties(
+            {
+                "trigger": trigger,
+                "recommended_tool": recommended_tool,
+                "session_id": event.thread,
+            },
+            {"query": query} if query else None,
+        )
+        or {},
+    )
+    return ExtractionResult(entities=[entity], edges=[], source_event_seq=event.seq)
 
 
 @register("code.symbol.indexed")
@@ -856,6 +993,8 @@ def _extract_code_symbol_indexed(event: Event) -> ExtractionResult:
             "symbol_kind": kind,
             "source_start_line": start_line,
             "source_end_line": end_line,
+            **_source_sha256_property(event.payload),
+            **_refresh_transform_properties(event.payload),
         },
     )
     edge = ExtractedEdge(
@@ -901,6 +1040,8 @@ def _extract_code_import_indexed(event: Event) -> ExtractionResult:
             "import_name": name,
             "import_kind": kind,
             "source_start_line": start_line,
+            **_source_sha256_property(event.payload),
+            **_refresh_transform_properties(event.payload),
         },
     )
     edge = ExtractedEdge(
@@ -963,6 +1104,8 @@ def _extract_code_dependency_indexed(event: Event) -> ExtractionResult:
             "import_name": import_name,
             "source_start_line": start_line,
             "resolution": resolution,
+            **_source_sha256_property(event.payload),
+            **_refresh_transform_properties(event.payload),
         },
     )
     return ExtractionResult(
@@ -1009,6 +1152,8 @@ def _extract_code_call_indexed(event: Event) -> ExtractionResult:
             "target_qualified_name": target_qualified_name,
             "source_start_line": start_line,
             "resolution": resolution,
+            **_source_sha256_property(event.payload),
+            **_refresh_transform_properties(event.payload),
         },
     )
     entities = [caller_symbol, call]
@@ -1794,6 +1939,22 @@ def _retrieval_salience_properties(payload: dict[str, Any]) -> dict[str, Any] | 
     if salience is None:
         return None
     return {"retrieval_salience": salience}
+
+
+def _refresh_transform_properties(payload: dict[str, Any]) -> dict[str, Any]:
+    """Return context-refresh transform lineage metadata."""
+    properties: dict[str, Any] = {}
+    if transform_version := _optional_text(payload.get("transform_version")):
+        properties["transform_version"] = transform_version
+    if transform_id := _optional_text(payload.get("transform_id")):
+        properties["transform_id"] = transform_id
+    return properties
+
+
+def _source_sha256_property(payload: dict[str, Any]) -> dict[str, str]:
+    """Return source hash metadata when refresh provided it."""
+    source_sha256 = _optional_text(payload.get("source_sha256"))
+    return {"source_sha256": source_sha256} if source_sha256 else {}
 
 
 def _merge_properties(*values: dict[str, Any] | None) -> dict[str, Any] | None:

@@ -93,6 +93,16 @@ class ProjectionStore(Protocol):  # pragma: no cover
         """Close the validity window for a projected entity."""
         ...
 
+    async def retire_source_projections(
+        self,
+        *,
+        source_path: str,
+        invalid_at: str,
+        session_id: str = "default",
+    ) -> None:
+        """Close active projection rows derived from one source path."""
+        ...
+
     async def inspect_event_projection_status(
         self,
         session_id: str,

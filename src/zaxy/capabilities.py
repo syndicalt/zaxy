@@ -43,6 +43,7 @@ def build_memory_capabilities(
             },
             "reason": "Session-start memory is only a bootstrap; checkout refreshes cited working state.",
         },
+        "reminder_policy": _reminder_policy(),
         "ambient_loop": _ambient_loop(),
         "tools": _tool_guidance(),
         "status": {
@@ -96,6 +97,7 @@ def format_memory_capabilities(manifest: dict[str, Any]) -> str:
             "- after meaningful work: context_after_turn or memory_append",
             "- when exact source is needed: memory_verbatim",
             "- when retrieved context was used: memory_feedback",
+            "- if memory.reminder.suggested appears: follow its memory_checkout call before answering",
             "",
             (
                 f"Recommended next call: {next_call['tool']}("
@@ -217,6 +219,24 @@ def _ambient_loop() -> dict[str, dict[str, str]]:
             "tool": "memory_feedback",
             "reason": "Reinforce useful cited memory so future checkout ranks it higher.",
         },
+    }
+
+
+def _reminder_policy() -> dict[str, Any]:
+    return {
+        "event_type": "memory.reminder.suggested",
+        "triggers": [
+            "session_start",
+            "resume",
+            "compaction",
+            "long_session",
+            "long_tool_run",
+            "where_are_we_question",
+        ],
+        "instruction": (
+            "When a reminder is suggested, call memory_bootstrap if awareness is unclear, "
+            "then call memory_checkout and rely only on cited current facts."
+        ),
     }
 
 

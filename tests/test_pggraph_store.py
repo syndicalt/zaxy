@@ -260,6 +260,63 @@ async def test_pggraph_store_invalidate_entity_closes_active_rows() -> None:
 
 
 @pytest.mark.asyncio
+async def test_pggraph_store_retire_source_projections_closes_active_rows() -> None:
+    connection = FakeConnection()
+    store = PgGraphStore("postgresql://test", connection=connection)
+
+    await store.retire_source_projections(
+        source_path="docs/guide.md",
+        invalid_at="2026-05-19T00:00:00Z",
+        session_id="agent-1",
+    )
+
+    sql = "\n".join(statement for statement, _params in connection.statements)
+    assert "UPDATE zaxy_pggraph_entities" in sql
+    assert "UPDATE zaxy_pggraph_edges" in sql
+    assert "properties ->> 'source_path'" in sql
+    assert "properties ->> 'target_path'" in sql
+    assert "valid_to = %(invalid_at)s" in sql
+    assert connection.statements[0][1] == {
+        "session_id": "agent-1",
+        "source_path": "docs/guide.md",
+        "invalid_at": "2026-05-19T00:00:00Z",
+    }
+    assert connection.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_pggraph_store_replays_projection_retired_as_source_retirement() -> None:
+    connection = FakeConnection()
+    store = PgGraphStore("postgresql://test", connection=connection)
+    result = ExtractionResult(
+        entities=[
+            ExtractedEntity(
+                name="docs/guide.md",
+                entity_type="source",
+                observed_at="2026-05-19T00:00:00Z",
+                properties={"source_path": "docs/guide.md"},
+            )
+        ],
+        edges=[],
+        source_event_seq=12,
+        source_event_type="projection.retired",
+    )
+
+    await store.upsert_extraction(result, session_id="agent-1")
+
+    sql = "\n".join(statement for statement, _params in connection.statements)
+    assert "INSERT INTO zaxy_pggraph_events" in sql
+    assert "UPDATE zaxy_pggraph_entities" in sql
+    assert "INSERT INTO zaxy_pggraph_entities" in sql
+    assert connection.statements[1][1] == {
+        "session_id": "agent-1",
+        "source_path": "docs/guide.md",
+        "invalid_at": "2026-05-19T00:00:00Z",
+    }
+    assert connection.commits == 1
+
+
+@pytest.mark.asyncio
 async def test_pggraph_store_search_traversal_uses_pggraph_traverse() -> None:
     connection = FakeConnection()
     connection.cursor_obj.rows = [

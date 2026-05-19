@@ -64,6 +64,36 @@ class CrewAIMemoryAdapter:
         finally:
             await fabric.close()
 
+    async def checkout_before_task(
+        self,
+        task_input: str,
+        *,
+        query: str | None = None,
+        crew: str | None = None,
+        agent: str | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Return Memory Checkout payload for task-boundary middleware."""
+        resolved_query = query or task_input or "crew context"
+        fabric = self.fabric_factory(self.eventloom_path)
+        try:
+            checkout = await fabric.checkout_memory(
+                resolved_query,
+                session_id=self.session_id,
+                limit=self.limit,
+                max_recent_events=self.max_recent_events,
+            )
+            payload = self._checkout_payload(checkout.to_dict())
+            if crew is not None:
+                payload["zaxy"]["crew"] = crew
+            if agent is not None:
+                payload["zaxy"]["agent"] = agent
+            if task_id is not None:
+                payload["zaxy"]["task_id"] = task_id
+            return payload
+        finally:
+            await fabric.close()
+
     async def after_task(
         self,
         result: str,
@@ -165,6 +195,19 @@ class CrewAIMemoryAdapter:
             "zaxy": metadata,
         }
 
+    def _checkout_payload(self, checkout: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "memory": str(checkout.get("prompt") or ""),
+            "contexts": [],
+            "zaxy": {
+                "kind": "memory_checkout",
+                "session_id": checkout.get("session_id", self.session_id),
+                "query": checkout.get("query"),
+                "current_fact_count": len(checkout.get("current_facts", []) or []),
+                "warning_count": len(checkout.get("warnings", []) or []),
+            },
+        }
+
 
 def create_crewai_memory_step(
     *,
@@ -190,3 +233,29 @@ def create_crewai_memory_step(
         return str(payload["memory"])
 
     return zaxy_crewai_memory_step
+
+
+def create_crewai_memory_checkout_step(
+    *,
+    session_id: str = "default",
+    eventloom_path: str = ".eventloom",
+    source: str = "crewai",
+    max_recent_events: int = 20,
+    limit: int = 10,
+    fabric_factory: FabricFactory = default_fabric_factory,
+) -> CrewAIMemoryStep:
+    """Return an async task helper that yields Memory Checkout prompt text."""
+    adapter = CrewAIMemoryAdapter(
+        session_id=session_id,
+        eventloom_path=eventloom_path,
+        source=source,
+        max_recent_events=max_recent_events,
+        limit=limit,
+        fabric_factory=fabric_factory,
+    )
+
+    async def zaxy_crewai_memory_checkout_step(message: str) -> str:
+        payload = await adapter.checkout_before_task(message)
+        return str(payload["memory"])
+
+    return zaxy_crewai_memory_checkout_step

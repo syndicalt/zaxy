@@ -121,6 +121,7 @@ zaxy hook-event heartbeat --eventloom-path .eventloom --session-id my-project-de
         </tbody>
       </table>
       <p>Unknown triggers are rejected before writing.</p>
+      <p>Lifecycle hooks also run the memory persistence policy. If Zaxy has not been used recently, or the hook marks a session start, resume, compaction, long session, long tool run, or roadmap/status question, Zaxy appends <code>memory.reminder.suggested</code>. That event is intentionally read-only guidance for the agent: call <code>memory_bootstrap</code> if awareness is unclear, then call <code>memory_checkout</code> and trust only cited current checkout facts.</p>
       <p>Checkpoint hooks can include retrieval-useful metadata:</p>
       <pre><code class="language-bash">zaxy hook-event checkpoint \
   --eventloom-path .eventloom \

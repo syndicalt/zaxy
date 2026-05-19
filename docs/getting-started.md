@@ -221,6 +221,40 @@ To run the SSE transport for daemon-style clients:
 zaxy serve --transport sse --port 8080
 ```
 
+## Keep source-derived context fresh
+
+Use `zaxy refresh-context` when documents or code should stay synchronized with
+the memory projection without replaying or re-embedding every unchanged file.
+The command fingerprints supported files, records source lifecycle events,
+indexes only discovered or changed sources, records the current transform
+version on derived rows, and retires stale backend projection rows for changed
+or deleted sources.
+
+```bash
+zaxy refresh-context docs --kind documents --session-id my-project-default
+zaxy refresh-context . --kind codebase --session-id my-project-default
+```
+
+The refresh state is stored under `.eventloom/context-refresh/` and is scoped by
+session and source kind. Eventloom remains the audit log: each run records
+`source.discovered`, `source.changed`, `source.unchanged`, `source.deleted`,
+`projection.updated`, and `projection.retired` events as applicable. A transform
+version change is treated as a reprocessing trigger even when file bytes are
+unchanged. Neo4j is the default projection backend, and the same refresh command
+can target the experimental pgGraph adapter when it is explicitly selected:
+
+```bash
+zaxy refresh-context . \
+  --kind codebase \
+  --session-id my-project-default \
+  --projection-backend pggraph \
+  --pggraph-dsn postgresql://postgres:postgres@localhost:5432/zaxy
+```
+
+This is the local, deterministic refresh path for source-derived context. Use
+`zaxy reproject` when an extractor or schema migration requires rebuilding a
+projection from the immutable Eventloom history.
+
 To let Zaxy observe client lifecycle checkpoints without proxying tool
 execution, generate hook adapter config:
 

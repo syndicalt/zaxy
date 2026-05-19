@@ -41,6 +41,7 @@ from zaxy.lifecycle import (
     build_tool_call_completed_event,
 )
 from zaxy.log import get_logger, setup_logging
+from zaxy.memory_persistence import record_memory_activity
 from zaxy.metrics import get_metrics
 from zaxy.pagination import encode_query_cursor, validate_query_cursor
 from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
@@ -879,6 +880,13 @@ class ZaxyMCPServer:
             workspace_root=self._workspace_root,
             current_task=_optional_text(arguments.get("current_task")),
         )
+        record_memory_activity(
+            self._eventloom_path,
+            session_id=session_id,
+            activity="bootstrap",
+            source="mcp",
+            query=_optional_text(arguments.get("current_task")),
+        )
         return [TextContent(type="text", text=json.dumps(bootstrap, indent=2))]
 
     async def handle_context_assemble(self, arguments: dict[str, Any]) -> list[TextContent]:
@@ -922,6 +930,13 @@ class ZaxyMCPServer:
             assembly=_context_assembly_from_payload(assembly),
             ref=resolved_ref,
         ).to_dict()
+        record_memory_activity(
+            self._eventloom_path,
+            session_id=session_id,
+            activity="checkout",
+            source="mcp",
+            query=query,
+        )
         return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
     async def handle_context_after_turn(self, arguments: dict[str, Any]) -> list[TextContent]:

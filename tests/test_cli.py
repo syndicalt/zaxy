@@ -22,7 +22,7 @@ def test_version_option_reports_project_version() -> None:
     result = runner.invoke(app, ["--version"])
 
     assert result.exit_code == 0
-    assert result.output.strip() == "zaxy 0.2.3"
+    assert result.output.strip() == "zaxy 0.3.0"
 
 
 def test_memory_status_prints_eventloom_sessions(tmp_path: Path) -> None:
@@ -502,6 +502,9 @@ def test_memory_bootstrap_text_output(tmp_path: Path) -> None:
     assert "# Zaxy Session Bootstrap" in result.output
     assert "1. memory_capabilities" in result.output
     assert "2. memory_checkout" in result.output
+    events = EventLog(tmp_path / ".eventloom" / "agent.jsonl").read_all()
+    assert events[-1].type == "memory.bootstrap.shown"
+    assert events[-1].payload["source"] == "cli"
 
 
 @patch("zaxy.__main__.MemoryFabric")
@@ -569,6 +572,9 @@ def test_memory_checkout_json_output(mock_fabric_cls: MagicMock, tmp_path: Path)
         max_recent_events=20,
     )
     fabric.close.assert_awaited_once()
+    events = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").read_all()
+    assert events[-1].type == "memory.checkout.completed"
+    assert events[-1].payload["query"] == "current project direction"
 
 
 def test_packet_analyzer_cli_help_exposes_observe_only_gateway() -> None:
@@ -1449,11 +1455,13 @@ def test_hook_event_command_appends_eventloom_event(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "Recorded hook precompact" in result.output
     events = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").read_all()
-    assert len(events) == 1
+    assert len(events) == 2
     assert events[0].type == "hook.precompact"
     assert events[0].actor == "zaxy-hook"
     assert events[0].thread == "agent-1"
     assert events[0].payload["source"] == "codex"
+    assert events[1].type == "memory.reminder.suggested"
+    assert events[1].payload["recommended_tool"] == "memory_checkout"
 
 
 def test_hook_event_checkpoint_carries_summary_and_reason(tmp_path: Path) -> None:
@@ -1512,6 +1520,69 @@ def test_hook_event_heartbeat_appends_health_event(tmp_path: Path) -> None:
     assert events[0].type == "hook.heartbeat"
     assert events[0].payload["trigger"] == "heartbeat"
     assert events[0].payload["source"] == "claude-code"
+
+
+def test_hook_event_suppresses_reminder_after_recent_checkout(tmp_path: Path) -> None:
+    """Hooks should not spam reminders when checkout was just used."""
+    runner = CliRunner()
+    EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").append(
+        "memory.checkout.completed",
+        actor="zaxy-memory",
+        payload={"activity": "checkout", "source": "test"},
+        thread="agent-1",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "hook-event",
+            "checkpoint",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent-1",
+            "--source",
+            "codex",
+            "--summary",
+            "Routine checkpoint.",
+            "--reason",
+            "interval",
+        ],
+    )
+
+    assert result.exit_code == 0
+    events = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").read_all()
+    assert [event.type for event in events] == ["memory.checkout.completed", "hook.checkpoint"]
+
+
+def test_hook_event_long_command_suggests_memory_reminder(tmp_path: Path) -> None:
+    """Long tool runs should reintroduce Zaxy when memory has gone stale."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "hook-event",
+            "command",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent-1",
+            "--source",
+            "codex",
+            "--command",
+            "pytest",
+            "--exit-code",
+            "0",
+            "--duration-ms",
+            "45000",
+        ],
+    )
+
+    assert result.exit_code == 0
+    events = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").read_all()
+    assert [event.type for event in events] == ["command.completed", "memory.reminder.suggested"]
+    assert "context_boundary" in events[1].payload["reasons"]
 
 
 def test_hook_event_command_observation_appends_normalized_event(tmp_path: Path) -> None:
@@ -2504,6 +2575,72 @@ def test_index_codebase_command_reports_indexed_count(mock_fabric_cls: MagicMock
     assert result.exit_code == 0
     assert "Indexed 3 codebase events into session agent-1" in result.output
     fabric.ingest_codebase.assert_awaited_once_with(tmp_path, session_id="agent-1", max_bytes=1024)
+    fabric.close.assert_awaited_once()
+
+
+@patch("zaxy.__main__.MemoryFabric")
+def test_refresh_context_command_uses_backend_aware_fabric(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """refresh-context should expose backend selection while refreshing source context."""
+    fabric = MagicMock()
+    report = MagicMock()
+    report.to_dict.return_value = {
+        "session_id": "agent-1",
+        "kind": "documents",
+        "event_count": 3,
+        "summary": {
+            "kind": "documents",
+            "discovered": 1,
+            "changed": 0,
+            "unchanged": 0,
+            "deleted": 0,
+            "indexed": 1,
+            "retired": 0,
+        },
+    }
+    fabric.refresh_context = AsyncMock(return_value=report)
+    fabric.close = AsyncMock()
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "refresh-context",
+            str(tmp_path),
+            "--kind",
+            "documents",
+            "--session-id",
+            "agent-1",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--projection-backend",
+            "pggraph",
+            "--pggraph-dsn",
+            "postgresql://postgres:postgres@localhost:5432/zaxy",
+            "--max-lines",
+            "20",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output)["summary"]["indexed"] == 1
+    mock_fabric_cls.assert_called_once_with(
+        eventloom_path=str(tmp_path / ".eventloom"),
+        projection_backend="pggraph",
+        pggraph_dsn="postgresql://postgres:postgres@localhost:5432/zaxy",
+        tracer_disabled=False,
+    )
+    fabric.refresh_context.assert_awaited_once_with(
+        tmp_path,
+        kind="documents",
+        session_id="agent-1",
+        max_lines=20,
+        max_bytes=512 * 1024,
+    )
     fabric.close.assert_awaited_once()
 
 

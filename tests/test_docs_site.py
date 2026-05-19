@@ -72,8 +72,8 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     assert "memory_append" in html
     assert "memory_query" in html
     assert "scripts/release-check.sh --root ." in html
-    assert "PyPI 0.2.3" in html
-    assert "1063 tests" in html
+    assert "PyPI 0.3.0" in html
+    assert "1161 tests" in html
     assert "91.97% coverage" in html
 
     for section_id in (
@@ -249,6 +249,22 @@ def test_framework_integration_docs_record_next_hardening_target() -> None:
     assert "model-facing UX hardening" in integrations
     assert "AutoGen remains template-only" in integrations
     assert "common native-preview payload contract" in competitive
+
+
+def test_docs_describe_memory_persistence_hardening() -> None:
+    """Docs should describe reminder policy, hooks, dashboard, and middleware."""
+    mcp = Path("docs/mcp.md").read_text(encoding="utf-8")
+    hooks = Path("docs/hooks.md").read_text(encoding="utf-8")
+    integrations = Path("docs/integrations.md").read_text(encoding="utf-8")
+    site = Path("site/index.html").read_text(encoding="utf-8")
+
+    assert "memory.reminder.suggested" in mcp
+    assert "memory.reminder.suggested" in hooks
+    assert "create_langgraph_memory_checkout_node" in integrations
+    assert "create_crewai_memory_checkout_step" in integrations
+    assert "zaxy_autogen_context" in integrations
+    assert "Memory Checkout before replying" in integrations
+    assert "Last checkout" in site
 
 
 def test_full_set_guardrail_docs_distinguish_legacy_and_same_harness_floors() -> None:
@@ -427,6 +443,19 @@ def test_public_site_links_to_all_core_docs() -> None:
         assert rendered_doc in parser.links
         assert doc not in parser.links
     assert "../docs/architecture.md" not in parser.links
+
+
+def test_docs_describe_incremental_context_refresh_and_backend_reconciliation() -> None:
+    """Docs should explain source refresh and stale projection retirement."""
+    getting_started = Path("docs/getting-started.md").read_text(encoding="utf-8")
+    codebase = Path("docs/codebase.md").read_text(encoding="utf-8")
+    eventloom = Path("docs/eventloom.md").read_text(encoding="utf-8")
+
+    assert "zaxy refresh-context" in getting_started
+    assert "--projection-backend pggraph" in getting_started
+    assert "retire stale Neo4j or pgGraph projection rows" in codebase.replace("\n", " ")
+    assert "source.changed" in eventloom
+    assert "projection.retired" in eventloom
 
 
 def test_public_site_docs_are_rendered_html_not_raw_markdown() -> None:

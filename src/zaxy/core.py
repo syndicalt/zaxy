@@ -39,6 +39,12 @@ from zaxy.compaction import (
 )
 from zaxy.config import get_settings
 from zaxy.context import Context, ContextAssemblyPolicy, context_counts
+from zaxy.context_refresh import (
+    ContextRefreshPlan,
+    load_refresh_state,
+    plan_context_refresh,
+    save_refresh_state,
+)
 from zaxy.documents import collect_document_events
 from zaxy.embedding import build_embedding_provider, embed_extraction
 from zaxy.event import EventLog, ReplayResult  # noqa: F401 - compatibility for existing tests
@@ -185,6 +191,25 @@ class HandoffBundle:
     integrity_ok: bool
 
 
+@dataclass(frozen=True)
+class ContextRefreshReport:
+    """Result of an incremental source refresh."""
+
+    session_id: str
+    kind: str
+    event_count: int
+    summary: dict[str, int | str]
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a stable JSON-serializable payload."""
+        return {
+            "session_id": self.session_id,
+            "kind": self.kind,
+            "event_count": self.event_count,
+            "summary": self.summary,
+        }
+
+
 class MemoryFabric:
     """Framework-agnostic persistent memory for AI agents.
 
@@ -204,6 +229,8 @@ class MemoryFabric:
         pathlight_project_id: str | None = None,
         tracer_disabled: bool = False,
         projection_paths: list[str | Path] | tuple[str | Path, ...] = (),
+        projection_backend: str | None = None,
+        pggraph_dsn: str | None = None,
     ) -> None:
         """Initialize fabric with configuration.
 
@@ -216,17 +243,18 @@ class MemoryFabric:
         self.settings = resolved_settings
         self.retrieval_profile: RetrievalProfile = retrieval_profile
 
-        self.session_manager = SessionManager(base_path=eventloom_path or resolved_settings.eventloom_path)
+        self.eventloom_path = Path(eventloom_path or resolved_settings.eventloom_path)
+        self.session_manager = SessionManager(base_path=str(self.eventloom_path))
         self.eventloom = self.session_manager.get("default").eventlog
         self.graph = build_projection_store(
             ProjectionBackendConfig(
-                backend=resolved_settings.projection_backend,
+                backend=projection_backend or resolved_settings.projection_backend,
                 neo4j_uri=neo4j_uri or resolved_settings.neo4j_uri,
                 neo4j_user=neo4j_user or resolved_settings.neo4j_user,
                 neo4j_password=neo4j_password or resolved_settings.neo4j_password,
                 neo4j_ca_cert=neo4j_ca_cert if neo4j_ca_cert is not None else resolved_settings.neo4j_ca_cert,
                 neo4j_trust_all=neo4j_trust_all if neo4j_trust_all is not None else resolved_settings.neo4j_trust_all,
-                pggraph_dsn=resolved_settings.pggraph_dsn,
+                pggraph_dsn=pggraph_dsn or resolved_settings.pggraph_dsn,
             )
         )
         self.query_router = QueryRouter(
@@ -395,6 +423,40 @@ class MemoryFabric:
                 session_id=sid,
             )
         return len(events)
+
+    async def refresh_context(
+        self,
+        path: str | Path,
+        *,
+        kind: str,
+        session_id: str = "default",
+        max_lines: int = 80,
+        max_bytes: int = 512 * 1024,
+    ) -> ContextRefreshReport:
+        """Refresh document or codebase context incrementally from source fingerprints."""
+        sid = validate_session_id(session_id)
+        previous = load_refresh_state(self.eventloom_path, session_id=sid, kind=kind)
+        plan: ContextRefreshPlan = plan_context_refresh(
+            path,
+            kind=kind,
+            previous=previous,
+            max_lines=max_lines,
+            max_bytes=max_bytes,
+        )
+        for event in plan.events:
+            await self.append(
+                event["event_type"],
+                actor=event["actor"],
+                payload=event["payload"],
+                session_id=sid,
+            )
+        save_refresh_state(self.eventloom_path, session_id=sid, state=plan.next_state)
+        return ContextRefreshReport(
+            session_id=sid,
+            kind=plan.kind,
+            event_count=len(plan.events),
+            summary=plan.summary,
+        )
 
     async def initialize_session(
         self,

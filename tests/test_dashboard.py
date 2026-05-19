@@ -88,6 +88,34 @@ def test_dashboard_status_and_events_use_resolved_eventloom(tmp_path: Path) -> N
     assert len(body["events"]) == 1
 
 
+def test_dashboard_surfaces_memory_persistence_status(tmp_path: Path) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    log = EventLog(workspace / ".eventloom" / "default.jsonl")
+    log.append("memory.bootstrap.shown", actor="zaxy-memory", payload={"source": "cli"})
+    log.append("memory.checkout.completed", actor="zaxy-memory", payload={"source": "cli"})
+    app = DashboardApp(resolve_dashboard_scope(DashboardConfig(workspace=workspace)))
+
+    status_code, _headers, body = app.handle_api("GET", "/api/status", "")
+    assert status_code == 200
+    assert body["memory_persistence"]["last_bootstrap_seq"] == 1
+    assert body["memory_persistence"]["last_checkout_seq"] == 2
+    assert body["memory_persistence"]["stale"] is False
+
+    status_code, _headers, body = app.handle_api("GET", "/api/memory-persistence", "")
+    assert status_code == 200
+    assert body["memory_persistence"]["last_checkout_seq"] == 2
+
+
+def test_dashboard_shell_shows_memory_persistence_metrics() -> None:
+    html = render_dashboard_html()
+
+    assert "Last checkout" in html
+    assert "Last feedback" in html
+    assert "Last bootstrap" in html
+    assert "memory-persistence-warning" in html
+
+
 def test_default_dashboard_graph_uses_eventloom_when_neo4j_is_absent(tmp_path: Path) -> None:
     workspace = tmp_path / "project"
     workspace.mkdir()

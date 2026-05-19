@@ -2,6 +2,22 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 0.3.0 - 2026-05-19
+
+- Added Memory Persistence / Agent Recall Hardening so Zaxy reintroduces itself
+  across session start, resume, compaction, long sessions, long tool runs, and
+  roadmap/status questions.
+- Added `memory.reminder.suggested`, memory bootstrap/checkout/feedback
+  activity markers, graph extractors, hook coverage, and dashboard visibility
+  for stale memory state.
+- Added opinionated LangGraph, CrewAI, and AutoGen checkout paths so framework
+  integrations call Memory Checkout at model/task/reply boundaries.
+- Added backend-aware context refresh and source projection retirement for
+  changed documents, transcripts, and codebase indexes.
+- Expanded pgGraph experimental backend coverage for projection, retrieval,
+  invalidation, traversal, integrity status, and release-safe operational
+  diagnostics.
+
 ## 0.2.3 - 2026-05-18
 
 - Added an explicit local pgGraph bootstrap path for `zaxy init --infra`.

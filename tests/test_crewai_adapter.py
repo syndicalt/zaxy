@@ -43,6 +43,10 @@ class FakeFabric:
         self.calls.append(("record_context_feedback", {"contexts": contexts, **kwargs}))
         return len(contexts)
 
+    async def checkout_memory(self, query: str, **kwargs: Any) -> Any:
+        self.calls.append(("checkout_memory", {"query": query, **kwargs}))
+        return _checkout()
+
     async def close(self) -> None:
         self.calls.append(("close", {}))
 
@@ -106,6 +110,30 @@ async def test_crewai_memory_step_returns_prompt_text() -> None:
 
     assert prompt == "Use CrewAI memory."
     assert calls[0][0] == "after_turn"
+
+
+@pytest.mark.asyncio
+async def test_crewai_adapter_checkout_before_task_uses_memory_checkout() -> None:
+    """Opinionated CrewAI middleware should call Memory Checkout before tasks."""
+    calls: list[tuple[str, dict[str, Any]]] = []
+    adapter = CrewAIMemoryAdapter(
+        session_id="crew-1",
+        fabric_factory=lambda eventloom_path: FakeFabric(calls),
+    )
+
+    payload = await adapter.checkout_before_task("What is left?")
+
+    assert payload["memory"] == "# Memory Checkout\nUse CrewAI checkout."
+    assert payload["zaxy"]["kind"] == "memory_checkout"
+    assert calls[0] == (
+        "checkout_memory",
+        {
+            "query": "What is left?",
+            "session_id": "crew-1",
+            "limit": 10,
+            "max_recent_events": 20,
+        },
+    )
 
 
 @pytest.mark.asyncio
@@ -186,3 +214,18 @@ def _assembly() -> ContextAssembly:
         compacted=False,
         warnings=[],
     )
+
+
+def _checkout() -> Any:
+    class Checkout:
+        def to_dict(self) -> dict[str, Any]:
+            return {
+                "session_id": "crew-1",
+                "query": "What is left?",
+                "prompt": "# Memory Checkout\nUse CrewAI checkout.",
+                "current_facts": [{"content": "Use CrewAI checkout.", "citation": "eventloom://crew-1/events/1#abc"}],
+                "evidence": [],
+                "warnings": [],
+            }
+
+    return Checkout()

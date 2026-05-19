@@ -61,9 +61,14 @@ Use the native-preview adapter when you want Zaxy to behave like a LangGraph
 node without requiring Zaxy to own your graph schema:
 
 ```python
-from zaxy.adapters.langgraph import LangGraphMemoryAdapter, create_langgraph_memory_node
+from zaxy.adapters.langgraph import (
+    LangGraphMemoryAdapter,
+    create_langgraph_memory_checkout_node,
+    create_langgraph_memory_node,
+)
 
 memory_node = create_langgraph_memory_node(session_id="my-agent")
+checkout_node = create_langgraph_memory_checkout_node(session_id="my-agent")
 adapter = LangGraphMemoryAdapter(session_id="my-agent")
 ```
 
@@ -75,6 +80,12 @@ state with:
 - `zaxy_context`: prompt text for the next model call;
 - `zaxy_contexts`: the retrieved `Context` objects used for feedback;
 - `zaxy`: metadata including session, replay count, warnings, and citations.
+
+For production agents, put `create_langgraph_memory_checkout_node()` or
+`LangGraphMemoryAdapter.checkout_before_model()` at model boundaries. That
+middleware calls `memory_checkout` automatically so long sessions, resumes,
+compactions, and roadmap questions reintroduce cited current memory instead of
+depending on the model to remember Zaxy.
 
 `LangGraphMemoryAdapter.record_tool_call()` records redacted
 `tool.call.completed` observations for tool nodes. `record_assistant_turn()`
@@ -91,9 +102,14 @@ application-owned lifecycle point. Zaxy does not import CrewAI or require a
 specific CrewAI object model:
 
 ```python
-from zaxy.adapters.crewai import CrewAIMemoryAdapter, create_crewai_memory_step
+from zaxy.adapters.crewai import (
+    CrewAIMemoryAdapter,
+    create_crewai_memory_checkout_step,
+    create_crewai_memory_step,
+)
 
 memory_step = create_crewai_memory_step(session_id="my-crew")
+checkout_step = create_crewai_memory_checkout_step(session_id="my-crew")
 adapter = CrewAIMemoryAdapter(session_id="my-crew")
 ```
 
@@ -105,6 +121,11 @@ a richer payload containing:
 - `contexts`: retrieved `Context` objects used for feedback;
 - `zaxy`: metadata including session, replay count, warnings, crew, agent, and
   task identifiers when supplied.
+
+For production task wrappers, use `create_crewai_memory_checkout_step()` or
+`CrewAIMemoryAdapter.checkout_before_task()` at task boundaries. That path calls
+`memory_checkout` before task execution and returns the checkout prompt as
+`memory`.
 
 `CrewAIMemoryAdapter.after_task()` persists task output as an assistant turn.
 `record_tool_use()` records redacted `tool.call.completed` observations.
@@ -133,16 +154,18 @@ await adapter.record_context_feedback(payload, feedback="used", importance=0.8)
 The templates and native adapters use the same durable flow:
 
 1. Create a `MemoryFabric` with the configured Eventloom path.
-2. Capture the latest turn with `after_turn()`.
-3. Assemble prompt context or build a resumable handoff bundle.
+2. Call Memory Checkout before replying or starting task/model work.
+3. Capture completed turns with `after_turn()`.
 4. Close the fabric client.
 
 LangGraph starters expose `zaxy_langgraph_memory_node(state)` for users who want
 a copy-paste template instead of importing the preview adapter. CrewAI starters
 expose `zaxy_crewai_memory_step(message)` and
 `zaxy_crewai_record_result(result)` on top of `CrewAIMemoryAdapter`. AutoGen
-starters expose `zaxy_autogen_context(message)`, returning a dictionary for
-agent context variables.
+starters expose `zaxy_autogen_context(message)`, which runs Memory Checkout
+before replying and returns a dictionary for agent context variables.
+`zaxy_autogen_record_reply(reply)` captures completed replies after the agent
+responds.
 
 The same renderer is available from Python:
 

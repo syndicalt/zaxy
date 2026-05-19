@@ -82,6 +82,17 @@ Codebase inventory is represented as typed events, not as direct graph writes.
 `code.file.indexed` records preserve relative path, language, hash, byte count,
 and line count. Replaying Eventloom can regenerate the file map projection.
 
+Context refresh is also event-backed. `zaxy refresh-context` compares current
+file fingerprints with the prior refresh state for a session and source kind,
+then appends source lifecycle events such as `source.discovered`,
+`source.changed`, `source.unchanged`, and `source.deleted`. Derived rows are
+tracked through `projection.updated` and `projection.retired`; the latter is
+used for changed or deleted sources so the selected Neo4j or pgGraph backend can
+close active projection rows while the immutable source history remains
+replayable. Refresh state also records the transform version, so a future
+extractor/chunker version bump can force unchanged files through the same
+retire-and-reindex path.
+
 Replay is the operational escape hatch. If Neo4j is unavailable, Eventloom still
 contains the history. If an extractor changes, replay can regenerate the graph.
 If a handoff needs context, replay reconstructs the sequence of events from a

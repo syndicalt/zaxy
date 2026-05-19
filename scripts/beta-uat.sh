@@ -62,6 +62,12 @@ MARKDOWN
     grep -Eq "Citations: [1-9]" <<<"${CHECKOUT_OUTPUT}"
     grep -q "Suggested next call: memory_checkout" <<<"${CHECKOUT_OUTPUT}"
     grep -q "Feedback: call memory_feedback" <<<"${CHECKOUT_OUTPUT}"
+    zaxy hook-event session-start \
+        --eventloom-path .eventloom \
+        --session-id "${session_id}" \
+        --source "${label}-local" \
+        --workspace "${project}" \
+        --summary "fresh session memory persistence boundary"
     zaxy hook-event command \
         --eventloom-path .eventloom \
         --session-id "${session_id}" \
@@ -92,6 +98,28 @@ MARKDOWN
         --role assistant \
         --content "Verified memory bootstrap and memory checkout guidance in a clean workspace." \
         --turn-index 1
+    zaxy hook-event checkpoint \
+        --eventloom-path .eventloom \
+        --session-id "${session_id}" \
+        --source "${label}-local" \
+        --workspace "${project}" \
+        --summary "what is left on the roadmap" \
+        --reason interval \
+        --turn-count 12
+    zaxy hook-event checkpoint \
+        --eventloom-path .eventloom \
+        --session-id "${session_id}" \
+        --source "${label}-local" \
+        --workspace "${project}" \
+        --summary "resumed session asks what is left on the roadmap" \
+        --reason resume
+    zaxy hook-event precompact \
+        --eventloom-path .eventloom \
+        --session-id "${session_id}" \
+        --source "${label}-local" \
+        --workspace "${project}" \
+        --summary "compacted context boundary"
+    zaxy memory log --eventloom-path .eventloom --session-id "${session_id}" --limit 20 | grep -q "memory.reminder.suggested"
     zaxy doctor --eventloom-path .eventloom
     zaxy hook-status --eventloom-path .eventloom
     zaxy capture status --workspace .

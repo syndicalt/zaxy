@@ -39,6 +39,15 @@ def test_capabilities_manifest_guides_periodic_memory_refresh(tmp_path: Path) ->
     assert manifest["ambient_loop"]["before_major_work"]["tool"] == "memory_checkout"
     assert manifest["ambient_loop"]["after_meaningful_work"]["tool"] == "context_after_turn"
     assert manifest["ambient_loop"]["when_context_is_used"]["tool"] == "memory_feedback"
+    assert manifest["reminder_policy"]["triggers"] == [
+        "session_start",
+        "resume",
+        "compaction",
+        "long_session",
+        "long_tool_run",
+        "where_are_we_question",
+    ]
+    assert manifest["reminder_policy"]["event_type"] == "memory.reminder.suggested"
     assert "memory_checkout" in {tool["name"] for tool in manifest["tools"]}
     assert "Do not treat session-start memory as sufficient" in manifest["prompt"]
 
@@ -57,6 +66,7 @@ def test_format_memory_capabilities_is_prompt_ready_and_concise(tmp_path: Path) 
     assert "Session: agent" in text
     assert "memory_checkout" in text
     assert "after compaction/resume" in text
+    assert "memory.reminder.suggested" in text
     assert len(text.splitlines()) <= 32
 
 

@@ -441,8 +441,9 @@ async def zaxy_crewai_record_result(result: str) -> str:
 def _autogen_template(*, session_id: str, eventloom_path: str) -> str:
     return f'''"""AutoGen starter for Zaxy memory.
 
-Call `zaxy_autogen_context` from an agent hook before replying, then place the
-returned prompt in your agent's system/context variables.
+Call `zaxy_autogen_context` from an agent hook before replying. It runs Memory
+Checkout so the agent conditions on cited current memory instead of relying on
+stale session state.
 """
 
 from zaxy import MemoryFabric
@@ -452,17 +453,26 @@ async def zaxy_autogen_context(message: str) -> dict[str, str]:
     fabric = MemoryFabric(eventloom_path={eventloom_path!r})
     await fabric.connect()
     try:
+        checkout = await fabric.checkout_memory(
+            message or "autogen context",
+            session_id={session_id!r},
+        )
+        return {{"zaxy_context": checkout.prompt}}
+    finally:
+        await fabric.close()
+
+
+async def zaxy_autogen_record_reply(reply: str) -> dict[str, str]:
+    fabric = MemoryFabric(eventloom_path={eventloom_path!r})
+    await fabric.connect()
+    try:
         context = await fabric.after_turn(
             role="assistant",
-            content=message,
+            content=reply,
             session_id={session_id!r},
-            query=message or "autogen context",
+            query=reply or "autogen reply",
         )
-        handoff = await fabric.handoff_bundle(
-            session_id={session_id!r},
-            query=message or "autogen handoff",
-        )
-        return {{"zaxy_context": context.prompt, "zaxy_handoff": handoff.prompt}}
+        return {{"zaxy_context": context.prompt}}
     finally:
         await fabric.close()
 '''

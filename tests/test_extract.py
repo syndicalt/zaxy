@@ -823,6 +823,88 @@ class TestCodeFileIndexed:
         assert edge.target == "src/zaxy/core.py"
 
 
+class TestSourceRefreshExtractors:
+    """Tests for context refresh source/projection lifecycle extraction."""
+
+    def test_extracts_source_changed_with_freshness_metadata(self) -> None:
+        ev = _make_event(
+            "source.changed",
+            {
+                "path": "docs/guide.md",
+                "source_kind": "documents",
+                "sha256": "a" * 64,
+                "previous_sha256": "b" * 64,
+                "bytes": 42,
+            },
+            actor="zaxy-context-refresh",
+        )
+
+        result = extract(ev)
+
+        assert result.entities[0].name == "docs/guide.md"
+        assert result.entities[0].entity_type == "source"
+        assert result.entities[0].properties == {
+            "source_path": "docs/guide.md",
+            "source_kind": "documents",
+            "source_sha256": "a" * 64,
+            "previous_sha256": "b" * 64,
+            "bytes": 42,
+            "refresh_status": "changed",
+        }
+
+    def test_extracts_projection_retired_for_deleted_source(self) -> None:
+        ev = _make_event(
+            "projection.retired",
+            {
+                "path": "src/old.py",
+                "source_kind": "codebase",
+                "reason": "source_deleted",
+            },
+            actor="zaxy-context-refresh",
+        )
+
+        result = extract(ev)
+
+        assert [entity.entity_type for entity in result.entities] == ["source", "projection"]
+        assert result.edges[0].source == "src/old.py"
+        assert result.edges[0].target == "projection:codebase:src/old.py"
+        assert result.edges[0].relation_type == "projection_retired"
+
+
+class TestMemoryPersistenceExtractors:
+    """Tests for memory persistence and reminder lifecycle extraction."""
+
+    def test_extracts_memory_reminder_suggestion(self) -> None:
+        ev = _make_event(
+            "memory.reminder.suggested",
+            {
+                "trigger": "checkpoint",
+                "recommended_tool": "memory_checkout",
+                "query": "what is left",
+                "reasons": ["stale_memory_activity"],
+            },
+            actor="zaxy-memory",
+        )
+
+        result = extract(ev)
+
+        assert result.entities[0].entity_type == "memory_reminder"
+        assert result.entities[0].properties["recommended_tool"] == "memory_checkout"
+        assert result.entities[0].properties["trigger"] == "checkpoint"
+
+    def test_extracts_memory_checkout_activity(self) -> None:
+        ev = _make_event(
+            "memory.checkout.completed",
+            {"activity": "checkout", "source": "mcp", "query": "roadmap"},
+            actor="zaxy-memory",
+        )
+
+        result = extract(ev)
+
+        assert result.entities[0].entity_type == "memory_activity"
+        assert result.entities[0].properties["activity"] == "checkout"
+
+
 class TestCodeSymbolIndexed:
     """Tests for code.symbol.indexed extractor."""
 

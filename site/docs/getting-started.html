@@ -94,6 +94,17 @@ zaxy init . \
       <p>When stdio starts in local development mode, Zaxy checks the selected projection backend. With the default Neo4j backend, it checks <code>bolt://localhost:7687</code>. If Neo4j is not reachable and Docker is available, it starts a <code>zaxy-neo4j</code> container automatically and waits for Bolt before serving MCP tools. With <code>PROJECTION_BACKEND=pggraph</code>, it checks <code>PGGRAPH_DSN</code>; local automatic startup requires <code>PGGRAPH_REPO</code> to point at a pgGraph checkout containing <code>scripts/quickstart.sh</code>, because Zaxy must install pgGraph into the local PostgreSQL container before graph traversal is available. Set <code>NEO4J_AUTO_START=false</code> or <code>PGGRAPH_AUTO_START=false</code> to opt out.</p>
       <p>To run the SSE transport for daemon-style clients:</p>
       <pre><code class="language-bash">zaxy serve --transport sse --port 8080</code></pre>
+      <h2 id="keep-source-derived-context-fresh">Keep source-derived context fresh</h2>
+      <p>Use <code>zaxy refresh-context</code> when documents or code should stay synchronized with the memory projection without replaying or re-embedding every unchanged file. The command fingerprints supported files, records source lifecycle events, indexes only discovered or changed sources, records the current transform version on derived rows, and retires stale backend projection rows for changed or deleted sources.</p>
+      <pre><code class="language-bash">zaxy refresh-context docs --kind documents --session-id my-project-default
+zaxy refresh-context . --kind codebase --session-id my-project-default</code></pre>
+      <p>The refresh state is stored under <code>.eventloom/context-refresh/</code> and is scoped by session and source kind. Eventloom remains the audit log: each run records <code>source.discovered</code>, <code>source.changed</code>, <code>source.unchanged</code>, <code>source.deleted</code>, <code>projection.updated</code>, and <code>projection.retired</code> events as applicable. A transform version change is treated as a reprocessing trigger even when file bytes are unchanged. Neo4j is the default projection backend, and the same refresh command can target the experimental pgGraph adapter when it is explicitly selected:</p>
+      <pre><code class="language-bash">zaxy refresh-context . \
+  --kind codebase \
+  --session-id my-project-default \
+  --projection-backend pggraph \
+  --pggraph-dsn postgresql://postgres:postgres@localhost:5432/zaxy</code></pre>
+      <p>This is the local, deterministic refresh path for source-derived context. Use <code>zaxy reproject</code> when an extractor or schema migration requires rebuilding a projection from the immutable Eventloom history.</p>
       <p>To let Zaxy observe client lifecycle checkpoints without proxying tool execution, generate hook adapter config:</p>
       <pre><code class="language-bash">zaxy hooks claude-code \
   --eventloom-path .eventloom \

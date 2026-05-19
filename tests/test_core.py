@@ -15,6 +15,7 @@ from zaxy.compaction import build_compaction_projection, write_compaction_projec
 from zaxy.core import (
     Context,
     ContextAssembly,
+    ContextRefreshReport,
     HandoffBundle,
     MemoryCheckout,
     MemoryFabric,
@@ -49,6 +50,28 @@ def test_memory_fabric_constructs_projection_store_through_factory(tmp_path: Pat
 
     assert fabric.graph is mock_build.return_value
     assert mock_build.call_args.args[0].backend == "neo4j"
+
+
+def test_memory_fabric_accepts_explicit_pggraph_projection_backend(tmp_path: Path) -> None:
+    """Framework integrations should be able to select pgGraph without env mutation."""
+    with (
+        patch("zaxy.core.build_projection_store") as mock_build,
+        patch("zaxy.core.QueryRouter"),
+        patch("zaxy.core.build_reranker", return_value=None),
+        patch("zaxy.core.MemoryTracer"),
+    ):
+        mock_build.return_value = AsyncMock()
+
+        MemoryFabric(
+            eventloom_path=str(tmp_path / ".eventloom"),
+            projection_backend="pggraph",
+            pggraph_dsn="postgresql://postgres:postgres@localhost:5432/zaxy",
+            tracer_disabled=True,
+        )
+
+    config = mock_build.call_args.args[0]
+    assert config.backend == "pggraph"
+    assert config.pggraph_dsn == "postgresql://postgres:postgres@localhost:5432/zaxy"
 
 
 async def test_memory_fabric_queries_verbatim_eventloom_sources(tmp_path: Path) -> None:
@@ -590,6 +613,92 @@ class TestCodebaseIngestion:
         assert first_call.kwargs["payload"]["path"] == "src/app.py"
         assert first_call.kwargs["payload"]["language"] == "python"
         assert first_call.kwargs["thread"] == "agent-1"
+
+
+class TestContextRefresh:
+    """Tests for incremental context refresh orchestration."""
+
+    async def test_refresh_context_appends_delta_and_index_events(
+        self,
+        fabric: MemoryFabric,
+        tmp_path,
+    ) -> None:  # type: ignore[no-untyped-def]
+        """refresh_context() should append source and projection lifecycle events."""
+        fabric.eventloom_path = tmp_path / ".eventloom"
+        doc = tmp_path / "README.md"
+        doc.write_text("Alpha\n", encoding="utf-8")
+
+        report = await fabric.refresh_context(tmp_path, kind="documents", session_id="agent-1", max_lines=20)
+
+        assert isinstance(report, ContextRefreshReport)
+        assert report.summary == {
+            "kind": "documents",
+            "discovered": 1,
+            "changed": 0,
+            "unchanged": 0,
+            "deleted": 0,
+            "indexed": 1,
+            "retired": 0,
+            "transform_changed": 0,
+        }
+        log = fabric.session_manager.get.return_value.eventlog
+        assert [call.args[0] for call in log.append.call_args_list] == [
+            "source.discovered",
+            "document.indexed",
+            "projection.updated",
+        ]
+        assert log.append.call_args_list[0].kwargs["thread"] == "agent-1"
+
+    async def test_refresh_context_persists_state_and_skips_unchanged(
+        self,
+        tmp_path,
+    ) -> None:
+        """A second refresh should skip re-indexing unchanged sources using persisted state."""
+        eventloom = tmp_path / ".eventloom"
+        doc = tmp_path / "README.md"
+        doc.write_text("Alpha\n", encoding="utf-8")
+        fabric = MemoryFabric(eventloom_path=str(eventloom), tracer_disabled=True)
+        fabric.graph = AsyncMock()
+
+        first = await fabric.refresh_context(tmp_path, kind="documents", session_id="agent-1")
+        second = await fabric.refresh_context(tmp_path, kind="documents", session_id="agent-1")
+
+        assert first.summary["indexed"] == 1
+        assert second.summary["unchanged"] == 1
+        assert second.summary["indexed"] == 0
+        events = [event.type for event in fabric.session_manager.get("agent-1").eventlog.read_all()]
+        assert events == [
+            "source.discovered",
+            "document.indexed",
+            "projection.updated",
+            "source.unchanged",
+        ]
+
+    async def test_refresh_context_records_replayable_retirement_for_changed_sources(
+        self,
+        tmp_path,
+    ) -> None:
+        """Changed sources should emit replayable retirement before current projections."""
+        eventloom = tmp_path / ".eventloom"
+        doc = tmp_path / "README.md"
+        doc.write_text("Alpha\n", encoding="utf-8")
+        fabric = MemoryFabric(eventloom_path=str(eventloom), tracer_disabled=True)
+        fabric.graph = AsyncMock()
+
+        await fabric.refresh_context(tmp_path, kind="documents", session_id="agent-1")
+        doc.write_text("Beta\n", encoding="utf-8")
+
+        report = await fabric.refresh_context(tmp_path, kind="documents", session_id="agent-1")
+
+        assert report.summary["changed"] == 1
+        assert report.summary["retired"] == 1
+        events = [event.type for event in fabric.session_manager.get("agent-1").eventlog.read_all()]
+        assert events[-4:] == [
+            "projection.retired",
+            "source.changed",
+            "document.indexed",
+            "projection.updated",
+        ]
 
 
 class TestSessionInitialization:

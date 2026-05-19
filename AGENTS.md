@@ -360,6 +360,8 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Public benchmark guardrail script for cached LongMemEval artifacts and archived report floors
 - [x] Common native-preview adapter contract chosen as the next model-facing UX hardening target, with AutoGen held at template-only until runtime hooks are validated
 - [x] pgGraph operational rebuild path through `zaxy reproject --projection-backend pggraph --reset-projection` with backend cleanup on projection failure
+- [x] Incremental `zaxy refresh-context` for document/code source deltas with Neo4j and pgGraph stale projection retirement
+- [x] Memory Persistence / Agent Recall Hardening with reminder policy, lifecycle hook suggestions, checkout activity markers, dashboard status, and framework checkout middleware
 - [x] Full-set LongMemEval synthesis improved without floor regression: archived hash checkout mean 0.724, Answer@5 0.628, R@5 0.972, citation coverage 1.000
 
 ## Metrics

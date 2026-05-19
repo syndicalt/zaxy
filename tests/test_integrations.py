@@ -421,6 +421,16 @@ def test_renders_crewai_agent_integration_template() -> None:
     assert "await adapter.after_task" in template
 
 
+def test_renders_autogen_template_with_pre_reply_memory_checkout() -> None:
+    """AutoGen starter should call Memory Checkout before the agent replies."""
+    template = render_agent_integration_template("autogen", session_id="agent-1")
+
+    assert "async def zaxy_autogen_context" in template
+    assert "await fabric.checkout_memory" in template
+    assert "session_id='agent-1'" in template
+    assert '"zaxy_context": checkout.prompt' in template
+
+
 def test_renders_framework_extra_install_commands() -> None:
     """Framework install guidance should map each framework to its optional extra."""
     assert render_framework_install_command("langgraph") == [

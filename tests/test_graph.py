@@ -577,6 +577,59 @@ class TestIngestion:
         assert kwargs["session_id"] == "agent-1"
         assert kwargs["invalid_at"] == "2024-06-01T00:00:00Z"
 
+    async def test_retire_source_projections_closes_entities_and_relationships(
+        self,
+        store: GraphStore,
+    ) -> None:
+        """Source retirement should expire active rows derived from one source path."""
+        await store.retire_source_projections(
+            source_path="docs/guide.md",
+            invalid_at="2026-05-19T00:00:00Z",
+            session_id="agent-1",
+        )
+
+        calls = store._driver.execute_query.call_args_list
+        assert len(calls) == 2
+        entity_cypher = calls[0].args[0]
+        relationship_cypher = calls[1].args[0]
+        assert "MATCH (e:Entity)" in entity_cypher
+        assert "e.source_path = $source_path" in entity_cypher
+        assert "e.target_path = $source_path" in entity_cypher
+        assert "SET e.valid_to = datetime($invalid_at)" in entity_cypher
+        assert "MATCH (source:Entity)-[r]->(target:Entity)" in relationship_cypher
+        assert "r.session_id = $session_id" in relationship_cypher
+        assert "r.valid_to IS NULL" in relationship_cypher
+        assert "SET r.valid_to = datetime($invalid_at)" in relationship_cypher
+        assert calls[0].kwargs["source_path"] == "docs/guide.md"
+        assert calls[0].kwargs["session_id"] == "agent-1"
+
+    async def test_upsert_projection_retired_event_retires_source_rows(
+        self,
+        store: GraphStore,
+    ) -> None:
+        """Replaying projection.retired should reconcile stale graph rows."""
+        result = ExtractionResult(
+            entities=[
+                ExtractedEntity(
+                    name="docs/guide.md",
+                    entity_type="source",
+                    observed_at="2026-05-19T00:00:00Z",
+                    properties={"source_path": "docs/guide.md"},
+                )
+            ],
+            edges=[],
+            source_event_seq=12,
+            source_event_type="projection.retired",
+        )
+
+        await store.upsert_extraction(result, session_id="agent-1")
+
+        calls = store._driver.execute_query.call_args_list
+        assert "MATCH (e:Entity)" in calls[1].args[0]
+        assert calls[1].kwargs["source_path"] == "docs/guide.md"
+        assert calls[1].kwargs["invalid_at"] == "2026-05-19T00:00:00Z"
+        assert "MERGE (e:Entity" in calls[3].args[0]
+
 
 class TestProjectionStatus:
     """Tests for graph/Eventloom projection integrity inspection."""

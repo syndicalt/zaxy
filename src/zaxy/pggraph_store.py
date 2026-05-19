@@ -233,6 +233,18 @@ class PgGraphStore:
                 "source_thread": result.source_thread,
             },
         )
+        if result.source_event_type == "projection.retired":
+            source_path = _retired_source_path(result)
+            observed_at = _extraction_observed_at(result)
+            if source_path and observed_at:
+                await self._retire_source_projections(
+                    connection,
+                    {
+                        "session_id": safe_session_id,
+                        "source_path": source_path,
+                        "invalid_at": observed_at,
+                    },
+                )
         for entity in result.entities:
             await connection.execute(
                 """
@@ -612,6 +624,74 @@ class PgGraphStore:
         )
         await connection.commit()
 
+    async def retire_source_projections(
+        self,
+        *,
+        source_path: str,
+        invalid_at: str,
+        session_id: str = "default",
+    ) -> None:
+        """Expire active entities and edges derived from one source path."""
+        safe_session_id = validate_session_id(session_id)
+        params = {
+            "session_id": safe_session_id,
+            "source_path": source_path,
+            "invalid_at": invalid_at,
+        }
+        connection = self._require_connection()
+        await self._retire_source_projections(connection, params)
+        await connection.commit()
+
+    async def _retire_source_projections(
+        self,
+        connection: Any,
+        params: dict[str, str],
+    ) -> None:
+        await connection.execute(
+            """
+            UPDATE zaxy_pggraph_entities
+            SET valid_to = %(invalid_at)s,
+                updated_at = now()
+            WHERE session_id = %(session_id)s
+              AND valid_to IS NULL
+              AND (
+                properties ->> 'source_path' = %(source_path)s
+                OR properties ->> 'target_path' = %(source_path)s
+                OR properties ->> 'test_path' = %(source_path)s
+                OR properties ->> 'covered_path' = %(source_path)s
+              )
+            """,
+            params,
+        )
+        await connection.execute(
+            """
+            UPDATE zaxy_pggraph_edges edge
+            SET valid_to = %(invalid_at)s,
+                updated_at = now()
+            WHERE edge.session_id = %(session_id)s
+              AND edge.valid_to IS NULL
+              AND (
+                EXISTS (
+                    SELECT 1
+                    FROM zaxy_pggraph_entities entity
+                    WHERE entity.node_key IN (edge.source_node_key, edge.target_node_key)
+                      AND entity.session_id = %(session_id)s
+                      AND (
+                        entity.properties ->> 'source_path' = %(source_path)s
+                        OR entity.properties ->> 'target_path' = %(source_path)s
+                        OR entity.properties ->> 'test_path' = %(source_path)s
+                        OR entity.properties ->> 'covered_path' = %(source_path)s
+                      )
+                )
+                OR edge.properties ->> 'source_path' = %(source_path)s
+                OR edge.properties ->> 'target_path' = %(source_path)s
+                OR edge.properties ->> 'test_path' = %(source_path)s
+                OR edge.properties ->> 'covered_path' = %(source_path)s
+              )
+            """,
+            params,
+        )
+
     async def inspect_event_projection_status(
         self,
         session_id: str,
@@ -931,6 +1011,20 @@ def _optional_float_value(value: object) -> float | None:
     if isinstance(value, int | float | Decimal):
         return float(value)
     return float(str(value))
+
+
+def _extraction_observed_at(result: ExtractionResult) -> str | None:
+    values = [entity.observed_at for entity in result.entities]
+    values.extend(edge.valid_from for edge in result.edges)
+    return min(values) if values else None
+
+
+def _retired_source_path(result: ExtractionResult) -> str | None:
+    for entity in result.entities:
+        source_path = entity.properties.get("source_path") if entity.properties else None
+        if isinstance(source_path, str) and source_path:
+            return source_path
+    return None
 
 
 def _pgvector_literal(embedding: list[float] | None) -> str | None:

@@ -43,7 +43,7 @@ def test_package_version_source_fallback_is_independent_of_cwd(
     monkeypatch.setattr(release.metadata, "version", missing_distribution)
     monkeypatch.chdir(tmp_path)
 
-    assert package_version() == "0.2.3"
+    assert package_version() == "0.3.0"
 
 
 def test_package_version_prefers_source_tree_version_in_editable_checkout(monkeypatch) -> None:
@@ -52,7 +52,7 @@ def test_package_version_prefers_source_tree_version_in_editable_checkout(monkey
 
     monkeypatch.setattr(release.metadata, "version", lambda _name: "0.1.0")
 
-    assert package_version() == "0.2.3"
+    assert package_version() == "0.3.0"
 
 
 def test_changelog_records_initial_pypi_release() -> None:
@@ -60,6 +60,7 @@ def test_changelog_records_initial_pypi_release() -> None:
     changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
 
     assert "# Changelog" in changelog
+    assert "## 0.3.0 - 2026-05-19" in changelog
     assert "## 0.2.3 - 2026-05-18" in changelog
     assert "## 0.2.2 - 2026-05-18" in changelog
     assert "## 0.2.0 - 2026-05-15" in changelog
@@ -195,6 +196,19 @@ def test_beta_uat_script_verifies_model_facing_memory_guidance() -> None:
     assert "grep -q \"Call memory_feedback when cited checkout context was used.\"" in script
     assert "grep -q \"Feedback: call memory_feedback\" <<<\"${CHECKOUT_OUTPUT}\"" in script
     assert "grep -q \"Suggested next call: memory_checkout\" <<<\"${CHECKOUT_OUTPUT}\"" in script
+
+
+def test_beta_uat_script_exercises_memory_persistence_boundaries() -> None:
+    """UAT should simulate long, resumed, compacted, and roadmap-question memory reminders."""
+    script = Path("scripts/beta-uat.sh").read_text(encoding="utf-8")
+
+    assert "zaxy hook-event session-start" in script
+    assert "zaxy hook-event checkpoint" in script
+    assert "--turn-count 12" in script
+    assert "--reason resume" in script
+    assert "zaxy hook-event precompact" in script
+    assert "what is left on the roadmap" in script
+    assert "grep -q \"memory.reminder.suggested\"" in script
 
 
 def test_beta_uat_script_exercises_observation_sinks_for_capture_soak() -> None:
