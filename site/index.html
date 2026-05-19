@@ -60,11 +60,11 @@
     </section>
 
     <section class="proof-strip" aria-label="Project status">
-      <span>1161 tests</span>
-      <span>91.97% coverage</span>
+      <span>1167 tests</span>
+      <span>92.13% coverage</span>
       <span>ruff clean</span>
       <span>mypy clean</span>
-      <span>PyPI 0.3.0</span>
+      <span>PyPI 0.3.1</span>
     </section>
 
     <section id="why" class="section">
@@ -207,7 +207,9 @@
           dashboard resolves one workspace by default and shows Eventloom sessions,
           graph projection status, recent events, graph neighborhoods, Checkout
           diagnostics, Last bootstrap, Last checkout, Last feedback, and
-          stale-memory warnings.
+          stale-memory warnings. Neo4j is the default graph provider; pass
+          <code>--projection-backend pggraph --pggraph-dsn ...</code> to inspect
+          the experimental pgGraph projection.
         </p>
       </div>
       <div class="value-grid">
@@ -392,7 +394,7 @@ scripts/release-check.sh --root .</code></pre>
   </main>
 
   <footer>
-    <span>Zaxy v0.3.0 - MIT</span>
+    <span>Zaxy v0.3.1 - MIT</span>
     <span><a href="README.html">README</a> <a href="docs/runbook.html">Runbook</a></span>
   </footer>
 </body>

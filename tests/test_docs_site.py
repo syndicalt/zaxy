@@ -72,9 +72,9 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     assert "memory_append" in html
     assert "memory_query" in html
     assert "scripts/release-check.sh --root ." in html
-    assert "PyPI 0.3.0" in html
-    assert "1161 tests" in html
-    assert "91.97% coverage" in html
+    assert "PyPI 0.3.1" in html
+    assert "1167 tests" in html
+    assert "92.13% coverage" in html
 
     for section_id in (
         "why",
@@ -196,6 +196,7 @@ def test_public_site_reflects_current_onboarding_and_runtime_surfaces() -> None:
     assert "zaxy reproject --projection-backend pggraph --reset-projection" in html
     assert "Read-only local dashboard" in html
     assert "zaxy dashboard --host 127.0.0.1 --port 8765" in html
+    assert "--projection-backend pggraph --pggraph-dsn" in html
     assert "Eventloom sessions" in html
     assert "graph projection" in html
     assert "Checkout diagnostics" in html

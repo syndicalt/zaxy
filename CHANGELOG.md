@@ -2,6 +2,14 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 0.3.1 - 2026-05-19
+
+- Exposed `--projection-backend pggraph` and `--pggraph-dsn` on the read-only
+  local dashboard so pgGraph projection evaluation is visible from the same
+  runtime graph UI as Neo4j.
+- Added a read-only pgGraph dashboard graph provider over the projection
+  contract tables with Eventloom fallback and explicit backend validation.
+
 ## 0.3.0 - 2026-05-19
 
 - Added Memory Persistence / Agent Recall Hardening so Zaxy reintroduces itself

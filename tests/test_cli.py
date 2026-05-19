@@ -22,7 +22,7 @@ def test_version_option_reports_project_version() -> None:
     result = runner.invoke(app, ["--version"])
 
     assert result.exit_code == 0
-    assert result.output.strip() == "zaxy 0.3.0"
+    assert result.output.strip() == "zaxy 0.3.1"
 
 
 def test_memory_status_prints_eventloom_sessions(tmp_path: Path) -> None:
@@ -3150,8 +3150,15 @@ def test_viewer_command_writes_static_html(tmp_path: Path) -> None:
 def test_dashboard_cli_help_exposes_localhost_default() -> None:
     """dashboard should expose the local read-only web app command."""
     runner = CliRunner()
+    command = get_command(app).commands["dashboard"]
+    options = {option: parameter for parameter in command.params for option in parameter.opts}
     result = runner.invoke(app, ["dashboard", "--help"])
 
     assert result.exit_code == 0
-    assert "127.0.0.1" in result.output
-    assert "8765" in result.output
+    assert "dashboard" in result.output
+    assert options["--host"].default == "127.0.0.1"
+    assert options["--port"].default == 8765
+    assert options["--projection-backend"].help == (
+        "Projection backend for graph visualization: neo4j or pggraph"
+    )
+    assert options["--pggraph-dsn"].help == "pgGraph/PostgreSQL DSN for graph visualization"

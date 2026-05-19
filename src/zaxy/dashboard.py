@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from urllib.parse import parse_qs, urlparse
 
 from neo4j import GraphDatabase
@@ -27,9 +28,11 @@ class DashboardConfig:
     domain: str | None = None
     host: str = "127.0.0.1"
     port: int = 8765
+    projection_backend: str = "neo4j"
     neo4j_uri: str | None = None
     neo4j_user: str | None = None
     neo4j_password: str | None = None
+    pggraph_dsn: str | None = None
 
 
 @dataclass(frozen=True)
@@ -42,9 +45,11 @@ class DashboardScope:
     domain: str | None
     host: str
     port: int
+    projection_backend: str = "neo4j"
     neo4j_uri: str | None = None
     neo4j_user: str | None = None
     neo4j_password: str | None = None
+    pggraph_dsn: str | None = None
     read_only: bool = True
 
 
@@ -587,10 +592,317 @@ class Neo4jDashboardGraphProvider:
         return _paths_payload([record["p"] for record in records], limit=limit)
 
 
+class ProjectionDashboardGraphProvider:
+    """Read-only dashboard graph provider backed by the projection contract tables."""
+
+    def __init__(self, backend: str, *, pggraph_dsn: str | None = None) -> None:
+        normalized = backend.casefold().strip()
+        if normalized != "pggraph":
+            raise ValueError("Projection dashboard provider currently supports pggraph only")
+        if not pggraph_dsn:
+            raise ValueError("pgGraph dashboard backend requires pggraph_dsn")
+        from zaxy.pggraph_store import PgGraphStore
+
+        self.backend = normalized
+        self._store = PgGraphStore(pggraph_dsn)
+
+    def summary(self, *, session_id: str | None) -> dict[str, object]:
+        """Return node and edge counts plus bounded overview elements."""
+        try:
+            return cast(
+                dict[str, object],
+                _run_async(self._summary(session_id=session_id)),
+            )
+        except Exception as exc:  # pragma: no cover - exercised in integration environments
+            return _graph_error(exc)
+
+    def neighborhood(
+        self,
+        *,
+        session_id: str | None,
+        node_id: str,
+        view: str,
+        hops: int,
+        limit: int,
+    ) -> dict[str, object]:
+        """Return a bounded pgGraph neighborhood around one projected node."""
+        try:
+            return cast(
+                dict[str, object],
+                _run_async(
+                    self._neighborhood(
+                        session_id=session_id,
+                        node_id=node_id,
+                        view=view,
+                        hops=hops,
+                        limit=limit,
+                    )
+                ),
+            )
+        except Exception as exc:  # pragma: no cover - exercised in integration environments
+            return _graph_error(exc)
+
+    def search(
+        self,
+        *,
+        session_id: str | None,
+        query: str,
+        view: str,
+        limit: int,
+    ) -> dict[str, object]:
+        """Search projected pgGraph nodes."""
+        try:
+            return cast(
+                dict[str, object],
+                _run_async(
+                    self._search(session_id=session_id, query=query, view=view, limit=limit)
+                ),
+            )
+        except Exception as exc:  # pragma: no cover - exercised in integration environments
+            return _graph_error(exc)
+
+    def path_to_event(
+        self,
+        *,
+        session_id: str | None,
+        node_id: str,
+        limit: int,
+    ) -> dict[str, object]:
+        """Return the projected node and its source Eventloom event when available."""
+        try:
+            return cast(
+                dict[str, object],
+                _run_async(
+                    self._path_to_event(session_id=session_id, node_id=node_id, limit=limit)
+                ),
+            )
+        except Exception as exc:  # pragma: no cover - exercised in integration environments
+            return _graph_error(exc)
+
+    async def _summary(self, *, session_id: str | None) -> dict[str, object]:
+        await self._store.connect()
+        try:
+            counts = await self._store._fetch_all(
+                """
+                SELECT
+                    (SELECT count(*) FROM zaxy_pggraph_entities
+                     WHERE (%(session_id)s::text IS NULL OR session_id = %(session_id)s::text)
+                       AND valid_to IS NULL) AS node_count,
+                    (SELECT count(*) FROM zaxy_pggraph_edges
+                     WHERE (%(session_id)s::text IS NULL OR session_id = %(session_id)s::text)
+                       AND valid_to IS NULL) AS edge_count
+                """,
+                {"session_id": session_id},
+            )
+            node_rows = await self._store._fetch_all(
+                """
+                SELECT node_key, name, entity_type, summary, properties, session_id,
+                       source_event_seq, source_event_hash, valid_from, valid_to
+                FROM zaxy_pggraph_entities
+                WHERE (%(session_id)s::text IS NULL OR session_id = %(session_id)s::text)
+                  AND valid_to IS NULL
+                ORDER BY updated_at DESC
+                LIMIT 100
+                """,
+                {"session_id": session_id},
+            )
+            edge_rows = await self._store._fetch_all(
+                """
+                SELECT edge_key, source_node_key, target_node_key, relation_type, properties,
+                       session_id, source_event_seq, source_event_hash
+                FROM zaxy_pggraph_edges
+                WHERE (%(session_id)s::text IS NULL OR session_id = %(session_id)s::text)
+                  AND valid_to IS NULL
+                ORDER BY updated_at DESC
+                LIMIT 100
+                """,
+                {"session_id": session_id},
+            )
+        finally:
+            await self._store.close()
+        count_row = counts[0] if counts else {}
+        return {
+            "available": True,
+            "source": self.backend,
+            "nodes": int(count_row.get("node_count") or 0),
+            "edges": int(count_row.get("edge_count") or 0),
+            "elements": _pggraph_elements(node_rows, edge_rows),
+        }
+
+    async def _neighborhood(
+        self,
+        *,
+        session_id: str | None,
+        node_id: str,
+        view: str,
+        hops: int,
+        limit: int,
+    ) -> dict[str, object]:
+        await self._store.connect()
+        try:
+            node_rows = await self._store._fetch_all(
+                """
+                WITH center AS (
+                    SELECT node_key
+                    FROM zaxy_pggraph_entities
+                    WHERE (node_key = %(node_id)s OR name = %(node_id)s)
+                      AND (%(session_id)s::text IS NULL OR session_id = %(session_id)s::text)
+                      AND valid_to IS NULL
+                    LIMIT 1
+                ), edges AS (
+                    SELECT edge.*
+                    FROM zaxy_pggraph_edges edge, center
+                    WHERE edge.valid_to IS NULL
+                      AND (%(session_id)s::text IS NULL OR edge.session_id = %(session_id)s::text)
+                      AND (
+                        edge.source_node_key = center.node_key
+                        OR edge.target_node_key = center.node_key
+                      )
+                    LIMIT %(limit)s
+                )
+                SELECT DISTINCT entity.node_key, entity.name, entity.entity_type, entity.summary,
+                       entity.properties, entity.session_id, entity.source_event_seq,
+                       entity.source_event_hash, entity.valid_from, entity.valid_to
+                FROM zaxy_pggraph_entities entity
+                JOIN edges ON entity.node_key IN (edges.source_node_key, edges.target_node_key)
+                WHERE entity.valid_to IS NULL
+                LIMIT %(limit)s
+                """,
+                {"session_id": session_id, "node_id": node_id, "limit": limit},
+            )
+            edge_rows = await self._store._fetch_all(
+                """
+                WITH center AS (
+                    SELECT node_key
+                    FROM zaxy_pggraph_entities
+                    WHERE (node_key = %(node_id)s OR name = %(node_id)s)
+                      AND (%(session_id)s::text IS NULL OR session_id = %(session_id)s::text)
+                      AND valid_to IS NULL
+                    LIMIT 1
+                )
+                SELECT edge_key, source_node_key, target_node_key, relation_type, properties,
+                       session_id, source_event_seq, source_event_hash
+                FROM zaxy_pggraph_edges edge, center
+                WHERE edge.valid_to IS NULL
+                  AND (%(session_id)s::text IS NULL OR edge.session_id = %(session_id)s::text)
+                  AND (
+                    edge.source_node_key = center.node_key
+                    OR edge.target_node_key = center.node_key
+                  )
+                LIMIT %(limit)s
+                """,
+                {"session_id": session_id, "node_id": node_id, "limit": limit},
+            )
+        finally:
+            await self._store.close()
+        elements = _pggraph_elements(node_rows, edge_rows)
+        return {
+            "available": True,
+            "source": self.backend,
+            "view": view,
+            "hops": hops,
+            "nodes": elements["nodes"],
+            "edges": elements["edges"],
+            "omitted_nodes": 0,
+            "omitted_edges": 0,
+        }
+
+    async def _search(
+        self,
+        *,
+        session_id: str | None,
+        query: str,
+        view: str,
+        limit: int,
+    ) -> dict[str, object]:
+        await self._store.connect()
+        try:
+            node_rows = await self._store._fetch_all(
+                """
+                SELECT node_key, name, entity_type, summary, properties, session_id,
+                       source_event_seq, source_event_hash, valid_from, valid_to
+                FROM zaxy_pggraph_entities
+                WHERE (%(session_id)s::text IS NULL OR session_id = %(session_id)s::text)
+                  AND valid_to IS NULL
+                  AND (name ILIKE %(query)s OR summary ILIKE %(query)s)
+                ORDER BY updated_at DESC
+                LIMIT %(limit)s
+                """,
+                {"session_id": session_id, "query": f"%{query}%", "limit": limit},
+            )
+        finally:
+            await self._store.close()
+        return {
+            "available": True,
+            "source": self.backend,
+            "view": view,
+            "nodes": [_pggraph_node_payload(row) for row in node_rows],
+            "edges": [],
+        }
+
+    async def _path_to_event(
+        self,
+        *,
+        session_id: str | None,
+        node_id: str,
+        limit: int,
+    ) -> dict[str, object]:
+        await self._store.connect()
+        try:
+            node_rows = await self._store._fetch_all(
+                """
+                SELECT node_key, name, entity_type, summary, properties, session_id,
+                       source_event_seq, source_event_hash, valid_from, valid_to
+                FROM zaxy_pggraph_entities
+                WHERE (node_key = %(node_id)s OR name = %(node_id)s)
+                  AND (%(session_id)s::text IS NULL OR session_id = %(session_id)s::text)
+                  AND valid_to IS NULL
+                LIMIT 1
+                """,
+                {"session_id": session_id, "node_id": node_id},
+            )
+        finally:
+            await self._store.close()
+        if not node_rows:
+            return {"available": True, "source": self.backend, "nodes": [], "edges": []}
+        node = _pggraph_node_payload(node_rows[0])
+        event_seq = node_rows[0].get("source_event_seq")
+        if event_seq is None:
+            return {"available": True, "source": self.backend, "nodes": [node], "edges": []}
+        event_id = f"event:{node_rows[0].get('session_id')}:{event_seq}"
+        event = {
+            "id": event_id,
+            "label": f"Event #{event_seq}",
+            "kind": "event",
+            "properties": {
+                "seq": event_seq,
+                "hash": node_rows[0].get("source_event_hash"),
+                "session_id": node_rows[0].get("session_id"),
+            },
+        }
+        return {
+            "available": True,
+            "source": self.backend,
+            "nodes": [node, event][:limit],
+            "edges": [
+                {
+                    "id": f"source-event:{node['id']}:{event_id}",
+                    "source": node["id"],
+                    "target": event_id,
+                    "label": "SOURCE_EVENT",
+                    "type": "SOURCE_EVENT",
+                    "properties": {},
+                }
+            ][:limit],
+        }
+
 def resolve_dashboard_scope(config: DashboardConfig) -> DashboardScope:
     """Resolve the active workspace and Eventloom directory for the dashboard."""
     workspace = (config.workspace or Path.cwd()).resolve()
     eventloom_path = (config.eventloom_path or workspace / ".eventloom").resolve()
+    projection_backend = config.projection_backend.casefold().strip()
+    if projection_backend not in {"neo4j", "pggraph"}:
+        raise ValueError("projection backend must be one of: neo4j, pggraph")
     return DashboardScope(
         workspace=workspace,
         eventloom_path=eventloom_path,
@@ -598,9 +910,11 @@ def resolve_dashboard_scope(config: DashboardConfig) -> DashboardScope:
         domain=config.domain,
         host=config.host,
         port=config.port,
+        projection_backend=projection_backend,
         neo4j_uri=config.neo4j_uri,
         neo4j_user=config.neo4j_user,
         neo4j_password=config.neo4j_password,
+        pggraph_dsn=config.pggraph_dsn,
     )
 
 
@@ -740,6 +1054,7 @@ class DashboardApp:
                 "session_id": self.scope.session_id,
                 "domain": self.scope.domain,
                 "read_only": self.scope.read_only,
+                "projection_backend": self.scope.projection_backend,
             },
             "memory": status.to_dict(),
             "memory_persistence": inspect_memory_persistence(
@@ -778,6 +1093,13 @@ def _int_param(
 def build_dashboard_graph_provider(scope: DashboardScope) -> DashboardGraphProvider:
     """Build the configured graph provider with Eventloom as the local fallback."""
     fallback = EventloomDashboardGraphProvider(scope.eventloom_path)
+    if scope.projection_backend == "pggraph":
+        if not scope.pggraph_dsn:
+            return fallback
+        return FallbackDashboardGraphProvider(
+            ProjectionDashboardGraphProvider("pggraph", pggraph_dsn=scope.pggraph_dsn),
+            fallback,
+        )
     if not (scope.neo4j_uri and scope.neo4j_user and scope.neo4j_password):
         return fallback
     return FallbackDashboardGraphProvider(
@@ -793,6 +1115,10 @@ def _graph_error(exc: Exception) -> dict[str, object]:
         "edges": [],
         "warning": str(exc),
     }
+
+
+def _run_async(coro: Any) -> Any:
+    return asyncio.run(coro)
 
 
 def _eventlog_paths(base: Path) -> list[Path]:
@@ -905,6 +1231,58 @@ def _edge_payload(relationship: Any) -> dict[str, Any]:
         "label": relationship.type,
         "type": relationship.type,
         "properties": _json_safe_properties(dict(relationship.items())),
+    }
+
+
+def _pggraph_elements(
+    node_rows: list[dict[str, Any]],
+    edge_rows: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    return {
+        "nodes": [_pggraph_node_payload(row) for row in node_rows],
+        "edges": [_pggraph_edge_payload(row) for row in edge_rows],
+    }
+
+
+def _pggraph_node_payload(row: dict[str, Any]) -> dict[str, Any]:
+    properties = _json_safe_properties(dict(row.get("properties") or {}))
+    properties.update(
+        {
+            "entity_type": row.get("entity_type"),
+            "name": row.get("name"),
+            "session_id": row.get("session_id"),
+            "source_event_seq": row.get("source_event_seq"),
+            "source_event_hash": row.get("source_event_hash"),
+            "summary": row.get("summary"),
+            "valid_from": row.get("valid_from"),
+            "valid_to": row.get("valid_to"),
+        }
+    )
+    safe_properties = _json_safe_properties(properties)
+    return {
+        "id": str(row.get("node_key") or row.get("name") or ""),
+        "label": str(row.get("name") or row.get("node_key") or ""),
+        "labels": [str(row.get("entity_type") or "Entity")],
+        "properties": safe_properties,
+    }
+
+
+def _pggraph_edge_payload(row: dict[str, Any]) -> dict[str, Any]:
+    properties = _json_safe_properties(dict(row.get("properties") or {}))
+    properties.update(
+        {
+            "session_id": row.get("session_id"),
+            "source_event_seq": row.get("source_event_seq"),
+            "source_event_hash": row.get("source_event_hash"),
+        }
+    )
+    return {
+        "id": str(row.get("edge_key") or ""),
+        "source": str(row.get("source_node_key") or ""),
+        "target": str(row.get("target_node_key") or ""),
+        "label": str(row.get("relation_type") or ""),
+        "type": str(row.get("relation_type") or ""),
+        "properties": _json_safe_properties(properties),
     }
 
 
