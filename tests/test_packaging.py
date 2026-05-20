@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import subprocess
 import tomllib
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from zaxy.event import EventLog
 from zaxy.release import package_version, run_beta_readiness
 
 
@@ -169,6 +171,24 @@ def test_beta_uat_script_exercises_clean_repo_happy_path() -> None:
     assert "zaxy memory status" in script
 
 
+def test_beta_uat_script_exercises_bare_embedded_init_path() -> None:
+    """UAT should protect bare init as the no-sidecar embedded default."""
+    script = Path("scripts/beta-uat.sh").read_text(encoding="utf-8")
+
+    assert 'run_workspace "embedded" "" "status"' in script
+    assert '"${preset}"' in script
+    assert "if [[ -n \"${preset}\" ]]" in script
+    assert "grep -q \"PROJECTION_BACKEND=embedded\" .env.local" in script
+    assert "grep -q \"NEO4J_AUTO_START=false\" .env.local" in script
+    assert "grep -q \"EMBEDDED_GRAPH_PATH=.eventloom/projections/embedded.kuzu\" .env.local" in script
+    assert "zaxy memory status --eventloom-path .eventloom --graph" in script
+    assert "grep -q \"Graph projection (backend=embedded):\"" in script
+    assert "zaxy memory inferred-status --session-id" in script
+    assert "grep -q '\"backend\": \"embedded\"'" in script
+    assert "zaxy reproject" in script
+    assert "grep -q \"using embedded\"" in script
+
+
 def test_beta_uat_script_uses_unique_default_domain_per_run() -> None:
     """Repeated UAT runs should not reuse the same Eventloom session in Neo4j."""
     script = Path("scripts/beta-uat.sh").read_text(encoding="utf-8")
@@ -221,6 +241,16 @@ def test_beta_uat_script_exercises_observation_sinks_for_capture_soak() -> None:
     assert "zaxy hook-event tool-call" in script
     assert "zaxy hook-event transcript-turn" in script
     assert "zaxy capture-soak --eventloom-path .eventloom --workspace-root . --session-id" in script
+
+
+def test_beta_uat_script_enforces_activation_efficiency_guardrail() -> None:
+    """UAT should fail if clean first-run sessions are captured without fresh checkout."""
+    script = Path("scripts/beta-uat.sh").read_text(encoding="utf-8")
+
+    assert "zaxy hook-status --eventloom-path .eventloom --min-activation-rate 1.0" in script
+    assert "--max-checkout-prompt-tokens 5000" in script
+    assert "--min-checkout-facts-per-1k-tokens 0.1" in script
+    assert script.index("--min-activation-rate 1.0") < script.index("zaxy capture-soak")
 
 
 def test_beta_uat_script_stops_managed_capture_before_cleanup() -> None:
@@ -295,7 +325,48 @@ def test_beta_readiness_reports_missing_clean_repo_uat(tmp_path: Path) -> None:
         "tests/test_packet_memory_e2e.py\n"
         "scripts/build-dist.sh\n"
         "scripts/validate-docs.sh\n"
-        "scripts/validate-deployment.sh\n",
+        "scripts/validate-deployment.sh\n"
+        "PYTHONPATH=src python -m zaxy hook-status\n"
+        "--eventloom-path reports/activation-release\n"
+        "--now 2026-05-20T12:00:00+00:00\n"
+        "--min-activation-rate 1.0\n"
+        "--max-checkout-prompt-tokens 5000\n"
+        "--min-checkout-facts-per-1k-tokens 0.1\n"
+        'BACKEND_SHOOTOUT_CMD="python scripts/check-backend-shootout.py reports/backend-shootout/backend-shootout.json '
+        "--require-report-metadata --require-markdown-report --verify-report-fingerprints --require-backends embedded,bm25 "
+        '--require-labeled-metrics --require-dashboard-source embedded=embedded --forbid-backends latticedb"\n'
+        'BACKEND_PERFORMANCE_CMD="python scripts/check-backend-shootout.py '
+        "reports/backend-shootout/longmemeval-40-backend-shootout.json --require-report-metadata "
+        "--require-markdown-report --verify-report-fingerprints --require-backends embedded,bm25 --require-labeled-metrics "
+        '--require-dashboard-source embedded=embedded --forbid-backends latticedb"\n'
+        'BACKEND_SCALE_CMD="python scripts/check-backend-shootout.py '
+        "reports/backend-shootout/longmemeval-100-backend-shootout.json --require-report-metadata "
+        "--require-markdown-report --verify-report-fingerprints --require-backends embedded,bm25 --require-labeled-metrics "
+        '--require-dashboard-source embedded=embedded --forbid-backends latticedb --max-checkout-p95-ms embedded=125"\n'
+        "--require-report-metadata\n"
+        "--require-markdown-report\n"
+        "--verify-report-fingerprints\n"
+        "backend-shootout.json\n"
+        "longmemeval-40-backend-shootout.json\n"
+        "longmemeval-100-backend-shootout.json\n"
+        "--min-quality-per-1k-injected-tokens embedded=1.0\n"
+        "--min-quality-per-1k-returned-tokens\n"
+        "--min-answer-at-5-per-1k-returned-tokens\n"
+        "--min-quality-per-1k-injected-tokens\n"
+        "--min-answer-at-5-per-1k-injected-tokens\n"
+        "--max-cold-bootstrap-ms\n"
+        "--max-first-checkout-ms\n"
+        "--max-append-to-projection-p95-ms\n"
+        "--max-resident-memory-delta-bytes\n"
+        "--max-on-disk-footprint-bytes\n"
+        "--max-dashboard-graph-load-ms\n"
+        "--max-checkout-p95-ms embedded=125\n"
+        "--max-checkout-p99-ms\n"
+        "--max-exact-p99-ms\n"
+        "--max-keyword-p95-ms\n"
+        "--max-keyword-p99-ms\n"
+        "--max-vector-p99-ms\n"
+        "--max-traversal-p99-ms\n",
         encoding="utf-8",
     )
 
@@ -305,16 +376,549 @@ def test_beta_readiness_reports_missing_clean_repo_uat(tmp_path: Path) -> None:
     assert report["status"] == "error"
     assert checks["release_smoke"]["status"] == "ok"
     assert checks["release_gate"]["status"] == "ok"
+    assert "backend shootout" in checks["release_gate"]["message"]
+    assert "100-query scale" in checks["release_gate"]["message"]
+    assert "parked-candidate exclusion" in checks["release_gate"]["message"]
     assert checks["clean_repo_uat"]["status"] == "error"
     assert checks["clean_repo_uat"]["action"] == (
         "Add a clean-repo UAT script for install, init, bootstrap, capture, and checkout."
     )
 
 
+def test_beta_readiness_requires_activation_efficiency_guardrail(tmp_path: Path) -> None:
+    """Beta readiness should reject UAT scripts that observe work without enforcing memory activation."""
+    _write_minimal_beta_ready_project(tmp_path)
+    (tmp_path / "BETA.md").write_text(
+        "# Beta Roadmap\n\n- remaining work\n- release criteria\n",
+        encoding="utf-8",
+    )
+    script = (tmp_path / "scripts" / "beta-uat.sh").read_text(encoding="utf-8")
+    (tmp_path / "scripts" / "beta-uat.sh").write_text(
+        script.replace(" --min-activation-rate 1.0", ""),
+        encoding="utf-8",
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["clean_repo_uat"]["status"] == "error"
+    assert "--min-activation-rate 1.0" in checks["clean_repo_uat"]["message"]
+    assert checks["clean_repo_uat"]["action"] == (
+        "Update scripts/beta-uat.sh to exercise the complete first-run beta path."
+    )
+
+
+def test_beta_readiness_requires_checkout_token_efficiency_guardrail(tmp_path: Path) -> None:
+    """Beta readiness should reject UAT scripts that do not gate checkout token discipline."""
+    _write_minimal_beta_ready_project(tmp_path)
+    (tmp_path / "BETA.md").write_text(
+        "# Beta Roadmap\n\n- remaining work\n- release criteria\n",
+        encoding="utf-8",
+    )
+    script_path = tmp_path / "scripts" / "beta-uat.sh"
+    script = script_path.read_text(encoding="utf-8")
+    script_path.write_text(
+        script.replace(" --max-checkout-prompt-tokens 5000", "")
+        .replace(" --min-checkout-facts-per-1k-tokens 0.1", ""),
+        encoding="utf-8",
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["clean_repo_uat"]["status"] == "error"
+    assert "--max-checkout-prompt-tokens 5000" in checks["clean_repo_uat"]["message"]
+    assert "--min-checkout-facts-per-1k-tokens 0.1" in checks["clean_repo_uat"]["message"]
+    assert checks["clean_repo_uat"]["action"] == (
+        "Update scripts/beta-uat.sh to exercise the complete first-run beta path."
+    )
+
+
+def test_beta_readiness_requires_bare_embedded_uat_path(tmp_path: Path) -> None:
+    """Beta readiness should fail if UAT does not protect the bare embedded default."""
+    _write_minimal_beta_ready_project(tmp_path)
+    script_path = tmp_path / "scripts" / "beta-uat.sh"
+    script = script_path.read_text(encoding="utf-8")
+    script_path.write_text(
+        script.replace('run_workspace "embedded" "" "status"\n', "")
+        .replace('grep -q "PROJECTION_BACKEND=embedded" .env.local\n', ""),
+        encoding="utf-8",
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert checks["clean_repo_uat"]["status"] == "error"
+    assert "bare embedded init" in checks["clean_repo_uat"]["message"]
+
+
+def test_beta_readiness_requires_bare_embedded_graph_operations(tmp_path: Path) -> None:
+    """Beta readiness should fail if UAT skips embedded graph status and rebuild checks."""
+    _write_minimal_beta_ready_project(tmp_path)
+    script_path = tmp_path / "scripts" / "beta-uat.sh"
+    script = script_path.read_text(encoding="utf-8")
+    script_path.write_text(
+        script.replace("zaxy memory status --eventloom-path .eventloom --graph\n", "")
+        .replace("zaxy memory inferred-status --session-id\n", "")
+        .replace("zaxy reproject\n", ""),
+        encoding="utf-8",
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert checks["clean_repo_uat"]["status"] == "error"
+    assert "zaxy memory status --eventloom-path .eventloom --graph" in checks["clean_repo_uat"]["message"]
+    assert "zaxy memory inferred-status --session-id" in checks["clean_repo_uat"]["message"]
+    assert "zaxy reproject" in checks["clean_repo_uat"]["message"]
+
+
+def test_beta_readiness_requires_backend_shootout_release_gates(tmp_path: Path) -> None:
+    """Beta readiness should reject release gates without backend shootout evidence checks."""
+    _write_minimal_beta_ready_project(tmp_path)
+    (tmp_path / "BETA.md").write_text(
+        "# Beta Roadmap\n\n- remaining work\n- release criteria\n",
+        encoding="utf-8",
+    )
+    script = (tmp_path / "scripts" / "release-check.sh").read_text(encoding="utf-8")
+    (tmp_path / "scripts" / "release-check.sh").write_text(
+        script.replace("scripts/check-backend-shootout.py", "")
+        .replace("backend-shootout.json", "")
+        .replace("longmemeval-40-backend-shootout.json", "")
+        .replace("longmemeval-100-backend-shootout.json", "")
+        .replace("--forbid-backends latticedb", "")
+        .replace("--min-answer-at-5-per-1k-returned-tokens\n", "")
+        .replace("--min-quality-per-1k-injected-tokens embedded=1.0\n", "")
+        .replace("--max-cold-bootstrap-ms\n", "")
+        .replace("--max-first-checkout-ms\n", "")
+        .replace("--max-append-to-projection-p95-ms\n", "")
+        .replace(" --max-checkout-p95-ms embedded=125", "")
+        .replace("--max-checkout-p95-ms embedded=125\n", "")
+        .replace("--min-answer-at-5-per-1k-injected-tokens\n", ""),
+        encoding="utf-8",
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["release_gate"]["status"] == "error"
+    assert "scripts/check-backend-shootout.py" in checks["release_gate"]["message"]
+    assert "backend-shootout.json" in checks["release_gate"]["message"]
+    assert "longmemeval-40-backend-shootout.json" in checks["release_gate"]["message"]
+    assert "longmemeval-100-backend-shootout.json" in checks["release_gate"]["message"]
+    assert "--forbid-backends latticedb" in checks["release_gate"]["message"]
+    assert "--min-answer-at-5-per-1k-returned-tokens" in checks["release_gate"]["message"]
+    assert "--min-quality-per-1k-injected-tokens embedded=1.0" in checks["release_gate"]["message"]
+    assert "--max-cold-bootstrap-ms" in checks["release_gate"]["message"]
+    assert "--max-first-checkout-ms" in checks["release_gate"]["message"]
+    assert "--max-append-to-projection-p95-ms" in checks["release_gate"]["message"]
+    assert "--max-checkout-p95-ms embedded=125" in checks["release_gate"]["message"]
+    assert "--min-answer-at-5-per-1k-injected-tokens" in checks["release_gate"]["message"]
+
+
+def test_beta_readiness_requires_forbidden_candidate_guardrail_on_all_backend_gates(tmp_path: Path) -> None:
+    """Beta readiness should reject release gates that forbid LatticeDB in only one backend report."""
+    _write_minimal_beta_ready_project(tmp_path)
+    (tmp_path / "BETA.md").write_text(
+        "# Beta Roadmap\n\n- remaining work\n- release criteria\n",
+        encoding="utf-8",
+    )
+    script = (tmp_path / "scripts" / "release-check.sh").read_text(encoding="utf-8")
+    (tmp_path / "scripts" / "release-check.sh").write_text(
+        script.replace("--forbid-backends latticedb", "", 2),
+        encoding="utf-8",
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["release_gate"]["status"] == "error"
+    assert "--forbid-backends latticedb (3 occurrences)" in checks["release_gate"]["message"]
+
+
+def test_beta_readiness_requires_forbidden_candidate_guardrail_inside_each_backend_command(tmp_path: Path) -> None:
+    """Beta readiness should reject parked-candidate flags that are not attached to backend commands."""
+    _write_minimal_beta_ready_project(tmp_path)
+    (tmp_path / "BETA.md").write_text(
+        "# Beta Roadmap\n\n- remaining work\n- release criteria\n",
+        encoding="utf-8",
+    )
+    script = (tmp_path / "scripts" / "release-check.sh").read_text(encoding="utf-8")
+    detached_flags = "--forbid-backends latticedb\n--forbid-backends latticedb\n--forbid-backends latticedb\n"
+    (tmp_path / "scripts" / "release-check.sh").write_text(
+        script.replace("--forbid-backends latticedb", "") + detached_flags,
+        encoding="utf-8",
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["release_gate"]["status"] == "error"
+    assert "BACKEND_SHOOTOUT_CMD must include --forbid-backends latticedb" in checks["release_gate"]["message"]
+    assert "BACKEND_PERFORMANCE_CMD must include --forbid-backends latticedb" in checks["release_gate"]["message"]
+    assert "BACKEND_SCALE_CMD must include --forbid-backends latticedb" in checks["release_gate"]["message"]
+
+
+def test_beta_readiness_requires_strict_backend_flags_inside_each_backend_command(tmp_path: Path) -> None:
+    """Beta readiness should reject strict backend flags that are detached from backend commands."""
+    _write_minimal_beta_ready_project(tmp_path)
+    (tmp_path / "BETA.md").write_text(
+        "# Beta Roadmap\n\n- remaining work\n- release criteria\n",
+        encoding="utf-8",
+    )
+    script = (tmp_path / "scripts" / "release-check.sh").read_text(encoding="utf-8")
+    strict_flags = [
+        "--require-report-metadata",
+        "--require-markdown-report",
+        "--verify-report-fingerprints",
+        "--require-labeled-metrics",
+    ]
+    for flag in strict_flags:
+        script = script.replace(f" {flag}", "")
+    (tmp_path / "scripts" / "release-check.sh").write_text(
+        script + "\n".join(strict_flags) + "\n",
+        encoding="utf-8",
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["release_gate"]["status"] == "error"
+    assert "BACKEND_SHOOTOUT_CMD must include --require-report-metadata" in checks["release_gate"]["message"]
+    assert "BACKEND_PERFORMANCE_CMD must include --require-markdown-report" in checks["release_gate"]["message"]
+    assert "BACKEND_SCALE_CMD must include --verify-report-fingerprints" in checks["release_gate"]["message"]
+    assert "BACKEND_SCALE_CMD must include --require-labeled-metrics" in checks["release_gate"]["message"]
+
+
+def test_beta_readiness_requires_required_backends_inside_each_backend_command(tmp_path: Path) -> None:
+    """Beta readiness should reject required-backend flags that are detached from backend commands."""
+    _write_minimal_beta_ready_project(tmp_path)
+    (tmp_path / "BETA.md").write_text(
+        "# Beta Roadmap\n\n- remaining work\n- release criteria\n",
+        encoding="utf-8",
+    )
+    script = (tmp_path / "scripts" / "release-check.sh").read_text(encoding="utf-8")
+    (tmp_path / "scripts" / "release-check.sh").write_text(
+        script.replace(" --require-backends embedded,bm25", "") + "--require-backends embedded,bm25\n",
+        encoding="utf-8",
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["release_gate"]["status"] == "error"
+    assert "BACKEND_SHOOTOUT_CMD must include --require-backends embedded,bm25" in checks["release_gate"]["message"]
+    assert "BACKEND_PERFORMANCE_CMD must include --require-backends embedded,bm25" in checks["release_gate"]["message"]
+    assert "BACKEND_SCALE_CMD must include --require-backends embedded,bm25" in checks["release_gate"]["message"]
+
+
+def test_beta_readiness_requires_dashboard_source_inside_each_backend_command(tmp_path: Path) -> None:
+    """Beta readiness should reject dashboard-source flags that are detached from backend commands."""
+    _write_minimal_beta_ready_project(tmp_path)
+    (tmp_path / "BETA.md").write_text(
+        "# Beta Roadmap\n\n- remaining work\n- release criteria\n",
+        encoding="utf-8",
+    )
+    script = (tmp_path / "scripts" / "release-check.sh").read_text(encoding="utf-8")
+    (tmp_path / "scripts" / "release-check.sh").write_text(
+        script.replace(" --require-dashboard-source embedded=embedded", "")
+        + "--require-dashboard-source embedded=embedded\n",
+        encoding="utf-8",
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["release_gate"]["status"] == "error"
+    assert "BACKEND_SHOOTOUT_CMD must include --require-dashboard-source embedded=embedded" in checks[
+        "release_gate"
+    ]["message"]
+    assert "BACKEND_PERFORMANCE_CMD must include --require-dashboard-source embedded=embedded" in checks[
+        "release_gate"
+    ]["message"]
+    assert "BACKEND_SCALE_CMD must include --require-dashboard-source embedded=embedded" in checks["release_gate"][
+        "message"
+    ]
+
+
+def test_beta_readiness_requires_scale_threshold_inside_scale_backend_command(tmp_path: Path) -> None:
+    """Beta readiness should reject scale thresholds that are detached from the scale backend command."""
+    _write_minimal_beta_ready_project(tmp_path)
+    (tmp_path / "BETA.md").write_text(
+        "# Beta Roadmap\n\n- remaining work\n- release criteria\n",
+        encoding="utf-8",
+    )
+    script = (tmp_path / "scripts" / "release-check.sh").read_text(encoding="utf-8")
+    (tmp_path / "scripts" / "release-check.sh").write_text(
+        script.replace(" --max-checkout-p95-ms embedded=125", "") + "--max-checkout-p95-ms embedded=125\n",
+        encoding="utf-8",
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["release_gate"]["status"] == "error"
+    assert "BACKEND_SCALE_CMD must include --max-checkout-p95-ms embedded=125" in checks["release_gate"]["message"]
+
+
+def test_beta_readiness_requires_activation_release_gate(tmp_path: Path) -> None:
+    """Beta readiness should reject release gates without activation and checkout-token guardrails."""
+    _write_minimal_beta_ready_project(tmp_path)
+    (tmp_path / "BETA.md").write_text(
+        "# Beta Roadmap\n\n- remaining work\n- release criteria\n",
+        encoding="utf-8",
+    )
+    script = (tmp_path / "scripts" / "release-check.sh").read_text(encoding="utf-8")
+    (tmp_path / "scripts" / "release-check.sh").write_text(
+        script.replace("zaxy hook-status\n", "")
+        .replace("--min-activation-rate 1.0\n", "")
+        .replace("--max-checkout-prompt-tokens 5000\n", "")
+        .replace("--min-checkout-facts-per-1k-tokens 0.1\n", ""),
+        encoding="utf-8",
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["release_gate"]["status"] == "error"
+    assert "zaxy hook-status" in checks["release_gate"]["message"]
+    assert "--min-activation-rate 1.0" in checks["release_gate"]["message"]
+    assert "--max-checkout-prompt-tokens 5000" in checks["release_gate"]["message"]
+    assert "--min-checkout-facts-per-1k-tokens 0.1" in checks["release_gate"]["message"]
+
+
+def test_beta_readiness_requires_source_tree_activation_release_gate_invocation(tmp_path: Path) -> None:
+    """Beta readiness should reject activation gates that depend on an installed zaxy executable."""
+    _write_minimal_beta_ready_project(tmp_path)
+    (tmp_path / "BETA.md").write_text(
+        "# Beta Roadmap\n\n- remaining work\n- release criteria\n",
+        encoding="utf-8",
+    )
+    script = (tmp_path / "scripts" / "release-check.sh").read_text(encoding="utf-8")
+    (tmp_path / "scripts" / "release-check.sh").write_text(
+        script.replace("PYTHONPATH=src python -m zaxy hook-status\n", "python -m zaxy hook-status\n"),
+        encoding="utf-8",
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["release_gate"]["status"] == "error"
+    assert "PYTHONPATH=src python -m zaxy hook-status" in checks["release_gate"]["message"]
+
+
+def test_beta_readiness_requires_deterministic_activation_release_gate_time(tmp_path: Path) -> None:
+    """Beta readiness should reject activation gates that depend on wall-clock time."""
+    _write_minimal_beta_ready_project(tmp_path)
+    (tmp_path / "BETA.md").write_text(
+        "# Beta Roadmap\n\n- remaining work\n- release criteria\n",
+        encoding="utf-8",
+    )
+    script = (tmp_path / "scripts" / "release-check.sh").read_text(encoding="utf-8")
+    (tmp_path / "scripts" / "release-check.sh").write_text(
+        script.replace("--now 2026-05-20T12:00:00+00:00\n", ""),
+        encoding="utf-8",
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["release_gate"]["status"] == "error"
+    assert "--now 2026-05-20T12:00:00+00:00" in checks["release_gate"]["message"]
+
+
+def test_beta_readiness_requires_release_gate_to_use_checked_activation_fixture(tmp_path: Path) -> None:
+    """Beta readiness should reject activation gates pointed at ad hoc Eventloom paths."""
+    _write_minimal_beta_ready_project(tmp_path)
+    (tmp_path / "BETA.md").write_text(
+        "# Beta Roadmap\n\n- remaining work\n- release criteria\n",
+        encoding="utf-8",
+    )
+    script = (tmp_path / "scripts" / "release-check.sh").read_text(encoding="utf-8")
+    (tmp_path / "scripts" / "release-check.sh").write_text(
+        script.replace("--eventloom-path reports/activation-release\n", "--eventloom-path .eventloom\n")
+        + "reports/activation-release\n",
+        encoding="utf-8",
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["release_gate"]["status"] == "error"
+    assert "--eventloom-path reports/activation-release" in checks["release_gate"]["message"]
+
+
+def test_beta_readiness_requires_activation_release_fixture(tmp_path: Path) -> None:
+    """Beta readiness should reject release gates without checked activation evidence."""
+    _write_minimal_beta_ready_project(tmp_path)
+    (tmp_path / "BETA.md").write_text(
+        "# Beta Roadmap\n\n- remaining work\n- release criteria\n",
+        encoding="utf-8",
+    )
+    for path in (tmp_path / "reports" / "activation-release").glob("*.jsonl"):
+        path.unlink()
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["activation_release_fixture"]["status"] == "error"
+    assert "reports/activation-release" in checks["activation_release_fixture"]["message"]
+    assert checks["activation_release_fixture"]["action"] == (
+        "Restore the activation fixture used by scripts/release-check.sh."
+    )
+
+
+def test_beta_readiness_rejects_tampered_activation_release_fixture(tmp_path: Path) -> None:
+    """Beta readiness should reject activation evidence with a broken Eventloom hash chain."""
+    _write_minimal_beta_ready_project(tmp_path)
+    (tmp_path / "BETA.md").write_text(
+        "# Beta Roadmap\n\n- remaining work\n- release criteria\n",
+        encoding="utf-8",
+    )
+    fixture = tmp_path / "reports" / "activation-release" / "agent-1.jsonl"
+    fixture.write_text(
+        fixture.read_text(encoding="utf-8").replace("release-gate", "tampered-release-gate", 1),
+        encoding="utf-8",
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["activation_release_fixture"]["status"] == "error"
+    assert "integrity" in checks["activation_release_fixture"]["message"]
+    assert checks["activation_release_fixture"]["action"] == (
+        "Restore the activation fixture used by scripts/release-check.sh."
+    )
+
+
+def test_beta_readiness_rejects_inefficient_activation_release_fixture(tmp_path: Path) -> None:
+    """Beta readiness should reject activation fixtures that cannot meet release token guardrails."""
+    _write_minimal_beta_ready_project(tmp_path)
+    (tmp_path / "BETA.md").write_text(
+        "# Beta Roadmap\n\n- remaining work\n- release criteria\n",
+        encoding="utf-8",
+    )
+    fixture = tmp_path / "reports" / "activation-release" / "agent-1.jsonl"
+    fixture.unlink()
+    log = EventLog(fixture)
+    now = datetime(2026, 5, 20, 12, 0, tzinfo=UTC)
+    log.append(
+        "memory.checkout.completed",
+        actor="zaxy-memory",
+        payload={
+            "source": "release-gate",
+            "token_efficiency": {
+                "prompt_tokens": 6000,
+                "current_fact_count": 1,
+                "evidence_count": 1,
+                "facts_per_1k_prompt_tokens": 0.05,
+            },
+        },
+        thread="agent-1",
+        timestamp=now - timedelta(minutes=5),
+    )
+    log.append(
+        "transcript.turn",
+        actor="assistant",
+        payload={"source": "release-gate", "role": "assistant"},
+        thread="agent-1",
+        timestamp=now - timedelta(minutes=1),
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["activation_release_fixture"]["status"] == "error"
+    assert "prompt_tokens=6000 exceeds 5000" in checks["activation_release_fixture"]["message"]
+    assert "facts_per_1k_prompt_tokens=0.05 is below 0.1" in checks["activation_release_fixture"]["message"]
+
+
+def test_beta_readiness_rejects_stale_activation_release_fixture(tmp_path: Path) -> None:
+    """Beta readiness should reject activation fixtures whose checkout is stale at release time."""
+    _write_minimal_beta_ready_project(tmp_path)
+    (tmp_path / "BETA.md").write_text(
+        "# Beta Roadmap\n\n- remaining work\n- release criteria\n",
+        encoding="utf-8",
+    )
+    fixture = tmp_path / "reports" / "activation-release" / "agent-1.jsonl"
+    fixture.unlink()
+    log = EventLog(fixture)
+    now = datetime(2026, 5, 20, 12, 0, tzinfo=UTC)
+    log.append(
+        "memory.checkout.completed",
+        actor="zaxy-memory",
+        payload={
+            "source": "release-gate",
+            "token_efficiency": {
+                "prompt_tokens": 400,
+                "current_fact_count": 2,
+                "evidence_count": 2,
+                "facts_per_1k_prompt_tokens": 5.0,
+            },
+        },
+        thread="agent-1",
+        timestamp=now - timedelta(hours=3),
+    )
+    log.append(
+        "transcript.turn",
+        actor="assistant",
+        payload={"source": "release-gate", "role": "assistant"},
+        thread="agent-1",
+        timestamp=now - timedelta(minutes=1),
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["activation_release_fixture"]["status"] == "error"
+    assert "checkout age 180.0 minutes exceeds 120 minutes" in checks["activation_release_fixture"]["message"]
+
+
 def _write_minimal_beta_ready_project(root: Path) -> None:
     (root / "scripts").mkdir()
     (root / ".github" / "workflows").mkdir(parents=True)
     (root / "docs").mkdir()
+    activation_log = EventLog(root / "reports" / "activation-release" / "agent-1.jsonl")
+    now = datetime(2026, 5, 20, 12, 0, tzinfo=UTC)
+    activation_log.append(
+        "memory.checkout.completed",
+        actor="zaxy-memory",
+        payload={
+            "source": "release-gate",
+            "token_efficiency": {
+                "prompt_tokens": 400,
+                "current_fact_count": 2,
+                "evidence_count": 2,
+                "facts_per_1k_prompt_tokens": 5.0,
+            },
+        },
+        thread="agent-1",
+        timestamp=now - timedelta(minutes=5),
+    )
+    activation_log.append(
+        "transcript.turn",
+        actor="assistant",
+        payload={"source": "release-gate", "role": "assistant"},
+        thread="agent-1",
+        timestamp=now - timedelta(minutes=1),
+    )
     (root / "pyproject.toml").write_text(
         '[project]\nname = "zaxy-memory"\nversion = "0.2.0"\n',
         encoding="utf-8",
@@ -344,20 +948,74 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
         "tests/test_packet_memory_e2e.py\n"
         "scripts/build-dist.sh\n"
         "scripts/validate-docs.sh\n"
-        "scripts/validate-deployment.sh\n",
+        "scripts/validate-deployment.sh\n"
+        "PYTHONPATH=src python -m zaxy hook-status\n"
+        "--eventloom-path reports/activation-release\n"
+        "--now 2026-05-20T12:00:00+00:00\n"
+        "--min-activation-rate 1.0\n"
+        "--max-checkout-prompt-tokens 5000\n"
+        "--min-checkout-facts-per-1k-tokens 0.1\n"
+        'BACKEND_SHOOTOUT_CMD="python scripts/check-backend-shootout.py reports/backend-shootout/backend-shootout.json '
+        "--require-report-metadata --require-markdown-report --verify-report-fingerprints --require-backends embedded,bm25 "
+        '--require-labeled-metrics --require-dashboard-source embedded=embedded --forbid-backends latticedb"\n'
+        'BACKEND_PERFORMANCE_CMD="python scripts/check-backend-shootout.py '
+        "reports/backend-shootout/longmemeval-40-backend-shootout.json --require-report-metadata "
+        "--require-markdown-report --verify-report-fingerprints --require-backends embedded,bm25 --require-labeled-metrics "
+        '--require-dashboard-source embedded=embedded --forbid-backends latticedb"\n'
+        'BACKEND_SCALE_CMD="python scripts/check-backend-shootout.py '
+        "reports/backend-shootout/longmemeval-100-backend-shootout.json --require-report-metadata "
+        "--require-markdown-report --verify-report-fingerprints --require-backends embedded,bm25 --require-labeled-metrics "
+        '--require-dashboard-source embedded=embedded --forbid-backends latticedb --max-checkout-p95-ms embedded=125"\n'
+        "--require-report-metadata\n"
+        "--require-markdown-report\n"
+        "--verify-report-fingerprints\n"
+        "backend-shootout.json\n"
+        "longmemeval-40-backend-shootout.json\n"
+        "longmemeval-100-backend-shootout.json\n"
+        "--min-quality-per-1k-injected-tokens embedded=1.0\n"
+        "--max-checkout-p95-ms embedded=125\n"
+        "--min-quality-per-1k-returned-tokens\n"
+        "--min-answer-at-5-per-1k-returned-tokens\n"
+        "--min-quality-per-1k-injected-tokens\n"
+        "--min-answer-at-5-per-1k-injected-tokens\n"
+        "--max-cold-bootstrap-ms\n"
+        "--max-first-checkout-ms\n"
+        "--max-append-to-projection-p95-ms\n"
+        "--max-resident-memory-delta-bytes\n"
+        "--max-on-disk-footprint-bytes\n"
+        "--max-dashboard-graph-load-ms\n"
+        "--max-checkout-p99-ms\n"
+        "--max-exact-p99-ms\n"
+        "--max-keyword-p95-ms\n"
+        "--max-keyword-p99-ms\n"
+        "--max-vector-p99-ms\n"
+        "--max-traversal-p99-ms\n",
         encoding="utf-8",
     )
     (root / "scripts" / "beta-uat.sh").write_text(
         "mktemp -d\n"
         "python -m pip install\n"
         "zaxy init local-codex local-claude\n"
+        'run_workspace "embedded" "" "status"\n'
+        "if [[ -n \"${preset}\" ]]\n"
+        '"${preset}"\n'
+        'grep -q "PROJECTION_BACKEND=embedded" .env.local\n'
+        'grep -q "NEO4J_AUTO_START=false" .env.local\n'
+        'grep -q "EMBEDDED_GRAPH_PATH=.eventloom/projections/embedded.kuzu" .env.local\n'
         "zaxy memory bootstrap\n"
         "zaxy memory checkout\n"
         "zaxy doctor\n"
-        "zaxy hook-status\n"
+        "zaxy hook-status --min-activation-rate 1.0 --max-checkout-prompt-tokens 5000 "
+        "--min-checkout-facts-per-1k-tokens 0.1\n"
         "zaxy capture status\n"
         "zaxy capture-soak\n"
-        "zaxy memory status\n",
+        "zaxy memory status\n"
+        "zaxy memory status --eventloom-path .eventloom --graph\n"
+        "Graph projection (backend=embedded):\n"
+        "zaxy memory inferred-status --session-id\n"
+        '"backend": "embedded"\n'
+        "zaxy reproject\n"
+        "using embedded\n",
         encoding="utf-8",
     )
     docs = (

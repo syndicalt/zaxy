@@ -352,7 +352,7 @@ PATHLIGHT_ACCESS_TOKEN_FILE=/run/secrets/pathlight_access_token</code></pre>
       <p>Before promoting a build, run:</p>
       <pre><code class="language-bash">zaxy doctor --release-smoke
 scripts/release-check.sh --root .</code></pre>
-      <p>The release smoke check verifies the package version, changelog entry, publish workflow, and PyPI Trusted Publishing posture. The release gate runs <code>ruff</code>, <code>mypy</code>, the full coverage-gated pytest suite, Python artifact build/metadata validation, public site/documentation validation, and deployment validation. A release is not ready until all six gates pass, the production <code>.env</code> points at TLS-enabled Neo4j, remote MCP/SSE bearer auth is configured, and secret files are not world-readable.</p>
+      <p>The release smoke check verifies the package version, changelog entry, publish workflow, and PyPI Trusted Publishing posture. The release gate runs <code>ruff</code>, <code>mypy</code>, the full coverage-gated pytest suite, Python artifact build/metadata validation, public site/documentation validation, deployment validation, backend shootout evidence, injected-token efficiency floors, and 100-query embedded scale validation. A release is not ready until all gates pass, the production <code>.env</code> points at TLS-enabled Neo4j, remote MCP/SSE bearer auth is configured, and secret files are not world-readable.</p>
       <h2 id="prometheus-alerts">Prometheus Alerts</h2>
       <pre><code class="language-yaml">groups:
   - name: zaxy-degraded-mode rules:
@@ -664,6 +664,7 @@ scripts/release-check.sh --root .</code></pre>
 zaxy serve --transport sse --port 8080  # Start MCP SSE server bound to localhost
 zaxy ide-config claude-desktop --eventloom-path .eventloom  # Print first-run MCP config
 zaxy local-profile --output .env.local  # Write offline retrieval profile
+zaxy local-profile --projection-backend embedded --output .env.local  # Write no-sidecar embedded profile
 zaxy local-profile --check  # Validate deterministic local retrieval providers
 zaxy init-session . --session-id zaxy-default  # Append workspace genesis profile event
 zaxy index-codebase . --session-id zaxy-default  # Append codebase file, symbol, import, dependency, call, and coverage events

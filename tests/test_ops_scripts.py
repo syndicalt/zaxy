@@ -425,6 +425,14 @@ def test_release_check_runs_quality_gates_in_order(tmp_path: Path) -> None:
             str(stub),
             "--validate-cmd",
             str(stub),
+            "--hook-status-cmd",
+            str(stub),
+            "--backend-shootout-cmd",
+            str(stub),
+            "--backend-performance-cmd",
+            str(stub),
+            "--backend-scale-cmd",
+            str(stub),
         ],
         cwd=Path.cwd(),
         check=True,
@@ -444,7 +452,69 @@ def test_release_check_runs_quality_gates_in_order(tmp_path: Path) -> None:
         f"{stub} --root {root}",
         f"{stub} --root {root}",
         f"{stub} --root {root}",
+        f"{stub} ",
+        f"{stub} ",
+        f"{stub} ",
+        f"{stub} ",
     ]
+
+
+def test_release_check_prefers_source_tree_imports(tmp_path: Path) -> None:
+    """Release gate should put the checked source tree ahead of any installed package."""
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "src").mkdir()
+    _write_deployment_fixture(root)
+    log_path = tmp_path / "commands.log"
+    stub = tmp_path / "stub.sh"
+    stub.write_text(
+        "#!/usr/bin/env bash\n"
+        "printf '%s\\n' \"$PYTHONPATH\" >> \"$RELEASE_CHECK_LOG\"\n",
+        encoding="utf-8",
+    )
+    stub.chmod(0o700)
+
+    subprocess.run(
+        [
+            "bash",
+            "scripts/release-check.sh",
+            "--root",
+            str(root),
+            "--ruff-cmd",
+            str(stub),
+            "--mypy-cmd",
+            str(stub),
+            "--pytest-cmd",
+            str(stub),
+            "--coverage-cmd",
+            str(stub),
+            "--packet-smoke-cmd",
+            str(stub),
+            "--package-cmd",
+            str(stub),
+            "--docs-cmd",
+            str(stub),
+            "--validate-cmd",
+            str(stub),
+            "--hook-status-cmd",
+            str(stub),
+            "--backend-shootout-cmd",
+            str(stub),
+            "--backend-performance-cmd",
+            str(stub),
+            "--backend-scale-cmd",
+            str(stub),
+        ],
+        cwd=Path.cwd(),
+        check=True,
+        text=True,
+        capture_output=True,
+        env={"RELEASE_CHECK_LOG": str(log_path), "PYTHONPATH": "/already/set"},
+    )
+
+    lines = log_path.read_text(encoding="utf-8").splitlines()
+    assert lines
+    assert all(line.startswith(f"{root / 'src'}:") for line in lines)
 
 
 def test_release_check_fails_fast_on_quality_gate_failure(tmp_path: Path) -> None:

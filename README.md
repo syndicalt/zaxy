@@ -16,20 +16,22 @@ Pathlight tracing.
 pipx install zaxy-memory
 # or: pip install zaxy-memory
 
-# Initialize local memory, MCP config guidance, profile, genesis, and heartbeat.
-# This checks graph infrastructure posture without starting containers.
-zaxy init . --domain my-project --preset local-codex --capture start --infra check
+# Initialize local memory, Codex MCP guidance, deterministic capture config,
+# profile, genesis, heartbeat, and no-sidecar embedded graph posture.
+zaxy init
 
 # Prove the local Eventloom log and model bootstrap are readable.
-zaxy memory log --eventloom-path .eventloom --session-id my-project-default --limit 5
-zaxy memory bootstrap --eventloom-path .eventloom --session-id my-project-default
+zaxy memory log --eventloom-path .eventloom --limit 5
+zaxy memory bootstrap --eventloom-path .eventloom
 zaxy doctor --eventloom-path .eventloom
 ```
 
 Your local data lives under `.eventloom/` as one append-only JSONL file per
-session. `zaxy init` prints the MCP config or install command for your selected
-client, shows the selected graph backend posture, and ends with copyable local
-verification commands.
+session. Bare `zaxy init` now expands to the local embedded Codex path: it
+prints the Codex MCP install command, writes `.codex/zaxy-capture.json`, writes
+`.env.local`, checks the repo-local embedded graph posture, and ends with
+copyable local verification commands. It does not start a background watcher
+unless you pass `--capture start`.
 
 For Claude Code instead of Codex:
 

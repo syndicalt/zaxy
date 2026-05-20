@@ -16,6 +16,7 @@ from zaxy.hooks import HOOK_CLIENTS, inspect_hook_status, render_hook_config
 from zaxy.install import resolve_zaxy_executable
 from zaxy.local_profile import check_local_profile
 from zaxy.packet_guidance import build_packet_capture_guidance
+from zaxy.runtime import LocalEmbeddedGraphRuntime, LocalPgGraphRuntime
 from zaxy.security import eventlog_path
 from zaxy.viewer import write_viewer_html
 
@@ -43,7 +44,7 @@ def run_doctor(
         _check_observation_coverage(hook_status),
         _check_capture_health(hook_status),
         _check_packet_memory(active),
-        _check_neo4j(active),
+        _check_projection_backend(active),
         _check_production(active),
     ]
     return {
@@ -482,6 +483,32 @@ def _tcp_port_open(host: str, port: int) -> bool:
             return True
     except OSError:
         return False
+
+
+def _check_projection_backend(settings: Settings) -> dict[str, str]:
+    backend = settings.projection_backend.casefold().strip()
+    if backend == "embedded":
+        check = LocalEmbeddedGraphRuntime(settings.embedded_graph_path).check()
+        return {
+            "name": "embedded_graph",
+            "status": check.status,
+            "message": check.message,
+        }
+    if backend == "pggraph":
+        check = LocalPgGraphRuntime(
+            settings.pggraph_dsn,
+            enabled=settings.pggraph_auto_start and settings.zaxy_env.lower() != "production",
+            image=settings.pggraph_auto_start_image,
+            container_name=settings.pggraph_auto_start_container,
+            pggraph_repo=settings.pggraph_repo,
+        ).check()
+        return {
+            "name": "pggraph",
+            "status": check.status,
+            "message": check.message,
+            "action": "Run zaxy status --projection-backend pggraph for live runtime posture.",
+        }
+    return _check_neo4j(settings)
 
 
 def _check_neo4j(settings: Settings) -> dict[str, str]:

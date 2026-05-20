@@ -65,6 +65,11 @@ def test_build_session_genesis_event_contains_profile_and_write_instructions(tmp
                 ],
                 "avoid_writing": ["raw_secrets", "full_source_bodies", "transient_chatter"],
                 "indexing_strategy": "metadata_only_codebase_map",
+                "memory_activation": {
+                    "required_tool": "memory_checkout",
+                    "before": ["roadmap", "implementation", "release", "review", "resume", "high_context_question"],
+                    "reason": "Keep model work grounded in fresh, cited Zaxy memory.",
+                },
             },
         },
     }

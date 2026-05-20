@@ -143,6 +143,11 @@ class MemoryCheckout:
             "diagnostics": self.diagnostics,
             "context_counts": self.context_counts,
             "replay_event_count": self.replay_event_count,
+            "token_efficiency": checkout_token_efficiency(
+                prompt=self.prompt,
+                current_fact_count=len(self.current_facts),
+                evidence_count=len(self.evidence),
+            ),
             "compacted": self.compacted,
             "assembly_policy": self.assembly_policy,
         }
@@ -157,6 +162,30 @@ class QueryPage:
     cursor: str | None
     has_more: bool
     offset: int
+
+
+def checkout_token_efficiency(
+    *,
+    prompt: str,
+    current_fact_count: int,
+    evidence_count: int,
+) -> dict[str, int | float]:
+    """Estimate Memory Checkout token efficiency for activation diagnostics."""
+    prompt_tokens = _approx_tokens(prompt)
+    return {
+        "prompt_tokens": prompt_tokens,
+        "current_fact_count": current_fact_count,
+        "evidence_count": evidence_count,
+        "facts_per_1k_prompt_tokens": round((current_fact_count / prompt_tokens) * 1000, 3)
+        if prompt_tokens
+        else 0.0,
+    }
+
+
+def _approx_tokens(text: str) -> int:
+    if not text:
+        return 0
+    return max(1, (len(text) + 3) // 4)
 
     def to_dict(self) -> dict[str, Any]:
         """Return a stable JSON-serializable pagination payload."""
@@ -231,6 +260,8 @@ class MemoryFabric:
         projection_paths: list[str | Path] | tuple[str | Path, ...] = (),
         projection_backend: str | None = None,
         pggraph_dsn: str | None = None,
+        embedded_graph_path: str | Path | None = None,
+        latticedb_path: str | Path | None = None,
     ) -> None:
         """Initialize fabric with configuration.
 
@@ -255,6 +286,9 @@ class MemoryFabric:
                 neo4j_ca_cert=neo4j_ca_cert if neo4j_ca_cert is not None else resolved_settings.neo4j_ca_cert,
                 neo4j_trust_all=neo4j_trust_all if neo4j_trust_all is not None else resolved_settings.neo4j_trust_all,
                 pggraph_dsn=pggraph_dsn or resolved_settings.pggraph_dsn,
+                embedded_graph_path=Path(embedded_graph_path or resolved_settings.embedded_graph_path),
+                latticedb_path=Path(latticedb_path or resolved_settings.latticedb_path),
+                embedding_dimension=resolved_settings.embedding_dimension,
             )
         )
         self.query_router = QueryRouter(

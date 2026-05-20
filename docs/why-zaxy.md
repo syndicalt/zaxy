@@ -39,9 +39,9 @@ point keeps that cost visible rather than hiding it:
 
 ```bash
 pipx install zaxy-memory
-zaxy init . --domain my-project --preset local-codex --capture start --infra check
-zaxy memory log --eventloom-path .eventloom --session-id my-project-default --limit 5
-zaxy memory bootstrap --eventloom-path .eventloom --session-id my-project-default
+zaxy init
+zaxy memory log --eventloom-path .eventloom --limit 5
+zaxy memory bootstrap --eventloom-path .eventloom
 zaxy doctor --eventloom-path .eventloom
 ```
 

@@ -101,7 +101,15 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     projection_backend: str = Field(
         default="neo4j",
-        description="Projection backend: neo4j or experimental pggraph",
+        description="Projection backend: neo4j, experimental pggraph, embedded, or latticedb",
+    )
+    embedded_graph_path: str = Field(
+        default=".eventloom/projections/embedded.kuzu",
+        description="Repo-local embedded graph projection path",
+    )
+    latticedb_path: str = Field(
+        default=".eventloom/projections/memory.latticedb",
+        description="Repo-local LatticeDB projection path",
     )
     pggraph_dsn: str = Field(
         default="postgresql://postgres:postgres@localhost:5432/zaxy",

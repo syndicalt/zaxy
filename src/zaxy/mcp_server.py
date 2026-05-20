@@ -48,7 +48,7 @@ from zaxy.projection_backends import ProjectionBackendConfig, build_projection_s
 from zaxy.query import QueryRouter, build_retention_policy
 from zaxy.refs import MemoryRef, MemoryRefStore
 from zaxy.remote_security import AuditEventExporter, RemoteAuditEvent, SessionRateLimiter
-from zaxy.runtime import LocalNeo4jRuntime, LocalPgGraphRuntime
+from zaxy.runtime import LocalEmbeddedGraphRuntime, LocalNeo4jRuntime, LocalPgGraphRuntime
 from zaxy.security import (
     MAX_QUERY_LIMIT,
     MAX_REPLAY_EVENTS,
@@ -365,10 +365,15 @@ class ZaxyMCPServer:
         neo4j_uri: str | None = None,
         neo4j_user: str | None = None,
         neo4j_password: str | None = None,
+        projection_backend: str | None = None,
+        pggraph_dsn: str | None = None,
+        embedded_graph_path: str | Path | None = None,
+        latticedb_path: str | Path | None = None,
         workspace_root: str | Path | None = None,
         default_session_id: str | None = None,
     ) -> None:
         settings = get_settings()
+        backend = projection_backend or settings.projection_backend
         self._admin_token = settings.mcp_admin_token
         self._default_session_id = validate_session_id(default_session_id or settings.eventloom_thread)
         self._lifecycle_capture_enabled = settings.mcp_lifecycle_capture_enabled
@@ -381,21 +386,29 @@ class ZaxyMCPServer:
         self._neo4j_uri = neo4j_uri or settings.neo4j_uri
         self._neo4j_user = neo4j_user or settings.neo4j_user
         self._neo4j_password = neo4j_password or settings.neo4j_password
-        self.local_projection_runtime = self._build_local_projection_runtime(settings)
+        self.local_projection_runtime = self._build_local_projection_runtime(
+            settings,
+            projection_backend=backend,
+            pggraph_dsn=pggraph_dsn,
+            embedded_graph_path=embedded_graph_path,
+        )
         self.local_neo4j = (
             self.local_projection_runtime
-            if settings.projection_backend.casefold().strip() != "pggraph"
+            if backend.casefold().strip() != "pggraph"
             else None
         )
         self.graph = build_projection_store(
             ProjectionBackendConfig(
-                backend=settings.projection_backend,
+                backend=backend,
                 neo4j_uri=self._neo4j_uri,
                 neo4j_user=self._neo4j_user,
                 neo4j_password=self._neo4j_password,
                 neo4j_ca_cert=settings.neo4j_ca_cert,
                 neo4j_trust_all=settings.neo4j_trust_all,
-                pggraph_dsn=settings.pggraph_dsn,
+                pggraph_dsn=pggraph_dsn or settings.pggraph_dsn,
+                embedded_graph_path=Path(embedded_graph_path or settings.embedded_graph_path),
+                latticedb_path=Path(latticedb_path or settings.latticedb_path),
+                embedding_dimension=settings.embedding_dimension,
             )
         )
         self.tracer = MemoryTracer(
@@ -409,15 +422,25 @@ class ZaxyMCPServer:
             verbatim_slots=settings.context_verbatim_slots,
         )
 
-    def _build_local_projection_runtime(self, settings: Any) -> LocalNeo4jRuntime | LocalPgGraphRuntime:
-        if settings.projection_backend.casefold().strip() == "pggraph":
+    def _build_local_projection_runtime(
+        self,
+        settings: Any,
+        *,
+        projection_backend: str | None = None,
+        pggraph_dsn: str | None = None,
+        embedded_graph_path: str | Path | None = None,
+    ) -> LocalNeo4jRuntime | LocalPgGraphRuntime | LocalEmbeddedGraphRuntime:
+        backend = (projection_backend or settings.projection_backend).casefold().strip()
+        if backend == "pggraph":
             return LocalPgGraphRuntime(
-                dsn=settings.pggraph_dsn,
+                dsn=pggraph_dsn or settings.pggraph_dsn,
                 enabled=settings.pggraph_auto_start and settings.zaxy_env.lower() != "production",
                 image=settings.pggraph_auto_start_image,
                 container_name=settings.pggraph_auto_start_container,
                 pggraph_repo=settings.pggraph_repo,
             )
+        if backend == "embedded":
+            return LocalEmbeddedGraphRuntime(path=embedded_graph_path or settings.embedded_graph_path)
         return LocalNeo4jRuntime(
             uri=self._neo4j_uri,
             user=self._neo4j_user,
@@ -936,6 +959,7 @@ class ZaxyMCPServer:
             activity="checkout",
             source="mcp",
             query=query,
+            metadata=_checkout_activity_metadata(output),
         )
         return [TextContent(type="text", text=json.dumps(output, indent=2))]
 
@@ -1323,6 +1347,13 @@ class RemoteRequestGuard:
                 client_host=client_host,
             )
         )
+
+
+def _checkout_activity_metadata(payload: dict[str, Any]) -> dict[str, Any]:
+    token_efficiency = payload.get("token_efficiency")
+    if isinstance(token_efficiency, dict):
+        return {"token_efficiency": token_efficiency}
+    return {}
 
 
 def _context_assembly_from_payload(payload: dict[str, Any]) -> ContextAssembly:

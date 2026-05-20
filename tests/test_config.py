@@ -50,6 +50,18 @@ def test_pggraph_bootstrap_defaults_are_local_and_explicit() -> None:
     assert settings.pggraph_repo is None
 
 
+def test_embedded_graph_path_defaults_to_eventloom_projection_file() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.embedded_graph_path == ".eventloom/projections/embedded.kuzu"
+
+
+def test_latticedb_path_defaults_to_eventloom_projection_file() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.latticedb_path == ".eventloom/projections/memory.latticedb"
+
+
 def test_retention_policy_defaults_are_non_destructive() -> None:
     settings = Settings(_env_file=None)
 

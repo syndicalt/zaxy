@@ -363,6 +363,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 - [x] Incremental `zaxy refresh-context` for document/code source deltas with Neo4j and pgGraph stale projection retirement
 - [x] Memory Persistence / Agent Recall Hardening with reminder policy, lifecycle hook suggestions, checkout activity markers, dashboard status, and framework checkout middleware
 - [x] Full-set LongMemEval synthesis improved without floor regression: archived hash checkout mean 0.724, Answer@5 0.628, R@5 0.972, citation coverage 1.000
+- [x] LatticeDB backend candidate behind `PROJECTION_BACKEND=latticedb` with projection, exact search, native full-text search, native vector search, traversal, temporal invalidation, source retirement, Eventloom citation metadata, projection status, inferred-edge diagnostics, and backend shootout routing
 
 ## Metrics
 
@@ -378,4 +379,24 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 ## Next Steps
 
-No open items for the current roadmap sprint.
+1. Build the zero-friction embedded graph runtime prototype further by
+   running the same-harness backend shootout at meaningful scale, reporting
+   projection throughput, checkout latency, traversal latency, returned tokens,
+   injected tokens, LongMemEval Answer@5/Recall@5, citation coverage, dashboard
+   graph load time, memory footprint, and rebuild recovery for embedded,
+   LatticeDB, Neo4j, pgGraph, and BM25.
+2. Build the Memory Activation Layer so `zaxy init` and a launcher path such as
+   `zaxy activate codex` make checkout/context injection the default session
+   behavior, while CLI and dashboard surfaces expose last checkout, last
+   capture, stale checkout, no-memory-use warnings, and token-efficiency
+   diagnostics.
+3. Keep Neo4j as the release default and quality control backend until the
+   embedded graph path preserves temporal semantics, citations, inferred-edge
+   metadata, session isolation, dashboard graph rendering, and published
+   LongMemEval guardrails.
+4. Continue the pgGraph collaboration track for Postgres-native deployments and
+   embedded packaging or library-mode options, but do not make pgGraph the
+   default unless it beats the same gates without sidecar friction.
+5. Continue LatticeDB evaluation as a first-class embedded candidate. Do not
+   make it the default until the adapter passes the same contract, benchmark,
+   and operations gates at representative scale.

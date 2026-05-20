@@ -49,6 +49,7 @@ def record_memory_activity(
     activity: MemoryActivity,
     source: str,
     query: str | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> Event:
     """Append a lightweight memory activity marker."""
     sid = validate_session_id(session_id)
@@ -58,6 +59,8 @@ def record_memory_activity(
     }
     if query:
         payload["query"] = query
+    if metadata:
+        payload.update(metadata)
     return _eventlog(eventloom_path, sid).append(
         MEMORY_ACTIVITY_EVENT_TYPES[activity],
         actor="zaxy-memory",

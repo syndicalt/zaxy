@@ -290,11 +290,11 @@ passed.
 Codex is CLI-assisted by default: `zaxy ide-config codex --install` prints the
 official `codex mcp add zaxy -- zaxy serve` command. Codex config is kept
 workspace-neutral because user-level Codex MCP servers can be reused across
-repositories: it may include local runtime defaults such as localhost Neo4j and
-empty TLS/password-file overrides, but it must not include repo identity values
-such as `EVENTLOOM_PATH`, `EVENTLOOM_THREAD`, or `ZAXY_DOMAIN`. A bare
-`zaxy serve` resolves `.eventloom` and the domain-prefixed default session from
-the process workspace at startup. Direct TOML writes are opt-in through
+repositories: it does not write graph-backend variables such as `NEO4J_URI`,
+`PROJECTION_BACKEND`, or repo identity values such as `EVENTLOOM_PATH`,
+`EVENTLOOM_THREAD`, or `ZAXY_DOMAIN`. A bare `zaxy serve` resolves `.eventloom`,
+the projection backend, and the domain-prefixed default session from the process
+workspace at startup. Direct TOML writes are opt-in through
 `--codex-config-scope project|user`. Project-scoped writes target
 `.codex/config.toml` and require `--codex-trusted-project` because Codex only
 loads project config from trusted projects. User-scoped writes target
@@ -310,8 +310,8 @@ Hermes server workspace-neutral for the same reason as Codex: the global config
 may be reused across repositories. `zaxy ide-config hermes` prints the YAML
 fragment. `zaxy ide-config hermes --install` merges it into the Hermes config,
 or `--hermes-config /path/to/config.yaml` can target an explicit file. The
-generated entry exposes the model-facing memory tools and local Neo4j startup
-defaults, but does not write repo-specific `EVENTLOOM_PATH`, `EVENTLOOM_THREAD`,
+generated entry exposes the model-facing memory tools without writing
+graph-backend variables or repo-specific `EVENTLOOM_PATH`, `EVENTLOOM_THREAD`,
 or `ZAXY_DOMAIN`; `zaxy serve` derives those from the current workspace at
 startup.
 

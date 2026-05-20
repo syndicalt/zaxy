@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import asyncio
+import importlib.util
 from datetime import date
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -18,7 +21,9 @@ from zaxy.dashboard import (
     render_dashboard_html,
     resolve_dashboard_scope,
 )
+from zaxy.embedded_graph_store import EmbeddedGraphStore
 from zaxy.event import EventLog
+from zaxy.extract import ExtractedEdge, ExtractedEntity, ExtractionResult
 
 
 def test_dashboard_scope_defaults_to_current_workspace(tmp_path: Path) -> None:
@@ -72,6 +77,15 @@ def test_dashboard_scope_accepts_pggraph_backend(tmp_path: Path) -> None:
 
     assert scope.projection_backend == "pggraph"
     assert scope.pggraph_dsn == "postgresql://postgres:postgres@localhost:5432/zaxy"
+
+
+def test_dashboard_scope_accepts_latticedb_candidate_backend(tmp_path: Path) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+
+    scope = resolve_dashboard_scope(DashboardConfig(workspace=workspace, projection_backend="latticedb"))
+
+    assert scope.projection_backend == "latticedb"
 
 
 def test_dashboard_scope_rejects_unknown_projection_backend(tmp_path: Path) -> None:
@@ -134,6 +148,104 @@ def test_dashboard_surfaces_memory_persistence_status(tmp_path: Path) -> None:
     assert body["memory_persistence"]["last_checkout_seq"] == 2
 
 
+def test_dashboard_surfaces_memory_activation_status(tmp_path: Path) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    log = EventLog(workspace / ".eventloom" / "default.jsonl")
+    checkout = log.append(
+        "memory.checkout.completed",
+        actor="zaxy-memory",
+        payload={"source": "dashboard-test"},
+    )
+    capture = log.append(
+        "transcript.turn",
+        actor="assistant",
+        payload={"source": "codex", "role": "assistant"},
+    )
+    app = DashboardApp(resolve_dashboard_scope(DashboardConfig(workspace=workspace)))
+
+    status_code, _headers, body = app.handle_api("GET", "/api/status", "")
+
+    assert status_code == 200
+    assert body["memory_activation"]["status"] == "ok"
+    assert body["memory_activation"]["message"] == "Latest memory checkout is fresh"
+    assert body["memory_activation"]["latest_checkout"]["seq"] == checkout.seq
+    assert body["memory_activation"]["latest_capture"]["seq"] == capture.seq
+    assert body["memory_activation"]["actions"] == []
+
+
+def test_dashboard_warns_when_memory_activation_is_missing(tmp_path: Path) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    log = EventLog(workspace / ".eventloom" / "default.jsonl")
+    capture = log.append(
+        "command.completed",
+        actor="zaxy-observer",
+        payload={"source": "codex", "command": "pytest"},
+    )
+    reminder = log.append(
+        "memory.reminder.suggested",
+        actor="zaxy-memory",
+        payload={"recommended_tool": "memory_checkout", "source": "codex"},
+    )
+    app = DashboardApp(resolve_dashboard_scope(DashboardConfig(workspace=workspace)))
+
+    status_code, _headers, body = app.handle_api("GET", "/api/status", "")
+
+    assert status_code == 200
+    assert body["memory_activation"]["status"] == "warning"
+    assert body["memory_activation"]["message"] == "No memory checkout events found"
+    assert body["memory_activation"]["latest_checkout"] is None
+    assert body["memory_activation"]["latest_capture"]["seq"] == capture.seq
+    assert body["memory_activation"]["latest_reminder"]["seq"] == reminder.seq
+    assert body["memory_activation"]["actions"] == [
+        "Run memory checkout before relying on Zaxy context.",
+    ]
+
+
+def test_dashboard_surfaces_activation_efficiency_metric(tmp_path: Path) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    ready = EventLog(workspace / ".eventloom" / "ready.jsonl")
+    ready.append(
+        "memory.checkout.completed",
+        actor="zaxy-memory",
+        payload={
+            "source": "dashboard-test",
+            "token_efficiency": {
+                "prompt_tokens": 160,
+                "current_fact_count": 2,
+                "evidence_count": 3,
+                "facts_per_1k_prompt_tokens": 12.5,
+            },
+        },
+        thread="ready",
+    )
+    ready.append("transcript.turn", actor="assistant", payload={"source": "codex", "role": "assistant"}, thread="ready")
+    missing = EventLog(workspace / ".eventloom" / "missing.jsonl")
+    missing.append("command.completed", actor="zaxy-observer", payload={"source": "codex"}, thread="missing")
+    app = DashboardApp(resolve_dashboard_scope(DashboardConfig(workspace=workspace)))
+
+    status_code, _headers, body = app.handle_api("GET", "/api/status", "")
+
+    assert status_code == 200
+    efficiency = body["memory_activation"]["activation_efficiency"]
+    assert efficiency["high_context_session_count"] == 2
+    assert efficiency["fresh_checkout_session_count"] == 1
+    assert efficiency["fresh_checkout_rate"] == 0.5
+    assert {session["status"] for session in efficiency["sessions"]} == {
+        "fresh_checkout",
+        "missing_checkout",
+    }
+    ready_session = next(session for session in efficiency["sessions"] if session["session_id"] == "ready")
+    assert ready_session["checkout"]["token_efficiency"] == {
+        "prompt_tokens": 160,
+        "current_fact_count": 2,
+        "evidence_count": 3,
+        "facts_per_1k_prompt_tokens": 12.5,
+    }
+
+
 def test_dashboard_shell_shows_memory_persistence_metrics() -> None:
     html = render_dashboard_html()
 
@@ -141,6 +253,20 @@ def test_dashboard_shell_shows_memory_persistence_metrics() -> None:
     assert "Last feedback" in html
     assert "Last bootstrap" in html
     assert "memory-persistence-warning" in html
+    assert "Activation" in html
+    assert "Activation rate" in html
+    assert "metric-activation-rate" in html
+    assert "Checkout tokens" in html
+    assert "metric-checkout-tokens" in html
+    assert "Facts / 1k tokens" in html
+    assert "metric-checkout-facts-per-token" in html
+    assert "Latest capture" in html
+    assert "Latest reminder" in html
+    assert "metric-latest-reminder" in html
+    assert "memory-activation-warning" in html
+    assert "checkout-query" in html
+    assert "Run checkout" in html
+    assert "checkout-json" in html
 
 
 def test_default_dashboard_graph_uses_eventloom_when_neo4j_is_absent(tmp_path: Path) -> None:
@@ -353,6 +479,135 @@ def test_build_dashboard_graph_provider_can_use_pggraph_projection_store(
 
     assert isinstance(provider, FallbackDashboardGraphProvider)
     assert isinstance(provider.primary, ProjectionDashboardGraphProvider)
+
+
+@pytest.mark.skipif(importlib.util.find_spec("kuzu") is None, reason="kuzu is not installed")
+def test_build_dashboard_graph_provider_can_use_embedded_projection_store(
+    tmp_path: Path,
+) -> None:
+    """Dashboard graph routes should read the actual embedded projection, not Eventloom fallback."""
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    graph_path = tmp_path / "embedded.kuzu"
+
+    async def project() -> None:
+        store = EmbeddedGraphStore(graph_path)
+        await store.connect()
+        await store.init_schema()
+        await store.upsert_extraction(
+            ExtractionResult(
+                entities=[
+                    ExtractedEntity(
+                        name="Embedded Goal",
+                        entity_type="goal",
+                        observed_at="2026-05-20T01:00:00Z",
+                        summary="ship embedded graph",
+                    ),
+                    ExtractedEntity(
+                        name="Embedded Task",
+                        entity_type="task",
+                        observed_at="2026-05-20T01:00:00Z",
+                        summary="wire dashboard",
+                    ),
+                ],
+                edges=[
+                    ExtractedEdge(
+                        source="Embedded Task",
+                        target="Embedded Goal",
+                        relation_type="supports",
+                        valid_from="2026-05-20T01:00:00Z",
+                    )
+                ],
+                source_event_seq=7,
+                source_event_hash="hash-7",
+                source_event_type="task.proposed",
+                source_thread="agent-1",
+            ),
+            session_id="agent-1",
+        )
+        await store.close()
+
+    asyncio.run(project())
+    scope = resolve_dashboard_scope(
+        DashboardConfig(
+            workspace=workspace,
+            session_id="agent-1",
+            projection_backend="embedded",
+            embedded_graph_path=graph_path,
+        )
+    )
+
+    provider = build_dashboard_graph_provider(scope)
+
+    assert isinstance(provider, FallbackDashboardGraphProvider)
+    summary = provider.summary(session_id="agent-1")
+    assert summary["source"] == "embedded"
+    assert summary["nodes"] == 2
+    assert summary["edges"] == 1
+    assert {node["label"] for node in summary["elements"]["nodes"]} == {
+        "Embedded Goal",
+        "Embedded Task",
+    }
+    assert summary["elements"]["edges"][0]["type"] == "supports"
+
+    app = DashboardApp(scope, graph_provider=provider)
+    status_code, _headers, body = app.handle_api("GET", "/api/graph/search", "q=dashboard")
+    assert status_code == 200
+    assert body["graph"]["source"] == "embedded"
+    assert body["graph"]["nodes"][0]["label"] == "Embedded Task"
+
+    status_code, _headers, body = app.handle_api(
+        "GET",
+        "/api/graph/neighborhood",
+        "node_id=Embedded%20Task&hops=1",
+    )
+    assert status_code == 200
+    assert body["graph"]["source"] == "embedded"
+    assert body["graph"]["edges"][0]["type"] == "supports"
+
+    task_node = next(node for node in summary["elements"]["nodes"] if node["label"] == "Embedded Task")
+    status_code, _headers, body = app.handle_api(
+        "GET",
+        "/api/graph/path-to-event",
+        f"node_id={task_node['id']}",
+    )
+    assert status_code == 200
+    assert body["graph"]["source"] == "embedded"
+    assert body["graph"]["nodes"][1]["id"] == "event:agent-1:7"
+
+
+@pytest.mark.skipif(importlib.util.find_spec("kuzu") is None, reason="kuzu is not installed")
+def test_embedded_dashboard_graph_provider_reports_empty_uninitialized_projection(
+    tmp_path: Path,
+) -> None:
+    """Bare embedded dashboard graph routes should not fall back to Eventloom projection."""
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    log = EventLog(workspace / ".eventloom" / "agent-1.jsonl")
+    log.append("hook.heartbeat", actor="zaxy-init", payload={"source": "zaxy-init"}, thread="agent-1")
+    scope = resolve_dashboard_scope(
+        DashboardConfig(
+            workspace=workspace,
+            session_id="agent-1",
+            projection_backend="embedded",
+            embedded_graph_path=workspace / ".eventloom" / "projections" / "embedded.kuzu",
+        )
+    )
+
+    provider = build_dashboard_graph_provider(scope)
+
+    summary = provider.summary(session_id="agent-1")
+    assert summary["available"] is True
+    assert summary["source"] == "embedded"
+    assert summary["nodes"] == 0
+    assert summary["edges"] == 0
+    assert summary["elements"] == {"nodes": [], "edges": []}
+
+    app = DashboardApp(scope, graph_provider=provider)
+    status_code, _headers, body = app.handle_api("GET", "/api/graph/search", "q=heartbeat")
+    assert status_code == 200
+    assert body["graph"]["source"] == "embedded"
+    assert body["graph"]["nodes"] == []
 
 
 def test_projection_dashboard_graph_provider_renders_pggraph_rows() -> None:
@@ -616,16 +871,70 @@ def test_dashboard_graph_routes_validate_required_parameters(tmp_path: Path) -> 
     assert body["error"] == "not_found"
 
 
-def test_dashboard_checkout_endpoint_is_read_only_placeholder(tmp_path: Path) -> None:
+def test_dashboard_checkout_endpoint_returns_read_only_checkout_diagnostics(tmp_path: Path) -> None:
     workspace = tmp_path / "project"
     workspace.mkdir()
+    log = EventLog(workspace / ".eventloom" / "default.jsonl")
+    log.append(
+        "decision.recorded",
+        actor="assistant",
+        payload={"decision": "Use embedded graph for local memory."},
+    )
     app = DashboardApp(resolve_dashboard_scope(DashboardConfig(workspace=workspace)))
 
-    status_code, _headers, body = app.handle_api("GET", "/api/checkout", "query=hello")
+    status_code, _headers, body = app.handle_api("GET", "/api/checkout", "query=embedded+memory&limit=3")
 
     assert status_code == 200
-    assert body["checkout"]["available"] is False
-    assert body["checkout"]["query"] == "hello"
+    assert body["checkout"]["available"] is True
+    assert body["checkout"]["session_id"] == "default"
+    assert body["checkout"]["query"] == "embedded memory"
+    assert body["checkout"]["payload"]["query"] == "embedded memory"
+    assert 0.0 <= body["checkout"]["payload"]["quality"]["confidence"] <= 1.0
+    assert "diagnostics" in body["checkout"]["payload"]
+    assert [event.type for event in EventLog(workspace / ".eventloom" / "default.jsonl").read_all()] == [
+        "decision.recorded"
+    ]
+
+
+@patch("zaxy.dashboard.MemoryFabric")
+def test_dashboard_checkout_passes_embedded_projection_path(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Dashboard checkout should use the same embedded projection path as graph routes."""
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    embedded_path = tmp_path / "embedded.kuzu"
+
+    class FakeCheckout:
+        def to_dict(self) -> dict[str, object]:
+            return {"query": "embedded", "quality": {"confidence": 1.0}}
+
+    class FakeFabric:
+        async def checkout_memory(self, *_args: object, **_kwargs: object) -> FakeCheckout:
+            return FakeCheckout()
+
+        async def close(self) -> None:
+            return None
+
+    mock_fabric_cls.return_value = FakeFabric()
+    app = DashboardApp(
+        resolve_dashboard_scope(
+            DashboardConfig(
+                workspace=workspace,
+                projection_backend="embedded",
+                embedded_graph_path=embedded_path,
+            )
+        )
+    )
+
+    status_code, _headers, body = app.handle_api("GET", "/api/checkout", "query=embedded")
+
+    assert status_code == 200
+    assert body["checkout"]["available"] is True
+    kwargs = mock_fabric_cls.call_args.kwargs
+    assert kwargs["projection_backend"] == "embedded"
+    assert kwargs["embedded_graph_path"] == embedded_path
 
 
 def test_neo4j_dashboard_provider_uses_direct_reads_without_transaction_retry() -> None:

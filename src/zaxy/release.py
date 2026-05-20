@@ -4,11 +4,24 @@ from __future__ import annotations
 
 import re
 import tomllib
+from datetime import UTC, datetime
 from importlib import metadata
 from pathlib import Path
 from typing import Any
 
+from zaxy.event import EventLog
+
 PACKAGE_NAME = "zaxy-memory"
+ACTIVATION_FIXTURE_NOW = datetime(2026, 5, 20, 12, 0, tzinfo=UTC)
+ACTIVATION_FIXTURE_MAX_CHECKOUT_AGE_MINUTES = 120
+ACTIVATION_FIXTURE_MAX_PROMPT_TOKENS = 5000
+ACTIVATION_FIXTURE_MIN_FACTS_PER_1K_PROMPT_TOKENS = 0.1
+HIGH_CONTEXT_EVENT_TYPES = {
+    "command.completed",
+    "file.edit.applied",
+    "tool.call.completed",
+    "transcript.turn",
+}
 
 
 def package_version(*, project_root: Path | None = None) -> str:
@@ -68,6 +81,7 @@ def run_beta_readiness(*, project_root: str | Path | None = None) -> dict[str, A
     checks = [
         _check_release_smoke_gate(root),
         _check_release_gate_script(root),
+        _check_activation_release_fixture(root),
         _check_clean_repo_uat(root),
         _check_docs_happy_path(root),
         _check_capture_happy_path(root),
@@ -224,8 +238,87 @@ def _check_release_gate_script(root: Path) -> dict[str, str]:
         "scripts/build-dist.sh",
         "scripts/validate-docs.sh",
         "scripts/validate-deployment.sh",
+        "PYTHONPATH=src python -m zaxy hook-status",
+        "--eventloom-path reports/activation-release",
+        "--now 2026-05-20T12:00:00+00:00",
+        "--min-activation-rate 1.0",
+        "--max-checkout-prompt-tokens 5000",
+        "--min-checkout-facts-per-1k-tokens 0.1",
+        "scripts/check-backend-shootout.py",
+        "--forbid-backends latticedb",
+        "--require-dashboard-source embedded=embedded",
+        "--require-backends embedded,bm25",
+        "--require-report-metadata",
+        "--require-markdown-report",
+        "--verify-report-fingerprints",
+        "backend-shootout.json",
+        "--min-quality-per-1k-injected-tokens embedded=1.0",
+        "longmemeval-40-backend-shootout.json",
+        "--min-quality-per-1k-returned-tokens",
+        "--min-answer-at-5-per-1k-returned-tokens",
+        "--min-quality-per-1k-injected-tokens",
+        "--min-answer-at-5-per-1k-injected-tokens",
+        "--max-cold-bootstrap-ms",
+        "--max-first-checkout-ms",
+        "--max-append-to-projection-p95-ms",
+        "--max-resident-memory-delta-bytes",
+        "--max-on-disk-footprint-bytes",
+        "--max-dashboard-graph-load-ms",
+        "longmemeval-100-backend-shootout.json",
+        "--max-checkout-p95-ms embedded=125",
+        "--max-checkout-p99-ms",
+        "--max-exact-p99-ms",
+        "--max-keyword-p99-ms",
+        "--max-vector-p99-ms",
+        "--max-traversal-p99-ms",
+        "--max-keyword-p95-ms",
     ]
     missing = [item for item in required if item not in script]
+    required_counts = {
+        "--forbid-backends latticedb": 3,
+    }
+    missing.extend(
+        f"{item} ({count} occurrences)"
+        for item, count in required_counts.items()
+        if script.count(item) < count
+    )
+    backend_command_flags = {
+        "BACKEND_SHOOTOUT_CMD": [
+            "--forbid-backends latticedb",
+            "--require-dashboard-source embedded=embedded",
+            "--require-backends embedded,bm25",
+            "--require-report-metadata",
+            "--require-markdown-report",
+            "--verify-report-fingerprints",
+            "--require-labeled-metrics",
+        ],
+        "BACKEND_PERFORMANCE_CMD": [
+            "--forbid-backends latticedb",
+            "--require-dashboard-source embedded=embedded",
+            "--require-backends embedded,bm25",
+            "--require-report-metadata",
+            "--require-markdown-report",
+            "--verify-report-fingerprints",
+            "--require-labeled-metrics",
+        ],
+        "BACKEND_SCALE_CMD": [
+            "--forbid-backends latticedb",
+            "--require-dashboard-source embedded=embedded",
+            "--require-backends embedded,bm25",
+            "--require-report-metadata",
+            "--require-markdown-report",
+            "--verify-report-fingerprints",
+            "--require-labeled-metrics",
+            "--max-checkout-p95-ms embedded=125",
+        ],
+    }
+    assignments = _shell_string_assignments(script)
+    missing.extend(
+        f"{name} must include {flag}"
+        for name, flags in backend_command_flags.items()
+        for flag in flags
+        if flag not in assignments.get(name, "")
+    )
     if missing:
         return {
             "name": "release_gate",
@@ -236,8 +329,133 @@ def _check_release_gate_script(root: Path) -> dict[str, str]:
     return {
         "name": "release_gate",
         "status": "ok",
-        "message": "scripts/release-check.sh covers static, test, coverage, packet, package, docs, and deployment gates",
+        "message": (
+            "scripts/release-check.sh covers static, test, coverage, packet, package, docs, deployment, "
+            "activation, backend shootout, medium-scale performance, 100-query scale gates, "
+            "and parked-candidate exclusion"
+        ),
     }
+
+
+def _shell_string_assignments(script: str) -> dict[str, str]:
+    assignments: dict[str, str] = {}
+    for match in re.finditer(r"^([A-Z][A-Z0-9_]*)=(['\"])(.*?)\2$", script, flags=re.MULTILINE):
+        assignments[match.group(1)] = match.group(3)
+    return assignments
+
+
+def _check_activation_release_fixture(root: Path) -> dict[str, str]:
+    fixture = root / "reports" / "activation-release"
+    paths = sorted(fixture.glob("*.jsonl")) if fixture.is_dir() else []
+    if not paths:
+        return {
+            "name": "activation_release_fixture",
+            "status": "error",
+            "message": "reports/activation-release has no checked Eventloom JSONL activation fixture",
+            "action": "Restore the activation fixture used by scripts/release-check.sh.",
+        }
+    checkout_seen = False
+    high_context_after_checkout = False
+    token_efficiency_errors: list[str] = []
+    for path in paths:
+        try:
+            log = EventLog(path)
+            integrity = log.verify()
+            events = log.read_all()
+        except Exception as exc:
+            return {
+                "name": "activation_release_fixture",
+                "status": "error",
+                "message": f"{path.relative_to(root)} is not readable Eventloom JSONL: {exc}",
+                "action": "Restore the activation fixture used by scripts/release-check.sh.",
+            }
+        if not integrity.ok:
+            return {
+                "name": "activation_release_fixture",
+                "status": "error",
+                "message": (
+                    f"{path.relative_to(root)} failed Eventloom integrity: "
+                    f"{integrity.broken_reason or 'unknown integrity error'}"
+                ),
+                "action": "Restore the activation fixture used by scripts/release-check.sh.",
+            }
+        checkout_threads: set[str] = set()
+        for event in events:
+            if event.type == "memory.checkout.completed" and _has_token_efficiency(event.payload):
+                checkout_seen = True
+                token_efficiency_errors.extend(_activation_token_efficiency_errors(event.payload))
+                token_efficiency_errors.extend(_activation_checkout_freshness_errors(event.timestamp))
+                checkout_threads.add(event.thread)
+            elif event.type in HIGH_CONTEXT_EVENT_TYPES and event.thread in checkout_threads:
+                high_context_after_checkout = True
+    if not checkout_seen:
+        return {
+            "name": "activation_release_fixture",
+            "status": "error",
+            "message": "reports/activation-release has no memory.checkout.completed event with token_efficiency",
+            "action": "Restore the activation fixture used by scripts/release-check.sh.",
+        }
+    if not high_context_after_checkout:
+        return {
+            "name": "activation_release_fixture",
+            "status": "error",
+            "message": "reports/activation-release has no high-context event after checkout",
+            "action": "Restore the activation fixture used by scripts/release-check.sh.",
+        }
+    if token_efficiency_errors:
+        return {
+            "name": "activation_release_fixture",
+            "status": "error",
+            "message": "reports/activation-release token-efficiency guardrail failed: "
+            + ", ".join(token_efficiency_errors),
+            "action": "Restore the activation fixture used by scripts/release-check.sh.",
+        }
+    return {
+        "name": "activation_release_fixture",
+        "status": "ok",
+        "message": "reports/activation-release proves fresh checkout with token-efficiency metadata before work",
+    }
+
+
+def _has_token_efficiency(payload: dict[str, Any]) -> bool:
+    value = payload.get("token_efficiency")
+    if not isinstance(value, dict):
+        return False
+    prompt_tokens = value.get("prompt_tokens")
+    facts_per_1k = value.get("facts_per_1k_prompt_tokens")
+    return isinstance(prompt_tokens, int | float) and isinstance(facts_per_1k, int | float)
+
+
+def _activation_token_efficiency_errors(payload: dict[str, Any]) -> list[str]:
+    value = payload["token_efficiency"]
+    prompt_tokens = value["prompt_tokens"]
+    facts_per_1k = value["facts_per_1k_prompt_tokens"]
+    errors: list[str] = []
+    if prompt_tokens > ACTIVATION_FIXTURE_MAX_PROMPT_TOKENS:
+        errors.append(f"prompt_tokens={int(prompt_tokens)} exceeds {ACTIVATION_FIXTURE_MAX_PROMPT_TOKENS}")
+    if facts_per_1k < ACTIVATION_FIXTURE_MIN_FACTS_PER_1K_PROMPT_TOKENS:
+        errors.append(
+            f"facts_per_1k_prompt_tokens={float(facts_per_1k):g} "
+            f"is below {ACTIVATION_FIXTURE_MIN_FACTS_PER_1K_PROMPT_TOKENS:g}"
+        )
+    return errors
+
+
+def _activation_checkout_freshness_errors(timestamp: str) -> list[str]:
+    checkout_time = _parse_event_timestamp(timestamp)
+    age_minutes = (ACTIVATION_FIXTURE_NOW - checkout_time).total_seconds() / 60
+    if age_minutes > ACTIVATION_FIXTURE_MAX_CHECKOUT_AGE_MINUTES:
+        return [
+            f"checkout age {age_minutes:.1f} minutes exceeds {ACTIVATION_FIXTURE_MAX_CHECKOUT_AGE_MINUTES} minutes"
+        ]
+    return []
+
+
+def _parse_event_timestamp(timestamp: str) -> datetime:
+    parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _check_clean_repo_uat(root: Path) -> dict[str, str]:
@@ -257,20 +475,35 @@ def _check_clean_repo_uat(root: Path) -> dict[str, str]:
         "zaxy init",
         "local-codex",
         "local-claude",
+        'run_workspace "embedded" "" "status"',
+        'if [[ -n "${preset}" ]]',
+        "PROJECTION_BACKEND=embedded",
+        "NEO4J_AUTO_START=false",
+        "EMBEDDED_GRAPH_PATH=.eventloom/projections/embedded.kuzu",
         "zaxy memory bootstrap",
         "zaxy memory checkout",
         "zaxy doctor",
         "zaxy hook-status",
+        "--min-activation-rate 1.0",
+        "--max-checkout-prompt-tokens 5000",
+        "--min-checkout-facts-per-1k-tokens 0.1",
         "zaxy capture status",
         "zaxy capture-soak",
         "zaxy memory status",
+        "zaxy memory status --eventloom-path .eventloom --graph",
+        "Graph projection (backend=embedded):",
+        "zaxy memory inferred-status --session-id",
+        '"backend": "embedded"',
+        "zaxy reproject",
+        "using embedded",
     ]
     missing = [item for item in required if item not in script]
     if missing:
         return {
             "name": "clean_repo_uat",
             "status": "error",
-            "message": "scripts/beta-uat.sh is missing happy-path steps: " + ", ".join(missing),
+            "message": "scripts/beta-uat.sh is missing happy-path steps, including bare embedded init: "
+            + ", ".join(missing),
             "action": "Update scripts/beta-uat.sh to exercise the complete first-run beta path.",
         }
     return {

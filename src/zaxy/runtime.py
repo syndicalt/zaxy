@@ -183,6 +183,35 @@ class LocalNeo4jRuntime:
 
 
 @dataclass(frozen=True)
+class LocalEmbeddedGraphRuntime:
+    """Local embedded graph projection posture.
+
+    Embedded graph backends are projection files, not services. The runtime
+    check therefore reports filesystem readiness and `ensure_available` only
+    creates the parent directory needed for lazy projection creation.
+    """
+
+    path: str | Path
+    display_name: str = "embedded graph"
+
+    def check(self) -> RuntimeCheck:
+        """Report local embedded projection posture without mutating files."""
+        graph_path = Path(self.path)
+        if graph_path.exists():
+            return RuntimeCheck("ok", f"Embedded graph projection exists at {graph_path}")
+        if graph_path.parent.exists():
+            return RuntimeCheck("ok", f"Embedded graph projection will be created lazily at {graph_path}")
+        return RuntimeCheck(
+            "ok",
+            f"Embedded graph projection parent will be created lazily at {graph_path.parent}",
+        )
+
+    def ensure_available(self) -> None:
+        """Create the local projection parent directory."""
+        Path(self.path).parent.mkdir(parents=True, exist_ok=True)
+
+
+@dataclass(frozen=True)
 class LocalPgGraphRuntime:
     """Best-effort local pgGraph/PostgreSQL bootstrapper for development startup."""
 

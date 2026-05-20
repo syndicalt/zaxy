@@ -31,9 +31,9 @@
       </ul>
       <p>That architecture has an activation cost. A user must install a Python package, wire an MCP client, and choose a local graph posture. The intended local entry point keeps that cost visible rather than hiding it:</p>
       <pre><code class="language-bash">pipx install zaxy-memory
-zaxy init . --domain my-project --preset local-codex --capture start --infra check
-zaxy memory log --eventloom-path .eventloom --session-id my-project-default --limit 5
-zaxy memory bootstrap --eventloom-path .eventloom --session-id my-project-default
+zaxy init
+zaxy memory log --eventloom-path .eventloom --limit 5
+zaxy memory bootstrap --eventloom-path .eventloom
 zaxy doctor --eventloom-path .eventloom</code></pre>
       <p>After that flow, local data lives in <code>.eventloom/</code> as append-only JSONL, and the generated MCP config or install command tells the client how to launch the same <code>zaxy</code> executable. The graph backend can remain unchecked during the first smoke test, or it can be started explicitly when graph-backed retrieval is needed.</p>
       <p>Use Zaxy when memory quality depends on temporal state, citations, operational debugging, or graph traversal. Use markdown or simple vector recall when the workload is casual, single-session, or easy to reconstruct by rereading notes.</p>

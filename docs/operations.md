@@ -30,7 +30,9 @@ scripts/release-check.sh --root .
 ```
 
 That gate runs ruff, mypy, pytest with coverage, package artifact validation,
-documentation validation, and deployment validation.
+documentation validation, deployment validation, activation efficiency and
+checkout token guardrails, backend shootout evidence, injected-token efficiency
+floors, and 100-query embedded scale validation.
 
 PyPI publishing is handled by the `Publish Python Package` GitHub Actions
 workflow. Publish a GitHub release after the release gate passes; the workflow

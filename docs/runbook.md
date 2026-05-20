@@ -383,10 +383,11 @@ scripts/release-check.sh --root .
 The release smoke check verifies the package version, changelog entry, publish
 workflow, and PyPI Trusted Publishing posture. The release gate runs `ruff`,
 `mypy`, the full coverage-gated pytest suite, Python artifact build/metadata
-validation, public site/documentation validation, and deployment validation. A
-release is not ready until all six gates pass, the production `.env` points at
-TLS-enabled Neo4j, remote MCP/SSE bearer auth is configured, and secret files
-are not world-readable.
+validation, public site/documentation validation, deployment validation, backend
+shootout evidence, injected-token efficiency floors, and 100-query embedded
+scale validation. A release is not ready until all gates pass, the production
+`.env` points at TLS-enabled Neo4j, remote MCP/SSE bearer auth is configured,
+and secret files are not world-readable.
 
 ## Prometheus Alerts
 
@@ -504,6 +505,7 @@ zaxy serve          # Start MCP stdio server
 zaxy serve --transport sse --port 8080  # Start MCP SSE server bound to localhost
 zaxy ide-config claude-desktop --eventloom-path .eventloom  # Print first-run MCP config
 zaxy local-profile --output .env.local  # Write offline retrieval profile
+zaxy local-profile --projection-backend embedded --output .env.local  # Write no-sidecar embedded profile
 zaxy local-profile --check  # Validate deterministic local retrieval providers
 zaxy init-session . --session-id zaxy-default  # Append workspace genesis profile event
 zaxy index-codebase . --session-id zaxy-default  # Append codebase file, symbol, import, dependency, call, and coverage events

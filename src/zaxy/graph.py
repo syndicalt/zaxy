@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from neo4j import AsyncDriver, AsyncGraphDatabase, TrustAll, TrustCustomCAs
@@ -219,6 +220,11 @@ class GraphStore(ProjectionStore):
             kwargs["encrypted"] = True
             kwargs["trusted_certificates"] = TrustAll()
         elif self._ca_cert:
+            if not Path(self._ca_cert).exists():
+                raise ValueError(
+                    f"NEO4J_CA_CERT does not exist: {self._ca_cert}. "
+                    "Unset NEO4J_CA_CERT for plain local bolt:// Neo4j or provide a valid CA file."
+                )
             kwargs["encrypted"] = True
             kwargs["trusted_certificates"] = TrustCustomCAs(self._ca_cert)
         self._driver = AsyncGraphDatabase.driver(self._uri, **kwargs)

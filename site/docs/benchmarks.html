@@ -380,6 +380,115 @@
         </tbody>
       </table>
       <p>No same-harness adapter should be published without a pinned install command, dataset mapping, retrieval limit, score mapping, latency/tokens capture, and a clear statement about whether the competitor result is retrieval recall, answer/judge accuracy, or another metric family.</p>
+      <h2 id="backend-shootout">Backend Shootout</h2>
+      <p>Embedded graph work needs a backend shootout before any default-backend change. The shootout contract compares <code>embedded</code>, <code>LatticeDB</code>, <code>Neo4j</code>, <code>pgGraph</code>, and <code>BM25</code> on the same Eventloom history and query file. It must report cold bootstrap time, first useful init time, first checkout time, append-to-projection p95, projection events per second, checkout p95, checkout p99, traversal p95, dashboard graph-load timing, returned tokens, injected tokens, citation coverage, quality against expected query terms when provided, Answer@5/Recall@5 fields for LongMemEval-compatible workloads, resident memory delta, on-disk footprint, and rebuild recovery time. Every generated JSON report also carries a report schema version, UTC generation timestamp, source fingerprints for the Eventloom and query files, and workload fingerprints for the filtered events and normalized query specs. Release evidence should use <code>--require-report-metadata --require-markdown-report --verify-report-fingerprints</code> so stale reports fail when their input Eventloom or query file changes, and so the human-readable Markdown sidecar carries matching provenance. It also verifies event/query counts so tampered count metadata cannot pass as release evidence.</p>
+      <p>The local harness is:</p>
+      <pre><code class="language-bash">python scripts/backend-shootout.py \
+  --eventloom-path .eventloom \
+  --session-id default \
+  --queries-file reports/backend-shootout/queries.json \
+  --output reports/backend-shootout/backend-shootout.json</code></pre>
+      <p>Validate a labeled active-backend report before treating it as release evidence:</p>
+      <pre><code class="language-bash">python scripts/check-backend-shootout.py \
+  reports/backend-shootout/backend-shootout.json \
+  --require-report-metadata \
+  --require-markdown-report \
+  --verify-report-fingerprints \
+  --require-backends embedded,bm25 \
+  --forbid-backends latticedb \
+  --require-labeled-metrics \
+  --require-dashboard-source embedded=embedded \
+  --min-answer-at-5 0.5 \
+  --min-recall-at-5 0.5 \
+  --min-citation-coverage 1.0 \
+  --min-quality-per-1k-injected-tokens embedded=1.0 \
+  --min-answer-at-5-per-1k-injected-tokens embedded=1.0 \
+  --max-cold-bootstrap-ms embedded=250 \
+  --max-first-checkout-ms embedded=25 \
+  --max-append-to-projection-p95-ms embedded=50 \
+  --max-resident-memory-delta-bytes embedded=256000000 \
+  --max-on-disk-footprint-bytes embedded=256000000 \
+  --max-dashboard-graph-load-ms embedded=250 \
+  --max-checkout-p99-ms embedded=25 \
+  --max-exact-p99-ms embedded=10 \
+  --max-keyword-p99-ms embedded=5 \
+  --max-vector-p99-ms embedded=5 \
+  --max-traversal-p99-ms embedded=5</code></pre>
+      <p>Validate the medium-scale embedded performance report before treating embedded projection throughput as protected release evidence:</p>
+      <pre><code class="language-bash">python scripts/check-backend-shootout.py \
+  reports/backend-shootout/longmemeval-40-backend-shootout.json \
+  --require-report-metadata \
+  --require-markdown-report \
+  --verify-report-fingerprints \
+  --require-backends embedded,bm25 \
+  --forbid-backends latticedb \
+  --require-labeled-metrics \
+  --require-dashboard-source embedded=embedded \
+  --min-citation-coverage 1.0 \
+  --min-projection-events-per-second embedded=40 \
+  --max-cold-bootstrap-ms embedded=200 \
+  --max-first-useful-init-ms embedded=15000 \
+  --max-first-checkout-ms embedded=50 \
+  --max-append-to-projection-p95-ms embedded=30 \
+  --max-resident-memory-delta-bytes embedded=768000000 \
+  --max-on-disk-footprint-bytes embedded=256000000 \
+  --max-dashboard-graph-load-ms embedded=500 \
+  --max-rebuild-recovery-ms embedded=15000 \
+  --max-checkout-p95-ms embedded=100 \
+  --max-checkout-p99-ms embedded=75 \
+  --min-quality-per-1k-returned-tokens embedded=0.10 \
+  --min-answer-at-5-per-1k-returned-tokens embedded=0.10 \
+  --min-quality-per-1k-injected-tokens embedded=0.10 \
+  --min-answer-at-5-per-1k-injected-tokens embedded=0.10 \
+  --max-exact-p95-ms embedded=15 \
+  --max-exact-p99-ms embedded=10 \
+  --max-keyword-p95-ms embedded=75 \
+  --max-keyword-p99-ms embedded=40 \
+  --max-vector-p95-ms embedded=25 \
+  --max-vector-p99-ms embedded=35 \
+  --max-traversal-p95-ms embedded=10 \
+  --max-traversal-p99-ms embedded=10</code></pre>
+      <p>Validate the 100-query embedded scale report before treating broader embedded runtime behavior as protected release evidence:</p>
+      <pre><code class="language-bash">python scripts/check-backend-shootout.py \
+  reports/backend-shootout/longmemeval-100-backend-shootout.json \
+  --require-report-metadata \
+  --require-markdown-report \
+  --verify-report-fingerprints \
+  --require-backends embedded,bm25 \
+  --forbid-backends latticedb \
+  --require-labeled-metrics \
+  --require-dashboard-source embedded=embedded \
+  --min-citation-coverage 1.0 \
+  --min-projection-events-per-second embedded=40 \
+  --max-cold-bootstrap-ms embedded=200 \
+  --max-first-useful-init-ms embedded=40000 \
+  --max-first-checkout-ms embedded=100 \
+  --max-append-to-projection-p95-ms embedded=40 \
+  --max-resident-memory-delta-bytes embedded=1536000000 \
+  --max-on-disk-footprint-bytes embedded=512000000 \
+  --max-dashboard-graph-load-ms embedded=500 \
+  --max-rebuild-recovery-ms embedded=40000 \
+  --max-checkout-p95-ms embedded=125 \
+  --max-checkout-p99-ms embedded=175 \
+  --min-quality-per-1k-returned-tokens embedded=0.15 \
+  --min-answer-at-5-per-1k-returned-tokens embedded=0.15 \
+  --min-quality-per-1k-injected-tokens embedded=0.15 \
+  --min-answer-at-5-per-1k-injected-tokens embedded=0.15 \
+  --max-exact-p95-ms embedded=10 \
+  --max-exact-p99-ms embedded=12 \
+  --max-keyword-p95-ms embedded=60 \
+  --max-keyword-p99-ms embedded=80 \
+  --max-vector-p95-ms embedded=15 \
+  --max-vector-p99-ms embedded=20 \
+  --max-traversal-p95-ms embedded=10 \
+  --max-traversal-p99-ms embedded=10</code></pre>
+      <p>This performance guardrail intentionally checks total checkout latency, projection/resource costs, and the retrieval lanes that produce context. <code>resident_memory_delta_bytes</code> and <code>on_disk_footprint_bytes</code> keep the embedded runtime honest about local machine cost instead of only optimizing query latency. <code>quality_per_1k_returned_tokens</code>, <code>answer_at_5_per_1k_returned_tokens</code>, <code>quality_per_1k_injected_tokens</code>, and <code>answer_at_5_per_1k_injected_tokens</code> protect the token-efficiency goal directly, while the exact, keyword, vector, and traversal p95 ceilings make it harder for one degraded lane to hide behind an acceptable aggregate checkout p95.</p>
+      <p>The default active backend set is <code>embedded</code>, <code>neo4j</code>, <code>pggraph</code>, and <code>bm25</code>. LatticeDB remains a supported explicit backend via <code>--backends latticedb</code>, but it is a parked candidate after the first graph-traversal smoke failed both quality and latency gates. Use it only for targeted follow-up, not routine active-backend shootouts. Release evidence should pass <code>--forbid-backends latticedb</code> until the candidate is requalified.</p>
+      <p>The current focused embedded graph-traversal evidence is archived at <code>reports/benchmarks/backend-shootout-graph-traversal-embedded-after-carry-forward</code>. That run used <code>mempalace-graph-traversal-v1</code>, 10 subjects, hash embeddings, <code>limit=5</code>, BM25 as the baseline, and <code>PROJECTION_BACKEND=embedded</code>. It reports Zaxy embedded mean score <code>1.000</code>, <code>Answer@5=1.000</code>, <code>Recall@5=1.000</code>, citation coverage <code>1.000</code>, p50 checkout latency <code>18.31ms</code>, and p95 checkout latency <code>31.87ms</code>. The predecessor failed because the embedded adapter did not match Neo4j&#x27;s undirected traversal semantics and did not carry active relationships forward when an entity was reasserted into a new temporal version.</p>
+      <p>A checked smoke workload is available at <code>reports/backend-shootout/sample.eventloom</code> with query specs in <code>reports/backend-shootout/queries.json</code>. It is intentionally small, so it is a reproducibility check rather than default-backend evidence. The checked report location is <code>reports/backend-shootout/backend-shootout.json</code>. The current checked smoke report covers <code>embedded</code> and <code>bm25</code> with citation coverage at <code>1.0</code>, report metadata, source fingerprints, and workload fingerprints. Run additional explicit backends locally when Neo4j, pgGraph, or LatticeDB infrastructure is available.</p>
+      <p>The medium-scale backend evidence is archived at <code>reports/backend-shootout/longmemeval-40-backend-shootout.json</code>, using <code>reports/backend-shootout/longmemeval-40.eventloom.jsonl</code> and <code>reports/backend-shootout/longmemeval-40-queries.json</code>. This 40-question LongMemEval-compatible run is not a default-backend gate. It is a scale and surface check for the embedded runtime path. In that report, embedded/Kuzu completed with <code>Answer@5=0.25</code>, <code>Recall@5=0.25</code>, citation coverage <code>1.0</code>, checkout p95 <code>35.26ms</code>, lane p95s of exact <code>4.059ms</code>, keyword <code>17.858ms</code>, vector <code>3.337ms</code>, and traversal <code>0.005ms</code>, cold bootstrap <code>98.563ms</code>, first checkout <code>35.26ms</code>, append-to-projection p95 <code>20.039ms</code>, first useful init <code>9096.341ms</code>, rebuild recovery <code>9284.813ms</code>, projection throughput <code>57.793</code> events/sec, resident memory delta <code>616280064</code> bytes, on-disk footprint <code>28659712</code> bytes, mean returned tokens <code>1877.125</code>, mean injected tokens <code>1978.725</code>, quality per 1k returned tokens <code>0.1332</code>, quality per 1k injected tokens <code>0.1263</code>, Answer@5 per 1k returned tokens <code>0.1332</code>, Answer@5 per 1k injected tokens <code>0.1263</code>, and dashboard graph source <code>embedded</code> with 100 nodes and 100 edges. The BM25 control completed with <code>Answer@5=0.25</code>, <code>Recall@5=0.25</code>, citation coverage <code>1.0</code>, checkout p95 <code>161.529ms</code>, mean returned/injected tokens <code>3944.9</code>, and quality plus Answer@5 per 1k returned/injected tokens <code>0.0634</code>. The embedded row shows a real local graph can be built and served to the dashboard without a sidecar, but the LongMemEval edges are deterministic session-to-document relationships, not deep semantic graph-traversal evidence. Use the focused graph-traversal archive above for relationship behavior, and use this 40-query report as operational evidence that the embedded path can run a larger Eventloom file through projection, checkout, token-efficiency accounting, and dashboard summary. Explicit Kuzu bulk projection transactions and prewarmed keyword/vector caches reduced the earlier roughly 120-second projection/rebuild run to roughly 10 seconds while keeping vector retrieval enabled. This is still not the same as passing the full default-backend gate, but it moves embedded projection throughput from a product blocker into the next optimization target.</p>
+      <p>The current 100-query scale evidence is archived at <code>reports/backend-shootout/longmemeval-100-backend-shootout.json</code>, using <code>reports/backend-shootout/longmemeval-100.eventloom.jsonl</code> and <code>reports/backend-shootout/longmemeval-100-queries.json</code>. This run covers 100 queries and 1,559 Eventloom events. Embedded/Kuzu scored <code>Answer@5=0.35</code>, <code>Recall@5=0.35</code>, citation coverage <code>1.0</code>, checkout p95 <code>92.588ms</code>, lane p95s of exact <code>7.021ms</code>, keyword <code>44.618ms</code>, vector <code>9.664ms</code>, and traversal <code>0.005ms</code>, cold bootstrap <code>105.955ms</code>, first checkout <code>66.316ms</code>, append-to-projection p95 <code>25.241ms</code>, first useful init <code>32065.445ms</code>, rebuild recovery <code>33054.159ms</code>, projection throughput <code>48.781</code> events/sec, resident memory delta <code>1447043072</code> bytes, on-disk footprint <code>57270272</code> bytes, mean returned tokens <code>1791.53</code>, mean injected tokens <code>1892.97</code>, quality per 1k returned tokens <code>0.1954</code>, quality per 1k injected tokens <code>0.1849</code>, Answer@5 per 1k returned tokens <code>0.1954</code>, Answer@5 per 1k injected tokens <code>0.1849</code>, dashboard source <code>embedded</code>, 100 dashboard nodes, and 100 dashboard edges. BM25 scored <code>Answer@5=0.34</code>, <code>Recall@5=0.34</code>, citation coverage <code>1.0</code>, checkout p95 <code>463.332ms</code>, mean returned/injected tokens <code>4179.5</code>, quality per 1k returned/injected tokens <code>0.0813</code>, and Answer@5 per 1k returned/injected tokens <code>0.0813</code>. This vector-enabled 100-query report is useful scale evidence: embedded beats BM25 on the expected-term quality metric while checking out faster and returning far fewer tokens, but vector indexing raises projection and rebuild costs. It remains below the historical full-set graph-backed quality floor. Treat it as evidence for operational viability and the next quality/performance gate, not as a default-backend decision.</p>
+      <p><code>BM25</code> is the zero-infrastructure lexical control. LatticeDB is tracked as a candidate backend behind the <code>ProjectionStore</code> factory, but it is not in the default active set. Its first adapter slice projects graph state and supports exact, keyword, traversal, temporal invalidation, source-retirement behavior, and Eventloom citation metadata on returned entities. It delegates vector and full-text search to LatticeDB and reports inferred-edge audit diagnostics. The current parked candidate evidence is <code>Answer@5=0.0</code>, mean score <code>0.0</code>, and roughly <code>6.4s</code> p50 checkout latency on the graph-traversal smoke. Graph backends run through Zaxy&#x27;s <code>MemoryFabric</code> projection contract so the shootout measures the same retrieval surface that agents use. Backends with missing infrastructure should emit an error row rather than hiding the failure or aborting the whole report.</p>
       <h2 id="reproduction">Reproduction</h2>
       <p>Run the current LongMemEval-compatible release evidence with BM25 included as a local baseline:</p>
       <pre><code class="language-bash">zaxy benchmark \

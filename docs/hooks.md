@@ -66,6 +66,11 @@ The same report includes a capture readiness summary. In JSON output, inspect
 `capture_readiness.status`, `active_observation_types`, and
 `missing_observation_types` to decide whether automatic capture is healthy or
 which adapter sinks still need to be wired.
+Memory activation status also includes checkout token-efficiency diagnostics
+when the latest checkout was produced by the CLI or MCP tool. Inspect
+`memory_activation.latest_checkout.token_efficiency.prompt_tokens` and
+`facts_per_1k_prompt_tokens` when you need to know whether the session is using
+fresh memory without overloading the working context.
 `zaxy doctor` also surfaces the same signal as `capture_health`, making it the
 single first-run health row for whether deterministic capture is installed,
 running when needed, and producing usable observations.

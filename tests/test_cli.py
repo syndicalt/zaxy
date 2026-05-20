@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -80,6 +81,77 @@ def test_memory_status_json_output(tmp_path: Path) -> None:
     assert payload["sessions"][0]["integrity_ok"] is True
 
 
+def test_status_command_reports_embedded_projection_without_neo4j(tmp_path: Path) -> None:
+    """Top-level status should support the no-sidecar embedded projection path."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "status",
+            "--projection-backend",
+            "embedded",
+            "--embedded-graph-path",
+            str(tmp_path / ".eventloom" / "projections" / "embedded.kuzu"),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "embedded graph: OK" in result.output
+    assert "will be created lazily" in result.output
+    assert "Neo4j:" not in result.output
+
+
+@patch("zaxy.__main__.LocalPgGraphRuntime")
+def test_status_command_can_check_pggraph_projection_backend(
+    mock_runtime_cls: MagicMock,
+) -> None:
+    """Top-level status should support pgGraph runtime posture checks."""
+    runtime = MagicMock()
+    runtime.check.return_value.status = "warning"
+    runtime.check.return_value.message = "pgGraph is not reachable; Docker is unavailable"
+    mock_runtime_cls.return_value = runtime
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "status",
+            "--projection-backend",
+            "pggraph",
+            "--pggraph-dsn",
+            "postgresql://postgres:postgres@localhost:5432/zaxy",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "pgGraph: WARNING (pgGraph is not reachable; Docker is unavailable)" in result.output
+    mock_runtime_cls.assert_called_once_with(
+        dsn="postgresql://postgres:postgres@localhost:5432/zaxy",
+        enabled=True,
+    )
+    assert "Neo4j:" not in result.output
+
+
+def test_status_command_uses_repo_local_profile_for_bare_init(monkeypatch, tmp_path: Path) -> None:
+    """After bare init, status should read .env.local and avoid probing Neo4j."""
+    (tmp_path / ".env.local").write_text(
+        "PROJECTION_BACKEND=embedded\n"
+        "EMBEDDED_GRAPH_PATH=.eventloom/projections/embedded.kuzu\n"
+        "NEO4J_AUTO_START=false\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["status"])
+
+    assert result.exit_code == 0
+    assert "embedded graph: OK" in result.output
+    assert "will be created lazily" in result.output
+    assert "Neo4j:" not in result.output
+
+
 @patch("zaxy.__main__.build_projection_store")
 def test_memory_status_graph_json_reports_projection_health(
     mock_build_projection_store: MagicMock,
@@ -130,6 +202,7 @@ def test_memory_status_graph_json_reports_projection_health(
 
     assert result.exit_code == 0
     payload = json.loads(result.output)
+    assert payload["graph"]["backend"] == "neo4j"
     assert payload["graph"]["sessions"][0]["session_id"] == "agent"
     assert payload["graph"]["sessions"][0]["integrity_ok"] is True
     config = mock_build_projection_store.call_args.args[0]
@@ -194,7 +267,7 @@ def test_memory_status_graph_can_use_pggraph_backend(
     )
 
     assert result.exit_code == 0
-    assert "Graph projection:" in result.output
+    assert "Graph projection (backend=pggraph):" in result.output
     config = mock_build_projection_store.call_args.args[0]
     assert config.backend == "pggraph"
     assert config.pggraph_dsn == "postgresql://postgres:postgres@localhost:5432/zaxy"
@@ -204,6 +277,168 @@ def test_memory_status_graph_can_use_pggraph_backend(
         eventloom_latest_hash=event.hash,
     )
     graph.close.assert_awaited_once()
+
+
+@patch("zaxy.__main__.build_projection_store")
+def test_memory_status_graph_can_use_embedded_backend(
+    mock_build_projection_store: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Graph status should support the no-sidecar embedded projection backend."""
+    event = EventLog(tmp_path / ".eventloom" / "agent.jsonl").append(
+        "task.completed",
+        actor="assistant",
+        payload={"summary": "Projected embedded graph chain."},
+        thread="agent",
+    )
+    embedded_path = tmp_path / ".eventloom" / "projections" / "embedded.kuzu"
+    graph = AsyncMock()
+    projection = MagicMock()
+    projection.to_dict.return_value = {
+        "session_id": "agent",
+        "event_count": 1,
+        "latest_seq": 1,
+        "latest_hash": event.hash,
+        "eventloom_latest_seq": 1,
+        "eventloom_latest_hash": event.hash,
+        "projection_lag": 0,
+        "latest_hash_matches": True,
+        "next_event_edges": 0,
+        "previous_event_edges": 0,
+        "missing_chain_links": 0,
+        "integrity_ok": True,
+    }
+    graph.inspect_event_projection_status.return_value = projection
+    mock_build_projection_store.return_value = graph
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "status",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--graph",
+            "--projection-backend",
+            "embedded",
+            "--embedded-graph-path",
+            str(embedded_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Graph projection (backend=embedded):" in result.output
+    config = mock_build_projection_store.call_args.args[0]
+    assert config.backend == "embedded"
+    assert config.embedded_graph_path == embedded_path
+    assert config.neo4j_uri != "bolt://test:7687"
+    graph.inspect_event_projection_status.assert_awaited_once_with(
+        "agent",
+        eventloom_latest_seq=event.seq,
+        eventloom_latest_hash=event.hash,
+    )
+    graph.close.assert_awaited_once()
+
+
+@patch("zaxy.__main__.build_projection_store")
+def test_memory_status_graph_uses_repo_local_profile_for_bare_init(
+    mock_build_projection_store: MagicMock,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """After bare init, memory status --graph should use the embedded profile by default."""
+    event = EventLog(tmp_path / ".eventloom" / "agent.jsonl").append(
+        "hook.heartbeat",
+        actor="zaxy-init",
+        payload={"source": "zaxy-init"},
+        thread="agent",
+    )
+    (tmp_path / ".env.local").write_text(
+        "PROJECTION_BACKEND=embedded\n"
+        "EMBEDDED_GRAPH_PATH=.eventloom/projections/embedded.kuzu\n"
+        "NEO4J_AUTO_START=false\n",
+        encoding="utf-8",
+    )
+    graph = AsyncMock()
+    projection = MagicMock()
+    projection.to_dict.return_value = {
+        "session_id": "agent",
+        "event_count": 1,
+        "latest_seq": event.seq,
+        "latest_hash": event.hash,
+        "eventloom_latest_seq": event.seq,
+        "eventloom_latest_hash": event.hash,
+        "projection_lag": 0,
+        "latest_hash_matches": True,
+        "next_event_edges": 0,
+        "previous_event_edges": 0,
+        "missing_chain_links": 0,
+        "integrity_ok": True,
+    }
+    graph.inspect_event_projection_status.return_value = projection
+    mock_build_projection_store.return_value = graph
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["memory", "status", "--eventloom-path", ".eventloom", "--graph"])
+
+    assert result.exit_code == 0
+    config = mock_build_projection_store.call_args.args[0]
+    assert config.backend == "embedded"
+    assert config.embedded_graph_path == Path(".eventloom/projections/embedded.kuzu")
+    assert "Graph projection (backend=embedded):" in result.output
+
+
+@patch("zaxy.__main__.build_projection_store")
+def test_memory_status_graph_uses_profile_next_to_absolute_eventloom_path(
+    mock_build_projection_store: MagicMock,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Absolute Eventloom paths should still resolve the inspected repo profile."""
+    workspace = tmp_path / "workspace"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    event = EventLog(workspace / ".eventloom" / "agent.jsonl").append(
+        "hook.heartbeat",
+        actor="zaxy-init",
+        payload={"source": "zaxy-init"},
+        thread="agent",
+    )
+    embedded_path = workspace / ".eventloom" / "projections" / "embedded.kuzu"
+    (workspace / ".env.local").write_text(
+        "PROJECTION_BACKEND=embedded\n"
+        f"EMBEDDED_GRAPH_PATH={embedded_path}\n",
+        encoding="utf-8",
+    )
+    graph = AsyncMock()
+    projection = MagicMock()
+    projection.to_dict.return_value = {
+        "session_id": "agent",
+        "event_count": 1,
+        "latest_seq": event.seq,
+        "latest_hash": event.hash,
+        "eventloom_latest_seq": event.seq,
+        "eventloom_latest_hash": event.hash,
+        "projection_lag": 0,
+        "latest_hash_matches": True,
+        "next_event_edges": 0,
+        "previous_event_edges": 0,
+        "missing_chain_links": 0,
+        "integrity_ok": True,
+    }
+    graph.inspect_event_projection_status.return_value = projection
+    mock_build_projection_store.return_value = graph
+    monkeypatch.chdir(outside)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["memory", "status", "--eventloom-path", str(workspace / ".eventloom"), "--graph"])
+
+    assert result.exit_code == 0
+    config = mock_build_projection_store.call_args.args[0]
+    assert config.backend == "embedded"
+    assert config.embedded_graph_path == embedded_path
 
 
 def test_memory_status_handles_empty_eventloom_directory(tmp_path: Path) -> None:
@@ -324,6 +559,50 @@ def test_memory_inferred_status_can_use_pggraph_backend(
     config = mock_build_projection_store.call_args.args[0]
     assert config.backend == "pggraph"
     assert config.pggraph_dsn == "postgresql://postgres:postgres@localhost:5432/zaxy"
+    graph.inspect_inferred_edge_status.assert_awaited_once_with("agent", limit=10)
+    graph.close.assert_awaited_once()
+
+
+@patch("zaxy.__main__.build_projection_store")
+def test_memory_inferred_status_uses_repo_local_profile_for_bare_init(
+    mock_build_projection_store: MagicMock,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """After bare init, inferred-edge status should use the embedded profile by default."""
+    embedded_path = tmp_path / ".eventloom" / "projections" / "embedded.kuzu"
+    (tmp_path / ".env.local").write_text(
+        "PROJECTION_BACKEND=embedded\n"
+        f"EMBEDDED_GRAPH_PATH={embedded_path}\n"
+        "NEO4J_AUTO_START=false\n",
+        encoding="utf-8",
+    )
+    graph = AsyncMock()
+    status = MagicMock()
+    status.to_dict.return_value = {
+        "session_id": "agent",
+        "total_edges": 0,
+        "method_count": 0,
+        "evidence_count": 0,
+        "missing_evidence_count": 0,
+        "missing_source_event_count": 0,
+        "evidence_coverage": 1.0,
+        "methods": [],
+        "samples": [],
+    }
+    graph.inspect_inferred_edge_status.return_value = status
+    mock_build_projection_store.return_value = graph
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["memory", "inferred-status", "--session-id", "agent", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["backend"] == "embedded"
+    config = mock_build_projection_store.call_args.args[0]
+    assert config.backend == "embedded"
+    assert config.embedded_graph_path == embedded_path
     graph.inspect_inferred_edge_status.assert_awaited_once_with("agent", limit=10)
     graph.close.assert_awaited_once()
 
@@ -507,6 +786,127 @@ def test_memory_bootstrap_text_output(tmp_path: Path) -> None:
     assert events[-1].payload["source"] == "cli"
 
 
+def test_activate_codex_outputs_prompt_ready_startup_packet(tmp_path: Path) -> None:
+    """zaxy activate codex should expose a low-friction session-start injection packet."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "activate",
+            "codex",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent",
+            "--current-task",
+            "continue the roadmap",
+            "--workspace-root",
+            str(tmp_path),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "# Zaxy Codex Activation" in result.output
+    assert "continue the roadmap" in result.output
+    assert "memory_checkout" in result.output
+    events = EventLog(tmp_path / ".eventloom" / "agent.jsonl").read_all()
+    assert events[-1].type == "memory.bootstrap.shown"
+    assert events[-1].payload["source"] == "activate-codex"
+
+
+def test_activate_codex_json_output(tmp_path: Path) -> None:
+    """The activation packet should be machine-readable for launchers."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "activate",
+            "codex",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent",
+            "--current-task",
+            "continue the roadmap",
+            "--workspace-root",
+            str(tmp_path),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["client"] == "codex"
+    assert payload["mode"] == "session_start_injection"
+    assert payload["session_id"] == "agent"
+    assert payload["bootstrap"]["startup_sequence"][1]["tool"] == "memory_checkout"
+    assert "# Zaxy Session Bootstrap" in payload["injection_text"]
+
+
+@patch("zaxy.__main__.subprocess.run")
+def test_activate_codex_launches_codex_with_injected_prompt(
+    mock_run: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """--launch should start Codex with activation context as the initial prompt."""
+    mock_run.return_value.returncode = 0
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "activate",
+            "codex",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent",
+            "--current-task",
+            "continue the roadmap",
+            "--workspace-root",
+            str(tmp_path),
+            "--launch",
+            "--codex-executable",
+            "codex-test",
+        ],
+    )
+
+    assert result.exit_code == 0
+    command = mock_run.call_args.args[0]
+    assert command[:3] == ["codex-test", "--cd", str(tmp_path.resolve())]
+    assert "# Zaxy Session Bootstrap" in command[-1]
+    assert "memory_checkout" in command[-1]
+
+
+def test_activate_codex_dry_run_prints_launch_command(tmp_path: Path) -> None:
+    """Dry-run should expose the launcher command without starting Codex."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "activate",
+            "codex",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent",
+            "--workspace-root",
+            str(tmp_path),
+            "--launch",
+            "--dry-run",
+            "--codex-executable",
+            "codex-test",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "codex-test --cd" in result.output
+    assert "Zaxy Session Bootstrap" in result.output
+
+
 @patch("zaxy.__main__.MemoryFabric")
 def test_memory_checkout_json_output(mock_fabric_cls: MagicMock, tmp_path: Path) -> None:
     """memory checkout --json should expose the Memory Checkout contract."""
@@ -518,6 +918,12 @@ def test_memory_checkout_json_output(mock_fabric_cls: MagicMock, tmp_path: Path)
         "current_facts": [{"content": "Use Memory Checkout.", "citation": "eventloom://agent-1/events/1#abc"}],
         "evidence": [{"citation": "eventloom://agent-1/events/1#abc"}],
         "provenance": [{"event_seq": 1, "event_hash": "abc"}],
+        "token_efficiency": {
+            "prompt_tokens": 8,
+            "current_fact_count": 1,
+            "evidence_count": 1,
+            "facts_per_1k_prompt_tokens": 125.0,
+        },
         "warnings": [],
     }
     fabric = AsyncMock()
@@ -561,6 +967,10 @@ def test_memory_checkout_json_output(mock_fabric_cls: MagicMock, tmp_path: Path)
         neo4j_password="testpassword",
         neo4j_ca_cert="",
         neo4j_trust_all=True,
+        projection_backend="neo4j",
+        pggraph_dsn="postgresql://postgres:postgres@localhost:5432/zaxy",
+        embedded_graph_path=Path(".eventloom/projections/embedded.kuzu"),
+        latticedb_path=Path(".eventloom/projections/memory.latticedb"),
     )
     fabric.connect.assert_awaited_once()
     fabric.checkout_memory.assert_awaited_once_with(
@@ -575,6 +985,56 @@ def test_memory_checkout_json_output(mock_fabric_cls: MagicMock, tmp_path: Path)
     events = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").read_all()
     assert events[-1].type == "memory.checkout.completed"
     assert events[-1].payload["query"] == "current project direction"
+    assert events[-1].payload["token_efficiency"] == {
+        "prompt_tokens": 8,
+        "current_fact_count": 1,
+        "evidence_count": 1,
+        "facts_per_1k_prompt_tokens": 125.0,
+    }
+
+
+@patch("zaxy.__main__.MemoryFabric")
+def test_memory_checkout_uses_repo_local_embedded_profile(
+    mock_fabric_cls: MagicMock,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Checkout should use the repo-local embedded backend selected by bare init."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    embedded_path = eventloom_path / "projections" / "embedded.kuzu"
+    (workspace / ".env.local").write_text(
+        "PROJECTION_BACKEND=embedded\n"
+        f"EMBEDDED_GRAPH_PATH={embedded_path}\n",
+        encoding="utf-8",
+    )
+    checkout = MagicMock()
+    checkout.to_dict.return_value = {"session_id": "agent-1", "query": "current project direction"}
+    fabric = AsyncMock()
+    fabric.checkout_memory.return_value = checkout
+    mock_fabric_cls.return_value = fabric
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "checkout",
+            "current project direction",
+            "--eventloom-path",
+            str(eventloom_path),
+            "--session-id",
+            "agent-1",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    kwargs = mock_fabric_cls.call_args.kwargs
+    assert kwargs["projection_backend"] == "embedded"
+    assert kwargs["embedded_graph_path"] == embedded_path
 
 
 def test_packet_analyzer_cli_help_exposes_observe_only_gateway() -> None:
@@ -979,9 +1439,9 @@ def test_ide_config_command_prints_codex_cli_install_command() -> None:
     assert "codex mcp add zaxy" in result.output
     assert "--env EVENTLOOM_THREAD" not in result.output
     assert "ZAXY_DOMAIN" not in result.output
-    assert "--env NEO4J_URI=bolt://localhost:7687" in result.output
-    assert "--env NEO4J_CA_CERT=" in result.output
-    assert "--env NEO4J_PASSWORD_FILE=" in result.output
+    assert "NEO4J_URI" not in result.output
+    assert "NEO4J_CA_CERT" not in result.output
+    assert "NEO4J_PASSWORD_FILE" not in result.output
     assert "-- /opt/zaxy/bin/zaxy serve" in result.output
     assert "--eventloom-path" not in result.output
 
@@ -1097,9 +1557,9 @@ def test_ide_config_command_writes_trusted_project_codex_config(tmp_path: Path) 
     assert 'command = "/opt/zaxy/bin/zaxy"' in config
     assert 'args = ["serve"]' in config
     assert "EVENTLOOM_PATH" not in config
-    assert 'NEO4J_URI = "bolt://localhost:7687"' in config
-    assert 'NEO4J_CA_CERT = ""' in config
-    assert 'NEO4J_PASSWORD_FILE = ""' in config
+    assert "NEO4J_URI" not in config
+    assert "NEO4J_CA_CERT" not in config
+    assert "NEO4J_PASSWORD_FILE" not in config
 
 
 def test_ide_config_command_rejects_project_codex_config_without_trust(tmp_path: Path) -> None:
@@ -1153,6 +1613,34 @@ def test_serve_derives_workspace_defaults_when_not_overridden(
     assert kwargs["eventloom_path"] == str(Path.cwd() / ".eventloom")
     assert kwargs["workspace_root"] == Path.cwd()
     assert kwargs["default_session_id"] == "zaxy-default"
+
+
+@patch("zaxy.__main__.mcp_main", new_callable=AsyncMock)
+@patch("zaxy.mcp_server.ZaxyMCPServer")
+def test_serve_uses_repo_local_embedded_profile(
+    mock_server_cls: MagicMock,
+    mock_mcp_main: AsyncMock,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """A bare `zaxy serve` should pass the repo-local projection profile to MCP."""
+    embedded_path = tmp_path / ".eventloom" / "projections" / "embedded.kuzu"
+    (tmp_path / ".env.local").write_text(
+        "PROJECTION_BACKEND=embedded\n"
+        f"EMBEDDED_GRAPH_PATH={embedded_path}\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("zaxy.mcp_server.server", None)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["serve"], catch_exceptions=False, env={}, color=False, prog_name="zaxy")
+
+    assert result.exit_code == 0
+    mock_mcp_main.assert_awaited_once()
+    kwargs = mock_server_cls.call_args.kwargs
+    assert kwargs["projection_backend"] == "embedded"
+    assert kwargs["embedded_graph_path"] == embedded_path
 
 
 def test_integration_template_command_prints_framework_starter() -> None:
@@ -1386,7 +1874,7 @@ def test_hook_status_ignores_non_hook_text_in_claude_settings(tmp_path: Path) ->
     )
 
     assert result.exit_code == 0
-    assert "claude-code: not installed" in result.output
+    assert "Claude Code hook config: missing" in result.output
 
 
 def test_hooks_command_refuses_to_overwrite_without_force(tmp_path: Path) -> None:
@@ -1834,6 +2322,471 @@ def test_hook_status_reports_complete_observation_coverage(tmp_path: Path) -> No
     }
 
 
+def test_hook_status_reports_memory_activation_posture(tmp_path: Path) -> None:
+    """hook-status should show whether the model has actually used memory checkout."""
+    now = datetime(2026, 5, 20, 12, 0, tzinfo=UTC)
+    log = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl")
+    checkout = log.append(
+        "memory.checkout.completed",
+        actor="assistant",
+        payload={
+            "activity": "checkout",
+            "query": "current roadmap",
+            "token_efficiency": {
+                "prompt_tokens": 200,
+                "current_fact_count": 3,
+                "evidence_count": 4,
+                "facts_per_1k_prompt_tokens": 15.0,
+            },
+        },
+        thread="agent-1",
+        timestamp=now - timedelta(minutes=20),
+    )
+    capture = log.append(
+        "transcript.turn",
+        actor="assistant",
+        payload={"source": "codex", "role": "assistant"},
+        thread="agent-1",
+        timestamp=now - timedelta(minutes=5),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "hook-status",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--workspace-root",
+            str(tmp_path),
+            "--max-checkout-stale-minutes",
+            "60",
+            "--now",
+            now.isoformat(),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["memory_activation"]["activation_efficiency"] == {
+        "high_context_session_count": 1,
+        "fresh_checkout_session_count": 1,
+        "stale_checkout_session_count": 0,
+        "missing_checkout_session_count": 0,
+        "fresh_checkout_rate": 1.0,
+        "sessions": [
+            {
+                "session_id": "agent-1",
+                "status": "fresh_checkout",
+                "first_substantive_event": {
+                    "seq": capture.seq,
+                    "hash": capture.hash,
+                    "timestamp": capture.timestamp,
+                    "type": "transcript.turn",
+                    "thread": "agent-1",
+                    "source": "codex",
+                },
+                "checkout": {
+                    "seq": checkout.seq,
+                    "hash": checkout.hash,
+                    "timestamp": checkout.timestamp,
+                    "type": "memory.checkout.completed",
+                    "thread": "agent-1",
+                    "source": "unknown",
+                    "token_efficiency": {
+                        "prompt_tokens": 200,
+                        "current_fact_count": 3,
+                        "evidence_count": 4,
+                        "facts_per_1k_prompt_tokens": 15.0,
+                    },
+                },
+            }
+        ],
+    }
+    assert payload["memory_activation"] | {"activation_efficiency": None} == {
+        "status": "ok",
+        "message": "Latest memory checkout is fresh",
+        "stale_after_minutes": 60,
+        "latest_checkout": {
+            "seq": checkout.seq,
+            "hash": checkout.hash,
+            "timestamp": checkout.timestamp,
+            "type": "memory.checkout.completed",
+            "thread": "agent-1",
+            "source": "unknown",
+            "token_efficiency": {
+                "prompt_tokens": 200,
+                "current_fact_count": 3,
+                "evidence_count": 4,
+                "facts_per_1k_prompt_tokens": 15.0,
+            },
+        },
+        "latest_capture": {
+            "seq": capture.seq,
+            "hash": capture.hash,
+            "timestamp": capture.timestamp,
+            "type": "transcript.turn",
+            "thread": "agent-1",
+            "source": "codex",
+        },
+        "latest_reminder": None,
+        "activation_efficiency": None,
+        "actions": [],
+    }
+
+    stale = runner.invoke(
+        app,
+        [
+            "hook-status",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--workspace-root",
+            str(tmp_path),
+            "--max-checkout-stale-minutes",
+            "10",
+            "--now",
+            now.isoformat(),
+        ],
+    )
+
+    assert stale.exit_code == 0
+    assert "Memory activation" in stale.output
+    assert "status: warning" in stale.output
+    assert "Latest memory checkout is stale" in stale.output
+    assert "activation efficiency: 0.0% (0/1 high-context sessions)" in stale.output
+    assert "checkout tokens: 200 prompt, 15.0 facts/1k prompt tokens" in stale.output
+    assert "Run memory checkout before relying on Zaxy context." in stale.output
+
+
+def test_hook_status_warns_when_memory_checkout_has_never_run(tmp_path: Path) -> None:
+    """hook-status should distinguish capture-only setups from active memory use."""
+    now = datetime(2026, 5, 20, 12, 0, tzinfo=UTC)
+    capture = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").append(
+        "command.completed",
+        actor="zaxy-observer",
+        payload={"source": "codex", "command": "pytest"},
+        thread="agent-1",
+        timestamp=now,
+    )
+    reminder = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").append(
+        "memory.reminder.suggested",
+        actor="zaxy-memory",
+        payload={"recommended_tool": "memory_checkout", "source": "codex"},
+        thread="agent-1",
+        timestamp=now,
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "hook-status",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--workspace-root",
+            str(tmp_path),
+            "--now",
+            now.isoformat(),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["memory_activation"]["status"] == "warning"
+    assert payload["memory_activation"]["message"] == "No memory checkout events found"
+    assert payload["memory_activation"]["latest_checkout"] is None
+    assert payload["memory_activation"]["latest_capture"]["seq"] == capture.seq
+    assert payload["memory_activation"]["latest_reminder"]["seq"] == reminder.seq
+    assert payload["memory_activation"]["latest_reminder"]["type"] == "memory.reminder.suggested"
+    assert payload["memory_activation"]["actions"] == [
+        "Run memory checkout before relying on Zaxy context.",
+    ]
+
+
+def test_hook_status_reports_activation_efficiency_by_session(tmp_path: Path) -> None:
+    """hook-status should quantify how often high-context sessions start with fresh checkout."""
+    now = datetime(2026, 5, 20, 12, 0, tzinfo=UTC)
+    ready = EventLog(tmp_path / ".eventloom" / "ready.jsonl")
+    checkout = ready.append(
+        "memory.checkout.completed",
+        actor="zaxy-memory",
+        payload={"activity": "checkout", "source": "test"},
+        thread="ready",
+        timestamp=now - timedelta(minutes=10),
+    )
+    first_ready = ready.append(
+        "transcript.turn",
+        actor="assistant",
+        payload={"source": "codex", "role": "assistant", "content": "Ship the roadmap."},
+        thread="ready",
+        timestamp=now - timedelta(minutes=5),
+    )
+    stale = EventLog(tmp_path / ".eventloom" / "stale.jsonl")
+    stale.append(
+        "memory.checkout.completed",
+        actor="zaxy-memory",
+        payload={"activity": "checkout", "source": "test"},
+        thread="stale",
+        timestamp=now - timedelta(minutes=90),
+    )
+    first_stale = stale.append(
+        "command.completed",
+        actor="zaxy-observer",
+        payload={"source": "codex", "command": "pytest"},
+        thread="stale",
+        timestamp=now - timedelta(minutes=1),
+    )
+    missing = EventLog(tmp_path / ".eventloom" / "missing.jsonl")
+    first_missing = missing.append(
+        "file.edit.applied",
+        actor="zaxy-observer",
+        payload={"source": "codex", "path": "src/zaxy/core.py"},
+        thread="missing",
+        timestamp=now,
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "hook-status",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--workspace-root",
+            str(tmp_path),
+            "--max-checkout-stale-minutes",
+            "60",
+            "--now",
+            now.isoformat(),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    efficiency = payload["memory_activation"]["activation_efficiency"]
+    assert efficiency["high_context_session_count"] == 3
+    assert efficiency["fresh_checkout_session_count"] == 1
+    assert efficiency["stale_checkout_session_count"] == 1
+    assert efficiency["missing_checkout_session_count"] == 1
+    assert efficiency["fresh_checkout_rate"] == 1 / 3
+    assert payload["memory_activation"]["status"] == "warning"
+    assert payload["memory_activation"]["message"] == "Some high-context sessions lack fresh memory checkout"
+    assert payload["memory_activation"]["actions"] == [
+        "Run memory checkout before continuing sessions without fresh Zaxy context.",
+    ]
+    assert efficiency["sessions"] == [
+        {
+            "session_id": "missing",
+            "status": "missing_checkout",
+            "first_substantive_event": {
+                "seq": first_missing.seq,
+                "hash": first_missing.hash,
+                "timestamp": first_missing.timestamp,
+                "type": "file.edit.applied",
+                "thread": "missing",
+                "source": "codex",
+            },
+            "checkout": None,
+        },
+        {
+            "session_id": "ready",
+            "status": "fresh_checkout",
+            "first_substantive_event": {
+                "seq": first_ready.seq,
+                "hash": first_ready.hash,
+                "timestamp": first_ready.timestamp,
+                "type": "transcript.turn",
+                "thread": "ready",
+                "source": "codex",
+            },
+            "checkout": {
+                "seq": checkout.seq,
+                "hash": checkout.hash,
+                "timestamp": checkout.timestamp,
+                "type": "memory.checkout.completed",
+                "thread": "ready",
+                "source": "test",
+            },
+        },
+        {
+            "session_id": "stale",
+            "status": "stale_checkout",
+            "first_substantive_event": {
+                "seq": first_stale.seq,
+                "hash": first_stale.hash,
+                "timestamp": first_stale.timestamp,
+                "type": "command.completed",
+                "thread": "stale",
+                "source": "codex",
+            },
+            "checkout": {
+                "seq": 1,
+                "hash": stale.read_all()[0].hash,
+                "timestamp": stale.read_all()[0].timestamp,
+                "type": "memory.checkout.completed",
+                "thread": "stale",
+                "source": "test",
+            },
+        },
+    ]
+
+
+def test_hook_status_can_fail_activation_efficiency_guardrail(tmp_path: Path) -> None:
+    """hook-status should be usable as a release gate for fresh checkout adoption."""
+    now = datetime(2026, 5, 20, 12, 0, tzinfo=UTC)
+    ready = EventLog(tmp_path / ".eventloom" / "ready.jsonl")
+    ready.append(
+        "memory.checkout.completed",
+        actor="zaxy-memory",
+        payload={"activity": "checkout", "source": "test"},
+        thread="ready",
+        timestamp=now - timedelta(minutes=5),
+    )
+    ready.append(
+        "transcript.turn",
+        actor="assistant",
+        payload={"source": "codex"},
+        thread="ready",
+        timestamp=now - timedelta(minutes=1),
+    )
+    EventLog(tmp_path / ".eventloom" / "missing.jsonl").append(
+        "command.completed",
+        actor="zaxy-observer",
+        payload={"source": "codex"},
+        thread="missing",
+        timestamp=now,
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "hook-status",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--workspace-root",
+            str(tmp_path),
+            "--now",
+            now.isoformat(),
+            "--min-activation-rate",
+            "0.8",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["activation_guardrail"] == {
+        "status": "fail",
+        "threshold": 0.8,
+        "fresh_checkout_rate": 0.5,
+        "message": "activation efficiency 50.0% is below required 80.0%",
+    }
+
+    passing = runner.invoke(
+        app,
+        [
+            "hook-status",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--workspace-root",
+            str(tmp_path),
+            "--now",
+            now.isoformat(),
+            "--min-activation-rate",
+            "0.5",
+        ],
+    )
+
+    assert passing.exit_code == 0
+    assert "Activation guardrail: OK (50.0% >= 50.0%)" in passing.output
+
+
+def test_hook_status_can_fail_checkout_token_efficiency_guardrail(tmp_path: Path) -> None:
+    """hook-status should gate whether fresh checkout is compact enough to be useful."""
+    now = datetime(2026, 5, 20, 12, 0, tzinfo=UTC)
+    log = EventLog(tmp_path / ".eventloom" / "agent.jsonl")
+    log.append(
+        "memory.checkout.completed",
+        actor="zaxy-memory",
+        payload={
+            "activity": "checkout",
+            "source": "test",
+            "token_efficiency": {
+                "prompt_tokens": 1400,
+                "current_fact_count": 2,
+                "evidence_count": 3,
+                "facts_per_1k_prompt_tokens": 1.43,
+            },
+        },
+        thread="agent",
+        timestamp=now - timedelta(minutes=5),
+    )
+    log.append(
+        "transcript.turn",
+        actor="assistant",
+        payload={"source": "codex"},
+        thread="agent",
+        timestamp=now - timedelta(minutes=1),
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "hook-status",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--workspace-root",
+            str(tmp_path),
+            "--now",
+            now.isoformat(),
+            "--max-checkout-prompt-tokens",
+            "1000",
+            "--min-checkout-facts-per-1k-tokens",
+            "2.0",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["checkout_token_guardrail"] == {
+        "status": "fail",
+        "max_prompt_tokens": 1000,
+        "min_facts_per_1k_prompt_tokens": 2.0,
+        "prompt_tokens": 1400,
+        "facts_per_1k_prompt_tokens": 1.43,
+        "messages": [
+            "checkout prompt tokens 1400 exceed maximum 1000",
+            "checkout facts per 1k prompt tokens 1.43 below required 2.0",
+        ],
+    }
+
+    passing = runner.invoke(
+        app,
+        [
+            "hook-status",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--workspace-root",
+            str(tmp_path),
+            "--now",
+            now.isoformat(),
+            "--max-checkout-prompt-tokens",
+            "1500",
+            "--min-checkout-facts-per-1k-tokens",
+            "1.0",
+        ],
+    )
+
+    assert passing.exit_code == 0
+    assert "Checkout token guardrail: OK (1400 prompt tokens, 1.43 facts/1k prompt tokens)" in passing.output
+
+
 @patch("zaxy.hooks._iter_process_cmdlines")
 def test_hook_status_reports_codex_capture_watcher_runtime(
     mock_processes: MagicMock,
@@ -1907,8 +2860,8 @@ def test_hook_status_reports_codex_capture_watcher_runtime(
     )
 
     assert text.exit_code == 0
-    assert "codex: installed (.codex/zaxy-capture.json)" in text.output
-    assert "codex capture: running pid=123" in text.output
+    assert "Codex capture config: installed (.codex/zaxy-capture.json)" in text.output
+    assert "Codex capture watcher: running pid=123" in text.output
 
 
 @patch("zaxy.hooks._iter_process_cmdlines")
@@ -2128,12 +3081,17 @@ def test_hooks_status_reports_installed_clients_and_recent_activity(tmp_path: Pa
     )
 
     assert result.exit_code == 0
-    assert "Zaxy hooks: ok" in result.output
-    assert "claude-code: installed" in result.output
-    assert "codex: not installed" in result.output
-    assert "last event: hook.heartbeat" in result.output
-    assert "capture readiness: warning - 0 of 4 high-value automatic capture lanes are active" in result.output
-    assert "command.completed: missing" in result.output
+    assert "Zaxy hooks: warning" in result.output
+    assert "Client setup" in result.output
+    assert "Claude Code hook config: installed" in result.output
+    assert "Codex capture config: missing" in result.output
+    assert "Last observed event" in result.output
+    assert "type: hook.heartbeat" in result.output
+    assert "Capture readiness" in result.output
+    assert "active lanes: 0 of 4" in result.output
+    assert "Memory activation" in result.output
+    assert "No memory checkout events found" in result.output
+    assert "[ ] command.completed" in result.output
     assert "agent-1" in result.output
 
 
@@ -2228,6 +3186,19 @@ def test_local_profile_command_writes_output_file(tmp_path: Path) -> None:
     assert "NEO4J_PASSWORD_FILE=" in profile
 
 
+def test_local_profile_command_can_render_embedded_projection_profile(tmp_path: Path) -> None:
+    runner = CliRunner()
+    target = tmp_path / ".env.local"
+
+    result = runner.invoke(app, ["local-profile", "--projection-backend", "embedded", "--output", str(target)])
+
+    assert result.exit_code == 0
+    profile = target.read_text(encoding="utf-8")
+    assert "PROJECTION_BACKEND=embedded" in profile
+    assert "EMBEDDED_GRAPH_PATH=.eventloom/projections/embedded.kuzu" in profile
+    assert "NEO4J_AUTO_START=false" in profile
+
+
 def test_local_profile_check_reports_success() -> None:
     runner = CliRunner()
 
@@ -2297,6 +3268,7 @@ def test_doctor_beta_readiness_reports_release_and_uat_gates() -> None:
     checks = {check["name"]: check for check in payload["checks"]}
     assert checks["release_smoke"]["status"] == "ok"
     assert checks["release_gate"]["status"] == "ok"
+    assert "parked-candidate exclusion" in checks["release_gate"]["message"]
     assert checks["clean_repo_uat"]["status"] == "ok"
     assert checks["docs_happy_path"]["status"] == "ok"
     assert checks["capture_happy_path"]["status"] == "ok"
@@ -2632,6 +3604,8 @@ def test_refresh_context_command_uses_backend_aware_fabric(
         eventloom_path=str(tmp_path / ".eventloom"),
         projection_backend="pggraph",
         pggraph_dsn="postgresql://postgres:postgres@localhost:5432/zaxy",
+        embedded_graph_path=Path(".eventloom/projections/embedded.kuzu"),
+        latticedb_path=Path(".eventloom/projections/memory.latticedb"),
         tracer_disabled=False,
     )
     fabric.refresh_context.assert_awaited_once_with(
@@ -2642,6 +3616,62 @@ def test_refresh_context_command_uses_backend_aware_fabric(
         max_bytes=512 * 1024,
     )
     fabric.close.assert_awaited_once()
+
+
+@patch("zaxy.__main__.MemoryFabric")
+def test_refresh_context_command_uses_repo_local_embedded_profile(
+    mock_fabric_cls: MagicMock,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """refresh-context should use the repo-local embedded profile by default."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    embedded_path = workspace / ".eventloom" / "projections" / "embedded.kuzu"
+    (workspace / ".env.local").write_text(
+        "PROJECTION_BACKEND=embedded\n"
+        f"EMBEDDED_GRAPH_PATH={embedded_path}\n",
+        encoding="utf-8",
+    )
+    fabric = MagicMock()
+    report = MagicMock()
+    report.to_dict.return_value = {
+        "session_id": "agent-1",
+        "kind": "documents",
+        "event_count": 0,
+        "summary": {
+            "kind": "documents",
+            "discovered": 0,
+            "changed": 0,
+            "unchanged": 0,
+            "deleted": 0,
+            "indexed": 0,
+            "retired": 0,
+        },
+    }
+    fabric.refresh_context = AsyncMock(return_value=report)
+    fabric.close = AsyncMock()
+    mock_fabric_cls.return_value = fabric
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "refresh-context",
+            str(workspace),
+            "--eventloom-path",
+            str(workspace / ".eventloom"),
+            "--session-id",
+            "agent-1",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    kwargs = mock_fabric_cls.call_args.kwargs
+    assert kwargs["projection_backend"] == "embedded"
+    assert kwargs["embedded_graph_path"] == embedded_path
 
 
 @patch("zaxy.__main__.MemoryFabric")
@@ -2762,6 +3792,73 @@ def test_init_command_passes_pggraph_bootstrap_options(mock_run_onboarding: Asyn
 
 
 @patch("zaxy.__main__.run_onboarding")
+def test_init_command_passes_embedded_projection_backend(mock_run_onboarding: AsyncMock, tmp_path: Path) -> None:
+    """init should expose embedded projection selection to onboarding infra checks."""
+    result_obj = MagicMock()
+    result_obj.status = "ok"
+    mock_run_onboarding.return_value = result_obj
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            str(tmp_path),
+            "--infra",
+            "check",
+            "--projection-backend",
+            "embedded",
+        ],
+    )
+
+    assert result.exit_code == 0
+    kwargs = mock_run_onboarding.await_args.kwargs
+    assert kwargs["infra"] == "check"
+    assert kwargs["projection_backend"] == "embedded"
+
+
+@patch("zaxy.__main__.run_onboarding")
+def test_init_command_expands_local_embedded_codex_preset(mock_run_onboarding: AsyncMock, tmp_path: Path) -> None:
+    """init --preset local-embedded-codex should select embedded without extra flags."""
+    result_obj = MagicMock()
+    result_obj.status = "ok"
+    mock_run_onboarding.return_value = result_obj
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["init", str(tmp_path), "--preset", "local-embedded-codex"])
+
+    assert result.exit_code == 0
+    kwargs = mock_run_onboarding.await_args.kwargs
+    assert kwargs["projection_backend"] == "embedded"
+    assert kwargs["infra"] == "check"
+    assert kwargs["mcp_client"] == "codex"
+    assert kwargs["hook_client"] == "codex"
+
+
+@patch("zaxy.__main__.run_onboarding")
+def test_init_command_defaults_to_local_embedded_codex_onboarding(mock_run_onboarding: AsyncMock, tmp_path: Path) -> None:
+    """Bare init should be the one-command no-sidecar local onboarding path."""
+    result_obj = MagicMock()
+    result_obj.status = "ok"
+    mock_run_onboarding.return_value = result_obj
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["init", str(tmp_path)])
+
+    assert result.exit_code == 0
+    kwargs = mock_run_onboarding.await_args.kwargs
+    assert kwargs["projection_backend"] == "embedded"
+    assert kwargs["infra"] == "check"
+    assert kwargs["mcp_client"] == "codex"
+    assert kwargs["mcp_output"] is None
+    assert kwargs["hook_client"] == "codex"
+    assert kwargs["hook_output"] == tmp_path / ".codex" / "zaxy-capture.json"
+    assert kwargs["local_profile_output"] == tmp_path / ".env.local"
+    assert kwargs["capture_mode"] == "deterministic"
+    assert kwargs["capture_action"] == "none"
+
+
+@patch("zaxy.__main__.run_onboarding")
 def test_init_command_expands_local_claude_preset(mock_run_onboarding: AsyncMock, tmp_path: Path) -> None:
     """init --preset local-claude should pass expanded explicit options."""
     result_obj = MagicMock()
@@ -2873,6 +3970,7 @@ def test_init_command_help_describes_full_onboarding_path() -> None:
     assert "MCP config" in result.output
     assert "infra" in result.output
     assert "hook status" in result.output
+    assert "Bare zaxy init uses the local embedded Codex path" in result.output
 
 
 def test_init_command_json_includes_next_steps_and_capture_summary(tmp_path: Path) -> None:
@@ -2983,8 +4081,129 @@ def test_reproject_command_can_reset_and_rebuild_pggraph_backend(
     store.connect.assert_awaited_once()
     store.init_schema.assert_awaited_once()
     store.reset_benchmark_projection.assert_awaited_once()
+    store.begin_bulk_projection.assert_awaited_once()
+    store.upsert_extraction.assert_awaited_once()
+    store.commit_bulk_projection.assert_awaited_once()
+    store.rollback_bulk_projection.assert_not_awaited()
+    store.close.assert_awaited_once()
+
+
+@patch("zaxy.__main__.build_projection_store")
+def test_reproject_command_can_reset_and_rebuild_embedded_backend(
+    mock_build_projection_store: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """reproject should operationally cover embedded graph reset and rebuild."""
+    log_path = tmp_path / "default.jsonl"
+    EventLog(log_path).append(
+        "goal.created",
+        actor="assistant",
+        payload={"title": "Evaluate embedded graph"},
+        thread="default",
+    )
+    store = AsyncMock()
+    mock_build_projection_store.return_value = store
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "reproject",
+            str(log_path),
+            "--session-id",
+            "default",
+            "--projection-backend",
+            "embedded",
+            "--reset-projection",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Reprojected 1 events into session default using embedded" in result.output
+    config = mock_build_projection_store.call_args.args[0]
+    assert config.backend == "embedded"
+    assert config.embedded_graph_path.name == "embedded.kuzu"
+    store.connect.assert_awaited_once()
+    store.init_schema.assert_awaited_once()
+    store.reset_benchmark_projection.assert_awaited_once()
     store.upsert_extraction.assert_awaited_once()
     store.close.assert_awaited_once()
+
+
+@patch("zaxy.__main__.build_projection_store")
+def test_reproject_command_uses_repo_local_profile_for_bare_init(
+    mock_build_projection_store: MagicMock,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """After bare init, reproject should rebuild the repo-local embedded graph by default."""
+    log_path = tmp_path / ".eventloom" / "default.jsonl"
+    EventLog(log_path).append(
+        "goal.created",
+        actor="assistant",
+        payload={"title": "Use embedded projection"},
+        thread="default",
+    )
+    embedded_path = tmp_path / ".eventloom" / "projections" / "embedded.kuzu"
+    (tmp_path / ".env.local").write_text(
+        "PROJECTION_BACKEND=embedded\n"
+        f"EMBEDDED_GRAPH_PATH={embedded_path}\n"
+        "NEO4J_AUTO_START=false\n",
+        encoding="utf-8",
+    )
+    store = AsyncMock()
+    mock_build_projection_store.return_value = store
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["reproject", str(log_path), "--session-id", "default"])
+
+    assert result.exit_code == 0
+    assert "Reprojected 1 events into session default using embedded" in result.output
+    config = mock_build_projection_store.call_args.args[0]
+    assert config.backend == "embedded"
+    assert config.embedded_graph_path == embedded_path
+    store.connect.assert_awaited_once()
+    store.init_schema.assert_awaited_once()
+    store.upsert_extraction.assert_awaited_once()
+    store.close.assert_awaited_once()
+
+
+@patch("zaxy.__main__.build_projection_store")
+def test_reproject_command_uses_profile_next_to_absolute_eventloom_log(
+    mock_build_projection_store: MagicMock,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Absolute Eventloom logs should rebuild the projection configured by their repo."""
+    workspace = tmp_path / "workspace"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    log_path = workspace / ".eventloom" / "default.jsonl"
+    EventLog(log_path).append(
+        "goal.created",
+        actor="assistant",
+        payload={"title": "Use embedded projection"},
+        thread="default",
+    )
+    embedded_path = workspace / ".eventloom" / "projections" / "embedded.kuzu"
+    (workspace / ".env.local").write_text(
+        "PROJECTION_BACKEND=embedded\n"
+        f"EMBEDDED_GRAPH_PATH={embedded_path}\n",
+        encoding="utf-8",
+    )
+    store = AsyncMock()
+    mock_build_projection_store.return_value = store
+    monkeypatch.chdir(outside)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["reproject", str(log_path), "--session-id", "default"])
+
+    assert result.exit_code == 0
+    assert "using embedded" in result.output
+    config = mock_build_projection_store.call_args.args[0]
+    assert config.backend == "embedded"
+    assert config.embedded_graph_path == embedded_path
 
 
 @patch("zaxy.__main__.build_projection_store")
@@ -3159,6 +4378,33 @@ def test_dashboard_cli_help_exposes_localhost_default() -> None:
     assert options["--host"].default == "127.0.0.1"
     assert options["--port"].default == 8765
     assert options["--projection-backend"].help == (
-        "Projection backend for graph visualization: neo4j or pggraph"
+        "Projection backend for graph visualization: neo4j, pggraph, embedded, or latticedb"
     )
     assert options["--pggraph-dsn"].help == "pgGraph/PostgreSQL DSN for graph visualization"
+    assert options["--embedded-graph-path"].help == "Embedded graph projection path for graph visualization"
+
+
+@patch("zaxy.dashboard.run_dashboard")
+def test_dashboard_command_uses_repo_local_profile_for_bare_init(
+    mock_run_dashboard: MagicMock,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """After bare init, dashboard should inspect the embedded graph profile by default."""
+    embedded_path = tmp_path / ".eventloom" / "projections" / "embedded.kuzu"
+    (tmp_path / ".env.local").write_text(
+        "PROJECTION_BACKEND=embedded\n"
+        f"EMBEDDED_GRAPH_PATH={embedded_path}\n"
+        "NEO4J_AUTO_START=false\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["dashboard"])
+
+    assert result.exit_code == 0
+    scope = mock_run_dashboard.call_args.args[0]
+    assert scope.projection_backend == "embedded"
+    assert scope.embedded_graph_path == embedded_path
+    assert "Zaxy dashboard listening on http://127.0.0.1:8765" in result.output

@@ -364,7 +364,8 @@ class PgGraphStore:
         """Search by exact entity identity."""
         rows = await self._fetch_all(
             """
-            SELECT name, entity_type, valid_from, valid_to, summary, properties, session_id
+            SELECT name, entity_type, valid_from, valid_to, summary, properties, session_id,
+                   source_event_seq, source_event_hash
             FROM zaxy_pggraph_entities
             WHERE session_id = %(session_id)s
               AND name = %(name)s
@@ -409,6 +410,8 @@ class PgGraphStore:
                 entity.summary,
                 entity.properties,
                 entity.session_id,
+                entity.source_event_seq,
+                entity.source_event_hash,
                 GREATEST(
                     CASE
                         WHEN lower(entity.name) = lower(%(query)s) THEN 1.0
@@ -489,8 +492,8 @@ class PgGraphStore:
                 seed_id := seed.node_key,
                 max_depth := %(depth)s,
                 edge_types := CASE
-                    WHEN %(relation_type)s IS NULL THEN NULL
-                    ELSE ARRAY[%(relation_type)s]
+                    WHEN %(relation_type)s::text IS NULL THEN NULL
+                    ELSE ARRAY[%(relation_type)s::text]
                 END,
                 direction := 'out',
                 node_tables := ARRAY['zaxy_pggraph_entities'::regclass],
@@ -532,6 +535,8 @@ class PgGraphStore:
                 summary,
                 properties,
                 session_id,
+                source_event_seq,
+                source_event_hash,
                 1.0 - (embedding_vector <=> %(embedding)s::vector) AS score
             FROM zaxy_pggraph_entities
             WHERE session_id = %(session_id)s
@@ -896,8 +901,12 @@ class PgGraphStore:
     ) -> list[dict[str, Any]]:
         connection = self._require_connection()
         async with connection.cursor() as cursor:
-            await cursor.execute(sql, params)
-            return list(await cursor.fetchall())
+            try:
+                await cursor.execute(sql, params)
+                return list(await cursor.fetchall())
+            except Exception:
+                await connection.rollback()
+                raise
 
 
 def _node_key(session_id: str, entity_type: str, name: str, valid_from: str) -> str:
@@ -913,6 +922,10 @@ def _row_to_entity(row: dict[str, Any]) -> GraphEntity:
     summary = row.get("summary")
     if summary is not None:
         properties = {"summary": summary, **properties}
+    if row.get("source_event_seq") is not None:
+        properties["source_event_seq"] = int(row["source_event_seq"])
+    if row.get("source_event_hash") is not None:
+        properties["source_event_hash"] = str(row["source_event_hash"])
     return GraphEntity(
         name=str(row.get("name") or ""),
         entity_type=str(row.get("entity_type") or ""),

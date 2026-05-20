@@ -127,8 +127,12 @@ def test_codex_capture_runtime_resolves_relative_paths_against_process_cwd(
 
 def test_start_codex_capture_requires_repo_local_config(tmp_path: Path) -> None:
     """Starting managed capture should fail clearly before any process launch without config."""
-    with pytest.raises(FileNotFoundError, match="zaxy-capture.json"):
+    with pytest.raises(FileNotFoundError) as exc_info:
         start_codex_capture(workspace=tmp_path)
+    message = str(exc_info.value)
+    assert "zaxy-capture.json" in message
+    assert "run zaxy init" in message
+    assert "--preset local-codex" not in message
 
 
 @patch("os.kill")

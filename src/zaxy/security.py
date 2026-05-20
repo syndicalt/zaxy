@@ -21,6 +21,19 @@ SECRET_KEY_PATTERN = re.compile(
     r"secret|token)",
     re.IGNORECASE,
 )
+NON_SECRET_TOKEN_METRIC_KEYS = {
+    "answer_at_5_per_1k_injected_tokens",
+    "answer_at_5_per_1k_returned_tokens",
+    "completion_tokens",
+    "facts_per_1k_prompt_tokens",
+    "mean_injected_tokens",
+    "mean_returned_tokens",
+    "prompt_tokens",
+    "quality_per_1k_injected_tokens",
+    "quality_per_1k_returned_tokens",
+    "token_efficiency",
+    "total_tokens",
+}
 SECRET_VALUE_PATTERNS = (
     re.compile(r"\bsk-[A-Za-z0-9_-]{8,}\b"),
     re.compile(r"\bpypi-[A-Za-z0-9_-]{20,}\b"),
@@ -114,6 +127,8 @@ def _redact_value(value: Any, path: str) -> tuple[Any, list[str]]:
 
 
 def _is_secret_key(key: str) -> bool:
+    if key.casefold() in NON_SECRET_TOKEN_METRIC_KEYS:
+        return False
     return SECRET_KEY_PATTERN.search(key) is not None
 
 

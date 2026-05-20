@@ -17,10 +17,13 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import tempfile
 import time
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, cast
 
@@ -42,7 +45,7 @@ from zaxy.compaction import (
     build_compaction_projection,
     write_compaction_projection,
 )
-from zaxy.config import get_settings
+from zaxy.config import Settings, get_settings
 from zaxy.core import MemoryFabric
 from zaxy.doctor import (
     format_doctor_report,
@@ -150,6 +153,7 @@ from zaxy.packet_projection import (
 from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
 from zaxy.refs import MemoryRefStore
 from zaxy.release import package_version, run_beta_readiness, run_release_smoke
+from zaxy.runtime import LocalEmbeddedGraphRuntime, LocalPgGraphRuntime
 from zaxy.schema import (
     fetch_schema_migration_records,
     render_schema_plan,
@@ -216,15 +220,20 @@ def memory_status(
     eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory or JSONL log"),  # noqa: B008
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
     graph: bool = typer.Option(False, "--graph", help="Also inspect graph projection integrity"),
-    projection_backend: str = typer.Option(
-        "neo4j",
+    projection_backend: str | None = typer.Option(
+        None,
         "--projection-backend",
-        help="Projection backend to inspect: neo4j or pggraph",
+        help="Projection backend to inspect: neo4j, pggraph, embedded, or latticedb",
     ),
     pggraph_dsn: str | None = typer.Option(  # noqa: B008
         None,
         "--pggraph-dsn",
         help="Experimental pgGraph/PostgreSQL DSN for --projection-backend pggraph",
+    ),
+    embedded_graph_path: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--embedded-graph-path",
+        help="Embedded graph projection path for --projection-backend embedded",
     ),
     neo4j_uri: str | None = typer.Option(None, help="Neo4j Bolt URI"),
     neo4j_user: str | None = typer.Option(None, help="Neo4j username"),
@@ -232,23 +241,25 @@ def memory_status(
 ) -> None:
     """Show read-only Eventloom memory status."""
     status = inspect_memory_status(eventloom_path)
-    graph_sessions: list[dict[str, object]] = []
+    graph_status: dict[str, object] | None = None
     if graph:
         import asyncio
 
-        from zaxy.config import get_settings
-
-        async def _inspect_graph() -> list[dict[str, object]]:
-            settings = get_settings()
+        async def _inspect_graph() -> dict[str, object]:
+            settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
+            backend = (projection_backend or settings.projection_backend).casefold().strip()
             store = build_projection_store(
                 ProjectionBackendConfig(
-                    backend=projection_backend,
+                    backend=backend,
                     neo4j_uri=neo4j_uri or settings.neo4j_uri,
                     neo4j_user=neo4j_user or settings.neo4j_user,
                     neo4j_password=neo4j_password or settings.neo4j_password,
                     neo4j_ca_cert=settings.neo4j_ca_cert,
                     neo4j_trust_all=settings.neo4j_trust_all,
                     pggraph_dsn=pggraph_dsn or settings.pggraph_dsn,
+                    embedded_graph_path=embedded_graph_path or Path(settings.embedded_graph_path),
+                    latticedb_path=Path(settings.latticedb_path),
+                    embedding_dimension=settings.embedding_dimension,
                 )
             )
             await store.connect()
@@ -261,26 +272,28 @@ def memory_status(
                         eventloom_latest_hash=session.latest_hash,
                     )
                     projections.append(projection.to_dict())
-                return projections
+                return {"backend": backend, "sessions": projections}
             finally:
                 await store.close()
 
-        graph_sessions = asyncio.run(_inspect_graph())
+        graph_status = asyncio.run(_inspect_graph())
     if json_output:
         payload = status.to_dict()
         if graph:
-            payload["graph"] = {"sessions": graph_sessions}
+            payload["graph"] = graph_status
         typer.echo(json.dumps(payload, indent=2, sort_keys=True))
     else:
         output = format_memory_status(status)
-        if graph:
-            output = "\n".join([output, "", _format_memory_graph_status(graph_sessions)])
+        if graph and graph_status is not None:
+            output = "\n".join([output, "", _format_memory_graph_status(graph_status)])
         typer.echo(output)
 
 
-def _format_memory_graph_status(graph_sessions: list[dict[str, object]]) -> str:
+def _format_memory_graph_status(graph_status: dict[str, object]) -> str:
     """Format graph projection status for humans."""
-    lines = ["Graph projection:"]
+    backend = graph_status.get("backend", "unknown")
+    graph_sessions = cast(list[dict[str, object]], graph_status.get("sessions", []))
+    lines = [f"Graph projection (backend={backend}):"]
     if not graph_sessions:
         lines.append("  no Eventloom sessions to inspect")
         return "\n".join(lines)
@@ -303,15 +316,20 @@ def memory_inferred_status(
     session_id: str = typer.Option("default", help="Session ID to inspect"),
     limit: int = typer.Option(10, help="Number of representative inferred edges to show"),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
-    projection_backend: str = typer.Option(
-        "neo4j",
+    projection_backend: str | None = typer.Option(
+        None,
         "--projection-backend",
-        help="Projection backend to inspect: neo4j or pggraph",
+        help="Projection backend to inspect: neo4j, pggraph, embedded, or latticedb",
     ),
     pggraph_dsn: str | None = typer.Option(  # noqa: B008
         None,
         "--pggraph-dsn",
         help="Experimental pgGraph/PostgreSQL DSN for --projection-backend pggraph",
+    ),
+    embedded_graph_path: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--embedded-graph-path",
+        help="Embedded graph projection path for --projection-backend embedded",
     ),
     neo4j_uri: str | None = typer.Option(None, help="Neo4j Bolt URI"),
     neo4j_user: str | None = typer.Option(None, help="Neo4j username"),
@@ -320,25 +338,29 @@ def memory_inferred_status(
     """Show read-only graph audit status for inferred relationships."""
     import asyncio
 
-    from zaxy.config import get_settings
-
     async def _inspect_graph() -> dict[str, object]:
-        settings = get_settings()
+        settings = _status_settings()
+        backend = (projection_backend or settings.projection_backend).casefold().strip()
         store = build_projection_store(
             ProjectionBackendConfig(
-                backend=projection_backend,
+                backend=backend,
                 neo4j_uri=neo4j_uri or settings.neo4j_uri,
                 neo4j_user=neo4j_user or settings.neo4j_user,
                 neo4j_password=neo4j_password or settings.neo4j_password,
                 neo4j_ca_cert=settings.neo4j_ca_cert,
                 neo4j_trust_all=settings.neo4j_trust_all,
                 pggraph_dsn=pggraph_dsn or settings.pggraph_dsn,
+                embedded_graph_path=embedded_graph_path or Path(settings.embedded_graph_path),
+                latticedb_path=Path(settings.latticedb_path),
+                embedding_dimension=settings.embedding_dimension,
             )
         )
         await store.connect()
         try:
             status = await store.inspect_inferred_edge_status(session_id, limit=limit)
-            return status.to_dict()
+            payload = status.to_dict()
+            payload["backend"] = backend
+            return payload
         finally:
             await store.close()
 
@@ -352,13 +374,14 @@ def memory_inferred_status(
 def _format_memory_inferred_status(status: dict[str, object]) -> str:
     """Format inferred-edge audit status for humans."""
     session_id = status.get("session_id", "-")
+    backend = status.get("backend", "unknown")
     total_edges = _format_int_value(status.get("total_edges"))
     method_count = _format_int_value(status.get("method_count"))
     evidence_coverage = _format_float_value(status.get("evidence_coverage"))
     missing_evidence = _format_int_value(status.get("missing_evidence_count"))
     missing_source_events = _format_int_value(status.get("missing_source_event_count"))
     lines = [
-        f"Inferred edges: {session_id}",
+        f"Inferred edges: {session_id} (backend={backend})",
         (
             f"  total={total_edges} methods={method_count} "
             f"evidence_coverage={evidence_coverage:.1%} "
@@ -458,6 +481,9 @@ def memory_bootstrap(
     session_id: str = typer.Option("default", help="Session ID to bootstrap"),
     current_task: str | None = typer.Option(None, help="Current task or question to seed checkout guidance"),  # noqa: B008
     workspace_root: Path = typer.Option(Path("."), help="Workspace root for capture/status discovery"),  # noqa: B008
+    launch: bool = typer.Option(False, "--launch", help="Start the agent client with activation context"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print the launch command without starting the client"),
+    codex_executable: str = typer.Option("codex", help="Codex executable for --launch"),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """Show compact session-start Zaxy memory bootstrap guidance."""
@@ -500,6 +526,7 @@ def memory_checkout(
     import asyncio
 
     async def _checkout() -> dict[str, object]:
+        settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
         fabric = MemoryFabric(
             eventloom_path=str(eventloom_path),
             neo4j_uri=neo4j_uri,
@@ -507,6 +534,10 @@ def memory_checkout(
             neo4j_password=neo4j_password,
             neo4j_ca_cert=neo4j_ca_cert,
             neo4j_trust_all=neo4j_trust_all,
+            projection_backend=settings.projection_backend,
+            pggraph_dsn=settings.pggraph_dsn,
+            embedded_graph_path=Path(settings.embedded_graph_path),
+            latticedb_path=Path(settings.latticedb_path),
         )
         await fabric.connect()
         try:
@@ -529,6 +560,7 @@ def memory_checkout(
         activity="checkout",
         source="cli",
         query=query,
+        metadata=_checkout_activity_metadata(payload),
     )
     if json_output:
         typer.echo(json.dumps(payload, indent=2, sort_keys=True))
@@ -632,6 +664,59 @@ def memory_refs_list(
         )
     else:
         typer.echo("No memory refs")
+
+
+@app.command("activate")
+def activate(
+    client: str = typer.Argument(..., help="Agent client to activate: codex"),  # noqa: B008
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    session_id: str = typer.Option("default", help="Session ID to activate"),
+    current_task: str | None = typer.Option(None, help="Current task or question to seed checkout guidance"),  # noqa: B008
+    workspace_root: Path = typer.Option(Path("."), help="Workspace root for capture/status discovery"),  # noqa: B008
+    launch: bool = typer.Option(False, "--launch", help="Start the agent client with activation context"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print the launch command without starting the client"),
+    codex_executable: str = typer.Option("codex", help="Codex executable for --launch"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Emit a prompt-ready memory activation packet for an agent client."""
+    normalized_client = client.casefold().strip().replace("_", "-")
+    if normalized_client != "codex":
+        raise typer.BadParameter("activate currently supports: codex", param_hint="client")
+    bootstrap = build_memory_bootstrap(
+        eventloom_path=eventloom_path,
+        session_id=session_id,
+        workspace_root=workspace_root,
+        current_task=current_task,
+    )
+    record_memory_activity(
+        eventloom_path,
+        session_id=session_id,
+        activity="bootstrap",
+        source="activate-codex",
+        query=current_task,
+    )
+    packet = {
+        "client": normalized_client,
+        "mode": "session_start_injection",
+        "session_id": session_id,
+        "workspace": str(workspace_root.resolve()),
+        "bootstrap": bootstrap,
+        "injection_text": bootstrap["prompt"],
+        "next_step": "Start Codex with this activation packet in session-start context, then run memory_checkout.",
+    }
+    if launch:
+        command = _codex_activation_command(codex_executable, workspace_root.resolve(), str(packet["injection_text"]))
+        if dry_run:
+            typer.echo(_shell_join(command))
+            return
+        result = subprocess.run(command, check=False)
+        if result.returncode != 0:
+            raise typer.Exit(result.returncode)
+        return
+    if json_output:
+        typer.echo(json.dumps(packet, indent=2, sort_keys=True))
+    else:
+        typer.echo(_format_activation_packet(packet))
 
 
 @app.command("ide-config")
@@ -832,14 +917,198 @@ def hooks(
 def hook_status(
     eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory or JSONL log to inspect"),
     workspace_root: Path = typer.Option(Path("."), help="Workspace root to scan for hook config"),  # noqa: B008
+    max_checkout_stale_minutes: int = typer.Option(120, help="Warn when the latest memory checkout is older than this many minutes"),
+    min_activation_rate: float | None = typer.Option(
+        None,
+        "--min-activation-rate",
+        help="Fail when fresh checkout rate for high-context sessions is below this 0.0-1.0 floor",
+    ),
+    max_checkout_prompt_tokens: int | None = typer.Option(
+        None,
+        "--max-checkout-prompt-tokens",
+        min=1,
+        help="Fail when the latest checkout prompt token estimate exceeds this ceiling",
+    ),
+    min_checkout_facts_per_1k_tokens: float | None = typer.Option(
+        None,
+        "--min-checkout-facts-per-1k-tokens",
+        min=0.0,
+        help="Fail when latest checkout current facts per 1k prompt tokens is below this floor",
+    ),
+    now: str | None = typer.Option(None, help="Override current time for deterministic status checks"),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """Inspect observer hook installation and recent lifecycle activity."""
-    report = inspect_hook_status(eventloom_path=eventloom_path, workspace_root=workspace_root)
+    if min_activation_rate is not None and not 0.0 <= min_activation_rate <= 1.0:
+        raise typer.BadParameter("must be between 0.0 and 1.0", param_hint="--min-activation-rate")
+    try:
+        parsed_now = _parse_cli_datetime(now) if now else None
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--now") from exc
+    report = inspect_hook_status(
+        eventloom_path=eventloom_path,
+        workspace_root=workspace_root,
+        max_checkout_stale_minutes=max_checkout_stale_minutes,
+        now=parsed_now,
+    )
+    guardrail = _activation_guardrail(report, threshold=min_activation_rate)
+    if guardrail is not None:
+        report["activation_guardrail"] = guardrail
+    token_guardrail = _checkout_token_guardrail(
+        report,
+        max_prompt_tokens=max_checkout_prompt_tokens,
+        min_facts_per_1k_prompt_tokens=min_checkout_facts_per_1k_tokens,
+    )
+    if token_guardrail is not None:
+        report["checkout_token_guardrail"] = token_guardrail
     if json_output:
         typer.echo(json.dumps(report, indent=2, sort_keys=True))
     else:
         typer.echo(format_hook_status(report))
+        if guardrail is not None:
+            typer.echo(_format_activation_guardrail(guardrail))
+        if token_guardrail is not None:
+            typer.echo(_format_checkout_token_guardrail(token_guardrail))
+    if (guardrail is not None and guardrail["status"] != "ok") or (
+        token_guardrail is not None and token_guardrail["status"] != "ok"
+    ):
+        raise typer.Exit(1)
+
+
+def _activation_guardrail(report: dict[str, object], *, threshold: float | None) -> dict[str, object] | None:
+    if threshold is None:
+        return None
+    memory_activation = report.get("memory_activation")
+    if not isinstance(memory_activation, dict):
+        return {
+            "status": "fail",
+            "threshold": threshold,
+            "fresh_checkout_rate": None,
+            "message": "activation efficiency is unavailable",
+        }
+    efficiency = memory_activation.get("activation_efficiency")
+    if not isinstance(efficiency, dict):
+        return {
+            "status": "fail",
+            "threshold": threshold,
+            "fresh_checkout_rate": None,
+            "message": "activation efficiency is unavailable",
+        }
+    rate = efficiency.get("fresh_checkout_rate")
+    if not isinstance(rate, int | float):
+        return {
+            "status": "fail",
+            "threshold": threshold,
+            "fresh_checkout_rate": None,
+            "message": "activation efficiency is unavailable",
+        }
+    status = "ok" if float(rate) >= threshold else "fail"
+    comparison = ">=" if status == "ok" else "is below required"
+    return {
+        "status": status,
+        "threshold": threshold,
+        "fresh_checkout_rate": float(rate),
+        "message": f"activation efficiency {float(rate) * 100:.1f}% {comparison} {threshold * 100:.1f}%",
+    }
+
+
+def _format_activation_guardrail(guardrail: dict[str, object]) -> str:
+    status = str(guardrail["status"]).upper()
+    rate = guardrail.get("fresh_checkout_rate")
+    threshold_value = guardrail.get("threshold")
+    threshold = float(threshold_value) if isinstance(threshold_value, int | float) else 0.0
+    if isinstance(rate, int | float):
+        comparator = ">=" if guardrail["status"] == "ok" else "<"
+        return f"Activation guardrail: {status} ({float(rate) * 100:.1f}% {comparator} {threshold * 100:.1f}%)"
+    return f"Activation guardrail: {status} ({guardrail['message']})"
+
+
+def _checkout_token_guardrail(
+    report: dict[str, object],
+    *,
+    max_prompt_tokens: int | None,
+    min_facts_per_1k_prompt_tokens: float | None,
+) -> dict[str, object] | None:
+    if max_prompt_tokens is None and min_facts_per_1k_prompt_tokens is None:
+        return None
+    memory_activation = report.get("memory_activation")
+    if not isinstance(memory_activation, dict):
+        return _missing_checkout_token_guardrail(
+            max_prompt_tokens=max_prompt_tokens,
+            min_facts_per_1k_prompt_tokens=min_facts_per_1k_prompt_tokens,
+        )
+    latest_checkout = memory_activation.get("latest_checkout")
+    if not isinstance(latest_checkout, dict):
+        return _missing_checkout_token_guardrail(
+            max_prompt_tokens=max_prompt_tokens,
+            min_facts_per_1k_prompt_tokens=min_facts_per_1k_prompt_tokens,
+        )
+    token_efficiency = latest_checkout.get("token_efficiency")
+    if not isinstance(token_efficiency, dict):
+        return _missing_checkout_token_guardrail(
+            max_prompt_tokens=max_prompt_tokens,
+            min_facts_per_1k_prompt_tokens=min_facts_per_1k_prompt_tokens,
+        )
+    prompt_tokens = token_efficiency.get("prompt_tokens")
+    facts_per_1k = token_efficiency.get("facts_per_1k_prompt_tokens")
+    if not isinstance(prompt_tokens, int | float) or not isinstance(facts_per_1k, int | float):
+        return _missing_checkout_token_guardrail(
+            max_prompt_tokens=max_prompt_tokens,
+            min_facts_per_1k_prompt_tokens=min_facts_per_1k_prompt_tokens,
+        )
+    messages: list[str] = []
+    if max_prompt_tokens is not None and int(prompt_tokens) > max_prompt_tokens:
+        messages.append(f"checkout prompt tokens {int(prompt_tokens)} exceed maximum {max_prompt_tokens}")
+    if min_facts_per_1k_prompt_tokens is not None and float(facts_per_1k) < min_facts_per_1k_prompt_tokens:
+        messages.append(
+            f"checkout facts per 1k prompt tokens {float(facts_per_1k)} "
+            f"below required {min_facts_per_1k_prompt_tokens}"
+        )
+    return {
+        "status": "fail" if messages else "ok",
+        "max_prompt_tokens": max_prompt_tokens,
+        "min_facts_per_1k_prompt_tokens": min_facts_per_1k_prompt_tokens,
+        "prompt_tokens": int(prompt_tokens),
+        "facts_per_1k_prompt_tokens": float(facts_per_1k),
+        "messages": messages,
+    }
+
+
+def _missing_checkout_token_guardrail(
+    *,
+    max_prompt_tokens: int | None,
+    min_facts_per_1k_prompt_tokens: float | None,
+) -> dict[str, object]:
+    return {
+        "status": "fail",
+        "max_prompt_tokens": max_prompt_tokens,
+        "min_facts_per_1k_prompt_tokens": min_facts_per_1k_prompt_tokens,
+        "prompt_tokens": None,
+        "facts_per_1k_prompt_tokens": None,
+        "messages": ["checkout token efficiency is unavailable"],
+    }
+
+
+def _format_checkout_token_guardrail(guardrail: dict[str, object]) -> str:
+    status = str(guardrail["status"]).upper()
+    prompt_tokens = guardrail.get("prompt_tokens")
+    facts_per_1k = guardrail.get("facts_per_1k_prompt_tokens")
+    if isinstance(prompt_tokens, int | float) and isinstance(facts_per_1k, int | float):
+        return (
+            f"Checkout token guardrail: {status} "
+            f"({int(prompt_tokens)} prompt tokens, {float(facts_per_1k)} facts/1k prompt tokens)"
+        )
+    messages = guardrail.get("messages")
+    if isinstance(messages, list) and messages:
+        return f"Checkout token guardrail: {status} ({'; '.join(str(message) for message in messages)})"
+    return f"Checkout token guardrail: {status}"
+
+
+def _checkout_activity_metadata(payload: dict[str, object]) -> dict[str, object]:
+    token_efficiency = payload.get("token_efficiency")
+    if isinstance(token_efficiency, dict):
+        return {"token_efficiency": token_efficiency}
+    return {}
 
 
 @app.command("capture-soak")
@@ -1174,6 +1443,7 @@ def _parse_json_object(value: str, *, option: str) -> dict[str, object]:
 @app.command("local-profile")
 def local_profile(
     output: Path | None = typer.Option(None, "--output", "-o", help="Write profile to this file"),  # noqa: B008
+    projection_backend: str = typer.Option("neo4j", "--projection-backend", help="Projection backend: neo4j, pggraph, embedded, or latticedb"),  # noqa: B008
     force: bool = typer.Option(False, "--force", help="Overwrite an existing output file"),  # noqa: B008
     check: bool = typer.Option(False, "--check", help="Validate deterministic local providers"),  # noqa: B008
 ) -> None:
@@ -1182,11 +1452,11 @@ def local_profile(
         typer.echo(json.dumps(check_local_profile(), indent=2, sort_keys=True))
         return
     if output is None:
-        typer.echo(render_local_profile(), nl=False)
+        typer.echo(render_local_profile(projection_backend=projection_backend), nl=False)
         return
     try:
-        written = write_local_profile(output, force=force)
-    except FileExistsError as exc:
+        written = write_local_profile(output, projection_backend=projection_backend, force=force)
+    except (FileExistsError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     typer.echo(f"Wrote local profile to {written}")
 
@@ -1302,7 +1572,7 @@ def refresh_context(
     kind: str = typer.Option("documents", "--kind", help="Context kind: documents or codebase"),
     session_id: str = typer.Option("default", help="Session ID to append refresh events into"),  # noqa: B008
     eventloom_path: Path = typer.Option(Path(".eventloom"), help="Eventloom directory for refresh state"),  # noqa: B008
-    projection_backend: str | None = typer.Option(None, "--projection-backend", help="Projection backend: neo4j or pggraph"),  # noqa: B008
+    projection_backend: str | None = typer.Option(None, "--projection-backend", help="Projection backend: neo4j, pggraph, embedded, or latticedb"),  # noqa: B008
     pggraph_dsn: str | None = typer.Option(None, "--pggraph-dsn", help="pgGraph/PostgreSQL DSN"),  # noqa: B008
     max_lines: int = typer.Option(80, "--max-lines", min=1, help="Maximum document lines per chunk"),
     max_bytes: int = typer.Option(512 * 1024, "--max-bytes", min=1, help="Maximum source file size to refresh"),
@@ -1312,10 +1582,13 @@ def refresh_context(
     import asyncio
 
     async def _run() -> dict[str, object]:
+        settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
         fabric = MemoryFabric(
             eventloom_path=str(eventloom_path),
-            projection_backend=projection_backend,
-            pggraph_dsn=pggraph_dsn,
+            projection_backend=projection_backend or settings.projection_backend,
+            pggraph_dsn=pggraph_dsn or settings.pggraph_dsn,
+            embedded_graph_path=Path(settings.embedded_graph_path),
+            latticedb_path=Path(settings.latticedb_path),
             tracer_disabled=False,
         )
         try:
@@ -1369,7 +1642,7 @@ def init_session(
 @app.command("init")
 def init(
     path: Path = typer.Argument(Path("."), help="Workspace root to initialize"),  # noqa: B008
-    preset: str | None = typer.Option(None, help="Onboarding preset: local-claude or local-codex"),  # noqa: B008
+    preset: str | None = typer.Option(None, help="Onboarding preset: local-claude, local-codex, or local-embedded-codex"),  # noqa: B008
     eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory for this workspace"),
     domain: str | None = typer.Option(None, help="Project/domain used for default session scoping"),  # noqa: B008
     session_id: str | None = typer.Option(None, help="Explicit session ID; defaults to <domain>-default"),  # noqa: B008
@@ -1379,7 +1652,7 @@ def init(
     hook_output: Path | None = typer.Option(None, help="Write hook config to this file"),  # noqa: B008
     local_profile_output: Path | None = typer.Option(None, help="Write local retrieval profile to this file"),  # noqa: B008
     infra: str = typer.Option("none", help="Local infra action: none, check, or start"),  # noqa: B008
-    projection_backend: str = typer.Option("neo4j", "--projection-backend", help="Projection backend for infra bootstrap: neo4j or pggraph"),  # noqa: B008
+    projection_backend: str | None = typer.Option(None, "--projection-backend", help="Projection backend for infra bootstrap: neo4j, pggraph, embedded, or latticedb"),  # noqa: B008
     pggraph_dsn: str | None = typer.Option(None, "--pggraph-dsn", help="pgGraph/PostgreSQL DSN for --projection-backend pggraph"),  # noqa: B008
     pggraph_repo: Path | None = typer.Option(None, "--pggraph-repo", help="Local pgGraph checkout containing scripts/quickstart.sh"),  # noqa: B008
     capture_mode: str = typer.Option("deterministic", help="Capture mode: deterministic, packet, or hybrid"),  # noqa: B008
@@ -1391,12 +1664,23 @@ def init(
     force: bool = typer.Option(False, "--force", help="Overwrite generated output files"),  # noqa: B008
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),  # noqa: B008
 ) -> None:
-    """Run first-run onboarding: MCP config, hooks, infra, genesis, heartbeat, doctor, hook status."""
+    """Bare zaxy init uses the local embedded Codex path for MCP config, infra, and hook status."""
     import asyncio
 
     async def _run() -> OnboardingResult:
+        effective_preset = preset
+        if (
+            effective_preset is None
+            and mcp_client is None
+            and mcp_output is None
+            and hook_client is None
+            and hook_output is None
+            and local_profile_output is None
+            and projection_backend is None
+        ):
+            effective_preset = "local-embedded-codex"
         preset_options = apply_onboarding_preset(
-            preset,
+            effective_preset,
             workspace=path,
             mcp_client=mcp_client,
             mcp_output=mcp_output,
@@ -1417,7 +1701,7 @@ def init(
             hook_output=preset_options["hook_output"],
             local_profile_output=preset_options["local_profile_output"],
             infra=preset_options["infra"],
-            projection_backend=projection_backend,
+            projection_backend=projection_backend or preset_options["projection_backend"] or "neo4j",
             pggraph_dsn=pggraph_dsn,
             pggraph_repo=pggraph_repo,
             capture_mode=preset_options["capture_mode"],
@@ -1457,16 +1741,17 @@ def dashboard(
     domain: str | None = typer.Option(None, help="Domain scope to display"),  # noqa: B008
     host: str = typer.Option("127.0.0.1", help="Dashboard bind host"),
     port: int = typer.Option(8765, min=1, max=65535, help="Dashboard bind port"),
-    projection_backend: str | None = typer.Option(None, "--projection-backend", help="Projection backend for graph visualization: neo4j or pggraph"),  # noqa: B008
+    projection_backend: str | None = typer.Option(None, "--projection-backend", help="Projection backend for graph visualization: neo4j, pggraph, embedded, or latticedb"),  # noqa: B008
     neo4j_uri: str | None = typer.Option(None, help="Neo4j Bolt URI for graph visualization"),  # noqa: B008
     neo4j_user: str | None = typer.Option(None, help="Neo4j username for graph visualization"),  # noqa: B008
     neo4j_password: str | None = typer.Option(None, help="Neo4j password for graph visualization"),  # noqa: B008
     pggraph_dsn: str | None = typer.Option(None, "--pggraph-dsn", help="pgGraph/PostgreSQL DSN for graph visualization"),  # noqa: B008
+    embedded_graph_path: Path | None = typer.Option(None, "--embedded-graph-path", help="Embedded graph projection path for graph visualization"),  # noqa: B008
 ) -> None:
     """Start the read-only local runtime dashboard."""
     from zaxy.dashboard import DashboardConfig, resolve_dashboard_scope, run_dashboard
 
-    settings = get_settings()
+    settings = _status_settings(workspace or Path("."))
     scope = resolve_dashboard_scope(
         DashboardConfig(
             workspace=workspace,
@@ -1480,6 +1765,7 @@ def dashboard(
             neo4j_user=neo4j_user or settings.neo4j_user,
             neo4j_password=neo4j_password or settings.neo4j_password,
             pggraph_dsn=pggraph_dsn or settings.pggraph_dsn,
+            embedded_graph_path=embedded_graph_path or Path(settings.embedded_graph_path),
         )
     )
     typer.echo(f"Zaxy dashboard listening on http://{scope.host}:{scope.port}")
@@ -1566,6 +1852,7 @@ def serve(
     workspace_root = Path.cwd()
     resolved_eventloom_path = eventloom_path or os.getenv("EVENTLOOM_PATH") or str(workspace_root / ".eventloom")
     resolved_session_id = os.getenv("EVENTLOOM_THREAD") or domain_default_session(derive_domain(workspace_root))
+    settings = _status_settings(workspace_root)
 
     # Configure the module-level server instance from CLI overrides
     mcp_server.server = mcp_server.ZaxyMCPServer(
@@ -1573,6 +1860,10 @@ def serve(
         neo4j_uri=neo4j_uri,
         neo4j_user=neo4j_user,
         neo4j_password=neo4j_password,
+        projection_backend=settings.projection_backend,
+        pggraph_dsn=settings.pggraph_dsn,
+        embedded_graph_path=Path(settings.embedded_graph_path),
+        latticedb_path=Path(settings.latticedb_path),
         workspace_root=workspace_root,
         default_session_id=resolved_session_id,
     )
@@ -1622,15 +1913,20 @@ def reproject(
     log_path: Path = typer.Argument(..., help="Path to Eventloom JSONL file"),  # noqa: B008
     from_seq: int = typer.Option(1, help="Start sequence number"),
     session_id: str = typer.Option("default", help="Graph session ID to project into"),
-    projection_backend: str = typer.Option(
-        "neo4j",
+    projection_backend: str | None = typer.Option(
+        None,
         "--projection-backend",
-        help="Projection backend to rebuild: neo4j or pggraph",
+        help="Projection backend to rebuild: neo4j, pggraph, embedded, or latticedb",
     ),
     pggraph_dsn: str | None = typer.Option(  # noqa: B008
         None,
         "--pggraph-dsn",
         help="Experimental pgGraph/PostgreSQL DSN for --projection-backend pggraph",
+    ),
+    embedded_graph_path: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--embedded-graph-path",
+        help="Embedded graph projection path for --projection-backend embedded",
     ),
     reset_projection: bool = typer.Option(
         False,
@@ -1644,11 +1940,11 @@ def reproject(
     """Replay an Eventloom log and rebuild its graph projection."""
     import asyncio
 
-    from zaxy.config import get_settings
+    profile_root = _profile_root_for_eventloom_path(log_path)
+    settings = _status_settings(profile_root)
+    backend = (projection_backend or settings.projection_backend).casefold().strip()
 
     async def _run() -> int:
-        settings = get_settings()
-        backend = projection_backend.casefold().strip()
         store = build_projection_store(
             ProjectionBackendConfig(
                 backend=backend,
@@ -1658,6 +1954,9 @@ def reproject(
                 neo4j_ca_cert=settings.neo4j_ca_cert,
                 neo4j_trust_all=settings.neo4j_trust_all,
                 pggraph_dsn=pggraph_dsn or settings.pggraph_dsn,
+                embedded_graph_path=embedded_graph_path or Path(settings.embedded_graph_path),
+                latticedb_path=Path(settings.latticedb_path),
+                embedding_dimension=settings.embedding_dimension,
             )
         )
         await store.connect()
@@ -1672,14 +1971,27 @@ def reproject(
             if not replay_result.integrity.ok:
                 reason = replay_result.integrity.broken_reason or "unknown integrity failure"
                 raise typer.BadParameter(f"Eventloom integrity failed: {reason}")
-            for event in replay_result.events:
-                await store.upsert_extraction(extract(event), session_id=session_id)
+            begin_bulk = getattr(store, "begin_bulk_projection", None)
+            commit_bulk = getattr(store, "commit_bulk_projection", None)
+            rollback_bulk = getattr(store, "rollback_bulk_projection", None)
+            use_bulk = callable(begin_bulk) and callable(commit_bulk)
+            if use_bulk:
+                await cast(Callable[[], Awaitable[None]], begin_bulk)()
+            try:
+                for event in replay_result.events:
+                    await store.upsert_extraction(extract(event), session_id=session_id)
+            except Exception:
+                if use_bulk and callable(rollback_bulk):
+                    await cast(Callable[[], Awaitable[None]], rollback_bulk)()
+                raise
+            if use_bulk:
+                await cast(Callable[[], Awaitable[None]], commit_bulk)()
             return len(replay_result.events)
         finally:
             await store.close()
 
     count = asyncio.run(_run())
-    typer.echo(f"Reprojected {count} events into session {session_id} using {projection_backend.casefold().strip()}")
+    typer.echo(f"Reprojected {count} events into session {session_id} using {backend}")
 
 
 @app.command()
@@ -1787,14 +2099,15 @@ def status(
     neo4j_uri: str | None = typer.Option(None, help="Neo4j Bolt URI"),
     neo4j_user: str | None = typer.Option(None, help="Neo4j username"),
     neo4j_password: str | None = typer.Option(None, help="Neo4j password"),
+    projection_backend: str | None = typer.Option(None, "--projection-backend", help="Projection backend to check: neo4j, pggraph, or embedded"),
+    pggraph_dsn: str | None = typer.Option(None, "--pggraph-dsn", help="pgGraph/PostgreSQL DSN"),
+    embedded_graph_path: Path | None = typer.Option(None, "--embedded-graph-path", help="Embedded graph projection path"),  # noqa: B008
     pathlight_url: str | None = typer.Option(None, help="Pathlight collector URL"),
 ) -> None:
-    """Check connectivity to external services."""
+    """Check connectivity to external services and local projection posture."""
     import asyncio
 
-    from zaxy.config import get_settings
-
-    settings = get_settings()
+    settings = _status_settings()
 
     async def _check() -> None:
         ok = True
@@ -1802,17 +2115,36 @@ def status(
         _user = neo4j_user or settings.neo4j_user
         _password = neo4j_password or settings.neo4j_password
         _pathlight = pathlight_url or settings.pathlight_url
+        backend = (projection_backend or settings.projection_backend).casefold().strip()
 
-        # Neo4j
-        try:
-            gs = GraphStore(_uri, _user, _password)
-            await gs.connect()
-            assert gs._driver is not None
-            await gs._driver.execute_query("RETURN 1 AS n")
-            await gs.close()
-            typer.echo(f"Neo4j:     OK ({_uri})")
-        except Exception as exc:
-            typer.echo(f"Neo4j:     FAIL ({exc})")
+        if backend == "embedded":
+            embedded_runtime = LocalEmbeddedGraphRuntime(path=embedded_graph_path or Path(settings.embedded_graph_path))
+            check = embedded_runtime.check()
+            typer.echo(f"embedded graph: {check.status.upper()} ({check.message})")
+            if check.status == "error":
+                ok = False
+        elif backend == "pggraph":
+            pggraph_runtime = LocalPgGraphRuntime(
+                dsn=pggraph_dsn or settings.pggraph_dsn,
+                enabled=settings.pggraph_auto_start and settings.zaxy_env.lower() != "production",
+            )
+            check = pggraph_runtime.check()
+            typer.echo(f"pgGraph: {check.status.upper()} ({check.message})")
+            if check.status == "error":
+                ok = False
+        elif backend == "neo4j":
+            try:
+                gs = GraphStore(_uri, _user, _password)
+                await gs.connect()
+                assert gs._driver is not None
+                await gs._driver.execute_query("RETURN 1 AS n")
+                await gs.close()
+                typer.echo(f"Neo4j:     OK ({_uri})")
+            except Exception as exc:
+                typer.echo(f"Neo4j:     FAIL ({exc})")
+                ok = False
+        else:
+            typer.echo(f"Projection: FAIL (status supports neo4j, pggraph, or embedded; got {backend})")
             ok = False
 
         # Pathlight is optional. Only fail health checks when explicitly enabled.
@@ -1836,6 +2168,42 @@ def status(
         raise typer.Exit(0 if ok else 1)
 
     asyncio.run(_check())
+
+
+def _status_settings(root: Path = Path(".")) -> Settings:
+    """Load status settings, honoring repo-local .env.local written by zaxy init."""
+    profile = root / ".env.local"
+    if not profile.is_file():
+        return Settings()
+    values = _read_env_profile(profile)
+    kwargs: dict[str, Any] = {}
+    for key, value in values.items():
+        if key in os.environ:
+            continue
+        field_name = key.casefold().lower()
+        if field_name in Settings.model_fields:
+            kwargs[field_name] = value
+    return Settings(**kwargs)
+
+
+def _profile_root_for_eventloom_path(path: Path) -> Path:
+    candidate = Path(path)
+    if candidate.name == ".eventloom":
+        return candidate.parent
+    if candidate.suffix == ".jsonl" and candidate.parent.name == ".eventloom":
+        return candidate.parent.parent
+    return Path(".")
+
+
+def _read_env_profile(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
 
 
 @app.command()
@@ -2114,7 +2482,7 @@ def benchmark(
     projection_backend: str = typer.Option(
         "neo4j",
         "--projection-backend",
-        help="Projection backend for graph-backed Zaxy benchmarks: neo4j or pggraph",
+        help="Projection backend for graph-backed Zaxy benchmarks: neo4j, pggraph, embedded, or latticedb",
     ),
     pggraph_dsn: str | None = typer.Option(  # noqa: B008
         None,
@@ -2284,6 +2652,9 @@ def benchmark(
                 neo4j_ca_cert=None,
                 neo4j_trust_all=False,
                 pggraph_dsn=pggraph_dsn or settings.pggraph_dsn,
+                embedded_graph_path=Path(settings.embedded_graph_path),
+                latticedb_path=Path(settings.latticedb_path),
+                embedding_dimension=settings.embedding_dimension,
             )
             zaxy_retriever, graph = await build_live_zaxy_retriever(
                 eventlog,
@@ -2446,6 +2817,40 @@ def benchmark_compare(
 
 def main() -> None:
     app()
+
+
+def _parse_cli_datetime(value: str) -> datetime:
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise ValueError("must be an ISO-8601 datetime") from exc
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _format_activation_packet(packet: dict[str, object]) -> str:
+    bootstrap = packet["bootstrap"]
+    if not isinstance(bootstrap, dict):
+        raise TypeError("activation packet bootstrap must be a dictionary")
+    injection_text = str(packet["injection_text"])
+    return "\n".join(
+        [
+            "# Zaxy Codex Activation",
+            f"Session: {packet['session_id']}",
+            f"Workspace: {packet['workspace']}",
+            "",
+            "Inject this at Codex session start, then follow the startup sequence:",
+            "",
+            injection_text,
+            "",
+            str(packet["next_step"]),
+        ]
+    )
+
+
+def _codex_activation_command(executable: str, workspace: Path, prompt: str) -> list[str]:
+    return [executable, "--cd", str(workspace), prompt]
 
 
 if __name__ == "__main__":

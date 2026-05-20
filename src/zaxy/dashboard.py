@@ -13,7 +13,9 @@ from urllib.parse import parse_qs, urlparse
 
 from neo4j import GraphDatabase
 
+from zaxy.core import MemoryFabric
 from zaxy.event import Event, EventLog
+from zaxy.hooks import inspect_memory_activation
 from zaxy.memory_persistence import inspect_memory_persistence
 from zaxy.memory_status import inspect_memory_log, inspect_memory_status
 
@@ -33,6 +35,7 @@ class DashboardConfig:
     neo4j_user: str | None = None
     neo4j_password: str | None = None
     pggraph_dsn: str | None = None
+    embedded_graph_path: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -50,6 +53,7 @@ class DashboardScope:
     neo4j_user: str | None = None
     neo4j_password: str | None = None
     pggraph_dsn: str | None = None
+    embedded_graph_path: Path | None = None
     read_only: bool = True
 
 
@@ -896,13 +900,289 @@ class ProjectionDashboardGraphProvider:
             ][:limit],
         }
 
+
+class EmbeddedDashboardGraphProvider:
+    """Read-only dashboard graph provider backed by the embedded projection."""
+
+    def __init__(self, path: Path) -> None:
+        from zaxy.embedded_graph_store import EmbeddedGraphStore
+
+        self.backend = "embedded"
+        self._store = EmbeddedGraphStore(Path(path))
+
+    def summary(self, *, session_id: str | None) -> dict[str, object]:
+        """Return active embedded graph nodes and edges for dashboard rendering."""
+        try:
+            return cast(dict[str, object], _run_async(self._summary(session_id=session_id)))
+        except Exception as exc:  # pragma: no cover - exercised in integration environments
+            return _graph_error(exc)
+
+    def neighborhood(
+        self,
+        *,
+        session_id: str | None,
+        node_id: str,
+        view: str,
+        hops: int,
+        limit: int,
+    ) -> dict[str, object]:
+        """Return a bounded neighborhood around one embedded graph node."""
+        try:
+            return cast(
+                dict[str, object],
+                _run_async(
+                    self._neighborhood(
+                        session_id=session_id,
+                        node_id=node_id,
+                        view=view,
+                        hops=hops,
+                        limit=limit,
+                    )
+                ),
+            )
+        except Exception as exc:  # pragma: no cover - exercised in integration environments
+            return _graph_error(exc)
+
+    def search(
+        self,
+        *,
+        session_id: str | None,
+        query: str,
+        view: str,
+        limit: int,
+    ) -> dict[str, object]:
+        """Search active embedded graph nodes by visible text."""
+        try:
+            return cast(
+                dict[str, object],
+                _run_async(self._search(session_id=session_id, query=query, view=view, limit=limit)),
+            )
+        except Exception as exc:  # pragma: no cover - exercised in integration environments
+            return _graph_error(exc)
+
+    def path_to_event(
+        self,
+        *,
+        session_id: str | None,
+        node_id: str,
+        limit: int,
+    ) -> dict[str, object]:
+        """Return a projected node and its source Eventloom event when present."""
+        try:
+            return cast(
+                dict[str, object],
+                _run_async(self._path_to_event(session_id=session_id, node_id=node_id, limit=limit)),
+            )
+        except Exception as exc:  # pragma: no cover - exercised in integration environments
+            return _graph_error(exc)
+
+    async def _summary(self, *, session_id: str | None) -> dict[str, object]:
+        await self._store.connect()
+        try:
+            conn = self._store._require_connection()
+            try:
+                node_rows = conn.execute(
+                    """
+                    MATCH (e:Entity)
+                    WHERE ($session_id IS NULL OR e.session_id = $session_id)
+                      AND e.valid_to IS NULL
+                    RETURN e.node_key, e.name, e.entity_type, e.summary, e.properties_json,
+                           e.session_id, e.source_event_seq, e.source_event_hash,
+                           e.valid_from, e.valid_to
+                    ORDER BY e.source_event_seq DESC
+                    LIMIT 100
+                    """,
+                    {"session_id": session_id},
+                ).get_all()
+                edge_rows = conn.execute(
+                    """
+                    MATCH (source:Entity)-[r:RELATES]->(target:Entity)
+                    WHERE ($session_id IS NULL OR r.session_id = $session_id)
+                      AND r.valid_to IS NULL
+                      AND source.valid_to IS NULL
+                      AND target.valid_to IS NULL
+                    RETURN source.node_key, target.node_key, r.relation_type, r.session_id,
+                           r.source_event_seq, r.source_event_hash, r.evidence_json
+                    LIMIT 100
+                    """,
+                    {"session_id": session_id},
+                ).get_all()
+            except RuntimeError as exc:
+                if not _is_missing_embedded_projection_table_error(exc):
+                    raise
+                return _empty_embedded_dashboard_summary()
+        finally:
+            await self._store.close()
+        return {
+            "available": True,
+            "source": self.backend,
+            "nodes": len(node_rows),
+            "edges": len(edge_rows),
+            "elements": _embedded_elements(node_rows, edge_rows),
+        }
+
+    async def _neighborhood(
+        self,
+        *,
+        session_id: str | None,
+        node_id: str,
+        view: str,
+        hops: int,
+        limit: int,
+    ) -> dict[str, object]:
+        await self._store.connect()
+        try:
+            conn = self._store._require_connection()
+            try:
+                edge_rows = conn.execute(
+                    """
+                    MATCH (source:Entity)-[r:RELATES]->(target:Entity)
+                    WHERE ($session_id IS NULL OR r.session_id = $session_id)
+                      AND r.valid_to IS NULL
+                      AND source.valid_to IS NULL
+                      AND target.valid_to IS NULL
+                      AND (
+                        source.node_key = $node_id OR source.name = $node_id
+                        OR target.node_key = $node_id OR target.name = $node_id
+                      )
+                    RETURN source.node_key, target.node_key, r.relation_type, r.session_id,
+                           r.source_event_seq, r.source_event_hash, r.evidence_json
+                    LIMIT $limit
+                    """,
+                    {"session_id": session_id, "node_id": node_id, "limit": limit},
+                ).get_all()
+                node_keys = sorted({str(row[0]) for row in edge_rows} | {str(row[1]) for row in edge_rows})
+                node_rows = _embedded_fetch_nodes(
+                    conn,
+                    session_id=session_id,
+                    node_keys=node_keys,
+                    limit=limit,
+                )
+            except RuntimeError as exc:
+                if not _is_missing_embedded_projection_table_error(exc):
+                    raise
+                return _empty_embedded_dashboard_elements(view=view, hops=hops)
+        finally:
+            await self._store.close()
+        elements = _embedded_elements(node_rows, edge_rows)
+        return {
+            "available": True,
+            "source": self.backend,
+            "view": view,
+            "hops": hops,
+            "nodes": elements["nodes"],
+            "edges": elements["edges"],
+            "omitted_nodes": 0,
+            "omitted_edges": 0,
+        }
+
+    async def _search(
+        self,
+        *,
+        session_id: str | None,
+        query: str,
+        view: str,
+        limit: int,
+    ) -> dict[str, object]:
+        await self._store.connect()
+        try:
+            try:
+                rows = self._store._require_connection().execute(
+                    """
+                    MATCH (e:Entity)
+                    WHERE ($session_id IS NULL OR e.session_id = $session_id)
+                      AND e.valid_to IS NULL
+                    RETURN e.node_key, e.name, e.entity_type, e.summary, e.properties_json,
+                           e.session_id, e.source_event_seq, e.source_event_hash,
+                           e.valid_from, e.valid_to
+                    LIMIT 250
+                    """,
+                    {"session_id": session_id},
+                ).get_all()
+            except RuntimeError as exc:
+                if not _is_missing_embedded_projection_table_error(exc):
+                    raise
+                return _empty_embedded_dashboard_elements(view=view)
+        finally:
+            await self._store.close()
+        needle = query.casefold()
+        nodes = [
+            _embedded_node_payload(row)
+            for row in rows
+            if needle in f"{row[1]} {row[2]} {row[3] or ''}".casefold()
+        ][:limit]
+        return {"available": True, "source": self.backend, "view": view, "nodes": nodes, "edges": []}
+
+    async def _path_to_event(
+        self,
+        *,
+        session_id: str | None,
+        node_id: str,
+        limit: int,
+    ) -> dict[str, object]:
+        await self._store.connect()
+        try:
+            try:
+                rows = self._store._require_connection().execute(
+                    """
+                    MATCH (e:Entity)
+                    WHERE (e.node_key = $node_id OR e.name = $node_id)
+                      AND ($session_id IS NULL OR e.session_id = $session_id)
+                      AND e.valid_to IS NULL
+                    RETURN e.node_key, e.name, e.entity_type, e.summary, e.properties_json,
+                           e.session_id, e.source_event_seq, e.source_event_hash,
+                           e.valid_from, e.valid_to
+                    LIMIT 1
+                    """,
+                    {"session_id": session_id, "node_id": node_id},
+                ).get_all()
+            except RuntimeError as exc:
+                if not _is_missing_embedded_projection_table_error(exc):
+                    raise
+                return _empty_embedded_dashboard_elements()
+        finally:
+            await self._store.close()
+        if not rows:
+            return {"available": True, "source": self.backend, "nodes": [], "edges": []}
+        node = _embedded_node_payload(rows[0])
+        event_seq = rows[0][6]
+        if event_seq is None:
+            return {"available": True, "source": self.backend, "nodes": [node], "edges": []}
+        event_id = f"event:{rows[0][5]}:{event_seq}"
+        event = {
+            "id": event_id,
+            "label": f"Event #{event_seq}",
+            "kind": "event",
+            "properties": {
+                "seq": event_seq,
+                "hash": rows[0][7],
+                "session_id": rows[0][5],
+            },
+        }
+        return {
+            "available": True,
+            "source": self.backend,
+            "nodes": [node, event][:limit],
+            "edges": [
+                {
+                    "id": f"source-event:{node['id']}:{event_id}",
+                    "source": node["id"],
+                    "target": event_id,
+                    "label": "SOURCE_EVENT",
+                    "type": "SOURCE_EVENT",
+                    "properties": {},
+                }
+            ][:limit],
+        }
+
+
 def resolve_dashboard_scope(config: DashboardConfig) -> DashboardScope:
     """Resolve the active workspace and Eventloom directory for the dashboard."""
     workspace = (config.workspace or Path.cwd()).resolve()
     eventloom_path = (config.eventloom_path or workspace / ".eventloom").resolve()
     projection_backend = config.projection_backend.casefold().strip()
-    if projection_backend not in {"neo4j", "pggraph"}:
-        raise ValueError("projection backend must be one of: neo4j, pggraph")
+    if projection_backend not in {"neo4j", "pggraph", "embedded", "latticedb"}:
+        raise ValueError("projection backend must be one of: neo4j, pggraph, embedded, latticedb")
     return DashboardScope(
         workspace=workspace,
         eventloom_path=eventloom_path,
@@ -915,6 +1195,7 @@ def resolve_dashboard_scope(config: DashboardConfig) -> DashboardScope:
         neo4j_user=config.neo4j_user,
         neo4j_password=config.neo4j_password,
         pggraph_dsn=config.pggraph_dsn,
+        embedded_graph_path=(config.embedded_graph_path or eventloom_path / "projections" / "embedded.kuzu"),
     )
 
 
@@ -969,17 +1250,25 @@ class DashboardApp:
             )
         if path == "/api/checkout":
             checkout_query = _str_param(params, "query")
+            if checkout_query is None:
+                return 400, headers, {"error": "query_required"}
             session_id = _str_param(params, "session_id") or self.scope.session_id
+            limit = _int_param(params, "limit", default=10, minimum=1, maximum=50)
+            replay_from_seq = _int_param(params, "replay_from_seq", default=1, minimum=1, maximum=1_000_000)
+            max_recent_events = _int_param(params, "max_recent_events", default=20, minimum=1, maximum=250)
+            ref = _str_param(params, "ref")
             return (
                 200,
                 headers,
                 {
-                    "checkout": {
-                        "available": False,
-                        "session_id": session_id,
-                        "query": checkout_query,
-                        "warning": "checkout diagnostics are not wired in this dashboard slice",
-                    }
+                    "checkout": self._checkout_body(
+                        query=checkout_query,
+                        session_id=session_id or "default",
+                        limit=limit,
+                        replay_from_seq=replay_from_seq,
+                        max_recent_events=max_recent_events,
+                        ref=ref,
+                    )
                 },
             )
         if path == "/api/graph/summary":
@@ -1044,6 +1333,51 @@ class DashboardApp:
             )
         return 404, headers, {"error": "not_found"}
 
+    def _checkout_body(
+        self,
+        *,
+        query: str,
+        session_id: str,
+        limit: int,
+        replay_from_seq: int,
+        max_recent_events: int,
+        ref: str | None,
+    ) -> dict[str, Any]:
+        """Return a read-only Memory Checkout payload for dashboard inspection."""
+
+        async def _checkout() -> dict[str, Any]:
+            fabric = MemoryFabric(
+                eventloom_path=str(self.scope.eventloom_path),
+                projection_backend=self.scope.projection_backend,
+                neo4j_uri=self.scope.neo4j_uri,
+                neo4j_user=self.scope.neo4j_user,
+                neo4j_password=self.scope.neo4j_password,
+                pggraph_dsn=self.scope.pggraph_dsn,
+                embedded_graph_path=self.scope.embedded_graph_path,
+                tracer_disabled=True,
+            )
+            try:
+                checkout = await fabric.checkout_memory(
+                    query,
+                    session_id=session_id,
+                    replay_from_seq=replay_from_seq,
+                    limit=limit,
+                    max_recent_events=max_recent_events,
+                    ref=ref,
+                )
+                return checkout.to_dict()
+            finally:
+                await fabric.close()
+
+        payload = asyncio.run(_checkout())
+        return {
+            "available": True,
+            "read_only": True,
+            "session_id": session_id,
+            "query": query,
+            "payload": payload,
+        }
+
     def _status_body(self) -> dict[str, Any]:
         status = inspect_memory_status(self.scope.eventloom_path)
         session_id = self.scope.session_id or "default"
@@ -1060,6 +1394,9 @@ class DashboardApp:
             "memory_persistence": inspect_memory_persistence(
                 self.scope.eventloom_path,
                 session_id=session_id,
+            ),
+            "memory_activation": inspect_memory_activation(
+                eventloom_path=self.scope.eventloom_path,
             ),
         }
 
@@ -1100,6 +1437,13 @@ def build_dashboard_graph_provider(scope: DashboardScope) -> DashboardGraphProvi
             ProjectionDashboardGraphProvider("pggraph", pggraph_dsn=scope.pggraph_dsn),
             fallback,
         )
+    if scope.projection_backend == "embedded":
+        if scope.embedded_graph_path is None:
+            return fallback
+        return FallbackDashboardGraphProvider(
+            EmbeddedDashboardGraphProvider(scope.embedded_graph_path),
+            fallback,
+        )
     if not (scope.neo4j_uri and scope.neo4j_user and scope.neo4j_password):
         return fallback
     return FallbackDashboardGraphProvider(
@@ -1115,6 +1459,35 @@ def _graph_error(exc: Exception) -> dict[str, object]:
         "edges": [],
         "warning": str(exc),
     }
+
+
+def _empty_embedded_dashboard_summary() -> dict[str, object]:
+    return {
+        "available": True,
+        "source": "embedded",
+        "nodes": 0,
+        "edges": 0,
+        "elements": {"nodes": [], "edges": []},
+    }
+
+
+def _empty_embedded_dashboard_elements(*, view: str | None = None, hops: int | None = None) -> dict[str, object]:
+    result: dict[str, object] = {
+        "available": True,
+        "source": "embedded",
+        "nodes": [],
+        "edges": [],
+    }
+    if view is not None:
+        result["view"] = view
+    if hops is not None:
+        result["hops"] = hops
+    return result
+
+
+def _is_missing_embedded_projection_table_error(exc: RuntimeError) -> bool:
+    message = str(exc)
+    return "Table Entity does not exist" in message or "Table RELATES does not exist" in message
 
 
 def _run_async(coro: Any) -> Any:
@@ -1242,6 +1615,96 @@ def _pggraph_elements(
         "nodes": [_pggraph_node_payload(row) for row in node_rows],
         "edges": [_pggraph_edge_payload(row) for row in edge_rows],
     }
+
+
+def _embedded_elements(
+    node_rows: list[list[Any]],
+    edge_rows: list[list[Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    return {
+        "nodes": [_embedded_node_payload(row) for row in node_rows],
+        "edges": [_embedded_edge_payload(row) for row in edge_rows],
+    }
+
+
+def _embedded_fetch_nodes(
+    conn: Any,
+    *,
+    session_id: str | None,
+    node_keys: list[str],
+    limit: int,
+) -> list[list[Any]]:
+    if not node_keys:
+        return []
+    return cast(list[list[Any]], conn.execute(
+        """
+        MATCH (e:Entity)
+        WHERE ($session_id IS NULL OR e.session_id = $session_id)
+          AND e.node_key IN $node_keys
+          AND e.valid_to IS NULL
+        RETURN e.node_key, e.name, e.entity_type, e.summary, e.properties_json,
+               e.session_id, e.source_event_seq, e.source_event_hash,
+               e.valid_from, e.valid_to
+        LIMIT $limit
+        """,
+        {"session_id": session_id, "node_keys": node_keys, "limit": limit},
+    ).get_all())
+
+
+def _embedded_node_payload(row: list[Any]) -> dict[str, Any]:
+    properties = _json_dict(row[4])
+    properties.update(
+        {
+            "entity_type": row[2],
+            "name": row[1],
+            "session_id": row[5],
+            "source_event_seq": row[6],
+            "source_event_hash": row[7],
+            "summary": row[3],
+            "valid_from": row[8],
+            "valid_to": row[9],
+        }
+    )
+    return {
+        "id": str(row[0]),
+        "label": str(row[1]),
+        "labels": [str(row[2] or "Entity")],
+        "properties": _json_safe_properties(properties),
+    }
+
+
+def _embedded_edge_payload(row: list[Any]) -> dict[str, Any]:
+    properties = _json_dict(row[6])
+    properties.update(
+        {
+            "session_id": row[3],
+            "source_event_seq": row[4],
+            "source_event_hash": row[5],
+        }
+    )
+    source = str(row[0])
+    target = str(row[1])
+    relation = str(row[2] or "")
+    return {
+        "id": f"{source}->{relation}->{target}",
+        "source": source,
+        "target": target,
+        "label": relation,
+        "type": relation,
+        "properties": _json_safe_properties(properties),
+    }
+
+
+def _json_dict(value: object) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return dict(value)
+    if not isinstance(value, str) or not value:
+        return {}
+    try:
+        loaded = json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+    return dict(loaded) if isinstance(loaded, dict) else {}
 
 
 def _pggraph_node_payload(row: dict[str, Any]) -> dict[str, Any]:
@@ -1395,6 +1858,22 @@ def render_dashboard_html() -> str:
       font: inherit;
       cursor: pointer;
     }
+    .checkout-toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+    .checkout-toolbar input {
+      flex: 1;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font: inherit;
+    }
+    .checkout-toolbar button {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fbfcfe;
+      padding: 8px 10px;
+      font: inherit;
+      cursor: pointer;
+    }
     #graph-canvas { height: 560px; border: 1px solid var(--line); border-radius: 8px; background: #ffffff; }
     #graph-detail { max-height: 560px; overflow: auto; }
     table { width: 100%; border-collapse: collapse; }
@@ -1436,9 +1915,16 @@ def render_dashboard_html() -> str:
         <div class="metric"><span>Graph edges</span><strong id="metric-edges">0</strong></div>
         <div class="metric"><span>Last bootstrap</span><strong id="metric-last-bootstrap">-</strong></div>
         <div class="metric"><span>Last checkout</span><strong id="metric-last-checkout">-</strong></div>
+        <div class="metric"><span>Activation</span><strong id="metric-activation">-</strong></div>
+        <div class="metric"><span>Activation rate</span><strong id="metric-activation-rate">-</strong></div>
+        <div class="metric"><span>Checkout tokens</span><strong id="metric-checkout-tokens">-</strong></div>
+        <div class="metric"><span>Facts / 1k tokens</span><strong id="metric-checkout-facts-per-token">-</strong></div>
+        <div class="metric"><span>Latest capture</span><strong id="metric-latest-capture">-</strong></div>
+        <div class="metric"><span>Latest reminder</span><strong id="metric-latest-reminder">-</strong></div>
         <div class="metric"><span>Last feedback</span><strong id="metric-last-feedback">-</strong></div>
       </div>
       <div class="panel warning" id="memory-persistence-warning"></div>
+      <div class="panel warning" id="memory-activation-warning"></div>
       <div class="panel"><pre id="status-json">{}</pre></div>
     </section>
     <section class="tab" id="sessions"><div class="panel"><table><thead><tr><th>Session</th><th>Events</th><th>Latest</th><th>Integrity</th></tr></thead><tbody id="sessions-body"></tbody></table></div></section>
@@ -1455,7 +1941,15 @@ def render_dashboard_html() -> str:
         <div class="panel" id="graph-detail"><pre>Select a node or edge.</pre></div>
       </div>
     </section>
-    <section class="tab" id="checkout"><div class="panel"><pre>Checkout diagnostics endpoint is reserved for the next dashboard slice.</pre></div></section>
+    <section class="tab" id="checkout">
+      <div class="panel">
+        <div class="checkout-toolbar">
+          <input id="checkout-query" type="search" placeholder="Checkout query">
+          <button id="checkout-run-button" type="button">Run checkout</button>
+        </div>
+        <pre id="checkout-json">{}</pre>
+      </div>
+    </section>
     <section class="tab" id="events"><div class="panel"><table><thead><tr><th>Session</th><th>Seq</th><th>Type</th><th>Actor</th><th>Summary</th></tr></thead><tbody id="events-body"></tbody></table></div></section>
   </main>
   <script>
@@ -1464,6 +1958,7 @@ def render_dashboard_html() -> str:
     const graphUrl = "/api/graph/summary";
     const graphSearchUrl = "/api/graph/search";
     const graphNeighborhoodUrl = "/api/graph/neighborhood";
+    const checkoutUrl = "/api/checkout";
     let selectedGraphNodeId = null;
 
     document.querySelectorAll("nav button").forEach((button) => {
@@ -1504,8 +1999,16 @@ def render_dashboard_html() -> str:
       document.getElementById("metric-events").textContent = status.memory.total_events;
       document.getElementById("metric-last-bootstrap").textContent = status.memory_persistence.last_bootstrap_seq || "-";
       document.getElementById("metric-last-checkout").textContent = status.memory_persistence.last_checkout_seq || "-";
+      document.getElementById("metric-activation").textContent = status.memory_activation.status || "-";
+      document.getElementById("metric-activation-rate").textContent = formatActivationRate(status.memory_activation.activation_efficiency);
+      const checkoutEfficiency = status.memory_activation.latest_checkout ? status.memory_activation.latest_checkout.token_efficiency : null;
+      document.getElementById("metric-checkout-tokens").textContent = checkoutEfficiency && checkoutEfficiency.prompt_tokens !== undefined ? checkoutEfficiency.prompt_tokens : "-";
+      document.getElementById("metric-checkout-facts-per-token").textContent = checkoutEfficiency && checkoutEfficiency.facts_per_1k_prompt_tokens !== undefined ? checkoutEfficiency.facts_per_1k_prompt_tokens : "-";
+      document.getElementById("metric-latest-capture").textContent = status.memory_activation.latest_capture ? status.memory_activation.latest_capture.seq : "-";
+      document.getElementById("metric-latest-reminder").textContent = status.memory_activation.latest_reminder ? status.memory_activation.latest_reminder.seq : "-";
       document.getElementById("metric-last-feedback").textContent = status.memory_persistence.last_feedback_seq || "-";
       document.getElementById("memory-persistence-warning").textContent = status.memory_persistence.warning || "";
+      document.getElementById("memory-activation-warning").textContent = status.memory_activation.status === "ok" ? "" : `${status.memory_activation.message}: ${(status.memory_activation.actions || []).join(" ")}`;
       document.getElementById("status-json").textContent = JSON.stringify(status, null, 2);
       document.getElementById("sessions-body").innerHTML = status.memory.sessions.map((session) => `
         <tr><td><code>${session.session_id}</code></td><td>${session.event_count}</td><td>${session.latest_type || ""}</td><td>${session.integrity_ok ? "OK" : "FAILED"}</td></tr>
@@ -1513,6 +2016,13 @@ def render_dashboard_html() -> str:
       document.getElementById("events-body").innerHTML = events.events.map((event) => `
         <tr><td><code>${event.session_id}</code></td><td>${event.seq}</td><td>${event.type}</td><td>${event.actor}</td><td>${event.summary || ""}</td></tr>
       `).join("");
+    }
+
+    function formatActivationRate(efficiency) {
+      if (!efficiency || efficiency.fresh_checkout_rate === null || efficiency.fresh_checkout_rate === undefined) {
+        return "-";
+      }
+      return `${Math.round(efficiency.fresh_checkout_rate * 1000) / 10}%`;
     }
     async function refreshGraph() {
       const graph = await fetch(graphUrl).then((response) => response.json());
@@ -1537,6 +2047,15 @@ def render_dashboard_html() -> str:
       }
       const graph = await fetch(`${graphNeighborhoodUrl}?node_id=${encodeURIComponent(selectedGraphNodeId)}&hops=1&limit=120`).then((response) => response.json());
       renderGraphPayload(graph.graph);
+    }
+    async function runCheckout() {
+      const query = document.getElementById("checkout-query").value.trim();
+      if (!query) {
+        document.getElementById("checkout-json").textContent = "Enter a checkout query.";
+        return;
+      }
+      const checkout = await fetch(`${checkoutUrl}?query=${encodeURIComponent(query)}&limit=10`).then((response) => response.json());
+      document.getElementById("checkout-json").textContent = JSON.stringify(checkout, null, 2);
     }
     function renderGraphPayload(graph) {
       const elements = graph.elements || { nodes: graph.nodes || [], edges: graph.edges || [] };
@@ -1602,6 +2121,17 @@ def render_dashboard_html() -> str:
       expandSelectedNode().catch((error) => {
         document.getElementById("graph-warning").textContent = String(error);
       });
+    });
+    document.getElementById("checkout-run-button").addEventListener("click", () => {
+      runCheckout().catch((error) => {
+        document.getElementById("checkout-json").textContent = String(error);
+      });
+    });
+    document.getElementById("checkout-query").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        document.getElementById("checkout-run-button").click();
+      }
     });
     refresh().catch((error) => {
       document.getElementById("status-json").textContent = String(error);

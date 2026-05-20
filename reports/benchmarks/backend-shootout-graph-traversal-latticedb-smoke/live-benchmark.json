@@ -1,0 +1,343 @@
+{
+  "category_summaries": [
+    {
+      "backend": "bm25",
+      "category": "graph-traversal",
+      "mean_answer_recall_at_1": 0.5,
+      "mean_answer_recall_at_10": 1.0,
+      "mean_answer_recall_at_5": 1.0,
+      "mean_citation_coverage": null,
+      "mean_recall_at_1": 1.0,
+      "mean_recall_at_10": 1.0,
+      "mean_recall_at_5": 1.0,
+      "mean_score": 0.0,
+      "mean_source_recall": null,
+      "miss_count": 3,
+      "query_count": 3
+    },
+    {
+      "backend": "zaxy",
+      "category": "graph-traversal",
+      "mean_answer_recall_at_1": 0.0,
+      "mean_answer_recall_at_10": 0.0,
+      "mean_answer_recall_at_5": 0.0,
+      "mean_citation_coverage": null,
+      "mean_recall_at_1": 1.0,
+      "mean_recall_at_10": 1.0,
+      "mean_recall_at_5": 1.0,
+      "mean_score": 0.0,
+      "mean_source_recall": null,
+      "miss_count": 3,
+      "query_count": 3
+    }
+  ],
+  "comparisons": [
+    {
+      "baseline_backend": "bm25",
+      "ci_high": 0.0,
+      "ci_low": 0.0,
+      "mean_difference": 0.0,
+      "p_value": 1.0,
+      "paired_units": 3,
+      "significant": false,
+      "target_backend": "zaxy"
+    }
+  ],
+  "embedding_provider": "hash:1536",
+  "external_results": [],
+  "generated_at": "2026-05-20T03:20:27Z",
+  "miss_taxonomy": {
+    "bm25": {
+      "stale_or_forbidden_hit": 3
+    },
+    "zaxy": {
+      "synthesis_miss": 3
+    }
+  },
+  "runs": [
+    {
+      "answer_recall_at_1": 0.5,
+      "answer_recall_at_10": 1.0,
+      "answer_recall_at_5": 1.0,
+      "approx_tokens": 526,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0000",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [
+        "graph-finisher-0000",
+        "graph-task-0000"
+      ],
+      "forbidden_hits": [
+        "graph-finisher-distractor-0000"
+      ],
+      "identity_hits": [
+        "graph-goal-0000",
+        "graph-task-0000"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.2935,
+      "miss_category": "stale_or_forbidden_hit",
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0000"
+      ],
+      "missing_sources": [],
+      "recall_at_1": 1.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "result_count": 5,
+      "returned_bytes": 2103,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "answer_recall_at_1": 0.5,
+      "answer_recall_at_10": 1.0,
+      "answer_recall_at_5": 1.0,
+      "approx_tokens": 526,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0001",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [
+        "graph-finisher-0001",
+        "graph-task-0001"
+      ],
+      "forbidden_hits": [
+        "graph-finisher-distractor-0001"
+      ],
+      "identity_hits": [
+        "graph-goal-0001",
+        "graph-task-0001"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.1558,
+      "miss_category": "stale_or_forbidden_hit",
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0001"
+      ],
+      "missing_sources": [],
+      "recall_at_1": 1.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "result_count": 5,
+      "returned_bytes": 2103,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "answer_recall_at_1": 0.5,
+      "answer_recall_at_10": 1.0,
+      "answer_recall_at_5": 1.0,
+      "approx_tokens": 527,
+      "backend": "bm25",
+      "case_name": "graph-traversal-0002",
+      "category": "graph-traversal",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [
+        "graph-finisher-0002",
+        "graph-task-0002"
+      ],
+      "forbidden_hits": [
+        "graph-finisher-distractor-0002"
+      ],
+      "identity_hits": [
+        "graph-goal-0002",
+        "graph-task-0002"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 0.1159,
+      "miss_category": "stale_or_forbidden_hit",
+      "missing_expected": [],
+      "missing_identities": [
+        "graph-finisher-0002"
+      ],
+      "missing_sources": [],
+      "recall_at_1": 1.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "result_count": 5,
+      "returned_bytes": 2105,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "answer_recall_at_1": 0.0,
+      "answer_recall_at_10": 0.0,
+      "answer_recall_at_5": 0.0,
+      "approx_tokens": 45,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0000",
+      "category": "graph-traversal",
+      "citation_count": 1,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0000"
+      ],
+      "identity_recall": 0.3333,
+      "latency_ms": 6255.4786,
+      "miss_category": "synthesis_miss",
+      "missing_expected": [
+        "graph-finisher-0000",
+        "graph-task-0000"
+      ],
+      "missing_identities": [
+        "graph-task-0000",
+        "graph-finisher-0000"
+      ],
+      "missing_sources": [],
+      "recall_at_1": 1.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "result_count": 1,
+      "returned_bytes": 180,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "answer_recall_at_1": 0.0,
+      "answer_recall_at_10": 0.0,
+      "answer_recall_at_5": 0.0,
+      "approx_tokens": 45,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0001",
+      "category": "graph-traversal",
+      "citation_count": 1,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0001"
+      ],
+      "identity_recall": 0.3333,
+      "latency_ms": 6425.3412,
+      "miss_category": "synthesis_miss",
+      "missing_expected": [
+        "graph-finisher-0001",
+        "graph-task-0001"
+      ],
+      "missing_identities": [
+        "graph-task-0001",
+        "graph-finisher-0001"
+      ],
+      "missing_sources": [],
+      "recall_at_1": 1.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "result_count": 1,
+      "returned_bytes": 180,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "answer_recall_at_1": 0.0,
+      "answer_recall_at_10": 0.0,
+      "answer_recall_at_5": 0.0,
+      "approx_tokens": 45,
+      "backend": "zaxy",
+      "case_name": "graph-traversal-0002",
+      "category": "graph-traversal",
+      "citation_count": 1,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "graph-goal-0002"
+      ],
+      "identity_recall": 0.3333,
+      "latency_ms": 6446.0026,
+      "miss_category": "synthesis_miss",
+      "missing_expected": [
+        "graph-finisher-0002",
+        "graph-task-0002"
+      ],
+      "missing_identities": [
+        "graph-task-0002",
+        "graph-finisher-0002"
+      ],
+      "missing_sources": [],
+      "recall_at_1": 1.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "result_count": 1,
+      "returned_bytes": 182,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    }
+  ],
+  "summaries": [
+    {
+      "backend": "bm25",
+      "case_count": 3,
+      "latency_ms_mean": 0.1884,
+      "latency_ms_p50": 0.1558,
+      "latency_ms_p95": 0.2797,
+      "latency_ms_p99": 0.2907,
+      "mean_answer_recall_at_1": 0.5,
+      "mean_answer_recall_at_10": 1.0,
+      "mean_answer_recall_at_5": 1.0,
+      "mean_approx_tokens": 526.3333,
+      "mean_citation_coverage": null,
+      "mean_identity_recall": 0.6667,
+      "mean_recall_at_1": 1.0,
+      "mean_recall_at_10": 1.0,
+      "mean_recall_at_5": 1.0,
+      "mean_returned_bytes": 2103.6667,
+      "mean_score": 0.0,
+      "mean_source_recall": null,
+      "runs": 1
+    },
+    {
+      "backend": "zaxy",
+      "case_count": 3,
+      "latency_ms_mean": 6375.6075,
+      "latency_ms_p50": 6425.3412,
+      "latency_ms_p95": 6443.9365,
+      "latency_ms_p99": 6445.5894,
+      "mean_answer_recall_at_1": 0.0,
+      "mean_answer_recall_at_10": 0.0,
+      "mean_answer_recall_at_5": 0.0,
+      "mean_approx_tokens": 45.0,
+      "mean_citation_coverage": null,
+      "mean_identity_recall": 0.3333,
+      "mean_recall_at_1": 1.0,
+      "mean_recall_at_10": 1.0,
+      "mean_recall_at_5": 1.0,
+      "mean_returned_bytes": 180.6667,
+      "mean_score": 0.0,
+      "mean_source_recall": null,
+      "runs": 1
+    }
+  ],
+  "workload": {
+    "case_count": 3,
+    "documents": null,
+    "event_count": 12,
+    "lanes": [
+      "graph-traversal"
+    ],
+    "sessions": null,
+    "sha256": "7561582cf2f3a8fde2f1b5b65d9aab367d61b166bc845695886abd7dc4c422bd",
+    "subjects": 3,
+    "version": "mempalace-graph-traversal-v1"
+  }
+}
