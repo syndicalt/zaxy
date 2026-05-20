@@ -265,6 +265,29 @@ def test_mcp_server_constructs_projection_store_through_factory(tmp_path: Path) 
     assert mock_build.call_args.args[0].backend == "neo4j"
 
 
+def test_mcp_server_accepts_embedded_projection_overrides(tmp_path: Path) -> None:
+    """ZaxyMCPServer should honor the embedded projection profile passed by zaxy serve."""
+    embedded_path = tmp_path / ".eventloom" / "projections" / "embedded.kuzu"
+    with (
+        patch("zaxy.mcp_server.build_projection_store") as mock_build,
+        patch("zaxy.mcp_server.MemoryTracer"),
+        patch("zaxy.mcp_server.SessionManager"),
+    ):
+        mock_build.return_value = AsyncMock()
+
+        srv = ZaxyMCPServer(
+            eventloom_path=str(tmp_path / ".eventloom"),
+            projection_backend="embedded",
+            embedded_graph_path=embedded_path,
+        )
+
+    assert srv.graph is mock_build.return_value
+    config = mock_build.call_args.args[0]
+    assert config.backend == "embedded"
+    assert config.embedded_graph_path == embedded_path
+    assert srv.local_projection_runtime.path == embedded_path
+
+
 class TestSessionDefaults:
     """Tests for session default behavior."""
 
@@ -773,6 +796,33 @@ class TestServerSetup:
         mock_graph.connect.assert_awaited_once()
         mock_graph.init_schema.assert_awaited_once()
 
+    async def test_setup_bootstraps_embedded_runtime_when_backend_is_embedded(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """MCP bootstrap should not require Neo4j for the embedded graph backend."""
+        monkeypatch.setenv("PROJECTION_BACKEND", "embedded")
+        monkeypatch.setenv("EMBEDDED_GRAPH_PATH", ".eventloom/projections/embedded.kuzu")
+        with (
+            patch("zaxy.mcp_server.build_projection_store") as mock_build_projection_store,
+            patch("zaxy.mcp_server.MemoryTracer") as mock_tracer_cls,
+            patch("zaxy.mcp_server.SessionManager"),
+            patch("zaxy.mcp_server.LocalNeo4jRuntime") as mock_neo4j_runtime_cls,
+            patch("zaxy.mcp_server.LocalEmbeddedGraphRuntime") as mock_embedded_runtime_cls,
+        ):
+            mock_graph = AsyncMock()
+            mock_build_projection_store.return_value = mock_graph
+            mock_tracer = AsyncMock()
+            mock_tracer_cls.return_value = mock_tracer
+            mock_embedded_runtime = MagicMock()
+            mock_embedded_runtime_cls.return_value = mock_embedded_runtime
+
+            srv = ZaxyMCPServer()
+            await srv.setup()
+
+        mock_neo4j_runtime_cls.assert_not_called()
+        mock_embedded_runtime.ensure_available.assert_called_once()
+        assert mock_embedded_runtime_cls.call_args.kwargs["path"] == ".eventloom/projections/embedded.kuzu"
+        mock_graph.connect.assert_awaited_once()
+        mock_graph.init_schema.assert_awaited_once()
+
     async def test_setup_appends_workspace_genesis_once(self, tmp_path: Path) -> None:
         """setup() should bootstrap the default session with one workspace genesis event."""
         (tmp_path / "pyproject.toml").write_text("[project]\nname = 'demo'\n", encoding="utf-8")
@@ -967,7 +1017,11 @@ class TestContextLifecycleTools:
             activity="checkout",
             source="mcp",
             query="What context contract should the model use?",
+            metadata={"token_efficiency": output["token_efficiency"]},
         )
+        assert output["token_efficiency"]["prompt_tokens"] > 0
+        assert output["token_efficiency"]["current_fact_count"] == 2
+        assert output["token_efficiency"]["evidence_count"] == 2
         assert output["quality"] == {
             "answerability": "answer_from_memory",
             "confidence": 0.95,

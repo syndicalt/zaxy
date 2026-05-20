@@ -46,6 +46,29 @@ def test_run_doctor_reports_local_setup_ok(tmp_path: Path, monkeypatch) -> None:
     assert (tmp_path / ".eventloom").is_dir()
 
 
+def test_run_doctor_reports_embedded_projection_without_neo4j(tmp_path: Path) -> None:
+    """Doctor should not report Neo4j posture when the embedded backend is selected."""
+    settings = Settings(
+        _env_file=None,
+        eventloom_path=str(tmp_path / ".eventloom"),
+        eventloom_thread="zaxy-default",
+        projection_backend="embedded",
+        embedded_graph_path=str(tmp_path / ".eventloom" / "projections" / "embedded.kuzu"),
+        zaxy_env="development",
+        embedding_enabled=True,
+        embedding_provider="hash",
+        reranker_provider="lexical",
+        mcp_lifecycle_capture_enabled=True,
+    )
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert "neo4j" not in checks
+    assert checks["embedded_graph"]["status"] == "ok"
+    assert "Embedded graph projection" in checks["embedded_graph"]["message"]
+
+
 def test_run_doctor_reports_resolved_cli_executable(tmp_path: Path) -> None:
     """Doctor should show the executable path MCP clients should call."""
     settings = Settings(

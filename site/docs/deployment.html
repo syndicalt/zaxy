@@ -29,7 +29,7 @@ docker compose -f docker-compose.prod.yml up -d</code></pre>
       <p>Before promoting a deployment:</p>
       <pre><code class="language-bash">scripts/validate-deployment.sh --root .
 scripts/release-check.sh --root .</code></pre>
-      <p>The release gate must pass locally and in CI. It checks linting, types, tests, coverage, package metadata, docs links, and deployment configuration. A tagged release should use artifacts built by <code>scripts/build-dist.sh</code>. Public Python releases publish to PyPI as <code>zaxy-memory</code>; the import package and CLI remain <code>zaxy</code>.</p>
+      <p>The release gate must pass locally and in CI. It checks linting, types, tests, coverage, package metadata, docs links, deployment configuration, backend shootout evidence, injected-token efficiency floors, and 100-query embedded scale validation. A tagged release should use artifacts built by <code>scripts/build-dist.sh</code>. Public Python releases publish to PyPI as <code>zaxy-memory</code>; the import package and CLI remain <code>zaxy</code>.</p>
       <p>Backups must be configured before production traffic. At minimum, persist Eventloom logs and secret material recovery procedures. Neo4j backups are recommended for faster restore, but Eventloom replay is the correctness path.</p>
       <p>For operational recovery, see <a href="operations.html">operations.md</a> and <a href="runbook.html">runbook.md</a>. For environment variables, see <a href="configuration.html">configuration.md</a>. For threat model and secret handling, see <a href="security.html">security.md</a>. The quick setup remains in <a href="../README.html">README.md</a>.</p>
     </article>

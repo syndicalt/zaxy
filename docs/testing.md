@@ -64,6 +64,69 @@ pytest tests/test_packet_memory_e2e.py --no-cov -q
 
 `scripts/release-check.sh` runs this packet smoke after the full pytest suite so
 the analyzer-to-projection-to-context workflow remains a named release gate.
+It also runs `PYTHONPATH=src python -m zaxy hook-status` with
+`--eventloom-path reports/activation-release`,
+`--now 2026-05-20T12:00:00+00:00`, `--min-activation-rate 1.0`,
+`--max-checkout-prompt-tokens 5000`, and
+`--min-checkout-facts-per-1k-tokens 0.1`, so release evidence includes a checked
+activation fixture where substantive work starts after fresh, token-disciplined
+checkout without depending on the wall clock. `zaxy doctor --beta-readiness`
+verifies that fixture exists, passes Eventloom hash-chain integrity, and
+contains both a token-efficiency-bearing checkout event and a later high-context
+event before accepting the release gate inventory. It also checks the fixture's
+checkout freshness, prompt-token estimate, and facts-per-1k-prompt-token values
+against the release thresholds, so the artifact cannot drift below the command's
+advertised guardrails. The release gate inventory also requires the hook-status
+command to point at `reports/activation-release` instead of an ad hoc Eventloom
+path. It also runs the backend
+shootout guardrail through
+`scripts/check-backend-shootout.py` against the checked active-backend report,
+so release evidence fails if labeled Answer@5/Recall@5, citation coverage, or
+the embedded dashboard graph source are missing or below the documented floor.
+The backend report checks use `--require-report-metadata` and
+`--require-markdown-report`, so release evidence must include the report schema
+version, generation timestamp, source fingerprints, normalized workload
+fingerprints, and a matching human-readable Markdown sidecar needed to reproduce
+or audit the run. They also use `--verify-report-fingerprints`, which recomputes
+the Eventloom, query-file, filtered-event, and normalized-query fingerprints
+before accepting the report. Active release reports also use `--forbid-backends
+latticedb`, so parked candidate evidence cannot be mistaken for current release
+evidence while LatticeDB remains below the active-backend gate.
+That checked active-backend report must also preserve embedded injected-token
+efficiency with `--min-quality-per-1k-injected-tokens embedded=1.0` and
+`--min-answer-at-5-per-1k-injected-tokens embedded=1.0`.
+The backend shootout release gate also checks medium-scale embedded runtime evidence against
+`reports/backend-shootout/longmemeval-40-backend-shootout.json` with backend
+scoped performance thresholds: `--min-projection-events-per-second
+embedded=40`, `--max-cold-bootstrap-ms embedded=200`,
+`--max-first-useful-init-ms embedded=15000`,
+`--max-first-checkout-ms embedded=50`,
+`--max-append-to-projection-p95-ms embedded=30`,
+`--max-resident-memory-delta-bytes embedded=768000000`,
+`--max-on-disk-footprint-bytes embedded=256000000`,
+`--max-dashboard-graph-load-ms embedded=500`,
+`--max-rebuild-recovery-ms embedded=15000`, `--max-checkout-p95-ms
+embedded=100`, and `--max-checkout-p99-ms embedded=75`. The same command now guards token efficiency and lane latency
+directly with `--min-quality-per-1k-returned-tokens embedded=0.10`,
+`--min-answer-at-5-per-1k-returned-tokens embedded=0.10`,
+`--min-quality-per-1k-injected-tokens embedded=0.10`,
+`--min-answer-at-5-per-1k-injected-tokens embedded=0.10`,
+`--max-exact-p95-ms embedded=15`, `--max-exact-p99-ms embedded=10`,
+`--max-keyword-p95-ms embedded=75`, `--max-keyword-p99-ms embedded=40`,
+`--max-vector-p95-ms embedded=25`, `--max-vector-p99-ms embedded=35`, `--max-traversal-p95-ms embedded=10`, and `--max-traversal-p99-ms embedded=10`.
+Finally, the release gate checks 100-query embedded scale evidence at
+`reports/backend-shootout/longmemeval-100-backend-shootout.json` with the same
+token-efficiency dimensions and a looser scale latency ceiling, including
+`--max-cold-bootstrap-ms embedded=200`,
+`--max-first-checkout-ms embedded=100`,
+`--max-append-to-projection-p95-ms embedded=40`,
+`--max-resident-memory-delta-bytes embedded=1536000000`,
+`--max-on-disk-footprint-bytes embedded=512000000`,
+`--max-dashboard-graph-load-ms embedded=500`,
+`--max-checkout-p95-ms embedded=125`,
+`--max-checkout-p99-ms embedded=175`,
+`--min-quality-per-1k-injected-tokens embedded=0.15`, and
+`--min-answer-at-5-per-1k-injected-tokens embedded=0.15`.
 
 The beta hardening path has two additional checks. `zaxy doctor
 --beta-readiness` is a fast local inventory of release metadata, release gate
@@ -71,10 +134,48 @@ coverage, clean-repo UAT coverage, documentation, and deterministic capture
 posture. `scripts/beta-uat.sh` performs a clean first-run exercise in a
 throwaway workspace: install, `zaxy init`, deterministic capture startup,
 `zaxy memory bootstrap`, `zaxy memory checkout`, doctor, hook status, capture
-status, capture soak, and memory status. `zaxy capture-soak` is the beta
-evidence command for deterministic capture: it checks transcript, tool-call,
-command, and file-edit observation coverage, freshness, latest seq/hash, and
-remediation steps.
+status, capture soak, and memory status. It also runs the bare embedded init
+path and verifies the generated profile includes `PROJECTION_BACKEND=embedded`,
+`NEO4J_AUTO_START=false`, and the repo-local embedded projection path, so the
+zero-friction default cannot silently drift back to a sidecar requirement. The
+bare embedded branch also runs `zaxy memory status --eventloom-path .eventloom --graph`,
+`zaxy memory inferred-status`, and `zaxy reproject` so clean UAT
+proves the repo-local embedded projection can be inspected, audited, rebuilt,
+and rechecked without backend flags. The UAT path runs `zaxy hook-status
+--min-activation-rate 1.0`, so it fails if its clean first-run captured sessions
+did not all start substantive work after fresh checkout. `zaxy capture-soak` is
+the beta evidence command for
+deterministic capture: it checks transcript, tool-call, command, and file-edit
+observation coverage, freshness, latest seq/hash, and remediation steps.
+
+For activation hardening, `zaxy hook-status --json` reports activation
+efficiency under `memory_activation.activation_efficiency`. The metric counts
+high-context sessions that have command, file-edit, tool-call, or transcript
+activity, then reports what percentage had a fresh `memory.checkout.completed`
+event before the first substantive captured event. Keep this as a product KPI:
+capture without fresh checkout means Zaxy observed the work but did not become
+the model's working context. Treat activation efficiency as a release-readiness
+signal for launcher, hook, and dashboard work. When hooks emit
+`memory.reminder.suggested`, `zaxy hook-status --json` also exposes
+`memory_activation.latest_reminder` so the warning is tied back to an auditable
+Eventloom event. Checkout activity markers now preserve numeric
+`token_efficiency` diagnostics, including prompt-token estimates and current
+facts per 1k prompt tokens, so `hook-status` and dashboard status can show
+whether activation is both fresh and token-disciplined.
+
+Use the same command as a guardrail when the evidence fixture should prove that
+models are actually starting work with memory loaded:
+
+```bash
+zaxy hook-status --eventloom-path .eventloom --json --min-activation-rate 0.8 \
+  --max-checkout-prompt-tokens 5000 \
+  --min-checkout-facts-per-1k-tokens 0.1
+```
+
+The command exits non-zero when fewer than 80% of high-context sessions had
+fresh checkout before substantive captured work, when the latest checkout
+exceeds the prompt-token ceiling, or when checkout facts per 1k prompt tokens
+falls below the required floor.
 
 For graph changes, write both mock tests for Cypher behavior and integration
 tests against Neo4j when the real database semantics matter. For security

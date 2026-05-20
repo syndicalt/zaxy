@@ -788,6 +788,39 @@ class TestDocumentIndexed:
 
         assert result.entities[0].properties["retrieval_salience"] == 4.0
 
+    def test_extracts_longmemeval_session_document_relationship(self) -> None:
+        ev = _make_event(
+            "document.indexed",
+            {
+                "path": "longmemeval/user/session-1/chunk-0001.md",
+                "start_line": 1,
+                "end_line": 10,
+                "content": "longmemeval_session_id=session-1\nI take classes at Serenity Yoga.",
+                "longmemeval_session_id": "session-1",
+                "longmemeval_chunk_index": 1,
+                "longmemeval_chunk_count": 3,
+            },
+            actor="longmemeval",
+        )
+
+        result = extract(ev)
+
+        session = next(entity for entity in result.entities if entity.entity_type == "longmemeval_session")
+        assert session.name == "longmemeval:session:session-1"
+        assert session.properties == {"longmemeval_session_id": "session-1"}
+        document = next(entity for entity in result.entities if entity.entity_type == "document")
+        assert document.properties["longmemeval_session_id"] == "session-1"
+        assert document.properties["longmemeval_chunk_index"] == 1
+        assert document.properties["longmemeval_chunk_count"] == 3
+        assert result.edges == [
+            ExtractedEdge(
+                source="longmemeval:session:session-1",
+                target="longmemeval/user/session-1/chunk-0001.md:1-10",
+                relation_type="has_document_chunk",
+                valid_from="2024-01-01T00:00:00Z",
+            )
+        ]
+
 
 class TestCodeFileIndexed:
     """Tests for code.file.indexed extractor."""

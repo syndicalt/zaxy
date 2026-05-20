@@ -30,20 +30,18 @@ copyable next steps. It does not require a hosted API key.
 
 ```bash
 pipx install zaxy-memory
-zaxy init . --domain my-project --preset local-codex --capture start --infra check
-zaxy memory log --eventloom-path .eventloom --session-id my-project-default --limit 5
-zaxy memory bootstrap --eventloom-path .eventloom --session-id my-project-default
+zaxy init
+zaxy memory log --eventloom-path .eventloom --limit 5
+zaxy activate codex --eventloom-path .eventloom --current-task "continue onboarding"
 zaxy doctor --eventloom-path .eventloom
 ```
 
 Expected local artifacts:
 
 - `.eventloom/`: append-only Eventloom JSONL logs, one file per session.
-- `.env.local`: local embedding, reranker, and graph defaults.
-- `.codex/zaxy-capture.json`: deterministic local Codex capture config when
-  `--preset local-codex` is used.
-- `zaxy-mcp.json` or a printed `codex mcp add` command: MCP config guidance for
-  the selected client.
+- `.env.local`: local embedding, reranker, and embedded graph defaults.
+- `.codex/zaxy-capture.json`: deterministic local Codex capture config.
+- A printed `codex mcp add` command: MCP install guidance for Codex.
 
 The first smoke-test command should show recent genesis or heartbeat events.
 The bootstrap command should print the model-facing Memory Bootstrap packet for
@@ -82,6 +80,7 @@ For an offline retrieval profile with no hosted services or API keys:
 
 ```bash
 zaxy local-profile --output .env.local
+zaxy local-profile --projection-backend embedded --output .env.local
 zaxy local-profile --check
 ```
 
@@ -90,6 +89,9 @@ Neo4j auto-start at `bolt://localhost:7687`. It also clears local Neo4j TLS and
 password-file overrides so stale container or production settings do not leak
 into local CLI use. It is the recommended baseline for local development before
 switching to hosted embeddings or model-backed rerankers.
+Use `--projection-backend embedded` for the no-sidecar profile that writes
+`PROJECTION_BACKEND=embedded`, `.eventloom/projections/embedded.kuzu`, and
+disables Neo4j/pgGraph autostart.
 
 Check local onboarding prerequisites before wiring an agent:
 
@@ -107,18 +109,28 @@ whether the high-value automatic lanes are active and includes the managed
 idle. It does not start Docker or require a live Neo4j connection; use
 `zaxy status` when you want a live graph connectivity test.
 
-Before meaningful model work, inspect the session-start bootstrap packet:
+Before meaningful Codex work, emit the session-start activation packet:
 
 ```bash
-zaxy memory bootstrap --session-id my-project-default
+zaxy activate codex --session-id my-project-default --current-task "ship the next change"
 ```
 
-`memory bootstrap` is the compact model-awareness surface for session start. It
-packages the active capability manifest, the recommended first
-`memory_checkout` call, deterministic capture status, and the trust policy for
-what to prefer, ignore, and record. `memory capabilities` remains available when
-you want the fuller manifest, and `memory checkout` loads the cited working
-state before real work begins.
+`activate codex` prints a prompt-ready Memory Bootstrap packet and records that
+the activation handoff was shown. The packet includes the active capability
+manifest, the recommended first `memory_checkout` call, deterministic capture
+status, and the trust policy for what to prefer, ignore, and record. `memory
+bootstrap` remains available when you only want the raw bootstrap packet,
+`memory capabilities` exposes the fuller manifest, and `memory checkout` loads
+the cited working state before real work begins.
+
+To start Codex with that activation packet as the initial prompt:
+
+```bash
+zaxy activate codex --session-id my-project-default --current-task "ship the next change" --launch
+```
+
+Use `--dry-run` to inspect the exact `codex --cd ... <prompt>` command without
+starting Codex.
 
 For a single first-run flow, use `zaxy init`. The happy path is deterministic
 capture: local profile writing, MCP config rendering, observer hook config,
@@ -147,18 +159,33 @@ zaxy init . \
 For Codex, use the deterministic Codex preset:
 
 ```bash
-zaxy init . \
-  --domain my-project \
-  --preset local-codex
+zaxy init
 ```
 
-The one-command local Codex happy path starts the managed watcher during init:
+The bare local path expands to the no-sidecar embedded Codex onboarding preset:
+it writes `.eventloom/`, `.env.local`, `.codex/zaxy-capture.json`, renders the
+Codex MCP install command, checks the repo-local embedded projection posture,
+and records the first workspace heartbeat. It installs deterministic capture
+configuration safely; start the watcher when you want live local capture:
 
 ```bash
-zaxy init . --domain my-project --preset local-codex --capture start
+zaxy capture start --workspace .
 zaxy doctor
-zaxy memory bootstrap --session-id my-project-default
+zaxy memory bootstrap
 ```
+
+To start managed deterministic capture during onboarding, pass `--capture
+start`:
+
+```bash
+zaxy init --capture start
+```
+
+Bare `zaxy init` selects `--projection-backend embedded` for local onboarding
+and checks the repo-local projection path instead of Neo4j or pgGraph. The
+embedded projection is created lazily under `.eventloom/projections/`, so this
+path needs no external graph service. `--preset local-embedded-codex` remains
+available as an explicit spelling of the same local path.
 
 `local-codex` renders Codex MCP install guidance, writes the local profile, and
 writes `.codex/zaxy-capture.json` for deterministic local capture. It does not
@@ -305,9 +332,10 @@ and PyPI Trusted Publishing posture without contacting external services. The
 beta readiness check verifies that the release smoke gate, release gate script,
 clean-repo UAT script, docs happy path, and deterministic capture happy path are
 present. The release gate adds package artifact checks, documentation link
-validation, and deployment preflight checks. `scripts/beta-uat.sh` creates a
-throwaway workspace, installs Zaxy into a fresh virtual environment, runs
-`zaxy init`, starts deterministic capture, runs `zaxy memory bootstrap`,
+validation, deployment preflight checks, backend shootout evidence, injected-token
+efficiency floors, and 100-query embedded scale validation. `scripts/beta-uat.sh`
+creates a throwaway workspace, installs Zaxy into a fresh virtual environment,
+runs `zaxy init`, starts deterministic capture, runs `zaxy memory bootstrap`,
 performs a cited `zaxy memory checkout`, and checks doctor, hook, capture, and
 memory status plus the `zaxy capture-soak` beta evidence report. The current public overview is
 [site/index.html](../site/index.html), and the operational checklist remains in

@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import assert_type
 
+import pytest
+
+from zaxy.embedded_graph_store import EmbeddedGraphStore
 from zaxy.extract import ExtractionResult
 from zaxy.graph import (
     GraphEntity,
@@ -12,6 +16,7 @@ from zaxy.graph import (
     GraphStore,
     SearchResult,
 )
+from zaxy.latticedb_store import LatticeDBStore
 from zaxy.pggraph_store import PgGraphStore
 from zaxy.projection import ProjectionStore
 from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
@@ -141,3 +146,71 @@ def test_build_projection_store_routes_pggraph_to_adapter() -> None:
     )
 
     assert isinstance(store, PgGraphStore)
+
+
+def test_build_projection_store_routes_embedded_to_adapter(tmp_path: Path) -> None:
+    graph_path = tmp_path / ".eventloom" / "projections" / "embedded.kuzu"
+
+    store = build_projection_store(
+        ProjectionBackendConfig(
+            backend="embedded",
+            neo4j_uri="bolt://localhost:7687",
+            neo4j_user="neo4j",
+            neo4j_password="testpassword",
+            neo4j_ca_cert=None,
+            neo4j_trust_all=False,
+            embedded_graph_path=graph_path,
+        )
+    )
+
+    assert isinstance(store, EmbeddedGraphStore)
+    assert store.path == graph_path
+
+
+def test_build_projection_store_requires_embedded_graph_path() -> None:
+    with pytest.raises(ValueError, match="embedded backend requires embedded_graph_path"):
+        build_projection_store(
+            ProjectionBackendConfig(
+                backend="embedded",
+                neo4j_uri="bolt://localhost:7687",
+                neo4j_user="neo4j",
+                neo4j_password="testpassword",
+                neo4j_ca_cert=None,
+                neo4j_trust_all=False,
+            )
+        )
+
+
+def test_build_projection_store_routes_latticedb_to_adapter(tmp_path: Path) -> None:
+    graph_path = tmp_path / ".eventloom" / "projections" / "memory.latticedb"
+
+    store = build_projection_store(
+        ProjectionBackendConfig(
+            backend="latticedb",
+            neo4j_uri="bolt://localhost:7687",
+            neo4j_user="neo4j",
+            neo4j_password="testpassword",
+            neo4j_ca_cert=None,
+            neo4j_trust_all=False,
+            latticedb_path=graph_path,
+            embedding_dimension=1536,
+        )
+    )
+
+    assert isinstance(store, LatticeDBStore)
+    assert store.path == graph_path
+    assert store.vector_dimensions == 1536
+
+
+def test_build_projection_store_requires_latticedb_path() -> None:
+    with pytest.raises(ValueError, match="LatticeDB backend requires latticedb_path"):
+        build_projection_store(
+            ProjectionBackendConfig(
+                backend="latticedb",
+                neo4j_uri="bolt://localhost:7687",
+                neo4j_user="neo4j",
+                neo4j_password="testpassword",
+                neo4j_ca_cert=None,
+                neo4j_trust_all=False,
+            )
+        )

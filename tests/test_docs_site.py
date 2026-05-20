@@ -165,6 +165,190 @@ def test_pggraph_backend_roadmap_records_contract_first_state() -> None:
     assert "zaxy memory inferred-status --projection-backend pggraph" in spec
 
 
+def test_zero_friction_runtime_roadmap_sets_frontier_bar() -> None:
+    """Roadmap should target frontier memory quality, not a convenience-only backend swap."""
+    agents = Path("AGENTS.md").read_text(encoding="utf-8")
+    architecture = Path("docs/architecture.md").read_text(encoding="utf-8")
+    roadmap = Path("docs/zero-friction-runtime-roadmap.md").read_text(encoding="utf-8")
+
+    assert "frontier-grade memory" in roadmap
+    assert "zaxy init" in roadmap
+    assert "Bare `zaxy init`" in roadmap
+    assert "PROJECTION_BACKEND=embedded" in roadmap
+    assert "Kuzu" in roadmap
+    assert "LatticeDB" in roadmap
+    assert "Memory Activation Layer" in roadmap
+    assert "activation efficiency" in roadmap
+    assert "ruthless token discipline" in roadmap
+    assert "invent new techniques" in roadmap
+    assert "same-harness benchmark output compares embedded, LatticeDB, Neo4j" in roadmap
+    assert "LatticeDB candidate gate status: failed current active-backend gate" in roadmap
+    assert "Embedded graph-traversal gate status: passed focused 10-subject smoke" in roadmap
+    assert "40-question LongMemEval-compatible embedded shootout" in roadmap
+    assert "100 dashboard nodes and 100 dashboard edges" in roadmap
+    assert "roughly 120-second projection/rebuild" in roadmap
+    assert "cost to roughly 10 seconds" in roadmap
+    assert "100-query scale evidence status: improving but not default-ready" in roadmap
+    assert "`Answer@5=0.35` versus BM25 `Answer@5=0.34`" in roadmap
+    assert "dashboard parity is wired" in roadmap
+    assert "Latest reminder" in roadmap
+    assert "memory_activation.latest_reminder" in roadmap
+    assert "write_instructions.memory_activation" in roadmap
+    assert "required tool before roadmap, implementation, release, review, resume" in roadmap
+    assert "high-context sessions" in roadmap
+    assert "fresh checkout before work starts" in roadmap
+    assert "Embedded infra check status: wired" in roadmap
+    assert "zaxy status --projection-backend embedded" in roadmap
+    assert "zaxy memory status --graph --projection-backend embedded --embedded-graph-path" in roadmap
+    assert "zaxy memory inferred-status --session-id <session>" in roadmap
+    assert "zaxy reproject .eventloom/<session>.jsonl --session-id <session>" in roadmap
+    assert "MCP embedded runtime status: wired" in roadmap
+    assert "local-embedded-codex" in roadmap
+    assert "zero-friction-runtime-roadmap.md" in architecture
+    assert "Build the zero-friction embedded graph runtime prototype" in agents
+    assert "Memory Activation Layer" in agents
+
+
+def test_docs_show_embedded_local_profile_option() -> None:
+    """Local profile docs should expose the embedded no-sidecar profile path."""
+    getting_started = Path("docs/getting-started.md").read_text(encoding="utf-8")
+    runbook = Path("docs/runbook.md").read_text(encoding="utf-8")
+    embeddings = Path("docs/embeddings.md").read_text(encoding="utf-8")
+
+    assert "zaxy local-profile --projection-backend embedded --output .env.local" in getting_started
+    assert "zaxy local-profile --projection-backend embedded --output .env.local" in runbook
+    assert "zaxy local-profile --projection-backend embedded" in embeddings
+
+
+def test_backend_shootout_contract_is_documented_and_scripted() -> None:
+    """Backend shootout should define the embedded-vs-sidecar measurement contract."""
+    benchmarks = Path("docs/benchmarks.md").read_text(encoding="utf-8")
+    normalized_benchmarks = " ".join(benchmarks.split())
+    script = Path("scripts/backend-shootout.py").read_text(encoding="utf-8")
+    guardrail = Path("scripts/check-backend-shootout.py").read_text(encoding="utf-8")
+
+    for phrase in (
+        "Backend Shootout",
+        "embedded",
+        "LatticeDB",
+        "Neo4j",
+        "pgGraph",
+        "BM25",
+        "cold bootstrap time",
+        "first useful init time",
+        "first checkout time",
+        "append-to-projection",
+        "checkout p95",
+        "checkout p99",
+        "returned tokens",
+        "injected tokens",
+        "citation coverage",
+        "resident memory",
+        "on-disk footprint",
+        "recovery time",
+        "report schema version",
+        "source fingerprints",
+        "workload fingerprints",
+        "event/query counts",
+    ):
+        assert phrase in benchmarks
+    assert "--eventloom-path" in script
+    assert "latticedb" in script
+    assert "--session-id" in script
+    assert "--backends" in script
+    assert "--queries-file" in script
+    assert "--output" in script
+    assert "Defaults exclude latticedb until it passes quality and latency gates." in script
+    assert "check-backend-shootout.py" in benchmarks
+    assert "--require-report-metadata" in benchmarks
+    assert "--require-report-metadata" in guardrail
+    assert "--require-markdown-report" in benchmarks
+    assert "--require-markdown-report" in guardrail
+    assert "--verify-report-fingerprints" in benchmarks
+    assert "--verify-report-fingerprints" in guardrail
+    assert "--require-labeled-metrics" in benchmarks
+    assert "--require-dashboard-source embedded=embedded" in benchmarks
+    assert "--min-quality-per-1k-injected-tokens embedded=1.0" in benchmarks
+    assert "--min-answer-at-5-per-1k-injected-tokens embedded=1.0" in benchmarks
+    assert "--min-projection-events-per-second embedded=40" in benchmarks
+    assert "--max-first-useful-init-ms embedded=15000" in benchmarks
+    assert "--max-resident-memory-delta-bytes embedded=768000000" in benchmarks
+    assert "--max-on-disk-footprint-bytes embedded=256000000" in benchmarks
+    assert "--max-dashboard-graph-load-ms embedded=250" in benchmarks
+    assert "--max-checkout-p99-ms embedded=25" in benchmarks
+    assert "--max-exact-p99-ms embedded=10" in benchmarks
+    assert "--max-keyword-p99-ms embedded=5" in benchmarks
+    assert "--max-vector-p99-ms embedded=5" in benchmarks
+    assert "--max-traversal-p99-ms embedded=5" in benchmarks
+    assert "--max-dashboard-graph-load-ms embedded=500" in benchmarks
+    assert "--max-rebuild-recovery-ms embedded=15000" in benchmarks
+    assert "--max-checkout-p95-ms embedded=100" in benchmarks
+    assert "--min-quality-per-1k-returned-tokens embedded=0.10" in benchmarks
+    assert "--min-answer-at-5-per-1k-returned-tokens embedded=0.10" in benchmarks
+    assert "--min-quality-per-1k-injected-tokens embedded=0.10" in benchmarks
+    assert "--min-answer-at-5-per-1k-injected-tokens embedded=0.10" in benchmarks
+    assert "--max-exact-p95-ms embedded=15" in benchmarks
+    assert "--max-keyword-p95-ms embedded=75" in benchmarks
+    assert "--max-vector-p95-ms embedded=25" in benchmarks
+    assert "--max-traversal-p95-ms embedded=10" in benchmarks
+    assert "--max-first-useful-init-ms embedded=40000" in benchmarks
+    assert "--max-resident-memory-delta-bytes embedded=1536000000" in benchmarks
+    assert "--max-on-disk-footprint-bytes embedded=512000000" in benchmarks
+    assert "--max-rebuild-recovery-ms embedded=40000" in benchmarks
+    assert "--max-checkout-p95-ms embedded=125" in benchmarks
+    assert "--min-quality-per-1k-returned-tokens embedded=0.15" in benchmarks
+    assert "--min-answer-at-5-per-1k-returned-tokens embedded=0.15" in benchmarks
+    assert "--min-quality-per-1k-injected-tokens embedded=0.15" in benchmarks
+    assert "--min-answer-at-5-per-1k-injected-tokens embedded=0.15" in benchmarks
+    assert "--max-keyword-p95-ms embedded=60" in benchmarks
+    assert "--max-checkout-p99-ms embedded=175" in benchmarks
+    assert "--max-exact-p99-ms embedded=12" in benchmarks
+    assert "--max-keyword-p99-ms embedded=80" in benchmarks
+    assert "--max-vector-p99-ms embedded=20" in benchmarks
+    assert "Backend shootout guardrail passed" in guardrail
+    assert "min-projection-events-per-second" in guardrail
+    assert "max-rebuild-recovery-ms" in guardrail
+    assert "min-quality-per-1k-returned-tokens" in guardrail
+    assert "min-answer-at-5-per-1k-returned-tokens" in guardrail
+    assert "min-quality-per-1k-injected-tokens" in guardrail
+    assert "min-answer-at-5-per-1k-injected-tokens" in guardrail
+    assert "max-keyword-p95-ms" in guardrail
+    assert "max-keyword-p99-ms" in guardrail
+    report = json.loads(Path("reports/backend-shootout/backend-shootout.json").read_text(encoding="utf-8"))
+    if any(row["status"] != "ok" for row in report["summaries"]):
+        assert "with all rows passing" not in benchmarks
+        assert "error rows" in benchmarks
+    assert "parked candidate" in benchmarks
+    assert "backend-shootout-graph-traversal-embedded-after-carry-forward" in benchmarks
+    assert "longmemeval-40-backend-shootout.json" in benchmarks
+    assert "longmemeval-100-backend-shootout.json" in benchmarks
+    assert "medium-scale backend evidence" in benchmarks
+    assert "Answer@5=0.25" in benchmarks
+    assert "100 nodes and 100 edges" in benchmarks
+    assert "cold bootstrap `98.563ms`" in benchmarks
+    assert "`35.26ms`" in benchmarks
+    assert "append-to-projection p95 `20.039ms`" in benchmarks
+    assert "resident memory delta" in benchmarks
+    assert "on-disk footprint" in benchmarks
+    assert "`9096.341ms`" in benchmarks
+    assert "projection throughput `57.793` events/sec" in normalized_benchmarks
+    assert "vector retrieval enabled" in benchmarks
+    assert "quality per 1k returned tokens `0.1332`" in normalized_benchmarks
+    assert "quality per 1k injected tokens `0.1263`" in normalized_benchmarks
+    assert "lane p95s of exact `4.059ms`, keyword `17.858ms`" in normalized_benchmarks
+    assert "roughly 10" in benchmarks
+    assert "100-query scale evidence" in benchmarks
+    assert "Embedded/Kuzu scored `Answer@5=0.35`" in benchmarks
+    assert "cold bootstrap `105.955ms`" in benchmarks
+    assert "`66.316ms`" in benchmarks
+    assert "append-to-projection p95 `25.241ms`" in benchmarks
+    assert "quality per 1k returned tokens `0.1954`" in normalized_benchmarks
+    assert "quality per 1k injected tokens `0.1849`" in normalized_benchmarks
+    assert "BM25 scored `Answer@5=0.34`" in benchmarks
+    assert "quality per 1k returned/injected tokens `0.0813`" in benchmarks
+    assert "not a default-backend gate" in benchmarks
+
+
 def test_install_docs_offer_zero_surprise_first_run_path() -> None:
     """Install docs should make local setup verifiable without guessing where state went."""
     readme = Path("README.md").read_text(encoding="utf-8")
@@ -174,10 +358,15 @@ def test_install_docs_offer_zero_surprise_first_run_path() -> None:
     combined = "\n".join([readme, getting_started, site])
     assert "Five-minute local smoke test" in combined
     assert "pipx install zaxy-memory" in combined
-    assert "zaxy init . --domain my-project --preset local-codex --capture start --infra check" in combined
+    assert "zaxy init" in combined
+    assert "Bare `zaxy init` now expands to the local embedded Codex path" in combined
+    assert "zaxy init --capture start" in combined
+    assert "zaxy init . --domain my-project --preset local-codex --capture start --infra check" not in combined
+    assert "zaxy init . --domain my-project --preset local-embedded-codex --capture start" not in combined
+    assert "no external graph service" in combined
     assert ".eventloom/" in combined
-    assert "zaxy memory log --eventloom-path .eventloom --session-id my-project-default --limit 5" in combined
-    assert "zaxy memory bootstrap --eventloom-path .eventloom --session-id my-project-default" in combined
+    assert "zaxy memory log --eventloom-path .eventloom --limit 5" in combined
+    assert "zaxy memory bootstrap --eventloom-path .eventloom" in combined
     assert "zaxy doctor --eventloom-path .eventloom" in combined
     assert "MCP config" in combined
 
@@ -192,6 +381,9 @@ def test_public_site_reflects_current_onboarding_and_runtime_surfaces() -> None:
     assert "prints the MCP command or config path" in html
     assert "Neo4j remains the default production graph projection" in html
     assert "pgGraph is experimental" in html
+    assert "Bare zaxy init" in html
+    assert "selects the embedded projection" in html
+    assert "local-embedded-codex" not in html
     assert "PROJECTION_BACKEND=pggraph" in html
     assert "zaxy reproject --projection-backend pggraph --reset-projection" in html
     assert "Read-only local dashboard" in html
@@ -233,6 +425,9 @@ def test_why_zaxy_doc_explains_markdown_vector_tradeoffs() -> None:
     assert "provenance" in text
     assert "multi-hop" in text
     assert "pipx install zaxy-memory" in text
+    assert "zaxy init" in text
+    assert "--preset local-codex" not in text
+    assert "--session-id my-project-default" not in text
     assert "neo4j" in text
     assert "pggraph" in text
 
@@ -459,6 +654,20 @@ def test_docs_describe_incremental_context_refresh_and_backend_reconciliation() 
     assert "projection.retired" in eventloom
 
 
+def test_operator_docs_describe_backend_release_gates() -> None:
+    """Operator-facing release docs should include backend shootout and scale gates."""
+    deployment = Path("docs/deployment.md").read_text(encoding="utf-8")
+    operations = Path("docs/operations.md").read_text(encoding="utf-8")
+    runbook = Path("docs/runbook.md").read_text(encoding="utf-8")
+    getting_started = Path("docs/getting-started.md").read_text(encoding="utf-8")
+
+    for text in (deployment, operations, runbook, getting_started):
+        normalized = " ".join(text.split())
+        assert "backend shootout" in normalized
+        assert "100-query" in normalized
+        assert "injected-token" in normalized
+
+
 def test_public_site_docs_are_rendered_html_not_raw_markdown() -> None:
     """Published docs links should stay on the site as rendered HTML pages."""
     for doc in REQUIRED_DOCS:
@@ -577,11 +786,80 @@ def test_docs_validation_script_checks_site_and_markdown_links(tmp_path: Path) -
 
 
 def test_release_gate_runs_docs_validation() -> None:
-    """The go-live gate should include docs/site validation."""
+    """The go-live gate should include docs/site and backend shootout validation."""
     script = Path("scripts/release-check.sh").read_text(encoding="utf-8")
+    testing = Path("docs/testing.md").read_text(encoding="utf-8")
 
     assert 'DOCS_CMD="scripts/validate-docs.sh"' in script
     assert '"${DOCS_CMD}" --root "${ROOT}"' in script
+    assert "BACKEND_SHOOTOUT_CMD" in script
+    assert "BACKEND_PERFORMANCE_CMD" in script
+    assert "BACKEND_SCALE_CMD" in script
+    assert "scripts/check-backend-shootout.py" in script
+    assert 'bash -c "${BACKEND_SHOOTOUT_CMD}"' in script
+    assert 'bash -c "${BACKEND_PERFORMANCE_CMD}"' in script
+    assert 'bash -c "${BACKEND_SCALE_CMD}"' in script
+    assert (
+        "backend-shootout.json --require-report-metadata --require-markdown-report --verify-report-fingerprints "
+        "--require-backends embedded,bm25"
+    ) in script
+    assert "--min-quality-per-1k-injected-tokens embedded=1.0" in script
+    assert "--min-answer-at-5-per-1k-injected-tokens embedded=1.0" in script
+    assert "longmemeval-100-backend-shootout.json" in script
+    assert "--max-checkout-p95-ms embedded=125" in script
+    assert "--min-quality-per-1k-injected-tokens embedded=0.15" in script
+    assert "--min-answer-at-5-per-1k-injected-tokens embedded=0.15" in script
+    assert "backend shootout" in testing
+    assert "medium-scale embedded runtime evidence" in testing
+    assert "100-query embedded scale evidence" in testing
+    assert "activation efficiency" in testing
+    assert "--min-activation-rate" in testing
+    assert "--max-checkout-prompt-tokens" in testing
+    assert "--min-checkout-facts-per-1k-tokens" in testing
+    assert "scripts/beta-uat.sh" in testing
+    assert "bare embedded init" in testing
+    assert "PROJECTION_BACKEND=embedded" in testing
+    assert "NEO4J_AUTO_START=false" in testing
+    assert "zaxy memory status --eventloom-path .eventloom --graph" in testing
+    assert "zaxy memory inferred-status" in testing
+    assert "zaxy reproject" in testing
+    assert "scripts/check-backend-shootout.py" in testing
+    assert "--min-quality-per-1k-returned-tokens embedded=0.10" in script
+    assert "--min-answer-at-5-per-1k-returned-tokens embedded=0.10" in script
+    assert "--min-quality-per-1k-injected-tokens embedded=0.10" in script
+    assert "--min-answer-at-5-per-1k-injected-tokens embedded=0.10" in script
+    assert "--max-cold-bootstrap-ms embedded=200" in script
+    assert "--max-first-checkout-ms embedded=50" in script
+    assert "--max-append-to-projection-p95-ms embedded=30" in script
+    assert "--max-resident-memory-delta-bytes embedded=768000000" in script
+    assert "--max-on-disk-footprint-bytes embedded=256000000" in script
+    assert "--max-dashboard-graph-load-ms embedded=250" in script
+    assert "--max-checkout-p99-ms embedded=25" in script
+    assert "--max-exact-p99-ms embedded=10" in script
+    assert "--max-keyword-p99-ms embedded=5" in script
+    assert "--max-vector-p99-ms embedded=5" in script
+    assert "--max-traversal-p99-ms embedded=5" in script
+    assert "--max-dashboard-graph-load-ms embedded=500" in script
+    assert "--max-keyword-p95-ms embedded=75" in script
+    assert "--max-keyword-p99-ms embedded=40" in script
+    assert "--max-vector-p99-ms embedded=35" in script
+    assert "--max-traversal-p95-ms embedded=10" in script
+    assert "--max-traversal-p99-ms embedded=10" in script
+    assert "--min-quality-per-1k-returned-tokens embedded=0.10" in testing
+    assert "--min-answer-at-5-per-1k-returned-tokens embedded=0.10" in testing
+    assert "--min-quality-per-1k-injected-tokens embedded=0.10" in testing
+    assert "--min-answer-at-5-per-1k-injected-tokens embedded=0.10" in testing
+    assert "--min-quality-per-1k-injected-tokens embedded=0.15" in testing
+    assert "--max-cold-bootstrap-ms embedded=200" in testing
+    assert "--max-first-checkout-ms embedded=100" in testing
+    assert "--max-append-to-projection-p95-ms embedded=40" in testing
+    assert "--max-resident-memory-delta-bytes embedded=1536000000" in testing
+    assert "--max-on-disk-footprint-bytes embedded=512000000" in testing
+    assert "--max-dashboard-graph-load-ms embedded=500" in testing
+    assert "--max-checkout-p95-ms embedded=125" in testing
+    assert "--max-checkout-p99-ms embedded=175" in testing
+    assert "--max-keyword-p95-ms embedded=75" in testing
+    assert "--max-vector-p99-ms embedded=35" in testing
 
 
 def test_github_pages_workflow_publishes_site_directory() -> None:

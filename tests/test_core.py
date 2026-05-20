@@ -74,6 +74,52 @@ def test_memory_fabric_accepts_explicit_pggraph_projection_backend(tmp_path: Pat
     assert config.pggraph_dsn == "postgresql://postgres:postgres@localhost:5432/zaxy"
 
 
+def test_memory_fabric_accepts_explicit_embedded_projection_backend(tmp_path: Path) -> None:
+    """Framework integrations should be able to select the embedded graph backend."""
+    embedded_path = tmp_path / ".eventloom" / "projections" / "embedded.kuzu"
+    with (
+        patch("zaxy.core.build_projection_store") as mock_build,
+        patch("zaxy.core.QueryRouter"),
+        patch("zaxy.core.build_reranker", return_value=None),
+        patch("zaxy.core.MemoryTracer"),
+    ):
+        mock_build.return_value = AsyncMock()
+
+        MemoryFabric(
+            eventloom_path=str(tmp_path / ".eventloom"),
+            projection_backend="embedded",
+            embedded_graph_path=embedded_path,
+            tracer_disabled=True,
+        )
+
+    config = mock_build.call_args.args[0]
+    assert config.backend == "embedded"
+    assert config.embedded_graph_path == embedded_path
+
+
+def test_memory_fabric_accepts_explicit_latticedb_projection_backend(tmp_path: Path) -> None:
+    """Framework integrations should be able to select the LatticeDB candidate backend."""
+    latticedb_path = tmp_path / ".eventloom" / "projections" / "memory.latticedb"
+    with (
+        patch("zaxy.core.build_projection_store") as mock_build,
+        patch("zaxy.core.QueryRouter"),
+        patch("zaxy.core.build_reranker", return_value=None),
+        patch("zaxy.core.MemoryTracer"),
+    ):
+        mock_build.return_value = AsyncMock()
+
+        MemoryFabric(
+            eventloom_path=str(tmp_path / ".eventloom"),
+            projection_backend="latticedb",
+            latticedb_path=latticedb_path,
+            tracer_disabled=True,
+        )
+
+    config = mock_build.call_args.args[0]
+    assert config.backend == "latticedb"
+    assert config.latticedb_path == latticedb_path
+
+
 async def test_memory_fabric_queries_verbatim_eventloom_sources(tmp_path: Path) -> None:
     """Fabric should expose verbatim source recall without requiring Neo4j."""
     fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
@@ -228,7 +274,7 @@ class TestLifecycle:
 
         get_settings.cache_clear()
         with (
-            patch("zaxy.core.build_projection_store"),
+            patch("zaxy.core.build_projection_store") as mock_build_projection_store,
             patch("zaxy.core.QueryRouter") as mock_router_cls,
             patch("zaxy.core.build_embedding_provider") as mock_build_embedding_provider,
             patch("zaxy.core.build_reranker") as mock_build_reranker,
@@ -242,8 +288,10 @@ class TestLifecycle:
             fabric = MemoryFabric()
 
         profile = resolve_retrieval_profile(fabric.settings)
+        projection_config = mock_build_projection_store.call_args.args[0]
         assert profile.name == "local_sota"
         assert fabric.retrieval_profile == profile
+        assert projection_config.embedding_dimension == 1024
         assert mock_build_embedding_provider.call_args.args[0].embedding_provider == "sentence-transformers"
         assert mock_build_embedding_provider.call_args.args[0].embedding_dimension == 1024
         assert mock_router_cls.call_args.kwargs["scoring_profile"] == "recall"

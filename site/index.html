@@ -175,11 +175,14 @@
           Neo4j remains the default production graph projection. pgGraph is experimental
           behind <code>PROJECTION_BACKEND=pggraph</code> for teams
           evaluating Postgres-local graph traversal, pgvector ranking, and temporal
-          retrieval without moving the source of truth out of Eventloom.
+          retrieval without moving the source of truth out of Eventloom. Bare zaxy init
+          selects the embedded projection for no-sidecar local onboarding without
+          requiring an external graph service.
         </p>
       </div>
       <div class="value-grid">
         <article><h3>Default: Neo4j</h3><p>Battle-tested graph projection for temporal entities, source citations, inferred edges, and traversal-backed retrieval.</p></article>
+        <article><h3>Local embedded</h3><p>Bare <code>zaxy init</code> uses the repo-local embedded projection path for no-sidecar Codex onboarding.</p></article>
         <article><h3>Experimental: pgGraph</h3><p>Available behind an explicit backend selector and guarded by same-harness quality, citation, latency, and operations comparisons.</p></article>
         <article><h3>Recoverable projection</h3><p>Rebuild a selected backend from Eventloom with <code>zaxy reproject --projection-backend pggraph --reset-projection</code>.</p></article>
       </div>
@@ -345,13 +348,14 @@
       </div>
       <div class="install-grid">
         <pre><code>pipx install zaxy-memory
-zaxy init . --domain my-project --preset local-codex --capture start --infra check
-zaxy memory log --eventloom-path .eventloom --session-id my-project-default --limit 5
-zaxy memory bootstrap --eventloom-path .eventloom --session-id my-project-default
+zaxy init
+zaxy memory log --eventloom-path .eventloom --limit 5
+zaxy memory bootstrap --eventloom-path .eventloom
 zaxy doctor --eventloom-path .eventloom</code></pre>
         <pre><code>Data lives in .eventloom/
 MCP config is generated or printed by zaxy init
-Graph posture is explicit: check first, start when needed
+Bare zaxy init writes the embedded local profile
+No graph service is required for default local use
 Production uses Docker secrets and deployment preflight
 scripts/release-check.sh --root .</code></pre>
       </div>

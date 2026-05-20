@@ -26,7 +26,7 @@ from zaxy.install import resolve_zaxy_executable
 from zaxy.integrations import render_codex_mcp_add_command, render_mcp_client_config
 from zaxy.local_profile import write_local_profile
 from zaxy.packet_guidance import build_packet_capture_guidance
-from zaxy.runtime import LocalNeo4jRuntime, LocalPgGraphRuntime
+from zaxy.runtime import LocalEmbeddedGraphRuntime, LocalNeo4jRuntime, LocalPgGraphRuntime
 from zaxy.session import SessionManager
 
 
@@ -78,13 +78,14 @@ def apply_onboarding_preset(
             "hook_output": hook_output,
             "local_profile_output": local_profile_output,
             "infra": infra,
+            "projection_backend": None,
             "capture_mode": normalized_capture_mode,
         }
     normalized = preset.casefold().strip().replace("_", "-")
-    if normalized not in {"local-claude", "local-codex"}:
-        raise ValueError("preset must be one of: local-claude, local-codex")
+    if normalized not in {"local-claude", "local-codex", "local-embedded-codex"}:
+        raise ValueError("preset must be one of: local-claude, local-codex, local-embedded-codex")
     root = Path(workspace)
-    if normalized == "local-codex":
+    if normalized in {"local-codex", "local-embedded-codex"}:
         return {
             "mcp_client": mcp_client or "codex",
             "mcp_output": Path(mcp_output) if mcp_output is not None else None,
@@ -100,6 +101,7 @@ def apply_onboarding_preset(
                 else root / ".env.local"
             ),
             "infra": infra if infra != "none" else "check",
+            "projection_backend": "embedded" if normalized == "local-embedded-codex" else None,
             "capture_mode": normalized_capture_mode,
         }
     return {
@@ -113,6 +115,7 @@ def apply_onboarding_preset(
             else root / ".env.local"
         ),
         "infra": infra if infra != "none" else "check",
+        "projection_backend": None,
         "capture_mode": normalized_capture_mode,
     }
 
@@ -166,9 +169,14 @@ async def run_onboarding(
     mcp_install_command: str | None = None
     eventloom.mkdir(parents=True, exist_ok=True)
     steps.append(OnboardingStep("eventloom", "ok", "Eventloom directory is ready", str(eventloom)))
+    selected_projection_backend = projection_backend or Settings().projection_backend
 
     if local_profile_output is not None:
-        written = write_local_profile(Path(local_profile_output), force=force)
+        written = write_local_profile(
+            Path(local_profile_output),
+            projection_backend=selected_projection_backend,
+            force=force,
+        )
         steps.append(OnboardingStep("local_profile", "ok", "Local retrieval profile written", str(written)))
 
     if mcp_client is not None:
@@ -222,7 +230,7 @@ async def run_onboarding(
             eventloom=eventloom,
             session_id=sid,
             domain=resolved_domain,
-            projection_backend=projection_backend,
+            projection_backend=selected_projection_backend,
             pggraph_dsn=pggraph_dsn,
             pggraph_repo=pggraph_repo,
         )
@@ -260,7 +268,7 @@ async def run_onboarding(
         eventloom=eventloom,
         session_id=sid,
         domain=resolved_domain,
-        projection_backend=projection_backend,
+        projection_backend=selected_projection_backend,
         pggraph_dsn=pggraph_dsn,
         pggraph_repo=pggraph_repo,
     )
@@ -296,7 +304,7 @@ async def run_onboarding(
             mcp_output=mcp_output,
             mcp_install_command=mcp_install_command,
             infra_action=infra_action,
-            projection_backend=projection_backend or settings.projection_backend,
+            projection_backend=selected_projection_backend,
             capture_mode=normalized_capture_mode,
             packet_capture=packet_capture,
             packet_upstream_base_url=packet_upstream_base_url,
@@ -381,8 +389,9 @@ def _normalize_hook_client_name(client: str) -> str:
     return client.casefold().strip().replace("_", "-")
 
 
-def _build_runtime(settings: Settings) -> LocalNeo4jRuntime | LocalPgGraphRuntime:
-    if settings.projection_backend.casefold().strip() == "pggraph":
+def _build_runtime(settings: Settings) -> LocalNeo4jRuntime | LocalPgGraphRuntime | LocalEmbeddedGraphRuntime:
+    backend = settings.projection_backend.casefold().strip()
+    if backend == "pggraph":
         return LocalPgGraphRuntime(
             dsn=settings.pggraph_dsn,
             enabled=settings.pggraph_auto_start and settings.zaxy_env.lower() != "production",
@@ -390,6 +399,8 @@ def _build_runtime(settings: Settings) -> LocalNeo4jRuntime | LocalPgGraphRuntim
             container_name=settings.pggraph_auto_start_container,
             pggraph_repo=settings.pggraph_repo,
         )
+    if backend == "embedded":
+        return LocalEmbeddedGraphRuntime(path=settings.embedded_graph_path)
     return LocalNeo4jRuntime(
         uri=settings.neo4j_uri,
         user=settings.neo4j_user,
@@ -441,7 +452,11 @@ def _build_next_steps(
         next_steps.append(
             f"Start managed deterministic Codex capture: zaxy capture start --workspace {workspace}"
         )
-        next_steps.append("Add --graph to the capture start command when Neo4j should receive live projections.")
+        backend = projection_backend.casefold().strip()
+        if backend == "neo4j":
+            next_steps.append("Add --graph to the capture start command when Neo4j should receive live projections.")
+        elif backend == "embedded":
+            next_steps.append("Captured events can be replayed into the repo-local embedded projection.")
     next_steps.append(f"Data lives in {eventloom}; each session is an append-only JSONL log.")
     next_steps.append(f"Run zaxy hook-status --eventloom-path {eventloom}")
     next_steps.append(
@@ -548,6 +563,8 @@ def _onboarding_settings(
     }
     if projection_backend is not None:
         settings_values["projection_backend"] = projection_backend
+        if projection_backend.casefold().strip() == "embedded":
+            settings_values["embedded_graph_path"] = str(eventloom / "projections" / "embedded.kuzu")
     if pggraph_dsn is not None:
         settings_values["pggraph_dsn"] = pggraph_dsn
     if pggraph_repo is not None:
@@ -586,11 +603,12 @@ def _onboarding_hook_status(report: dict[str, Any], *, hook_client: str | None) 
     status = str(report["status"])
     if status == "ok":
         return "ok"
-    if hook_client is None or _normalize_hook_client_name(hook_client) != "codex":
+    if hook_client is None:
         return status
-    codex = report.get("clients", {}).get("codex", {})
-    runtime = codex.get("runtime", {})
-    if codex.get("installed") and not runtime.get("running", False):
+    normalized_client = _normalize_hook_client_name(hook_client)
+    client = report.get("clients", {}).get(normalized_client, {})
+    latest_event = report.get("latest_event") or {}
+    if client.get("installed") and latest_event.get("type") == hook_event_type("heartbeat"):
         return "ok"
     return status
 

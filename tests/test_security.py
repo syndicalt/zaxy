@@ -64,6 +64,29 @@ class TestPayloadSecurity:
         assert secured.payload == {"version": "1.2.3"}
         assert secured.sensitivity == "public"
 
+    def test_token_count_metrics_are_not_treated_as_secrets(self) -> None:
+        secured = secure_payload(
+            {
+                "token_efficiency": {
+                    "prompt_tokens": 200,
+                    "completion_tokens": 12,
+                    "facts_per_1k_prompt_tokens": 15.0,
+                },
+                "token": "secret",
+            }
+        )
+
+        assert secured.payload == {
+            "token_efficiency": {
+                "prompt_tokens": 200,
+                "completion_tokens": 12,
+                "facts_per_1k_prompt_tokens": 15.0,
+            },
+            "token": REDACTED_VALUE,
+        }
+        assert secured.sensitivity == "restricted"
+        assert secured.redacted_paths == ["token"]
+
 
 class TestValidation:
     """Smoke tests for shared public validation helpers."""

@@ -26,6 +26,7 @@ from zaxy.benchmark import (
     expected_terms_recall,
     score_retrieval,
 )
+from zaxy.config import get_settings
 from zaxy.context import Context
 from zaxy.core import ContextAssembly, build_memory_checkout
 from zaxy.embedding import EmbeddingProvider, HashEmbeddingProvider, embed_extraction
@@ -2262,6 +2263,9 @@ async def build_live_zaxy_retriever(
         neo4j_password=neo4j_password,
         neo4j_ca_cert=None,
         neo4j_trust_all=False,
+        embedded_graph_path=Path(".eventloom/projections/embedded.kuzu"),
+        latticedb_path=Path(".eventloom/projections/memory.latticedb"),
+        embedding_dimension=get_settings().embedding_dimension,
     )
     graph = build_projection_store(config)
     await graph.connect()

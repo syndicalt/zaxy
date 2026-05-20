@@ -762,8 +762,9 @@ def _extract_document_indexed(event: Event) -> ExtractionResult:
     end_line = _positive_int(event.payload.get("end_line"), default=start_line)
     content = _optional_text(event.payload.get("content")) or ""
     sha256 = _optional_text(event.payload.get("sha256"))
+    document_name = f"{path}:{start_line}-{end_line}"
     entity = ExtractedEntity(
-        name=f"{path}:{start_line}-{end_line}",
+        name=document_name,
         entity_type="document",
         observed_at=event.timestamp,
         summary=content,
@@ -775,13 +776,18 @@ def _extract_document_indexed(event: Event) -> ExtractionResult:
                 "source_sha256": sha256,
                 **_refresh_transform_properties(event.payload),
             },
+            _longmemeval_document_properties(event.payload),
             _retrieval_salience_properties(event.payload),
         )
         or {},
     )
+    entities, edges = _document_session_context(
+        event,
+        document_name=document_name,
+    )
     return ExtractionResult(
-        entities=[entity],
-        edges=[],
+        entities=[entity, *entities],
+        edges=edges,
         source_event_seq=event.seq,
     )
 
@@ -1939,6 +1945,53 @@ def _retrieval_salience_properties(payload: dict[str, Any]) -> dict[str, Any] | 
     if salience is None:
         return None
     return {"retrieval_salience": salience}
+
+
+def _longmemeval_document_properties(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Return LongMemEval source metadata for benchmark document projections."""
+    session_id = _optional_text(payload.get("longmemeval_session_id"))
+    if session_id is None:
+        return None
+    properties: dict[str, Any] = {"longmemeval_session_id": session_id}
+    if session_date := _optional_text(payload.get("longmemeval_session_date")):
+        properties["longmemeval_session_date"] = session_date
+    if chunk_index := _optional_positive_int(payload.get("longmemeval_chunk_index")):
+        properties["longmemeval_chunk_index"] = chunk_index
+    if chunk_count := _optional_positive_int(payload.get("longmemeval_chunk_count")):
+        properties["longmemeval_chunk_count"] = chunk_count
+    if turn_index := _optional_positive_int(payload.get("turn_index")):
+        properties["turn_index"] = turn_index
+    if role := _optional_text(payload.get("role")):
+        properties["role"] = role
+    if payload.get("longmemeval_salient_memory_turn") is not None:
+        properties["longmemeval_salient_memory_turn"] = bool(payload.get("longmemeval_salient_memory_turn"))
+    return properties
+
+
+def _document_session_context(
+    event: Event,
+    *,
+    document_name: str,
+) -> tuple[list[ExtractedEntity], list[ExtractedEdge]]:
+    """Link benchmark document chunks to their source conversation session."""
+    session_id = _optional_text(event.payload.get("longmemeval_session_id"))
+    if session_id is None:
+        return [], []
+    session_name = f"longmemeval:session:{session_id}"
+    session = ExtractedEntity(
+        name=session_name,
+        entity_type="longmemeval_session",
+        observed_at=event.timestamp,
+        summary=_optional_text(event.payload.get("longmemeval_session_date")),
+        properties={"longmemeval_session_id": session_id},
+    )
+    edge = ExtractedEdge(
+        source=session_name,
+        target=document_name,
+        relation_type="has_document_chunk",
+        valid_from=event.timestamp,
+    )
+    return [session], [edge]
 
 
 def _refresh_transform_properties(payload: dict[str, Any]) -> dict[str, Any]:

@@ -1,11 +1,12 @@
 # Architecture
 
-Zaxy has four primary layers: Eventloom, extraction, Neo4j, and MCP. Each layer
-has a narrow responsibility so the system remains replayable and auditable.
-Eventloom stores append-only JSONL events with hash-chain integrity. The
-extraction engine converts typed events into `ExtractedEntity` and
-`ExtractedEdge` objects. Neo4j stores temporal graph projections. MCP exposes
-the memory operations to agent frameworks and clients.
+Zaxy has four primary layers: Eventloom, extraction, projection backends, and
+MCP. Each layer has a narrow responsibility so the system remains replayable and
+auditable. Eventloom stores append-only JSONL events with hash-chain integrity.
+The extraction engine converts typed events into `ExtractedEntity` and
+`ExtractedEdge` objects. Projection backends store temporal graph views for
+retrieval, dashboard inspection, and graph traversal. MCP exposes the memory
+operations to agent frameworks and clients.
 
 The data flow starts when an agent calls `memory_append`, a Python caller uses
 `MemoryFabric.append`, a service calls `MemoryFabric.ingest_documents` for
@@ -29,16 +30,23 @@ graph as the relevance layer, verbatim retrieval as the exact-source lane, and
 the working set as the model-facing memory projection instead of creating a
 separate context cache.
 
-Eventloom is deliberately the bottom layer. It must remain useful even if Neo4j
-is unavailable or a projection bug is discovered. If the graph needs to be
-rebuilt, replay the log and re-run extraction. This is the reason Zaxy does not
-silently overwrite facts: graph entities carry `valid_from` and `valid_to`
-windows, and reasserted facts become new versions.
+Eventloom is deliberately the bottom layer. It must remain useful even if a
+projection backend is unavailable or a projection bug is discovered. If a graph
+needs to be rebuilt, replay the log and re-run extraction. This is the reason
+Zaxy does not silently overwrite facts: graph entities carry `valid_from` and
+`valid_to` windows, and reasserted facts become new versions.
 
-Neo4j is used directly through the official driver. Zaxy does not delegate
-schema control to a high-level graph-memory abstraction because temporal
-validity, invalidation semantics, index management, and query fusion need to be
-explicit and testable. The graph schema is documented in
+Neo4j is the current default graph backend and quality control baseline. pgGraph
+is available as an experimental Postgres-native projection backend. The next
+runtime track is an embedded graph backend that removes sidecar setup from the
+default local path while preserving graph-native traversal, citations, temporal
+versioning, and replay. See
+[zero-friction-runtime-roadmap.md](zero-friction-runtime-roadmap.md) for the
+embedded runtime gates.
+
+Zaxy does not delegate schema control to a high-level graph-memory abstraction
+because temporal validity, invalidation semantics, index management, and query
+fusion need to be explicit and testable. The graph schema is documented in
 [graph-schema.md](graph-schema.md).
 
 Pathlight is observability, not storage. It records memory operation traces so

@@ -98,7 +98,8 @@ def test_renders_hermes_mcp_config_as_workspace_neutral_yaml_shape() -> None:
     assert server["tools"]["resources"] is False
     assert server["tools"]["prompts"] is False
     assert "memory_checkout" in server["tools"]["include"]
-    assert server["env"]["NEO4J_URI"] == "bolt://localhost:7687"
+    assert not any(key.startswith("NEO4J_") for key in server["env"])
+    assert "PROJECTION_BACKEND" not in server["env"]
     assert "EVENTLOOM_PATH" not in server["env"]
     assert "EVENTLOOM_THREAD" not in server["env"]
     assert "ZAXY_DOMAIN" not in server["env"]
@@ -255,10 +256,9 @@ def test_renders_codex_mcp_add_command_with_env_and_command_separator() -> None:
         "serve",
     ]
     assert "--env" in command
-    assert "NEO4J_URI=bolt://localhost:7687" in command
-    assert "NEO4J_CA_CERT=" in command
-    assert "NEO4J_PASSWORD_FILE=" in command
     assert "ZAXY_ENV=development" in command
+    assert not any(part.startswith("NEO4J_") for part in command)
+    assert not any(part.startswith("PROJECTION_BACKEND=") for part in command)
     assert not any("EVENTLOOM_" in part or "ZAXY_DOMAIN" in part for part in command)
 
 
@@ -287,9 +287,8 @@ def test_writes_trusted_project_codex_config_without_removing_existing_servers(
     assert config["mcp_servers"]["context7"]["command"] == "npx"
     assert config["mcp_servers"]["zaxy"]["command"] == "/opt/zaxy/bin/zaxy"
     assert config["mcp_servers"]["zaxy"]["args"] == ["serve"]
-    assert config["mcp_servers"]["zaxy"]["env"]["NEO4J_URI"] == "bolt://localhost:7687"
-    assert config["mcp_servers"]["zaxy"]["env"]["NEO4J_CA_CERT"] == ""
-    assert config["mcp_servers"]["zaxy"]["env"]["NEO4J_PASSWORD_FILE"] == ""
+    assert not any(key.startswith("NEO4J_") for key in config["mcp_servers"]["zaxy"]["env"])
+    assert "PROJECTION_BACKEND" not in config["mcp_servers"]["zaxy"]["env"]
     assert "EVENTLOOM_PATH" not in config["mcp_servers"]["zaxy"]["env"]
     assert "EVENTLOOM_THREAD" not in config["mcp_servers"]["zaxy"]["env"]
     assert "ZAXY_DOMAIN" not in config["mcp_servers"]["zaxy"]["env"]

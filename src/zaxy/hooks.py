@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shlex
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
@@ -184,6 +185,8 @@ def inspect_hook_status(
     *,
     eventloom_path: str | Path = ".eventloom",
     workspace_root: str | Path | None = None,
+    max_checkout_stale_minutes: int = 120,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Inspect installed hook configs and recent Eventloom lifecycle activity."""
     root = Path(workspace_root or Path.cwd())
@@ -194,10 +197,17 @@ def inspect_hook_status(
     coverage = _observation_coverage(eventloom)
     missing = [event_type for event_type in HIGH_VALUE_OBSERVATION_TYPES if coverage[event_type]["count"] == 0]
     readiness = _capture_readiness(coverage, installations=installations, workspace_root=root, eventloom_path=eventloom)
+    activation = _memory_activation(
+        eventloom,
+        stale_after_minutes=max_checkout_stale_minutes,
+        now=now,
+    )
     installed_any = any(client["installed"] for client in installations.values())
     status = "ok" if latest is not None else "warning"
     codex_runtime = installations["codex"].get("runtime", {})
     if installations["codex"]["installed"] and not codex_runtime.get("running", False):
+        status = "warning"
+    if activation["status"] != "ok":
         status = "warning"
     if not installed_any and latest is None:
         message = "No installed observer hook config or hook lifecycle events found"
@@ -214,39 +224,129 @@ def inspect_hook_status(
         "observation_coverage": coverage,
         "missing_observation_types": missing,
         "capture_readiness": readiness,
+        "memory_activation": activation,
     }
+
+
+def inspect_memory_activation(
+    *,
+    eventloom_path: str | Path = ".eventloom",
+    max_checkout_stale_minutes: int = 120,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Inspect whether memory checkout is actively being used."""
+    return _memory_activation(
+        Path(eventloom_path),
+        stale_after_minutes=max_checkout_stale_minutes,
+        now=now,
+    )
 
 
 def format_hook_status(report: dict[str, Any]) -> str:
     """Format hook status for humans."""
-    lines = [f"Zaxy hooks: {report['status']}", f"- activity: {report['message']}"]
+    lines = [
+        f"Zaxy hooks: {report['status']}",
+        "",
+        "Summary",
+        f"  {report['message']}",
+        f"  Eventloom: {report['eventloom_path']}",
+        "",
+        "Client setup",
+    ]
     for client in HOOK_CLIENTS:
         info = report["clients"][client]
-        installed = "installed" if info["installed"] else "not installed"
+        installed = "installed" if info["installed"] else "missing"
         suffix = f" ({', '.join(info['paths'])})" if info["paths"] else ""
-        lines.append(f"- {client}: {installed}{suffix}")
+        lines.append(f"  {_client_setup_label(client)}: {installed}{suffix}")
         runtime = info.get("runtime")
         if runtime:
             if runtime.get("running"):
                 pids = ", ".join(str(pid) for pid in runtime.get("pids", []))
-                lines.append(f"  {client} capture: running pid={pids}")
+                lines.append(f"  Codex capture watcher: running pid={pids}")
             else:
-                lines.append(f"  {client} capture: not running")
+                lines.append("  Codex capture watcher: not running")
     latest = report.get("latest_event")
     if latest:
-        lines.append(
-            f"- last event: {latest['type']} seq={latest['seq']} "
-            f"session={latest['thread']} source={latest['source']}"
+        lines.extend(
+            [
+                "",
+                "Last observed event",
+                f"  type: {latest['type']}",
+                f"  seq: {latest['seq']}",
+                f"  session: {latest['thread']}",
+                f"  source: {latest['source']}",
+            ]
         )
     readiness = report.get("capture_readiness")
     if readiness:
-        lines.append(f"- capture readiness: {readiness['status']} - {readiness['message']}")
+        active_count = len(readiness.get("active_observation_types", []))
+        total = len(HIGH_VALUE_OBSERVATION_TYPES)
+        lines.extend(
+            [
+                "",
+                "Capture readiness",
+                f"  status: {readiness['status']}",
+                f"  active lanes: {active_count} of {total}",
+            ]
+        )
         actions = readiness.get("actions", [])
         if actions:
-            lines.extend(f"  action: {action}" for action in actions)
+            lines.extend(["", "Next steps"])
+            for index, action in enumerate(actions, start=1):
+                lines.extend(_format_next_step(index, str(action)))
+    activation = report.get("memory_activation")
+    if activation:
+        lines.extend(
+            [
+                "",
+                "Memory activation",
+                f"  status: {activation['status']}",
+                f"  {activation['message']}",
+                f"  stale after: {activation['stale_after_minutes']} minutes",
+            ]
+        )
+        latest_checkout = activation.get("latest_checkout")
+        if latest_checkout:
+            lines.append(
+                f"  latest checkout: seq={latest_checkout['seq']} "
+                f"session={latest_checkout['thread']} at {latest_checkout['timestamp']}"
+            )
+            token_efficiency = latest_checkout.get("token_efficiency")
+            if isinstance(token_efficiency, dict):
+                prompt_tokens = token_efficiency.get("prompt_tokens")
+                facts_per_1k = token_efficiency.get("facts_per_1k_prompt_tokens")
+                if isinstance(prompt_tokens, int | float) and isinstance(facts_per_1k, int | float):
+                    lines.append(
+                        f"  checkout tokens: {int(prompt_tokens)} prompt, "
+                        f"{float(facts_per_1k):.1f} facts/1k prompt tokens"
+                    )
+        latest_capture = activation.get("latest_capture")
+        if latest_capture:
+            lines.append(
+                f"  latest capture: {latest_capture['type']} seq={latest_capture['seq']} "
+                f"session={latest_capture['thread']} source={latest_capture['source']}"
+            )
+        latest_reminder = activation.get("latest_reminder")
+        if latest_reminder:
+            lines.append(
+                f"  latest reminder: seq={latest_reminder['seq']} "
+                f"session={latest_reminder['thread']} at {latest_reminder['timestamp']}"
+            )
+        efficiency = activation.get("activation_efficiency")
+        if efficiency:
+            rate = efficiency.get("fresh_checkout_rate")
+            fresh = int(efficiency.get("fresh_checkout_session_count", 0))
+            total = int(efficiency.get("high_context_session_count", 0))
+            rate_label = "-" if rate is None else f"{float(rate) * 100:.1f}%"
+            lines.append(f"  activation efficiency: {rate_label} ({fresh}/{total} high-context sessions)")
+        actions = activation.get("actions", [])
+        if actions:
+            lines.extend(["", "Memory next steps"])
+            for index, action in enumerate(actions, start=1):
+                lines.append(f"  {index}. {action}")
     coverage = report.get("observation_coverage", {})
     if coverage:
-        lines.append("- observation coverage:")
+        lines.extend(["", "Observation coverage"])
         for event_type in OBSERVATION_COVERAGE_TYPES:
             entry = coverage.get(event_type, {})
             count = entry.get("count", 0)
@@ -254,13 +354,40 @@ def format_hook_status(report: dict[str, Any]) -> str:
             label = "hook.*" if event_type == "hook" else event_type
             if latest_observation:
                 lines.append(
-                    f"  {label}: count={count} latest={latest_observation['type']} "
+                    f"  [x] {label} count={count} latest={latest_observation['type']} "
                     f"seq={latest_observation['seq']} session={latest_observation['thread']} "
                     f"source={latest_observation['source']}"
                 )
             else:
-                lines.append(f"  {label}: missing")
+                lines.append(f"  [ ] {label}")
     return "\n".join(lines)
+
+
+def _client_setup_label(client: str) -> str:
+    labels = {
+        "claude-code": "Claude Code hook config",
+        "codex": "Codex capture config",
+        "generic": "Generic hook config",
+    }
+    return labels.get(client, f"{client} hook config")
+
+
+def _format_next_step(index: int, action: str) -> list[str]:
+    wire_prefix = "Wire hooks or adapter sinks for: "
+    start_prefix = "Start managed deterministic Codex capture: "
+    if action.startswith(wire_prefix):
+        lanes = [
+            lane.strip().rstrip(".")
+            for lane in action.removeprefix(wire_prefix).split(",")
+            if lane.strip()
+        ]
+        lines = [f"  {index}. Wire hooks or adapter sinks for missing lanes:"]
+        lines.extend(f"     - {lane}" for lane in lanes)
+        return lines
+    if action.startswith(start_prefix):
+        command = action.removeprefix(start_prefix).rstrip(".")
+        return [f"  {index}. Start managed deterministic Codex capture:", f"     {command}"]
+    return [f"  {index}. {action}"]
 
 
 def _capture_readiness(
@@ -479,6 +606,165 @@ def _observation_coverage(eventloom_path: Path) -> dict[str, dict[str, Any]]:
     return coverage
 
 
+def _memory_activation(
+    eventloom_path: Path,
+    *,
+    stale_after_minutes: int,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    latest_checkout: dict[str, Any] | None = None
+    latest_capture: dict[str, Any] | None = None
+    latest_reminder: dict[str, Any] | None = None
+    activation_efficiency = _activation_efficiency(
+        eventloom_path,
+        stale_after_minutes=stale_after_minutes,
+    )
+    for path in _eventlog_paths(eventloom_path):
+        try:
+            events = EventLog(path).read_all()
+        except Exception:
+            continue
+        for event in events:
+            if event.type == "memory.checkout.completed":
+                summary = _summarize_observation_event(event)
+                if latest_checkout is None or _event_is_newer(event, latest_checkout):
+                    latest_checkout = summary
+            if _observation_coverage_type(event.type) in HIGH_VALUE_OBSERVATION_TYPES:
+                summary = _summarize_observation_event(event)
+                if latest_capture is None or _event_is_newer(event, latest_capture):
+                    latest_capture = summary
+            if event.type == "memory.reminder.suggested":
+                summary = _summarize_observation_event(event)
+                if latest_reminder is None or _event_is_newer(event, latest_reminder):
+                    latest_reminder = summary
+
+    actions: list[str] = []
+    if latest_checkout is None:
+        actions.append("Run memory checkout before relying on Zaxy context.")
+        return {
+            "status": "warning",
+            "message": "No memory checkout events found",
+            "stale_after_minutes": stale_after_minutes,
+            "latest_checkout": None,
+            "latest_capture": latest_capture,
+            "latest_reminder": latest_reminder,
+            "activation_efficiency": activation_efficiency,
+            "actions": actions,
+        }
+
+    reference_time = now or datetime.now(UTC)
+    checkout_time = _parse_event_timestamp(str(latest_checkout["timestamp"]))
+    age_seconds = (reference_time - checkout_time).total_seconds()
+    if age_seconds > stale_after_minutes * 60:
+        actions.append("Run memory checkout before relying on Zaxy context.")
+        return {
+            "status": "warning",
+            "message": "Latest memory checkout is stale",
+            "stale_after_minutes": stale_after_minutes,
+            "latest_checkout": latest_checkout,
+            "latest_capture": latest_capture,
+            "latest_reminder": latest_reminder,
+            "activation_efficiency": activation_efficiency,
+            "actions": actions,
+        }
+    stale_sessions = int(activation_efficiency.get("stale_checkout_session_count", 0))
+    missing_sessions = int(activation_efficiency.get("missing_checkout_session_count", 0))
+    if stale_sessions or missing_sessions:
+        actions.append("Run memory checkout before continuing sessions without fresh Zaxy context.")
+        return {
+            "status": "warning",
+            "message": "Some high-context sessions lack fresh memory checkout",
+            "stale_after_minutes": stale_after_minutes,
+            "latest_checkout": latest_checkout,
+            "latest_capture": latest_capture,
+            "latest_reminder": latest_reminder,
+            "activation_efficiency": activation_efficiency,
+            "actions": actions,
+        }
+    return {
+        "status": "ok",
+        "message": "Latest memory checkout is fresh",
+        "stale_after_minutes": stale_after_minutes,
+        "latest_checkout": latest_checkout,
+        "latest_capture": latest_capture,
+        "latest_reminder": latest_reminder,
+        "activation_efficiency": activation_efficiency,
+        "actions": [],
+    }
+
+
+def _activation_efficiency(
+    eventloom_path: Path,
+    *,
+    stale_after_minutes: int,
+) -> dict[str, Any]:
+    sessions: list[dict[str, Any]] = []
+    for path in _eventlog_paths(eventloom_path):
+        try:
+            events = EventLog(path).read_all()
+        except Exception:
+            continue
+        first_substantive = _first_substantive_event(events)
+        if first_substantive is None:
+            continue
+        checkout = _latest_checkout_before(events, first_substantive)
+        status = "missing_checkout"
+        if checkout is not None:
+            checkout_time = _parse_event_timestamp(checkout.timestamp)
+            first_time = _parse_event_timestamp(first_substantive.timestamp)
+            age_seconds = (first_time - checkout_time).total_seconds()
+            status = "fresh_checkout" if age_seconds <= stale_after_minutes * 60 else "stale_checkout"
+        sessions.append(
+            {
+                "session_id": first_substantive.thread,
+                "status": status,
+                "first_substantive_event": _summarize_observation_event(first_substantive),
+                "checkout": _summarize_observation_event(checkout) if checkout is not None else None,
+            }
+        )
+    sessions.sort(key=lambda item: str(item["session_id"]))
+    high_context_count = len(sessions)
+    fresh_count = sum(1 for session in sessions if session["status"] == "fresh_checkout")
+    stale_count = sum(1 for session in sessions if session["status"] == "stale_checkout")
+    missing_count = sum(1 for session in sessions if session["status"] == "missing_checkout")
+    return {
+        "high_context_session_count": high_context_count,
+        "fresh_checkout_session_count": fresh_count,
+        "stale_checkout_session_count": stale_count,
+        "missing_checkout_session_count": missing_count,
+        "fresh_checkout_rate": fresh_count / high_context_count if high_context_count else None,
+        "sessions": sessions,
+    }
+
+
+def _first_substantive_event(events: list[Event]) -> Event | None:
+    first: Event | None = None
+    for event in events:
+        if _observation_coverage_type(event.type) not in HIGH_VALUE_OBSERVATION_TYPES:
+            continue
+        if first is None or event.timestamp < first.timestamp or (
+            event.timestamp == first.timestamp and event.seq < first.seq
+        ):
+            first = event
+    return first
+
+
+def _latest_checkout_before(events: list[Event], event: Event) -> Event | None:
+    checkout: Event | None = None
+    event_time = _parse_event_timestamp(event.timestamp)
+    for candidate in events:
+        if candidate.type != "memory.checkout.completed":
+            continue
+        candidate_time = _parse_event_timestamp(candidate.timestamp)
+        if candidate_time > event_time:
+            continue
+        if checkout is None or candidate.timestamp > checkout.timestamp or (
+            candidate.timestamp == checkout.timestamp and candidate.seq > checkout.seq
+        ):
+            checkout = candidate
+    return checkout
+
+
 def _eventlog_paths(eventloom_path: Path) -> list[Path]:
     if eventloom_path.is_file():
         return [eventloom_path]
@@ -504,7 +790,7 @@ def _event_is_newer(event: Event, latest: dict[str, Any]) -> bool:
 
 
 def _summarize_observation_event(event: Event) -> dict[str, Any]:
-    return {
+    summary = {
         "seq": event.seq,
         "hash": event.hash,
         "timestamp": event.timestamp,
@@ -512,6 +798,17 @@ def _summarize_observation_event(event: Event) -> dict[str, Any]:
         "thread": event.thread,
         "source": event.payload.get("source", "unknown"),
     }
+    token_efficiency = event.payload.get("token_efficiency")
+    if isinstance(token_efficiency, dict):
+        summary["token_efficiency"] = token_efficiency
+    return summary
+
+
+def _parse_event_timestamp(timestamp: str) -> datetime:
+    parsed = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def _looks_like_zaxy_hook_config(path: Path, *, allow_text: bool = False) -> bool:

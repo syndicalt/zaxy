@@ -6,6 +6,7 @@ instance via Docker (marked with `integration`)."""
 from __future__ import annotations
 
 from datetime import UTC
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -97,11 +98,21 @@ class TestConnection:
         """ca_cert should pass Neo4j's custom CA trust object."""
         from neo4j import TrustCustomCAs
 
-        gs = GraphStore("bolt://x", "u", "p", ca_cert="/tmp/ca.pem")
+        ca_path = Path("/tmp/ca.pem")
+        ca_path.write_text("test-ca\n", encoding="utf-8")
+        gs = GraphStore("bolt://x", "u", "p", ca_cert=str(ca_path))
         await gs.connect()
         kwargs = mock_factory.call_args.kwargs
         assert kwargs["encrypted"] is True
         assert isinstance(kwargs["trusted_certificates"], TrustCustomCAs)
+
+    async def test_connect_rejects_missing_custom_ca_path(self, tmp_path: Path) -> None:
+        """Missing TLS CA files should fail with an actionable error."""
+        missing = tmp_path / "missing-ca.pem"
+        gs = GraphStore("bolt://x", "u", "p", ca_cert=str(missing))
+
+        with pytest.raises(ValueError, match="NEO4J_CA_CERT does not exist"):
+            await gs.connect()
 
     async def test_close_closes_driver(self, mock_driver: AsyncMock) -> None:
         """close() should close the driver and clear the reference."""

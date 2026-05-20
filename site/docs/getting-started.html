@@ -27,16 +27,16 @@ zaxy status</code></pre>
       <h2 id="five-minute-local-smoke-test">Five-minute local smoke test</h2>
       <p>Use this path when you want to know whether Zaxy is viable on a workstation without committing to a full graph deployment. It writes local config, records session genesis and heartbeat events, checks infrastructure posture, and prints copyable next steps. It does not require a hosted API key.</p>
       <pre><code class="language-bash">pipx install zaxy-memory
-zaxy init . --domain my-project --preset local-codex --capture start --infra check
-zaxy memory log --eventloom-path .eventloom --session-id my-project-default --limit 5
-zaxy memory bootstrap --eventloom-path .eventloom --session-id my-project-default
+zaxy init
+zaxy memory log --eventloom-path .eventloom --limit 5
+zaxy activate codex --eventloom-path .eventloom --current-task &quot;continue onboarding&quot;
 zaxy doctor --eventloom-path .eventloom</code></pre>
       <p>Expected local artifacts:</p>
       <ul>
         <li><code>.eventloom/</code>: append-only Eventloom JSONL logs, one file per session.</li>
-        <li><code>.env.local</code>: local embedding, reranker, and graph defaults.</li>
-        <li><code>.codex/zaxy-capture.json</code>: deterministic local Codex capture config when <code>--preset local-codex</code> is used.</li>
-        <li><code>zaxy-mcp.json</code> or a printed <code>codex mcp add</code> command: MCP config guidance for the selected client.</li>
+        <li><code>.env.local</code>: local embedding, reranker, and embedded graph defaults.</li>
+        <li><code>.codex/zaxy-capture.json</code>: deterministic local Codex capture config.</li>
+        <li>A printed <code>codex mcp add</code> command: MCP install guidance for Codex.</li>
       </ul>
       <p>The first smoke-test command should show recent genesis or heartbeat events. The bootstrap command should print the model-facing Memory Bootstrap packet for <code>my-project-default</code>, including the recommended first checkout and capture trust policy. <code>zaxy doctor --eventloom-path .eventloom</code> should make any missing MCP config, hook, capture, or graph posture explicit before you start relying on the memory layer. The same local data can be inspected later with <code>zaxy memory status --eventloom-path .eventloom</code> and <code>zaxy memory diff --eventloom-path .eventloom --session-id my-project-default --from-seq 1 --to-seq 10</code>.</p>
       <p>For Claude Code, swap the init command:</p>
@@ -49,15 +49,19 @@ zaxy status</code></pre>
       <p><code>./scripts/setup.sh</code> creates <code>.env</code>, <code>.eventloom</code>, and local runtime directories. Development mode uses <code>neo4j/testpassword</code> and localhost-bound ports through <code>bolt://localhost:7687</code> with no Neo4j TLS override. The Docker Compose <code>zaxy</code> service still talks to its sibling Neo4j container internally; local CLI and MCP onboarding should use localhost. Production mode is different: <code>./scripts/setup.sh --production</code> writes secret files under <code>./secrets</code>, configures <code>ZAXY_ENV=production</code>, and expects a TLS-enabled Neo4j profile. See <a href="deployment.html">deployment.md</a> before exposing remote SSE.</p>
       <p>For an offline retrieval profile with no hosted services or API keys:</p>
       <pre><code class="language-bash">zaxy local-profile --output .env.local
+zaxy local-profile --projection-backend embedded --output .env.local
 zaxy local-profile --check</code></pre>
-      <p>This configures deterministic hash embeddings, lexical reranking, and local Neo4j auto-start at <code>bolt://localhost:7687</code>. It also clears local Neo4j TLS and password-file overrides so stale container or production settings do not leak into local CLI use. It is the recommended baseline for local development before switching to hosted embeddings or model-backed rerankers.</p>
+      <p>This configures deterministic hash embeddings, lexical reranking, and local Neo4j auto-start at <code>bolt://localhost:7687</code>. It also clears local Neo4j TLS and password-file overrides so stale container or production settings do not leak into local CLI use. It is the recommended baseline for local development before switching to hosted embeddings or model-backed rerankers. Use <code>--projection-backend embedded</code> for the no-sidecar profile that writes <code>PROJECTION_BACKEND=embedded</code>, <code>.eventloom/projections/embedded.kuzu</code>, and disables Neo4j/pgGraph autostart.</p>
       <p>Check local onboarding prerequisites before wiring an agent:</p>
       <pre><code class="language-bash">zaxy doctor
 zaxy doctor --json</code></pre>
       <p>The doctor command verifies Eventloom writeability, local embedding/reranker construction, static viewer generation, MCP default-session posture, observer hook coverage, capture health, optional LLM packet memory projection, Neo4j configuration posture, and production-mode warnings. <code>capture_health</code> summarizes whether the high-value automatic lanes are active and includes the managed <code>zaxy capture start --workspace ...</code> action when Codex capture is configured but idle. It does not start Docker or require a live Neo4j connection; use <code>zaxy status</code> when you want a live graph connectivity test.</p>
-      <p>Before meaningful model work, inspect the session-start bootstrap packet:</p>
-      <pre><code class="language-bash">zaxy memory bootstrap --session-id my-project-default</code></pre>
-      <p><code>memory bootstrap</code> is the compact model-awareness surface for session start. It packages the active capability manifest, the recommended first <code>memory_checkout</code> call, deterministic capture status, and the trust policy for what to prefer, ignore, and record. <code>memory capabilities</code> remains available when you want the fuller manifest, and <code>memory checkout</code> loads the cited working state before real work begins.</p>
+      <p>Before meaningful Codex work, emit the session-start activation packet:</p>
+      <pre><code class="language-bash">zaxy activate codex --session-id my-project-default --current-task &quot;ship the next change&quot;</code></pre>
+      <p><code>activate codex</code> prints a prompt-ready Memory Bootstrap packet and records that the activation handoff was shown. The packet includes the active capability manifest, the recommended first <code>memory_checkout</code> call, deterministic capture status, and the trust policy for what to prefer, ignore, and record. <code>memory bootstrap</code> remains available when you only want the raw bootstrap packet, <code>memory capabilities</code> exposes the fuller manifest, and <code>memory checkout</code> loads the cited working state before real work begins.</p>
+      <p>To start Codex with that activation packet as the initial prompt:</p>
+      <pre><code class="language-bash">zaxy activate codex --session-id my-project-default --current-task &quot;ship the next change&quot; --launch</code></pre>
+      <p>Use <code>--dry-run</code> to inspect the exact <code>codex --cd ... &lt;prompt&gt;</code> command without starting Codex.</p>
       <p>For a single first-run flow, use <code>zaxy init</code>. The happy path is deterministic capture: local profile writing, MCP config rendering, observer hook config, workspace genesis, hook heartbeat, doctor, and hook status. It does not proxy model traffic and does not require a provider API key.</p>
       <pre><code class="language-bash">zaxy init . \
   --domain my-project \
@@ -72,13 +76,14 @@ zaxy doctor --json</code></pre>
   --local-profile-output .env.local \
   --infra check</code></pre>
       <p>For Codex, use the deterministic Codex preset:</p>
-      <pre><code class="language-bash">zaxy init . \
-  --domain my-project \
-  --preset local-codex</code></pre>
-      <p>The one-command local Codex happy path starts the managed watcher during init:</p>
-      <pre><code class="language-bash">zaxy init . --domain my-project --preset local-codex --capture start
+      <pre><code class="language-bash">zaxy init</code></pre>
+      <p>The bare local path expands to the no-sidecar embedded Codex onboarding preset: it writes <code>.eventloom/</code>, <code>.env.local</code>, <code>.codex/zaxy-capture.json</code>, renders the Codex MCP install command, checks the repo-local embedded projection posture, and records the first workspace heartbeat. It installs deterministic capture configuration safely; start the watcher when you want live local capture:</p>
+      <pre><code class="language-bash">zaxy capture start --workspace .
 zaxy doctor
-zaxy memory bootstrap --session-id my-project-default</code></pre>
+zaxy memory bootstrap</code></pre>
+      <p>To start managed deterministic capture during onboarding, pass <code>--capture start</code>:</p>
+      <pre><code class="language-bash">zaxy init --capture start</code></pre>
+      <p>Bare <code>zaxy init</code> selects <code>--projection-backend embedded</code> for local onboarding and checks the repo-local projection path instead of Neo4j or pgGraph. The embedded projection is created lazily under <code>.eventloom/projections/</code>, so this path needs no external graph service. <code>--preset local-embedded-codex</code> remains available as an explicit spelling of the same local path.</p>
       <p><code>local-codex</code> renders Codex MCP install guidance, writes the local profile, and writes <code>.codex/zaxy-capture.json</code> for deterministic local capture. It does not generate <code>.codex/hooks.json</code>: Codex parses that file as JSON, and Zaxy does not assume a native Codex hook schema unless your Codex version documents one. Start <code>zaxy capture start --workspace .</code> from the printed next steps to run the managed watcher that imports local Codex session JSONL into Eventloom. To start that watcher during onboarding, pass <code>--capture start</code>. It does not enable packet capture. After startup, <code>zaxy doctor</code> should show <code>capture_health: ok</code> once command, file-edit, tool-call, and transcript observations have appeared. <code>zaxy init</code> also prints a capture summary showing whether local capture is configured, whether the watcher is running, the latest imported observation when available, and the doctor capture-health result. The same block is available in <code>zaxy init --json</code> as <code>capture</code>.</p>
       <p>Generated output files are non-destructive by default. Pass <code>--force</code> only when you intentionally want to replace generated config. <code>--infra check</code> reports the selected local projection backend and Docker posture without starting containers. Use <code>--infra start</code> when you explicitly want onboarding to start the local runtime. Neo4j remains the default backend. For experimental pgGraph bootstrap, install the optional extra and point Zaxy at a local pgGraph checkout so it can run the extension installer instead of starting plain Postgres:</p>
       <pre><code class="language-bash">pip install &quot;zaxy-memory[pggraph]&quot;
@@ -125,7 +130,7 @@ zaxy doctor --beta-readiness
 zaxy capture-soak --eventloom-path .eventloom --session-id my-project-default
 scripts/release-check.sh --root .
 scripts/beta-uat.sh</code></pre>
-      <p>The full pytest command enforces the 90 percent coverage gate configured in <code>pyproject.toml</code>. Integration tests require Docker Neo4j services. The release smoke check verifies the package version, changelog entry, release workflow, and PyPI Trusted Publishing posture without contacting external services. The beta readiness check verifies that the release smoke gate, release gate script, clean-repo UAT script, docs happy path, and deterministic capture happy path are present. The release gate adds package artifact checks, documentation link validation, and deployment preflight checks. <code>scripts/beta-uat.sh</code> creates a throwaway workspace, installs Zaxy into a fresh virtual environment, runs <code>zaxy init</code>, starts deterministic capture, runs <code>zaxy memory bootstrap</code>, performs a cited <code>zaxy memory checkout</code>, and checks doctor, hook, capture, and memory status plus the <code>zaxy capture-soak</code> beta evidence report. The current public overview is <a href="../index.html">site/index.html</a>, and the operational checklist remains in <a href="runbook.html">runbook.md</a>. The <a href="../README.html">README.md</a> is intentionally short; these docs are the detailed operator and integrator reference.</p>
+      <p>The full pytest command enforces the 90 percent coverage gate configured in <code>pyproject.toml</code>. Integration tests require Docker Neo4j services. The release smoke check verifies the package version, changelog entry, release workflow, and PyPI Trusted Publishing posture without contacting external services. The beta readiness check verifies that the release smoke gate, release gate script, clean-repo UAT script, docs happy path, and deterministic capture happy path are present. The release gate adds package artifact checks, documentation link validation, deployment preflight checks, backend shootout evidence, injected-token efficiency floors, and 100-query embedded scale validation. <code>scripts/beta-uat.sh</code> creates a throwaway workspace, installs Zaxy into a fresh virtual environment, runs <code>zaxy init</code>, starts deterministic capture, runs <code>zaxy memory bootstrap</code>, performs a cited <code>zaxy memory checkout</code>, and checks doctor, hook, capture, and memory status plus the <code>zaxy capture-soak</code> beta evidence report. The current public overview is <a href="../index.html">site/index.html</a>, and the operational checklist remains in <a href="runbook.html">runbook.md</a>. The <a href="../README.html">README.md</a> is intentionally short; these docs are the detailed operator and integrator reference.</p>
       <p>The mental model is simple: append operational facts, extract graph facts, retrieve connected context, and replay from the original event stream whenever you need auditability. Do not treat Neo4j as the source of truth. Neo4j is the reasoning layer. Eventloom is the durable history. MCP is the interface agents call.</p>
     </article>
   </main>

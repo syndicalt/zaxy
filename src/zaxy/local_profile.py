@@ -11,6 +11,7 @@ from zaxy.query import build_reranker
 
 _LOCAL_PROFILE_VALUES = {
     "ZAXY_ENV": "development",
+    "PROJECTION_BACKEND": "neo4j",
     "NEO4J_URI": "bolt://localhost:7687",
     "NEO4J_USER": "neo4j",
     "NEO4J_PASSWORD": "testpassword",
@@ -26,22 +27,34 @@ _LOCAL_PROFILE_VALUES = {
 }
 
 
-def render_local_profile() -> str:
+def render_local_profile(*, projection_backend: str = "neo4j") -> str:
     """Return an .env-style offline retrieval profile."""
+    normalized_backend = projection_backend.casefold().strip()
+    if normalized_backend not in {"neo4j", "pggraph", "embedded", "latticedb"}:
+        raise ValueError("projection_backend must be one of: neo4j, pggraph, embedded, latticedb")
+    values = dict(_LOCAL_PROFILE_VALUES)
+    values["PROJECTION_BACKEND"] = normalized_backend
+    if normalized_backend == "embedded":
+        values["NEO4J_AUTO_START"] = "false"
+        values["PGGRAPH_AUTO_START"] = "false"
+        values["EMBEDDED_GRAPH_PATH"] = ".eventloom/projections/embedded.kuzu"
+    elif normalized_backend == "pggraph":
+        values["NEO4J_AUTO_START"] = "false"
+        values["PGGRAPH_AUTO_START"] = "true"
     lines = [
         "# Zaxy offline local retrieval profile",
         "# Deterministic embeddings and lexical reranking require no hosted secrets.",
-        *[f"{key}={value}" for key, value in _LOCAL_PROFILE_VALUES.items()],
+        *[f"{key}={value}" for key, value in values.items()],
         "",
     ]
     return "\n".join(lines)
 
 
-def write_local_profile(path: Path, *, force: bool = False) -> Path:
+def write_local_profile(path: Path, *, projection_backend: str = "neo4j", force: bool = False) -> Path:
     """Write the offline retrieval profile to path."""
     if path.exists() and not force:
         raise FileExistsError(f"{path} already exists; pass --force to overwrite")
-    path.write_text(render_local_profile(), encoding="utf-8")
+    path.write_text(render_local_profile(projection_backend=projection_backend), encoding="utf-8")
     return path
 
 

@@ -83,6 +83,29 @@ def test_apply_onboarding_preset_expands_local_codex_defaults(tmp_path: Path) ->
     assert options["capture_mode"] == "deterministic"
 
 
+def test_apply_onboarding_preset_expands_local_embedded_codex_defaults(tmp_path: Path) -> None:
+    """local-embedded-codex should be the one-command no-sidecar local path."""
+    options = apply_onboarding_preset(
+        "local-embedded-codex",
+        workspace=tmp_path,
+        mcp_client=None,
+        mcp_output=None,
+        hook_client=None,
+        hook_output=None,
+        local_profile_output=None,
+        infra="none",
+        capture_mode="deterministic",
+    )
+
+    assert options["mcp_client"] == "codex"
+    assert options["hook_client"] == "codex"
+    assert options["hook_output"] == tmp_path / ".codex" / "zaxy-capture.json"
+    assert options["local_profile_output"] == tmp_path / ".env.local"
+    assert options["infra"] == "check"
+    assert options["projection_backend"] == "embedded"
+    assert options["capture_mode"] == "deterministic"
+
+
 def test_apply_onboarding_preset_preserves_explicit_overrides(tmp_path: Path) -> None:
     """Preset expansion should never override explicit user choices."""
     options = apply_onboarding_preset(
@@ -253,6 +276,40 @@ async def test_run_onboarding_renders_codex_install_command_and_local_capture_co
     assert (workspace / ".codex" / "zaxy-capture.json").is_file()
     assert not (workspace / ".codex" / "hooks.json").exists()
     assert any("Start managed deterministic Codex capture: zaxy capture start" in step for step in result.next_steps)
+
+
+@pytest.mark.asyncio
+async def test_run_onboarding_embedded_codex_next_steps_avoid_neo4j_graph_hint(tmp_path: Path) -> None:
+    """Embedded Codex onboarding should not steer users back to Neo4j live projection."""
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    fabric = MagicMock()
+    fabric.ensure_session_initialized = AsyncMock()
+    fabric.ensure_session_initialized.return_value.workspace_type = "codebase"
+    fabric.ensure_session_initialized.return_value.confidence = 0.7
+    fabric.ensure_session_initialized.return_value.signals = ["pyproject.toml"]
+    fabric.ensure_session_initialized.return_value.instructions_profile = "codebase"
+    fabric.close = AsyncMock()
+
+    result = await run_onboarding(
+        workspace,
+        eventloom_path=workspace / ".eventloom",
+        domain="demo",
+        session_id="demo-default",
+        mcp_client="codex",
+        hook_client="codex",
+        hook_output=workspace / ".codex" / "zaxy-capture.json",
+        projection_backend="embedded",
+        infra="check",
+        fabric_factory=lambda eventloom_path: fabric,
+    )
+
+    next_steps = "\n".join(result.next_steps)
+    assert "Start managed deterministic Codex capture: zaxy capture start" in next_steps
+    assert "Add --graph" not in next_steps
+    assert "Neo4j" not in next_steps
+    assert "NEO4J_" not in next_steps
+    assert "embedded projection" in next_steps
 
 
 @pytest.mark.asyncio
@@ -515,6 +572,62 @@ def test_build_runtime_uses_pggraph_bootstrapper_for_pggraph_backend() -> None:
     runtime = _build_runtime(settings)
 
     assert runtime.display_name == "pgGraph"
+
+
+def test_build_runtime_uses_embedded_projection_runtime_for_embedded_backend(tmp_path: Path) -> None:
+    """Embedded onboarding should not ask users to start sidecar graph services."""
+    graph_path = tmp_path / ".eventloom" / "projections" / "embedded.kuzu"
+    settings = Settings(
+        _env_file=None,
+        projection_backend="embedded",
+        embedded_graph_path=str(graph_path),
+    )
+
+    runtime = _build_runtime(settings)
+    check = runtime.check()
+
+    assert runtime.display_name == "embedded graph"
+    assert check.status == "ok"
+    assert "will be created lazily" in check.message
+    runtime.ensure_available()
+    assert graph_path.parent.is_dir()
+
+
+@pytest.mark.asyncio
+async def test_run_onboarding_checks_embedded_infra_without_sidecar_next_step(tmp_path: Path) -> None:
+    """Embedded infra check should report local projection posture and avoid sidecar start guidance."""
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    local_profile = workspace / ".env.local"
+    fabric = MagicMock()
+    fabric.ensure_session_initialized = AsyncMock()
+    fabric.ensure_session_initialized.return_value.workspace_type = "generic_workspace"
+    fabric.ensure_session_initialized.return_value.confidence = 0.2
+    fabric.ensure_session_initialized.return_value.signals = []
+    fabric.ensure_session_initialized.return_value.instructions_profile = "generic"
+    fabric.close = AsyncMock()
+
+    result = await run_onboarding(
+        workspace,
+        eventloom_path=workspace / ".eventloom",
+        domain="demo",
+        infra="check",
+        projection_backend="embedded",
+        local_profile_output=local_profile,
+        fabric_factory=lambda eventloom_path: fabric,
+    )
+
+    infra_step = next(step for step in result.steps if step.name == "infra")
+    assert infra_step.status == "ok"
+    assert "Embedded graph projection" in infra_step.message
+    assert not any("--infra start" in step for step in result.next_steps)
+    profile_text = local_profile.read_text(encoding="utf-8")
+    assert "PROJECTION_BACKEND=embedded" in profile_text
+    assert "NEO4J_AUTO_START=false" in profile_text
+    doctor_checks = {check["name"]: check for check in result.doctor["checks"]}
+    assert "neo4j" not in doctor_checks
+    assert doctor_checks["embedded_graph"]["status"] == "ok"
+    assert str(workspace / ".eventloom" / "projections") in doctor_checks["embedded_graph"]["message"]
 
 
 def test_format_onboarding_result_includes_next_section(tmp_path: Path) -> None:

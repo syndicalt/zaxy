@@ -23,8 +23,9 @@
       <p>For the local-first profile:</p>
       <pre><code class="language-bash">zaxy local-profile
 zaxy local-profile --output .env.local
+zaxy local-profile --projection-backend embedded --output .env.local
 zaxy local-profile --check</code></pre>
-      <p>The generated profile uses <code>EMBEDDING_PROVIDER=hash</code>, <code>RERANKER_PROVIDER=lexical</code>, and <code>NEO4J_AUTO_START=true</code>. It intentionally omits hosted API key variables so the default local path stays offline and deterministic.</p>
+      <p>The generated profile uses <code>EMBEDDING_PROVIDER=hash</code>, <code>RERANKER_PROVIDER=lexical</code>, and <code>NEO4J_AUTO_START=true</code>. It intentionally omits hosted API key variables so the default local path stays offline and deterministic. Use <code>zaxy local-profile --projection-backend embedded</code> when the same offline embedding/reranker defaults should target the embedded graph projection and avoid sidecar autostart.</p>
       <p>The hosted provider is selected with:</p>
       <pre><code class="language-bash">EMBEDDING_ENABLED=true
 EMBEDDING_PROVIDER=openai

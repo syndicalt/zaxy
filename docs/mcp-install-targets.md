@@ -68,22 +68,22 @@ Codex supports MCP in the CLI and IDE extension. The documented config file is
 `.codex/config.toml`. Codex also exposes `codex mcp add`, so Zaxy supports Codex
 by rendering a workspace-neutral `codex mcp add zaxy -- zaxy serve` command
 unless a direct config scope is requested. The rendered config may include
-local runtime defaults, such as localhost Neo4j and empty TLS/password-file
-overrides, so an old production `.env` does not break interactive MCP startup.
-It does not write repo-specific Eventloom/session/domain environment into Codex
-config; `zaxy serve` derives the active workspace at startup. Direct TOML
-support requires either user scope or project scope with an explicit trusted
-project acknowledgement. The TOML merge preserves unrelated server entries,
-rejects malformed TOML, and refuses to replace an existing `zaxy` entry unless
-`--force` is passed.
+process-local defaults such as empty secret-file overrides, but it does not
+write graph-backend variables or repo-specific Eventloom/session/domain
+environment into Codex config; `zaxy serve` derives the active workspace and
+projection backend at startup. Direct TOML support requires either user scope or
+project scope with an explicit trusted project acknowledgement. The TOML merge
+preserves unrelated server entries, rejects malformed TOML, and refuses to
+replace an existing `zaxy` entry unless `--force` is passed.
 
 Hermes Agent documents MCP servers in the global YAML config at
 `~/.hermes/config.yaml`, under the top-level `mcp_servers` mapping. Zaxy treats
 that as a global integration point, so `zaxy ide-config hermes` renders YAML
-with `zaxy serve`, local Neo4j startup defaults, and model-facing memory tools,
-but without `EVENTLOOM_PATH`, `EVENTLOOM_THREAD`, or `ZAXY_DOMAIN`. At runtime,
-`zaxy serve` resolves the active workspace and default session from the process
-working directory, which prevents one repository from leaking into another.
+with `zaxy serve` and model-facing memory tools, but without graph-backend
+variables, `EVENTLOOM_PATH`, `EVENTLOOM_THREAD`, or `ZAXY_DOMAIN`. At runtime,
+`zaxy serve` resolves the active workspace, projection backend, and default
+session from the process working directory, which prevents one repository from
+leaking into another.
 `zaxy ide-config hermes --install` merges into the Hermes YAML file, preserves
 unrelated settings and servers, rejects malformed YAML, and refuses to replace
 an existing `zaxy` entry unless `--force` is passed.

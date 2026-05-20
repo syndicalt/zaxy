@@ -31,6 +31,8 @@ class FakeCursor:
         params: tuple[object, ...] | dict[str, object] | None = None,
     ) -> None:
         self.connection.statements.append((sql, params))
+        if self.connection.execute_error is not None:
+            raise self.connection.execute_error
 
     async def fetchall(self) -> list[dict[str, Any]]:
         if self.connection.row_sets:
@@ -46,7 +48,9 @@ class FakeConnection:
         self.cursor_obj = FakeCursor(self)
         self.row_sets: list[list[dict[str, Any]]] = []
         self.commits = 0
+        self.rollbacks = 0
         self.closed = False
+        self.execute_error: Exception | None = None
 
     def cursor(self, *, row_factory: object | None = None) -> FakeCursor:
         return self.cursor_obj
@@ -60,6 +64,9 @@ class FakeConnection:
 
     async def commit(self) -> None:
         self.commits += 1
+
+    async def rollback(self) -> None:
+        self.rollbacks += 1
 
     async def close(self) -> None:
         self.closed = True
@@ -86,6 +93,18 @@ async def test_pggraph_store_init_schema_creates_projection_tables_and_registers
     assert "to_column := 'target_node_key'" in sql
     assert "graph.build" in sql
     assert connection.commits == 1
+
+
+@pytest.mark.asyncio
+async def test_pggraph_store_rolls_back_failed_fetch_queries() -> None:
+    connection = FakeConnection()
+    connection.execute_error = RuntimeError("query failed")
+    store = PgGraphStore("postgresql://test", connection=connection)
+
+    with pytest.raises(RuntimeError, match="query failed"):
+        await store.search_keyword("memory", session_id="agent-1")
+
+    assert connection.rollbacks == 1
 
 
 @pytest.mark.asyncio
@@ -175,6 +194,8 @@ async def test_pggraph_store_search_exact_maps_rows_to_graph_entities() -> None:
             "summary": "Memory product",
             "properties": {"path": "README.md"},
             "session_id": "agent-1",
+            "source_event_seq": 7,
+            "source_event_hash": "a" * 64,
         }
     ]
     store = PgGraphStore("postgresql://test", connection=connection)
@@ -187,11 +208,18 @@ async def test_pggraph_store_search_exact_maps_rows_to_graph_entities() -> None:
             entity_type="project",
             valid_from="2026-05-18T00:00:00Z",
             valid_to=None,
-            properties={"summary": "Memory product", "path": "README.md"},
+            properties={
+                "summary": "Memory product",
+                "path": "README.md",
+                "source_event_seq": 7,
+                "source_event_hash": "a" * 64,
+            },
             session_id="agent-1",
         )
     ]
     sql = connection.statements[-1][0]
+    assert "source_event_seq" in sql
+    assert "source_event_hash" in sql
     assert "%(entity_type)s::text IS NULL" in sql
 
 
@@ -342,6 +370,7 @@ async def test_pggraph_store_search_traversal_uses_pggraph_traverse() -> None:
 
     assert results[0].name == "pgGraph"
     assert "graph.traverse" in connection.statements[-1][0]
+    assert "%(relation_type)s::text IS NULL" in connection.statements[-1][0]
 
 
 @pytest.mark.asyncio

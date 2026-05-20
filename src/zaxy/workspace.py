@@ -37,6 +37,12 @@ GENERIC_EVENTS = [
     "artifact.indexed",
 ]
 
+MEMORY_ACTIVATION_INSTRUCTIONS = {
+    "required_tool": "memory_checkout",
+    "before": ["roadmap", "implementation", "release", "review", "resume", "high_context_question"],
+    "reason": "Keep model work grounded in fresh, cited Zaxy memory.",
+}
+
 INSTRUCTION_FILES = {
     "AGENTS.md": "agents",
     "CLAUDE.md": "claude",
@@ -213,11 +219,13 @@ def _write_instructions(profile: str) -> dict[str, Any]:
             "preferred_events": CODEBASE_EVENTS,
             "avoid_writing": ["raw_secrets", "full_source_bodies", "transient_chatter"],
             "indexing_strategy": "metadata_only_codebase_map",
+            "memory_activation": MEMORY_ACTIVATION_INSTRUCTIONS,
         }
     return {
         "preferred_events": GENERIC_EVENTS,
         "avoid_writing": ["raw_secrets", "transient_chatter"],
         "indexing_strategy": "metadata_only_artifact_map",
+        "memory_activation": MEMORY_ACTIVATION_INSTRUCTIONS,
     }
 
 

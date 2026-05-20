@@ -137,7 +137,7 @@ def _read_codex_capture_config(workspace: Path) -> dict[str, Any] | None:
 def _require_codex_capture_config(workspace: Path) -> dict[str, Any]:
     config = _read_codex_capture_config(workspace)
     if config is None:
-        raise FileNotFoundError(f"{workspace / CODEX_CAPTURE_CONFIG} not found; run zaxy init --preset local-codex")
+        raise FileNotFoundError(f"{workspace / CODEX_CAPTURE_CONFIG} not found; run zaxy init")
     return config
 
 

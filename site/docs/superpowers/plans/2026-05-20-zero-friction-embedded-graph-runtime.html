@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zero-Friction Embedded Graph Runtime Implementation Plan - Zaxy Docs</title>
+  <link rel="stylesheet" href="../../../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../../../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../../../index.html">Overview</a>
+      <a href="../../getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="zero-friction-embedded-graph-runtime-implementation-plan">Zero-Friction Embedded Graph Runtime Implementation Plan</h1>
+      <blockquote><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</blockquote>
+      <p><strong>Goal:</strong> Build a prototype embedded graph runtime that can replace sidecar-first local onboarding without weakening Zaxy&#x27;s temporal, cited, graph-backed retrieval quality.</p>
+      <p><strong>Architecture:</strong> Keep Eventloom as the source of truth and add <code>PROJECTION_BACKEND=embedded</code> behind the existing <code>ProjectionStore</code> contract. The first candidate is a Kuzu-backed adapter stored under <code>.eventloom/projections/embedded.kuzu</code>; Neo4j remains the default and quality control backend until same-harness gates pass.</p>
+      <p><strong>Tech Stack:</strong> Python 3.11+, Kuzu optional dependency, existing <code>ProjectionStore</code>, Eventloom replay, Typer CLI, pytest, ruff, mypy.</p>
+      <p>---</p>
+      <h2 id="file-structure">File Structure</h2>
+      <ul>
+        <li>Create <code>src/zaxy/embedded_graph_store.py</code>: Kuzu-backed <code>ProjectionStore</code> implementation.</li>
+        <li>Modify <code>src/zaxy/projection_backends.py</code>: route <code>backend=&quot;embedded&quot;</code> to the embedded store.</li>
+        <li>Modify <code>src/zaxy/config.py</code>: add embedded graph path/settings and document accepted backend values.</li>
+        <li>Modify <code>src/zaxy/__main__.py</code>: expose embedded backend in CLI options/help where projection backend is accepted.</li>
+        <li>Modify <code>src/zaxy/dashboard.py</code>: make graph routes display embedded backend metadata and projection status.</li>
+        <li>Modify <code>pyproject.toml</code>: add optional dependency group <code>embedded = [&quot;kuzu&gt;=0.11&quot;]</code>.</li>
+        <li>Create <code>tests/test_embedded_graph_store.py</code>: adapter contract tests with real Kuzu when installed and skip otherwise.</li>
+        <li>Create <code>tests/test_projection_backends_embedded.py</code>: factory/config tests.</li>
+        <li>Create or extend <code>tests/test_cli.py</code>: help/status/init coverage for embedded backend.</li>
+        <li>Create <code>scripts/backend-shootout.py</code>: repeatable same-harness backend comparison runner.</li>
+        <li>Modify <code>docs/zero-friction-runtime-roadmap.md</code>, <code>docs/configuration.md</code>, <code>docs/getting-started.md</code>, and <code>docs/benchmarks.md</code>: document prototype status and gates.</li>
+      </ul>
+      <h2 id="task-1-backend-factory-and-settings">Task 1: Backend Factory And Settings</h2>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>src/zaxy/config.py</code></li>
+        <li>Modify: <code>src/zaxy/projection_backends.py</code></li>
+        <li>Modify: <code>pyproject.toml</code></li>
+        <li>Test: <code>tests/test_projection_backends_embedded.py</code></li>
+      </ul>
+      <ul>
+        <li>[x] <strong>Step 1: Write the failing factory tests</strong></li>
+      </ul>
+      <pre><code class="language-python">from pathlib import Path
+from unittest.mock import patch
+
+import pytest
+
+from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
+
+
+def test_build_projection_store_routes_embedded_backend(tmp_path: Path) -&gt; None:
+    config = ProjectionBackendConfig(
+        backend=&quot;embedded&quot;,
+        neo4j_uri=&quot;bolt://localhost:7687&quot;,
+        neo4j_user=&quot;neo4j&quot;,
+        neo4j_password=&quot;testpassword&quot;,
+        neo4j_ca_cert=None,
+        neo4j_trust_all=False,
+        embedded_graph_path=tmp_path / &quot;.eventloom&quot; / &quot;projections&quot; / &quot;embedded.kuzu&quot;,
+    )
+
+    with patch(&quot;zaxy.embedded_graph_store.EmbeddedGraphStore&quot;) as store_cls:
+        store = build_projection_store(config)
+
+    assert store is store_cls.return_value
+    store_cls.assert_called_once_with(tmp_path / &quot;.eventloom&quot; / &quot;projections&quot; / &quot;embedded.kuzu&quot;)
+
+
+def test_embedded_backend_requires_path() -&gt; None:
+    config = ProjectionBackendConfig(
+        backend=&quot;embedded&quot;,
+        neo4j_uri=&quot;bolt://localhost:7687&quot;,
+        neo4j_user=&quot;neo4j&quot;,
+        neo4j_password=&quot;testpassword&quot;,
+        neo4j_ca_cert=None,
+        neo4j_trust_all=False,
+    )
+
+    with pytest.raises(ValueError, match=&quot;embedded backend requires embedded_graph_path&quot;):
+        build_projection_store(config)</code></pre>
+      <ul>
+        <li>[x] <strong>Step 2: Run test to verify it fails</strong></li>
+      </ul>
+      <p>Run: <code>PYTHONPATH=src pytest tests/test_projection_backends_embedded.py --no-cov -q</code></p>
+      <p>Expected: fails because <code>embedded_graph_path</code> and <code>EmbeddedGraphStore</code> do not exist.</p>
+      <ul>
+        <li>[x] <strong>Step 3: Implement minimal factory support</strong></li>
+      </ul>
+      <p>Add <code>embedded_graph_path: Path | None = None</code> to <code>ProjectionBackendConfig</code>, route <code>backend == &quot;embedded&quot;</code> to <code>zaxy.embedded_graph_store.EmbeddedGraphStore</code>, and update the error text to include <code>neo4j, pggraph, embedded</code>.</p>
+      <ul>
+        <li>[x] <strong>Step 4: Add package metadata</strong></li>
+      </ul>
+      <p>Add this optional dependency group:</p>
+      <pre><code class="language-toml">embedded = [
+    &quot;kuzu&gt;=0.11.0&quot;,
+]</code></pre>
+      <ul>
+        <li>[x] <strong>Step 5: Run focused checks</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">ruff check src/zaxy/projection_backends.py tests/test_projection_backends_embedded.py
+PYTHONPATH=src pytest tests/test_projection_backends_embedded.py --no-cov -q</code></pre>
+      <p>Expected: ruff clean and tests pass.</p>
+      <h2 id="task-2-embedded-store-schema-and-projection">Task 2: Embedded Store Schema And Projection</h2>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Create: <code>src/zaxy/embedded_graph_store.py</code></li>
+        <li>Test: <code>tests/test_embedded_graph_store.py</code></li>
+      </ul>
+      <ul>
+        <li>[x] <strong>Step 1: Write schema/projection tests</strong></li>
+      </ul>
+      <pre><code class="language-python">import importlib.util
+from pathlib import Path
+
+import pytest
+
+from zaxy.embedded_graph_store import EmbeddedGraphStore
+from zaxy.extract import ExtractedEdge, ExtractedEntity, ExtractionResult
+
+pytestmark = pytest.mark.skipif(importlib.util.find_spec(&quot;kuzu&quot;) is None, reason=&quot;kuzu is not installed&quot;)
+
+
+@pytest.mark.asyncio
+async def test_embedded_store_projects_entities_and_edges(tmp_path: Path) -&gt; None:
+    store = EmbeddedGraphStore(tmp_path / &quot;embedded.kuzu&quot;)
+    await store.connect()
+    await store.init_schema()
+
+    result = ExtractionResult(
+        entities=[
+            ExtractedEntity(name=&quot;Goal A&quot;, entity_type=&quot;goal&quot;, properties={&quot;summary&quot;: &quot;ship memory&quot;}),
+            ExtractedEntity(name=&quot;Task B&quot;, entity_type=&quot;task&quot;, properties={&quot;summary&quot;: &quot;write tests&quot;}),
+        ],
+        edges=[
+            ExtractedEdge(
+                source_name=&quot;Task B&quot;,
+                source_type=&quot;task&quot;,
+                target_name=&quot;Goal A&quot;,
+                target_type=&quot;goal&quot;,
+                relation_type=&quot;SUPPORTS&quot;,
+                properties={&quot;source_event_seq&quot;: 1, &quot;source_event_hash&quot;: &quot;abc&quot;},
+            )
+        ],
+        event_metadata={&quot;seq&quot;: 1, &quot;hash&quot;: &quot;abc&quot;, &quot;prev_hash&quot;: None, &quot;event_type&quot;: &quot;task.proposed&quot;},
+    )
+
+    await store.upsert_extraction(result, session_id=&quot;agent-1&quot;)
+
+    exact = await store.search_exact(&quot;Goal A&quot;, session_id=&quot;agent-1&quot;)
+    neighbors = await store.search_traversal(&quot;Task B&quot;, depth=1, session_id=&quot;agent-1&quot;)
+
+    assert exact[0].name == &quot;Goal A&quot;
+    assert any(entity.name == &quot;Goal A&quot; for entity in neighbors)
+    await store.close()</code></pre>
+      <ul>
+        <li>[x] <strong>Step 2: Run test to verify it fails</strong></li>
+      </ul>
+      <p>Run: <code>PYTHONPATH=src pytest tests/test_embedded_graph_store.py --no-cov -q</code></p>
+      <p>Expected: fails because <code>EmbeddedGraphStore</code> does not exist, or skips if Kuzu is not installed.</p>
+      <ul>
+        <li>[x] <strong>Step 3: Implement minimal Kuzu-backed store</strong></li>
+      </ul>
+      <p>Implement <code>connect</code>, <code>close</code>, <code>init_schema</code>, <code>upsert_extraction</code>, <code>search_exact</code>, <code>search_keyword</code>, <code>search_traversal</code>, and <code>has_traversal_edges</code>. Use explicit node/relationship tables for <code>Entity</code>, <code>Event</code>, <code>Source</code>, <code>RELATES</code>, <code>NEXT_EVENT</code>, <code>PREVIOUS_EVENT</code>, <code>CITES_SOURCE</code>, <code>SUPERSEDED_BY</code>, and <code>PREVIOUS_VERSION</code> where supported by the first Kuzu schema.</p>
+      <ul>
+        <li>[x] <strong>Step 4: Run focused checks</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">ruff check src/zaxy/embedded_graph_store.py tests/test_embedded_graph_store.py
+PYTHONPATH=src pytest tests/test_embedded_graph_store.py --no-cov -q</code></pre>
+      <p>Expected: ruff clean and tests pass or Kuzu-dependent tests skip cleanly when Kuzu is absent.</p>
+      <h2 id="task-3-temporal-semantics-and-rebuild">Task 3: Temporal Semantics And Rebuild</h2>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>src/zaxy/embedded_graph_store.py</code></li>
+        <li>Test: <code>tests/test_embedded_graph_store.py</code></li>
+      </ul>
+      <ul>
+        <li>[x] <strong>Step 1: Add temporal and invalidation tests</strong></li>
+      </ul>
+      <p>Add tests proving reasserted entities create active versions with <code>valid_from</code>, old versions get <code>valid_to</code>, <code>invalidate_entity</code> closes active rows, and <code>inspect_event_projection_status</code> reports latest projected Eventloom sequence/hash.</p>
+      <ul>
+        <li>[x] <strong>Step 2: Run tests to verify failure</strong></li>
+      </ul>
+      <p>Run: <code>PYTHONPATH=src pytest tests/test_embedded_graph_store.py --no-cov -q</code></p>
+      <p>Expected: temporal and status assertions fail until implemented.</p>
+      <ul>
+        <li>[x] <strong>Step 3: Implement temporal behavior</strong></li>
+      </ul>
+      <p>Mirror Neo4j semantics in the embedded store: preserve session isolation, close previous active versions, create supersession relationships, and make projection status compare Event nodes against Eventloom latest sequence/hash.</p>
+      <ul>
+        <li>[x] <strong>Step 4: Run focused checks</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">ruff check src/zaxy/embedded_graph_store.py tests/test_embedded_graph_store.py
+PYTHONPATH=src pytest tests/test_embedded_graph_store.py --no-cov -q</code></pre>
+      <p>Expected: tests pass or skip only for missing Kuzu.</p>
+      <h2 id="task-4-activation-and-status-surfaces">Task 4: Activation And Status Surfaces</h2>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>src/zaxy/__main__.py</code></li>
+        <li>Modify: <code>src/zaxy/dashboard.py</code></li>
+        <li>Modify: <code>src/zaxy/hooks.py</code></li>
+        <li>Test: <code>tests/test_cli.py</code></li>
+      </ul>
+      <ul>
+        <li>[x] <strong>Step 1: Add failing CLI assertions</strong></li>
+      </ul>
+      <p>Add tests asserting <code>zaxy init --help</code>, <code>zaxy dashboard --help</code>, and <code>zaxy memory status --help</code> surface <code>embedded</code> as a projection backend option, and <code>hook-status</code> output includes last checkout and stale/no-checkout activation status when available.</p>
+      <ul>
+        <li>[x] <strong>Step 2: Run test to verify failure</strong></li>
+      </ul>
+      <p>Run: <code>PYTHONPATH=src pytest tests/test_cli.py --no-cov -q</code></p>
+      <p>Expected: new assertions fail until help/status surfaces are updated.</p>
+      <ul>
+        <li>[x] <strong>Step 3: Implement activation status</strong></li>
+      </ul>
+      <p>Add read-only status fields for latest checkout event, latest capture event, stale checkout threshold, and no-memory-use warning. Keep JSON output stable and add clearer human output.</p>
+      <ul>
+        <li>[x] <strong>Step 4: Run focused checks</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">ruff check src/zaxy/__main__.py src/zaxy/dashboard.py src/zaxy/hooks.py tests/test_cli.py
+mypy src/zaxy/__main__.py src/zaxy/dashboard.py src/zaxy/hooks.py
+PYTHONPATH=src pytest tests/test_cli.py --no-cov -q</code></pre>
+      <p>Expected: ruff, mypy, and CLI tests pass.</p>
+      <h2 id="task-5-backend-shootout-harness">Task 5: Backend Shootout Harness</h2>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Create: <code>scripts/backend-shootout.py</code></li>
+        <li>Modify: <code>docs/benchmarks.md</code></li>
+        <li>Test: <code>tests/test_docs_site.py</code></li>
+      </ul>
+      <ul>
+        <li>[x] <strong>Step 1: Add docs test for shootout contract</strong></li>
+      </ul>
+      <p>Add assertions that benchmark docs mention embedded, Neo4j, pgGraph, BM25, first useful init time, checkout p95/p99, returned tokens, citation coverage, and recovery time.</p>
+      <ul>
+        <li>[x] <strong>Step 2: Run test to verify failure</strong></li>
+      </ul>
+      <p>Run: <code>PYTHONPATH=src pytest tests/test_docs_site.py::test_zero_friction_runtime_roadmap_sets_frontier_bar --no-cov -q</code></p>
+      <p>Expected: fails until docs and script exist.</p>
+      <ul>
+        <li>[x] <strong>Step 3: Implement the shootout script</strong></li>
+      </ul>
+      <p>Create a CLI that accepts <code>--eventloom-path</code>, <code>--session-id</code>, <code>--backends embedded,neo4j,pggraph,bm25</code>, <code>--queries-file</code>, and <code>--output</code>. It should replay Eventloom into each backend, run identical query workloads, and emit JSON plus markdown summary with latency, quality, citation, and token metrics.</p>
+      <ul>
+        <li>[x] <strong>Step 4: Run script smoke test</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">python scripts/backend-shootout.py --help
+ruff check scripts/backend-shootout.py tests/test_docs_site.py
+PYTHONPATH=src pytest tests/test_docs_site.py::test_zero_friction_runtime_roadmap_sets_frontier_bar --no-cov -q</code></pre>
+      <p>Expected: help renders, ruff clean, docs test passes.</p>
+      <h2 id="task-6-gate-review">Task 6: Gate Review</h2>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>AGENTS.md</code></li>
+        <li>Modify: <code>docs/zero-friction-runtime-roadmap.md</code></li>
+        <li>Modify: <code>docs/benchmarks.md</code></li>
+      </ul>
+      <ul>
+        <li>[x] <strong>Step 1: Run full relevant verification</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">ruff check src/zaxy tests scripts
+mypy src/zaxy
+PYTHONPATH=src pytest tests/test_projection_backends_embedded.py tests/test_embedded_graph_store.py tests/test_cli.py tests/test_docs_site.py --no-cov -q</code></pre>
+      <p>Expected: checks pass, with Kuzu tests skipping only when Kuzu is not installed.</p>
+      <ul>
+        <li>[x] <strong>Step 2: Record gate status</strong></li>
+      </ul>
+      <p>Update the roadmap with one of these statuses:</p>
+      <pre><code class="language-text">embedded prototype: blocked - Kuzu missing
+embedded prototype: failed - quality gate regression
+embedded prototype: passed - eligible for broader benchmark</code></pre>
+      <ul>
+        <li>[x] <strong>Step 3: Commit</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">git add pyproject.toml src/zaxy tests docs scripts
+git commit -m &quot;feat: prototype embedded graph runtime&quot;</code></pre>
+      <p>Expected: commit succeeds only after the gate status is recorded.</p>
+      <h2 id="self-review">Self-Review</h2>
+      <ul>
+        <li>Spec coverage: The plan covers embedded graph backend, activation/status, benchmark shootout, docs, and guardrails from <code>docs/zero-friction-runtime-roadmap.md</code>.</li>
+        <li>Placeholder scan: No unresolved placeholder markers are intentionally left in the implementation steps.</li>
+        <li>Type consistency: The plan uses the existing <code>ProjectionStore</code> contract and names the new backend <code>embedded</code> consistently.</li>
+      </ul>
+    </article>
+  </main>
+</body>
+</html>

@@ -46,11 +46,16 @@ MARKDOWN
     python -m pip install --upgrade pip
     python -m pip install "${INSTALL_SPEC}"
 
-    zaxy init . \
-        --domain "${domain}" \
-        --preset "${preset}" \
-        --capture "${capture_action}" \
-        --infra check
+    INIT_ARGS=(. --domain "${domain}" --capture "${capture_action}" --infra check)
+    if [[ -n "${preset}" ]]; then
+        INIT_ARGS+=(--preset "${preset}")
+    fi
+    zaxy init "${INIT_ARGS[@]}"
+    if [[ -z "${preset}" ]]; then
+        grep -q "PROJECTION_BACKEND=embedded" .env.local
+        grep -q "NEO4J_AUTO_START=false" .env.local
+        grep -q "EMBEDDED_GRAPH_PATH=.eventloom/projections/embedded.kuzu" .env.local
+    fi
 
     BOOTSTRAP_OUTPUT="$(zaxy memory bootstrap --session-id "${session_id}")"
     echo "${BOOTSTRAP_OUTPUT}"
@@ -121,10 +126,24 @@ MARKDOWN
         --summary "compacted context boundary"
     zaxy memory log --eventloom-path .eventloom --session-id "${session_id}" --limit 20 | grep -q "memory.reminder.suggested"
     zaxy doctor --eventloom-path .eventloom
-    zaxy hook-status --eventloom-path .eventloom
+    zaxy hook-status --eventloom-path .eventloom --min-activation-rate 1.0 \
+        --max-checkout-prompt-tokens 5000 \
+        --min-checkout-facts-per-1k-tokens 0.1
     zaxy capture status --workspace .
     zaxy capture-soak --eventloom-path .eventloom --workspace-root . --session-id "${session_id}"
     zaxy memory status --eventloom-path .eventloom
+    if [[ -z "${preset}" ]]; then
+        GRAPH_STATUS_OUTPUT="$(zaxy memory status --eventloom-path .eventloom --graph)"
+        echo "${GRAPH_STATUS_OUTPUT}"
+        grep -q "Graph projection (backend=embedded):" <<<"${GRAPH_STATUS_OUTPUT}"
+        INFERRED_STATUS_OUTPUT="$(zaxy memory inferred-status --session-id "${session_id}" --json)"
+        echo "${INFERRED_STATUS_OUTPUT}"
+        grep -q '"backend": "embedded"' <<<"${INFERRED_STATUS_OUTPUT}"
+        REPROJECT_OUTPUT="$(zaxy reproject ".eventloom/${session_id}.jsonl" --session-id "${session_id}")"
+        echo "${REPROJECT_OUTPUT}"
+        grep -q "using embedded" <<<"${REPROJECT_OUTPUT}"
+        zaxy memory status --eventloom-path .eventloom --graph | grep -q "integrity=OK"
+    fi
     zaxy doctor --beta-readiness --project-root "${ROOT}"
     zaxy capture stop --workspace .
 
@@ -135,3 +154,4 @@ MARKDOWN
 
 run_workspace "codex" "local-codex" "start"
 run_workspace "claude-code" "local-claude" "status"
+run_workspace "embedded" "" "status"

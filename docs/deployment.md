@@ -42,10 +42,11 @@ scripts/release-check.sh --root .
 ```
 
 The release gate must pass locally and in CI. It checks linting, types, tests,
-coverage, package metadata, docs links, and deployment configuration. A tagged
-release should use artifacts built by `scripts/build-dist.sh`. Public Python
-releases publish to PyPI as `zaxy-memory`; the import package and CLI remain
-`zaxy`.
+coverage, package metadata, docs links, deployment configuration, backend
+shootout evidence, injected-token efficiency floors, and 100-query embedded
+scale validation. A tagged release should use artifacts built by
+`scripts/build-dist.sh`. Public Python releases publish to PyPI as
+`zaxy-memory`; the import package and CLI remain `zaxy`.
 
 Backups must be configured before production traffic. At minimum, persist
 Eventloom logs and secret material recovery procedures. Neo4j backups are
