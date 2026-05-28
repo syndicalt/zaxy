@@ -29,10 +29,17 @@ def test_domain_default_is_optional() -> None:
     assert settings.zaxy_domain is None
 
 
-def test_projection_backend_defaults_to_neo4j() -> None:
+def test_projection_backend_defaults_to_embedded() -> None:
     settings = Settings(_env_file=None)
 
-    assert settings.projection_backend == "neo4j"
+    assert settings.projection_backend == "embedded"
+
+
+def test_projection_backend_description_lists_embedded_first() -> None:
+    """User-facing config metadata should present the default backend first."""
+    description = Settings.model_fields["projection_backend"].description
+
+    assert description == "Projection backend: embedded, neo4j, pggraph, or latticedb"
 
 
 def test_pggraph_dsn_defaults_to_local_postgres() -> None:
@@ -44,10 +51,17 @@ def test_pggraph_dsn_defaults_to_local_postgres() -> None:
 def test_pggraph_bootstrap_defaults_are_local_and_explicit() -> None:
     settings = Settings(_env_file=None)
 
-    assert settings.pggraph_auto_start is True
+    assert settings.pggraph_auto_start is False
     assert settings.pggraph_auto_start_image == "pgvector/pgvector:pg17"
     assert settings.pggraph_auto_start_container == "zaxy-pggraph"
     assert settings.pggraph_repo is None
+
+
+def test_sidecar_autostart_defaults_are_disabled_for_embedded_backend() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.neo4j_auto_start is False
+    assert settings.pggraph_auto_start is False
 
 
 def test_embedded_graph_path_defaults_to_eventloom_projection_file() -> None:
@@ -209,8 +223,9 @@ class TestProductionValidation:
     def test_production_requires_non_default_password(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """Production mode should reject the development password."""
+        """Production mode should reject the development password for Neo4j."""
         monkeypatch.setenv("ZAXY_ENV", "production")
+        monkeypatch.setenv("PROJECTION_BACKEND", "neo4j")
         monkeypatch.setenv("NEO4J_URI", "bolt+s://neo4j:7687")
         monkeypatch.setenv("NEO4J_PASSWORD", "testpassword")
         monkeypatch.setenv("MCP_ADMIN_TOKEN", "admin-token")
@@ -219,8 +234,9 @@ class TestProductionValidation:
             Settings(_env_file=None)
 
     def test_production_requires_tls_uri(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Production mode should reject plaintext Neo4j URIs without CA trust."""
+        """Production mode should reject plaintext Neo4j URIs when Neo4j is selected."""
         monkeypatch.setenv("ZAXY_ENV", "production")
+        monkeypatch.setenv("PROJECTION_BACKEND", "neo4j")
         monkeypatch.setenv("NEO4J_URI", "bolt://neo4j:7687")
         monkeypatch.delenv("NEO4J_CA_CERT", raising=False)
         monkeypatch.setenv("NEO4J_PASSWORD", "secure-password")
@@ -228,6 +244,22 @@ class TestProductionValidation:
 
         with pytest.raises(ValidationError, match="NEO4J_URI"):
             Settings(_env_file=None)
+
+    def test_production_embedded_backend_does_not_require_neo4j_secrets(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Embedded production deployments should not inherit sidecar Neo4j requirements."""
+        monkeypatch.setenv("ZAXY_ENV", "production")
+        monkeypatch.setenv("PROJECTION_BACKEND", "embedded")
+        monkeypatch.setenv("MCP_ADMIN_TOKEN", "admin-token")
+        monkeypatch.setenv("MCP_REMOTE_AUTH_TOKEN", "remote-token")
+        monkeypatch.delenv("NEO4J_PASSWORD", raising=False)
+        monkeypatch.delenv("NEO4J_PASSWORD_FILE", raising=False)
+        monkeypatch.delenv("NEO4J_CA_CERT", raising=False)
+
+        settings = Settings(_env_file=None)
+
+        assert settings.projection_backend == "embedded"
 
     def test_production_requires_admin_token(
         self, monkeypatch: pytest.MonkeyPatch

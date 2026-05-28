@@ -17,6 +17,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from zaxy.security import vector_has_signal
+
 if TYPE_CHECKING:
     from zaxy.extract import ExtractionResult
     from zaxy.graph import (
@@ -183,6 +185,8 @@ class LatticeDBStore:
         """Search by lexical relevance."""
         from zaxy.graph import SearchResult
 
+        if limit <= 0:
+            return []
         native_matches = self._search_keyword_native(query, limit=limit, temporal_point=temporal_point, session_id=session_id)
         if native_matches:
             return native_matches
@@ -196,7 +200,8 @@ class LatticeDBStore:
             haystack = f"{entity.name} {entity.entity_type} {entity.properties.get('summary', '')}".casefold()
             score = sum(1 for term in terms if term in haystack)
             if score:
-                matches.append(SearchResult(entity=entity, score=float(score), source="keyword", raw_score=float(score)))
+                score_value = float(score)
+                matches.append(SearchResult(entity=entity, score=score_value, source="keyword", raw_score=score_value))
         return sorted(matches, key=lambda item: item.score, reverse=True)[:limit]
 
     def _search_keyword_native(
@@ -284,6 +289,10 @@ class LatticeDBStore:
         """Search by vector similarity."""
         from zaxy.graph import SearchResult
 
+        if limit <= 0:
+            return []
+        if not vector_has_signal(embedding):
+            return []
         database = self._require_database()
         with database.read() as txn:
             matches = list(txn.vector_search(_vector(embedding), k=limit))

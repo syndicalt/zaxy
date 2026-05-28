@@ -55,6 +55,42 @@ remains template-only until runtime hooks are validated in real usage. The next
 adapter work should stabilize shared payload keys and feedback behavior across
 native-preview adapters before promoting another framework-native package.
 
+## Coordinate Adapter Contract
+
+Zaxy Coordinate has a dependency-light adapter contract for orchestrators that
+already own worker spawning, worktrees, containers, or task scheduling:
+
+```python
+from zaxy.adapters.coordination import CoordinationAdapter
+
+adapter = CoordinationAdapter(eventloom_path=".eventloom", actor="coordinator")
+adapter.start_mission("auth-main", objective="Ship auth refactor")
+adapter.create_worker("auth-main", "auth-api")
+adapter.assign("auth-main", "auth-api", "Trace API auth failures")
+finding = adapter.report_finding(
+    "auth-main",
+    "auth-api",
+    summary="API failures trace to expired JWKS cache handling",
+    evidence=[{"kind": "source", "reference": "src/auth.py:12"}],
+    claim_key="auth.failure.cause",
+    claim_value="expired-jwks-cache",
+)
+```
+
+The adapter returns JSON-friendly payloads with Eventloom event sequence and
+hash metadata. It does not infer findings from transcripts and does not spawn
+workers; callers must pass explicit summaries, evidence, confidence, and
+claim fields.
+
+Generate coordination starters:
+
+```bash
+zaxy coordinate adapter-template codex --mission auth-main --worker auth-api
+zaxy coordinate adapter-template langgraph --mission auth-main --worker auth-api
+zaxy coordinate adapter-template crewai --mission auth-main --worker auth-api
+zaxy coordinate adapter-template mcp --mission auth-main --worker auth-api
+```
+
 ## LangGraph Native Preview
 
 Use the native-preview adapter when you want Zaxy to behave like a LangGraph
@@ -62,6 +98,7 @@ node without requiring Zaxy to own your graph schema:
 
 ```python
 from zaxy.adapters.langgraph import (
+    create_langgraph_coordination_node,
     LangGraphMemoryAdapter,
     create_langgraph_memory_checkout_node,
     create_langgraph_memory_node,
@@ -69,6 +106,7 @@ from zaxy.adapters.langgraph import (
 
 memory_node = create_langgraph_memory_node(session_id="my-agent")
 checkout_node = create_langgraph_memory_checkout_node(session_id="my-agent")
+coordinate_node = create_langgraph_coordination_node(mission_id="auth-main", worker_id="auth-api")
 adapter = LangGraphMemoryAdapter(session_id="my-agent")
 ```
 
@@ -103,6 +141,7 @@ specific CrewAI object model:
 
 ```python
 from zaxy.adapters.crewai import (
+    create_crewai_coordination_step,
     CrewAIMemoryAdapter,
     create_crewai_memory_checkout_step,
     create_crewai_memory_step,
@@ -110,6 +149,7 @@ from zaxy.adapters.crewai import (
 
 memory_step = create_crewai_memory_step(session_id="my-crew")
 checkout_step = create_crewai_memory_checkout_step(session_id="my-crew")
+coordinate_step = create_crewai_coordination_step(mission_id="auth-main", worker_id="auth-api")
 adapter = CrewAIMemoryAdapter(session_id="my-crew")
 ```
 

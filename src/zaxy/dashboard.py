@@ -1,4 +1,4 @@
-"""Read-only local dashboard for runtime memory debugging."""
+"""Local dashboard for runtime memory debugging and explicit coordination review."""
 
 from __future__ import annotations
 
@@ -7,17 +7,25 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from importlib import import_module
 from pathlib import Path
 from typing import Any, Protocol, cast
 from urllib.parse import parse_qs, urlparse
-
-from neo4j import GraphDatabase
 
 from zaxy.core import MemoryFabric
 from zaxy.event import Event, EventLog
 from zaxy.hooks import inspect_memory_activation
 from zaxy.memory_persistence import inspect_memory_persistence
 from zaxy.memory_status import inspect_memory_log, inspect_memory_status
+
+
+def _load_sync_neo4j_graph_database() -> Any:
+    """Load Neo4j's sync driver only for the explicit Neo4j dashboard backend."""
+    try:
+        neo4j = import_module("neo4j")
+    except ImportError as exc:
+        raise RuntimeError('Neo4j dashboard backend requires `pip install "zaxy-memory[neo4j]"`') from exc
+    return neo4j.GraphDatabase
 
 
 @dataclass(frozen=True)
@@ -30,17 +38,18 @@ class DashboardConfig:
     domain: str | None = None
     host: str = "127.0.0.1"
     port: int = 8765
-    projection_backend: str = "neo4j"
+    projection_backend: str = "embedded"
     neo4j_uri: str | None = None
     neo4j_user: str | None = None
     neo4j_password: str | None = None
     pggraph_dsn: str | None = None
     embedded_graph_path: Path | None = None
+    coordinate_review_enabled: bool = False
 
 
 @dataclass(frozen=True)
 class DashboardScope:
-    """Resolved read-only dashboard scope."""
+    """Resolved dashboard scope."""
 
     workspace: Path
     eventloom_path: Path
@@ -48,13 +57,14 @@ class DashboardScope:
     domain: str | None
     host: str
     port: int
-    projection_backend: str = "neo4j"
+    projection_backend: str = "embedded"
     neo4j_uri: str | None = None
     neo4j_user: str | None = None
     neo4j_password: str | None = None
     pggraph_dsn: str | None = None
     embedded_graph_path: Path | None = None
     read_only: bool = True
+    coordinate_review_enabled: bool = False
 
 
 class DashboardGraphProvider(Protocol):
@@ -376,7 +386,8 @@ class Neo4jDashboardGraphProvider:
     """Read-only Neo4j graph provider for the local dashboard."""
 
     def __init__(self, uri: str, user: str, password: str) -> None:
-        self._driver = GraphDatabase.driver(
+        graph_database = _load_sync_neo4j_graph_database()
+        self._driver = graph_database.driver(
             uri,
             auth=(user, password),
             connection_timeout=1.0,
@@ -1182,7 +1193,7 @@ def resolve_dashboard_scope(config: DashboardConfig) -> DashboardScope:
     eventloom_path = (config.eventloom_path or workspace / ".eventloom").resolve()
     projection_backend = config.projection_backend.casefold().strip()
     if projection_backend not in {"neo4j", "pggraph", "embedded", "latticedb"}:
-        raise ValueError("projection backend must be one of: neo4j, pggraph, embedded, latticedb")
+        raise ValueError("projection backend must be one of: embedded, neo4j, pggraph, latticedb")
     return DashboardScope(
         workspace=workspace,
         eventloom_path=eventloom_path,
@@ -1196,11 +1207,12 @@ def resolve_dashboard_scope(config: DashboardConfig) -> DashboardScope:
         neo4j_password=config.neo4j_password,
         pggraph_dsn=config.pggraph_dsn,
         embedded_graph_path=(config.embedded_graph_path or eventloom_path / "projections" / "embedded.kuzu"),
+        coordinate_review_enabled=config.coordinate_review_enabled,
     )
 
 
 class DashboardApp:
-    """Read-only dashboard API facade."""
+    """Dashboard API facade."""
 
     def __init__(
         self,
@@ -1214,10 +1226,21 @@ class DashboardApp:
         )
 
     def handle_api(
-        self, method: str, path: str, query: str
+        self,
+        method: str,
+        path: str,
+        query: str,
+        *,
+        body: str | bytes | None = None,
     ) -> tuple[int, dict[str, str], dict[str, Any]]:
         """Return a JSON-compatible API response for a dashboard route."""
         headers = {"content-type": "application/json; charset=utf-8"}
+        if method.upper() == "POST" and path in {"/api/coordinate/review", "/api/coordinate/review-finding"}:
+            params = parse_qs(query, keep_blank_values=False)
+            return self._coordinate_review_body(params, headers, body=body)
+        if method.upper() == "POST" and path == "/api/coordinate/apply-approval":
+            params = parse_qs(query, keep_blank_values=False)
+            return self._coordinate_apply_approval_body(params, headers, body=body)
         if method.upper() != "GET":
             return 405, headers, {"error": "read_only"}
 
@@ -1271,6 +1294,43 @@ class DashboardApp:
                     )
                 },
             )
+        if path == "/api/coordination/mission":
+            mission_id = _str_param(params, "mission_id")
+            if mission_id is None:
+                return 400, headers, {"error": "mission_id_required"}
+            include_diagnostics = _bool_param(params, "include_diagnostics", default=False)
+            return 200, headers, {
+                "coordination": self._coordination_mission_body(
+                    mission_id=mission_id,
+                    include_diagnostics=include_diagnostics,
+                )
+            }
+        if path == "/api/coordinate/brief":
+            mission_id = _str_param(params, "mission_id")
+            if mission_id is None:
+                return 400, headers, {"error": "mission_id_required"}
+            return 200, headers, {"brief": self._coordination_manager().brief(mission_id).to_dict()}
+        if path == "/api/coordinate/ledger":
+            mission_id = _str_param(params, "mission_id")
+            if mission_id is None:
+                return 400, headers, {"error": "mission_id_required"}
+            return 200, headers, {
+                "ledger": self._coordination_manager().performance_ledger(mission_id).to_dict()
+            }
+        if path == "/api/coordinate/approval-packet":
+            mission_id = _str_param(params, "mission_id")
+            if mission_id is None:
+                return 400, headers, {"error": "mission_id_required"}
+            return 200, headers, {
+                "approval_packet": self._coordination_manager().approval_packet(mission_id).to_dict()
+            }
+        if path == "/api/coordinate/review-export":
+            mission_id = _str_param(params, "mission_id")
+            if mission_id is None:
+                return 400, headers, {"error": "mission_id_required"}
+            return 200, headers, {
+                "review_export": self._coordination_manager().review_export(mission_id).to_dict()
+            }
         if path == "/api/graph/summary":
             session_id = _str_param(params, "session_id") or self.scope.session_id
             return 200, headers, {"graph": self.graph_provider.summary(session_id=session_id)}
@@ -1378,6 +1438,121 @@ class DashboardApp:
             "payload": payload,
         }
 
+    def _coordination_mission_body(
+        self,
+        *,
+        mission_id: str,
+        include_diagnostics: bool,
+    ) -> dict[str, Any]:
+        """Return a read-only coordination mission dashboard payload."""
+        manager = self._coordination_manager()
+        brief = manager.brief(mission_id)
+        checkout = manager.checkout(mission_id, include_diagnostics=include_diagnostics)
+        ledger = manager.performance_ledger(mission_id)
+        approval_packet = manager.approval_packet(mission_id)
+        return {
+            "available": True,
+            "read_only": True,
+            "review_enabled": self.scope.coordinate_review_enabled,
+            "mission_id": mission_id,
+            "include_diagnostics": include_diagnostics,
+            "brief": brief.to_dict(),
+            "checkout": checkout.to_dict(),
+            "ledger": ledger.to_dict(),
+            "approval_packet": approval_packet.to_dict(),
+        }
+
+    def _coordination_manager(self) -> Any:
+        """Return a coordination manager bound to the dashboard Eventloom scope."""
+        from zaxy.coordination import CoordinationManager
+
+        return CoordinationManager(eventloom_path=self.scope.eventloom_path)
+
+    def _coordinate_review_body(
+        self,
+        params: dict[str, list[str]],
+        headers: dict[str, str],
+        *,
+        body: str | bytes | None,
+    ) -> tuple[int, dict[str, str], dict[str, Any]]:
+        """Apply an explicitly enabled dashboard review action."""
+        if not self.scope.coordinate_review_enabled:
+            return 403, headers, {"error": "coordinate_review_disabled"}
+        body_payload = _json_body(body)
+        if isinstance(body_payload, tuple):
+            return body_payload[0], headers, body_payload[1]
+        mission_id = _str_param(params, "mission_id") or _optional_body_str(body_payload, "mission_id")
+        finding_id = _str_param(params, "finding_id") or _optional_body_str(body_payload, "finding_id")
+        status = _str_param(params, "status") or _optional_body_str(body_payload, "status")
+        if mission_id is None:
+            return 400, headers, {"error": "mission_id_required"}
+        if finding_id is None:
+            return 400, headers, {"error": "finding_id_required"}
+        if status is None:
+            return 400, headers, {"error": "status_required"}
+        rationale = _str_param(params, "rationale") or _optional_body_str(body_payload, "rationale")
+        actor = _str_param(params, "actor") or _optional_body_str(body_payload, "actor") or "dashboard"
+        promote = _body_bool(body_payload, "promote", default=_bool_param(params, "promote", default=False))
+        manager = self._coordination_manager()
+        try:
+            result = manager.apply_approval_decisions(
+                mission_id,
+                [
+                    {
+                        "finding_id": finding_id,
+                        "status": status,
+                        "rationale": rationale,
+                        "promote": promote,
+                    }
+                ],
+                actor=actor,
+            )
+        except ValueError as exc:
+            return 400, headers, {"error": "invalid_coordinate_review", "message": str(exc)}
+        return 200, headers, {
+            "review": result.to_dict(),
+            "coordination": self._coordination_mission_body(
+                mission_id=mission_id,
+                include_diagnostics=True,
+            ),
+        }
+
+    def _coordinate_apply_approval_body(
+        self,
+        params: dict[str, list[str]],
+        headers: dict[str, str],
+        *,
+        body: str | bytes | None,
+    ) -> tuple[int, dict[str, str], dict[str, Any]]:
+        """Apply an explicitly enabled dashboard approval packet."""
+        if not self.scope.coordinate_review_enabled:
+            return 403, headers, {"error": "coordinate_review_disabled"}
+        payload = _json_body(body)
+        if isinstance(payload, tuple):
+            return payload[0], headers, payload[1]
+        mission_id = _str_param(params, "mission_id") or _optional_body_str(payload, "mission_id")
+        if mission_id is None:
+            return 400, headers, {"error": "mission_id_required"}
+        actor = _str_param(params, "actor") or _optional_body_str(payload, "actor") or "dashboard"
+        decisions = payload.get("decisions")
+        if not isinstance(decisions, list) or not all(isinstance(item, dict) for item in decisions):
+            return 400, headers, {"error": "invalid_decisions"}
+        try:
+            result = self._coordination_manager().apply_approval_decisions(
+                mission_id,
+                decisions,
+                actor=actor,
+            )
+        except ValueError as exc:
+            return 400, headers, {"error": "invalid_coordinate_review", "message": str(exc)}
+        return 200, headers, {
+            "approval_result": result.to_dict(),
+            "coordination": self._coordination_mission_body(
+                mission_id=mission_id,
+                include_diagnostics=True,
+            ),
+        }
+
     def _status_body(self) -> dict[str, Any]:
         status = inspect_memory_status(self.scope.eventloom_path)
         session_id = self.scope.session_id or "default"
@@ -1388,6 +1563,7 @@ class DashboardApp:
                 "session_id": self.scope.session_id,
                 "domain": self.scope.domain,
                 "read_only": self.scope.read_only,
+                "coordinate_review_enabled": self.scope.coordinate_review_enabled,
                 "projection_backend": self.scope.projection_backend,
             },
             "memory": status.to_dict(),
@@ -1425,6 +1601,48 @@ def _int_param(
     except ValueError:
         return default
     return min(max(parsed, minimum), maximum)
+
+
+def _bool_param(
+    params: dict[str, list[str]],
+    name: str,
+    *,
+    default: bool,
+) -> bool:
+    value = _str_param(params, name)
+    if value is None:
+        return default
+    return value.casefold() in {"1", "true", "yes", "on"}
+
+
+def _json_body(body: str | bytes | None) -> dict[str, Any] | tuple[int, dict[str, Any]]:
+    if body is None or body == b"" or body == "":
+        return {}
+    try:
+        text = body.decode("utf-8") if isinstance(body, bytes) else body
+        payload = json.loads(text)
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return 400, {"error": "invalid_json"}
+    if not isinstance(payload, dict):
+        return 400, {"error": "invalid_json_object"}
+    return payload
+
+
+def _optional_body_str(payload: dict[str, Any], name: str) -> str | None:
+    value = payload.get(name)
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _body_bool(payload: dict[str, Any], name: str, *, default: bool) -> bool:
+    value = payload.get(name)
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).casefold() in {"1", "true", "yes", "on"}
 
 
 def build_dashboard_graph_provider(scope: DashboardScope) -> DashboardGraphProvider:
@@ -1903,6 +2121,7 @@ def render_dashboard_html() -> str:
     <button class="active" data-tab="overview">Overview</button>
     <button data-tab="sessions">Sessions</button>
     <button data-tab="graph">Graph</button>
+    <button data-tab="coordinate">Coordinate</button>
     <button data-tab="checkout">Checkout</button>
     <button data-tab="events">Events</button>
   </nav>
@@ -1950,6 +2169,33 @@ def render_dashboard_html() -> str:
         <pre id="checkout-json">{}</pre>
       </div>
     </section>
+    <section class="tab" id="coordinate">
+      <div class="panel">
+        <div class="checkout-toolbar">
+          <input id="coordination-mission-id" type="search" placeholder="Mission ID">
+          <button id="coordination-load-button" type="button">Load mission</button>
+          <button id="coordination-review-export-button" type="button">Review export</button>
+        </div>
+        <div id="coordinate-review-status"></div>
+        <div class="grid">
+          <div class="metric"><span>Workers</span><strong id="metric-coordinate-workers">-</strong></div>
+          <div class="metric"><span>Accepted</span><strong id="metric-coordinate-accepted">-</strong></div>
+          <div class="metric"><span>Pending</span><strong id="metric-coordinate-pending">-</strong></div>
+          <div class="metric"><span>Conflicts</span><strong id="metric-coordinate-conflicts">-</strong></div>
+          <div class="metric"><span>Stale</span><strong id="metric-coordinate-stale">-</strong></div>
+        </div>
+        <table>
+          <thead><tr><th>Worker</th><th>Assignment</th><th>Status</th></tr></thead>
+          <tbody id="coordinate-workers-body"></tbody>
+        </table>
+        <table>
+          <thead><tr><th>Status</th><th>Finding</th><th>Worker</th><th>Summary</th><th>Evidence</th></tr></thead>
+          <tbody id="coordinate-findings-body"></tbody>
+        </table>
+        <pre id="coordinate-review-export"></pre>
+        <pre id="coordination-json">{}</pre>
+      </div>
+    </section>
     <section class="tab" id="events"><div class="panel"><table><thead><tr><th>Session</th><th>Seq</th><th>Type</th><th>Actor</th><th>Summary</th></tr></thead><tbody id="events-body"></tbody></table></div></section>
   </main>
   <script>
@@ -1959,6 +2205,10 @@ def render_dashboard_html() -> str:
     const graphSearchUrl = "/api/graph/search";
     const graphNeighborhoodUrl = "/api/graph/neighborhood";
     const checkoutUrl = "/api/checkout";
+    const coordinationMissionUrl = "/api/coordination/mission";
+    const coordinationReviewExportUrl = "/api/coordinate/review-export";
+    const coordinationReviewUrl = "/api/coordinate/review-finding";
+    const coordinationApplyApprovalUrl = "/api/coordinate/apply-approval";
     let selectedGraphNodeId = null;
 
     document.querySelectorAll("nav button").forEach((button) => {
@@ -2057,6 +2307,83 @@ def render_dashboard_html() -> str:
       const checkout = await fetch(`${checkoutUrl}?query=${encodeURIComponent(query)}&limit=10`).then((response) => response.json());
       document.getElementById("checkout-json").textContent = JSON.stringify(checkout, null, 2);
     }
+    async function loadCoordinationMission() {
+      const missionId = document.getElementById("coordination-mission-id").value.trim();
+      if (!missionId) {
+        document.getElementById("coordination-json").textContent = "Enter a mission ID.";
+        return;
+      }
+      const payload = await fetch(`${coordinationMissionUrl}?mission_id=${encodeURIComponent(missionId)}&include_diagnostics=true`).then((response) => response.json());
+      renderCoordinationMission(payload);
+    }
+    async function loadCoordinationReviewExport() {
+      const missionId = document.getElementById("coordination-mission-id").value.trim();
+      if (!missionId) {
+        document.getElementById("coordinate-review-export").textContent = "Enter a mission ID.";
+        return;
+      }
+      const payload = await fetch(`${coordinationReviewExportUrl}?mission_id=${encodeURIComponent(missionId)}`).then((response) => response.json());
+      document.getElementById("coordinate-review-export").textContent = payload.review_export ? payload.review_export.markdown : JSON.stringify(payload, null, 2);
+    }
+    function renderCoordinationMission(payload) {
+      const mission = payload.coordination || {};
+      const brief = mission.brief || {};
+      const reviewEnabled = Boolean(mission.review_enabled);
+      const findings = [
+        ...tagFindings("accepted", brief.accepted_findings),
+        ...tagFindings("pending", brief.pending_findings),
+        ...tagFindings("rejected", brief.rejected_findings),
+        ...tagFindings("deferred", brief.deferred_findings),
+        ...tagFindings("conflicted", brief.conflicted_findings),
+        ...tagFindings("stale", brief.stale_findings)
+      ];
+      document.getElementById("metric-coordinate-workers").textContent = (brief.workers || []).length;
+      document.getElementById("metric-coordinate-accepted").textContent = (brief.accepted_findings || []).length;
+      document.getElementById("metric-coordinate-pending").textContent = (brief.pending_findings || []).length;
+      document.getElementById("metric-coordinate-conflicts").textContent = (brief.conflicts || []).length;
+      document.getElementById("metric-coordinate-stale").textContent = (brief.stale_findings || []).length;
+      document.getElementById("coordinate-workers-body").innerHTML = (brief.workers || []).map((worker) => `
+        <tr><td><code>${escapeHtml(worker.worker_id || "")}</code></td><td>${escapeHtml(worker.assignment || "")}</td><td>${escapeHtml(worker.status || "")}</td></tr>
+      `).join("");
+      document.getElementById("coordinate-findings-body").innerHTML = findings.map((finding) => `
+        <tr><td>${escapeHtml(finding._status || "")}${renderReviewControls(finding, reviewEnabled)}</td><td><code>${escapeHtml(finding.finding_id || "")}</code></td><td><code>${escapeHtml(finding.worker_id || "")}</code></td><td>${escapeHtml(finding.summary || "")}</td><td>${escapeHtml(formatEvidence(finding.evidence || []))}</td></tr>
+      `).join("");
+      document.getElementById("coordination-json").textContent = JSON.stringify(payload, null, 2);
+    }
+    function renderReviewControls(finding, reviewEnabled) {
+      if (!reviewEnabled || finding._status === "accepted") {
+        return "";
+      }
+      const findingId = escapeHtml(finding.finding_id || "");
+      return `
+        <div class="review-controls">
+          <button type="button" data-finding-id="${findingId}" data-review-status="accepted" data-promote="true">Accept</button>
+          <button type="button" data-finding-id="${findingId}" data-review-status="rejected" data-promote="false">Reject</button>
+          <button type="button" data-finding-id="${findingId}" data-review-status="deferred" data-promote="false">Defer</button>
+        </div>
+      `;
+    }
+    async function reviewFinding(findingId, status, promote) {
+      const missionId = document.getElementById("coordination-mission-id").value.trim();
+      if (!missionId || !findingId || !status) {
+        return;
+      }
+      const params = new URLSearchParams({
+        mission_id: missionId,
+        finding_id: findingId,
+        status,
+        promote: promote ? "true" : "false"
+      });
+      const payload = await fetch(`${coordinationReviewUrl}?${params.toString()}`, { method: "POST" }).then((response) => response.json());
+      document.getElementById("coordinate-review-status").textContent = JSON.stringify(payload.review || payload.approval_result || payload, null, 2);
+      renderCoordinationMission(payload);
+    }
+    function tagFindings(status, findings) {
+      return (findings || []).map((finding) => ({ ...finding, _status: status }));
+    }
+    function formatEvidence(evidence) {
+      return evidence.map((item) => item.reference || item.summary || item.kind || "").filter(Boolean).join("; ");
+    }
     function renderGraphPayload(graph) {
       const elements = graph.elements || { nodes: graph.nodes || [], edges: graph.edges || [] };
       if (!cy || !elements.nodes) {
@@ -2133,6 +2460,31 @@ def render_dashboard_html() -> str:
         document.getElementById("checkout-run-button").click();
       }
     });
+    document.getElementById("coordination-load-button").addEventListener("click", () => {
+      loadCoordinationMission().catch((error) => {
+        document.getElementById("coordination-json").textContent = String(error);
+      });
+    });
+    document.getElementById("coordination-review-export-button").addEventListener("click", () => {
+      loadCoordinationReviewExport().catch((error) => {
+        document.getElementById("coordinate-review-export").textContent = String(error);
+      });
+    });
+    document.getElementById("coordinate-findings-body").addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-review-status]");
+      if (!button) {
+        return;
+      }
+      reviewFinding(button.dataset.findingId, button.dataset.reviewStatus, button.dataset.promote === "true").catch((error) => {
+        document.getElementById("coordination-json").textContent = String(error);
+      });
+    });
+    document.getElementById("coordination-mission-id").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        document.getElementById("coordination-load-button").click();
+      }
+    });
     refresh().catch((error) => {
       document.getElementById("status-json").textContent = String(error);
     });
@@ -2169,6 +2521,25 @@ def create_dashboard_handler(dashboard_app: DashboardApp) -> type[BaseHTTPReques
             )
 
         def do_POST(self) -> None:  # noqa: N802
+            parsed = urlparse(self.path)
+            if parsed.path.startswith("/api/coordinate/"):
+                content_length = int(self.headers.get("content-length") or "0")
+                if content_length > 65_536:
+                    self._write_json(
+                        413,
+                        {"content-type": "application/json; charset=utf-8"},
+                        {"error": "request_too_large"},
+                    )
+                    return
+                body = self.rfile.read(content_length) if content_length else b""
+                status, headers, response = self.dashboard_app.handle_api(
+                    "POST",
+                    parsed.path,
+                    parsed.query,
+                    body=body,
+                )
+                self._write_json(status, headers, response)
+                return
             self._reject_mutation()
 
         def do_PUT(self) -> None:  # noqa: N802

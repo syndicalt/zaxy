@@ -9,7 +9,7 @@ usage() {
     cat <<USAGE
 Usage: scripts/validate-deployment.sh [--root PATH]
 
-Checks production env, Neo4j TLS config, remote MCP auth, and secret file permissions.
+Checks production env, selected sidecar TLS config, remote MCP auth, and secret file permissions.
 USAGE
 }
 
@@ -88,10 +88,19 @@ if [[ "${ENV[ZAXY_ENV]:-}" != "production" ]]; then
     fail "ZAXY_ENV must be production"
 fi
 
+projection_backend="${ENV[PROJECTION_BACKEND]:-embedded}"
+case "${projection_backend}" in
+    embedded|neo4j|pggraph|latticedb)
+        ;;
+    *)
+        fail "PROJECTION_BACKEND must be one of: embedded, neo4j, pggraph, latticedb"
+        ;;
+esac
+
 neo4j_uri="${ENV[NEO4J_URI]:-}"
 neo4j_ca_cert="${ENV[NEO4J_CA_CERT]:-}"
-if [[ "${neo4j_uri}" == bolt://* && -z "${neo4j_ca_cert}" ]]; then
-    fail "NEO4J_CA_CERT is required when NEO4J_URI uses bolt:// in production"
+if [[ "${projection_backend}" == "neo4j" && "${neo4j_uri}" == bolt://* && -z "${neo4j_ca_cert}" ]]; then
+    fail "NEO4J_CA_CERT is required when PROJECTION_BACKEND=neo4j and NEO4J_URI uses bolt:// in production"
 fi
 
 remote_token="${ENV[MCP_REMOTE_AUTH_TOKEN]:-}"

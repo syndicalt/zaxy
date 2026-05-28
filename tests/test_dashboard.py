@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import json
 from datetime import date
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
+from zaxy.coordination import CoordinationManager
 from zaxy.dashboard import (
     DashboardApp,
     DashboardConfig,
+    EmbeddedDashboardGraphProvider,
     EventloomDashboardGraphProvider,
     FallbackDashboardGraphProvider,
     Neo4jDashboardGraphProvider,
@@ -36,6 +39,8 @@ def test_dashboard_scope_defaults_to_current_workspace(tmp_path: Path) -> None:
     assert scope.eventloom_path == workspace.resolve() / ".eventloom"
     assert scope.host == "127.0.0.1"
     assert scope.port == 8765
+    assert scope.projection_backend == "embedded"
+    assert scope.embedded_graph_path == workspace.resolve() / ".eventloom" / "projections" / "embedded.kuzu"
     assert scope.read_only is True
 
 
@@ -459,7 +464,9 @@ def test_build_dashboard_graph_provider_uses_eventloom_without_neo4j_credentials
 
     provider = build_dashboard_graph_provider(scope)
 
-    assert isinstance(provider, EventloomDashboardGraphProvider)
+    assert isinstance(provider, FallbackDashboardGraphProvider)
+    assert isinstance(provider.primary, EmbeddedDashboardGraphProvider)
+    assert isinstance(provider.fallback, EventloomDashboardGraphProvider)
 
 
 def test_build_dashboard_graph_provider_can_use_pggraph_projection_store(
@@ -937,6 +944,280 @@ def test_dashboard_checkout_passes_embedded_projection_path(
     assert kwargs["embedded_graph_path"] == embedded_path
 
 
+def test_dashboard_coordination_mission_view_is_read_only_and_replay_backed(tmp_path: Path) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    manager = CoordinationManager(eventloom_path=eventloom_path)
+    manager.start_mission("auth-main", objective="Ship auth refactor", actor="lead")
+    manager.create_worker("auth-main", "auth-api", actor="lead")
+    finding = manager.report_finding(
+        "auth-main",
+        "auth-api",
+        summary="Expired JWKS cache causes API auth failures.",
+        actor="auth-api-agent",
+        evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
+        claim_key="auth.failure.cause",
+        claim_value="expired-jwks-cache",
+    )
+    manager.review_finding("auth-main", finding.finding_id, status="accepted", actor="lead")
+    manager.promote_finding("auth-main", finding.finding_id, actor="lead")
+    before_events = {
+        path.name: len(EventLog(path).read_all()) for path in sorted(eventloom_path.glob("*.jsonl"))
+    }
+    app = DashboardApp(resolve_dashboard_scope(DashboardConfig(workspace=workspace)))
+
+    status_code, _headers, body = app.handle_api(
+        "GET",
+        "/api/coordination/mission",
+        "mission_id=auth-main&include_diagnostics=true",
+    )
+
+    assert status_code == 200
+    assert body["coordination"]["available"] is True
+    assert body["coordination"]["read_only"] is True
+    assert body["coordination"]["mission_id"] == "auth-main"
+    assert body["coordination"]["brief"]["objective"] == "Ship auth refactor"
+    assert body["coordination"]["brief"]["workers"][0]["worker_id"] == "auth-api"
+    assert body["coordination"]["checkout"]["accepted_findings"][0]["finding_id"] == finding.finding_id
+    assert body["coordination"]["ledger"]["workers"][0]["accepted_findings"] == 1
+    assert body["coordination"]["approval_packet"]["mission_id"] == "auth-main"
+    after_events = {
+        path.name: len(EventLog(path).read_all()) for path in sorted(eventloom_path.glob("*.jsonl"))
+    }
+    assert after_events == before_events
+
+
+def test_dashboard_coordination_mission_view_requires_mission_id(tmp_path: Path) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    app = DashboardApp(resolve_dashboard_scope(DashboardConfig(workspace=workspace)))
+
+    status_code, _headers, body = app.handle_api("GET", "/api/coordination/mission", "")
+
+    assert status_code == 400
+    assert body["error"] == "mission_id_required"
+
+
+def test_dashboard_coordinate_brief_ledger_and_approval_routes(tmp_path: Path) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    manager = CoordinationManager(eventloom_path=workspace / ".eventloom")
+    manager.start_mission("auth-main", objective="Ship auth refactor", actor="lead")
+    manager.create_worker("auth-main", "auth-api", actor="lead")
+    stale = manager.report_finding(
+        "auth-main",
+        "auth-api",
+        summary="Old flag-missing theory from a superseded branch.",
+        actor="auth-api-agent",
+        evidence=[
+            {
+                "kind": "transcript",
+                "reference": "eventloom://old/events/3#abc",
+                "stale": True,
+                "superseded_by": "decision:jwks-cache",
+            }
+        ],
+    )
+    app = DashboardApp(resolve_dashboard_scope(DashboardConfig(workspace=workspace)))
+
+    brief_status, _headers, brief_body = app.handle_api(
+        "GET",
+        "/api/coordinate/brief",
+        "mission_id=auth-main",
+    )
+    ledger_status, _headers, ledger_body = app.handle_api(
+        "GET",
+        "/api/coordinate/ledger",
+        "mission_id=auth-main",
+    )
+    packet_status, _headers, packet_body = app.handle_api(
+        "GET",
+        "/api/coordinate/approval-packet",
+        "mission_id=auth-main",
+    )
+
+    assert brief_status == 200
+    assert brief_body["brief"]["stale_findings"][0]["finding_id"] == stale.finding_id
+    assert ledger_status == 200
+    assert ledger_body["ledger"]["workers"][0]["stale_claim_count"] == 1
+    assert packet_status == 200
+    assert packet_body["approval_packet"]["findings"][0]["stale"] is True
+
+
+def test_dashboard_coordinate_review_export_route_is_read_only(tmp_path: Path) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    manager = CoordinationManager(eventloom_path=eventloom_path)
+    manager.start_mission("auth-main", objective="Ship auth refactor", actor="lead")
+    manager.create_worker("auth-main", "auth-api", actor="lead")
+    finding = manager.report_finding(
+        "auth-main",
+        "auth-api",
+        summary="Expired JWKS cache causes API failures.",
+        actor="auth-api-agent",
+        evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
+    )
+    before_events = {
+        path.name: len(EventLog(path).read_all()) for path in sorted(eventloom_path.glob("*.jsonl"))
+    }
+    app = DashboardApp(resolve_dashboard_scope(DashboardConfig(workspace=workspace)))
+
+    status_code, _headers, body = app.handle_api(
+        "GET",
+        "/api/coordinate/review-export",
+        "mission_id=auth-main",
+    )
+
+    assert status_code == 200
+    assert body["review_export"]["read_only"] is True
+    assert body["review_export"]["packet"]["findings"][0]["finding_id"] == finding.finding_id
+    assert "# Zaxy Coordinate Review: auth-main" in body["review_export"]["markdown"]
+    after_events = {
+        path.name: len(EventLog(path).read_all()) for path in sorted(eventloom_path.glob("*.jsonl"))
+    }
+    assert after_events == before_events
+
+
+def test_dashboard_coordinate_review_route_requires_explicit_enablement(tmp_path: Path) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    manager = CoordinationManager(eventloom_path=workspace / ".eventloom")
+    manager.start_mission("auth-main", objective="Ship auth refactor", actor="lead")
+    manager.create_worker("auth-main", "auth-api", actor="lead")
+    finding = manager.report_finding(
+        "auth-main",
+        "auth-api",
+        summary="Expired JWKS cache causes API auth failures.",
+        actor="auth-api-agent",
+        evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
+    )
+    app = DashboardApp(resolve_dashboard_scope(DashboardConfig(workspace=workspace)))
+
+    status_code, _headers, body = app.handle_api(
+        "POST",
+        "/api/coordinate/review",
+        f"mission_id=auth-main&finding_id={finding.finding_id}&status=accepted&promote=true",
+    )
+
+    assert status_code == 403
+    assert body["error"] == "coordinate_review_disabled"
+    assert manager.brief("auth-main").accepted_findings == []
+
+
+def test_dashboard_coordinate_review_route_reviews_and_promotes_when_enabled(tmp_path: Path) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    manager = CoordinationManager(eventloom_path=eventloom_path)
+    manager.start_mission("auth-main", objective="Ship auth refactor", actor="lead")
+    manager.create_worker("auth-main", "auth-api", actor="lead")
+    finding = manager.report_finding(
+        "auth-main",
+        "auth-api",
+        summary="Expired JWKS cache causes API auth failures.",
+        actor="auth-api-agent",
+        evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
+        claim_key="auth.failure.cause",
+        claim_value="expired-jwks-cache",
+    )
+    app = DashboardApp(
+        resolve_dashboard_scope(
+            DashboardConfig(workspace=workspace, coordinate_review_enabled=True)
+        )
+    )
+
+    status_code, _headers, body = app.handle_api(
+        "POST",
+        "/api/coordinate/review",
+        (
+            f"mission_id=auth-main&finding_id={finding.finding_id}"
+            "&status=accepted&promote=true&rationale=verified"
+        ),
+    )
+
+    assert status_code == 200
+    assert body["review"]["reviewed_count"] == 1
+    assert body["review"]["promoted_count"] == 1
+    refreshed = CoordinationManager(eventloom_path=eventloom_path).brief("auth-main")
+    assert [item.finding_id for item in refreshed.accepted_findings] == [finding.finding_id]
+    event_types = [event.type for event in EventLog(eventloom_path / "auth-main.jsonl").read_all()]
+    assert "coordination.finding.reviewed" in event_types
+    assert "coordination.finding.promoted" in event_types
+
+
+def test_dashboard_coordinate_apply_approval_route_applies_json_decisions(tmp_path: Path) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    manager = CoordinationManager(eventloom_path=eventloom_path)
+    manager.start_mission("auth-main", objective="Ship auth refactor", actor="lead")
+    manager.create_worker("auth-main", "auth-api", actor="lead")
+    accepted = manager.report_finding(
+        "auth-main",
+        "auth-api",
+        summary="Expired JWKS cache causes API auth failures.",
+        actor="auth-api-agent",
+        evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
+    )
+    rejected = manager.report_finding(
+        "auth-main",
+        "auth-api",
+        summary="Unbacked claim that OAuth scope drift caused failures.",
+        actor="auth-api-agent",
+        evidence=[],
+    )
+    app = DashboardApp(
+        resolve_dashboard_scope(
+            DashboardConfig(workspace=workspace, coordinate_review_enabled=True)
+        )
+    )
+
+    status_code, _headers, body = app.handle_api(
+        "POST",
+        "/api/coordinate/apply-approval",
+        "",
+        body=json.dumps(
+            {
+                "mission_id": "auth-main",
+                "actor": "dashboard-reviewer",
+                "decisions": [
+                    {"finding_id": accepted.finding_id, "status": "accepted", "promote": True},
+                    {"finding_id": rejected.finding_id, "status": "rejected", "promote": False},
+                ],
+            }
+        ),
+    )
+
+    assert status_code == 200
+    assert body["approval_result"]["reviewed_count"] == 2
+    assert body["approval_result"]["promoted_count"] == 1
+    refreshed = CoordinationManager(eventloom_path=eventloom_path).brief("auth-main")
+    assert [item.finding_id for item in refreshed.accepted_findings] == [accepted.finding_id]
+    assert [item.finding_id for item in refreshed.rejected_findings] == [rejected.finding_id]
+
+
+def test_dashboard_coordinate_apply_approval_route_validates_json_decisions(tmp_path: Path) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    app = DashboardApp(
+        resolve_dashboard_scope(
+            DashboardConfig(workspace=workspace, coordinate_review_enabled=True)
+        )
+    )
+
+    status_code, _headers, body = app.handle_api(
+        "POST",
+        "/api/coordinate/apply-approval",
+        "",
+        body=json.dumps({"mission_id": "auth-main", "decisions": {"finding_id": "x"}}),
+    )
+
+    assert status_code == 400
+    assert body["error"] == "invalid_decisions"
+
+
 def test_neo4j_dashboard_provider_uses_direct_reads_without_transaction_retry() -> None:
     assert "execute_read" not in Neo4jDashboardGraphProvider.summary.__code__.co_names
     assert "execute_read" not in Neo4jDashboardGraphProvider.neighborhood.__code__.co_names
@@ -1247,9 +1528,14 @@ def test_dashboard_index_html_references_core_tabs_and_api() -> None:
     assert "Overview" in html
     assert "Sessions" in html
     assert "Graph" in html
+    assert "Coordinate" in html
     assert "Checkout" in html
     assert "Events" in html
     assert "/api/status" in html
+    assert "/api/coordination/mission" in html
+    assert "/api/coordinate/review-export" in html
+    assert "/api/coordinate/review-finding" in html
+    assert "/api/coordinate/apply-approval" in html
     assert "/api/graph/summary" in html
     assert "/api/graph/search" in html
     assert "/api/graph/neighborhood" in html
@@ -1258,6 +1544,17 @@ def test_dashboard_index_html_references_core_tabs_and_api() -> None:
     assert "expandSelectedNode" in html
     assert 'cy.on("tap", "node"' in html
     assert "refreshGraph().catch" in html
+    assert "coordination-mission-id" in html
+    assert "loadCoordinationMission" in html
+    assert "metric-coordinate-workers" in html
+    assert "metric-coordinate-stale" in html
+    assert "coordinate-workers-body" in html
+    assert "coordinate-findings-body" in html
+    assert "renderCoordinationMission" in html
+    assert "coordinate-review-export" in html
+    assert "loadCoordinationReviewExport" in html
+    assert "coordinate-review-status" in html
+    assert "reviewFinding" in html
     assert "cy.add" in html
     assert "cytoscape" in html.lower()
 

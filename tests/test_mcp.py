@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import zaxy.mcp_server
+from zaxy.config import Settings
 from zaxy.core import build_memory_checkout
 from zaxy.event import EventLog
 from zaxy.mcp_server import (
@@ -64,7 +65,7 @@ class TestToolSchema:
 
     def test_tools_list_length(self) -> None:
         """Should expose the memory and context lifecycle tools."""
-        assert len(TOOLS) == 13
+        assert len(TOOLS) == 25
 
     def test_tool_names(self) -> None:
         """Tool names should match the expected contract."""
@@ -83,6 +84,18 @@ class TestToolSchema:
             "context_assemble",
             "context_after_turn",
             "subagent_cleanup",
+            "coordination_start",
+            "coordination_worker_create",
+            "coordination_assign",
+            "coordination_report_finding",
+            "coordination_merge_brief",
+            "coordination_checkout",
+            "coordination_performance_ledger",
+            "coordination_approval_packet",
+            "coordination_apply_approval",
+            "coordination_review_finding",
+            "coordination_promote",
+            "coordination_handoff",
         }
 
     def test_memory_verbatim_has_query_and_limit(self) -> None:
@@ -155,6 +168,46 @@ class TestToolSchema:
         assert "session_id" in tool.inputSchema["properties"]
         assert "current_task" in tool.inputSchema["properties"]
 
+    def test_coordination_report_finding_schema_requires_mission_worker_and_summary(self) -> None:
+        """coordination_report_finding should expose structured worker-local finding capture."""
+        tool = next(t for t in TOOLS if t.name == "coordination_report_finding")
+        assert tool.inputSchema["required"] == ["mission_id", "worker_id", "summary"]
+        assert "evidence" in tool.inputSchema["properties"]
+        assert "claim_key" in tool.inputSchema["properties"]
+
+    def test_coordination_review_finding_schema_has_status_enum(self) -> None:
+        """coordination_review_finding should restrict review states."""
+        tool = next(t for t in TOOLS if t.name == "coordination_review_finding")
+        assert tool.inputSchema["required"] == ["mission_id", "finding_id", "status"]
+        assert tool.inputSchema["properties"]["status"]["enum"] == [
+            "accepted",
+            "rejected",
+            "deferred",
+            "conflicted",
+        ]
+
+    def test_coordination_checkout_schema_has_optional_diagnostics(self) -> None:
+        """coordination_checkout should default to accepted state with opt-in diagnostics."""
+        tool = next(t for t in TOOLS if t.name == "coordination_checkout")
+
+        assert tool.inputSchema["required"] == ["mission_id"]
+        assert tool.inputSchema["properties"]["include_diagnostics"]["type"] == "boolean"
+
+    def test_coordination_performance_ledger_schema_requires_mission_id(self) -> None:
+        """coordination_performance_ledger should expose worker-level outcome metrics."""
+        tool = next(t for t in TOOLS if t.name == "coordination_performance_ledger")
+
+        assert tool.inputSchema["required"] == ["mission_id"]
+
+    def test_coordination_approval_tool_schemas(self) -> None:
+        """Approval tools should expose packet export and decision application."""
+        packet = next(t for t in TOOLS if t.name == "coordination_approval_packet")
+        apply = next(t for t in TOOLS if t.name == "coordination_apply_approval")
+
+        assert packet.inputSchema["required"] == ["mission_id"]
+        assert apply.inputSchema["required"] == ["mission_id", "decisions"]
+        assert apply.inputSchema["properties"]["decisions"]["type"] == "array"
+
 
 # ------------------------------------------------------------------
 # Handler tests
@@ -179,6 +232,162 @@ class TestMemoryAppend:
         server.tracer.trace_append.assert_awaited_once()
         assert len(result) == 1
         assert "1" in result[0].text
+
+
+class TestCoordinationTools:
+    """Tests for high-level coordination MCP tools."""
+
+    async def test_coordination_tools_append_project_and_brief(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """MCP coordination tools should preserve parent/worker isolation and return briefs."""
+        server = ZaxyMCPServer(eventloom_path=str(tmp_path / ".eventloom"))
+        server.graph = AsyncMock()
+        server.tracer = AsyncMock()
+
+        result = await server.handle_coordination_start({
+            "mission_id": "auth-main",
+            "objective": "Ship auth refactor",
+            "actor": "lead",
+        })
+        assert json_loads(result[0].text)["event_type"] == "coordination.mission.created"
+
+        await server.handle_coordination_worker_create({
+            "mission_id": "auth-main",
+            "worker_id": "auth-api",
+            "actor": "lead",
+        })
+        result = await server.handle_coordination_report_finding({
+            "mission_id": "auth-main",
+            "worker_id": "auth-api",
+            "summary": "API failures trace to expired JWKS cache handling.",
+            "actor": "auth-api-agent",
+            "evidence": [{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
+            "claim_key": "auth.failure.cause",
+            "claim_value": "expired-jwks-cache",
+        })
+        finding_id = json_loads(result[0].text)["finding_id"]
+        await server.handle_coordination_review_finding({
+            "mission_id": "auth-main",
+            "finding_id": finding_id,
+            "status": "accepted",
+            "actor": "lead",
+        })
+        await server.handle_coordination_promote({
+            "mission_id": "auth-main",
+            "finding_id": finding_id,
+            "actor": "lead",
+        })
+
+        result = await server.handle_coordination_merge_brief({"mission_id": "auth-main"})
+        brief = json_loads(result[0].text)
+
+        assert brief["mission_id"] == "auth-main"
+        assert brief["accepted_findings"][0]["finding_id"] == finding_id
+        assert brief["accepted_findings"][0]["worker_id"] == "auth-api"
+        assert brief["pending_findings"] == []
+        assert server.graph.upsert_extraction.await_count == 5
+
+        result = await server.handle_coordination_checkout({"mission_id": "auth-main"})
+        checkout = json_loads(result[0].text)
+        assert checkout["accepted_findings"][0]["finding_id"] == finding_id
+        assert checkout["pending_findings"] == []
+        assert "API failures trace to expired JWKS cache handling." in checkout["prompt"]
+
+        result = await server.handle_coordination_performance_ledger({"mission_id": "auth-main"})
+        ledger = json_loads(result[0].text)
+        assert ledger["workers"][0]["worker_id"] == "auth-api"
+        assert ledger["workers"][0]["accepted_findings"] == 1
+        assert ledger["workers"][0]["test_backed_findings"] == 1
+
+        result = await server.handle_coordination_approval_packet({"mission_id": "auth-main"})
+        packet = json_loads(result[0].text)
+        assert packet["mission_id"] == "auth-main"
+
+        result = await server.handle_coordination_handoff({
+            "mission_id": "auth-main",
+            "summary": "Auth mission complete.",
+            "next_steps": ["Release branch"],
+            "risks": ["Token cache metrics are sparse"],
+            "actor": "lead",
+        })
+        handoff = json_loads(result[0].text)
+        assert handoff["event_type"] == "coordination.handoff.created"
+        assert handoff["handoff_id"].startswith("auth-main:handoff:")
+        assert handoff["next_steps"] == ["Release branch"]
+        assert handoff["risks"] == ["Token cache metrics are sparse"]
+        assert server.graph.upsert_extraction.await_count == 6
+
+    async def test_coordination_apply_approval_reviews_and_promotes(self, tmp_path: Path) -> None:
+        """MCP approval application should append review and promotion events."""
+        server = ZaxyMCPServer(eventloom_path=str(tmp_path / ".eventloom"))
+        server.graph = AsyncMock()
+        server.tracer = AsyncMock()
+
+        await server.handle_coordination_start({"mission_id": "auth-main", "objective": "Ship auth refactor"})
+        await server.handle_coordination_worker_create({"mission_id": "auth-main", "worker_id": "auth-api"})
+        result = await server.handle_coordination_report_finding({
+            "mission_id": "auth-main",
+            "worker_id": "auth-api",
+            "summary": "Expired JWKS cache causes API failures.",
+            "evidence": [{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
+        })
+        finding_id = json_loads(result[0].text)["finding_id"]
+
+        result = await server.handle_coordination_apply_approval({
+            "mission_id": "auth-main",
+            "decisions": [{"finding_id": finding_id, "status": "accepted", "rationale": "Remote approval.", "promote": True}],
+            "actor": "reviewer",
+        })
+
+        payload = json_loads(result[0].text)
+        assert payload["reviewed_count"] == 1
+        assert payload["promoted_count"] == 1
+        assert server.graph.upsert_extraction.await_count == 5
+
+    async def test_coordination_manager_uses_configured_semantic_detector(self, tmp_path: Path) -> None:
+        """MCP coordination briefs should use the configured semantic conflict factory."""
+        server = ZaxyMCPServer(eventloom_path=str(tmp_path / ".eventloom"))
+        server.graph = AsyncMock()
+        server.tracer = AsyncMock()
+        server._settings = Settings(
+            _env_file=None,
+            coordination_semantic_conflict_provider="lexical",
+        )
+
+        await server.handle_coordination_start({"mission_id": "auth-main", "objective": "Ship auth refactor"})
+        await server.handle_coordination_worker_create({"mission_id": "auth-main", "worker_id": "auth-api"})
+        await server.handle_coordination_worker_create({"mission_id": "auth-main", "worker_id": "auth-ui"})
+        await server.handle_coordination_report_finding({
+            "mission_id": "auth-main",
+            "worker_id": "auth-api",
+            "summary": "Token refresh retry is enabled in auth middleware.",
+        })
+        await server.handle_coordination_report_finding({
+            "mission_id": "auth-main",
+            "worker_id": "auth-ui",
+            "summary": "Token refresh retry is disabled in browser session handling.",
+        })
+
+        result = await server.handle_coordination_merge_brief({"mission_id": "auth-main"})
+
+        brief = json_loads(result[0].text)
+        assert brief["conflicts"][0]["conflict_type"] == "semantic"
+        assert brief["conflicts"][0]["reason"] == "local_lexical_contradiction:disabled/enabled"
+
+    async def test_coordination_remote_scope_rejects_cross_session_start(self, tmp_path: Path) -> None:
+        """Remote MCP sessions must not write arbitrary parent mission sessions."""
+        server = ZaxyMCPServer(eventloom_path=str(tmp_path / ".eventloom"))
+        token = remote_session_scope.set("client-session")
+        try:
+            with pytest.raises(PermissionError, match="session scope"):
+                await server.handle_coordination_start({
+                    "mission_id": "other-session",
+                    "objective": "Not allowed",
+                })
+        finally:
+            remote_session_scope.reset(token)
 
 
 class TestMemoryCapabilities:
@@ -255,14 +464,14 @@ def test_mcp_server_constructs_projection_store_through_factory(tmp_path: Path) 
         patch("zaxy.mcp_server.build_projection_store") as mock_build,
         patch("zaxy.mcp_server.MemoryTracer"),
         patch("zaxy.mcp_server.SessionManager"),
-        patch("zaxy.mcp_server.LocalNeo4jRuntime"),
+        patch("zaxy.mcp_server.LocalEmbeddedGraphRuntime"),
     ):
         mock_build.return_value = AsyncMock()
 
         srv = ZaxyMCPServer(eventloom_path=str(tmp_path / ".eventloom"))
 
     assert srv.graph is mock_build.return_value
-    assert mock_build.call_args.args[0].backend == "neo4j"
+    assert mock_build.call_args.args[0].backend == "embedded"
 
 
 def test_mcp_server_accepts_embedded_projection_overrides(tmp_path: Path) -> None:
@@ -747,13 +956,13 @@ class TestMemorySkill:
 class TestServerSetup:
     """Tests for MCP server startup orchestration."""
 
-    async def test_setup_bootstraps_local_neo4j_before_graph_schema(self) -> None:
-        """Local stdio startup should make its Neo4j dependency transparent."""
+    async def test_setup_bootstraps_default_embedded_runtime_before_graph_schema(self) -> None:
+        """Local stdio startup should prepare the default embedded runtime."""
         with (
             patch("zaxy.mcp_server.build_projection_store") as mock_build_projection_store,
             patch("zaxy.mcp_server.MemoryTracer") as mock_tracer_cls,
             patch("zaxy.mcp_server.SessionManager"),
-            patch("zaxy.mcp_server.LocalNeo4jRuntime") as mock_runtime_cls,
+            patch("zaxy.mcp_server.LocalEmbeddedGraphRuntime") as mock_runtime_cls,
         ):
             mock_graph = AsyncMock()
             mock_build_projection_store.return_value = mock_graph

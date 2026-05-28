@@ -36,13 +36,12 @@ needs to be rebuilt, replay the log and re-run extraction. This is the reason
 Zaxy does not silently overwrite facts: graph entities carry `valid_from` and
 `valid_to` windows, and reasserted facts become new versions.
 
-Neo4j is the current default graph backend and quality control baseline. pgGraph
-is available as an experimental Postgres-native projection backend. The next
-runtime track is an embedded graph backend that removes sidecar setup from the
-default local path while preserving graph-native traversal, citations, temporal
-versioning, and replay. See
-[zero-friction-runtime-roadmap.md](zero-friction-runtime-roadmap.md) for the
-embedded runtime gates.
+The embedded Kuzu projection is the default graph backend because it preserves
+graph-native traversal, citations, temporal versioning, and replay without a
+separate graph service. Neo4j remains the quality and performance control
+backend, and pgGraph remains an experimental Postgres-native projection backend.
+See [zero-friction-runtime-roadmap.md](zero-friction-runtime-roadmap.md) for the
+embedded runtime gates and backend lifecycle.
 
 Zaxy does not delegate schema control to a high-level graph-memory abstraction
 because temporal validity, invalidation semantics, index management, and query

@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import builtins
+
+from zaxy import synthesis
 from zaxy.synthesis import (
     build_count_ledger,
     build_currency_ledger,
@@ -26,6 +29,151 @@ def test_build_synthesis_plan_classifies_currency_sum() -> None:
     assert plan.required_kinds == ("currency",)
     assert "money" in plan.subject_terms
     assert "total" in plan.reasons
+
+
+def test_build_synthesis_plan_tokenizes_query_once(monkeypatch) -> None:
+    """Planning should reuse one query tokenization for tokens and subject terms."""
+    calls = 0
+    original_source_tokens = synthesis.source_tokens
+
+    def tracking_source_tokens(text: str) -> list[str]:
+        nonlocal calls
+        calls += 1
+        return original_source_tokens(text)
+
+    monkeypatch.setattr(synthesis, "source_tokens", tracking_source_tokens)
+
+    plan = synthesis.build_synthesis_plan(
+        "How much total money have I spent on bike-related expenses?"
+    )
+
+    assert plan.required_kinds == ("currency",)
+    assert calls == 1
+
+
+def test_currency_label_scans_bounded_prefix_for_pre_amount_labels(monkeypatch) -> None:
+    """Currency labels should come from nearby text without regex scanning the full source."""
+    scanned_prefix_lengths: list[int] = []
+    original_before_amount = synthesis._currency_label_before_amount
+
+    def tracking_before_amount(prefix: str) -> str:
+        scanned_prefix_lengths.append(len(prefix))
+        return original_before_amount(prefix)
+
+    monkeypatch.setattr(synthesis, "_currency_label_before_amount", tracking_before_amount)
+    prefix = ("This older unrelated budget note mentions $5 and planning details. " * 80)
+    prefix += "I replaced the bike chain cost me "
+    text = prefix + "$45 after tax."
+
+    label = synthesis.currency_label(text, len(prefix), len(prefix) + 3)
+
+    assert label == "the bike chain"
+    assert scanned_prefix_lengths
+    assert max(scanned_prefix_lengths) <= 240
+
+
+def test_source_tokens_uses_compiled_regex_helpers(monkeypatch) -> None:
+    """Hot-path tokenization should not compile regex strings on every call."""
+
+    def fail(*args, **kwargs):  # noqa: ANN001
+        raise AssertionError("source_tokens should use compiled regex helpers")
+
+    monkeypatch.setattr(synthesis.re, "findall", fail)
+    monkeypatch.setattr(synthesis.re, "search", fail)
+    monkeypatch.setattr(synthesis.re, "split", fail)
+
+    assert synthesis.source_tokens("source_path=longmemeval/foo-bar.md") == [
+        "source_path",
+        "source",
+        "path",
+        "longmemeval/foo-bar.md",
+        "longmemeval",
+        "foo",
+        "bar.md",
+    ]
+
+
+def test_source_tokens_uses_constant_time_separator_check(monkeypatch) -> None:
+    """Token splitting should not run a regex search for every token."""
+    monkeypatch.setattr(
+        builtins,
+        "any",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("separator checks should not allocate generator scans")
+        ),
+    )
+
+    assert not hasattr(synthesis, "_SOURCE_TOKEN_HAS_SEPARATOR_RE")
+
+    assert synthesis.source_tokens("source_path=longmemeval/foo-bar.md") == [
+        "source_path",
+        "source",
+        "path",
+        "longmemeval/foo-bar.md",
+        "longmemeval",
+        "foo",
+        "bar.md",
+    ]
+
+
+def test_source_tokens_caches_repeated_text_without_mutation_leak(monkeypatch) -> None:
+    """Repeated synthesis tokenization should reuse parsing while returning safe lists."""
+    synthesis._source_token_tuple.cache_clear()
+    calls = 0
+    original_token_re = synthesis._SOURCE_TOKEN_RE
+
+    class TrackingTokenRegex:
+        def findall(self, text: str) -> list[str]:
+            nonlocal calls
+            calls += 1
+            return original_token_re.findall(text)
+
+    monkeypatch.setattr(synthesis, "_SOURCE_TOKEN_RE", TrackingTokenRegex())
+    text = "source_path=longmemeval/foo-bar.md I bought bike gear."
+
+    first = synthesis.source_tokens(text)
+    first.append("mutated")
+    second = synthesis.source_tokens(text)
+
+    assert "mutated" not in second
+    assert second[:7] == [
+        "source_path",
+        "source",
+        "path",
+        "longmemeval/foo-bar.md",
+        "longmemeval",
+        "foo",
+        "bar.md",
+    ]
+    assert calls == 1
+
+
+def test_currency_label_before_amount_uses_compiled_regex_helpers(monkeypatch) -> None:
+    """Repeated currency-label recovery should avoid dynamic regex compilation."""
+
+    def fail(*args, **kwargs):  # noqa: ANN001
+        raise AssertionError("currency label recovery should use compiled regex helpers")
+
+    monkeypatch.setattr(synthesis.re, "search", fail)
+
+    assert synthesis._currency_label_before_amount("I recently bought bike lights for ") == "bike lights"
+
+
+def test_currency_label_before_amount_skips_patterns_without_trigger(monkeypatch) -> None:
+    """Irrelevant prefixes should avoid regex pattern scans in the hot path."""
+
+    class FailingPattern:
+        def search(self, value: str):  # noqa: ANN001
+            del value
+            raise AssertionError("irrelevant prefixes should not scan currency-label patterns")
+
+    monkeypatch.setattr(
+        synthesis,
+        "_CURRENCY_LABEL_BEFORE_AMOUNT_PATTERNS",
+        (FailingPattern(),),
+    )
+
+    assert synthesis._currency_label_before_amount("I mentioned several older purchases") == ""
 
 
 def test_build_synthesis_plan_classifies_currency_difference() -> None:

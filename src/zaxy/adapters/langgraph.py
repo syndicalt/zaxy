@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from zaxy.adapters._common import FabricFactory, assembly_payload, default_fabric_factory
+from zaxy.adapters.coordination import CoordinationAdapter
 from zaxy.context import Context
 from zaxy.core import ContextAssembly
 from zaxy.observation import build_tool_call_observation
@@ -239,6 +240,31 @@ def create_langgraph_memory_checkout_node(
         return await adapter.checkout_before_model(state)
 
     return zaxy_langgraph_memory_checkout_node
+
+
+def create_langgraph_coordination_node(
+    *,
+    mission_id: str,
+    worker_id: str,
+    eventloom_path: str = ".eventloom",
+    actor: str | None = None,
+) -> LangGraphNode:
+    """Return an async node that reports explicit Coordinate findings."""
+
+    async def zaxy_langgraph_coordination_node(state: dict[str, Any]) -> dict[str, Any]:
+        adapter = CoordinationAdapter(eventloom_path=eventloom_path, actor=actor or worker_id)
+        finding = adapter.report_finding(
+            mission_id,
+            worker_id,
+            summary=str(state.get("coordination_summary") or state.get("latest_message") or ""),
+            evidence=list(state.get("coordination_evidence") or []),
+            confidence=state.get("coordination_confidence"),
+            claim_key=state.get("coordination_claim_key"),
+            claim_value=state.get("coordination_claim_value"),
+        )
+        return {**state, "zaxy_coordination": finding}
+
+    return zaxy_langgraph_coordination_node
 
 
 def _latest_message(state: Mapping[str, Any]) -> tuple[str, str]:

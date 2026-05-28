@@ -19,9 +19,10 @@
     <article class="doc-content">
       <h1 id="zero-friction-embedded-graph-runtime-implementation-plan">Zero-Friction Embedded Graph Runtime Implementation Plan</h1>
       <blockquote><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</blockquote>
-      <p><strong>Goal:</strong> Build a prototype embedded graph runtime that can replace sidecar-first local onboarding without weakening Zaxy&#x27;s temporal, cited, graph-backed retrieval quality.</p>
-      <p><strong>Architecture:</strong> Keep Eventloom as the source of truth and add <code>PROJECTION_BACKEND=embedded</code> behind the existing <code>ProjectionStore</code> contract. The first candidate is a Kuzu-backed adapter stored under <code>.eventloom/projections/embedded.kuzu</code>; Neo4j remains the default and quality control backend until same-harness gates pass.</p>
-      <p><strong>Tech Stack:</strong> Python 3.11+, Kuzu optional dependency, existing <code>ProjectionStore</code>, Eventloom replay, Typer CLI, pytest, ruff, mypy.</p>
+      <p><strong>Goal:</strong> Build and harden the embedded graph runtime path that replaces sidecar-first local onboarding without weakening Zaxy&#x27;s temporal, cited, graph-backed retrieval quality.</p>
+      <p><strong>Architecture:</strong> Keep Eventloom as the source of truth and add <code>PROJECTION_BACKEND=embedded</code> behind the existing <code>ProjectionStore</code> contract. The first candidate is a Kuzu-backed adapter stored under <code>.eventloom/projections/embedded.kuzu</code>; at the time this plan was written, Neo4j was the quality-control backend until same-harness gates passed.</p>
+      <p><strong>Current status:</strong> embedded Kuzu is the default projection backend. Neo4j is now an optional sidecar and quality-control backend for same-harness comparisons.</p>
+      <p><strong>Tech Stack:</strong> Python 3.11+, Kuzu core dependency, existing <code>ProjectionStore</code>, Eventloom replay, Typer CLI, pytest, ruff, mypy.</p>
       <p>---</p>
       <h2 id="file-structure">File Structure</h2>
       <ul>
@@ -30,12 +31,12 @@
         <li>Modify <code>src/zaxy/config.py</code>: add embedded graph path/settings and document accepted backend values.</li>
         <li>Modify <code>src/zaxy/__main__.py</code>: expose embedded backend in CLI options/help where projection backend is accepted.</li>
         <li>Modify <code>src/zaxy/dashboard.py</code>: make graph routes display embedded backend metadata and projection status.</li>
-        <li>Modify <code>pyproject.toml</code>: add optional dependency group <code>embedded = [&quot;kuzu&gt;=0.11&quot;]</code>.</li>
+        <li>Modify <code>pyproject.toml</code>: promote Kuzu into the core dependency set and leave the legacy <code>embedded</code> extra empty for compatibility.</li>
         <li>Create <code>tests/test_embedded_graph_store.py</code>: adapter contract tests with real Kuzu when installed and skip otherwise.</li>
         <li>Create <code>tests/test_projection_backends_embedded.py</code>: factory/config tests.</li>
         <li>Create or extend <code>tests/test_cli.py</code>: help/status/init coverage for embedded backend.</li>
         <li>Create <code>scripts/backend-shootout.py</code>: repeatable same-harness backend comparison runner.</li>
-        <li>Modify <code>docs/zero-friction-runtime-roadmap.md</code>, <code>docs/configuration.md</code>, <code>docs/getting-started.md</code>, and <code>docs/benchmarks.md</code>: document prototype status and gates.</li>
+        <li>Modify <code>docs/zero-friction-runtime-roadmap.md</code>, <code>docs/configuration.md</code>, <code>docs/getting-started.md</code>, and <code>docs/benchmarks.md</code>: document promoted runtime status and benchmark gates.</li>
       </ul>
       <h2 id="task-1-backend-factory-and-settings">Task 1: Backend Factory And Settings</h2>
       <p><strong>Files:</strong></p>
@@ -94,14 +95,17 @@ def test_embedded_backend_requires_path() -&gt; None:
       <ul>
         <li>[x] <strong>Step 3: Implement minimal factory support</strong></li>
       </ul>
-      <p>Add <code>embedded_graph_path: Path | None = None</code> to <code>ProjectionBackendConfig</code>, route <code>backend == &quot;embedded&quot;</code> to <code>zaxy.embedded_graph_store.EmbeddedGraphStore</code>, and update the error text to include <code>neo4j, pggraph, embedded</code>.</p>
+      <p>Add <code>embedded_graph_path: Path | None = None</code> to <code>ProjectionBackendConfig</code>, route <code>backend == &quot;embedded&quot;</code> to <code>zaxy.embedded_graph_store.EmbeddedGraphStore</code>, and update the error text to include <code>embedded, neo4j, pggraph, latticedb</code>.</p>
       <ul>
         <li>[x] <strong>Step 4: Add package metadata</strong></li>
       </ul>
-      <p>Add this optional dependency group:</p>
-      <pre><code class="language-toml">embedded = [
+      <p>Promote Kuzu into the core dependency set and keep the legacy embedded extra empty:</p>
+      <pre><code class="language-toml">dependencies = [
     &quot;kuzu&gt;=0.11.0&quot;,
-]</code></pre>
+]
+
+[project.optional-dependencies]
+embedded = []</code></pre>
       <ul>
         <li>[x] <strong>Step 5: Run focused checks</strong></li>
       </ul>
@@ -279,15 +283,15 @@ PYTHONPATH=src pytest tests/test_projection_backends_embedded.py tests/test_embe
         <li>[x] <strong>Step 2: Record gate status</strong></li>
       </ul>
       <p>Update the roadmap with one of these statuses:</p>
-      <pre><code class="language-text">embedded prototype: blocked - Kuzu missing
-embedded prototype: failed - quality gate regression
-embedded prototype: passed - eligible for broader benchmark</code></pre>
+      <pre><code class="language-text">embedded runtime: blocked - Kuzu missing
+embedded runtime: failed - quality gate regression
+embedded runtime: passed and promoted to default</code></pre>
       <ul>
         <li>[x] <strong>Step 3: Commit</strong></li>
       </ul>
       <p>Run:</p>
       <pre><code class="language-bash">git add pyproject.toml src/zaxy tests docs scripts
-git commit -m &quot;feat: prototype embedded graph runtime&quot;</code></pre>
+git commit -m &quot;feat: harden embedded graph runtime&quot;</code></pre>
       <p>Expected: commit succeeds only after the gate status is recorded.</p>
       <h2 id="self-review">Self-Review</h2>
       <ul>

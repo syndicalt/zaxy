@@ -46,12 +46,94 @@ def _load_backend_shootout_check_module():
     return module
 
 
-def test_backend_shootout_default_active_backends_exclude_latticedb_candidate() -> None:
-    """The default active shootout should not spend time on a parked candidate backend."""
+def _guardrail_summary(**overrides: object) -> dict[str, object]:
+    summary: dict[str, object] = {
+        "backend": "bm25",
+        "contract": "retrieve",
+        "status": "ok",
+        "query_count": 1,
+        "mean_quality": 1.0,
+        "citation_coverage": 1.0,
+        "mean_returned_tokens": 1.0,
+        "quality_per_1k_returned_tokens": 1000.0,
+        "mean_injected_tokens": 1.0,
+        "quality_per_1k_injected_tokens": 1000.0,
+        "first_checkout_ms": 0.0,
+        "checkout_p95_ms": 0.0,
+        "checkout_p99_ms": 0.0,
+    }
+    summary.update(overrides)
+    return summary
+
+
+def _guardrail_diagnostic(**overrides: object) -> dict[str, object]:
+    diagnostic: dict[str, object] = {
+        "query": "What happened?",
+        "expected_terms": [],
+        "identity_terms": [],
+        "source_terms": [],
+        "retrieval_terms": [],
+        "quality": 1.0,
+        "answer_hit": True,
+        "recall_quality": 1.0,
+        "recall_hit": True,
+        "missing_expected_terms": [],
+        "missing_retrieval_terms": [],
+        "latency_ms": 0.0,
+        "returned_tokens": 1,
+        "injected_tokens": 1,
+        "citation_hit": True,
+        "top_contexts": [],
+    }
+    diagnostic.update(overrides)
+    return diagnostic
+
+
+def _write_guardrail_report(
+    tmp_path: Path,
+    *,
+    summary: dict[str, object] | None = None,
+    diagnostic: dict[str, object] | None = None,
+) -> Path:
+    summary = summary or _guardrail_summary()
+    diagnostic = diagnostic or _guardrail_diagnostic()
+    backend = str(summary["backend"])
+    contract = str(summary.get("contract") or "retrieve")
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps(
+            {
+                "summaries": [summary],
+                "query_results": {f"{backend}:{contract}": [diagnostic]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    return report
+
+
+def test_backend_shootout_default_active_backends_are_embedded_and_bm25_only() -> None:
+    """Default shootouts should run without optional sidecar infrastructure."""
     module = _load_backend_shootout_module()
 
     assert "latticedb" in module.SUPPORTED_BACKENDS
-    assert "latticedb" not in module.DEFAULT_BACKENDS
+    assert "neo4j" in module.SUPPORTED_BACKENDS
+    assert "pggraph" in module.SUPPORTED_BACKENDS
+    assert module.DEFAULT_BACKENDS == ("embedded", "bm25")
+
+
+def test_backend_shootout_help_does_not_import_runtime_or_dashboard() -> None:
+    """Help output should avoid importing heavy runtime modules."""
+    result = subprocess.run(
+        [sys.executable, "-X", "importtime", "scripts/backend-shootout.py", "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0
+    assert "zaxy.core" not in result.stderr
+    assert "zaxy.dashboard" not in result.stderr
 
 
 def test_backend_shootout_parses_linux_statm_current_rss_bytes() -> None:
@@ -74,6 +156,60 @@ def test_backend_shootout_tracks_max_current_rss_delta() -> None:
 
     assert tracker.delta_bytes() == 1_100
     assert module._ResidentMemoryTracker(start_bytes=None).delta_bytes() is None
+
+
+def test_backend_shootout_scores_acceptable_answer_alternatives() -> None:
+    """Backend Answer@5 should share benchmark answer-surface matching."""
+    module = _load_backend_shootout_module()
+
+    quality = module._expected_term_quality(
+        "zaxy_synthesis_bundle=true duration_answer=14 days",
+        ("14 days. 15 days (including the last day) is also acceptable.",),
+    )
+
+    assert quality == 1.0
+
+
+def test_backend_shootout_scores_compact_count_answer_surfaces() -> None:
+    """LongMemEval prose answers should match compact synthesized count answers."""
+    module = _load_backend_shootout_module()
+
+    quality = module._expected_term_quality(
+        "count_answer_text=I currently own four musical instruments.",
+        (
+            "I currently own 4 musical instruments. "
+            "I've had the Fender Stratocaster electric guitar for 5 years.",
+        ),
+    )
+
+    assert quality == 1.0
+
+
+def test_backend_shootout_materializes_fabric_eventloom_for_source_lane(tmp_path: Path) -> None:
+    """Graph backend diagnostics should give MemoryFabric the same Eventloom source."""
+    module = _load_backend_shootout_module()
+    source_log = EventLog(tmp_path / "source.jsonl")
+    source_event = source_log.append(
+        "document.indexed",
+        actor="longmemeval",
+        payload={
+            "path": "longmemeval/answer-1/salient-turn-0001.md",
+            "content": "I started using NebulaStream last week.",
+            "start_line": 1,
+            "end_line": 1,
+        },
+        thread="answer-1",
+    )
+
+    eventloom_path = module._prepare_fabric_eventloom(
+        [source_event],
+        output_parent=tmp_path / "reports",
+        backend="embedded",
+        session_id="default",
+    )
+
+    materialized = EventLog(eventloom_path / "default.jsonl").read_all()
+    assert [event.model_dump() for event in materialized] == [source_event.model_dump()]
 
 
 def test_backend_shootout_dashboard_count_coercion_rejects_booleans() -> None:
@@ -161,6 +297,7 @@ def test_backend_shootout_runs_bm25_and_writes_reports(tmp_path: Path) -> None:
     assert payload["event_count"] == 1
     assert payload["query_count"] == 1
     assert payload["summaries"][0]["backend"] == "bm25"
+    assert payload["summaries"][0]["contract"] == "retrieve"
     assert payload["summaries"][0]["status"] == "ok"
     assert payload["summaries"][0]["mean_quality"] == 1.0
     assert payload["summaries"][0]["cold_bootstrap_ms"] is not None
@@ -198,7 +335,7 @@ def test_backend_shootout_runs_bm25_and_writes_reports(tmp_path: Path) -> None:
     assert "Source queries SHA-256:" in markdown
     assert "Workload events SHA-256:" in markdown
     assert "Workload queries SHA-256:" in markdown
-    assert "| bm25 | ok |" in markdown
+    assert "| bm25 | retrieve | ok |" in markdown
     assert "Checkout p95 ms" in markdown
     assert "Cold bootstrap ms" in markdown
     assert "First checkout ms" in markdown
@@ -216,8 +353,224 @@ def test_backend_shootout_runs_bm25_and_writes_reports(tmp_path: Path) -> None:
     assert "Exact p50 ms" in markdown
     assert "Keyword p95 ms" in markdown
     assert "Vector p99 ms" in markdown
-    assert "| bm25 | ok |" in markdown
+    assert "| bm25 | retrieve | ok |" in markdown
     assert "| 1.0 | 1.0 |" in markdown
+
+
+def test_backend_shootout_default_run_is_sidecar_free(tmp_path: Path) -> None:
+    """Omitting --backends should run embedded plus BM25 without optional services."""
+    eventloom = tmp_path / ".eventloom"
+    log = EventLog(eventloom / "agent-1.jsonl")
+    log.append(
+        "decision.recorded",
+        actor="assistant",
+        payload={"decision": "Embedded Kuzu is the default local projection."},
+        thread="agent-1",
+    )
+    queries = tmp_path / "queries.json"
+    queries.write_text(
+        json.dumps([{"query": "embedded Kuzu projection", "expected_terms": ["Kuzu"]}]),
+        encoding="utf-8",
+    )
+    output = tmp_path / "backend-shootout.json"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/backend-shootout.py",
+            "--eventloom-path",
+            str(eventloom),
+            "--session-id",
+            "agent-1",
+            "--queries-file",
+            str(queries),
+            "--output",
+            str(output),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert [(summary["backend"], summary["contract"]) for summary in payload["summaries"]] == [
+        ("embedded", "retrieve"),
+        ("embedded", "answer_ready"),
+        ("bm25", "retrieve"),
+    ]
+    assert {summary["backend"] for summary in payload["summaries"]} == {"embedded", "bm25"}
+    assert all(summary["status"] == "ok" for summary in payload["summaries"])
+    assert not (output.parent / "embedded.eventloom").exists()
+
+
+def test_backend_shootout_can_emit_per_query_diagnostics(tmp_path: Path) -> None:
+    """Quality-parity work needs miss diagnostics, not just aggregate scores."""
+    eventloom = tmp_path / ".eventloom"
+    log = EventLog(eventloom / "agent-1.jsonl")
+    log.append(
+        "decision.recorded",
+        actor="assistant",
+        payload={"decision": "Embedded Kuzu should match Neo4j quality."},
+        thread="agent-1",
+    )
+    queries = tmp_path / "queries.json"
+    queries.write_text(
+        json.dumps(
+            [
+                {"query": "embedded kuzu quality", "expected_terms": ["Kuzu"]},
+                {
+                    "query": "embedded quality missing answer",
+                    "expected_terms": ["97 days"],
+                    "identity_terms": ["missing-agent", "agent-1"],
+                },
+            ]
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "backend-shootout.json"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/backend-shootout.py",
+            "--eventloom-path",
+            str(eventloom),
+            "--session-id",
+            "agent-1",
+            "--backends",
+            "bm25",
+            "--queries-file",
+            str(queries),
+            "--output",
+            str(output),
+            "--include-query-results",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    diagnostics = payload["query_results"]["bm25:retrieve"]
+    assert payload["summaries"][0]["answer_at_5"] == 0.5
+    assert payload["summaries"][0]["recall_at_5"] == 1.0
+    assert payload["summaries"][0]["citation_coverage"] == 1.0
+    assert diagnostics == [
+        {
+            "query": "embedded kuzu quality",
+            "expected_terms": ["Kuzu"],
+            "identity_terms": [],
+            "source_terms": [],
+            "retrieval_terms": ["Kuzu"],
+            "quality": 1.0,
+            "answer_hit": True,
+            "recall_quality": 1.0,
+            "recall_hit": True,
+            "missing_expected_terms": [],
+            "missing_retrieval_terms": [],
+            "latency_ms": diagnostics[0]["latency_ms"],
+            "returned_tokens": diagnostics[0]["returned_tokens"],
+            "injected_tokens": diagnostics[0]["injected_tokens"],
+            "citation_hit": True,
+            "top_contexts": diagnostics[0]["top_contexts"],
+        },
+        {
+            "query": "embedded quality missing answer",
+            "expected_terms": ["97 days"],
+            "identity_terms": ["missing-agent", "agent-1"],
+            "source_terms": [],
+            "retrieval_terms": ["missing-agent", "agent-1"],
+            "quality": 0.0,
+            "answer_hit": False,
+            "recall_quality": 1.0,
+            "recall_hit": True,
+            "missing_expected_terms": ["97 days"],
+            "missing_retrieval_terms": ["missing-agent"],
+            "latency_ms": diagnostics[1]["latency_ms"],
+            "returned_tokens": diagnostics[1]["returned_tokens"],
+            "injected_tokens": diagnostics[1]["injected_tokens"],
+            "citation_hit": True,
+            "top_contexts": diagnostics[1]["top_contexts"],
+        },
+    ]
+    assert diagnostics[0]["returned_tokens"] > 0
+    assert diagnostics[1]["returned_tokens"] > 0
+    assert diagnostics[0]["latency_ms"] >= 0.0
+    assert diagnostics[1]["latency_ms"] >= 0.0
+    assert diagnostics[0]["top_contexts"] == [
+        {
+            "rank": 1,
+            "source": "bm25",
+            "score": diagnostics[0]["top_contexts"][0]["score"],
+            "citation": diagnostics[0]["top_contexts"][0]["citation"],
+            "snippet": diagnostics[0]["top_contexts"][0]["snippet"],
+        }
+    ]
+    assert diagnostics[0]["top_contexts"][0]["citation"].startswith("eventloom://agent-1/events/1#")
+    assert diagnostics[0]["top_contexts"][0]["score"] > 0
+    assert diagnostics[0]["top_contexts"][0]["snippet"] == (
+        '{"decision": "Embedded Kuzu should match Neo4j quality."}'
+    )
+
+
+def test_backend_workload_builder_preserves_longmemeval_identity_terms(tmp_path: Path) -> None:
+    """Backend parity reports need LongMemEval retrieval targets, not only final answers."""
+    dataset = tmp_path / "longmemeval.json"
+    dataset.write_text(
+        json.dumps(
+            [
+                {
+                    "question_id": "q1",
+                    "question": "Which issue happened first?",
+                    "answer": "GPS system not functioning correctly",
+                    "answer_session_ids": ["answer-session"],
+                    "haystack_session_ids": ["answer-session"],
+                    "haystack_dates": ["2024/01/01 (Mon) 10:00"],
+                    "haystack_sessions": [
+                        [
+                            {
+                                "role": "user",
+                                "content": "My car GPS system failed after the first service.",
+                                "has_answer": True,
+                            }
+                        ]
+                    ],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    eventloom = tmp_path / "longmemeval.eventloom.jsonl"
+    queries = tmp_path / "queries.json"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build-backend-shootout-workload.py",
+            "--dataset",
+            str(dataset),
+            "--eventloom-output",
+            str(eventloom),
+            "--queries-output",
+            str(queries),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    payload = json.loads(queries.read_text(encoding="utf-8"))
+    assert payload == [
+        {
+            "query": "Which issue happened first?",
+            "expected_terms": ["GPS system not functioning correctly"],
+            "identity_terms": ["answer-session"],
+            "source_terms": [],
+        }
+    ]
 
 
 @pytest.mark.skipif(importlib.util.find_spec("latticedb") is None, reason="latticedb is not installed")
@@ -737,7 +1090,7 @@ def test_backend_shootout_guardrail_rejects_negative_global_metric_floor(tmp_pat
             {
                 "summaries": [
                     {
-                        "backend": "embedded",
+                        "backend": "bm25",
                         "status": "ok",
                         "answer_at_5": 0.0,
                         "recall_at_5": 1.0,
@@ -775,7 +1128,7 @@ def test_backend_shootout_guardrail_rejects_impossible_global_metric_floor(tmp_p
             {
                 "summaries": [
                     {
-                        "backend": "embedded",
+                        "backend": "bm25",
                         "status": "ok",
                         "answer_at_5": 1.0,
                         "recall_at_5": 1.0,
@@ -2288,10 +2641,329 @@ def test_backend_shootout_guardrail_rejects_markdown_backend_row_without_metrics
     )
 
     assert result.returncode == 1
-    assert "report: Markdown sidecar row for bm25 missing answer_at_5=1.0" in result.stderr
-    assert "report: Markdown sidecar row for bm25 missing recall_at_5=1.0" in result.stderr
-    assert "report: Markdown sidecar row for bm25 missing quality_per_1k_injected_tokens" in result.stderr
-    assert "report: Markdown sidecar row for bm25 missing answer_at_5_per_1k_injected_tokens" in result.stderr
+    assert "report: Markdown sidecar row for bm25:retrieve missing answer_at_5=1.0" in result.stderr
+    assert "report: Markdown sidecar row for bm25:retrieve missing recall_at_5=1.0" in result.stderr
+    assert "report: Markdown sidecar row for bm25:retrieve missing quality_per_1k_injected_tokens" in result.stderr
+    assert "report: Markdown sidecar row for bm25:retrieve missing answer_at_5_per_1k_injected_tokens" in result.stderr
+
+
+def test_backend_shootout_guardrail_rejects_markdown_metric_values_in_wrong_columns(tmp_path: Path) -> None:
+    """Markdown metric checks should validate the column, not just row membership."""
+    report = tmp_path / "backend-shootout.json"
+    eventloom_sha = "a" * 64
+    queries_sha = "b" * 64
+    workload_events_sha = "c" * 64
+    workload_queries_sha = "d" * 64
+    report.write_text(
+        json.dumps(
+            {
+                "report_schema_version": 1,
+                "harness": "zaxy-backend-shootout",
+                "generated_at_utc": "2026-05-21T00:00:00Z",
+                "eventloom_path": "events.jsonl",
+                "queries_file": "queries.json",
+                "session_id": "default",
+                "query_count": 1,
+                "event_count": 1,
+                "limit": 5,
+                "source_fingerprints": {
+                    "eventloom_sha256": eventloom_sha,
+                    "queries_sha256": queries_sha,
+                },
+                "workload_fingerprints": {
+                    "events_sha256": workload_events_sha,
+                    "queries_sha256": workload_queries_sha,
+                },
+                "summaries": [
+                    {
+                        "backend": "embedded",
+                        "contract": "answer_ready",
+                        "status": "ok",
+                        "query_count": 1,
+                        "answer_at_5": 1.0,
+                        "recall_at_5": 0.5,
+                        "citation_coverage": 1.0,
+                        "quality_per_1k_injected_tokens": 0.25,
+                        "answer_at_5_per_1k_injected_tokens": 0.75,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    report.with_suffix(".md").write_text(
+        "\n".join(
+            [
+                "# Backend Shootout",
+                "",
+                "- Report schema version: `1`",
+                "- Harness: `zaxy-backend-shootout`",
+                "- Generated at UTC: `2026-05-21T00:00:00Z`",
+                "- Eventloom path: `events.jsonl`",
+                "- Queries file: `queries.json`",
+                "- Session ID: `default`",
+                "- Queries: `1`",
+                "- Events: `1`",
+                "- Limit: `5`",
+                f"- Source Eventloom SHA-256: `{eventloom_sha}`",
+                f"- Source queries SHA-256: `{queries_sha}`",
+                f"- Workload events SHA-256: `{workload_events_sha}`",
+                f"- Workload queries SHA-256: `{workload_queries_sha}`",
+                "",
+                "| Backend | Contract | Status | Answer@5 | Recall@5 | Citation coverage | Quality / 1k injected | Answer@5 / 1k injected |",
+                "|---------|----------|--------|----------|----------|-------------------|------------------------|-------------------------|",
+                "| embedded | answer_ready | ok | 0.5 | 1.0 | 1.0 | 0.75 | 0.25 |",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-report-metadata",
+            "--require-markdown-report",
+            "--require-backends",
+            "embedded",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "report: Markdown sidecar row for embedded:answer_ready missing answer_at_5=1.0" in result.stderr
+    assert "report: Markdown sidecar row for embedded:answer_ready missing recall_at_5=0.5" in result.stderr
+    assert (
+        "report: Markdown sidecar row for embedded:answer_ready missing quality_per_1k_injected_tokens=0.25"
+        in result.stderr
+    )
+    assert (
+        "report: Markdown sidecar row for embedded:answer_ready missing answer_at_5_per_1k_injected_tokens=0.75"
+        in result.stderr
+    )
+
+
+def test_backend_shootout_guardrail_rejects_markdown_operational_metric_mismatch(tmp_path: Path) -> None:
+    """Markdown sidecars should expose latency and token-efficiency metrics from JSON."""
+    report = tmp_path / "backend-shootout.json"
+    eventloom_sha = "a" * 64
+    queries_sha = "b" * 64
+    workload_events_sha = "c" * 64
+    workload_queries_sha = "d" * 64
+    report.write_text(
+        json.dumps(
+            {
+                "report_schema_version": 1,
+                "harness": "zaxy-backend-shootout",
+                "generated_at_utc": "2026-05-21T00:00:00Z",
+                "eventloom_path": "events.jsonl",
+                "queries_file": "queries.json",
+                "session_id": "default",
+                "query_count": 1,
+                "event_count": 1,
+                "limit": 5,
+                "source_fingerprints": {
+                    "eventloom_sha256": eventloom_sha,
+                    "queries_sha256": queries_sha,
+                },
+                "workload_fingerprints": {
+                    "events_sha256": workload_events_sha,
+                    "queries_sha256": workload_queries_sha,
+                },
+                "summaries": [
+                    {
+                        "backend": "embedded",
+                        "contract": "retrieve",
+                        "status": "ok",
+                        "query_count": 1,
+                        "first_checkout_ms": 1.234,
+                        "checkout_p95_ms": 2.345,
+                        "checkout_p99_ms": 3.456,
+                        "mean_returned_tokens": 10.0,
+                        "quality_per_1k_returned_tokens": 20.0,
+                        "answer_at_5_per_1k_returned_tokens": 30.0,
+                        "mean_injected_tokens": 40.0,
+                        "quality_per_1k_injected_tokens": 50.0,
+                        "answer_at_5_per_1k_injected_tokens": 60.0,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    report.with_suffix(".md").write_text(
+        "\n".join(
+            [
+                "# Backend Shootout",
+                "",
+                "- Report schema version: `1`",
+                "- Harness: `zaxy-backend-shootout`",
+                "- Generated at UTC: `2026-05-21T00:00:00Z`",
+                "- Eventloom path: `events.jsonl`",
+                "- Queries file: `queries.json`",
+                "- Session ID: `default`",
+                "- Queries: `1`",
+                "- Events: `1`",
+                "- Limit: `5`",
+                f"- Source Eventloom SHA-256: `{eventloom_sha}`",
+                f"- Source queries SHA-256: `{queries_sha}`",
+                f"- Workload events SHA-256: `{workload_events_sha}`",
+                f"- Workload queries SHA-256: `{workload_queries_sha}`",
+                "",
+                "| Backend | Contract | Status | First checkout ms | Checkout p95 ms | Checkout p99 ms | Returned tokens | Quality / 1k tokens | Answer@5 / 1k tokens | Injected tokens | Quality / 1k injected | Answer@5 / 1k injected |",
+                "|---------|----------|--------|-------------------|-----------------|-----------------|-----------------|----------------------|-----------------------|-----------------|------------------------|-------------------------|",
+                "| embedded | retrieve | ok | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-report-metadata",
+            "--require-markdown-report",
+            "--require-backends",
+            "embedded",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "report: Markdown sidecar row for embedded:retrieve missing first_checkout_ms=1.234" in result.stderr
+    assert "report: Markdown sidecar row for embedded:retrieve missing checkout_p95_ms=2.345" in result.stderr
+    assert "report: Markdown sidecar row for embedded:retrieve missing checkout_p99_ms=3.456" in result.stderr
+    assert "report: Markdown sidecar row for embedded:retrieve missing mean_returned_tokens=10.0" in result.stderr
+    assert "report: Markdown sidecar row for embedded:retrieve missing quality_per_1k_returned_tokens=20.0" in result.stderr
+    assert "report: Markdown sidecar row for embedded:retrieve missing answer_at_5_per_1k_returned_tokens=30.0" in result.stderr
+
+
+def test_backend_shootout_guardrail_rejects_markdown_remaining_operational_metric_mismatch(
+    tmp_path: Path,
+) -> None:
+    """Markdown sidecars should match all rendered operational metric groups."""
+    report = tmp_path / "backend-shootout.json"
+    eventloom_sha = "a" * 64
+    queries_sha = "b" * 64
+    workload_events_sha = "c" * 64
+    workload_queries_sha = "d" * 64
+    report.write_text(
+        json.dumps(
+            {
+                "report_schema_version": 1,
+                "harness": "zaxy-backend-shootout",
+                "generated_at_utc": "2026-05-21T00:00:00Z",
+                "eventloom_path": "events.jsonl",
+                "queries_file": "queries.json",
+                "session_id": "default",
+                "query_count": 1,
+                "event_count": 1,
+                "limit": 5,
+                "source_fingerprints": {
+                    "eventloom_sha256": eventloom_sha,
+                    "queries_sha256": queries_sha,
+                },
+                "workload_fingerprints": {
+                    "events_sha256": workload_events_sha,
+                    "queries_sha256": workload_queries_sha,
+                },
+                "summaries": [
+                    {
+                        "backend": "bm25",
+                        "contract": "retrieve",
+                        "status": "ok",
+                        "query_count": 1,
+                        "cold_bootstrap_ms": 1.0,
+                        "first_useful_init_ms": 2.0,
+                        "append_to_projection_p95_ms": 3.0,
+                        "projection_events_per_second": 4.0,
+                        "exact_p50_ms": 5.0,
+                        "exact_p95_ms": 6.0,
+                        "exact_p99_ms": 7.0,
+                        "keyword_p50_ms": 8.0,
+                        "keyword_p95_ms": 9.0,
+                        "keyword_p99_ms": 10.0,
+                        "vector_p50_ms": 11.0,
+                        "vector_p95_ms": 12.0,
+                        "vector_p99_ms": 13.0,
+                        "traversal_p50_ms": 14.0,
+                        "traversal_p95_ms": 15.0,
+                        "traversal_p99_ms": 16.0,
+                        "dashboard_graph_load_ms": 17.0,
+                        "dashboard_graph_source": "embedded",
+                        "dashboard_graph_nodes": 18,
+                        "dashboard_graph_edges": 19,
+                        "memory_footprint_bytes": 20,
+                        "resident_memory_delta_bytes": 21,
+                        "on_disk_footprint_bytes": 22,
+                        "rebuild_recovery_ms": 23.0,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    report.with_suffix(".md").write_text(
+        "\n".join(
+            [
+                "# Backend Shootout",
+                "",
+                "- Report schema version: `1`",
+                "- Harness: `zaxy-backend-shootout`",
+                "- Generated at UTC: `2026-05-21T00:00:00Z`",
+                "- Eventloom path: `events.jsonl`",
+                "- Queries file: `queries.json`",
+                "- Session ID: `default`",
+                "- Queries: `1`",
+                "- Events: `1`",
+                "- Limit: `5`",
+                f"- Source Eventloom SHA-256: `{eventloom_sha}`",
+                f"- Source queries SHA-256: `{queries_sha}`",
+                f"- Workload events SHA-256: `{workload_events_sha}`",
+                f"- Workload queries SHA-256: `{workload_queries_sha}`",
+                "",
+                "| Backend | Contract | Status | Cold bootstrap ms | First useful init ms | Append projection p95 ms | Projection eps | Exact p50 ms | Exact p95 ms | Exact p99 ms | Keyword p50 ms | Keyword p95 ms | Keyword p99 ms | Vector p50 ms | Vector p95 ms | Vector p99 ms | Traversal p50 ms | Traversal p95 ms | Traversal p99 ms | Dashboard graph load ms | Dashboard source | Dashboard nodes | Dashboard edges | Memory bytes | Resident memory delta bytes | On-disk footprint bytes | Rebuild recovery ms |",
+                "|---------|----------|--------|-------------------|----------------------|--------------------------|----------------|--------------|--------------|--------------|----------------|----------------|----------------|--------------|--------------|--------------|------------------|------------------|------------------|-------------------------|------------------|-----------------|-----------------|--------------|-----------------------------|-------------------------|---------------------|",
+                "| bm25 | retrieve | ok | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | stale | 0 | 0 | 0 | 0 | 0 | 0.0 |",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-report-metadata",
+            "--require-markdown-report",
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "report: Markdown sidecar row for bm25:retrieve missing cold_bootstrap_ms=1.0" in result.stderr
+    assert "report: Markdown sidecar row for bm25:retrieve missing exact_p95_ms=6.0" in result.stderr
+    assert "report: Markdown sidecar row for bm25:retrieve missing keyword_p99_ms=10.0" in result.stderr
+    assert "report: Markdown sidecar row for bm25:retrieve missing vector_p99_ms=13.0" in result.stderr
+    assert "report: Markdown sidecar row for bm25:retrieve missing traversal_p99_ms=16.0" in result.stderr
+    assert "report: Markdown sidecar row for bm25:retrieve missing dashboard_graph_source=embedded" in result.stderr
+    assert "report: Markdown sidecar row for bm25:retrieve missing memory_footprint_bytes=20" in result.stderr
+    assert "report: Markdown sidecar row for bm25:retrieve missing rebuild_recovery_ms=23.0" in result.stderr
 
 
 def test_backend_shootout_guardrail_rejects_stale_report_fingerprints(tmp_path: Path) -> None:
@@ -2570,7 +3242,1839 @@ def test_backend_shootout_guardrail_rejects_duplicate_backend_summaries(tmp_path
     )
 
     assert result.returncode == 1
-    assert "embedded: duplicate backend summary rows found" in result.stderr
+    assert "embedded:retrieve: duplicate backend summary rows found" in result.stderr
+
+
+def test_backend_shootout_guardrail_treats_legacy_rows_as_retrieve_contract(tmp_path: Path) -> None:
+    """Rows without contract should collide with explicit retrieve rows."""
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps(
+            {
+                "summaries": [
+                    {"backend": "embedded", "status": "ok", "query_count": 1},
+                    {"backend": "embedded", "contract": "retrieve", "status": "ok", "query_count": 1},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "embedded",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "embedded:retrieve: duplicate backend summary rows found" in result.stderr
+
+
+def test_backend_shootout_guardrail_rejects_unknown_contract_name(tmp_path: Path) -> None:
+    """Typoed contract lanes must not satisfy required backend evidence."""
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps(
+            {
+                "summaries": [
+                    {
+                        "backend": "embedded",
+                        "contract": "retrive",
+                        "status": "ok",
+                        "query_count": 1,
+                        "answer_at_5": 1.0,
+                        "recall_at_5": 1.0,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "embedded",
+            "--require-labeled-metrics",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "report: summaries[0].contract is 'retrive', expected one of: answer_ready, retrieve" in result.stderr
+
+
+def test_backend_shootout_guardrail_requires_retrieve_contract_evidence(tmp_path: Path) -> None:
+    """Answer-ready rows must not stand in for raw retrieval evidence."""
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps(
+            {
+                "summaries": [
+                    {
+                        "backend": "embedded",
+                        "contract": "answer_ready",
+                        "status": "ok",
+                        "query_count": 1,
+                        "answer_at_5": 1.0,
+                        "recall_at_5": 1.0,
+                        "citation_coverage": 1.0,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "embedded",
+            "--require-labeled-metrics",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "embedded: missing required retrieve contract summary" in result.stderr
+
+
+def test_backend_shootout_guardrail_requires_answer_ready_graph_contract(tmp_path: Path) -> None:
+    """Explicit graph-backend contract reports must include answer-ready evidence."""
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps(
+            {
+                "summaries": [
+                    {
+                        "backend": "embedded",
+                        "contract": "retrieve",
+                        "status": "ok",
+                        "query_count": 1,
+                        "answer_at_5": 1.0,
+                        "recall_at_5": 1.0,
+                        "citation_coverage": 1.0,
+                    },
+                    {
+                        "backend": "bm25",
+                        "contract": "retrieve",
+                        "status": "ok",
+                        "query_count": 1,
+                        "answer_at_5": 1.0,
+                        "recall_at_5": 1.0,
+                        "citation_coverage": 1.0,
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "embedded,bm25",
+            "--require-labeled-metrics",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "embedded: missing required answer_ready contract summary" in result.stderr
+    assert "bm25: missing required answer_ready contract summary" not in result.stderr
+
+
+def test_backend_shootout_guardrail_rejects_query_result_contract_mismatch(tmp_path: Path) -> None:
+    """Per-query diagnostics must use the same backend-contract keys as summaries."""
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps(
+            {
+                "summaries": [
+                    {
+                        "backend": "embedded",
+                        "contract": "retrieve",
+                        "status": "ok",
+                        "query_count": 1,
+                        "answer_at_5": 1.0,
+                        "recall_at_5": 1.0,
+                        "citation_coverage": 1.0,
+                    },
+                    {
+                        "backend": "embedded",
+                        "contract": "answer_ready",
+                        "status": "ok",
+                        "query_count": 1,
+                        "answer_at_5": 1.0,
+                        "recall_at_5": 1.0,
+                        "citation_coverage": 1.0,
+                    },
+                ],
+                "query_results": {
+                    "embedded:retrieve": [],
+                    "embedded:answer-redy": [],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "embedded",
+            "--require-labeled-metrics",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "report: query_results missing diagnostics for embedded:answer_ready" in result.stderr
+    assert "report: query_results contains diagnostics for embedded:answer-redy without matching summary" in result.stderr
+
+
+def test_backend_shootout_guardrail_requires_query_results_when_requested(tmp_path: Path) -> None:
+    """Release gates should be able to require auditable per-query diagnostics."""
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps({"summaries": [_guardrail_summary()]}),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+            "--require-query-results",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "report: query_results are required" in result.stderr
+
+
+def test_backend_shootout_guardrail_requires_git_tracked_inputs_when_requested(tmp_path: Path) -> None:
+    """Release evidence should not depend on untracked local benchmark inputs."""
+    module = _load_backend_shootout_module()
+    eventloom = tmp_path / "events"
+    event = EventLog(eventloom / "default.jsonl").append(
+        "decision.recorded",
+        actor="assistant",
+        payload={"decision": "Track benchmark source inputs."},
+        thread="default",
+    )
+    queries = tmp_path / "queries.json"
+    queries.write_text(json.dumps([{"query": "benchmark source inputs"}]), encoding="utf-8")
+    query_specs = module._load_queries(queries)
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps(
+            {
+                "report_schema_version": 1,
+                "harness": "zaxy-backend-shootout",
+                "generated_at_utc": "2026-05-21T00:00:00Z",
+                "eventloom_path": str(eventloom),
+                "queries_file": str(queries),
+                "session_id": "default",
+                "query_count": 1,
+                "event_count": 1,
+                "limit": 5,
+                "source_fingerprints": {
+                    "eventloom_sha256": module._path_fingerprint(eventloom),
+                    "queries_sha256": module._path_fingerprint(queries),
+                },
+                "workload_fingerprints": {
+                    "events_sha256": module._events_fingerprint([event]),
+                    "queries_sha256": module._queries_fingerprint(query_specs),
+                },
+                "summaries": [_guardrail_summary()],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-report-metadata",
+            "--verify-report-fingerprints",
+            "--require-git-tracked-inputs",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert f"report: eventloom_path {eventloom} is not tracked by git" in result.stderr
+    assert f"report: queries_file {queries} is not tracked by git" in result.stderr
+
+
+def test_backend_shootout_guardrail_accepts_git_tracked_sample_inputs() -> None:
+    """The tracked smoke report should be eligible for stricter reproducibility checks."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            "reports/backend-shootout/backend-shootout.json",
+            "--require-report-metadata",
+            "--verify-report-fingerprints",
+            "--require-git-tracked-inputs",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_backend_shootout_guardrail_rejects_stale_query_diagnostics(
+    tmp_path: Path,
+) -> None:
+    """Per-query diagnostics should align with the current query workload order."""
+    module = _load_backend_shootout_module()
+    eventloom = tmp_path / "events"
+    event = EventLog(eventloom / "default.jsonl").append(
+        "decision.recorded",
+        actor="assistant",
+        payload={"decision": "Pin diagnostic queries to workload inputs."},
+        thread="default",
+    )
+    queries = tmp_path / "queries.json"
+    queries.write_text(
+        json.dumps([{"query": "current query", "expected_terms": ["current"]}]),
+        encoding="utf-8",
+    )
+    query_specs = module._load_queries(queries)
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps(
+            {
+                "report_schema_version": 1,
+                "harness": "zaxy-backend-shootout",
+                "generated_at_utc": "2026-05-21T00:00:00Z",
+                "eventloom_path": str(eventloom),
+                "queries_file": str(queries),
+                "session_id": "default",
+                "query_count": 1,
+                "event_count": 1,
+                "limit": 5,
+                "source_fingerprints": {
+                    "eventloom_sha256": module._path_fingerprint(eventloom),
+                    "queries_sha256": module._path_fingerprint(queries),
+                },
+                "workload_fingerprints": {
+                    "events_sha256": module._events_fingerprint([event]),
+                    "queries_sha256": module._queries_fingerprint(query_specs),
+                },
+                "summaries": [
+                    _guardrail_summary(
+                        backend="bm25",
+                        contract="retrieve",
+                        mean_quality=1.0,
+                        answer_at_5=1.0,
+                        recall_at_5=1.0,
+                        citation_coverage=0.0,
+                        mean_returned_tokens=1.0,
+                        quality_per_1k_returned_tokens=1000.0,
+                        answer_at_5_per_1k_returned_tokens=1000.0,
+                        mean_injected_tokens=1.0,
+                        quality_per_1k_injected_tokens=1000.0,
+                        answer_at_5_per_1k_injected_tokens=1000.0,
+                    )
+                ],
+                "query_results": {
+                    "bm25:retrieve": [
+                        _guardrail_diagnostic(
+                            query="stale query",
+                            expected_terms=["current"],
+                            retrieval_terms=["current"],
+                            quality=1.0,
+                            answer_hit=True,
+                            recall_quality=1.0,
+                            recall_hit=True,
+                            citation_hit=False,
+                        )
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-report-metadata",
+            "--verify-report-fingerprints",
+            "--require-query-results",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "report: query_results['bm25:retrieve'][0].query does not match current query workload" in result.stderr
+
+
+def test_backend_shootout_guardrail_rejects_non_list_query_results(tmp_path: Path) -> None:
+    """Per-query diagnostics values should stay machine-readable lists."""
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps(
+            {
+                "summaries": [
+                    {
+                        "backend": "bm25",
+                        "contract": "retrieve",
+                        "status": "ok",
+                        "query_count": 1,
+                    }
+                ],
+                "query_results": {"bm25:retrieve": {"query": "not a list"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "report: query_results['bm25:retrieve'] must be a list" in result.stderr
+
+
+def test_backend_shootout_guardrail_rejects_zero_score_vector_contexts(tmp_path: Path) -> None:
+    """Vector diagnostics should not preserve stale zero-similarity padding."""
+    report = _write_guardrail_report(
+        tmp_path,
+        summary=_guardrail_summary(citation_coverage=0.0),
+        diagnostic=_guardrail_diagnostic(
+            citation_hit=False,
+            top_contexts=[
+                {
+                    "rank": 1,
+                    "source": "vector",
+                    "score": 0.0,
+                    "citation": None,
+                    "snippet": "unrelated padded vector result",
+                }
+            ],
+        ),
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+            "--require-query-results",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "report: query_results['bm25:retrieve'][0].top_contexts[0].score must be positive for vector source" in result.stderr
+
+
+def test_backend_shootout_guardrail_rejects_query_result_count_mismatch(tmp_path: Path) -> None:
+    """Per-query diagnostics should match each summary row's measured query count."""
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps(
+            {
+                "summaries": [
+                    {
+                        "backend": "embedded",
+                        "contract": "retrieve",
+                        "status": "ok",
+                        "query_count": 2,
+                        "answer_at_5": 1.0,
+                        "recall_at_5": 1.0,
+                        "citation_coverage": 1.0,
+                    },
+                    {
+                        "backend": "embedded",
+                        "contract": "answer_ready",
+                        "status": "ok",
+                        "query_count": 2,
+                        "answer_at_5": 1.0,
+                        "recall_at_5": 1.0,
+                        "citation_coverage": 1.0,
+                    },
+                ],
+                "query_results": {
+                    "embedded:retrieve": [{"query": "one"}],
+                    "embedded:answer_ready": [{"query": "one"}, {"query": "two"}],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "embedded",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "report: query_results['embedded:retrieve'] has 1 diagnostics, expected 2" in result.stderr
+
+
+def test_backend_shootout_guardrail_checks_query_result_count_before_duplicate_overwrite(
+    tmp_path: Path,
+) -> None:
+    """Duplicate summaries should not hide stale query diagnostic counts."""
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps(
+            {
+                "summaries": [
+                    {"backend": "bm25", "contract": "retrieve", "status": "ok", "query_count": 2},
+                    {"backend": "bm25", "contract": "retrieve", "status": "ok", "query_count": 1},
+                ],
+                "query_results": {"bm25:retrieve": [{"query": "one"}]},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "bm25:retrieve: duplicate backend summary rows found" in result.stderr
+    assert "report: query_results['bm25:retrieve'] has 1 diagnostics, expected 2" in result.stderr
+
+
+def test_backend_shootout_guardrail_rejects_malformed_query_diagnostic_item(tmp_path: Path) -> None:
+    """Per-query diagnostics should keep the generated machine-readable schema."""
+    report = _write_guardrail_report(
+        tmp_path,
+        diagnostic={
+            "query": "",
+            "quality": "1.0",
+            "answer_hit": "yes",
+            "latency_ms": -1.0,
+            "returned_tokens": -2,
+            "injected_tokens": 3,
+            "top_contexts": {},
+        },
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "report: query_results['bm25:retrieve'][0].query must be a non-empty string" in result.stderr
+    assert "report: query_results['bm25:retrieve'][0].quality must be a rate between 0 and 1" in result.stderr
+    assert "report: query_results['bm25:retrieve'][0].answer_hit must be a boolean" in result.stderr
+    assert "report: query_results['bm25:retrieve'][0].latency_ms must be a non-negative number" in result.stderr
+    assert "report: query_results['bm25:retrieve'][0].returned_tokens must be a non-negative integer" in result.stderr
+    assert "report: query_results['bm25:retrieve'][0].top_contexts must be a list" in result.stderr
+
+
+def test_backend_shootout_guardrail_rejects_malformed_top_context_diagnostic(tmp_path: Path) -> None:
+    """Top-context diagnostics should keep stable rank, source, score, and snippet fields."""
+    report = _write_guardrail_report(
+        tmp_path,
+        summary=_guardrail_summary(citation_coverage=0.0),
+        diagnostic=_guardrail_diagnostic(
+            citation_hit=False,
+            top_contexts=[
+                {
+                    "rank": 0,
+                    "source": "",
+                    "score": "1.0",
+                    "snippet": "",
+                }
+            ],
+        ),
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    prefix = "report: query_results['bm25:retrieve'][0].top_contexts[0]"
+    assert f"{prefix}.rank must be a positive integer" in result.stderr
+    assert f"{prefix}.source must be a non-empty string" in result.stderr
+    assert f"{prefix}.score must be a non-negative number" in result.stderr
+    assert f"{prefix}.snippet must be a non-empty string" in result.stderr
+
+
+def test_backend_shootout_guardrail_rejects_unknown_top_context_source(tmp_path: Path) -> None:
+    """Top-context source labels should stay tied to measured retrieval lanes."""
+    report = _write_guardrail_report(
+        tmp_path,
+        summary=_guardrail_summary(citation_coverage=0.0),
+        diagnostic=_guardrail_diagnostic(
+            citation_hit=False,
+            top_contexts=[
+                {
+                    "rank": 1,
+                    "source": "vectro",
+                    "score": 1.0,
+                    "citation": None,
+                    "snippet": "typoed source lane",
+                }
+            ],
+        ),
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "report: query_results['bm25:retrieve'][0].top_contexts[0].source is not recognized" in result.stderr
+
+
+def test_backend_shootout_guardrail_rejects_non_string_query_diagnostic_terms(tmp_path: Path) -> None:
+    """Term arrays in query diagnostics should contain only strings."""
+    report = _write_guardrail_report(
+        tmp_path,
+        diagnostic=_guardrail_diagnostic(
+            expected_terms=["alpha", 42],
+            identity_terms=[None],
+            source_terms=["source"],
+            retrieval_terms=["alpha", 42, None],
+            missing_expected_terms=[False],
+            missing_retrieval_terms=["ok"],
+        ),
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    prefix = "report: query_results['bm25:retrieve'][0]"
+    assert f"{prefix}.expected_terms[1] must be a string" in result.stderr
+    assert f"{prefix}.identity_terms[0] must be a string" in result.stderr
+    assert f"{prefix}.retrieval_terms[1] must be a string" in result.stderr
+    assert f"{prefix}.retrieval_terms[2] must be a string" in result.stderr
+    assert f"{prefix}.missing_expected_terms[0] must be a string" in result.stderr
+
+
+def test_backend_shootout_guardrail_rejects_blank_top_context_citation(tmp_path: Path) -> None:
+    """Top-context citation values should be null or useful non-empty strings."""
+    report = _write_guardrail_report(
+        tmp_path,
+        diagnostic=_guardrail_diagnostic(
+            top_contexts=[
+                {
+                    "rank": 1,
+                    "source": "bm25",
+                    "score": 1.0,
+                    "citation": "  ",
+                    "snippet": "memory",
+                }
+            ],
+        ),
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    prefix = "report: query_results['bm25:retrieve'][0].top_contexts[0]"
+    assert f"{prefix}.citation must be a non-empty string or null" in result.stderr
+
+
+def test_backend_shootout_guardrail_rejects_unsupported_top_context_citation_scheme(
+    tmp_path: Path,
+) -> None:
+    """Top-context citations should be auditable Eventloom or source-file references."""
+    report = _write_guardrail_report(
+        tmp_path,
+        diagnostic=_guardrail_diagnostic(
+            top_contexts=[
+                {
+                    "rank": 1,
+                    "source": "bm25",
+                    "score": 1.0,
+                    "citation": "opaque-reference",
+                    "snippet": "memory",
+                }
+            ],
+        ),
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    prefix = "report: query_results['bm25:retrieve'][0].top_contexts[0]"
+    assert f"{prefix}.citation must start with eventloom:// or file://" in result.stderr
+
+
+def test_backend_shootout_guardrail_rejects_malformed_eventloom_top_context_citation(
+    tmp_path: Path,
+) -> None:
+    """Eventloom top-context citations should include thread, positive seq, and hash."""
+    report = _write_guardrail_report(
+        tmp_path,
+        diagnostic=_guardrail_diagnostic(
+            top_contexts=[
+                {
+                    "rank": 1,
+                    "source": "bm25",
+                    "score": 1.0,
+                    "citation": "eventloom://agent-1/events/not-a-seq#abc",
+                    "snippet": "memory",
+                }
+            ],
+        ),
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    prefix = "report: query_results['bm25:retrieve'][0].top_contexts[0]"
+    assert f"{prefix}.citation must match eventloom://<thread>/events/<seq>#<hash>" in result.stderr
+
+
+def test_backend_shootout_guardrail_rejects_malformed_file_top_context_citation(
+    tmp_path: Path,
+) -> None:
+    """File top-context citations should include a concrete source path."""
+    report = _write_guardrail_report(
+        tmp_path,
+        diagnostic=_guardrail_diagnostic(
+            top_contexts=[
+                {
+                    "rank": 1,
+                    "source": "bm25",
+                    "score": 1.0,
+                    "citation": "file://",
+                    "snippet": "memory",
+                }
+            ],
+        ),
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    prefix = "report: query_results['bm25:retrieve'][0].top_contexts[0]"
+    assert f"{prefix}.citation must include a file:// path" in result.stderr
+
+
+def test_backend_shootout_guardrail_rejects_citation_hit_without_cited_context(
+    tmp_path: Path,
+) -> None:
+    """Citation-hit diagnostics should expose at least one cited top context."""
+    report = _write_guardrail_report(
+        tmp_path,
+        diagnostic=_guardrail_diagnostic(
+            citation_hit=True,
+            top_contexts=[
+                {
+                    "rank": 1,
+                    "source": "bm25",
+                    "score": 1.0,
+                    "citation": None,
+                    "snippet": "memory",
+                }
+            ],
+        ),
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert (
+        "report: query_results['bm25:retrieve'][0].citation_hit requires at least one cited top_context"
+        in result.stderr
+    )
+
+
+def test_backend_shootout_guardrail_rejects_cited_context_without_citation_hit(
+    tmp_path: Path,
+) -> None:
+    """Citation-hit diagnostics should agree with cited top-context evidence."""
+    report = _write_guardrail_report(
+        tmp_path,
+        summary=_guardrail_summary(citation_coverage=0.0),
+        diagnostic=_guardrail_diagnostic(
+            citation_hit=False,
+            top_contexts=[
+                {
+                    "rank": 1,
+                    "source": "bm25",
+                    "score": 1.0,
+                    "citation": "eventloom://agent-1/events/1#abc",
+                    "snippet": "memory",
+                }
+            ],
+        ),
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert (
+        "report: query_results['bm25:retrieve'][0].citation_hit must equal presence of a cited top_context"
+        in result.stderr
+    )
+
+
+def test_backend_shootout_guardrail_rejects_unstable_top_context_ranks(tmp_path: Path) -> None:
+    """Top-context diagnostics should use deterministic contiguous ranks."""
+    report = _write_guardrail_report(
+        tmp_path,
+        diagnostic=_guardrail_diagnostic(
+            top_contexts=[
+                {
+                    "rank": 1,
+                    "source": "bm25",
+                    "score": 1.0,
+                    "citation": None,
+                    "snippet": "first",
+                },
+                {
+                    "rank": 1,
+                    "source": "bm25",
+                    "score": 0.9,
+                    "citation": None,
+                    "snippet": "duplicate",
+                },
+            ],
+        ),
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert (
+        "report: query_results['bm25:retrieve'][0].top_contexts ranks must be contiguous from 1"
+        in result.stderr
+    )
+
+
+def test_backend_shootout_guardrail_rejects_inconsistent_query_hit_flags(tmp_path: Path) -> None:
+    """Hit booleans should agree with quality and recall_quality values."""
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps(
+            {
+                "summaries": [
+                    {"backend": "bm25", "contract": "retrieve", "status": "ok", "query_count": 2}
+                ],
+                "query_results": {
+                    "bm25:retrieve": [
+                        {
+                            "query": "What happened?",
+                            "expected_terms": [],
+                            "identity_terms": [],
+                            "source_terms": [],
+                            "retrieval_terms": [],
+                            "quality": 1.0,
+                            "answer_hit": False,
+                            "recall_quality": 0.5,
+                            "recall_hit": True,
+                            "missing_expected_terms": [],
+                            "missing_retrieval_terms": [],
+                            "latency_ms": 0.0,
+                            "returned_tokens": 1,
+                            "injected_tokens": 1,
+                            "citation_hit": True,
+                            "top_contexts": [],
+                        },
+                        {
+                            "query": "What happened next?",
+                            "expected_terms": [],
+                            "identity_terms": [],
+                            "source_terms": [],
+                            "retrieval_terms": [],
+                            "quality": 0.5,
+                            "answer_hit": True,
+                            "recall_quality": 1.0,
+                            "recall_hit": False,
+                            "missing_expected_terms": [],
+                            "missing_retrieval_terms": [],
+                            "latency_ms": 0.0,
+                            "returned_tokens": 1,
+                            "injected_tokens": 1,
+                            "citation_hit": True,
+                            "top_contexts": [],
+                        },
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    prefix = "report: query_results['bm25:retrieve']"
+    assert f"{prefix}[0].answer_hit must equal quality >= 1.0" in result.stderr
+    assert f"{prefix}[0].recall_hit must equal recall_quality >= 1.0" in result.stderr
+    assert f"{prefix}[1].answer_hit must equal quality >= 1.0" in result.stderr
+    assert f"{prefix}[1].recall_hit must equal recall_quality >= 1.0" in result.stderr
+
+
+def test_backend_shootout_guardrail_rejects_missing_terms_outside_term_sets(tmp_path: Path) -> None:
+    """Missing-term diagnostics should refer to terms tracked for the query."""
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps(
+            {
+                "summaries": [
+                    {"backend": "bm25", "contract": "retrieve", "status": "ok", "query_count": 1}
+                ],
+                "query_results": {
+                    "bm25:retrieve": [
+                        {
+                            "query": "What happened?",
+                            "expected_terms": ["alpha"],
+                            "identity_terms": [],
+                            "source_terms": ["source-a"],
+                            "retrieval_terms": ["alpha", "source-a"],
+                            "quality": 0.0,
+                            "answer_hit": False,
+                            "recall_quality": 0.0,
+                            "recall_hit": False,
+                            "missing_expected_terms": ["beta"],
+                            "missing_retrieval_terms": ["source-b"],
+                            "latency_ms": 0.0,
+                            "returned_tokens": 1,
+                            "injected_tokens": 1,
+                            "citation_hit": True,
+                            "top_contexts": [],
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    prefix = "report: query_results['bm25:retrieve'][0]"
+    assert f"{prefix}.missing_expected_terms[0] is not present in expected_terms" in result.stderr
+    assert f"{prefix}.missing_retrieval_terms[0] is not present in retrieval_terms" in result.stderr
+
+
+def test_backend_shootout_guardrail_rejects_summary_metrics_that_disagree_with_query_results(
+    tmp_path: Path,
+) -> None:
+    """Summary quality metrics should agree with included per-query diagnostics."""
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps(
+            {
+                "summaries": [
+                    {
+                        "backend": "bm25",
+                        "contract": "retrieve",
+                        "status": "ok",
+                        "query_count": 2,
+                        "mean_quality": 1.0,
+                        "answer_at_5": 1.0,
+                        "recall_at_5": 1.0,
+                        "citation_coverage": 1.0,
+                    }
+                ],
+                "query_results": {
+                    "bm25:retrieve": [
+                        {
+                            "query": "first",
+                            "expected_terms": ["alpha"],
+                            "identity_terms": [],
+                            "source_terms": [],
+                            "retrieval_terms": ["alpha"],
+                            "quality": 1.0,
+                            "answer_hit": True,
+                            "recall_quality": 1.0,
+                            "recall_hit": True,
+                            "missing_expected_terms": [],
+                            "missing_retrieval_terms": [],
+                            "latency_ms": 0.0,
+                            "returned_tokens": 1,
+                            "injected_tokens": 1,
+                            "citation_hit": True,
+                            "top_contexts": [],
+                        },
+                        {
+                            "query": "second",
+                            "expected_terms": ["beta"],
+                            "identity_terms": [],
+                            "source_terms": [],
+                            "retrieval_terms": ["beta"],
+                            "quality": 0.0,
+                            "answer_hit": False,
+                            "recall_quality": 0.0,
+                            "recall_hit": False,
+                            "missing_expected_terms": ["beta"],
+                            "missing_retrieval_terms": ["beta"],
+                            "latency_ms": 0.0,
+                            "returned_tokens": 1,
+                            "injected_tokens": 1,
+                            "citation_hit": False,
+                            "top_contexts": [],
+                        },
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "bm25:retrieve: mean_quality=1.0 does not match query_results aggregate 0.5" in result.stderr
+    assert "bm25:retrieve: answer_at_5=1.0 does not match query_results aggregate 0.5" in result.stderr
+    assert "bm25:retrieve: recall_at_5=1.0 does not match query_results aggregate 0.5" in result.stderr
+    assert "bm25:retrieve: citation_coverage=1.0 does not match query_results aggregate 0.5" in result.stderr
+
+
+def test_backend_shootout_guardrail_allows_unlabeled_query_result_aggregates(tmp_path: Path) -> None:
+    """Unlabeled diagnostics should still validate mean quality and citation coverage."""
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps(
+            {
+                "summaries": [
+                    {
+                        "backend": "bm25",
+                        "contract": "retrieve",
+                        "status": "ok",
+                        "query_count": 1,
+                        "mean_quality": 0.0,
+                        "answer_at_5": None,
+                        "recall_at_5": None,
+                        "citation_coverage": 1.0,
+                        "mean_returned_tokens": 1.0,
+                        "quality_per_1k_returned_tokens": 0.0,
+                        "mean_injected_tokens": 1.0,
+                        "quality_per_1k_injected_tokens": 0.0,
+                        "first_checkout_ms": 0.0,
+                        "checkout_p95_ms": 0.0,
+                        "checkout_p99_ms": 0.0,
+                    }
+                ],
+                "query_results": {
+                    "bm25:retrieve": [
+                        {
+                            "query": "unlabeled",
+                            "expected_terms": [],
+                            "identity_terms": [],
+                            "source_terms": [],
+                            "retrieval_terms": [],
+                            "quality": 0.0,
+                            "answer_hit": False,
+                            "recall_quality": 0.0,
+                            "recall_hit": False,
+                            "missing_expected_terms": [],
+                            "missing_retrieval_terms": [],
+                            "latency_ms": 0.0,
+                            "returned_tokens": 1,
+                            "injected_tokens": 1,
+                            "citation_hit": True,
+                            "top_contexts": [
+                                {
+                                    "rank": 1,
+                                    "source": "keyword",
+                                    "score": 1.0,
+                                    "citation": "eventloom://default/events/1#abcdef",
+                                    "snippet": "cited unlabeled context",
+                                }
+                            ],
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Backend shootout guardrail passed" in result.stdout
+
+
+def test_backend_shootout_guardrail_rejects_token_efficiency_summary_mismatch(
+    tmp_path: Path,
+) -> None:
+    """Token-efficiency summaries should agree with included per-query diagnostics."""
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps(
+            {
+                "summaries": [
+                    {
+                        "backend": "bm25",
+                        "contract": "retrieve",
+                        "status": "ok",
+                        "query_count": 2,
+                        "mean_quality": 0.5,
+                        "answer_at_5": 0.5,
+                        "recall_at_5": 0.5,
+                        "citation_coverage": 0.5,
+                        "mean_returned_tokens": 100.0,
+                        "quality_per_1k_returned_tokens": 10.0,
+                        "answer_at_5_per_1k_returned_tokens": 10.0,
+                        "mean_injected_tokens": 200.0,
+                        "quality_per_1k_injected_tokens": 10.0,
+                        "answer_at_5_per_1k_injected_tokens": 10.0,
+                    }
+                ],
+                "query_results": {
+                    "bm25:retrieve": [
+                        {
+                            "query": "first",
+                            "expected_terms": ["alpha"],
+                            "identity_terms": [],
+                            "source_terms": [],
+                            "retrieval_terms": ["alpha"],
+                            "quality": 1.0,
+                            "answer_hit": True,
+                            "recall_quality": 1.0,
+                            "recall_hit": True,
+                            "missing_expected_terms": [],
+                            "missing_retrieval_terms": [],
+                            "latency_ms": 0.0,
+                            "returned_tokens": 100,
+                            "injected_tokens": 200,
+                            "citation_hit": True,
+                            "top_contexts": [],
+                        },
+                        {
+                            "query": "second",
+                            "expected_terms": ["beta"],
+                            "identity_terms": [],
+                            "source_terms": [],
+                            "retrieval_terms": ["beta"],
+                            "quality": 0.0,
+                            "answer_hit": False,
+                            "recall_quality": 0.0,
+                            "recall_hit": False,
+                            "missing_expected_terms": ["beta"],
+                            "missing_retrieval_terms": ["beta"],
+                            "latency_ms": 0.0,
+                            "returned_tokens": 100,
+                            "injected_tokens": 200,
+                            "citation_hit": False,
+                            "top_contexts": [],
+                        },
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "bm25:retrieve: quality_per_1k_returned_tokens=10.0 does not match query_results aggregate 5.0" in result.stderr
+    assert "bm25:retrieve: answer_at_5_per_1k_returned_tokens=10.0 does not match query_results aggregate 5.0" in result.stderr
+    assert "bm25:retrieve: quality_per_1k_injected_tokens=10.0 does not match query_results aggregate 2.5" in result.stderr
+    assert "bm25:retrieve: answer_at_5_per_1k_injected_tokens=10.0 does not match query_results aggregate 2.5" in result.stderr
+
+
+def test_backend_shootout_guardrail_allows_zero_token_efficiency_aggregates(tmp_path: Path) -> None:
+    """Zero-token diagnostics should not force impossible per-1k summary metrics."""
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps(
+            {
+                "summaries": [
+                    {
+                        "backend": "bm25",
+                        "contract": "retrieve",
+                        "status": "ok",
+                        "query_count": 1,
+                        "mean_quality": 1.0,
+                        "answer_at_5": 1.0,
+                        "recall_at_5": 1.0,
+                        "citation_coverage": 1.0,
+                        "mean_returned_tokens": 0.0,
+                        "quality_per_1k_returned_tokens": None,
+                        "answer_at_5_per_1k_returned_tokens": None,
+                        "mean_injected_tokens": 0.0,
+                        "quality_per_1k_injected_tokens": None,
+                        "answer_at_5_per_1k_injected_tokens": None,
+                        "first_checkout_ms": 0.0,
+                        "checkout_p95_ms": 0.0,
+                        "checkout_p99_ms": 0.0,
+                    }
+                ],
+                "query_results": {
+                    "bm25:retrieve": [
+                        {
+                            "query": "first",
+                            "expected_terms": ["alpha"],
+                            "identity_terms": [],
+                            "source_terms": [],
+                            "retrieval_terms": ["alpha"],
+                            "quality": 1.0,
+                            "answer_hit": True,
+                            "recall_quality": 1.0,
+                            "recall_hit": True,
+                            "missing_expected_terms": [],
+                            "missing_retrieval_terms": [],
+                            "latency_ms": 0.0,
+                            "returned_tokens": 0,
+                            "injected_tokens": 0,
+                            "citation_hit": True,
+                            "top_contexts": [
+                                {
+                                    "rank": 1,
+                                    "source": "keyword",
+                                    "score": 1.0,
+                                    "citation": "eventloom://default/events/1#abcdef",
+                                    "snippet": "cited zero-token context",
+                                }
+                            ],
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Backend shootout guardrail passed" in result.stdout
+
+
+def test_backend_shootout_guardrail_rejects_latency_summary_mismatch(
+    tmp_path: Path,
+) -> None:
+    """Latency summaries should agree with included per-query diagnostics."""
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps(
+            {
+                "summaries": [
+                    {
+                        "backend": "bm25",
+                        "contract": "retrieve",
+                        "status": "ok",
+                        "query_count": 3,
+                        "mean_quality": 1.0,
+                        "answer_at_5": 1.0,
+                        "recall_at_5": 1.0,
+                        "citation_coverage": 1.0,
+                        "first_checkout_ms": 99.0,
+                        "checkout_p95_ms": 99.0,
+                        "checkout_p99_ms": 99.0,
+                    }
+                ],
+                "query_results": {
+                    "bm25:retrieve": [
+                        {
+                            "query": "first",
+                            "expected_terms": ["alpha"],
+                            "identity_terms": [],
+                            "source_terms": [],
+                            "retrieval_terms": ["alpha"],
+                            "quality": 1.0,
+                            "answer_hit": True,
+                            "recall_quality": 1.0,
+                            "recall_hit": True,
+                            "missing_expected_terms": [],
+                            "missing_retrieval_terms": [],
+                            "latency_ms": 1.234,
+                            "returned_tokens": 1,
+                            "injected_tokens": 1,
+                            "citation_hit": True,
+                            "top_contexts": [],
+                        },
+                        {
+                            "query": "second",
+                            "expected_terms": ["beta"],
+                            "identity_terms": [],
+                            "source_terms": [],
+                            "retrieval_terms": ["beta"],
+                            "quality": 1.0,
+                            "answer_hit": True,
+                            "recall_quality": 1.0,
+                            "recall_hit": True,
+                            "missing_expected_terms": [],
+                            "missing_retrieval_terms": [],
+                            "latency_ms": 2.345,
+                            "returned_tokens": 1,
+                            "injected_tokens": 1,
+                            "citation_hit": True,
+                            "top_contexts": [],
+                        },
+                        {
+                            "query": "third",
+                            "expected_terms": ["gamma"],
+                            "identity_terms": [],
+                            "source_terms": [],
+                            "retrieval_terms": ["gamma"],
+                            "quality": 1.0,
+                            "answer_hit": True,
+                            "recall_quality": 1.0,
+                            "recall_hit": True,
+                            "missing_expected_terms": [],
+                            "missing_retrieval_terms": [],
+                            "latency_ms": 3.456,
+                            "returned_tokens": 1,
+                            "injected_tokens": 1,
+                            "citation_hit": True,
+                            "top_contexts": [],
+                        },
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "bm25:retrieve: first_checkout_ms=99.0 does not match query_results aggregate 1.234" in result.stderr
+    assert "bm25:retrieve: checkout_p95_ms=99.0 does not match query_results aggregate 3.456" in result.stderr
+    assert "bm25:retrieve: checkout_p99_ms=99.0 does not match query_results aggregate 3.456" in result.stderr
+
+
+def test_backend_shootout_guardrail_allows_empty_query_results_with_null_latency_summaries(
+    tmp_path: Path,
+) -> None:
+    """Empty diagnostic lanes should allow nullable latency summaries."""
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps(
+            {
+                "summaries": [
+                    {
+                        "backend": "bm25",
+                        "contract": "retrieve",
+                        "status": "ok",
+                        "query_count": 0,
+                        "first_checkout_ms": None,
+                        "checkout_p95_ms": None,
+                        "checkout_p99_ms": None,
+                    }
+                ],
+                "query_results": {"bm25:retrieve": []},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Backend shootout guardrail passed" in result.stdout
+
+
+def test_backend_shootout_guardrail_rejects_null_summary_metric_with_query_results(
+    tmp_path: Path,
+) -> None:
+    """Query-derived aggregates should not silently ignore missing summary metrics."""
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps(
+            {
+                "summaries": [
+                    {
+                        "backend": "bm25",
+                        "contract": "retrieve",
+                        "status": "ok",
+                        "query_count": 1,
+                        "mean_quality": None,
+                        "answer_at_5": None,
+                        "first_checkout_ms": None,
+                    }
+                ],
+                "query_results": {
+                    "bm25:retrieve": [
+                        {
+                            "query": "first",
+                            "expected_terms": ["alpha"],
+                            "identity_terms": [],
+                            "source_terms": [],
+                            "retrieval_terms": ["alpha"],
+                            "quality": 1.0,
+                            "answer_hit": True,
+                            "recall_quality": 1.0,
+                            "recall_hit": True,
+                            "missing_expected_terms": [],
+                            "missing_retrieval_terms": [],
+                            "latency_ms": 1.0,
+                            "returned_tokens": 1,
+                            "injected_tokens": 1,
+                            "citation_hit": True,
+                            "top_contexts": [],
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "bm25:retrieve: mean_quality is missing; query_results aggregate is 1.0" in result.stderr
+    assert "bm25:retrieve: answer_at_5 is missing; query_results aggregate is 1.0" in result.stderr
+    assert "bm25:retrieve: first_checkout_ms is missing; query_results aggregate is 1.0" in result.stderr
+
+
+def test_backend_shootout_guardrail_rejects_non_numeric_summary_metric_with_query_results(
+    tmp_path: Path,
+) -> None:
+    """Query-derived summary metrics should not silently ignore non-numeric summary values."""
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps(
+            {
+                "summaries": [
+                    {
+                        "backend": "bm25",
+                        "contract": "retrieve",
+                        "status": "ok",
+                        "query_count": 1,
+                        "mean_quality": "1.0",
+                        "answer_at_5": "1.0",
+                        "recall_at_5": "1.0",
+                        "citation_coverage": "1.0",
+                        "first_checkout_ms": "1.0",
+                    }
+                ],
+                "query_results": {
+                    "bm25:retrieve": [
+                        {
+                            "query": "first",
+                            "expected_terms": ["alpha"],
+                            "identity_terms": [],
+                            "source_terms": [],
+                            "retrieval_terms": ["alpha"],
+                            "quality": 1.0,
+                            "answer_hit": True,
+                            "recall_quality": 1.0,
+                            "recall_hit": True,
+                            "missing_expected_terms": [],
+                            "missing_retrieval_terms": [],
+                            "latency_ms": 1.0,
+                            "returned_tokens": 1,
+                            "injected_tokens": 1,
+                            "citation_hit": True,
+                            "top_contexts": [],
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "bm25:retrieve: mean_quality must be a number to compare with query_results aggregate 1.0" in result.stderr
+    assert "bm25:retrieve: answer_at_5 must be a number to compare with query_results aggregate 1.0" in result.stderr
+    assert "bm25:retrieve: first_checkout_ms must be a number to compare with query_results aggregate 1.0" in result.stderr
+
+
+def test_backend_shootout_guardrail_rejects_boolean_summary_metric_with_query_results(
+    tmp_path: Path,
+) -> None:
+    """JSON booleans should not satisfy query-derived numeric summary metrics."""
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps(
+            {
+                "summaries": [
+                    {
+                        "backend": "bm25",
+                        "contract": "retrieve",
+                        "status": "ok",
+                        "query_count": 1,
+                        "mean_quality": True,
+                        "answer_at_5": True,
+                        "recall_at_5": True,
+                        "citation_coverage": True,
+                    }
+                ],
+                "query_results": {
+                    "bm25:retrieve": [
+                        {
+                            "query": "first",
+                            "expected_terms": ["alpha"],
+                            "identity_terms": [],
+                            "source_terms": [],
+                            "retrieval_terms": ["alpha"],
+                            "quality": 1.0,
+                            "answer_hit": True,
+                            "recall_quality": 1.0,
+                            "recall_hit": True,
+                            "missing_expected_terms": [],
+                            "missing_retrieval_terms": [],
+                            "latency_ms": 1.0,
+                            "returned_tokens": 1,
+                            "injected_tokens": 1,
+                            "citation_hit": True,
+                            "top_contexts": [],
+                        }
+                    ]
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "bm25",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "bm25:retrieve: mean_quality must be a number to compare with query_results aggregate 1.0" in result.stderr
+    assert "bm25:retrieve: citation_coverage must be a number to compare with query_results aggregate 1.0" in result.stderr
+
+
+def test_backend_shootout_guardrail_names_duplicate_backend_contract(tmp_path: Path) -> None:
+    """Duplicate diagnostics should identify the colliding benchmark contract."""
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps(
+            {
+                "summaries": [
+                    {"backend": "embedded", "contract": "answer_ready", "status": "ok", "query_count": 1},
+                    {"backend": "embedded", "contract": "answer_ready", "status": "ok", "query_count": 1},
+                    {"backend": "embedded", "contract": "retrieve", "status": "ok", "query_count": 1},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "embedded",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "embedded:answer_ready: duplicate backend summary rows found" in result.stderr
+    assert "embedded:retrieve: duplicate backend summary rows found" not in result.stderr
 
 
 def test_backend_shootout_guardrail_rejects_slow_embedded_projection(tmp_path: Path) -> None:
@@ -2740,6 +5244,278 @@ def test_backend_shootout_guardrail_rejects_low_token_efficiency_and_slow_lanes(
     assert "embedded: traversal_p99_ms=9.0 is above 5.0" in result.stderr
 
 
+def test_backend_shootout_guardrail_splits_answer_ready_quality_from_retrieve_latency(tmp_path: Path) -> None:
+    """Answer-ready rows should carry answer quality without weakening retrieval latency gates."""
+    report = tmp_path / "backend-shootout.json"
+    report.write_text(
+        json.dumps(
+            {
+                "summaries": [
+                    {
+                        "backend": "embedded",
+                        "contract": "retrieve",
+                        "status": "ok",
+                        "query_count": 1,
+                        "answer_at_5": 0.0,
+                        "recall_at_5": 1.0,
+                        "citation_coverage": 1.0,
+                        "dashboard_graph_source": "embedded",
+                        "checkout_p95_ms": 20.0,
+                        "answer_at_5_per_1k_injected_tokens": 0.0,
+                    },
+                    {
+                        "backend": "embedded",
+                        "contract": "answer_ready",
+                        "status": "ok",
+                        "query_count": 1,
+                        "answer_at_5": 1.0,
+                        "recall_at_5": 1.0,
+                        "citation_coverage": 1.0,
+                        "dashboard_graph_source": "embedded",
+                        "checkout_p95_ms": 2_000.0,
+                        "answer_at_5_per_1k_injected_tokens": 0.2,
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-backends",
+            "embedded",
+            "--require-labeled-metrics",
+            "--require-dashboard-source",
+            "embedded=embedded",
+            "--min-answer-at-5",
+            "1.0",
+            "--min-recall-at-5",
+            "1.0",
+            "--min-citation-coverage",
+            "1.0",
+            "--min-answer-at-5-per-1k-injected-tokens",
+            "embedded=0.1",
+            "--max-checkout-p95-ms",
+            "embedded=100",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Backend shootout guardrail passed" in result.stdout
+
+
+def test_backend_shootout_guardrail_validates_contract_scoped_markdown_rows(tmp_path: Path) -> None:
+    """Markdown sidecars should match backend and contract when multiple rows exist."""
+    report = tmp_path / "backend-shootout.json"
+    eventloom_sha = "a" * 64
+    queries_sha = "b" * 64
+    workload_events_sha = "c" * 64
+    workload_queries_sha = "d" * 64
+    report.write_text(
+        json.dumps(
+            {
+                "report_schema_version": 1,
+                "harness": "zaxy-backend-shootout",
+                "generated_at_utc": "2026-05-21T00:00:00Z",
+                "eventloom_path": "events.jsonl",
+                "queries_file": "queries.json",
+                "session_id": "default",
+                "query_count": 1,
+                "event_count": 1,
+                "limit": 5,
+                "source_fingerprints": {
+                    "eventloom_sha256": eventloom_sha,
+                    "queries_sha256": queries_sha,
+                },
+                "workload_fingerprints": {
+                    "events_sha256": workload_events_sha,
+                    "queries_sha256": workload_queries_sha,
+                },
+                "summaries": [
+                    {
+                        "backend": "embedded",
+                        "contract": "retrieve",
+                        "status": "ok",
+                        "query_count": 1,
+                        "answer_at_5": 0.0,
+                        "recall_at_5": 1.0,
+                        "citation_coverage": 1.0,
+                        "quality_per_1k_injected_tokens": 0.0,
+                        "answer_at_5_per_1k_injected_tokens": 0.0,
+                    },
+                    {
+                        "backend": "embedded",
+                        "contract": "answer_ready",
+                        "status": "ok",
+                        "query_count": 1,
+                        "answer_at_5": 1.0,
+                        "recall_at_5": 1.0,
+                        "citation_coverage": 1.0,
+                        "quality_per_1k_injected_tokens": 0.2,
+                        "answer_at_5_per_1k_injected_tokens": 0.2,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    report.with_suffix(".md").write_text(
+        "\n".join(
+            [
+                "# Backend Shootout",
+                "",
+                "- Report schema version: `1`",
+                "- Harness: `zaxy-backend-shootout`",
+                "- Generated at UTC: `2026-05-21T00:00:00Z`",
+                "- Eventloom path: `events.jsonl`",
+                "- Queries file: `queries.json`",
+                "- Session ID: `default`",
+                "- Queries: `1`",
+                "- Events: `1`",
+                "- Limit: `5`",
+                f"- Source Eventloom SHA-256: `{eventloom_sha}`",
+                f"- Source queries SHA-256: `{queries_sha}`",
+                f"- Workload events SHA-256: `{workload_events_sha}`",
+                f"- Workload queries SHA-256: `{workload_queries_sha}`",
+                "",
+                "| Backend | Contract | Status | Answer@5 | Recall@5 | Citation coverage | Quality / 1k injected | Answer@5 / 1k injected |",
+                "|---------|----------|--------|----------|----------|-------------------|------------------------|-------------------------|",
+                "| embedded | retrieve | ok | 0.0 | 1.0 | 1.0 | 0.0 | 0.0 |",
+                "| embedded | answer_ready | ok | 1.0 | 1.0 | 1.0 | 0.2 | 0.2 |",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-report-metadata",
+            "--require-markdown-report",
+            "--require-backends",
+            "embedded",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Backend shootout guardrail passed" in result.stdout
+
+
+def test_backend_shootout_guardrail_names_missing_contract_scoped_markdown_row(tmp_path: Path) -> None:
+    """Markdown sidecar errors should identify the missing backend contract."""
+    report = tmp_path / "backend-shootout.json"
+    eventloom_sha = "a" * 64
+    queries_sha = "b" * 64
+    workload_events_sha = "c" * 64
+    workload_queries_sha = "d" * 64
+    report.write_text(
+        json.dumps(
+            {
+                "report_schema_version": 1,
+                "harness": "zaxy-backend-shootout",
+                "generated_at_utc": "2026-05-21T00:00:00Z",
+                "eventloom_path": "events.jsonl",
+                "queries_file": "queries.json",
+                "session_id": "default",
+                "query_count": 1,
+                "event_count": 1,
+                "limit": 5,
+                "source_fingerprints": {
+                    "eventloom_sha256": eventloom_sha,
+                    "queries_sha256": queries_sha,
+                },
+                "workload_fingerprints": {
+                    "events_sha256": workload_events_sha,
+                    "queries_sha256": workload_queries_sha,
+                },
+                "summaries": [
+                    {
+                        "backend": "embedded",
+                        "contract": "retrieve",
+                        "status": "ok",
+                        "query_count": 1,
+                        "answer_at_5": 0.0,
+                        "recall_at_5": 1.0,
+                        "citation_coverage": 1.0,
+                        "quality_per_1k_injected_tokens": 0.0,
+                        "answer_at_5_per_1k_injected_tokens": 0.0,
+                    },
+                    {
+                        "backend": "embedded",
+                        "contract": "answer_ready",
+                        "status": "ok",
+                        "query_count": 1,
+                        "answer_at_5": 1.0,
+                        "recall_at_5": 1.0,
+                        "citation_coverage": 1.0,
+                        "quality_per_1k_injected_tokens": 0.2,
+                        "answer_at_5_per_1k_injected_tokens": 0.2,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    report.with_suffix(".md").write_text(
+        "\n".join(
+            [
+                "# Backend Shootout",
+                "",
+                "- Report schema version: `1`",
+                "- Harness: `zaxy-backend-shootout`",
+                "- Generated at UTC: `2026-05-21T00:00:00Z`",
+                "- Eventloom path: `events.jsonl`",
+                "- Queries file: `queries.json`",
+                "- Session ID: `default`",
+                "- Queries: `1`",
+                "- Events: `1`",
+                "- Limit: `5`",
+                f"- Source Eventloom SHA-256: `{eventloom_sha}`",
+                f"- Source queries SHA-256: `{queries_sha}`",
+                f"- Workload events SHA-256: `{workload_events_sha}`",
+                f"- Workload queries SHA-256: `{workload_queries_sha}`",
+                "",
+                "| Backend | Contract | Status | Answer@5 | Recall@5 | Citation coverage | Quality / 1k injected | Answer@5 / 1k injected |",
+                "|---------|----------|--------|----------|----------|-------------------|------------------------|-------------------------|",
+                "| embedded | retrieve | ok | 0.0 | 1.0 | 1.0 | 0.0 | 0.0 |",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/check-backend-shootout.py",
+            str(report),
+            "--require-report-metadata",
+            "--require-markdown-report",
+            "--require-backends",
+            "embedded",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "report: Markdown sidecar missing backend row for embedded:answer_ready" in result.stderr
+
+
 def test_backend_shootout_guardrail_accepts_current_sample_report() -> None:
     """The checked sample report should pass the active-backend guardrail."""
     report = json.loads(Path("reports/backend-shootout/backend-shootout.json").read_text(encoding="utf-8"))
@@ -2760,9 +5536,12 @@ def test_backend_shootout_guardrail_accepts_current_sample_report() -> None:
             "reports/backend-shootout/backend-shootout.json",
             "--require-report-metadata",
             "--require-markdown-report",
+            "--require-query-results",
             "--verify-report-fingerprints",
             "--require-backends",
             "embedded,bm25",
+            "--forbid-backends",
+            "neo4j,pggraph,latticedb",
             "--require-labeled-metrics",
             "--require-dashboard-source",
             "embedded=embedded",
@@ -2817,9 +5596,12 @@ def test_backend_shootout_guardrail_accepts_current_longmemeval_40_performance_r
             "reports/backend-shootout/longmemeval-40-backend-shootout.json",
             "--require-report-metadata",
             "--require-markdown-report",
+            "--require-query-results",
             "--verify-report-fingerprints",
             "--require-backends",
             "embedded,bm25",
+            "--forbid-backends",
+            "neo4j,pggraph,latticedb",
             "--require-labeled-metrics",
             "--require-dashboard-source",
             "embedded=embedded",
@@ -2828,13 +5610,13 @@ def test_backend_shootout_guardrail_accepts_current_longmemeval_40_performance_r
             "--min-projection-events-per-second",
             "embedded=40",
             "--max-cold-bootstrap-ms",
-            "embedded=200",
+            "embedded=250",
             "--max-first-useful-init-ms",
             "embedded=15000",
             "--max-first-checkout-ms",
             "embedded=50",
             "--max-append-to-projection-p95-ms",
-            "embedded=30",
+            "embedded=35",
             "--max-resident-memory-delta-bytes",
             "embedded=768000000",
             "--max-on-disk-footprint-bytes",
@@ -2846,7 +5628,7 @@ def test_backend_shootout_guardrail_accepts_current_longmemeval_40_performance_r
             "--max-checkout-p95-ms",
             "embedded=100",
             "--max-checkout-p99-ms",
-            "embedded=75",
+            "embedded=85",
             "--min-quality-per-1k-returned-tokens",
             "embedded=0.10",
             "--min-answer-at-5-per-1k-returned-tokens",
@@ -2884,21 +5666,30 @@ def test_backend_shootout_guardrail_accepts_current_longmemeval_40_performance_r
 def test_backend_shootout_guardrail_accepts_current_longmemeval_100_scale_report() -> None:
     """The 100-query scale report should include injected-token efficiency evidence."""
     report = json.loads(Path("reports/backend-shootout/longmemeval-100-backend-shootout.json").read_text(encoding="utf-8"))
-    summaries = {summary["backend"]: summary for summary in report["summaries"]}
+    summaries = {(summary["backend"], summary["contract"]): summary for summary in report["summaries"]}
 
-    assert summaries["embedded"]["mean_injected_tokens"] == 1892.97
-    assert summaries["embedded"]["quality_per_1k_injected_tokens"] == 0.1849
-    assert summaries["embedded"]["answer_at_5_per_1k_injected_tokens"] == 0.1849
-    assert summaries["embedded"]["cold_bootstrap_ms"] == 105.955
-    assert summaries["embedded"]["first_checkout_ms"] == 66.316
-    assert summaries["embedded"]["append_to_projection_p95_ms"] == 25.241
-    assert summaries["embedded"]["resident_memory_delta_bytes"] == 1447043072
-    assert summaries["embedded"]["on_disk_footprint_bytes"] == 57270272
-    assert summaries["embedded"]["resident_memory_delta_bytes"] is not None
-    assert summaries["embedded"]["on_disk_footprint_bytes"] is not None
-    assert summaries["bm25"]["mean_injected_tokens"] == 4179.5
-    assert summaries["bm25"]["quality_per_1k_injected_tokens"] == 0.0813
-    assert summaries["bm25"]["answer_at_5_per_1k_injected_tokens"] == 0.0813
+    embedded_retrieve = summaries[("embedded", "retrieve")]
+    embedded_answer = summaries[("embedded", "answer_ready")]
+    bm25 = summaries[("bm25", "retrieve")]
+
+    assert embedded_retrieve["recall_at_5"] == 0.99
+    assert embedded_retrieve["cold_bootstrap_ms"] == 421.649
+    assert embedded_retrieve["checkout_p95_ms"] == 19.915
+    assert embedded_retrieve["checkout_p99_ms"] == 21.937
+    assert embedded_retrieve["mean_injected_tokens"] == 1492.24
+    assert embedded_retrieve["quality_per_1k_injected_tokens"] == 0.3485
+    assert embedded_answer["answer_at_5"] == 0.99
+    assert embedded_answer["recall_at_5"] == 1.0
+    assert embedded_answer["first_checkout_ms"] == 37.615
+    assert embedded_answer["checkout_p95_ms"] == 90.478
+    assert embedded_answer["mean_injected_tokens"] == 3426.8
+    assert embedded_answer["quality_per_1k_injected_tokens"] == 0.2889
+    assert embedded_answer["answer_at_5_per_1k_injected_tokens"] == 0.2889
+    assert embedded_answer["resident_memory_delta_bytes"] == 1604280320
+    assert embedded_answer["on_disk_footprint_bytes"] == 57298944
+    assert bm25["mean_injected_tokens"] == 4179.5
+    assert bm25["quality_per_1k_injected_tokens"] == 0.1244
+    assert bm25["answer_at_5_per_1k_injected_tokens"] == 0.1244
 
     result = subprocess.run(
         [
@@ -2907,36 +5698,41 @@ def test_backend_shootout_guardrail_accepts_current_longmemeval_100_scale_report
             "reports/backend-shootout/longmemeval-100-backend-shootout.json",
             "--require-report-metadata",
             "--require-markdown-report",
+            "--require-query-results",
             "--verify-report-fingerprints",
             "--require-backends",
             "embedded,bm25",
+            "--forbid-backends",
+            "neo4j,pggraph,latticedb",
             "--require-labeled-metrics",
             "--require-dashboard-source",
             "embedded=embedded",
+            "--min-recall-at-5",
+            "0.90",
             "--min-citation-coverage",
             "1.0",
             "--min-projection-events-per-second",
-            "embedded=40",
+            "embedded=35",
             "--max-cold-bootstrap-ms",
-            "embedded=200",
+            "embedded=600",
             "--max-first-useful-init-ms",
-            "embedded=40000",
+            "embedded=45000",
             "--max-first-checkout-ms",
-            "embedded=100",
+            "embedded=150",
             "--max-append-to-projection-p95-ms",
             "embedded=40",
             "--max-resident-memory-delta-bytes",
-            "embedded=1536000000",
+            "embedded=1700000000",
             "--max-on-disk-footprint-bytes",
             "embedded=512000000",
             "--max-dashboard-graph-load-ms",
             "embedded=500",
             "--max-rebuild-recovery-ms",
-            "embedded=40000",
+            "embedded=45000",
             "--max-checkout-p95-ms",
-            "embedded=125",
+            "embedded=200",
             "--max-checkout-p99-ms",
-            "embedded=175",
+            "embedded=250",
             "--min-quality-per-1k-returned-tokens",
             "embedded=0.15",
             "--min-answer-at-5-per-1k-returned-tokens",
@@ -2950,9 +5746,9 @@ def test_backend_shootout_guardrail_accepts_current_longmemeval_100_scale_report
             "--max-exact-p99-ms",
             "embedded=12",
             "--max-keyword-p95-ms",
-            "embedded=60",
+            "embedded=20",
             "--max-keyword-p99-ms",
-            "embedded=80",
+            "embedded=15",
             "--max-vector-p95-ms",
             "embedded=15",
             "--max-vector-p99-ms",
@@ -3027,6 +5823,8 @@ def test_backend_shootout_workload_builder_exports_longmemeval_queries(tmp_path:
         {
             "query": "What degree did I graduate with?",
             "expected_terms": ["Business Administration"],
+            "identity_terms": ["answer-1"],
+            "source_terms": [],
         }
     ]
     assert "Wrote 1 backend-shootout queries" in result.stdout
@@ -3247,6 +6045,123 @@ def test_backend_shootout_projects_events_inside_supported_bulk_transaction() ->
     ]
 
 
+def test_backend_shootout_rolls_back_when_bulk_commit_fails() -> None:
+    """Failed bulk commits should leave backend transactions closed cleanly."""
+    module = _load_backend_shootout_module()
+
+    class FakeGraph:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        async def begin_bulk_projection(self) -> None:
+            self.calls.append("begin")
+
+        async def commit_bulk_projection(self) -> None:
+            self.calls.append("commit")
+            raise RuntimeError("commit failed")
+
+        async def rollback_bulk_projection(self) -> None:
+            self.calls.append("rollback")
+
+    class FakeFabric:
+        def __init__(self) -> None:
+            self.graph = FakeGraph()
+
+        async def _project_event(self, event: object, *, session_id: str) -> None:
+            self.graph.calls.append(f"project:{event}:{session_id}")
+
+    fake = FakeFabric()
+
+    import asyncio
+
+    with pytest.raises(RuntimeError, match="commit failed"):
+        asyncio.run(module._project_events(fake, ["a"], "agent-1"))
+
+    assert fake.graph.calls == [
+        "begin",
+        "project:a:agent-1",
+        "commit",
+        "rollback",
+    ]
+
+
+def test_backend_shootout_preserves_projection_error_when_rollback_fails() -> None:
+    """Rollback cleanup failures should not mask the benchmark root cause."""
+    module = _load_backend_shootout_module()
+
+    class FakeGraph:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        async def begin_bulk_projection(self) -> None:
+            self.calls.append("begin")
+
+        async def commit_bulk_projection(self) -> None:
+            self.calls.append("commit")
+
+        async def rollback_bulk_projection(self) -> None:
+            self.calls.append("rollback")
+            raise RuntimeError("rollback failed")
+
+    class FakeFabric:
+        def __init__(self) -> None:
+            self.graph = FakeGraph()
+
+        async def _project_event(self, event: object, *, session_id: str) -> None:
+            self.graph.calls.append(f"project:{event}:{session_id}")
+            raise RuntimeError("projection failed")
+
+    fake = FakeFabric()
+
+    import asyncio
+
+    with pytest.raises(RuntimeError, match="projection failed"):
+        asyncio.run(module._project_events(fake, ["a"], "agent-1"))
+
+    assert fake.graph.calls == [
+        "begin",
+        "project:a:agent-1",
+        "rollback",
+    ]
+
+
+def test_backend_shootout_graph_backend_error_preserves_contract_rows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Graph backend failures should keep retrieve and answer-ready rows distinct."""
+    module = _load_backend_shootout_module()
+
+    class FailingFabric:
+        def __init__(self, **_kwargs: object) -> None:
+            self.graph = object()
+
+        async def connect(self) -> None:
+            raise RuntimeError("projection unavailable")
+
+        async def close(self) -> None:
+            return None
+
+    import zaxy.core
+
+    monkeypatch.setattr(zaxy.core, "MemoryFabric", FailingFabric)
+    args = module.argparse.Namespace(
+        eventloom_path=tmp_path / ".eventloom",
+        output=tmp_path / "backend-shootout.json",
+        session_id="agent-1",
+        limit=5,
+    )
+
+    import asyncio
+
+    runs = asyncio.run(module._run_graph_backend("embedded", [], [], args))
+
+    assert [run.metrics.contract for run in runs] == ["retrieve", "answer_ready"]
+    assert {run.metrics.status for run in runs} == {"error"}
+    assert {run.metrics.error for run in runs} == {"projection unavailable"}
+    assert all(run.query_results == [] for run in runs)
+
+
 @pytest.mark.skipif(importlib.util.find_spec("kuzu") is None, reason="kuzu is not installed")
 def test_backend_shootout_embedded_accepts_single_eventloom_file(tmp_path: Path) -> None:
     """Graph backend shootouts should honor the documented JSONL-file Eventloom input."""
@@ -3288,3 +6203,108 @@ def test_backend_shootout_embedded_accepts_single_eventloom_file(tmp_path: Path)
     summary = json.loads(output.read_text(encoding="utf-8"))["summaries"][0]
     assert summary["backend"] == "embedded"
     assert summary["status"] == "ok"
+
+
+@pytest.mark.skipif(importlib.util.find_spec("kuzu") is None, reason="kuzu is not installed")
+def test_backend_shootout_embedded_reports_retrieve_and_answer_ready_contracts(tmp_path: Path) -> None:
+    """Graph backend reports should separate retrieval quality from answer-ready assembly quality."""
+    eventloom = tmp_path / ".eventloom"
+    EventLog(eventloom / "agent-1.jsonl").append(
+        "document.indexed",
+        actor="assistant",
+        payload={
+            "path": "memory.md",
+            "content": "I spent $25 on a bike chain and $40 on bike lights.",
+            "start_line": 1,
+            "end_line": 1,
+        },
+        thread="agent-1",
+    )
+    queries = tmp_path / "queries.json"
+    queries.write_text(
+        json.dumps(
+            [
+                {
+                    "query": "How much total money have I spent on bike-related expenses?",
+                    "expected_terms": ["65"],
+                    "identity_terms": ["bike chain"],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "backend-shootout.json"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/backend-shootout.py",
+            "--eventloom-path",
+            str(eventloom),
+            "--session-id",
+            "agent-1",
+            "--backends",
+            "embedded",
+            "--queries-file",
+            str(queries),
+            "--output",
+            str(output),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    summaries = json.loads(output.read_text(encoding="utf-8"))["summaries"]
+    contracts = {summary["contract"] for summary in summaries}
+    assert contracts == {"retrieve", "answer_ready"}
+    assert {summary["backend"] for summary in summaries} == {"embedded"}
+
+
+@pytest.mark.skipif(importlib.util.find_spec("kuzu") is None, reason="kuzu is not installed")
+def test_backend_shootout_query_results_are_contract_scoped(tmp_path: Path) -> None:
+    """Per-query diagnostics must not collapse retrieve and answer-ready contracts."""
+    eventloom = tmp_path / ".eventloom"
+    EventLog(eventloom / "agent-1.jsonl").append(
+        "document.indexed",
+        actor="assistant",
+        payload={
+            "path": "memory.md",
+            "content": "I adopted a local-first embedded graph contract.",
+            "start_line": 1,
+            "end_line": 1,
+        },
+        thread="agent-1",
+    )
+    queries = tmp_path / "queries.json"
+    queries.write_text(
+        json.dumps([{"query": "embedded graph contract", "expected_terms": ["embedded graph"]}]),
+        encoding="utf-8",
+    )
+    output = tmp_path / "backend-shootout.json"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/backend-shootout.py",
+            "--eventloom-path",
+            str(eventloom),
+            "--session-id",
+            "agent-1",
+            "--backends",
+            "embedded",
+            "--queries-file",
+            str(queries),
+            "--output",
+            str(output),
+            "--include-query-results",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    query_results = json.loads(output.read_text(encoding="utf-8"))["query_results"]
+    assert set(query_results) == {"embedded:retrieve", "embedded:answer_ready"}

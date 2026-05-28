@@ -19,7 +19,8 @@
     <article class="doc-content">
       <h1 id="pggraph-adapter-implementation-plan">pgGraph Adapter Implementation Plan</h1>
       <blockquote><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</blockquote>
-      <p><strong>Goal:</strong> Add a real experimental <code>PROJECTION_BACKEND=pggraph</code> adapter that stores Zaxy projections in PostgreSQL tables and uses pgGraph for bounded traversal, while Neo4j remains the default.</p>
+      <p><strong>Goal:</strong> Add a real experimental <code>PROJECTION_BACKEND=pggraph</code> adapter that stores Zaxy projections in PostgreSQL tables and uses pgGraph for bounded traversal. Historical note: this plan was written before the embedded Kuzu promotion, when Neo4j was still the default projection backend.</p>
+      <p><strong>Current status:</strong> embedded Kuzu is the default projection backend. Neo4j and pgGraph are explicit sidecar backends for controlled comparisons or existing infrastructure.</p>
       <p><strong>Architecture:</strong> Eventloom remains the source of truth. The pgGraph adapter owns a small relational projection schema, registers its entity and edge tables with pgGraph, and implements the existing <code>ProjectionStore</code> contract. Exact and keyword retrieval use ordinary PostgreSQL; traversal uses <code>graph.traverse</code>; vector search stays explicitly unavailable until pgvector ranking is added and benchmarked.</p>
       <p><strong>Tech Stack:</strong> Python 3.11+, optional <code>psycopg[binary]</code>, PostgreSQL, pgGraph SQL functions (<code>graph.add_table</code>, <code>graph.add_edge</code>, <code>graph.build</code>, <code>graph.traverse</code>), pytest/ruff/mypy.</p>
       <p>---</p>
@@ -434,8 +435,8 @@ git commit -m &quot;feat: add pggraph traversal search&quot;</code></pre>
       <ul>
         <li>Install with <code>pip install &quot;zaxy-memory[pggraph]&quot;</code>.</li>
         <li>Configure <code>PROJECTION_BACKEND=pggraph</code> and <code>PGGRAPH_DSN=...</code>.</li>
-        <li>Neo4j remains the only production and published benchmark backend.</li>
-        <li>pgGraph adapter supports exact, keyword, projection, invalidation, and traversal; vector is unavailable until pgvector is implemented and benchmarked.</li>
+        <li>Embedded Kuzu is the local production default. Neo4j remains the sidecar control backend for same-harness published benchmark comparisons.</li>
+        <li>pgGraph adapter supports exact, keyword, projection, invalidation, traversal, and pgvector-backed vector search when the PostgreSQL endpoint has pgvector.</li>
       </ul>
       <ul>
         <li>[ ] <strong>Step 3: Run final verification</strong></li>
@@ -453,8 +454,8 @@ PYTHONPATH=src python -m zaxy benchmark-compare reports/benchmarks/longmemeval-5
 git commit -m &quot;docs: document experimental pggraph adapter&quot;</code></pre>
       <h2 id="self-review">Self-Review</h2>
       <ul>
-        <li>Spec coverage: The plan keeps Eventloom as source of truth, preserves Neo4j as default, implements pgGraph only behind <code>PROJECTION_BACKEND=pggraph</code>, and keeps benchmark gates explicit.</li>
-        <li>Placeholder scan: There are no unresolved placeholder markers. Vector search is intentionally unavailable with a precise runtime error until pgvector support is implemented and benchmarked.</li>
+        <li>Spec coverage: The plan keeps Eventloom as source of truth, preserves embedded Kuzu as the default, implements pgGraph only behind <code>PROJECTION_BACKEND=pggraph</code>, and keeps benchmark gates explicit.</li>
+        <li>Placeholder scan: There are no unresolved placeholder markers. Vector search uses pgvector-backed ranking when the PostgreSQL endpoint has pgvector.</li>
         <li>Type consistency: <code>PgGraphStore</code> implements the same <code>ProjectionStore</code> method names and return types used by <code>QueryRouter</code>, <code>MemoryFabric</code>, and MCP.</li>
       </ul>
     </article>

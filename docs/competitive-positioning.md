@@ -92,8 +92,8 @@ export are available.
   skill-version graph projection, checkout skill routing, outcome tracking, and
   eval-gated promotion/rollback.
 - Evaluate pgGraph as an experimental Postgres-backed projection backend behind
-  a backend-neutral contract, with Neo4j remaining the default until same-harness
-  benchmark and operations gates prove parity or better.
+  a backend-neutral contract, with embedded Kuzu remaining the default until a
+  candidate backend proves same-harness benchmark and operations parity or better.
 - Expand clean-repo onboarding and model-facing UAT across fresh Codex and
   Claude Code workspaces: `zaxy init`, Memory Bootstrap, deterministic capture,
   Memory Checkout, retrieval feedback, and doctor status.

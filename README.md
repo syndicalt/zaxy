@@ -3,8 +3,10 @@
 **Event-sourced temporal knowledge graph fabric for AI agent memory.**
 
 Zaxy replaces markdown files + vector DBs with a structured, replayable,
-bi-temporal memory system built on Eventloom and Neo4j, with optional
-Pathlight tracing.
+bi-temporal memory system built on Eventloom and an embedded Kuzu graph
+projection, with optional Neo4j, pgGraph, and Pathlight integrations.
+The plain install uses embedded Kuzu. Install `zaxy-memory[neo4j]` only for the
+optional Neo4j sidecar, and `zaxy-memory[pathlight]` only for Pathlight tracing.
 
 ## Quick Start
 
@@ -46,7 +48,8 @@ zaxy ide-config hermes --install
 ```
 
 For repository development, use `pip install -e ".[dev]"`, `./scripts/setup.sh`,
-and `docker compose up -d`. Production setup writes Docker secret files under
+and `zaxy status`. Start Docker sidecars only for integration tests or explicit
+backend comparisons. Production setup writes Docker secret files under
 `./secrets/`; see [docs/deployment.md](docs/deployment.md).
 
 ## Architecture
@@ -58,7 +61,7 @@ Agent (LangGraph / Any MCP Client)
 MCP Server — memory_append / memory_query / memory_feedback / memory_replay / memory_invalidate
     |
     v
-Eventloom (immutable JSONL log)  →  Hybrid Extraction  →  Neo4j (temporal KG)
+Eventloom (immutable JSONL log)  →  Hybrid Extraction  →  Embedded Kuzu graph
     |                                                               |
     +—————— Optional Pathlight traces ———————————————→  Query Router
                                                               |
@@ -97,8 +100,8 @@ See [LLM Packet Analyzer](docs/packet-analyzer.md).
 - **Hybrid retrieval**: Exact + keyword + vector + graph traversal with configurable fusion weights.
 - **Session sharding**: One Eventloom log per agent/session, with a shared graph.
 - **MCP-native**: Drop-in memory for any MCP-compatible agent framework over stdio or SSE.
-- **Observable**: Optional Pathlight traces, breakpoints, and diff support.
-- **Hardened local defaults**: bounded MCP inputs, safe session IDs, localhost-bound Neo4j ports, and optional admin token support for replay/invalidation.
+- **Observable**: Optional Pathlight traces, breakpoints, and diff support via `zaxy-memory[pathlight]`.
+- **Hardened local defaults**: bounded MCP inputs, safe session IDs, no-sidecar embedded graph projection, and optional admin token support for replay/invalidation.
 
 ## Project Structure
 
@@ -106,10 +109,11 @@ See [LLM Packet Analyzer](docs/packet-analyzer.md).
 |------|---------|
 | `src/zaxy/event.py` | Eventloom JSONL I/O + hash chain integrity |
 | `src/zaxy/extract.py` | Hybrid extraction engine + rule registry |
-| `src/zaxy/graph.py` | Neo4j bi-temporal wrapper |
+| `src/zaxy/embedded_graph_store.py` | Embedded Kuzu projection store |
+| `src/zaxy/graph.py` | Optional Neo4j bi-temporal wrapper via `zaxy-memory[neo4j]` |
 | `src/zaxy/query.py` | Hybrid retrieval router |
 | `src/zaxy/mcp_server.py` | MCP stdio/SSE server |
-| `src/zaxy/trace.py` | Pathlight observability hooks |
+| `src/zaxy/trace.py` | Optional Pathlight observability hooks |
 | `src/zaxy/core.py` | MemoryFabric orchestrator |
 | `src/zaxy/session.py` | Per-session Eventloom log manager |
 | `src/zaxy/security.py` | Shared validation and input bounds |
@@ -131,7 +135,7 @@ Use `docker-compose.prod.yml` as the production compose baseline.
 ## Development
 
 - **Tests first** (Karpathy rule). Every public function has a test.
-- **Unit tests** mock Neo4j/Pathlight. **Integration tests** use Docker.
+- **Unit tests** mock external services. **Integration tests** use Docker for optional sidecar backends.
 - **Coverage gate: ≥90%** enforced by CI.
 - **Lint/format**: `ruff`. **Types**: `mypy`.
 
@@ -140,9 +144,8 @@ Use `docker-compose.prod.yml` as the production compose baseline.
 pytest
 
 # Run integration tests (requires Docker)
-docker compose up -d neo4j-test
 ./scripts/generate-certs.sh .certs
-docker compose up -d neo4j-tls
+docker compose --profile integration up -d neo4j-test neo4j-tls
 pytest -m integration --no-cov
 
 # Lint and type-check
@@ -152,13 +155,15 @@ mypy src
 # Competitive retrieval benchmark harness
 pytest tests/test_competitive_benchmarks.py --benchmark-only --no-cov
 
-# Frozen live benchmark: markdown vs BM25 vs vector vs markdown+vector vs Zaxy
-scripts/live-benchmark.sh --embedding-provider openai --workload frozen --runs 1 --reset-graph
+# Frozen live benchmark: markdown vs BM25 vs vector vs markdown+vector vs embedded Zaxy
+# Uses deterministic hash embeddings and embedded projection by default.
+scripts/live-benchmark.sh --workload frozen --runs 1 --reset-graph
 
 # Representative benchmark suite: temporal memory + docs + transcripts + mixed context
-scripts/live-benchmark.sh --embedding-provider openai --workload suite --subjects 100 --documents 250 --sessions 50 --runs 1 --reset-graph
+scripts/live-benchmark.sh --workload suite --subjects 100 --documents 250 --sessions 50 --runs 1 --reset-graph
 
 # LongMemEval-compatible memory benchmark and BM25 comparison
+# Plain benchmark commands use the embedded projection backend by default.
 zaxy benchmark --embedding-provider hash --workload longmemeval \
   --dataset .cache/zaxy/benchmarks/longmemeval_oracle.json \
   --questions 100 --runs 1 --limit 10 --zaxy-backend checkout \

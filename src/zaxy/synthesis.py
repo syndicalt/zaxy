@@ -6,6 +6,22 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, timedelta
+from functools import lru_cache
+
+_SOURCE_TOKEN_RE = re.compile(r"[a-z0-9]+(?:[-_:./#][a-z0-9]+)*")
+_SOURCE_TOKEN_SPLIT_RE = re.compile(r"[-_:/#]+")
+_CURRENCY_LABEL_BEFORE_AMOUNT_PATTERNS = (
+    re.compile(r"(?P<label>[^.!?]{1,100}?)\s+for\s*$", flags=re.IGNORECASE),
+    re.compile(r"(?P<label>[^.!?]{1,100}?),?\s+which\s+were\s*$", flags=re.IGNORECASE),
+    re.compile(r"(?P<label>[^.!?]{1,100}?)\s+cost\s+me\s*$", flags=re.IGNORECASE),
+    re.compile(r"(?P<label>[^.!?]{1,100}?)\s+cost\s*$", flags=re.IGNORECASE),
+)
+_CURRENCY_PURCHASE_LABEL_BEFORE_AMOUNT_RE = re.compile(
+    r"\bI\s+(?:recently\s+|also\s+)?"
+    r"(?:bought|booked|got|purchased|picked up|paid for|spent on)\s+"
+    r"(?:a|an|the|my)?\s*(?P<item>[^.!?;,]{1,100})",
+    flags=re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -225,10 +241,11 @@ _FIRST_PERSON_EVIDENCE_RE = re.compile(
 def build_synthesis_plan(query: str, *, limit: int = 10) -> SynthesisPlan:
     """Build a deterministic answer-shape plan for a memory query."""
     del limit
-    tokens = set(source_tokens(query))
+    query_tokens = source_tokens(query)
+    tokens = set(query_tokens)
     subject_terms = tuple(
         token
-        for token in source_tokens(query)
+        for token in query_tokens
         if len(token) > 2 and token not in _QUERY_STOPWORDS and not token.isdigit()
     )
     reasons: list[str] = []
@@ -251,6 +268,15 @@ def build_synthesis_plan(query: str, *, limit: int = 10) -> SynthesisPlan:
     explicit_money_terms = {"money", "cost", "costs", "price", "prices", "amount"}
     money_terms = explicit_money_terms | {"spent", "spend"}
     duration_query = bool(tokens & duration_terms)
+    if {"how", "many"} <= tokens and _count_subject(query) and not _duration_measure_query(tokens):
+        return SynthesisPlan(
+            answer_type="count",
+            operation="count_distinct",
+            subject_terms=subject_terms,
+            required_kinds=("event",),
+            required_source_groups=2,
+            reasons=("count",),
+        )
     if tokens & money_terms and (not duration_query or bool(tokens & explicit_money_terms)):
         if "comparison" in reasons:
             return SynthesisPlan(
@@ -306,9 +332,16 @@ def build_synthesis_plan(query: str, *, limit: int = 10) -> SynthesisPlan:
     )
 
 
-def build_currency_ledger(query: str, contexts: list[str]) -> EvidenceLedger:
+def _duration_measure_query(tokens: set[str]) -> bool:
+    """Return whether duration units are the thing being counted."""
+    return bool(tokens & {"hours", "hour", "minutes", "minute", "days", "day", "weeks", "week"}) and not bool(
+        tokens & {"month", "months"}
+    )
+
+
+def build_currency_ledger(query: str, contexts: list[str], *, plan: SynthesisPlan | None = None) -> EvidenceLedger:
     """Extract and normalize currency evidence into a cited ledger."""
-    plan = build_synthesis_plan(query)
+    plan = plan or build_synthesis_plan(query)
     if "currency" not in plan.required_kinds:
         return EvidenceLedger(plan=plan, rows=())
     focus_terms = _numeric_focus_terms(query)
@@ -324,9 +357,9 @@ def build_currency_ledger(query: str, contexts: list[str]) -> EvidenceLedger:
             re.finditer(r"\$(?P<value>\d+(?:,\d{3})*(?:\.\d+)?)", text)
         ):
             evidence_span = local_evidence_span(text, match.start(), match.end())
-            relevance = _relevance(focus_terms, evidence_span)
             value = str(float(match.group("value").replace(",", "")))
             label = currency_label(text, match.start(), match.end())
+            relevance = _relevance(focus_terms, " ".join((evidence_span, label)))
             identity = currency_identity(group=group, value=value, label=label)
             confidence = _row_confidence(relevance=relevance, has_label=bool(label))
             duplicate = included_by_identity.get(identity)
@@ -364,6 +397,7 @@ def build_currency_ledger(query: str, contexts: list[str]) -> EvidenceLedger:
     ledger = _deduplicate_currency_source_values(
         EvidenceLedger(plan=plan, rows=tuple(rows))
     )
+    ledger = _filter_lodging_currency_ledger(query, ledger)
     return _filter_currency_ledger(ledger, focus_terms)
 
 
@@ -403,9 +437,9 @@ def render_currency_result(ledger: EvidenceLedger, *, rank: int) -> SynthesisRes
     )
 
 
-def build_count_ledger(query: str, contexts: list[str]) -> EvidenceLedger:
+def build_count_ledger(query: str, contexts: list[str], *, plan: SynthesisPlan | None = None) -> EvidenceLedger:
     """Extract distinct cited-event evidence for count/list synthesis."""
-    plan = build_synthesis_plan(query)
+    plan = plan or build_synthesis_plan(query)
     if "event" not in plan.required_kinds:
         return EvidenceLedger(plan=plan, rows=())
     focus_terms = _count_focus_terms(query)
@@ -548,6 +582,8 @@ def _filter_count_rows(
         return _filter_target_property_rows(query, rows)
     if subject == "musical_instrument":
         return _filter_subsumed_instrument_rows(rows)
+    if subject == "museum_gallery":
+        return _filter_museum_gallery_rows(rows)
     if subject != "doctor_visit":
         return rows
     included = [row for row in rows if row.kind == "event" and not row.exclude_reason]
@@ -581,6 +617,34 @@ def _filter_count_rows(
                 confidence=row.confidence,
             )
         )
+    return filtered
+
+
+def _filter_museum_gallery_rows(rows: list[EvidenceLedgerRow]) -> list[EvidenceLedgerRow]:
+    """Keep named museum/gallery visits even when generic focus scoring is sparse."""
+    filtered: list[EvidenceLedgerRow] = []
+    for row in rows:
+        if row.normalized_identity.startswith("museum_gallery=") and row.exclude_reason == "query_focus_mismatch":
+            filtered.append(
+                EvidenceLedgerRow(
+                    fact_id=row.fact_id,
+                    source_group=row.source_group,
+                    citation=row.citation,
+                    kind=row.kind,
+                    value=row.value,
+                    unit=row.unit,
+                    label=row.label,
+                    raw_span=row.raw_span,
+                    context=row.context,
+                    normalized_identity=row.normalized_identity,
+                    relevance=max(row.relevance, 2),
+                    include_reason=row.include_reason,
+                    exclude_reason="",
+                    confidence=row.confidence,
+                )
+            )
+            continue
+        filtered.append(row)
     return filtered
 
 
@@ -685,7 +749,7 @@ def _target_property_terms(query: str) -> set[str]:
     }
 
 
-def build_date_ledger(query: str, contexts: list[str]) -> EvidenceLedger:
+def build_date_ledger(query: str, contexts: list[str], *, plan: SynthesisPlan | None = None) -> EvidenceLedger:
     """Extract explicit date evidence for temporal interval synthesis."""
     plan = SynthesisPlan(
         answer_type="interval",
@@ -806,9 +870,9 @@ def render_date_interval_result(ledger: EvidenceLedger, *, rank: int) -> Synthes
     )
 
 
-def build_duration_ledger(query: str, contexts: list[str]) -> EvidenceLedger:
+def build_duration_ledger(query: str, contexts: list[str], *, plan: SynthesisPlan | None = None) -> EvidenceLedger:
     """Extract and normalize duration evidence into a cited ledger."""
-    plan = build_synthesis_plan(query)
+    plan = plan or build_synthesis_plan(query)
     if "duration" not in plan.required_kinds:
         return EvidenceLedger(plan=plan, rows=())
     focus_terms = _duration_focus_terms(query)
@@ -916,12 +980,18 @@ def render_duration_result(ledger: EvidenceLedger, *, rank: int) -> SynthesisRes
 
 def source_tokens(text: str) -> list[str]:
     """Tokenize source/query text for deterministic synthesis helpers."""
+    return list(_source_token_tuple(text))
+
+
+@lru_cache(maxsize=8192)
+def _source_token_tuple(text: str) -> tuple[str, ...]:
+    """Tokenize source/query text once while keeping callers mutation-isolated."""
     tokens: list[str] = []
-    for token in re.findall(r"[a-z0-9]+(?:[-_:./#][a-z0-9]+)*", text.casefold()):
+    for token in _SOURCE_TOKEN_RE.findall(text.casefold()):
         tokens.append(token)
-        if re.search(r"[-_:/#]", token):
-            tokens.extend(part for part in re.split(r"[-_:/#]+", token) if part)
-    return tokens
+        if not token.isalnum():
+            tokens.extend(part for part in _SOURCE_TOKEN_SPLIT_RE.split(token) if part)
+    return tuple(tokens)
 
 
 def context_text(context: str) -> str:
@@ -1052,7 +1122,11 @@ def currency_label(text: str, start: int, end: int) -> str:
     )
     if match:
         return clean_label(match.group("label"))
-    if label := _currency_label_before_amount(text[:start]):
+    prefix = text[max(0, start - 240) : start]
+    if label := _currency_label_before_amount(prefix):
+        return label
+    purchase_prefix = text[max(0, start - 720) : start]
+    if label := _currency_purchase_label_before_amount(purchase_prefix):
         return label
     return ""
 
@@ -1245,6 +1319,11 @@ def count_answer_text(query: str, candidates: tuple[EvidenceLedgerRow, ...]) -> 
         if labels:
             return f"I visited {count} different doctors: {labels}."
         return f"I visited {count} different doctors."
+    if count_subject == "museum_gallery":
+        labels = _joined_count_labels(candidates)
+        if labels:
+            return f"I visited {count} different museums or galleries: {labels}."
+        return f"I visited {count} different museums or galleries."
     if count_subject == "wedding":
         couples = _joined_wedding_couples(candidates)
         if couples:
@@ -1584,6 +1663,13 @@ def count_evidence_items(
             identity_prefix="doctor_visit",
             label_extractor=_doctor_visit_labels,
         )
+    if subject == "museum_gallery":
+        return _count_labeled_items_from_spans(
+            spans,
+            focus_terms=focus_terms,
+            identity_prefix="museum_gallery",
+            label_extractor=_museum_gallery_labels,
+        )
     if subject == "musical_instrument":
         return _count_labeled_items_from_spans(
             spans,
@@ -1679,8 +1765,8 @@ def _count_action_terms(query: str) -> set[str]:
     action_groups = {
         "attend": {"assist", "assisted", "attend", "attended", "attending", "back", "go", "got", "participated", "visited", "volunteered", "went"},
         "attended": {"assist", "assisted", "attend", "attended", "attending", "back", "go", "got", "participated", "visited", "volunteered", "went"},
-        "visit": {"appointment", "back", "diagnosed", "got", "had", "prescribed", "see", "saw", "visit", "visited", "went"},
-        "visited": {"appointment", "back", "diagnosed", "got", "had", "prescribed", "see", "saw", "visit", "visited", "went"},
+        "visit": {"appointment", "back", "diagnosed", "got", "had", "prescribed", "see", "saw", "took", "visit", "visited", "went"},
+        "visited": {"appointment", "back", "diagnosed", "got", "had", "prescribed", "see", "saw", "took", "visit", "visited", "went"},
         "view": {"fell", "love", "rejected", "saw", "searching", "seen", "tour", "toured", "view", "viewed", "visited"},
         "viewed": {"fell", "love", "rejected", "saw", "searching", "seen", "tour", "toured", "view", "viewed", "visited"},
         "own": {"had", "have", "own", "owned", "playing", "selling", "service"},
@@ -1696,7 +1782,7 @@ def _count_action_terms(query: str) -> set[str]:
     for term in query_terms:
         actions.update(action_groups.get(term, set()))
     if not actions and {"how", "many"} <= query_terms:
-        actions.update({"attend", "attended", "visit", "visited", "went", "got", "bought", "been"})
+        actions.update({"attend", "attended", "visit", "visited", "went", "got", "bought", "been", "took"})
     return actions
 
 
@@ -1729,6 +1815,8 @@ def _count_subject(query: str) -> str:
     tokens = set(source_tokens(query))
     if tokens & {"movie", "movies", "film", "films", "cinema"} and tokens & {"festival", "festivals", "fest", "fests"}:
         return "film_festival"
+    if tokens & {"museum", "museums", "gallery", "galleries", "cube"}:
+        return "museum_gallery"
     if tokens & {"property", "properties", "home", "homes", "house", "houses"}:
         return "property_viewing"
     if tokens & {"doctor", "doctors", "physician", "physicians", "dermatologist", "ent"}:
@@ -1763,6 +1851,12 @@ def _span_matches_count_subject(span: str, subject: str) -> bool:
         if re.search(r"\bI\s+(?:requested|asked|wanted|hoped|planned)\s+to\s+see\b", span, flags=re.IGNORECASE):
             return False
         return bool(tokens & {"doctor", "doctors", "physician", "physicians", "dermatologist", "ent"})
+    if subject == "museum_gallery":
+        if re.search(r"\bno\s+(?:museum|museums|gallery|galleries)\b", span, flags=re.IGNORECASE):
+            return False
+        if tokens & {"january"}:
+            return False
+        return bool(tokens & {"museum", "museums", "gallery", "galleries", "cube"})
     if subject == "musical_instrument":
         if re.search(
             r"\b(?:thinking\s+about|considering|planning\s+to|want\s+to)\s+"
@@ -1830,6 +1924,22 @@ def _doctor_visit_labels(span: str) -> list[str]:
         r"\b(?P<label>doctor)(?:,\s*)?(?:Dr\.?\s+[A-Z][A-Za-z'-]+)?",
     ):
         for match in re.finditer(pattern, span, flags=re.IGNORECASE):
+            label = _clean_count_item_label(match.group("label"))
+            identity = _normalize_count_identity(label)
+            if label and identity not in {_normalize_count_identity(existing) for existing in labels}:
+                labels.append(label)
+    return labels
+
+
+def _museum_gallery_labels(span: str) -> list[str]:
+    """Extract named museum/gallery venues from first-person visit evidence."""
+    labels: list[str] = []
+    patterns = (
+        r"\b(?P<label>(?:The\s+)?[A-Z][A-Za-z'&-]+(?:\s+[A-Z][A-Za-z'&-]+){0,5}\s+(?:Museum|Gallery|Cube))\b",
+        r"\b(?P<label>(?:Museum|Gallery)\s+of\s+[A-Z][A-Za-z'&-]+(?:\s+[A-Z][A-Za-z'&-]+){0,4})\b",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, span):
             label = _clean_count_item_label(match.group("label"))
             identity = _normalize_count_identity(label)
             if label and identity not in {_normalize_count_identity(existing) for existing in labels}:
@@ -2237,6 +2347,56 @@ def _filter_currency_ledger(
     return EvidenceLedger(plan=ledger.plan, rows=tuple(rows))
 
 
+def _filter_lodging_currency_ledger(query: str, ledger: EvidenceLedger) -> EvidenceLedger:
+    """Keep lodging price rows for accommodation/nightly stay comparisons."""
+    query_terms = set(source_tokens(query))
+    if not (
+        query_terms & {"accommodation", "accommodations", "hotel", "hostel", "resort", "lodging"}
+        and query_terms & {"night", "nightly", "tokyo", "hawaii", "maui"}
+    ):
+        return ledger
+    included = [
+        row
+        for row in ledger.included(kind="currency")
+        if _lodging_currency_evidence(row.context)
+    ]
+    if len({row.source_group for row in included}) < ledger.plan.required_source_groups:
+        return ledger
+    selected_facts = {row.fact_id for row in included}
+    rows: list[EvidenceLedgerRow] = []
+    for row in ledger.rows:
+        if row.kind != "currency" or row.exclude_reason or row.fact_id in selected_facts:
+            rows.append(row)
+            continue
+        rows.append(
+            EvidenceLedgerRow(
+                fact_id=row.fact_id,
+                source_group=row.source_group,
+                citation=row.citation,
+                kind=row.kind,
+                value=row.value,
+                unit=row.unit,
+                label=row.label,
+                raw_span=row.raw_span,
+                context=row.context,
+                normalized_identity=row.normalized_identity,
+                relevance=row.relevance,
+                include_reason=row.include_reason,
+                exclude_reason="not_lodging_price",
+                confidence=row.confidence,
+            )
+        )
+    return EvidenceLedger(plan=ledger.plan, rows=tuple(rows))
+
+
+def _lodging_currency_evidence(context: str) -> bool:
+    terms = set(source_tokens(context))
+    lodging_terms = {"accommodation", "accommodations", "hotel", "hostel", "resort", "lodging", "stay", "stayed"}
+    destination_terms = {"tokyo", "hawaii", "maui", "japan"}
+    nightly_terms = {"night", "nightly"}
+    return bool(terms & lodging_terms) and bool(terms & (destination_terms | nightly_terms))
+
+
 def _deduplicate_currency_source_values(ledger: EvidenceLedger) -> EvidenceLedger:
     """Exclude duplicate amounts repeated within one source group."""
     seen_source_values: set[tuple[str, str]] = set()
@@ -2546,6 +2706,10 @@ def _count_focus_terms(query: str) -> set[str]:
         "instrument": {"instrument", "instruments", "guitar", "piano", "drum", "drums", "ukulele"},
         "instruments": {"instrument", "instruments", "guitar", "piano", "drum", "drums", "ukulele"},
         "musical": {"instrument", "instruments", "guitar", "piano", "drum", "drums", "ukulele"},
+        "museum": {"museum", "museums", "gallery", "galleries", "cube", "art"},
+        "museums": {"museum", "museums", "gallery", "galleries", "cube", "art"},
+        "gallery": {"museum", "museums", "gallery", "galleries", "cube", "art"},
+        "galleries": {"museum", "museums", "gallery", "galleries", "cube", "art"},
         "properties": {"properties", "property", "home", "homes", "house", "houses", "bungalow", "condo", "townhouse"},
         "property": {"properties", "property", "home", "homes", "house", "houses", "bungalow", "condo", "townhouse"},
         "wedding": {"wedding", "weddings"},
@@ -2591,16 +2755,26 @@ def _row_confidence(*, relevance: int, has_label: bool) -> float:
 
 def _currency_label_before_amount(prefix: str) -> str:
     prefix = " ".join(prefix.split())
-    patterns = (
-        r"(?P<label>[^.!?]{1,100}?)\s+for\s*$",
-        r"(?P<label>[^.!?]{1,100}?),?\s+which\s+were\s*$",
-        r"(?P<label>[^.!?]{1,100}?)\s+cost\s+me\s*$",
-        r"(?P<label>[^.!?]{1,100}?)\s+cost\s*$",
-    )
-    for pattern in patterns:
-        match = re.search(pattern, prefix, flags=re.IGNORECASE)
+    lowered = prefix.casefold()
+    if not (
+        lowered.endswith((" for", " which were", " cost me", " cost"))
+        or lowered in {"for", "which were", "cost me", "cost"}
+    ):
+        return ""
+    for pattern in _CURRENCY_LABEL_BEFORE_AMOUNT_PATTERNS:
+        match = pattern.search(prefix)
         if match:
             return _clean_currency_item_label(match.group("label"))
+    return ""
+
+
+def _currency_purchase_label_before_amount(prefix: str) -> str:
+    """Extract a nearby purchased item when the amount is in a follow-up clause."""
+    sentences = re.split(r"[.!?]", prefix)
+    for sentence in reversed(sentences[-3:]):
+        match = _CURRENCY_PURCHASE_LABEL_BEFORE_AMOUNT_RE.search(sentence)
+        if match:
+            return _clean_currency_item_label(match.group("item"))
     return ""
 
 

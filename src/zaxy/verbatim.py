@@ -7,11 +7,12 @@ the immutable source of truth.
 
 from __future__ import annotations
 
+import heapq
 import json
 import math
 import re
 import statistics
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -47,12 +48,20 @@ class VerbatimIndex:
     def __init__(self, chunks: tuple[VerbatimChunk, ...]) -> None:
         self._chunks = chunks
         self._tokenized = tuple(tuple(_tokens(chunk.content)) for chunk in chunks)
+        self._term_counts = tuple(Counter(tokens) for tokens in self._tokenized)
+        self._term_document_ids = _term_document_ids(self._term_counts)
+        self._document_lengths = tuple(len(tokens) for tokens in self._tokenized)
         self._document_frequencies = _document_frequencies(self._tokenized)
         self._document_count = len(self._tokenized)
         self._average_document_length = (
-            statistics.fmean(len(tokens) for tokens in self._tokenized)
+            statistics.fmean(self._document_lengths)
             if self._tokenized
             else 0.0
+        )
+        self._term_idf = _term_idf(self._document_frequencies, self._document_count)
+        self._document_length_norms = _document_length_norms(
+            self._document_lengths,
+            self._average_document_length,
         )
 
     @classmethod
@@ -74,18 +83,24 @@ class VerbatimIndex:
         if not query_terms:
             return []
         scored = []
-        for chunk, document_terms in zip(self._chunks, self._tokenized, strict=True):
-            score = _bm25_score(
-                query_terms,
-                document_terms,
-                self._document_frequencies,
-                self._document_count,
-                self._average_document_length,
+        candidate_terms: dict[int, list[str]] = {}
+        for term in query_terms:
+            for index in self._term_document_ids.get(term, ()):
+                candidate_terms.setdefault(index, []).append(term)
+        if not candidate_terms:
+            return []
+        for index, matched_terms in candidate_terms.items():
+            chunk = self._chunks[index]
+            term_counts = self._term_counts[index]
+            score = _bm25_score_from_precomputed(
+                tuple(matched_terms),
+                term_counts,
+                self._document_length_norms[index],
+                self._term_idf,
             )
             if score <= 0.0:
                 continue
             scored.append((score, chunk))
-        scored.sort(key=lambda item: item[0], reverse=True)
         return [
             VerbatimHit(
                 content=chunk.content,
@@ -94,7 +109,7 @@ class VerbatimIndex:
                 source_kind=chunk.source_kind,
                 metadata=dict(chunk.metadata),
             )
-            for score, chunk in scored[:lim]
+            for score, chunk in heapq.nlargest(lim, scored, key=lambda item: item[0])
         ]
 
 
@@ -226,6 +241,52 @@ def _document_frequencies(documents: tuple[tuple[str, ...], ...]) -> Counter[str
     return frequencies
 
 
+def _term_document_ids(term_counts: tuple[Counter[str], ...]) -> dict[str, tuple[int, ...]]:
+    postings: defaultdict[str, list[int]] = defaultdict(list)
+    for index, counts in enumerate(term_counts):
+        for term in counts:
+            postings[term].append(index)
+    return {term: tuple(indices) for term, indices in postings.items()}
+
+
+def _term_idf(document_frequencies: Counter[str], document_count: int) -> dict[str, float]:
+    if document_count == 0:
+        return {}
+    return {
+        term: math.log(1 + ((document_count - frequency + 0.5) / (frequency + 0.5)))
+        for term, frequency in document_frequencies.items()
+    }
+
+
+def _document_length_norms(
+    document_lengths: tuple[int, ...],
+    average_document_length: float,
+    *,
+    k1: float = 1.5,
+    b: float = 0.75,
+) -> tuple[float, ...]:
+    safe_average = max(average_document_length, 1.0)
+    return tuple(k1 * (1 - b + b * (document_length / safe_average)) for document_length in document_lengths)
+
+
+def _bm25_score_from_precomputed(
+    query_terms: tuple[str, ...],
+    term_counts: Counter[str],
+    document_length_norm: float,
+    term_idf: dict[str, float],
+    *,
+    k1: float = 1.5,
+) -> float:
+    score = 0.0
+    for term in query_terms:
+        frequency = term_counts.get(term, 0)
+        if frequency == 0:
+            continue
+        denominator = frequency + document_length_norm
+        score += term_idf.get(term, 0.0) * ((frequency * (k1 + 1)) / denominator)
+    return score
+
+
 def _bm25_score(
     query_terms: tuple[str, ...],
     document_terms: tuple[str, ...],
@@ -240,6 +301,31 @@ def _bm25_score(
         return 0.0
     term_counts = Counter(document_terms)
     document_length = len(document_terms)
+    return _bm25_score_from_counts(
+        query_terms,
+        term_counts,
+        document_length,
+        document_frequencies,
+        document_count,
+        average_document_length,
+        k1=k1,
+        b=b,
+    )
+
+
+def _bm25_score_from_counts(
+    query_terms: tuple[str, ...],
+    term_counts: Counter[str],
+    document_length: int,
+    document_frequencies: Counter[str],
+    document_count: int,
+    average_document_length: float,
+    *,
+    k1: float = 1.5,
+    b: float = 0.75,
+) -> float:
+    if document_count == 0 or document_length <= 0:
+        return 0.0
     score = 0.0
     for term in query_terms:
         frequency = term_counts.get(term, 0)

@@ -7,11 +7,17 @@ import argparse
 import importlib.util
 import json
 import math
+import re
+import subprocess
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeGuard
 
+EVENTLOOM_CITATION_RE = re.compile(r"^eventloom://[^/\s]+/events/[1-9][0-9]*#[0-9A-Fa-f]+$")
 KNOWN_BACKENDS = {"embedded", "latticedb", "neo4j", "pggraph", "bm25"}
+GRAPH_BACKENDS = {"embedded", "latticedb", "neo4j", "pggraph"}
+KNOWN_TOP_CONTEXT_SOURCES = {"bm25", "exact", "keyword", "traversal", "vector", "verbatim"}
+KNOWN_CONTRACTS = {"answer_ready", "retrieve"}
 KNOWN_STATUSES = {"error", "ok"}
 ERROR_STATUS_EMPTY_METRICS = {
     "answer_at_5",
@@ -88,9 +94,19 @@ def main() -> None:
         help="Require the generated Markdown sidecar to include matching report provenance",
     )
     parser.add_argument(
+        "--require-query-results",
+        action="store_true",
+        help="Require per-query diagnostics for each backend contract summary",
+    )
+    parser.add_argument(
         "--verify-report-fingerprints",
         action="store_true",
         help="Recompute source/workload fingerprints from the report inputs and reject stale reports",
+    )
+    parser.add_argument(
+        "--require-git-tracked-inputs",
+        action="store_true",
+        help="Require the report Eventloom and query input paths to be tracked by git",
     )
     parser.add_argument(
         "--require-labeled-metrics",
@@ -311,10 +327,14 @@ def validate_report(args: argparse.Namespace) -> list[str]:
         report_query_count=report_query_count if _non_negative_int(report_query_count) else None,
     )
     duplicate_errors = _duplicate_backend_errors(summaries)
+    by_backend_contract = _summaries_by_backend_contract(summaries)
     by_backend = {
-        str(summary.get("backend")): summary
-        for summary in summaries
-        if isinstance(summary, dict) and summary.get("backend") is not None
+        backend: _preferred_quality_summary(contract_rows)
+        for backend, contract_rows in by_backend_contract.items()
+    }
+    retrieve_by_backend = {
+        backend: _preferred_retrieval_summary(contract_rows)
+        for backend, contract_rows in by_backend_contract.items()
     }
     required_backends = _csv(args.require_backends)
     forbidden_backends = _csv(args.forbid_backends)
@@ -400,6 +420,7 @@ def validate_report(args: argparse.Namespace) -> list[str]:
     ]:
         errors.extend(_unknown_backend_errors(list(requirements), option))
     errors.extend(_summary_metric_shape_errors(summaries))
+    errors.extend(_query_result_shape_errors(report, summaries, require_query_results=args.require_query_results))
     errors.extend(_backend_policy_conflicts(required_backends, forbidden_backends))
     verified_query_count = _verified_query_count(report) if args.verify_report_fingerprints else None
     if args.require_report_metadata:
@@ -408,41 +429,64 @@ def validate_report(args: argparse.Namespace) -> list[str]:
         errors.extend(_validate_markdown_report(args.report.with_suffix(".md"), report))
     if args.verify_report_fingerprints:
         errors.extend(_verify_report_fingerprints(report))
+        errors.extend(_verify_query_result_workload(report))
+    if args.require_git_tracked_inputs:
+        errors.extend(_validate_git_tracked_inputs(report, args.report))
     for backend in forbidden_backends:
         if backend in by_backend:
             errors.append(f"{backend}: forbidden backend present in report")
     for backend in required_backends:
-        summary = by_backend.get(backend)
-        if summary is None:
+        quality_summary = by_backend.get(backend)
+        retrieval_summary = retrieve_by_backend.get(backend)
+        contract_rows = by_backend_contract.get(backend, {})
+        if quality_summary is None:
             errors.append(f"{backend}: missing required backend summary")
             continue
-        if summary.get("status") != "ok":
-            errors.append(f"{backend}: status is {summary.get('status')!r}, expected 'ok'")
+        if retrieval_summary is None:
+            errors.append(f"{backend}: missing required retrieve contract summary")
             continue
-        if verified_query_count is not None and summary.get("query_count") != verified_query_count:
-            errors.append(
-                f"{backend}: query_count={summary.get('query_count')} "
-                f"does not match current input count {verified_query_count}"
-            )
+        if (
+            backend in GRAPH_BACKENDS
+            and "answer_ready" not in contract_rows
+            and _has_explicit_contract_rows(contract_rows)
+        ):
+            errors.append(f"{backend}: missing required answer_ready contract summary")
+        selected_summaries = _unique_summaries(retrieval_summary, quality_summary)
+        bad_statuses = [
+            summary
+            for summary in selected_summaries
+            if summary.get("status") != "ok"
+        ]
+        if bad_statuses:
+            for summary in bad_statuses:
+                errors.append(f"{backend}: status is {summary.get('status')!r}, expected 'ok'")
+            continue
+        if verified_query_count is not None:
+            for summary in selected_summaries:
+                if summary.get("query_count") != verified_query_count:
+                    errors.append(
+                        f"{backend}: query_count={summary.get('query_count')} "
+                        f"does not match current input count {verified_query_count}"
+                    )
         if args.require_labeled_metrics:
-            errors.extend(_require_metric(summary, backend, "answer_at_5"))
-            errors.extend(_require_metric(summary, backend, "recall_at_5"))
-        errors.extend(_check_floor(summary, backend, "answer_at_5", args.min_answer_at_5))
-        errors.extend(_check_floor(summary, backend, "recall_at_5", args.min_recall_at_5))
-        errors.extend(_check_floor(summary, backend, "citation_coverage", args.min_citation_coverage))
+            errors.extend(_require_metric(quality_summary, backend, "answer_at_5"))
+            errors.extend(_require_metric(retrieval_summary, backend, "recall_at_5"))
+        errors.extend(_check_floor(quality_summary, backend, "answer_at_5", args.min_answer_at_5))
+        errors.extend(_check_floor(retrieval_summary, backend, "recall_at_5", args.min_recall_at_5))
+        errors.extend(_check_floor(quality_summary, backend, "citation_coverage", args.min_citation_coverage))
         expected_source = dashboard_sources.get(backend)
-        if expected_source is not None and summary.get("dashboard_graph_source") != expected_source:
+        if expected_source is not None and retrieval_summary.get("dashboard_graph_source") != expected_source:
             errors.append(
-                f"{backend}: dashboard_graph_source is {summary.get('dashboard_graph_source')!r}, "
+                f"{backend}: dashboard_graph_source is {retrieval_summary.get('dashboard_graph_source')!r}, "
                 f"expected {expected_source!r}"
             )
-        errors.extend(_check_backend_floor(summary, backend, "projection_events_per_second", min_projection_eps))
-        errors.extend(_check_backend_ceiling(summary, backend, "cold_bootstrap_ms", max_cold_bootstrap_ms))
-        errors.extend(_check_backend_ceiling(summary, backend, "first_useful_init_ms", max_first_init_ms))
-        errors.extend(_check_backend_ceiling(summary, backend, "first_checkout_ms", max_first_checkout_ms))
+        errors.extend(_check_backend_floor(retrieval_summary, backend, "projection_events_per_second", min_projection_eps))
+        errors.extend(_check_backend_ceiling(retrieval_summary, backend, "cold_bootstrap_ms", max_cold_bootstrap_ms))
+        errors.extend(_check_backend_ceiling(retrieval_summary, backend, "first_useful_init_ms", max_first_init_ms))
+        errors.extend(_check_backend_ceiling(retrieval_summary, backend, "first_checkout_ms", max_first_checkout_ms))
         errors.extend(
             _check_backend_ceiling(
-                summary,
+                retrieval_summary,
                 backend,
                 "append_to_projection_p95_ms",
                 max_append_projection_p95_ms,
@@ -450,7 +494,7 @@ def validate_report(args: argparse.Namespace) -> list[str]:
         )
         errors.extend(
             _check_backend_ceiling(
-                summary,
+                retrieval_summary,
                 backend,
                 "resident_memory_delta_bytes",
                 max_resident_memory_delta_bytes,
@@ -458,18 +502,18 @@ def validate_report(args: argparse.Namespace) -> list[str]:
         )
         errors.extend(
             _check_backend_ceiling(
-                summary,
+                retrieval_summary,
                 backend,
                 "on_disk_footprint_bytes",
                 max_on_disk_footprint_bytes,
             )
         )
-        errors.extend(_check_backend_ceiling(summary, backend, "rebuild_recovery_ms", max_rebuild_ms))
-        errors.extend(_check_backend_ceiling(summary, backend, "checkout_p95_ms", max_checkout_p95_ms))
-        errors.extend(_check_backend_ceiling(summary, backend, "checkout_p99_ms", max_checkout_p99_ms))
+        errors.extend(_check_backend_ceiling(retrieval_summary, backend, "rebuild_recovery_ms", max_rebuild_ms))
+        errors.extend(_check_backend_ceiling(retrieval_summary, backend, "checkout_p95_ms", max_checkout_p95_ms))
+        errors.extend(_check_backend_ceiling(retrieval_summary, backend, "checkout_p99_ms", max_checkout_p99_ms))
         errors.extend(
             _check_backend_ceiling(
-                summary,
+                retrieval_summary,
                 backend,
                 "dashboard_graph_load_ms",
                 max_dashboard_graph_load_ms,
@@ -477,7 +521,7 @@ def validate_report(args: argparse.Namespace) -> list[str]:
         )
         errors.extend(
             _check_backend_floor(
-                summary,
+                quality_summary,
                 backend,
                 "quality_per_1k_returned_tokens",
                 min_quality_per_1k_tokens,
@@ -485,7 +529,7 @@ def validate_report(args: argparse.Namespace) -> list[str]:
         )
         errors.extend(
             _check_backend_floor(
-                summary,
+                quality_summary,
                 backend,
                 "answer_at_5_per_1k_returned_tokens",
                 min_answer_at_5_per_1k_tokens,
@@ -493,7 +537,7 @@ def validate_report(args: argparse.Namespace) -> list[str]:
         )
         errors.extend(
             _check_backend_floor(
-                summary,
+                quality_summary,
                 backend,
                 "quality_per_1k_injected_tokens",
                 min_quality_per_1k_injected_tokens,
@@ -501,20 +545,20 @@ def validate_report(args: argparse.Namespace) -> list[str]:
         )
         errors.extend(
             _check_backend_floor(
-                summary,
+                quality_summary,
                 backend,
                 "answer_at_5_per_1k_injected_tokens",
                 min_answer_at_5_per_1k_injected_tokens,
             )
         )
-        errors.extend(_check_backend_ceiling(summary, backend, "exact_p95_ms", max_exact_p95_ms))
-        errors.extend(_check_backend_ceiling(summary, backend, "exact_p99_ms", max_exact_p99_ms))
-        errors.extend(_check_backend_ceiling(summary, backend, "keyword_p95_ms", max_keyword_p95_ms))
-        errors.extend(_check_backend_ceiling(summary, backend, "keyword_p99_ms", max_keyword_p99_ms))
-        errors.extend(_check_backend_ceiling(summary, backend, "vector_p95_ms", max_vector_p95_ms))
-        errors.extend(_check_backend_ceiling(summary, backend, "vector_p99_ms", max_vector_p99_ms))
-        errors.extend(_check_backend_ceiling(summary, backend, "traversal_p95_ms", max_traversal_p95_ms))
-        errors.extend(_check_backend_ceiling(summary, backend, "traversal_p99_ms", max_traversal_p99_ms))
+        errors.extend(_check_backend_ceiling(retrieval_summary, backend, "exact_p95_ms", max_exact_p95_ms))
+        errors.extend(_check_backend_ceiling(retrieval_summary, backend, "exact_p99_ms", max_exact_p99_ms))
+        errors.extend(_check_backend_ceiling(retrieval_summary, backend, "keyword_p95_ms", max_keyword_p95_ms))
+        errors.extend(_check_backend_ceiling(retrieval_summary, backend, "keyword_p99_ms", max_keyword_p99_ms))
+        errors.extend(_check_backend_ceiling(retrieval_summary, backend, "vector_p95_ms", max_vector_p95_ms))
+        errors.extend(_check_backend_ceiling(retrieval_summary, backend, "vector_p99_ms", max_vector_p99_ms))
+        errors.extend(_check_backend_ceiling(retrieval_summary, backend, "traversal_p95_ms", max_traversal_p95_ms))
+        errors.extend(_check_backend_ceiling(retrieval_summary, backend, "traversal_p99_ms", max_traversal_p99_ms))
     return errors
 
 
@@ -526,6 +570,46 @@ def _load_report(path: Path) -> dict[str, Any]:
     if not isinstance(report, dict):
         raise ValueError("top-level report must be an object")
     return report
+
+
+def _summaries_by_backend_contract(summaries: list[Any]) -> dict[str, dict[str, dict[str, Any]]]:
+    """Group valid summary rows by backend and benchmark contract."""
+    grouped: dict[str, dict[str, dict[str, Any]]] = {}
+    for summary in summaries:
+        if not isinstance(summary, dict) or summary.get("backend") is None:
+            continue
+        backend = str(summary["backend"])
+        contract = str(summary.get("contract") or "retrieve")
+        grouped.setdefault(backend, {})[contract] = summary
+    return grouped
+
+
+def _preferred_quality_summary(contract_rows: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Return the row used for answer-ready quality gates."""
+    return contract_rows.get("answer_ready") or contract_rows.get("retrieve") or next(iter(contract_rows.values()))
+
+
+def _preferred_retrieval_summary(contract_rows: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+    """Return the row used for raw retrieval and operational latency gates."""
+    return contract_rows.get("retrieve")
+
+
+def _has_explicit_contract_rows(contract_rows: dict[str, dict[str, Any]]) -> bool:
+    """Return whether a backend report opted into contract-specific rows."""
+    return any("contract" in summary for summary in contract_rows.values())
+
+
+def _unique_summaries(*summaries: dict[str, Any]) -> list[dict[str, Any]]:
+    """Deduplicate summary row objects while preserving order."""
+    unique: list[dict[str, Any]] = []
+    seen: set[int] = set()
+    for summary in summaries:
+        identity = id(summary)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        unique.append(summary)
+    return unique
 
 
 def _summary_shape_errors(
@@ -541,6 +625,11 @@ def _summary_shape_errors(
             continue
         if not _non_empty_string(summary.get("backend")):
             errors.append(f"report: summaries[{index}].backend is missing")
+        if "contract" in summary and summary.get("contract") not in KNOWN_CONTRACTS:
+            expected = ", ".join(sorted(KNOWN_CONTRACTS))
+            errors.append(
+                f"report: summaries[{index}].contract is {summary.get('contract')!r}, expected one of: {expected}"
+            )
         if not _non_empty_string(summary.get("status")):
             errors.append(f"report: summaries[{index}].status is missing")
         elif summary.get("status") not in KNOWN_STATUSES:
@@ -612,6 +701,335 @@ def _summary_metric_shape_errors(summaries: list[Any]) -> list[str]:
     return errors
 
 
+def _query_result_shape_errors(report: dict[str, Any], summaries: list[Any], *, require_query_results: bool = False) -> list[str]:
+    query_results = report.get("query_results")
+    if query_results is None:
+        if require_query_results:
+            return ["report: query_results are required"]
+        return []
+    if not isinstance(query_results, dict):
+        return ["report: query_results must be an object"]
+
+    errors: list[str] = []
+    expected_counts = _summary_result_query_counts(summaries)
+    expected_keys = set(expected_counts)
+    actual_keys = set(query_results)
+    for key in sorted(expected_keys - actual_keys):
+        errors.append(f"report: query_results missing diagnostics for {key}")
+    for key in sorted(actual_keys - expected_keys):
+        errors.append(f"report: query_results contains diagnostics for {key} without matching summary")
+    for key, value in query_results.items():
+        if not isinstance(value, list):
+            errors.append(f"report: query_results[{key!r}] must be a list")
+            continue
+        expected_count = expected_counts.get(key)
+        if expected_count is not None and len(value) != expected_count:
+            errors.append(
+                f"report: query_results[{key!r}] has {len(value)} diagnostics, expected {expected_count}"
+            )
+        errors.extend(_query_diagnostic_item_errors(key, value))
+    errors.extend(_query_result_summary_metric_errors(query_results, summaries))
+    return errors
+
+
+def _query_result_summary_metric_errors(query_results: dict[Any, Any], summaries: list[Any]) -> list[str]:
+    errors: list[str] = []
+    for summary in summaries:
+        if not isinstance(summary, dict):
+            continue
+        backend = summary.get("backend")
+        if backend is None:
+            continue
+        key = f"{backend}:{summary.get('contract') or 'retrieve'}"
+        diagnostics = query_results.get(key)
+        if not isinstance(diagnostics, list) or not _query_diagnostics_ready_for_aggregation(diagnostics):
+            continue
+        expected = _query_result_aggregates(diagnostics)
+        for metric, expected_value in expected.items():
+            actual = summary.get(metric)
+            if expected_value is None:
+                continue
+            if actual is None:
+                errors.append(f"{key}: {metric} is missing; query_results aggregate is {expected_value}")
+            elif not _number(actual):
+                errors.append(f"{key}: {metric} must be a number to compare with query_results aggregate {expected_value}")
+            elif round(float(actual), 4) != expected_value:
+                errors.append(f"{key}: {metric}={actual} does not match query_results aggregate {expected_value}")
+    return errors
+
+
+def _query_diagnostics_ready_for_aggregation(diagnostics: list[Any]) -> TypeGuard[list[dict[str, Any]]]:
+    for diagnostic in diagnostics:
+        if not isinstance(diagnostic, dict):
+            return False
+        if not _number(diagnostic.get("quality")) or not _number(diagnostic.get("recall_quality")):
+            return False
+        if not _number(diagnostic.get("latency_ms")):
+            return False
+        if not _non_negative_int(diagnostic.get("returned_tokens")):
+            return False
+        if not _non_negative_int(diagnostic.get("injected_tokens")):
+            return False
+        if not isinstance(diagnostic.get("citation_hit"), bool):
+            return False
+        if not isinstance(diagnostic.get("expected_terms"), list):
+            return False
+        if not isinstance(diagnostic.get("retrieval_terms"), list):
+            return False
+    return True
+
+
+def _query_result_aggregates(diagnostics: list[dict[str, Any]]) -> dict[str, float | None]:
+    answer_labeled = [diagnostic for diagnostic in diagnostics if diagnostic["expected_terms"]]
+    recall_labeled = [diagnostic for diagnostic in diagnostics if diagnostic["retrieval_terms"]]
+    mean_quality = _mean_numbers([float(diagnostic["quality"]) for diagnostic in diagnostics])
+    answer_at_5 = (
+        round(sum(1.0 for diagnostic in answer_labeled if float(diagnostic["quality"]) >= 1.0) / len(answer_labeled), 4)
+        if answer_labeled
+        else None
+    )
+    mean_returned_tokens = _mean_numbers([float(diagnostic["returned_tokens"]) for diagnostic in diagnostics])
+    mean_injected_tokens = _mean_numbers([float(diagnostic["injected_tokens"]) for diagnostic in diagnostics])
+    latencies = [float(diagnostic["latency_ms"]) for diagnostic in diagnostics]
+    return {
+        "mean_quality": mean_quality,
+        "answer_at_5": answer_at_5,
+        "recall_at_5": _mean_numbers([float(diagnostic["recall_quality"]) for diagnostic in recall_labeled]),
+        "citation_coverage": (
+            round(sum(1.0 for diagnostic in diagnostics if diagnostic["citation_hit"]) / len(diagnostics), 4)
+            if diagnostics
+            else None
+        ),
+        "mean_returned_tokens": mean_returned_tokens,
+        "quality_per_1k_returned_tokens": _per_1k_tokens(mean_quality, mean_returned_tokens),
+        "answer_at_5_per_1k_returned_tokens": _per_1k_tokens(answer_at_5, mean_returned_tokens),
+        "mean_injected_tokens": mean_injected_tokens,
+        "quality_per_1k_injected_tokens": _per_1k_tokens(mean_quality, mean_injected_tokens),
+        "answer_at_5_per_1k_injected_tokens": _per_1k_tokens(answer_at_5, mean_injected_tokens),
+        "first_checkout_ms": round(latencies[0], 3) if latencies else None,
+        "checkout_p95_ms": _nearest_rank_percentile(latencies, 95),
+        "checkout_p99_ms": _nearest_rank_percentile(latencies, 99),
+    }
+
+
+def _mean_numbers(values: list[float]) -> float | None:
+    return round(sum(values) / len(values), 4) if values else None
+
+
+def _per_1k_tokens(metric: float | None, mean_tokens: float | None) -> float | None:
+    if metric is None or mean_tokens is None or mean_tokens <= 0:
+        return None
+    return round(metric / mean_tokens * 1000, 4)
+
+
+def _nearest_rank_percentile(values: list[float], percentile: int) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = min(len(ordered) - 1, math.ceil((percentile / 100) * len(ordered)) - 1)
+    return round(ordered[index], 3)
+
+
+def _query_diagnostic_item_errors(key: str, diagnostics: list[Any]) -> list[str]:
+    errors: list[str] = []
+    for index, diagnostic in enumerate(diagnostics):
+        label = f"report: query_results[{key!r}][{index}]"
+        if not isinstance(diagnostic, dict):
+            errors.append(f"{label} must be an object")
+            continue
+        if not _non_empty_string(diagnostic.get("query")):
+            errors.append(f"{label}.query must be a non-empty string")
+        for metric in ("quality", "recall_quality"):
+            value = diagnostic.get(metric)
+            if not _number(value) or not 0 <= float(value) <= 1:
+                errors.append(f"{label}.{metric} must be a rate between 0 and 1")
+        for metric in ("answer_hit", "recall_hit", "citation_hit"):
+            if not isinstance(diagnostic.get(metric), bool):
+                errors.append(f"{label}.{metric} must be a boolean")
+        errors.extend(_query_hit_consistency_errors(label, diagnostic))
+        for metric in ("latency_ms",):
+            value = diagnostic.get(metric)
+            if not _number(value) or float(value) < 0:
+                errors.append(f"{label}.{metric} must be a non-negative number")
+        for metric in ("returned_tokens", "injected_tokens"):
+            if not _non_negative_int(diagnostic.get(metric)):
+                errors.append(f"{label}.{metric} must be a non-negative integer")
+        for metric in (
+            "expected_terms",
+            "identity_terms",
+            "source_terms",
+            "retrieval_terms",
+            "missing_expected_terms",
+            "missing_retrieval_terms",
+            "top_contexts",
+        ):
+            if not isinstance(diagnostic.get(metric), list):
+                errors.append(f"{label}.{metric} must be a list")
+        for metric in (
+            "expected_terms",
+            "identity_terms",
+            "source_terms",
+            "retrieval_terms",
+            "missing_expected_terms",
+            "missing_retrieval_terms",
+        ):
+            errors.extend(_string_list_item_errors(label, diagnostic, metric))
+        errors.extend(_missing_term_consistency_errors(label, diagnostic))
+        top_contexts = diagnostic.get("top_contexts")
+        if isinstance(top_contexts, list):
+            errors.extend(_top_context_diagnostic_errors(label, top_contexts))
+            errors.extend(_citation_hit_context_errors(label, diagnostic, top_contexts))
+    return errors
+
+
+def _citation_hit_context_errors(label: str, diagnostic: dict[str, Any], top_contexts: list[Any]) -> list[str]:
+    expected_hit = any(isinstance(context, dict) and _non_empty_string(context.get("citation")) for context in top_contexts)
+    citation_hit = diagnostic.get("citation_hit")
+    if citation_hit == expected_hit:
+        return []
+    if citation_hit is True:
+        return [f"{label}.citation_hit requires at least one cited top_context"]
+    return [f"{label}.citation_hit must equal presence of a cited top_context"]
+
+
+def _query_hit_consistency_errors(label: str, diagnostic: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    quality = diagnostic.get("quality")
+    answer_hit = diagnostic.get("answer_hit")
+    if _number(quality) and isinstance(answer_hit, bool) and answer_hit != (float(quality) >= 1.0):
+        errors.append(f"{label}.answer_hit must equal quality >= 1.0")
+    recall_quality = diagnostic.get("recall_quality")
+    recall_hit = diagnostic.get("recall_hit")
+    if _number(recall_quality) and isinstance(recall_hit, bool) and recall_hit != (float(recall_quality) >= 1.0):
+        errors.append(f"{label}.recall_hit must equal recall_quality >= 1.0")
+    return errors
+
+
+def _missing_term_consistency_errors(label: str, diagnostic: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    errors.extend(
+        _missing_term_subset_errors(
+            label,
+            diagnostic,
+            missing_metric="missing_expected_terms",
+            source_metric="expected_terms",
+        )
+    )
+    errors.extend(
+        _missing_term_subset_errors(
+            label,
+            diagnostic,
+            missing_metric="missing_retrieval_terms",
+            source_metric="retrieval_terms",
+        )
+    )
+    return errors
+
+
+def _missing_term_subset_errors(
+    label: str,
+    diagnostic: dict[str, Any],
+    *,
+    missing_metric: str,
+    source_metric: str,
+) -> list[str]:
+    missing = diagnostic.get(missing_metric)
+    source = diagnostic.get(source_metric)
+    if not _string_list(missing) or not _string_list(source):
+        return []
+    source_terms = set(source)
+    return [
+        f"{label}.{missing_metric}[{index}] is not present in {source_metric}"
+        for index, term in enumerate(missing)
+        if term not in source_terms
+    ]
+
+
+def _string_list(value: object) -> TypeGuard[list[str]]:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _string_list_item_errors(label: str, payload: dict[str, Any], metric: str) -> list[str]:
+    value = payload.get(metric)
+    if not isinstance(value, list):
+        return []
+    return [
+        f"{label}.{metric}[{index}] must be a string"
+        for index, item in enumerate(value)
+        if not isinstance(item, str)
+    ]
+
+
+def _top_context_diagnostic_errors(query_label: str, top_contexts: list[Any]) -> list[str]:
+    errors: list[str] = []
+    ranks: list[int] = []
+    for index, context in enumerate(top_contexts):
+        label = f"{query_label}.top_contexts[{index}]"
+        if not isinstance(context, dict):
+            errors.append(f"{label} must be an object")
+            continue
+        rank = context.get("rank")
+        if not _positive_int(rank):
+            errors.append(f"{label}.rank must be a positive integer")
+        elif isinstance(rank, int):
+            ranks.append(rank)
+        else:
+            errors.append(f"{label}.rank must be a positive integer")
+        source = context.get("source")
+        if not _non_empty_string(source):
+            errors.append(f"{label}.source must be a non-empty string")
+        elif source not in KNOWN_TOP_CONTEXT_SOURCES:
+            errors.append(f"{label}.source is not recognized")
+        score = context.get("score")
+        if not _number(score) or float(score) < 0:
+            errors.append(f"{label}.score must be a non-negative number")
+        elif context.get("source") == "vector" and float(score) <= 0:
+            errors.append(f"{label}.score must be positive for vector source")
+        citation = context.get("citation")
+        if citation is not None and not _non_empty_string(citation):
+            errors.append(f"{label}.citation must be a non-empty string or null")
+        elif isinstance(citation, str) and not _supported_context_citation(citation):
+            errors.append(f"{label}.citation must start with eventloom:// or file://")
+        elif isinstance(citation, str) and citation.startswith("eventloom://") and not _valid_eventloom_citation(citation):
+            errors.append(f"{label}.citation must match eventloom://<thread>/events/<seq>#<hash>")
+        elif isinstance(citation, str) and citation.startswith("file://") and not _valid_file_citation(citation):
+            errors.append(f"{label}.citation must include a file:// path")
+        if not _non_empty_string(context.get("snippet")):
+            errors.append(f"{label}.snippet must be a non-empty string")
+    if ranks and ranks != list(range(1, len(top_contexts) + 1)):
+        errors.append(f"{query_label}.top_contexts ranks must be contiguous from 1")
+    return errors
+
+
+def _supported_context_citation(citation: str) -> bool:
+    return citation.startswith(("eventloom://", "file://"))
+
+
+def _valid_eventloom_citation(citation: str) -> bool:
+    return EVENTLOOM_CITATION_RE.fullmatch(citation) is not None
+
+
+def _valid_file_citation(citation: str) -> bool:
+    return bool(citation.removeprefix("file://").strip())
+
+
+def _summary_result_query_counts(summaries: list[Any]) -> dict[str, int | None]:
+    counts: dict[str, int | None] = {}
+    for summary in summaries:
+        if not isinstance(summary, dict):
+            continue
+        backend = summary.get("backend")
+        if backend is None:
+            continue
+        contract = str(summary.get("contract") or "retrieve")
+        query_count = summary.get("query_count")
+        key = f"{backend}:{contract}"
+        if key in counts:
+            continue
+        counts[key] = query_count if _non_negative_int(query_count) else None
+    return counts
+
+
 def _schema_version_one(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value == 1
 
@@ -640,12 +1058,18 @@ def _backend_policy_conflicts(required_backends: list[str], forbidden_backends: 
 
 
 def _duplicate_backend_errors(summaries: list[Any]) -> list[str]:
-    counts: dict[str, int] = {}
+    counts: dict[tuple[str, str], int] = {}
     for summary in summaries:
         if isinstance(summary, dict) and summary.get("backend") is not None:
             backend = str(summary["backend"])
-            counts[backend] = counts.get(backend, 0) + 1
-    return [f"{backend}: duplicate backend summary rows found" for backend, count in counts.items() if count > 1]
+            contract = str(summary.get("contract") or "retrieve")
+            key = (backend, contract)
+            counts[key] = counts.get(key, 0) + 1
+    return [
+        f"{backend}:{contract}: duplicate backend summary rows found"
+        for (backend, contract), count in counts.items()
+        if count > 1
+    ]
 
 
 def _validate_report_metadata(report: dict[str, Any]) -> list[str]:
@@ -701,26 +1125,101 @@ def _missing_markdown_backend_rows(markdown: str, report: dict[str, Any]) -> lis
         status = summary.get("status")
         if backend is None or status is None:
             continue
-        row_prefix = f"| {backend} | {status} |"
+        contract = str(summary.get("contract") or "retrieve")
+        row_prefix = f"| {backend} | {contract} | {status} |"
         row = _markdown_row(markdown, row_prefix)
+        if row is None and ("contract" not in summary or "| Contract |" not in markdown):
+            row = _markdown_row(markdown, f"| {backend} | {status} |")
         if row is None:
-            errors.append(f"report: Markdown sidecar missing backend row for {backend}")
+            backend_label = f"{backend}:{contract}" if "contract" in summary else str(backend)
+            errors.append(f"report: Markdown sidecar missing backend row for {backend_label}")
             continue
-        for metric in (
-            "answer_at_5",
-            "recall_at_5",
-            "citation_coverage",
-            "quality_per_1k_injected_tokens",
-            "answer_at_5_per_1k_injected_tokens",
-        ):
+        header = _markdown_header_for_row(markdown, row)
+        backend_label = f"{backend}:{contract}" if "contract" in summary else str(backend)
+        for metric in _MARKDOWN_METRIC_COLUMNS:
             value = summary.get(metric)
-            if value is not None and f"| {value} |" not in row:
-                errors.append(f"report: Markdown sidecar row for {backend} missing {metric}={value}")
+            if value is not None and _markdown_metric_value(row, header, metric) != str(value):
+                errors.append(f"report: Markdown sidecar row for {backend_label} missing {metric}={value}")
     return errors
 
 
 def _markdown_row(markdown: str, prefix: str) -> str | None:
     return next((line for line in markdown.splitlines() if line.startswith(prefix)), None)
+
+
+def _markdown_header_for_row(markdown: str, row: str) -> str | None:
+    lines = markdown.splitlines()
+    for index, line in enumerate(lines):
+        if line != row:
+            continue
+        for separator_index in range(index - 1, 0, -1):
+            if _markdown_separator_row(lines[separator_index]) and lines[separator_index - 1].startswith("|"):
+                return lines[separator_index - 1]
+    return None
+
+
+def _markdown_separator_row(row: str) -> bool:
+    return all(char in "| :-" for char in row.strip())
+
+
+def _markdown_metric_value(row: str, header: str | None, metric: str) -> str | None:
+    if header is None:
+        return None
+    header_cells = _markdown_cells(header)
+    row_cells = _markdown_cells(row)
+    column_name = _MARKDOWN_METRIC_COLUMNS[metric]
+    try:
+        index = header_cells.index(column_name)
+    except ValueError:
+        return None
+    if index >= len(row_cells):
+        return None
+    return row_cells[index]
+
+
+def _markdown_cells(row: str) -> list[str]:
+    return [cell.strip() for cell in row.strip().strip("|").split("|")]
+
+
+_MARKDOWN_METRIC_COLUMNS = {
+    "cold_bootstrap_ms": "Cold bootstrap ms",
+    "first_useful_init_ms": "First useful init ms",
+    "first_checkout_ms": "First checkout ms",
+    "append_to_projection_p95_ms": "Append projection p95 ms",
+    "projection_events_per_second": "Projection eps",
+    "checkout_p95_ms": "Checkout p95 ms",
+    "checkout_p99_ms": "Checkout p99 ms",
+    "exact_p50_ms": "Exact p50 ms",
+    "exact_p95_ms": "Exact p95 ms",
+    "exact_p99_ms": "Exact p99 ms",
+    "keyword_p50_ms": "Keyword p50 ms",
+    "keyword_p95_ms": "Keyword p95 ms",
+    "keyword_p99_ms": "Keyword p99 ms",
+    "vector_p50_ms": "Vector p50 ms",
+    "vector_p95_ms": "Vector p95 ms",
+    "vector_p99_ms": "Vector p99 ms",
+    "traversal_p50_ms": "Traversal p50 ms",
+    "traversal_p95_ms": "Traversal p95 ms",
+    "traversal_p99_ms": "Traversal p99 ms",
+    "dashboard_graph_load_ms": "Dashboard graph load ms",
+    "dashboard_graph_source": "Dashboard source",
+    "dashboard_graph_nodes": "Dashboard nodes",
+    "dashboard_graph_edges": "Dashboard edges",
+    "mean_returned_tokens": "Returned tokens",
+    "quality_per_1k_returned_tokens": "Quality / 1k tokens",
+    "answer_at_5_per_1k_returned_tokens": "Answer@5 / 1k tokens",
+    "mean_injected_tokens": "Injected tokens",
+    "quality_per_1k_injected_tokens": "Quality / 1k injected",
+    "answer_at_5_per_1k_injected_tokens": "Answer@5 / 1k injected",
+    "answer_at_5": "Answer@5",
+    "recall_at_5": "Recall@5",
+    "citation_coverage": "Citation coverage",
+    "mean_quality": "Mean quality",
+    "memory_footprint_bytes": "Memory bytes",
+    "resident_memory_delta_bytes": "Resident memory delta bytes",
+    "on_disk_footprint_bytes": "On-disk footprint bytes",
+    "rebuild_recovery_ms": "Rebuild recovery ms",
+}
 
 
 def _nested_string(report: dict[str, Any], section: str, key: str) -> str | None:
@@ -787,6 +1286,82 @@ def _verify_report_fingerprints(report: dict[str, Any]) -> list[str]:
         )
     )
     return errors
+
+
+def _verify_query_result_workload(report: dict[str, Any]) -> list[str]:
+    query_results = report.get("query_results")
+    queries_file = report.get("queries_file")
+    if not isinstance(query_results, dict) or not isinstance(queries_file, str) or not queries_file:
+        return []
+    harness = _load_backend_shootout_harness()
+    query_specs = harness._load_queries(Path(queries_file))
+    expected_queries = [spec.query for spec in query_specs]
+    expected_terms = [list(spec.expected_terms) for spec in query_specs]
+    expected_identity_terms = [list(spec.identity_terms) for spec in query_specs]
+    expected_source_terms = [list(spec.source_terms) for spec in query_specs]
+    errors: list[str] = []
+    for key, diagnostics in query_results.items():
+        if not isinstance(diagnostics, list):
+            continue
+        for index, diagnostic in enumerate(diagnostics[: len(query_specs)]):
+            if not isinstance(diagnostic, dict):
+                continue
+            label = f"report: query_results[{key!r}][{index}]"
+            if diagnostic.get("query") != expected_queries[index]:
+                errors.append(f"{label}.query does not match current query workload")
+            if diagnostic.get("expected_terms") != expected_terms[index]:
+                errors.append(f"{label}.expected_terms does not match current query workload")
+            if diagnostic.get("identity_terms") != expected_identity_terms[index]:
+                errors.append(f"{label}.identity_terms does not match current query workload")
+            if diagnostic.get("source_terms") != expected_source_terms[index]:
+                errors.append(f"{label}.source_terms does not match current query workload")
+    return errors
+
+
+def _validate_git_tracked_inputs(report: dict[str, Any], report_path: Path) -> list[str]:
+    errors: list[str] = []
+    root = _git_root(report_path)
+    if root is None:
+        return ["report: git root could not be resolved"]
+    for label in ("eventloom_path", "queries_file"):
+        value = report.get(label)
+        if not isinstance(value, str) or not value:
+            errors.append(f"report: {label} is missing")
+            continue
+        path = Path(value)
+        candidate = path if path.is_absolute() else root / path
+        if not _git_path_is_tracked(root, candidate):
+            errors.append(f"report: {label} {value} is not tracked by git")
+    return errors
+
+
+def _git_root(path: Path) -> Path | None:
+    for cwd in (path.parent if path.parent.exists() else Path.cwd(), Path.cwd()):
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            cwd=cwd,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            return Path(result.stdout.strip()).resolve()
+    return None
+
+
+def _git_path_is_tracked(root: Path, path: Path) -> bool:
+    try:
+        relative = path.resolve().relative_to(root)
+    except ValueError:
+        return False
+    result = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", "--", str(relative)],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
 
 
 def _load_backend_shootout_harness() -> Any:
@@ -987,7 +1562,7 @@ def _check_backend_ceiling(
     return []
 
 
-def _number(value: object) -> bool:
+def _number(value: object) -> TypeGuard[int | float]:
     return isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value)
 
 

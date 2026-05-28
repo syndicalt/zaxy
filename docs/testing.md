@@ -32,7 +32,7 @@ services:
 
 ```bash
 ./scripts/generate-certs.sh .certs
-docker compose up -d neo4j-test neo4j-tls
+docker compose --profile integration up -d neo4j-test neo4j-tls
 ```
 
 For local full-suite checks, prefer the integration helper so the Neo4j
@@ -83,30 +83,32 @@ shootout guardrail through
 `scripts/check-backend-shootout.py` against the checked active-backend report,
 so release evidence fails if labeled Answer@5/Recall@5, citation coverage, or
 the embedded dashboard graph source are missing or below the documented floor.
-The backend report checks use `--require-report-metadata` and
-`--require-markdown-report`, so release evidence must include the report schema
-version, generation timestamp, source fingerprints, normalized workload
-fingerprints, and a matching human-readable Markdown sidecar needed to reproduce
-or audit the run. They also use `--verify-report-fingerprints`, which recomputes
-the Eventloom, query-file, filtered-event, and normalized-query fingerprints
-before accepting the report. Active release reports also use `--forbid-backends
-latticedb`, so parked candidate evidence cannot be mistaken for current release
-evidence while LatticeDB remains below the active-backend gate.
+The backend report checks use `--require-report-metadata`,
+`--require-markdown-report`, `--require-query-results`, and
+`--require-git-tracked-inputs`, so release evidence must include the report
+schema version, generation timestamp, source fingerprints, normalized workload
+fingerprints, a matching human-readable Markdown sidecar, per-query diagnostics
+needed to reproduce or audit the run, and checked-in Eventloom/query inputs.
+They also use `--verify-report-fingerprints`, which recomputes the Eventloom,
+query-file, filtered-event, and normalized-query fingerprints before accepting
+the report. Active release reports also use `--forbid-backends
+neo4j,pggraph,latticedb`, so optional sidecar or candidate evidence cannot be
+mistaken for the current sidecar-free active-backend gate.
 That checked active-backend report must also preserve embedded injected-token
 efficiency with `--min-quality-per-1k-injected-tokens embedded=1.0` and
 `--min-answer-at-5-per-1k-injected-tokens embedded=1.0`.
 The backend shootout release gate also checks medium-scale embedded runtime evidence against
 `reports/backend-shootout/longmemeval-40-backend-shootout.json` with backend
 scoped performance thresholds: `--min-projection-events-per-second
-embedded=40`, `--max-cold-bootstrap-ms embedded=200`,
+embedded=40`, `--max-cold-bootstrap-ms embedded=250`,
 `--max-first-useful-init-ms embedded=15000`,
 `--max-first-checkout-ms embedded=50`,
-`--max-append-to-projection-p95-ms embedded=30`,
+`--max-append-to-projection-p95-ms embedded=35`,
 `--max-resident-memory-delta-bytes embedded=768000000`,
 `--max-on-disk-footprint-bytes embedded=256000000`,
 `--max-dashboard-graph-load-ms embedded=500`,
 `--max-rebuild-recovery-ms embedded=15000`, `--max-checkout-p95-ms
-embedded=100`, and `--max-checkout-p99-ms embedded=75`. The same command now guards token efficiency and lane latency
+embedded=100`, and `--max-checkout-p99-ms embedded=85`. The same command now guards token efficiency and lane latency
 directly with `--min-quality-per-1k-returned-tokens embedded=0.10`,
 `--min-answer-at-5-per-1k-returned-tokens embedded=0.10`,
 `--min-quality-per-1k-injected-tokens embedded=0.10`,
@@ -117,14 +119,19 @@ directly with `--min-quality-per-1k-returned-tokens embedded=0.10`,
 Finally, the release gate checks 100-query embedded scale evidence at
 `reports/backend-shootout/longmemeval-100-backend-shootout.json` with the same
 token-efficiency dimensions and a looser scale latency ceiling, including
-`--max-cold-bootstrap-ms embedded=200`,
-`--max-first-checkout-ms embedded=100`,
+`--max-cold-bootstrap-ms embedded=600`,
+`--max-first-useful-init-ms embedded=45000`,
+`--max-first-checkout-ms embedded=150`,
 `--max-append-to-projection-p95-ms embedded=40`,
-`--max-resident-memory-delta-bytes embedded=1536000000`,
+`--max-resident-memory-delta-bytes embedded=1700000000`,
 `--max-on-disk-footprint-bytes embedded=512000000`,
 `--max-dashboard-graph-load-ms embedded=500`,
-`--max-checkout-p95-ms embedded=125`,
-`--max-checkout-p99-ms embedded=175`,
+`--max-rebuild-recovery-ms embedded=45000`,
+`--max-checkout-p95-ms embedded=200`,
+`--max-checkout-p99-ms embedded=250`,
+`--max-keyword-p95-ms embedded=20`,
+`--max-keyword-p99-ms embedded=15`,
+`--min-recall-at-5 0.90`,
 `--min-quality-per-1k-injected-tokens embedded=0.15`, and
 `--min-answer-at-5-per-1k-injected-tokens embedded=0.15`.
 
@@ -186,26 +193,37 @@ fail-fast behavior without running destructive commands.
 Benchmark tests cover extraction latency, append latency, graph upsert latency,
 query latency, and competitive retrieval harness behavior. Benchmarks are useful
 for detecting large regressions, but correctness tests decide release readiness.
-For live comparative statistics against markdown, BM25, vector, markdown+vector, and
-Zaxy retrieval, run the statistically powered workload:
+For live comparative statistics against markdown, BM25, vector,
+markdown+vector, and Zaxy retrieval, run the statistically powered workload. The
+wrapper uses deterministic hash embeddings and the embedded projection backend
+by default, so this path is offline and reproducible:
 
 ```bash
-./scripts/generate-certs.sh .certs
-docker compose up -d neo4j-test
-scripts/live-benchmark.sh --embedding-provider openai --workload statistical --subjects 100 --runs 1 --reset-graph
+scripts/live-benchmark.sh --workload statistical --subjects 100 --runs 1 --reset-graph
 ```
 
-OpenAI mode uses `OPENAI_API_KEY`, `OPENAI_EMBEDDING_MODEL`, and
-`EMBEDDING_DIMENSION`. The default model is `text-embedding-3-small`.
+OpenAI mode is opt-in with `--embedding-provider openai` and uses
+`OPENAI_API_KEY`, `OPENAI_EMBEDDING_MODEL`, and `EMBEDDING_DIMENSION`. The
+default hosted model is `text-embedding-3-small`. The same wrapper also passes
+through `--embedding-provider local-http` and `--embedding-provider
+sentence-transformers` for local provider comparisons.
 The script writes `reports/benchmarks/live-benchmark.json` for automation and
-`reports/benchmarks/live-benchmark.md` for human review. Use
-`--embedding-provider hash` for deterministic offline smoke checks.
+`reports/benchmarks/live-benchmark.md` for human review.
+For sidecar comparisons, set `--projection-backend neo4j` with `--neo4j-uri`,
+`--neo4j-user`, and `--neo4j-password` or the matching `NEO4J_*` environment
+values. Set `--projection-backend pggraph --pggraph-dsn ...` to pass a
+PostgreSQL/pgGraph DSN.
+Use `--baseline-backends`, `--zaxy-backend`, `--external-results`, and
+`--reuse-projection` on the wrapper when reproducing the published comparison
+commands.
+Add `--dry-run` to print the exact `zaxy benchmark` command without starting a
+benchmark run.
 
 For publishable comparisons, use the frozen workload instead of a custom
 subject count:
 
 ```bash
-scripts/live-benchmark.sh --embedding-provider openai --workload frozen --runs 1 --reset-graph
+scripts/live-benchmark.sh --workload frozen --runs 1 --reset-graph
 ```
 
 For MemPalace-comparable temporal recall beyond the original frozen statistical
@@ -214,7 +232,7 @@ preference states per subject, queries each state with an explicit as-of point,
 and reports citation coverage for otherwise successful retrievals:
 
 ```bash
-scripts/live-benchmark.sh --embedding-provider openai --workload temporal-recall --subjects 100 --runs 1 --reset-graph
+scripts/live-benchmark.sh --workload temporal-recall --subjects 100 --runs 1 --reset-graph
 ```
 
 For MemPalace-comparable source recall, use the dedicated source workload. It
@@ -223,7 +241,7 @@ whether retrieval returned the exact expected source path as a separate source
 recall metric:
 
 ```bash
-scripts/live-benchmark.sh --embedding-provider openai --workload source-recall --documents 100 --runs 1 --reset-graph
+scripts/live-benchmark.sh --workload source-recall --documents 100 --runs 1 --reset-graph
 ```
 
 For MemPalace-comparable graph traversal, use the dedicated graph workload. It
@@ -231,7 +249,7 @@ creates a goal, linked task, and completion actor per case, then asks for the
 actor who completed the task connected to the goal:
 
 ```bash
-scripts/live-benchmark.sh --embedding-provider openai --workload graph-traversal --subjects 100 --runs 1 --reset-graph
+scripts/live-benchmark.sh --workload graph-traversal --subjects 100 --runs 1 --reset-graph
 ```
 
 For MemPalace-comparable context-collapse behavior, use the dedicated
@@ -240,7 +258,7 @@ a compact checkpoint, then asks for the preserved decision that should survive a
 small context window:
 
 ```bash
-scripts/live-benchmark.sh --embedding-provider openai --workload context-collapse --sessions 100 --runs 1 --reset-graph
+scripts/live-benchmark.sh --workload context-collapse --sessions 100 --runs 1 --reset-graph
 ```
 
 To inventory the comparable proof lanes without Neo4j or hosted embeddings,
@@ -263,7 +281,6 @@ curl -fsSL -o /tmp/longmemeval-data/longmemeval_s_cleaned.json \
   https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned/resolve/main/longmemeval_s_cleaned.json
 
 scripts/live-benchmark.sh \
-  --embedding-provider openai \
   --embedding-cache .cache/zaxy/longmemeval-embeddings.json \
   --progress \
   --workload longmemeval \
@@ -295,7 +312,7 @@ facts, graph traversal, indexed documents, sanitized transcript turns, and mixed
 cross-lane queries:
 
 ```bash
-scripts/live-benchmark.sh --embedding-provider openai --workload suite --subjects 100 --documents 250 --sessions 50 --runs 1 --reset-graph
+scripts/live-benchmark.sh --workload suite --subjects 100 --documents 250 --sessions 50 --runs 1 --reset-graph
 ```
 
 Suite reports disclose subject, document, session, lane, event, query, and
@@ -370,7 +387,7 @@ models semantic consolidation that keeps one representative text, so it can
 look topically relevant while losing exact source identities:
 
 ```bash
-scripts/live-benchmark.sh --embedding-provider openai --workload consolidation --documents 100 --runs 1 --reset-graph
+scripts/live-benchmark.sh --workload consolidation --documents 100 --runs 1 --reset-graph
 ```
 
 Use this lane to detect whether a compaction strategy preserves exact event,

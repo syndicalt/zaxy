@@ -379,7 +379,7 @@ Run with coverage: `pytest --cov` (default in pyproject.toml)
 
 ## Next Steps
 
-1. Build the zero-friction embedded graph runtime prototype further by
+1. Build the zero-friction embedded graph runtime path further by
    running the same-harness backend shootout at meaningful scale, reporting
    projection throughput, checkout latency, traversal latency, returned tokens,
    injected tokens, LongMemEval Answer@5/Recall@5, citation coverage, dashboard

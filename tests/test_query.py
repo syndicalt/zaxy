@@ -13,10 +13,20 @@ from zaxy.query import (
     LexicalReranker,
     OpenAICompatibleReranker,
     QueryRouter,
+    _entity_matches_identifier,
     _entity_similarity,
+    _entity_tokens,
+    _exact_candidates,
+    _expanded_queries,
+    _identifier_boosted_score,
+    _inferred_edge_trust_metadata,
+    _looks_like_durable_identifier,
     _mmr_rank,
     _prompt_visible_properties,
+    _structured_preference_candidates,
+    _suppress_identifier_fuzzy_distractors,
     _to_chunk,
+    _tokens,
     build_reranker,
     build_retention_policy,
 )
@@ -137,6 +147,35 @@ class TestQueryRouting:
         assert results[0].score == pytest.approx(0.8)
         assert mock_store.search_keyword.await_args.kwargs["session_id"] == "agent-1"
 
+    async def test_evidence_plan_expansions_feed_raw_graph_keyword_retrieval(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Raw graph retrieval should share deterministic evidence-aware query expansion."""
+        target = GraphEntity(
+            name="bike-expense-ledger",
+            entity_type="document",
+            valid_from="2024-01-01T00:00:00Z",
+            valid_to=None,
+            properties={"summary": "bike helmet chain lights rack tune-up cost total $185"},
+        )
+
+        async def _search_keyword(query: str, **_: object) -> list[SearchResult]:
+            if "bike bicycle helmet chain lights rack tune-up cost" in query:
+                return [SearchResult(entity=target, score=1.0, source="keyword")]
+            return []
+
+        mock_store.search_keyword.side_effect = _search_keyword
+
+        results = await router.query(
+            "How much total money have I spent on bike-related expenses since the start of the year?"
+        )
+
+        assert [result.entity_name for result in results] == ["bike-expense-ledger"]
+        keyword_queries = [call.args[0] for call in mock_store.search_keyword.await_args_list]
+        assert any("bike bicycle helmet chain lights rack tune-up cost" in query for query in keyword_queries)
+
     async def test_exact_results_are_not_drowned_by_unbounded_keyword_scores(
         self,
         router: QueryRouter,
@@ -213,6 +252,54 @@ class TestQueryRouting:
             "source-recall/target/service-0000.md:10-14"
         ]
 
+    async def test_natural_hyphenated_terms_do_not_suppress_expansion_hits(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Hyphenated adjectives like art-related are not durable identifiers."""
+        distractor = SearchResult(
+            entity=GraphEntity(
+                name="generic-art-note",
+                entity_type="document",
+                valid_from="2024-04-01T00:00:00Z",
+                valid_to=None,
+                properties={"summary": "A generic note about art-related searches."},
+            ),
+            score=2.0,
+            source="keyword",
+        )
+        target = SearchResult(
+            entity=GraphEntity(
+                name="event-ledger",
+                entity_type="document",
+                valid_from="2024-04-01T00:00:00Z",
+                valid_to=None,
+                properties={
+                    "summary": (
+                        "Children's Museum Art Afternoon guided tour "
+                        "History Museum Art Gallery lecture street art."
+                    ),
+                },
+            ),
+            score=1.0,
+            source="keyword",
+        )
+
+        async def _search_keyword(query: str, **_: object) -> list[SearchResult]:
+            if "Children's Museum" in query:
+                return [target]
+            return [distractor]
+
+        mock_store.search_keyword.side_effect = _search_keyword
+
+        results = await router.query(
+            "How many different art-related events did I attend in the past month?",
+            limit=5,
+        )
+
+        assert "event-ledger" in [result.entity_name for result in results]
+
     async def test_traversal_expansion(self, router: QueryRouter, mock_store: AsyncMock) -> None:
         """Traversal from keyword hits should bring in neighbors."""
         keyword_ent = GraphEntity(
@@ -263,6 +350,44 @@ class TestQueryRouting:
         assert [result.source for result in results] == ["keyword"]
         store.has_traversal_edges.assert_awaited_once_with(session_id="agent-1")
         store.search_traversal.assert_not_awaited()
+
+    async def test_temporal_traversal_does_not_depend_on_current_edge_gate(self) -> None:
+        """Historical queries should still attempt traversal after current edges retire."""
+        anchor = GraphEntity(
+            name="Guide Claim",
+            entity_type="fact",
+            valid_from="2026-05-20T01:00:00Z",
+            valid_to="2026-05-20T02:00:00Z",
+            properties={"summary": "claim from retired source"},
+        )
+        neighbor = GraphEntity(
+            name="Stable Goal",
+            entity_type="goal",
+            valid_from="2026-05-20T01:00:00Z",
+            valid_to=None,
+            properties={"summary": "goal remains active"},
+        )
+        store = AsyncMock()
+        store.search_exact = AsyncMock(return_value=[anchor])
+        store.search_vector = AsyncMock(return_value=[])
+        store.search_keyword = AsyncMock(return_value=[])
+        store.search_traversal = AsyncMock(return_value=[neighbor])
+        store.has_traversal_edges = AsyncMock(return_value=False)
+        router = QueryRouter(store=store, default_limit=5, session_id="agent-1")
+
+        results = await router.query(
+            "Guide Claim",
+            temporal_point="2026-05-20T01:30:00Z",
+        )
+
+        assert "Stable Goal" in [result.entity_name for result in results]
+        store.has_traversal_edges.assert_not_awaited()
+        store.search_traversal.assert_awaited_once_with(
+            "Guide Claim",
+            depth=2,
+            temporal_point="2026-05-20T01:30:00Z",
+            session_id="agent-1",
+        )
 
     async def test_direct_traversal_neighbors_from_exact_hits_survive_mmr(
         self,
@@ -861,6 +986,120 @@ class TestQueryRouting:
         mock_store.search_vector.assert_awaited_once()
         assert mock_store.search_vector.await_args.kwargs["session_id"] == "agent-1"
 
+    async def test_zero_vector_skips_vector_search(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Zero-norm query embeddings should not call the projection backend."""
+        await router.query("Alice", embedding=[0.0, 0.0])
+
+        mock_store.search_vector.assert_not_awaited()
+
+    async def test_router_overfetches_candidates_before_final_limit(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Retrieval should collect enough candidates for reranking before truncating prompt context."""
+        entities = [
+            GraphEntity(
+                name=f"candidate-{index}",
+                entity_type="document",
+                valid_from="2024-01-01T00:00:00Z",
+                valid_to=None,
+                properties={},
+            )
+            for index in range(3)
+        ]
+        mock_store.search_keyword.return_value = [
+            SearchResult(entity=entity, score=1.0 - (index * 0.1), source="keyword")
+            for index, entity in enumerate(entities)
+        ]
+
+        results = await router.query("candidate ranking", limit=2, embedding=[0.1, 0.2])
+
+        assert len(results) == 2
+        assert mock_store.search_keyword.await_args.kwargs["limit"] > 2
+        assert mock_store.search_vector.await_args.kwargs["limit"] > 2
+
+    async def test_local_lexical_reranker_promotes_strong_overlap_over_vector_noise(self) -> None:
+        """Local-first retrieval should let exact query evidence beat high-score semantic noise."""
+        reranker = LexicalReranker()
+        noisy = SearchResult(
+            entity=GraphEntity(
+                name="unrelated salient turn",
+                entity_type="document",
+                valid_from="2024-01-01T00:00:00Z",
+                valid_to=None,
+                properties={"summary": "A generic memory about a different topic."},
+            ),
+            score=1.7,
+            source="vector",
+        )
+        relevant = SearchResult(
+            entity=GraphEntity(
+                name="house search with Rachel",
+                entity_type="document",
+                valid_from="2024-01-01T00:00:00Z",
+                valid_to=None,
+                properties={
+                    "summary": "I found a house I loved after starting to work with Rachel."
+                },
+            ),
+            score=1.15,
+            source="keyword",
+        )
+
+        results = await reranker.rerank(
+            "How many days did it take to find a house I loved after starting to work with Rachel?",
+            [noisy, relevant],
+            limit=2,
+        )
+
+        assert results[0].entity.name == "house search with Rachel"
+
+    async def test_local_lexical_reranker_uses_matched_expansion_terms(self) -> None:
+        """Expansion hits should be reranked against the expansion that found them."""
+        reranker = LexicalReranker()
+        distractor = SearchResult(
+            entity=GraphEntity(
+                name="generic art inspiration",
+                entity_type="document",
+                valid_from="2024-01-01T00:00:00Z",
+                valid_to=None,
+                properties={"summary": "Local art inspiration and exhibitions near me."},
+            ),
+            score=1.6,
+            source="keyword",
+            matched_query="How many different art-related events did I attend in the past month?",
+        )
+        target = SearchResult(
+            entity=GraphEntity(
+                name="art event ledger",
+                entity_type="document",
+                valid_from="2024-01-01T00:00:00Z",
+                valid_to=None,
+                properties={
+                    "summary": "Children's Museum Art Afternoon guided tour History Museum Art Gallery lecture street art"
+                },
+            ),
+            score=1.1,
+            source="keyword",
+            matched_query=(
+                "art exhibition gallery museum festival studio attended event events past month "
+                "Children's Museum History Museum Art Gallery Art Afternoon guided tour lecture street art"
+            ),
+        )
+
+        results = await reranker.rerank(
+            "How many different art-related events did I attend in the past month?",
+            [distractor, target],
+            limit=2,
+        )
+
+        assert results[0].entity.name == "art event ledger"
+
     async def test_results_sorted_by_score(self, router: QueryRouter, mock_store: AsyncMock) -> None:
         """Results should be ordered by descending score."""
         mock_store.search_keyword.return_value = [
@@ -994,6 +1233,170 @@ class TestQueryRouting:
         assert len(ranked) == 5
         assert len(tokenized_names) == len(results)
 
+    @pytest.mark.asyncio
+    async def test_lexical_reranker_tokenizes_each_entity_once_with_expansions(self) -> None:
+        """Local lexical reranking should reuse entity tokens across matched-query scoring."""
+        result = SearchResult(
+            entity=GraphEntity(
+                name="bike expense memory",
+                entity_type="document",
+                valid_from="2024-01-01T00:00:00Z",
+                valid_to=None,
+                properties={"summary": "I bought bike lights for $40."},
+            ),
+            score=1.0,
+            source="keyword",
+            matched_query="bike bicycle cycling cost",
+        )
+        tokenized_names: list[str] = []
+
+        def _tokens(entity: GraphEntity) -> set[str]:
+            tokenized_names.append(entity.name)
+            return {"bike", "expense", "memory", "lights"}
+
+        with patch("zaxy.query._entity_tokens", side_effect=_tokens):
+            reranked = await LexicalReranker().rerank(
+                "How much total money have I spent on bike expenses?",
+                [result],
+                limit=1,
+            )
+
+        assert len(reranked) == 1
+        assert tokenized_names == ["bike expense memory"]
+
+    async def test_rank_reuses_entity_tokens_between_mmr_and_lexical_reranker(
+        self,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Graph ranking should not retokenize candidates across ranker stages."""
+        router = QueryRouter(
+            store=mock_store,
+            default_limit=5,
+            session_id="agent-1",
+            reranker=LexicalReranker(),
+        )
+        results = [
+            SearchResult(
+                entity=GraphEntity(
+                    name=f"memory-{index:04d}",
+                    entity_type="document",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={"summary": f"memory {index} shared context"},
+                ),
+                score=1.0 - (index * 0.01),
+                source="keyword",
+            )
+            for index in range(12)
+        ]
+        tokenized_names: list[str] = []
+
+        def _tokens(entity: GraphEntity) -> set[str]:
+            tokenized_names.append(entity.name)
+            return {entity.name, entity.entity_type, "shared"}
+
+        with patch("zaxy.query._entity_tokens", side_effect=_tokens):
+            ranked = await router._rank("shared memory", results, limit=5)
+
+        assert len(ranked) == 5
+        assert len(tokenized_names) == len(results)
+
+    async def test_rank_without_reranker_mmr_ranks_only_requested_limit(
+        self,
+        mock_store: AsyncMock,
+    ) -> None:
+        """The built-in MMR path should not rank candidates that cannot be returned."""
+        router = QueryRouter(store=mock_store, default_limit=5, session_id="agent-1")
+        results = [
+            SearchResult(
+                entity=GraphEntity(
+                    name=f"memory-{index:04d}",
+                    entity_type="document",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={"summary": f"memory {index} shared context"},
+                ),
+                score=1.0 - (index * 0.001),
+                source="keyword",
+            )
+            for index in range(60)
+        ]
+
+        with patch("zaxy.query._entity_similarity", return_value=0.0) as similarity:
+            ranked = await router._rank("shared memory", results, limit=5)
+
+        assert len(ranked) == 5
+        assert similarity.call_count <= 60
+
+    async def test_rank_with_lexical_reranker_uses_bounded_mmr_pool(
+        self,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Lexical reranking should see a bounded MMR pool, not every fused candidate."""
+        router = QueryRouter(
+            store=mock_store,
+            default_limit=5,
+            session_id="agent-1",
+            reranker=LexicalReranker(),
+        )
+        results = [
+            SearchResult(
+                entity=GraphEntity(
+                    name=f"memory-{index:04d}",
+                    entity_type="document",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={"summary": f"memory {index} shared context"},
+                ),
+                score=1.0 - (index * 0.001),
+                source="keyword",
+            )
+            for index in range(60)
+        ]
+
+        with patch("zaxy.query._entity_similarity", return_value=0.0) as similarity:
+            ranked = await router._rank("shared memory", results, limit=5)
+
+        assert len(ranked) == 5
+        assert similarity.call_count <= 250
+
+    async def test_rank_tokenizes_only_bounded_mmr_pool(
+        self,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Ranking should not tokenize candidates already excluded from the MMR pool."""
+        router = QueryRouter(
+            store=mock_store,
+            default_limit=5,
+            session_id="agent-1",
+            reranker=LexicalReranker(),
+        )
+        results = [
+            SearchResult(
+                entity=GraphEntity(
+                    name=f"memory-{index:04d}",
+                    entity_type="document",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={"summary": f"memory {index} shared context"},
+                ),
+                score=1.0 - (index * 0.001),
+                source="keyword",
+            )
+            for index in range(60)
+        ]
+        tokenized_names: list[str] = []
+
+        def _tokens(entity: GraphEntity) -> set[str]:
+            tokenized_names.append(entity.name)
+            return {entity.name, entity.entity_type, "shared"}
+
+        with patch("zaxy.query._entity_tokens", side_effect=_tokens):
+            ranked = await router._rank("shared memory", results, limit=5)
+
+        assert len(ranked) == 5
+        assert len(tokenized_names) == 20
+
     def test_entity_similarity_avoids_allocating_set_operations(self) -> None:
         """MMR similarity should not allocate intersection/union sets for every pair."""
 
@@ -1024,6 +1427,214 @@ class TestQueryRouting:
         }
 
         assert _entity_similarity(left, right, cache) == 0.5
+
+    def test_entity_similarity_avoids_generator_sum_hot_path(self, monkeypatch) -> None:
+        """MMR similarity should count overlap without generator allocations."""
+        monkeypatch.setattr(
+            "builtins.sum",
+            lambda *args, **kwargs: (_ for _ in ()).throw(
+                AssertionError("entity similarity should not allocate a generator for sum")
+            ),
+        )
+        left = GraphEntity(
+            name="left",
+            entity_type="document",
+            valid_from="2024-01-01T00:00:00Z",
+            valid_to=None,
+            properties={},
+        )
+        right = GraphEntity(
+            name="right",
+            entity_type="document",
+            valid_from="2024-01-01T00:00:00Z",
+            valid_to=None,
+            properties={},
+        )
+        cache = {
+            ("left", "document", "2024-01-01T00:00:00Z"): {"alpha", "beta", "gamma"},
+            ("right", "document", "2024-01-01T00:00:00Z"): {"beta", "gamma", "delta"},
+        }
+
+        assert _entity_similarity(left, right, cache) == 0.5
+
+    def test_query_tokenizers_use_compiled_regex_helpers(self, monkeypatch) -> None:
+        """Query ranking tokenizers should not compile regex strings on every call."""
+
+        def fail(*args, **kwargs):  # noqa: ANN001
+            raise AssertionError("query tokenizers should use compiled regex helpers")
+
+        monkeypatch.setattr("zaxy.query.re.findall", fail)
+        entity = GraphEntity(
+            name="Bike expense memory",
+            entity_type="document",
+            valid_from="2024-01-01T00:00:00Z",
+            valid_to=None,
+            properties={"summary": "I bought bike lights for $40."},
+        )
+
+        assert _tokens("Bike expenses since 2024") == {"bike", "expenses", "since", "2024"}
+        assert _entity_tokens(entity) >= {"bike", "expense", "memory", "document", "lights", "40"}
+
+    def test_expanded_queries_use_compiled_tokenizer(self, monkeypatch) -> None:
+        """Query expansion should reuse the compiled token regex on the retrieval hot path."""
+
+        def fail(*args, **kwargs):  # noqa: ANN001
+            raise AssertionError("query expansion should use compiled regex helpers")
+
+        monkeypatch.setattr("zaxy.query.re.findall", fail)
+
+        expanded = _expanded_queries("auth decision")
+
+        assert expanded[0] == "auth decision"
+        assert any("authentication" in query for query in expanded[1:])
+        assert any("rationale" in query for query in expanded[1:])
+
+    def test_structured_preference_candidates_use_compiled_user_id_regex(self, monkeypatch) -> None:
+        """Preference expansion should avoid recompiling user-id regexes on query routing paths."""
+
+        def fail(*args, **kwargs):  # noqa: ANN001
+            raise AssertionError("preference expansion should use a compiled user-id regex")
+
+        monkeypatch.setattr("zaxy.query.re.findall", fail)
+
+        assert _structured_preference_candidates("What is user-0003's timezone preference?") == [
+            "user-0003:timezone"
+        ]
+
+    def test_exact_candidates_use_compiled_regexes(self, monkeypatch) -> None:
+        """Exact candidate extraction should reuse compiled regexes on query routing paths."""
+
+        def fail(*args, **kwargs):  # noqa: ANN001
+            raise AssertionError("exact candidate extraction should use compiled regex helpers")
+
+        monkeypatch.setattr("zaxy.query.re.finditer", fail)
+
+        candidates = _exact_candidates("Recall Goal 0003 and user-0003:timezone for graph-goal-0003")
+
+        assert "Goal 0003" in candidates
+        assert "user-0003:timezone" in candidates
+        assert "graph-goal-0003" in candidates
+
+    def test_durable_identifier_detection_uses_loop_hot_path(self, monkeypatch) -> None:
+        """Identifier classification should avoid nested generator helpers."""
+        monkeypatch.setattr(
+            "builtins.any",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError("identifier classification should not allocate any() generators")
+            ),
+        )
+
+        assert _looks_like_durable_identifier("graph-goal-0003") is True
+        assert _looks_like_durable_identifier("art-related") is False
+
+    def test_entity_identifier_matching_uses_loop_hot_path(self, monkeypatch) -> None:
+        """Identifier matching should avoid generator allocation in per-result paths."""
+        monkeypatch.setattr(
+            "builtins.any",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError("identifier matching should not allocate any() generators")
+            ),
+        )
+        entity = GraphEntity(
+            name="graph-goal-0003",
+            entity_type="goal",
+            valid_from="2024-01-01T00:00:00Z",
+            valid_to=None,
+            properties={"source_path": "tasks/graph-goal-0003.md"},
+        )
+
+        assert _entity_matches_identifier(entity, ("graph-goal-0003",)) is True
+        assert _entity_matches_identifier(entity, ("graph-goal-9999",)) is False
+
+    def test_identifier_score_boost_uses_loop_hot_path(self, monkeypatch) -> None:
+        """Identifier boosting should avoid generator allocation in fused ranking."""
+        monkeypatch.setattr(
+            "builtins.any",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError("identifier boosting should not allocate any() generators")
+            ),
+        )
+        entity = GraphEntity(
+            name="graph-task-0003",
+            entity_type="task",
+            valid_from="2024-01-01T00:00:00Z",
+            valid_to=None,
+            properties={"summary": "Task graph-task-0003 completion evidence."},
+        )
+
+        assert _identifier_boosted_score(0.7, entity, ("graph-task-0003",)) == 1.35
+        assert _identifier_boosted_score(0.7, entity, ("graph-task-9999",)) == 0.7
+
+    def test_identifier_suppression_uses_single_loop_hot_path(self, monkeypatch) -> None:
+        """Identifier suppression should avoid generator allocation over fused results."""
+        monkeypatch.setattr(
+            "builtins.any",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError("identifier suppression should not allocate any() generators")
+            ),
+        )
+        target = SearchResult(
+            entity=GraphEntity(
+                name="graph-goal-0003",
+                entity_type="goal",
+                valid_from="2024-01-01T00:00:00Z",
+                valid_to=None,
+                properties={},
+            ),
+            score=1.0,
+            source="keyword",
+        )
+        distractor = SearchResult(
+            entity=GraphEntity(
+                name="nearby context",
+                entity_type="document",
+                valid_from="2024-01-01T00:00:00Z",
+                valid_to=None,
+                properties={},
+            ),
+            score=0.9,
+            source="keyword",
+        )
+        traversal = SearchResult(
+            entity=GraphEntity(
+                name="neighbor",
+                entity_type="task",
+                valid_from="2024-01-01T00:00:00Z",
+                valid_to=None,
+                properties={},
+            ),
+            score=0.8,
+            source="traversal",
+        )
+
+        assert _suppress_identifier_fuzzy_distractors(
+            [target, distractor, traversal],
+            ("graph-goal-0003",),
+        ) == [target, traversal]
+
+    def test_inferred_edge_trust_metadata_uses_loop_hot_path(self, monkeypatch) -> None:
+        """Traversal trust scoring should avoid generator sums on ranked paths."""
+        monkeypatch.setattr(
+            "builtins.sum",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError("inferred-edge trust metadata should not allocate generator sums")
+            ),
+        )
+
+        metadata = _inferred_edge_trust_metadata(
+            {
+                "_path_inferred_edge_count": 2,
+                "_path_inferred_confidences": [0.8, 0.6, 0.2],
+                "_path_inference_methods": ["cited_decision", "unknown"],
+                "_path_inferred_source_event_count": 1,
+                "_path_inferred_evidenced_edge_count": 1,
+            }
+        )
+
+        assert metadata["confidence"] == pytest.approx(0.7)
+        assert metadata["method_coverage"] == 0.5
+        assert metadata["source_coverage"] == 0.5
+        assert metadata["evidence_coverage"] == 0.5
 
     def test_mmr_ranking_updates_similarity_penalties_incrementally(self) -> None:
         """MMR should not recompute old selected-candidate similarities every round."""

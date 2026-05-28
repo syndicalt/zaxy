@@ -12,10 +12,13 @@ from zaxy.local_profile import check_local_profile, render_local_profile, write_
 def test_render_local_profile_outputs_offline_env_without_secrets() -> None:
     text = render_local_profile()
 
+    assert "PROJECTION_BACKEND=embedded" in text
+    assert "EMBEDDED_GRAPH_PATH=.eventloom/projections/embedded.kuzu" in text
     assert "EMBEDDING_ENABLED=true" in text
     assert "EMBEDDING_PROVIDER=hash" in text
     assert "RERANKER_PROVIDER=lexical" in text
-    assert "NEO4J_AUTO_START=true" in text
+    assert "NEO4J_AUTO_START=false" in text
+    assert "PGGRAPH_AUTO_START=false" in text
     assert "OPENAI_API_KEY" not in text
 
 
@@ -44,6 +47,7 @@ def test_write_local_profile_can_force_overwrite(tmp_path: Path) -> None:
     write_local_profile(target, force=True)
 
     assert "EMBEDDING_PROVIDER=hash" in target.read_text(encoding="utf-8")
+    assert "PROJECTION_BACKEND=embedded" in target.read_text(encoding="utf-8")
 
 
 def test_write_local_profile_can_write_embedded_projection_defaults(tmp_path: Path) -> None:

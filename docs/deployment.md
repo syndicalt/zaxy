@@ -4,7 +4,6 @@ Production deployment starts with explicit configuration and secret files. Run:
 
 ```bash
 ./scripts/setup.sh --production
-./scripts/generate-certs.sh .certs
 docker compose -f docker-compose.prod.yml up -d
 ```
 
@@ -14,11 +13,20 @@ secrets are useful for validation and staging, but real deployments should
 replace them with platform-managed secrets or files mounted by Docker,
 Kubernetes, or a vault sidecar.
 
-Neo4j must be reachable through an encrypted Bolt configuration. Production
-compose enables Bolt TLS and mounts certificate material. `NEO4J_CA_CERT` tells
-Zaxy which certificate to trust. Do not set `NEO4J_TRUST_ALL=true` in
-production unless you are doing a temporary emergency recovery with a written
-risk acceptance.
+The default production backend is the embedded Kuzu projection, which requires
+no graph service endpoint and does not start Neo4j. Optional sidecar backends
+must be configured explicitly. For Neo4j, install `zaxy-memory[neo4j]`, generate
+certificate material, and start the compose profile:
+
+```bash
+./scripts/generate-certs.sh .certs
+docker compose -f docker-compose.prod.yml --profile neo4j up -d zaxy-neo4j
+```
+
+Production compose mounts the Neo4j certificate material only for that profile;
+`NEO4J_CA_CERT` tells Zaxy which certificate to trust. Do not set
+`NEO4J_TRUST_ALL=true` in production unless you are doing a temporary emergency
+recovery with a written risk acceptance.
 
 Remote MCP/SSE should only be exposed behind authentication. For single-tenant
 or private deployments, configure `MCP_REMOTE_AUTH_TOKEN_FILE` and require
@@ -49,8 +57,9 @@ scale validation. A tagged release should use artifacts built by
 `zaxy-memory`; the import package and CLI remain `zaxy`.
 
 Backups must be configured before production traffic. At minimum, persist
-Eventloom logs and secret material recovery procedures. Neo4j backups are
-recommended for faster restore, but Eventloom replay is the correctness path.
+Eventloom logs and secret material recovery procedures. Embedded and optional
+sidecar projection backups can speed restore, but Eventloom replay is the
+correctness path.
 
 For operational recovery, see [operations.md](operations.md) and
 [runbook.md](runbook.md). For environment variables, see

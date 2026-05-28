@@ -49,7 +49,7 @@
         <li>Keep same-harness BM25 baselines in public benchmark reports so Zaxy claims show both retrieval quality and latency/token tradeoffs against a strong lexical baseline.</li>
         <li>Build or document feasible same-harness competitor adapters for MemPalace, Mem0, and Agent Memory. If a same-harness adapter is not practical, document the blocker and keep the competitor number in the external-disclosure table.</li>
         <li>Add Skill Memory as a first-class procedural layer: skill lifecycle events, skill-version graph projection, checkout skill routing, outcome tracking, and eval-gated promotion/rollback.</li>
-        <li>Evaluate pgGraph as an experimental Postgres-backed projection backend behind a backend-neutral contract, with Neo4j remaining the default until same-harness benchmark and operations gates prove parity or better.</li>
+        <li>Evaluate pgGraph as an experimental Postgres-backed projection backend behind a backend-neutral contract, with embedded Kuzu remaining the default until a candidate backend proves same-harness benchmark and operations parity or better.</li>
         <li>Expand clean-repo onboarding and model-facing UAT across fresh Codex and Claude Code workspaces: <code>zaxy init</code>, Memory Bootstrap, deterministic capture, Memory Checkout, retrieval feedback, and doctor status.</li>
         <li>Keep public benchmark scripts reproducible from a clean checkout with cached datasets, archived reports, guardrail commands, and no hidden manual steps.</li>
         <li>Keep LangGraph and CrewAI native-preview adapters dependency-light and use them to harden the common native-preview payload contract.</li>

@@ -153,6 +153,14 @@ def validate_limit(limit: int | None, default: int = 10) -> int:
     return value
 
 
+def vector_has_signal(values: list[float]) -> bool:
+    """Return whether a vector can produce a meaningful similarity score."""
+    for value in values:  # noqa: SIM110 - avoid generator allocation on retrieval hot paths.
+        if value != 0.0:
+            return True
+    return False
+
+
 def validate_from_seq(from_seq: int | None) -> int:
     """Validate replay starting sequence."""
     value = 1 if from_seq is None else from_seq

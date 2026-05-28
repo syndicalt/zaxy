@@ -2,7 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a real experimental `PROJECTION_BACKEND=pggraph` adapter that stores Zaxy projections in PostgreSQL tables and uses pgGraph for bounded traversal, while Neo4j remains the default.
+**Goal:** Add a real experimental `PROJECTION_BACKEND=pggraph` adapter that stores Zaxy projections in PostgreSQL tables and uses pgGraph for bounded traversal. Historical note: this plan was written before the embedded Kuzu promotion, when Neo4j was still the default projection backend.
+
+**Current status:** embedded Kuzu is the default projection backend. Neo4j and pgGraph are explicit sidecar backends for controlled comparisons or existing infrastructure.
 
 **Architecture:** Eventloom remains the source of truth. The pgGraph adapter owns a small relational projection schema, registers its entity and edge tables with pgGraph, and implements the existing `ProjectionStore` contract. Exact and keyword retrieval use ordinary PostgreSQL; traversal uses `graph.traverse`; vector search stays explicitly unavailable until pgvector ranking is added and benchmarked.
 
@@ -506,8 +508,10 @@ Document:
 
 - Install with `pip install "zaxy-memory[pggraph]"`.
 - Configure `PROJECTION_BACKEND=pggraph` and `PGGRAPH_DSN=...`.
-- Neo4j remains the only production and published benchmark backend.
-- pgGraph adapter supports exact, keyword, projection, invalidation, and traversal; vector is unavailable until pgvector is implemented and benchmarked.
+- Embedded Kuzu is the local production default. Neo4j remains the sidecar
+  control backend for same-harness published benchmark comparisons.
+- pgGraph adapter supports exact, keyword, projection, invalidation, traversal,
+  and pgvector-backed vector search when the PostgreSQL endpoint has pgvector.
 
 - [ ] **Step 3: Run final verification**
 
@@ -530,6 +534,9 @@ git commit -m "docs: document experimental pggraph adapter"
 
 ## Self-Review
 
-- Spec coverage: The plan keeps Eventloom as source of truth, preserves Neo4j as default, implements pgGraph only behind `PROJECTION_BACKEND=pggraph`, and keeps benchmark gates explicit.
-- Placeholder scan: There are no unresolved placeholder markers. Vector search is intentionally unavailable with a precise runtime error until pgvector support is implemented and benchmarked.
+- Spec coverage: The plan keeps Eventloom as source of truth, preserves embedded
+  Kuzu as the default, implements pgGraph only behind `PROJECTION_BACKEND=pggraph`,
+  and keeps benchmark gates explicit.
+- Placeholder scan: There are no unresolved placeholder markers. Vector search
+  uses pgvector-backed ranking when the PostgreSQL endpoint has pgvector.
 - Type consistency: `PgGraphStore` implements the same `ProjectionStore` method names and return types used by `QueryRouter`, `MemoryFabric`, and MCP.

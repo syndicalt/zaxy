@@ -1,21 +1,56 @@
 """Embedded graph projection backend.
 
-This module owns the zero-friction local graph runtime prototype. The first
-implementation target is Kuzu, but the adapter is intentionally exposed through
-the existing ProjectionStore contract so Neo4j remains the control backend.
+This module owns the zero-friction local graph runtime. The Kuzu adapter is
+exposed through the ProjectionStore contract so local default deployments and
+same-harness backend comparisons share the same retrieval surface.
 """
 
 from __future__ import annotations
 
+import heapq
 import importlib.util
 import json
 import math
 import re
 import shutil
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
+
+_CacheValue = TypeVar("_CacheValue")
+_TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
+_KEYWORD_STOP_WORDS = frozenset(
+    {
+        "am",
+        "and",
+        "are",
+        "at",
+        "did",
+        "do",
+        "does",
+        "first",
+        "for",
+        "had",
+        "have",
+        "how",
+        "in",
+        "it",
+        "me",
+        "of",
+        "the",
+        "to",
+        "was",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "with",
+    }
+)
 
 if TYPE_CHECKING:
     from zaxy.extract import ExtractionResult
@@ -30,16 +65,18 @@ if TYPE_CHECKING:
 @dataclass(frozen=True)
 class _KeywordIndex:
     entities: list[GraphEntity]
-    terms: list[list[str]]
-    document_frequency: Counter[str]
-    average_length: float
+    term_counts: list[Counter[str]]
+    term_entity_ids: dict[str, tuple[int, ...]]
+    term_idf: dict[str, float]
+    document_length_norms: list[float]
 
 
 @dataclass(frozen=True)
 class _VectorIndex:
     entities: list[GraphEntity]
-    sparse_vectors: list[dict[int, float]]
     norms: list[float]
+    postings: dict[int, list[tuple[int, float]]]
+    dimensions: list[int]
 
 
 @dataclass(frozen=True)
@@ -49,47 +86,43 @@ class _TraversalIndex:
 
 
 class EmbeddedGraphStore:
-    """Kuzu-backed embedded projection store shell.
-
-    The store is selectable behind `PROJECTION_BACKEND=embedded` before it is the
-    default. Methods fail clearly until the Kuzu implementation lands.
-    """
+    """Kuzu-backed embedded projection store."""
 
     def __init__(self, path: Path) -> None:
         self.path = Path(path)
         self._database: Any | None = None
         self._connection: Any | None = None
         self._active_entity_cache: dict[tuple[str, str, str], tuple[str, str | None, str]] = {}
+        self._current_entity_index_cache: dict[str, list[GraphEntity]] = {}
+        self._current_entity_lookup_cache: dict[str, dict[tuple[str, str | None], list[GraphEntity]]] = {}
+        self._temporal_entity_index_cache: dict[tuple[str, str], list[GraphEntity]] = {}
+        self._temporal_entity_lookup_cache: dict[tuple[str, str], dict[tuple[str, str | None], list[GraphEntity]]] = {}
         self._keyword_index_cache: dict[str, _KeywordIndex] = {}
+        self._temporal_keyword_index_cache: dict[tuple[str, str], _KeywordIndex] = {}
         self._vector_index_cache: dict[tuple[str, str | None], _VectorIndex] = {}
         self._traversal_index_cache: dict[str, _TraversalIndex] = {}
+        self._temporal_traversal_index_cache: dict[tuple[str, str], _TraversalIndex] = {}
         self._bulk_projection_open = False
         self._dirty_bulk_sessions: set[str] = set()
+        self._bulk_active_state_loaded_sessions: set[str] = set()
 
     async def connect(self) -> None:
         """Open embedded graph resources."""
         if importlib.util.find_spec("kuzu") is None:
-            raise RuntimeError('embedded graph backend requires `pip install "zaxy-memory[embedded]"`')
+            raise RuntimeError('embedded graph backend requires `pip install "zaxy-memory"`')
         import kuzu
 
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._database = kuzu.Database(str(self.path))
         self._connection = kuzu.Connection(self._database)
-        self._active_entity_cache = {}
-        self._keyword_index_cache = {}
-        self._vector_index_cache = {}
-        self._traversal_index_cache = {}
-        self._dirty_bulk_sessions = set()
+        self._clear_all_caches()
 
     async def close(self) -> None:
         """Close embedded graph resources."""
         self._connection = None
         self._database = None
-        self._keyword_index_cache = {}
-        self._vector_index_cache = {}
-        self._traversal_index_cache = {}
+        self._clear_all_caches()
         self._bulk_projection_open = False
-        self._dirty_bulk_sessions = set()
 
     async def init_schema(self) -> None:
         """Initialize embedded graph schema."""
@@ -159,6 +192,14 @@ class EmbeddedGraphStore:
             """
         )
 
+    async def warm_session(self, session_id: str = "default") -> None:
+        """Preload read indexes for a session to avoid first-checkout stalls."""
+        self._current_entities(session_id)
+        self._current_entity_lookup(session_id)
+        self._keyword_index(session_id)
+        self._vector_index(session_id, None)
+        self._traversal_index(session_id)
+
     async def reset_benchmark_projection(self) -> None:
         """Remove and recreate the embedded projection artifact."""
         await self.close()
@@ -167,11 +208,7 @@ class EmbeddedGraphStore:
                 shutil.rmtree(self.path)
             else:
                 self.path.unlink()
-        self._active_entity_cache = {}
-        self._keyword_index_cache = {}
-        self._vector_index_cache = {}
-        self._traversal_index_cache = {}
-        self._dirty_bulk_sessions = set()
+        self._clear_all_caches()
         await self.connect()
         await self.init_schema()
 
@@ -189,10 +226,12 @@ class EmbeddedGraphStore:
         self._require_connection().execute("COMMIT")
         self._bulk_projection_open = False
         for session_id in sorted(self._dirty_bulk_sessions):
+            self._current_entity_lookup(session_id)
             self._keyword_index(session_id)
             self._vector_index(session_id, None)
             self._traversal_index(session_id)
         self._dirty_bulk_sessions = set()
+        self._bulk_active_state_loaded_sessions = set()
 
     async def rollback_bulk_projection(self) -> None:
         """Rollback an explicit Kuzu write transaction for bulk Eventloom replay."""
@@ -200,18 +239,12 @@ class EmbeddedGraphStore:
             return
         self._require_connection().execute("ROLLBACK")
         self._bulk_projection_open = False
-        self._active_entity_cache = {}
-        self._keyword_index_cache = {}
-        self._vector_index_cache = {}
-        self._traversal_index_cache = {}
-        self._dirty_bulk_sessions = set()
+        self._clear_all_caches()
 
     async def upsert_extraction(self, result: ExtractionResult, session_id: str = "default") -> None:
         """Project an extracted Eventloom event."""
         conn = self._require_connection()
-        self._keyword_index_cache.pop(session_id, None)
-        self._clear_vector_index_cache(session_id)
-        self._traversal_index_cache.pop(session_id, None)
+        self._clear_read_caches(session_id)
         if self._bulk_projection_open:
             self._dirty_bulk_sessions.add(session_id)
         conn.execute(
@@ -354,27 +387,11 @@ class EmbeddedGraphStore:
         session_id: str = "default",
     ) -> list[GraphEntity]:
         """Search by exact identity."""
-        rows = self._require_connection().execute(
-            """
-            MATCH (e:Entity)
-            WHERE e.session_id = $session_id
-              AND e.name = $name
-              AND ($entity_type IS NULL OR e.entity_type = $entity_type)
-              AND (
-                ($temporal_point IS NULL AND e.valid_to IS NULL)
-                OR (
-                    $temporal_point IS NOT NULL
-                    AND e.valid_from <= $temporal_point
-                    AND (e.valid_to IS NULL OR $temporal_point < e.valid_to)
-                )
-              )
-            RETURN e.name, e.entity_type, e.valid_from, e.valid_to, e.summary, e.properties_json, e.session_id,
-                   e.source_event_seq, e.source_event_hash
-            ORDER BY e.valid_from DESC
-            """,
-            {"session_id": session_id, "name": name, "entity_type": entity_type, "temporal_point": temporal_point},
-        ).get_all()
-        return [_row_to_entity(row) for row in rows]
+        if temporal_point is None:
+            lookup = self._current_entity_lookup(session_id)
+            return list(lookup.get((name, entity_type), ()))
+        lookup = self._temporal_entity_lookup(session_id, temporal_point)
+        return list(lookup.get((name, entity_type), ()))
 
     async def search_keyword(
         self,
@@ -386,26 +403,51 @@ class EmbeddedGraphStore:
         """Search by lexical relevance."""
         from zaxy.graph import SearchResult
 
+        if limit <= 0:
+            return []
         query_terms = _keyword_query_terms(query)
         if not query_terms:
             return []
-        index = self._keyword_index(session_id)
-        document_count = len(index.terms)
+        index = self._keyword_index(session_id, temporal_point)
         matches = []
-        for entity, terms in zip(index.entities, index.terms, strict=True):
-            score = _bm25_score(
-                query_terms,
-                terms,
-                document_frequency=index.document_frequency,
-                document_count=document_count,
-                average_length=index.average_length,
+        matched_terms_by_candidate: dict[int, list[str]] = {}
+        for term in _keyword_candidate_terms(index, query_terms):
+            for entity_index in index.term_entity_ids.get(term, ()):
+                matched_terms_by_candidate.setdefault(entity_index, []).append(term)
+        if not matched_terms_by_candidate:
+            return []
+        for entity_index, matched_terms in matched_terms_by_candidate.items():
+            entity = index.entities[entity_index]
+            term_counts = index.term_counts[entity_index]
+            score = _bm25_score_from_precomputed(
+                matched_terms,
+                term_counts,
+                document_length_norm=index.document_length_norms[entity_index],
+                term_idf=index.term_idf,
             )
             if score:
-                matches.append(SearchResult(entity=entity, score=float(score), source="keyword", raw_score=float(score)))
-        return sorted(matches, key=lambda item: item.score, reverse=True)[:limit]
+                score_value = float(score)
+                matches.append(SearchResult(entity=entity, score=score_value, source="keyword", raw_score=score_value))
+        return heapq.nlargest(limit, matches, key=lambda item: item.score)
 
-    def _keyword_index(self, session_id: str) -> _KeywordIndex:
+    def _keyword_index(self, session_id: str, temporal_point: str | None = None) -> _KeywordIndex:
+        if temporal_point is not None:
+            key = (session_id, temporal_point)
+            cached = self._temporal_keyword_index_cache.get(key)
+            if cached is not None:
+                return cached
+            index = _keyword_index_from_entities(self._temporal_entities(session_id, temporal_point))
+            self._temporal_keyword_index_cache[key] = index
+            return index
         cached = self._keyword_index_cache.get(session_id)
+        if cached is not None:
+            return cached
+        index = _keyword_index_from_entities(self._current_entities(session_id))
+        self._keyword_index_cache[session_id] = index
+        return index
+
+    def _current_entities(self, session_id: str) -> list[GraphEntity]:
+        cached = self._current_entity_index_cache.get(session_id)
         if cached is not None:
             return cached
         rows = self._require_connection().execute(
@@ -418,21 +460,59 @@ class EmbeddedGraphStore:
             {"session_id": session_id},
         ).get_all()
         entities = [_row_to_entity(row) for row in rows]
-        entity_terms = [_terms(_entity_keyword_text(entity)) for entity in entities]
-        document_frequency = Counter(term for terms in entity_terms for term in set(terms))
-        average_length = (
-            sum(len(terms) for terms in entity_terms) / len(entity_terms)
-            if entity_terms
-            else 0.0
-        )
-        index = _KeywordIndex(
-            entities=entities,
-            terms=entity_terms,
-            document_frequency=document_frequency,
-            average_length=average_length,
-        )
-        self._keyword_index_cache[session_id] = index
-        return index
+        self._current_entity_index_cache[session_id] = entities
+        return entities
+
+    def _current_entity_lookup(self, session_id: str) -> dict[tuple[str, str | None], list[GraphEntity]]:
+        cached = self._current_entity_lookup_cache.get(session_id)
+        if cached is not None:
+            return cached
+        lookup: dict[tuple[str, str | None], list[GraphEntity]] = {}
+        for entity in self._current_entities(session_id):
+            lookup.setdefault((entity.name, None), []).append(entity)
+            lookup.setdefault((entity.name, entity.entity_type), []).append(entity)
+        for matches in lookup.values():
+            matches.sort(key=lambda entity: entity.valid_from or "", reverse=True)
+        self._current_entity_lookup_cache[session_id] = lookup
+        return lookup
+
+    def _temporal_entities(self, session_id: str, temporal_point: str) -> list[GraphEntity]:
+        key = (session_id, temporal_point)
+        cached = self._temporal_entity_index_cache.get(key)
+        if cached is not None:
+            return cached
+        rows = self._require_connection().execute(
+            """
+            MATCH (e:Entity)
+            WHERE e.session_id = $session_id
+              AND e.valid_from <= $temporal_point
+              AND (e.valid_to IS NULL OR $temporal_point < e.valid_to)
+            RETURN e.name, e.entity_type, e.valid_from, e.valid_to, e.summary, e.properties_json, e.session_id,
+                   e.source_event_seq, e.source_event_hash
+            """,
+            {"session_id": session_id, "temporal_point": temporal_point},
+        ).get_all()
+        entities = [_row_to_entity(row) for row in rows]
+        self._temporal_entity_index_cache[key] = entities
+        return entities
+
+    def _temporal_entity_lookup(
+        self,
+        session_id: str,
+        temporal_point: str,
+    ) -> dict[tuple[str, str | None], list[GraphEntity]]:
+        key = (session_id, temporal_point)
+        cached = self._temporal_entity_lookup_cache.get(key)
+        if cached is not None:
+            return cached
+        lookup: dict[tuple[str, str | None], list[GraphEntity]] = {}
+        for entity in self._temporal_entities(session_id, temporal_point):
+            lookup.setdefault((entity.name, None), []).append(entity)
+            lookup.setdefault((entity.name, entity.entity_type), []).append(entity)
+        for matches in lookup.values():
+            matches.sort(key=lambda entity: entity.valid_from or "", reverse=True)
+        self._temporal_entity_lookup_cache[key] = lookup
+        return lookup
 
     async def search_traversal(
         self,
@@ -444,7 +524,7 @@ class EmbeddedGraphStore:
     ) -> list[GraphEntity]:
         """Search graph neighbors from a starting entity."""
         safe_depth = max(1, min(depth, 5))
-        index = self._traversal_index(session_id)
+        index = self._traversal_index(session_id, temporal_point)
         start_keys = set(index.keys_by_name.get(start_name, set()))
         if not start_keys:
             return []
@@ -463,10 +543,11 @@ class EmbeddedGraphStore:
                     if target_key in start_keys:
                         continue
                     target_path_relations = [*source_path_relations, relation]
-                    found.setdefault(
-                        target_key,
-                        _entity_with_path_metadata(target_entity, relation_types=target_path_relations),
-                    )
+                    if target_key not in found:
+                        found[target_key] = _entity_with_path_metadata(
+                            target_entity,
+                            relation_types=target_path_relations,
+                        )
                     if target_key not in seen_sources:
                         seen_sources.add(target_key)
                         path_relations_by_key[target_key] = target_path_relations
@@ -476,61 +557,120 @@ class EmbeddedGraphStore:
                 break
         return list(found.values())
 
-    def _traversal_index(self, session_id: str) -> _TraversalIndex:
+    def _traversal_index(self, session_id: str, temporal_point: str | None = None) -> _TraversalIndex:
+        if temporal_point is not None:
+            key = (session_id, temporal_point)
+            cached = self._temporal_traversal_index_cache.get(key)
+            if cached is not None:
+                return cached
+            index = self._build_traversal_index(session_id, temporal_point)
+            self._temporal_traversal_index_cache[key] = index
+            return index
         cached = self._traversal_index_cache.get(session_id)
         if cached is not None:
             return cached
-        rows = self._require_connection().execute(
-            """
-            MATCH (source:Entity)-[r:RELATES]->(target:Entity)
-            WHERE source.session_id = $session_id
-              AND target.session_id = $session_id
-              AND r.session_id = $session_id
-              AND source.valid_to IS NULL
-              AND target.valid_to IS NULL
-              AND r.valid_to IS NULL
-            RETURN source.node_key,
-                   source.name,
-                   source.entity_type,
-                   source.valid_from,
-                   source.valid_to,
-                   source.summary,
-                   source.properties_json,
-                   source.session_id,
-                   source.source_event_seq,
-                   source.source_event_hash,
-                   r.relation_type,
-                   target.node_key,
-                   target.name,
-                   target.entity_type,
-                   target.valid_from,
-                   target.valid_to,
-                   target.summary,
-                   target.properties_json,
-                   target.session_id,
-                   target.source_event_seq,
-                   target.source_event_hash
-            """,
-            {"session_id": session_id},
-        ).get_all()
+        index = self._build_traversal_index(session_id, None)
+        self._traversal_index_cache[session_id] = index
+        return index
+
+    def _build_traversal_index(self, session_id: str, temporal_point: str | None) -> _TraversalIndex:
+        if temporal_point is None:
+            rows = self._require_connection().execute(
+                """
+                MATCH (source:Entity)-[r:RELATES]->(target:Entity)
+                WHERE source.session_id = $session_id
+                  AND target.session_id = $session_id
+                  AND r.session_id = $session_id
+                  AND source.valid_to IS NULL
+                  AND target.valid_to IS NULL
+                  AND r.valid_to IS NULL
+                RETURN source.node_key,
+                       source.name,
+                       source.entity_type,
+                       source.valid_from,
+                       source.valid_to,
+                       source.summary,
+                       source.properties_json,
+                       source.session_id,
+                       source.source_event_seq,
+                       source.source_event_hash,
+                       r.relation_type,
+                       target.node_key,
+                       target.name,
+                       target.entity_type,
+                       target.valid_from,
+                       target.valid_to,
+                       target.summary,
+                       target.properties_json,
+                       target.session_id,
+                       target.source_event_seq,
+                       target.source_event_hash
+                """,
+                {"session_id": session_id},
+            ).get_all()
+        else:
+            rows = self._require_connection().execute(
+                """
+                MATCH (source:Entity)-[r:RELATES]->(target:Entity)
+                WHERE source.session_id = $session_id
+                  AND target.session_id = $session_id
+                  AND r.session_id = $session_id
+                  AND source.valid_from <= $temporal_point
+                  AND (source.valid_to IS NULL OR $temporal_point < source.valid_to)
+                  AND target.valid_from <= $temporal_point
+                  AND (target.valid_to IS NULL OR $temporal_point < target.valid_to)
+                  AND r.valid_from <= $temporal_point
+                  AND (r.valid_to IS NULL OR $temporal_point < r.valid_to)
+                RETURN source.node_key,
+                       source.name,
+                       source.entity_type,
+                       source.valid_from,
+                       source.valid_to,
+                       source.summary,
+                       source.properties_json,
+                       source.session_id,
+                       source.source_event_seq,
+                       source.source_event_hash,
+                       r.relation_type,
+                       target.node_key,
+                       target.name,
+                       target.entity_type,
+                       target.valid_from,
+                       target.valid_to,
+                       target.summary,
+                       target.properties_json,
+                       target.session_id,
+                       target.source_event_seq,
+                       target.source_event_hash
+                """,
+                {"session_id": session_id, "temporal_point": temporal_point},
+            ).get_all()
         adjacency: dict[str, list[tuple[str, GraphEntity, str]]] = {}
         keys_by_name: dict[str, set[str]] = {}
+        entities_by_key: dict[str, GraphEntity] = {}
         for row in rows:
             relation = str(row[10])
             source_key = str(row[0])
             target_key = str(row[11])
             keys_by_name.setdefault(str(row[1]), set()).add(source_key)
             keys_by_name.setdefault(str(row[12]), set()).add(target_key)
-            source_entity = _row_to_entity(list(row[1:10]))
-            target_entity = _row_to_entity(list(row[12:]))
+            source_entity = entities_by_key.get(source_key)
+            if source_entity is None:
+                source_entity = _row_to_entity(list(row[1:10]))
+                entities_by_key[source_key] = source_entity
+            target_entity = entities_by_key.get(target_key)
+            if target_entity is None:
+                target_entity = _row_to_entity(list(row[12:]))
+                entities_by_key[target_key] = target_entity
             adjacency.setdefault(source_key, []).append((target_key, target_entity, relation))
             adjacency.setdefault(target_key, []).append((source_key, source_entity, relation))
-        index = _TraversalIndex(adjacency=adjacency, keys_by_name=keys_by_name)
-        self._traversal_index_cache[session_id] = index
-        return index
+        return _TraversalIndex(adjacency=adjacency, keys_by_name=keys_by_name)
 
     async def has_traversal_edges(self, session_id: str = "default") -> bool:
         """Return whether the embedded projection has active graph edges."""
+        cached = self._traversal_index_cache.get(session_id)
+        if cached is not None:
+            return bool(cached.adjacency)
         rows = self._require_connection().execute(
             """
             MATCH (:Entity)-[r:RELATES]->(:Entity)
@@ -551,47 +691,50 @@ class EmbeddedGraphStore:
         """Search by vector similarity."""
         from zaxy.graph import SearchResult
 
-        index = self._vector_index(session_id, temporal_point)
+        if limit <= 0:
+            return []
         query_norm = _vector_norm(embedding)
         if query_norm == 0.0:
             return []
+        index = self._vector_index(session_id, temporal_point)
         query_sparse = _sparse_vector(embedding)
-        matches = []
-        for entity, sparse_vector, norm in zip(index.entities, index.sparse_vectors, index.norms, strict=True):
-            dimension = entity.properties.get("embedding_dimension")
-            if isinstance(dimension, int) and dimension != len(embedding):
+        dot_products: dict[int, float] = {}
+        for dimension, query_value in query_sparse.items():
+            for entity_index, entity_value in index.postings.get(dimension, []):
+                dot_products[entity_index] = dot_products.get(entity_index, 0.0) + (query_value * entity_value)
+        matches: list[SearchResult] = []
+        for entity_index, dot in dot_products.items():
+            norm = index.norms[entity_index]
+            if norm == 0.0 or index.dimensions[entity_index] != len(embedding):
                 continue
-            score = _sparse_cosine_similarity(query_sparse, sparse_vector, query_norm, norm)
-            matches.append(SearchResult(entity=entity, score=score, source="vector", raw_score=score))
-        return sorted(matches, key=lambda item: item.score, reverse=True)[:limit]
+            score = dot / (query_norm * norm)
+            if score <= 0.0:
+                continue
+            matches.append(
+                SearchResult(
+                    entity=index.entities[entity_index],
+                    score=score,
+                    source="vector",
+                    raw_score=score,
+                )
+            )
+        return heapq.nlargest(limit, matches, key=lambda item: item.score)
 
     def _vector_index(self, session_id: str, temporal_point: str | None) -> _VectorIndex:
         key = (session_id, temporal_point)
         cached = self._vector_index_cache.get(key)
         if cached is not None:
             return cached
-        rows = self._require_connection().execute(
-            """
-            MATCH (e:Entity)
-            WHERE e.session_id = $session_id
-              AND (
-                ($temporal_point IS NULL AND e.valid_to IS NULL)
-                OR (
-                    $temporal_point IS NOT NULL
-                    AND e.valid_from <= $temporal_point
-                    AND (e.valid_to IS NULL OR $temporal_point < e.valid_to)
-                )
-              )
-            RETURN e.name, e.entity_type, e.valid_from, e.valid_to, e.summary, e.properties_json, e.session_id,
-                   e.source_event_seq, e.source_event_hash
-            """,
-            {"session_id": session_id, "temporal_point": temporal_point},
-        ).get_all()
+        candidate_entities = (
+            self._current_entities(session_id)
+            if temporal_point is None
+            else self._temporal_entities(session_id, temporal_point)
+        )
         entities: list[GraphEntity] = []
-        sparse_vectors: list[dict[int, float]] = []
         norms: list[float] = []
-        for row in rows:
-            entity = _row_to_entity(row)
+        dimensions: list[int] = []
+        postings: dict[int, list[tuple[int, float]]] = {}
+        for entity in candidate_entities:
             vector = _embedding_vector(entity.properties.get("embedding"))
             if vector is None:
                 continue
@@ -600,18 +743,70 @@ class EmbeddedGraphStore:
                 continue
             entity.properties["embedding_dimension"] = len(vector)
             entities.append(entity)
-            sparse_vectors.append(_sparse_vector(vector))
+            entity_index = len(norms)
+            sparse_vector = _sparse_vector(vector)
             norms.append(norm)
-        index = _VectorIndex(entities=entities, sparse_vectors=sparse_vectors, norms=norms)
+            dimensions.append(len(vector))
+            for dimension, value in sparse_vector.items():
+                postings.setdefault(dimension, []).append((entity_index, value))
+        index = _VectorIndex(
+            entities=entities,
+            norms=norms,
+            postings=postings,
+            dimensions=dimensions,
+        )
         self._vector_index_cache[key] = index
         return index
 
     def _clear_vector_index_cache(self, session_id: str) -> None:
-        self._vector_index_cache = {
-            key: value
-            for key, value in self._vector_index_cache.items()
-            if key[0] != session_id
-        }
+        self._vector_index_cache = self._clear_session_keyed_cache(self._vector_index_cache, session_id)
+
+    def _clear_temporal_read_caches(self, session_id: str) -> None:
+        self._temporal_entity_index_cache = self._clear_session_keyed_cache(
+            self._temporal_entity_index_cache,
+            session_id,
+        )
+        self._temporal_entity_lookup_cache = self._clear_session_keyed_cache(
+            self._temporal_entity_lookup_cache,
+            session_id,
+        )
+        self._temporal_keyword_index_cache = self._clear_session_keyed_cache(
+            self._temporal_keyword_index_cache,
+            session_id,
+        )
+        self._temporal_traversal_index_cache = self._clear_session_keyed_cache(
+            self._temporal_traversal_index_cache,
+            session_id,
+        )
+
+    def _clear_session_keyed_cache(
+        self,
+        cache: dict[tuple[str, Any], _CacheValue],
+        session_id: str,
+    ) -> dict[tuple[str, Any], _CacheValue]:
+        return {key: value for key, value in cache.items() if key[0] != session_id}
+
+    def _clear_read_caches(self, session_id: str) -> None:
+        self._current_entity_index_cache.pop(session_id, None)
+        self._current_entity_lookup_cache.pop(session_id, None)
+        self._clear_temporal_read_caches(session_id)
+        self._keyword_index_cache.pop(session_id, None)
+        self._clear_vector_index_cache(session_id)
+        self._traversal_index_cache.pop(session_id, None)
+
+    def _clear_all_caches(self) -> None:
+        self._active_entity_cache = {}
+        self._current_entity_index_cache = {}
+        self._current_entity_lookup_cache = {}
+        self._temporal_entity_index_cache = {}
+        self._temporal_entity_lookup_cache = {}
+        self._keyword_index_cache = {}
+        self._temporal_keyword_index_cache = {}
+        self._vector_index_cache = {}
+        self._traversal_index_cache = {}
+        self._temporal_traversal_index_cache = {}
+        self._dirty_bulk_sessions = set()
+        self._bulk_active_state_loaded_sessions = set()
 
     async def invalidate_entity(
         self,
@@ -638,9 +833,7 @@ class EmbeddedGraphStore:
             },
         )
         self._active_entity_cache.pop((session_id, entity_type, name), None)
-        self._keyword_index_cache.pop(session_id, None)
-        self._clear_vector_index_cache(session_id)
-        self._traversal_index_cache.pop(session_id, None)
+        self._clear_read_caches(session_id)
 
     async def retire_source_projections(
         self,
@@ -688,9 +881,7 @@ class EmbeddedGraphStore:
             if not (key[0] == session_id and value[0] in retired_node_keys)
         }
         if retired_node_keys:
-            self._keyword_index_cache.pop(session_id, None)
-            self._clear_vector_index_cache(session_id)
-            self._traversal_index_cache.pop(session_id, None)
+            self._clear_read_caches(session_id)
 
     async def inspect_event_projection_status(
         self,
@@ -763,6 +954,8 @@ class EmbeddedGraphStore:
             missing_chain_links == 0
             and (projection_lag in (None, 0))
             and latest_hash_matches
+            and next_event_edges == max(0, event_count - 1)
+            and previous_event_edges == max(0, event_count - 1)
         )
         return GraphEventProjectionStatus(
             session_id=session_id,
@@ -825,8 +1018,7 @@ class EmbeddedGraphStore:
         method_rows: dict[str, list[list[Any]]] = {}
         evidence_count = 0
         missing_source_event_count = 0
-        samples = []
-        for row in rows[:limit]:
+        for row in rows:
             evidence = _json_dict(row[7])
             if evidence:
                 evidence_count += 1
@@ -834,6 +1026,11 @@ class EmbeddedGraphStore:
                 missing_source_event_count += 1
             method = str(row[4] or "unknown")
             method_rows.setdefault(method, []).append(row)
+
+        samples = []
+        for row in rows[:limit]:
+            evidence = _json_dict(row[7])
+            method = str(row[4] or "unknown")
             samples.append(
                 GraphInferredEdgeSample(
                     source=str(row[0]),
@@ -882,31 +1079,8 @@ class EmbeddedGraphStore:
         return self._connection
 
     def _active_node_key(self, session_id: str, entity_type: str, name: str) -> str | None:
-        cached = self._active_entity_cache.get((session_id, entity_type, name))
-        if cached is not None:
-            return cached[0]
-        rows = self._require_connection().execute(
-            """
-            MATCH (e:Entity)
-            WHERE e.session_id = $session_id
-              AND e.name = $name
-              AND e.entity_type = $entity_type
-              AND e.valid_to IS NULL
-            RETURN e.node_key, e.summary, e.properties_json
-            ORDER BY e.valid_from DESC
-            LIMIT 1
-            """,
-            {"session_id": session_id, "entity_type": entity_type, "name": name},
-        ).get_all()
-        if not rows:
-            return None
-        node_key = str(rows[0][0])
-        self._active_entity_cache[(session_id, entity_type, name)] = (
-            node_key,
-            str(rows[0][1]) if rows[0][1] is not None else None,
-            str(rows[0][2] or "{}"),
-        )
-        return node_key
+        active_entity = self._active_entity_state(session_id=session_id, entity_type=entity_type, name=name)
+        return active_entity[0] if active_entity is not None else None
 
     def _active_entity_state(
         self,
@@ -918,6 +1092,9 @@ class EmbeddedGraphStore:
         cached = self._active_entity_cache.get((session_id, entity_type, name))
         if cached is not None:
             return cached
+        if self._bulk_projection_open:
+            self._load_bulk_active_state(session_id)
+            return self._active_entity_cache.get((session_id, entity_type, name))
         rows = self._require_connection().execute(
             """
             MATCH (e:Entity)
@@ -944,6 +1121,26 @@ class EmbeddedGraphStore:
         )
         self._active_entity_cache[(session_id, entity_type, name)] = active_entity
         return active_entity
+
+    def _load_bulk_active_state(self, session_id: str) -> None:
+        """Load active entity state once for a bulk projection transaction."""
+        if session_id in self._bulk_active_state_loaded_sessions:
+            return
+        rows = self._require_connection().execute(
+            """
+            MATCH (e:Entity)
+            WHERE e.session_id = $session_id AND e.valid_to IS NULL
+            RETURN e.node_key, e.name, e.entity_type, e.summary, e.properties_json
+            """,
+            {"session_id": session_id},
+        ).get_all()
+        for row in rows:
+            self._active_entity_cache[(session_id, str(row[2]), str(row[1]))] = (
+                str(row[0]),
+                str(row[3]) if row[3] is not None else None,
+                str(row[4] or "{}"),
+            )
+        self._bulk_active_state_loaded_sessions.add(session_id)
 
     def _copy_active_relationships_to_new_version(
         self,
@@ -1160,69 +1357,148 @@ def _entity_keyword_text(entity: GraphEntity) -> str:
 
 
 def _terms(text: str) -> list[str]:
-    return [term for term in re.findall(r"[A-Za-z0-9]+", text.casefold()) if len(term) > 1]
+    return [term for term in _TOKEN_RE.findall(text.casefold()) if len(term) > 1]
 
 
 def _keyword_query_terms(text: str) -> list[str]:
-    stopwords = {
-        "am",
-        "are",
-        "did",
-        "does",
-        "first",
-        "had",
-        "have",
-        "how",
-        "the",
-        "was",
-        "what",
-        "when",
-        "where",
-        "which",
-        "who",
-        "with",
-    }
-    return [term for term in _terms(text) if term not in stopwords]
+    return [term for term in _terms(text) if term not in _KEYWORD_STOP_WORDS]
 
 
-def _bm25_score(
+def _keyword_index_from_entities(entities: list[GraphEntity]) -> _KeywordIndex:
+    term_counts: list[Counter[str]] = []
+    document_frequency: Counter[str] = Counter()
+    document_lengths: list[int] = []
+    total_document_length = 0
+    for entity in entities:
+        terms = _terms(_entity_keyword_text(entity))
+        counts = Counter(terms)
+        term_counts.append(counts)
+        length = len(terms)
+        document_lengths.append(length)
+        total_document_length += length
+        document_frequency.update(counts.keys())
+    average_length = total_document_length / len(term_counts) if term_counts else 0.0
+    return _KeywordIndex(
+        entities=entities,
+        term_counts=term_counts,
+        term_entity_ids=_term_entity_ids(term_counts),
+        term_idf=_term_idf(document_frequency, len(term_counts)),
+        document_length_norms=_document_length_norms(document_lengths, average_length),
+    )
+
+
+def _keyword_candidate_terms(
+    index: _KeywordIndex,
     query_terms: list[str],
-    document_terms: list[str],
     *,
-    document_frequency: Counter[str],
-    document_count: int,
+    max_candidates: int = 1000,
+    min_terms: int = 4,
+) -> list[str]:
+    unique_terms = list(dict.fromkeys(query_terms))
+    if not unique_terms:
+        return []
+    if _candidate_union_size_at_most(index, unique_terms, max_candidates):
+        return unique_terms
+
+    selected: list[str] = []
+    selected_candidates: set[int] = {*()}
+    sorted_terms = sorted(
+        unique_terms,
+        key=lambda term: (
+            len(index.term_entity_ids.get(term, ())),
+            -index.term_idf.get(term, 0.0),
+        ),
+    )
+    for term in sorted_terms:
+        postings = index.term_entity_ids.get(term, ())
+        if not postings:
+            continue
+        remaining_capacity = max_candidates - len(selected_candidates)
+        new_candidate_count = _new_candidate_count_until_overflow(
+            postings,
+            selected_candidates,
+            max_new_candidates=remaining_capacity,
+        )
+        if len(selected) < min_terms or len(selected_candidates) + new_candidate_count <= max_candidates:
+            selected.append(term)
+            selected_candidates.update(postings)
+    selected_lookup = {*selected}
+    return [term for term in unique_terms if term in selected_lookup]
+
+
+def _candidate_union_size_at_most(index: _KeywordIndex, terms: list[str], max_candidates: int) -> bool:
+    candidates: set[int] = {*()}
+    for term in terms:
+        for entity_index in index.term_entity_ids.get(term, ()):
+            candidates.add(entity_index)
+            if len(candidates) > max_candidates:
+                return False
+    return True
+
+
+def _new_candidate_count_until_overflow(
+    postings: Sequence[int],
+    selected_candidates: set[int],
+    *,
+    max_new_candidates: int,
+) -> int:
+    new_candidate_count = 0
+    for entity_index in postings:
+        if entity_index in selected_candidates:
+            continue
+        new_candidate_count += 1
+        if new_candidate_count > max_new_candidates:
+            return new_candidate_count
+    return new_candidate_count
+
+
+def _term_entity_ids(term_counts: list[Counter[str]]) -> dict[str, tuple[int, ...]]:
+    postings: dict[str, list[int]] = {}
+    for index, counts in enumerate(term_counts):
+        for term in counts:
+            postings.setdefault(term, []).append(index)
+    return {term: tuple(indices) for term, indices in postings.items()}
+
+
+def _term_idf(document_frequency: Counter[str], document_count: int) -> dict[str, float]:
+    if document_count <= 0:
+        return {}
+    return {
+        term: math.log(1 + (document_count - frequency + 0.5) / (frequency + 0.5))
+        for term, frequency in document_frequency.items()
+    }
+
+
+def _document_length_norms(
+    document_lengths: list[int],
     average_length: float,
+    *,
+    k1: float = 1.5,
+    b: float = 0.75,
+) -> list[float]:
+    if average_length <= 0:
+        return [0.0 for _ in document_lengths]
+    return [k1 * (1 - b + b * document_length / average_length) for document_length in document_lengths]
+
+
+def _bm25_score_from_precomputed(
+    query_terms: Sequence[str],
+    term_counts: Counter[str],
+    *,
+    document_length_norm: float,
+    term_idf: dict[str, float],
+    k1: float = 1.5,
 ) -> float:
-    if not document_terms or document_count <= 0 or average_length <= 0:
+    if document_length_norm <= 0:
         return 0.0
-    counts = Counter(document_terms)
     score = 0.0
     for term in query_terms:
-        score += _bm25_term_score(
-            term_frequency=counts[term],
-            document_frequency=document_frequency[term],
-            document_count=document_count,
-            document_length=len(document_terms),
-            average_length=average_length,
-        )
+        term_frequency = term_counts[term]
+        if term_frequency <= 0:
+            continue
+        denominator = term_frequency + document_length_norm
+        score += term_idf.get(term, 0.0) * (term_frequency * (k1 + 1)) / denominator
     return score
-
-
-def _bm25_term_score(
-    *,
-    term_frequency: int,
-    document_frequency: int,
-    document_count: int,
-    document_length: int,
-    average_length: float,
-) -> float:
-    if term_frequency <= 0 or document_frequency <= 0:
-        return 0.0
-    k1 = 1.5
-    b = 0.75
-    idf = math.log(1 + (document_count - document_frequency + 0.5) / (document_frequency + 0.5))
-    denominator = term_frequency + k1 * (1 - b + b * document_length / average_length)
-    return idf * (term_frequency * (k1 + 1)) / denominator
 
 
 def _embedding_vector(value: Any) -> list[float] | None:
@@ -1237,24 +1513,14 @@ def _embedding_vector(value: Any) -> list[float] | None:
 
 
 def _vector_norm(vector: list[float]) -> float:
-    return math.sqrt(sum(value * value for value in vector))
+    squared_sum = 0.0
+    for value in vector:
+        squared_sum += value * value
+    return math.sqrt(squared_sum)
 
 
 def _sparse_vector(vector: list[float]) -> dict[int, float]:
     return {index: value for index, value in enumerate(vector) if value != 0.0}
-
-
-def _sparse_cosine_similarity(
-    left: dict[int, float],
-    right: dict[int, float],
-    left_norm: float,
-    right_norm: float,
-) -> float:
-    if left_norm == 0.0 or right_norm == 0.0:
-        return 0.0
-    smaller, larger = (left, right) if len(left) <= len(right) else (right, left)
-    dot = sum(value * larger.get(index, 0.0) for index, value in smaller.items())
-    return dot / (left_norm * right_norm)
 
 
 def _json_dict(raw: Any) -> dict[str, Any]:
@@ -1265,4 +1531,7 @@ def _json_dict(raw: Any) -> dict[str, Any]:
 
 
 def _properties_reference_source(properties: dict[str, Any], source_path: str) -> bool:
-    return any(properties.get(key) == source_path for key in ("source_path", "target_path", "test_path", "covered_path"))
+    for key in ("source_path", "target_path", "test_path", "covered_path"):
+        if properties.get(key) == source_path:
+            return True
+    return False

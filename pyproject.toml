@@ -18,25 +18,25 @@ classifiers = [
 ]
 keywords = [
     "agent-memory",
+    "embedded-memory",
     "event-sourcing",
     "knowledge-graph",
+    "kuzu",
+    "local-first",
     "mcp",
-    "neo4j",
     "temporal-graph",
 ]
 dependencies = [
-    "graphiti-core>=0.1.0",
-    "neo4j>=5.20.0",
     "pydantic>=2.7.0",
     "pydantic-settings>=2.0.0",
     "mcp>=1.0.0",
-    "pathlight>=0.1.0",
     "typer>=0.12.0",
     "httpx>=0.27.0",
     "prometheus-client>=0.20.0",
     "PyJWT[crypto]>=2.8.0",
     "tomlkit>=0.13.0",
     "PyYAML>=6.0.0",
+    "kuzu>=0.11.0",
 ]
 
 [project.optional-dependencies]
@@ -55,8 +55,13 @@ local-embeddings = [
 pggraph = [
     "psycopg[binary]>=3.2.0",
 ]
+neo4j = [
+    "neo4j>=5.20.0",
+]
+pathlight = [
+    "pathlight>=0.1.0",
+]
 embedded = [
-    "kuzu>=0.11.0",
 ]
 latticedb = [
     "latticedb>=0.9.6",
@@ -175,8 +180,3 @@ disallow_untyped_defs = true
 disallow_incomplete_defs = true
 check_untyped_defs = true
 show_error_codes = true
-
-[[tool.mypy.overrides]]
-module = ["neo4j.*", "mcp.*", "pathlight.*", "psycopg.*"]
-follow_untyped_imports = true
-ignore_missing_imports = true

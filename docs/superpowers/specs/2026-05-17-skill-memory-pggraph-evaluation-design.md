@@ -3,10 +3,10 @@
 ## Context
 
 Zaxy already has a strong memory substrate: Eventloom is the source of truth,
-Neo4j is the structured reasoning projection, and Memory Checkout assembles
-cited, prompt-ready context. A recent product thesis argues that memory and
-skills should be treated as one routed world model instead of separate static
-files, plugins, or APIs.
+the selected projection backend provides structured reasoning, and Memory
+Checkout assembles cited, prompt-ready context. A recent product thesis argues
+that memory and skills should be treated as one routed world model instead of
+separate static files, plugins, or APIs.
 
 Zaxy mostly satisfies the evidence and provenance side of that thesis, and now
 treats reusable procedures as first-class Skill Memory. Separately, pgGraph is
@@ -18,11 +18,12 @@ track, not a default backend migration.
 ## Goals
 
 - Keep Skill Memory as the procedural layer of Zaxy's world model.
-- Evaluate pgGraph as an experimental backend without risking current Neo4j
-  retrieval quality.
+- Evaluate pgGraph as an experimental backend without risking current embedded
+  retrieval quality or same-harness Neo4j control comparisons.
 - Preserve Eventloom as the immutable source of truth for every backend.
-- Keep Neo4j as the default production and benchmark baseline until a new
-  backend proves parity or better on the same harness.
+- Keep embedded Kuzu as the local production default, with Neo4j as the sidecar
+  control backend until another backend proves parity or better on the same
+  harness.
 
 ## Non-Goals
 
@@ -59,10 +60,13 @@ outcome history, rollback metadata, and a supersession path.
 ## pgGraph Evaluation Roadmap
 
 As of May 18, 2026, pgGraph docs describe version 0.1.0, PostgreSQL 13-18 support, and alpha status
-for experimentation, demos, benchmarks, and early feedback. Zaxy therefore keeps `PROJECTION_BACKEND=neo4j` as the default and
-treats `PROJECTION_BACKEND=pggraph` as experimental until it passes the benchmark
-gates. Install the optional adapter with `pip install "zaxy-memory[pggraph]"`,
-then set `PROJECTION_BACKEND=pggraph` and `PGGRAPH_DSN=...`.
+for experimentation, demos, benchmarks, and early feedback. Historical note:
+Zaxy used `PROJECTION_BACKEND=neo4j` as the default when this evaluation spec was
+written. Current status: embedded Kuzu is the default projection backend, while
+`PROJECTION_BACKEND=pggraph` remains an explicit experimental sidecar until it
+passes the benchmark gates. Install the optional adapter with
+`pip install "zaxy-memory[pggraph]"`, then set `PROJECTION_BACKEND=pggraph` and
+`PGGRAPH_DSN=...`.
 
 The current pgGraph adapter supports projection, exact search, keyword search, vector search, invalidation, and traversal
 over Zaxy-owned PostgreSQL projection tables. Local bootstrap is available with:

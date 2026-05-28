@@ -7,11 +7,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from zaxy.adapters._common import FabricFactory, assembly_payload, default_fabric_factory
+from zaxy.adapters.coordination import CoordinationAdapter
 from zaxy.context import Context
 from zaxy.core import ContextAssembly
 from zaxy.observation import build_tool_call_observation
 
 CrewAIMemoryStep = Callable[[str], Awaitable[str]]
+CrewAICoordinationStep = Callable[..., Awaitable[dict[str, Any]]]
 
 
 @dataclass(frozen=True)
@@ -259,3 +261,34 @@ def create_crewai_memory_checkout_step(
         return str(payload["memory"])
 
     return zaxy_crewai_memory_checkout_step
+
+
+def create_crewai_coordination_step(
+    *,
+    mission_id: str,
+    worker_id: str,
+    eventloom_path: str = ".eventloom",
+    actor: str | None = None,
+) -> CrewAICoordinationStep:
+    """Return an async task helper that reports explicit Coordinate findings."""
+
+    async def zaxy_crewai_coordination_step(
+        summary: str,
+        *,
+        evidence: list[dict[str, Any]] | None = None,
+        confidence: float | None = None,
+        claim_key: str | None = None,
+        claim_value: str | None = None,
+    ) -> dict[str, Any]:
+        adapter = CoordinationAdapter(eventloom_path=eventloom_path, actor=actor or worker_id)
+        return adapter.report_finding(
+            mission_id,
+            worker_id,
+            summary=summary,
+            evidence=evidence or [],
+            confidence=confidence,
+            claim_key=claim_key,
+            claim_value=claim_value,
+        )
+
+    return zaxy_crewai_coordination_step

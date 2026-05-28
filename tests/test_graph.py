@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from datetime import UTC
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -75,36 +76,59 @@ class TestConnection:
 
         assert projection_store is store
 
-    @patch("zaxy.graph.AsyncGraphDatabase.driver")
-    async def test_connect_creates_driver(self, mock_factory: MagicMock) -> None:
+    @patch("zaxy.graph._load_async_neo4j")
+    async def test_connect_creates_driver(self, mock_load_neo4j: MagicMock) -> None:
         """connect() should instantiate the driver."""
+        mock_factory = MagicMock()
+        mock_load_neo4j.return_value = (
+            SimpleNamespace(driver=mock_factory),
+            object,
+            object,
+        )
         gs = GraphStore("bolt://x", "u", "p")
         await gs.connect()
         mock_factory.assert_called_once_with("bolt://x", auth=("u", "p"))
 
-    @patch("zaxy.graph.AsyncGraphDatabase.driver")
-    async def test_connect_uses_trust_all_object(self, mock_factory: MagicMock) -> None:
+    @patch("zaxy.graph._load_async_neo4j")
+    async def test_connect_uses_trust_all_object(self, mock_load_neo4j: MagicMock) -> None:
         """trust_all should pass Neo4j's trust object, not a bare bool."""
-        from neo4j import TrustAll
+        class FakeTrustAll:
+            pass
+
+        mock_factory = MagicMock()
+        mock_load_neo4j.return_value = (
+            SimpleNamespace(driver=mock_factory),
+            FakeTrustAll,
+            object,
+        )
 
         gs = GraphStore("bolt://x", "u", "p", trust_all=True)
         await gs.connect()
         kwargs = mock_factory.call_args.kwargs
         assert kwargs["encrypted"] is True
-        assert isinstance(kwargs["trusted_certificates"], TrustAll)
+        assert isinstance(kwargs["trusted_certificates"], FakeTrustAll)
 
-    @patch("zaxy.graph.AsyncGraphDatabase.driver")
-    async def test_connect_uses_custom_ca_object(self, mock_factory: MagicMock) -> None:
+    @patch("zaxy.graph._load_async_neo4j")
+    async def test_connect_uses_custom_ca_object(self, mock_load_neo4j: MagicMock) -> None:
         """ca_cert should pass Neo4j's custom CA trust object."""
-        from neo4j import TrustCustomCAs
+        class FakeTrustCustomCAs:
+            def __init__(self, path: str) -> None:
+                self.path = path
 
+        mock_factory = MagicMock()
+        mock_load_neo4j.return_value = (
+            SimpleNamespace(driver=mock_factory),
+            object,
+            FakeTrustCustomCAs,
+        )
         ca_path = Path("/tmp/ca.pem")
         ca_path.write_text("test-ca\n", encoding="utf-8")
         gs = GraphStore("bolt://x", "u", "p", ca_cert=str(ca_path))
         await gs.connect()
         kwargs = mock_factory.call_args.kwargs
         assert kwargs["encrypted"] is True
-        assert isinstance(kwargs["trusted_certificates"], TrustCustomCAs)
+        assert isinstance(kwargs["trusted_certificates"], FakeTrustCustomCAs)
+        assert kwargs["trusted_certificates"].path == str(ca_path)
 
     async def test_connect_rejects_missing_custom_ca_path(self, tmp_path: Path) -> None:
         """Missing TLS CA files should fail with an actionable error."""
@@ -857,6 +881,31 @@ class TestRetrieval:
         assert "node.session_id = $session_id" in call.args[0]
         assert call.kwargs["session_id"] == "agent-1"
 
+    async def test_search_keyword_converts_score_once_and_sets_raw_score(self, store: GraphStore) -> None:
+        """Neo4j keyword diagnostics should match other backends."""
+        node = _make_node(name="Goal1", entity_type="goal", valid_from="2024-01-01T00:00:00Z")
+
+        class _CountingScore:
+            float_calls = 0
+
+            def __float__(self) -> float:
+                self.float_calls += 1
+                return 1.23
+
+        score = _CountingScore()
+        store._driver.execute_query.return_value = ([{"node": node, "score": score}], None, None)
+
+        results = await store.search_keyword("ship mvp", session_id="agent-1")
+
+        assert results[0].score == 1.23
+        assert results[0].raw_score == 1.23
+        assert score.float_calls == 1
+
+    async def test_search_keyword_zero_limit_skips_neo4j_query(self, store: GraphStore) -> None:
+        """Zero-result keyword queries should not hit Neo4j."""
+        assert await store.search_keyword("ship mvp", limit=0, session_id="agent-1") == []
+        store._driver.execute_query.assert_not_awaited()
+
     async def test_search_keyword_with_temporal_filter(self, store: GraphStore) -> None:
         """Keyword search should optionally filter by temporal point."""
         store._driver.execute_query.return_value = ([], None, None)
@@ -973,6 +1022,36 @@ class TestRetrieval:
         assert "node.session_id = $session_id" in call.args[0]
         assert call.kwargs["session_id"] == "agent-1"
         assert "node.session_id = $session_id AND node.valid_to IS NULL" in call.args[0]
+
+    async def test_search_vector_converts_score_once_and_sets_raw_score(self, store: GraphStore) -> None:
+        """Neo4j vector diagnostics should match other backends."""
+        node = _make_node(name="Goal1", entity_type="goal", valid_from="2024-01-01T00:00:00Z")
+
+        class _CountingScore:
+            float_calls = 0
+
+            def __float__(self) -> float:
+                self.float_calls += 1
+                return 0.91
+
+        score = _CountingScore()
+        store._driver.execute_query.return_value = ([{"node": node, "score": score}], None, None)
+
+        results = await store.search_vector([0.1, 0.2], session_id="agent-1")
+
+        assert results[0].score == 0.91
+        assert results[0].raw_score == 0.91
+        assert score.float_calls == 1
+
+    async def test_search_vector_zero_limit_skips_neo4j_query(self, store: GraphStore) -> None:
+        """Zero-result vector queries should not hit Neo4j."""
+        assert await store.search_vector([0.1, 0.2], limit=0, session_id="agent-1") == []
+        store._driver.execute_query.assert_not_awaited()
+
+    async def test_search_vector_zero_norm_skips_neo4j_query(self, store: GraphStore) -> None:
+        """Zero-norm vector queries should not hit Neo4j."""
+        assert await store.search_vector([0.0, 0.0], session_id="agent-1") == []
+        store._driver.execute_query.assert_not_awaited()
 
     async def test_search_traversal_rejects_invalid_depth(self, store: GraphStore) -> None:
         """Traversal depth must be bounded before being interpolated into Cypher."""

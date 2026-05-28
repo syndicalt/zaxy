@@ -139,7 +139,11 @@ def classify_retrieval_intent(query: str, *, limit: int) -> RetrievalIntent:
         needs_source = True
         slots = max(slots, 1)
         reasons.append("operational_memory")
-    if {"first", "which"} <= tokens and tokens & temporal_order_terms:
+    if (
+        {"first", "which"} <= tokens and tokens & temporal_order_terms
+    ) or (
+        tokens & {"meet", "met"} and tokens & {"first", "earlier", "before"}
+    ):
         needs_source = True
         slots = max(slots, max(2, min(4, limit // 2)))
         reasons.append("temporal_order")

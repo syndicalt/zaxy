@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import zaxy.verbatim as verbatim
 from zaxy.event import EventLog
 from zaxy.verbatim import VerbatimIndex
 
@@ -32,6 +33,8 @@ def test_verbatim_index_retrieves_document_chunks_with_citations(tmp_path) -> No
     assert hits[0].metadata["source_path"] == "docs/runbook.md"
     assert hits[0].metadata["source_start_line"] == 10
     assert hits[0].metadata["source_end_line"] == 14
+    assert index._term_counts[0]["rollback"] == 1
+    assert index._document_lengths == (8,)
 
 
 def test_verbatim_index_retrieves_transcript_turn_identity(tmp_path) -> None:
@@ -137,3 +140,113 @@ def test_verbatim_index_matches_identifiers_next_to_punctuation(tmp_path) -> Non
     hits = VerbatimIndex.from_event_logs([log]).query("identity-code-0042", limit=1)
 
     assert hits[0].content == "assistant: The audit trail uses identity-code-0042."
+
+
+def test_verbatim_index_scores_only_documents_matching_query_terms(tmp_path, monkeypatch) -> None:
+    """BM25 queries should skip chunks that cannot match any query term."""
+    log = EventLog(tmp_path / "agent.jsonl")
+    for index in range(20):
+        log.append(
+            "document.indexed",
+            actor="indexer",
+            payload={
+                "path": f"docs/{index}.md",
+                "start_line": 1,
+                "end_line": 1,
+                "content": f"Background document {index} about unrelated planning.",
+            },
+            thread="agent",
+        )
+    log.append(
+        "document.indexed",
+        actor="indexer",
+        payload={
+            "path": "docs/target.md",
+            "start_line": 1,
+            "end_line": 1,
+            "content": "The migration checkpoint marker is precise-needle-42.",
+        },
+        thread="agent",
+    )
+    index = VerbatimIndex.from_event_logs([log])
+    original_score = verbatim._bm25_score_from_precomputed
+    score_calls = 0
+
+    def tracking_score(*args, **kwargs):
+        nonlocal score_calls
+        score_calls += 1
+        return original_score(*args, **kwargs)
+
+    monkeypatch.setattr(verbatim, "_bm25_score_from_precomputed", tracking_score)
+
+    hits = index.query("precise-needle-42", limit=1)
+
+    assert hits[0].metadata["source_path"] == "docs/target.md"
+    assert score_calls == 1
+
+
+def test_verbatim_index_query_uses_precomputed_bm25_statistics(tmp_path, monkeypatch) -> None:
+    """Runtime queries should not recompute generic BM25 document statistics."""
+    log = EventLog(tmp_path / "agent.jsonl")
+    log.append(
+        "document.indexed",
+        actor="indexer",
+        payload={
+            "path": "docs/target.md",
+            "start_line": 1,
+            "end_line": 1,
+            "content": "The benchmark marker is reusable-needle-7.",
+        },
+        thread="agent",
+    )
+    index = VerbatimIndex.from_event_logs([log])
+
+    def fail_generic_score(*args, **kwargs):
+        raise AssertionError("query should use precomputed BM25 statistics")
+
+    monkeypatch.setattr(verbatim, "_bm25_score_from_counts", fail_generic_score)
+
+    hits = index.query("reusable-needle-7", limit=1)
+
+    assert hits[0].metadata["source_path"] == "docs/target.md"
+
+
+def test_verbatim_index_scores_only_terms_present_in_candidate(tmp_path, monkeypatch) -> None:
+    """Candidate scoring should not scan query terms absent from that candidate."""
+    log = EventLog(tmp_path / "agent.jsonl")
+    log.append(
+        "document.indexed",
+        actor="indexer",
+        payload={
+            "path": "docs/alpha.md",
+            "start_line": 1,
+            "end_line": 1,
+            "content": "alpha topic only",
+        },
+        thread="agent",
+    )
+    log.append(
+        "document.indexed",
+        actor="indexer",
+        payload={
+            "path": "docs/beta.md",
+            "start_line": 1,
+            "end_line": 1,
+            "content": "beta topic only",
+        },
+        thread="agent",
+    )
+    index = VerbatimIndex.from_event_logs([log])
+    original_score = verbatim._bm25_score_from_precomputed
+    scored_terms: list[tuple[str, ...]] = []
+
+    def tracking_score(query_terms, *args, **kwargs):
+        scored_terms.append(tuple(query_terms))
+        return original_score(query_terms, *args, **kwargs)
+
+    monkeypatch.setattr(verbatim, "_bm25_score_from_precomputed", tracking_score)
+
+    hits = index.query("alpha beta missing", limit=2)
+
+    assert {hit.metadata["source_path"] for hit in hits} == {"docs/alpha.md", "docs/beta.md"}
+    assert sorted(scored_terms) == [("alpha",), ("beta",)]

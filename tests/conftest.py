@@ -24,6 +24,7 @@ def isolate_settings(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         "MCP_REMOTE_AUTH_TOKEN_FILE",
         "OPENAI_API_KEY_FILE",
         "RERANKER_API_KEY_FILE",
+        "COORDINATION_SEMANTIC_CONFLICT_API_KEY_FILE",
         "PATHLIGHT_ACCESS_TOKEN_FILE",
     ):
         monkeypatch.setenv(env_name, "")

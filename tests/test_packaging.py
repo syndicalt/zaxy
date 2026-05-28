@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 import tomllib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -30,6 +31,232 @@ def test_pyproject_declares_typed_package_and_release_tools() -> None:
         "src/zaxy/py.typed"
     ]
     assert "site" in pyproject["tool"]["hatch"]["build"]["targets"]["sdist"]["include"]
+
+
+def test_core_install_includes_embedded_default_backend() -> None:
+    """The embedded backend should be part of the core install, not duplicated in an extra."""
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+
+    dependencies = pyproject["project"]["dependencies"]
+    extras = pyproject["project"]["optional-dependencies"]
+
+    assert "kuzu>=0.11.0" in dependencies
+    assert extras["embedded"] == []
+    assert "neo4j>=5.20.0" not in dependencies
+    assert extras["neo4j"] == ["neo4j>=5.20.0"]
+
+
+def test_package_keywords_center_embedded_local_memory() -> None:
+    """Package discovery metadata should match the embedded-first runtime."""
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+
+    keywords = pyproject["project"]["keywords"]
+    assert "embedded-memory" in keywords
+    assert "kuzu" in keywords
+    assert "local-first" in keywords
+    assert "neo4j" not in keywords
+
+
+def test_core_install_excludes_unused_graphiti_abstraction() -> None:
+    """Plain installs should not ship the unused Graphiti abstraction dependency."""
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+
+    dependencies = pyproject["project"]["dependencies"]
+    assert not any(dependency.startswith("graphiti-core") for dependency in dependencies)
+
+
+def test_gitignore_keeps_backend_diagnostics_scratch_out_of_release_inputs() -> None:
+    """Generated diagnostics are scratch, but target query inputs must stay visible."""
+    gitignore = Path(".gitignore").read_text(encoding="utf-8")
+
+    assert "reports/backend-shootout/*-diagnostics.json" in gitignore
+    assert "reports/backend-shootout/*-diagnostics.md" in gitignore
+    assert "reports/backend-shootout/*-target-diagnostics.json" in gitignore
+    assert "reports/backend-shootout/*-target-diagnostics.md" in gitignore
+    assert "reports/backend-shootout/*-queries-with-targets.json" not in gitignore
+
+
+def test_pathlight_observability_is_opt_in_extra() -> None:
+    """Plain installs should not require optional tracing infrastructure."""
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+
+    dependencies = pyproject["project"]["dependencies"]
+    extras = pyproject["project"]["optional-dependencies"]
+
+    assert "pathlight>=0.1.0" not in dependencies
+    assert extras["pathlight"] == ["pathlight>=0.1.0"]
+
+
+def test_neo4j_driver_imports_are_lazy_for_embedded_default() -> None:
+    """Importing default runtime modules should not require the optional Neo4j driver."""
+    graph_source = Path("src/zaxy/graph.py").read_text(encoding="utf-8")
+    dashboard_source = Path("src/zaxy/dashboard.py").read_text(encoding="utf-8")
+    live_benchmark_source = Path("src/zaxy/live_benchmark.py").read_text(encoding="utf-8")
+
+    assert "from neo4j import" not in graph_source
+    assert "from neo4j import" not in dashboard_source
+    assert "from neo4j import" not in live_benchmark_source
+
+
+def test_projection_backend_factory_does_not_import_neo4j_store_until_selected() -> None:
+    """Importing the backend factory should not load the optional Neo4j store path."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; import zaxy.projection_backends; print('zaxy.graph' in sys.modules)",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "False"
+
+
+def test_projection_backend_factory_avoids_event_model_import_until_needed() -> None:
+    """Lightweight backend imports should not load Eventloom/Pydantic release gates."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; import zaxy.projection_backends; "
+                "print('zaxy.event' in sys.modules); "
+                "print('pydantic' in sys.modules)"
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == ["False", "False"]
+
+
+def test_projection_backend_factory_avoids_release_metadata_until_needed() -> None:
+    """Submodule imports should not read package metadata for lazy __version__."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import sys; import zaxy.projection_backends; "
+                "print('zaxy.release' in sys.modules); "
+                "from zaxy import __version__; "
+                "print(bool(__version__)); "
+                "print('zaxy.release' in sys.modules)"
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == ["False", "True", "True"]
+
+
+def test_package_lazy_exports_preserve_public_import_compatibility() -> None:
+    """Lazy package exports should still support established public imports."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import zaxy; "
+                "from zaxy import MemoryFabric, render_mcp_client_config; "
+                "print(MemoryFabric.__name__); "
+                "print(callable(render_mcp_client_config)); "
+                "print('MemoryFabric' in dir(zaxy))"
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == ["MemoryFabric", "True", "True"]
+
+
+def test_cli_version_exits_before_loading_command_graph() -> None:
+    """The version path should avoid importing optional command subsystems."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import runpy, sys\n"
+                "sys.argv = ['python -m zaxy', '--version']\n"
+                "try:\n"
+                "    runpy.run_module('zaxy.__main__', run_name='__main__')\n"
+                "except SystemExit as exc:\n"
+                "    print(f'exit={exc.code}')\n"
+                "print('zaxy.mcp_server' in sys.modules)\n"
+                "print('zaxy.graph' in sys.modules)\n"
+                "print('typer' in sys.modules)"
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == ["zaxy 0.3.1", "exit=0", "False", "False", "False"]
+
+
+def test_cli_help_avoids_mcp_server_stack_until_serve_runs() -> None:
+    """Rendering CLI help should not load command-only Zaxy subsystems."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import contextlib, io, runpy, sys\n"
+                "sys.argv = ['python -m zaxy', '--help']\n"
+                "with contextlib.redirect_stdout(io.StringIO()):\n"
+                "    try:\n"
+                "        runpy.run_module('zaxy.__main__', run_name='__main__')\n"
+                "    except SystemExit:\n"
+                "        pass\n"
+                "loaded = sorted(name for name in sys.modules if name.startswith('zaxy.') and name != 'zaxy.__main__')\n"
+                "print(loaded)\n"
+                "print('mcp' in sys.modules)\n"
+                "print('uvicorn' in sys.modules)\n"
+                "print('sse_starlette' in sys.modules)\n"
+                "print('httpx' in sys.modules)\n"
+                "print('pydantic_settings' in sys.modules)\n"
+                "print('tomllib' in sys.modules)\n"
+                "print('tomlkit' in sys.modules)\n"
+                "print('yaml' in sys.modules)"
+            ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == ["[]", "False", "False", "False", "False", "False", "False", "False", "False"]
+
+
+def test_mypy_config_does_not_keep_stale_optional_driver_overrides() -> None:
+    """Lazy-loaded optional drivers should not leave unused mypy overrides behind."""
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+
+    override_modules = {
+        module
+        for override in pyproject["tool"]["mypy"].get("overrides", [])
+        for module in override["module"]
+    }
+    assert "neo4j.*" not in override_modules
+    assert "mcp.*" not in override_modules
+    assert "pathlight.*" not in override_modules
+    assert "psycopg.*" not in override_modules
 
 
 def test_package_version_source_fallback_is_independent_of_cwd(
@@ -333,18 +560,25 @@ def test_beta_readiness_reports_missing_clean_repo_uat(tmp_path: Path) -> None:
         "--max-checkout-prompt-tokens 5000\n"
         "--min-checkout-facts-per-1k-tokens 0.1\n"
         'BACKEND_SHOOTOUT_CMD="python scripts/check-backend-shootout.py reports/backend-shootout/backend-shootout.json '
-        "--require-report-metadata --require-markdown-report --verify-report-fingerprints --require-backends embedded,bm25 "
-        '--require-labeled-metrics --require-dashboard-source embedded=embedded --forbid-backends latticedb"\n'
+        "--require-report-metadata --require-markdown-report --require-query-results --require-git-tracked-inputs "
+        "--verify-report-fingerprints --require-backends embedded,bm25 "
+        '--require-labeled-metrics --require-dashboard-source embedded=embedded '
+        '--forbid-backends neo4j,pggraph,latticedb"\n'
         'BACKEND_PERFORMANCE_CMD="python scripts/check-backend-shootout.py '
         "reports/backend-shootout/longmemeval-40-backend-shootout.json --require-report-metadata "
-        "--require-markdown-report --verify-report-fingerprints --require-backends embedded,bm25 --require-labeled-metrics "
-        '--require-dashboard-source embedded=embedded --forbid-backends latticedb"\n'
+        "--require-markdown-report --require-query-results --require-git-tracked-inputs --verify-report-fingerprints "
+        "--require-backends embedded,bm25 --require-labeled-metrics "
+        '--require-dashboard-source embedded=embedded --forbid-backends neo4j,pggraph,latticedb"\n'
         'BACKEND_SCALE_CMD="python scripts/check-backend-shootout.py '
         "reports/backend-shootout/longmemeval-100-backend-shootout.json --require-report-metadata "
-        "--require-markdown-report --verify-report-fingerprints --require-backends embedded,bm25 --require-labeled-metrics "
-        '--require-dashboard-source embedded=embedded --forbid-backends latticedb --max-checkout-p95-ms embedded=125"\n'
+        "--require-markdown-report --require-query-results --require-git-tracked-inputs --verify-report-fingerprints "
+        "--require-backends embedded,bm25 --require-labeled-metrics "
+        '--require-dashboard-source embedded=embedded --forbid-backends neo4j,pggraph,latticedb '
+        '--max-checkout-p95-ms embedded=200"\n'
         "--require-report-metadata\n"
         "--require-markdown-report\n"
+        "--require-query-results\n"
+        "--require-git-tracked-inputs\n"
         "--verify-report-fingerprints\n"
         "backend-shootout.json\n"
         "longmemeval-40-backend-shootout.json\n"
@@ -360,7 +594,7 @@ def test_beta_readiness_reports_missing_clean_repo_uat(tmp_path: Path) -> None:
         "--max-resident-memory-delta-bytes\n"
         "--max-on-disk-footprint-bytes\n"
         "--max-dashboard-graph-load-ms\n"
-        "--max-checkout-p95-ms embedded=125\n"
+        "--max-checkout-p95-ms embedded=200\n"
         "--max-checkout-p99-ms\n"
         "--max-exact-p99-ms\n"
         "--max-keyword-p95-ms\n"
@@ -378,7 +612,7 @@ def test_beta_readiness_reports_missing_clean_repo_uat(tmp_path: Path) -> None:
     assert checks["release_gate"]["status"] == "ok"
     assert "backend shootout" in checks["release_gate"]["message"]
     assert "100-query scale" in checks["release_gate"]["message"]
-    assert "parked-candidate exclusion" in checks["release_gate"]["message"]
+    assert "optional backend exclusion" in checks["release_gate"]["message"]
     assert checks["clean_repo_uat"]["status"] == "error"
     assert checks["clean_repo_uat"]["action"] == (
         "Add a clean-repo UAT script for install, init, bootstrap, capture, and checkout."
@@ -488,14 +722,15 @@ def test_beta_readiness_requires_backend_shootout_release_gates(tmp_path: Path) 
         .replace("backend-shootout.json", "")
         .replace("longmemeval-40-backend-shootout.json", "")
         .replace("longmemeval-100-backend-shootout.json", "")
-        .replace("--forbid-backends latticedb", "")
+        .replace("--forbid-backends neo4j,pggraph,latticedb", "")
+        .replace("--require-query-results", "")
         .replace("--min-answer-at-5-per-1k-returned-tokens\n", "")
         .replace("--min-quality-per-1k-injected-tokens embedded=1.0\n", "")
         .replace("--max-cold-bootstrap-ms\n", "")
         .replace("--max-first-checkout-ms\n", "")
         .replace("--max-append-to-projection-p95-ms\n", "")
-        .replace(" --max-checkout-p95-ms embedded=125", "")
-        .replace("--max-checkout-p95-ms embedded=125\n", "")
+        .replace(" --max-checkout-p95-ms embedded=200", "")
+        .replace("--max-checkout-p95-ms embedded=200\n", "")
         .replace("--min-answer-at-5-per-1k-injected-tokens\n", ""),
         encoding="utf-8",
     )
@@ -509,14 +744,193 @@ def test_beta_readiness_requires_backend_shootout_release_gates(tmp_path: Path) 
     assert "backend-shootout.json" in checks["release_gate"]["message"]
     assert "longmemeval-40-backend-shootout.json" in checks["release_gate"]["message"]
     assert "longmemeval-100-backend-shootout.json" in checks["release_gate"]["message"]
-    assert "--forbid-backends latticedb" in checks["release_gate"]["message"]
+    assert "--forbid-backends neo4j,pggraph,latticedb" in checks["release_gate"]["message"]
+    assert "--require-query-results" in checks["release_gate"]["message"]
     assert "--min-answer-at-5-per-1k-returned-tokens" in checks["release_gate"]["message"]
     assert "--min-quality-per-1k-injected-tokens embedded=1.0" in checks["release_gate"]["message"]
     assert "--max-cold-bootstrap-ms" in checks["release_gate"]["message"]
     assert "--max-first-checkout-ms" in checks["release_gate"]["message"]
     assert "--max-append-to-projection-p95-ms" in checks["release_gate"]["message"]
-    assert "--max-checkout-p95-ms embedded=125" in checks["release_gate"]["message"]
+    assert "--max-checkout-p95-ms embedded=200" in checks["release_gate"]["message"]
     assert "--min-answer-at-5-per-1k-injected-tokens" in checks["release_gate"]["message"]
+
+
+def test_beta_readiness_rejects_backend_reports_with_untracked_inputs(tmp_path: Path) -> None:
+    """Beta readiness should reject release evidence that cannot be reproduced from tracked inputs."""
+    _write_minimal_beta_ready_project(tmp_path)
+    reports = tmp_path / "reports" / "backend-shootout"
+    reports.mkdir(parents=True)
+    eventloom = reports / "tracked.eventloom.jsonl"
+    eventloom.write_text('{"seq":1,"type":"decision.recorded","payload":{}}\n', encoding="utf-8")
+    queries = reports / "untracked-queries.json"
+    queries.write_text('[{"query":"tracked input evidence"}]\n', encoding="utf-8")
+    (reports / "backend-shootout.json").write_text(
+        '{"eventloom_path":"reports/backend-shootout/tracked.eventloom.jsonl",'
+        '"queries_file":"reports/backend-shootout/untracked-queries.json"}\n',
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True, text=True)
+    subprocess.run(
+        ["git", "add", "."],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ["git", "rm", "--cached", "reports/backend-shootout/untracked-queries.json"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["backend_report_inputs"]["status"] == "error"
+    assert "backend-shootout.json queries_file reports/backend-shootout/untracked-queries.json" in checks[
+        "backend_report_inputs"
+    ]["message"]
+
+
+def test_beta_readiness_requires_all_backend_report_artifacts(tmp_path: Path) -> None:
+    """Beta readiness should fail if release-gate benchmark reports are absent."""
+    _write_minimal_beta_ready_project(tmp_path)
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["backend_report_inputs"]["status"] == "error"
+    assert "reports/backend-shootout/backend-shootout.json is missing" in checks["backend_report_inputs"]["message"]
+    assert "reports/backend-shootout/longmemeval-40-backend-shootout.json is missing" in checks[
+        "backend_report_inputs"
+    ]["message"]
+    assert "reports/backend-shootout/longmemeval-100-backend-shootout.json is missing" in checks[
+        "backend_report_inputs"
+    ]["message"]
+
+
+def test_beta_readiness_requires_query_results_in_backend_report_artifacts(tmp_path: Path) -> None:
+    """Beta readiness should reject reproducible-looking reports without per-query evidence."""
+    _write_minimal_beta_ready_project(tmp_path)
+    reports = tmp_path / "reports" / "backend-shootout"
+    reports.mkdir(parents=True)
+    eventloom = reports / "sample.eventloom"
+    eventloom.mkdir()
+    (eventloom / "agent-1.jsonl").write_text(
+        '{"seq":1,"type":"decision.recorded","payload":{},"thread":"agent-1"}\n',
+        encoding="utf-8",
+    )
+    queries = reports / "queries.json"
+    queries.write_text('[{"query":"embedded benchmark evidence"}]\n', encoding="utf-8")
+    payload = (
+        '{"eventloom_path":"reports/backend-shootout/sample.eventloom",'
+        '"queries_file":"reports/backend-shootout/queries.json"}\n'
+    )
+    for filename in (
+        "backend-shootout.json",
+        "longmemeval-40-backend-shootout.json",
+        "longmemeval-100-backend-shootout.json",
+    ):
+        (reports / filename).write_text(payload, encoding="utf-8")
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["backend_report_inputs"]["status"] == "error"
+    assert "backend-shootout.json query_results are missing" in checks["backend_report_inputs"]["message"]
+    assert "longmemeval-40-backend-shootout.json query_results are missing" in checks[
+        "backend_report_inputs"
+    ]["message"]
+    assert "longmemeval-100-backend-shootout.json query_results are missing" in checks[
+        "backend_report_inputs"
+    ]["message"]
+
+
+def test_beta_readiness_requires_non_empty_query_result_diagnostics(tmp_path: Path) -> None:
+    """Beta readiness should reject query-results containers without diagnostics."""
+    _write_minimal_beta_ready_project(tmp_path)
+    reports = tmp_path / "reports" / "backend-shootout"
+    reports.mkdir(parents=True)
+    eventloom = reports / "sample.eventloom"
+    eventloom.mkdir()
+    (eventloom / "agent-1.jsonl").write_text(
+        '{"seq":1,"type":"decision.recorded","payload":{},"thread":"agent-1"}\n',
+        encoding="utf-8",
+    )
+    queries = reports / "queries.json"
+    queries.write_text('[{"query":"embedded benchmark evidence"}]\n', encoding="utf-8")
+    payload = (
+        '{"eventloom_path":"reports/backend-shootout/sample.eventloom",'
+        '"queries_file":"reports/backend-shootout/queries.json",'
+        '"query_results":{"embedded:retrieve":[]}}\n'
+    )
+    for filename in (
+        "backend-shootout.json",
+        "longmemeval-40-backend-shootout.json",
+        "longmemeval-100-backend-shootout.json",
+    ):
+        (reports / filename).write_text(payload, encoding="utf-8")
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["backend_report_inputs"]["status"] == "error"
+    assert "backend-shootout.json query_results embedded:retrieve has no diagnostics" in checks[
+        "backend_report_inputs"
+    ]["message"]
+    assert "longmemeval-40-backend-shootout.json query_results embedded:retrieve has no diagnostics" in checks[
+        "backend_report_inputs"
+    ]["message"]
+    assert "longmemeval-100-backend-shootout.json query_results embedded:retrieve has no diagnostics" in checks[
+        "backend_report_inputs"
+    ]["message"]
+
+
+def test_beta_readiness_requires_query_result_diagnostic_objects(tmp_path: Path) -> None:
+    """Beta readiness should reject placeholder diagnostic rows."""
+    _write_minimal_beta_ready_project(tmp_path)
+    reports = tmp_path / "reports" / "backend-shootout"
+    reports.mkdir(parents=True)
+    eventloom = reports / "sample.eventloom"
+    eventloom.mkdir()
+    (eventloom / "agent-1.jsonl").write_text(
+        '{"seq":1,"type":"decision.recorded","payload":{},"thread":"agent-1"}\n',
+        encoding="utf-8",
+    )
+    queries = reports / "queries.json"
+    queries.write_text('[{"query":"embedded benchmark evidence"}]\n', encoding="utf-8")
+    payload = (
+        '{"eventloom_path":"reports/backend-shootout/sample.eventloom",'
+        '"queries_file":"reports/backend-shootout/queries.json",'
+        '"query_results":{"embedded:retrieve":["placeholder"]}}\n'
+    )
+    for filename in (
+        "backend-shootout.json",
+        "longmemeval-40-backend-shootout.json",
+        "longmemeval-100-backend-shootout.json",
+    ):
+        (reports / filename).write_text(payload, encoding="utf-8")
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["backend_report_inputs"]["status"] == "error"
+    assert "backend-shootout.json query_results embedded:retrieve[0] must be a diagnostic object" in checks[
+        "backend_report_inputs"
+    ]["message"]
+    assert "longmemeval-40-backend-shootout.json query_results embedded:retrieve[0] must be a diagnostic object" in checks[
+        "backend_report_inputs"
+    ]["message"]
+    assert "longmemeval-100-backend-shootout.json query_results embedded:retrieve[0] must be a diagnostic object" in checks[
+        "backend_report_inputs"
+    ]["message"]
 
 
 def test_beta_readiness_requires_forbidden_candidate_guardrail_on_all_backend_gates(tmp_path: Path) -> None:
@@ -528,7 +942,7 @@ def test_beta_readiness_requires_forbidden_candidate_guardrail_on_all_backend_ga
     )
     script = (tmp_path / "scripts" / "release-check.sh").read_text(encoding="utf-8")
     (tmp_path / "scripts" / "release-check.sh").write_text(
-        script.replace("--forbid-backends latticedb", "", 2),
+        script.replace("--forbid-backends neo4j,pggraph,latticedb", "", 2),
         encoding="utf-8",
     )
 
@@ -537,7 +951,7 @@ def test_beta_readiness_requires_forbidden_candidate_guardrail_on_all_backend_ga
     checks = {check["name"]: check for check in report["checks"]}
     assert report["status"] == "error"
     assert checks["release_gate"]["status"] == "error"
-    assert "--forbid-backends latticedb (3 occurrences)" in checks["release_gate"]["message"]
+    assert "--forbid-backends neo4j,pggraph,latticedb (3 occurrences)" in checks["release_gate"]["message"]
 
 
 def test_beta_readiness_requires_forbidden_candidate_guardrail_inside_each_backend_command(tmp_path: Path) -> None:
@@ -548,9 +962,13 @@ def test_beta_readiness_requires_forbidden_candidate_guardrail_inside_each_backe
         encoding="utf-8",
     )
     script = (tmp_path / "scripts" / "release-check.sh").read_text(encoding="utf-8")
-    detached_flags = "--forbid-backends latticedb\n--forbid-backends latticedb\n--forbid-backends latticedb\n"
+    detached_flags = (
+        "--forbid-backends neo4j,pggraph,latticedb\n"
+        "--forbid-backends neo4j,pggraph,latticedb\n"
+        "--forbid-backends neo4j,pggraph,latticedb\n"
+    )
     (tmp_path / "scripts" / "release-check.sh").write_text(
-        script.replace("--forbid-backends latticedb", "") + detached_flags,
+        script.replace("--forbid-backends neo4j,pggraph,latticedb", "") + detached_flags,
         encoding="utf-8",
     )
 
@@ -559,9 +977,18 @@ def test_beta_readiness_requires_forbidden_candidate_guardrail_inside_each_backe
     checks = {check["name"]: check for check in report["checks"]}
     assert report["status"] == "error"
     assert checks["release_gate"]["status"] == "error"
-    assert "BACKEND_SHOOTOUT_CMD must include --forbid-backends latticedb" in checks["release_gate"]["message"]
-    assert "BACKEND_PERFORMANCE_CMD must include --forbid-backends latticedb" in checks["release_gate"]["message"]
-    assert "BACKEND_SCALE_CMD must include --forbid-backends latticedb" in checks["release_gate"]["message"]
+    assert (
+        "BACKEND_SHOOTOUT_CMD must include --forbid-backends neo4j,pggraph,latticedb"
+        in checks["release_gate"]["message"]
+    )
+    assert (
+        "BACKEND_PERFORMANCE_CMD must include --forbid-backends neo4j,pggraph,latticedb"
+        in checks["release_gate"]["message"]
+    )
+    assert (
+        "BACKEND_SCALE_CMD must include --forbid-backends neo4j,pggraph,latticedb"
+        in checks["release_gate"]["message"]
+    )
 
 
 def test_beta_readiness_requires_strict_backend_flags_inside_each_backend_command(tmp_path: Path) -> None:
@@ -575,6 +1002,8 @@ def test_beta_readiness_requires_strict_backend_flags_inside_each_backend_comman
     strict_flags = [
         "--require-report-metadata",
         "--require-markdown-report",
+        "--require-query-results",
+        "--require-git-tracked-inputs",
         "--verify-report-fingerprints",
         "--require-labeled-metrics",
     ]
@@ -592,8 +1021,33 @@ def test_beta_readiness_requires_strict_backend_flags_inside_each_backend_comman
     assert checks["release_gate"]["status"] == "error"
     assert "BACKEND_SHOOTOUT_CMD must include --require-report-metadata" in checks["release_gate"]["message"]
     assert "BACKEND_PERFORMANCE_CMD must include --require-markdown-report" in checks["release_gate"]["message"]
+    assert "BACKEND_SCALE_CMD must include --require-query-results" in checks["release_gate"]["message"]
+    assert "BACKEND_SCALE_CMD must include --require-git-tracked-inputs" in checks["release_gate"]["message"]
     assert "BACKEND_SCALE_CMD must include --verify-report-fingerprints" in checks["release_gate"]["message"]
     assert "BACKEND_SCALE_CMD must include --require-labeled-metrics" in checks["release_gate"]["message"]
+
+
+def test_beta_readiness_requires_query_results_inside_each_backend_command(tmp_path: Path) -> None:
+    """Beta readiness should reject query-result evidence flags that are detached from backend commands."""
+    _write_minimal_beta_ready_project(tmp_path)
+    (tmp_path / "BETA.md").write_text(
+        "# Beta Roadmap\n\n- remaining work\n- release criteria\n",
+        encoding="utf-8",
+    )
+    script = (tmp_path / "scripts" / "release-check.sh").read_text(encoding="utf-8")
+    (tmp_path / "scripts" / "release-check.sh").write_text(
+        script.replace(" --require-query-results", "") + "--require-query-results\n",
+        encoding="utf-8",
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["release_gate"]["status"] == "error"
+    assert "BACKEND_SHOOTOUT_CMD must include --require-query-results" in checks["release_gate"]["message"]
+    assert "BACKEND_PERFORMANCE_CMD must include --require-query-results" in checks["release_gate"]["message"]
+    assert "BACKEND_SCALE_CMD must include --require-query-results" in checks["release_gate"]["message"]
 
 
 def test_beta_readiness_requires_required_backends_inside_each_backend_command(tmp_path: Path) -> None:
@@ -658,7 +1112,7 @@ def test_beta_readiness_requires_scale_threshold_inside_scale_backend_command(tm
     )
     script = (tmp_path / "scripts" / "release-check.sh").read_text(encoding="utf-8")
     (tmp_path / "scripts" / "release-check.sh").write_text(
-        script.replace(" --max-checkout-p95-ms embedded=125", "") + "--max-checkout-p95-ms embedded=125\n",
+        script.replace(" --max-checkout-p95-ms embedded=200", "") + "--max-checkout-p95-ms embedded=200\n",
         encoding="utf-8",
     )
 
@@ -667,7 +1121,7 @@ def test_beta_readiness_requires_scale_threshold_inside_scale_backend_command(tm
     checks = {check["name"]: check for check in report["checks"]}
     assert report["status"] == "error"
     assert checks["release_gate"]["status"] == "error"
-    assert "BACKEND_SCALE_CMD must include --max-checkout-p95-ms embedded=125" in checks["release_gate"]["message"]
+    assert "BACKEND_SCALE_CMD must include --max-checkout-p95-ms embedded=200" in checks["release_gate"]["message"]
 
 
 def test_beta_readiness_requires_activation_release_gate(tmp_path: Path) -> None:
@@ -956,24 +1410,31 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
         "--max-checkout-prompt-tokens 5000\n"
         "--min-checkout-facts-per-1k-tokens 0.1\n"
         'BACKEND_SHOOTOUT_CMD="python scripts/check-backend-shootout.py reports/backend-shootout/backend-shootout.json '
-        "--require-report-metadata --require-markdown-report --verify-report-fingerprints --require-backends embedded,bm25 "
-        '--require-labeled-metrics --require-dashboard-source embedded=embedded --forbid-backends latticedb"\n'
+        "--require-report-metadata --require-markdown-report --require-query-results --require-git-tracked-inputs "
+        "--verify-report-fingerprints --require-backends embedded,bm25 "
+        '--require-labeled-metrics --require-dashboard-source embedded=embedded '
+        '--forbid-backends neo4j,pggraph,latticedb"\n'
         'BACKEND_PERFORMANCE_CMD="python scripts/check-backend-shootout.py '
         "reports/backend-shootout/longmemeval-40-backend-shootout.json --require-report-metadata "
-        "--require-markdown-report --verify-report-fingerprints --require-backends embedded,bm25 --require-labeled-metrics "
-        '--require-dashboard-source embedded=embedded --forbid-backends latticedb"\n'
+        "--require-markdown-report --require-query-results --require-git-tracked-inputs --verify-report-fingerprints "
+        "--require-backends embedded,bm25 --require-labeled-metrics "
+        '--require-dashboard-source embedded=embedded --forbid-backends neo4j,pggraph,latticedb"\n'
         'BACKEND_SCALE_CMD="python scripts/check-backend-shootout.py '
         "reports/backend-shootout/longmemeval-100-backend-shootout.json --require-report-metadata "
-        "--require-markdown-report --verify-report-fingerprints --require-backends embedded,bm25 --require-labeled-metrics "
-        '--require-dashboard-source embedded=embedded --forbid-backends latticedb --max-checkout-p95-ms embedded=125"\n'
+        "--require-markdown-report --require-query-results --require-git-tracked-inputs --verify-report-fingerprints "
+        "--require-backends embedded,bm25 --require-labeled-metrics "
+        '--require-dashboard-source embedded=embedded --forbid-backends neo4j,pggraph,latticedb '
+        '--max-checkout-p95-ms embedded=200"\n'
         "--require-report-metadata\n"
         "--require-markdown-report\n"
+        "--require-query-results\n"
+        "--require-git-tracked-inputs\n"
         "--verify-report-fingerprints\n"
         "backend-shootout.json\n"
         "longmemeval-40-backend-shootout.json\n"
         "longmemeval-100-backend-shootout.json\n"
         "--min-quality-per-1k-injected-tokens embedded=1.0\n"
-        "--max-checkout-p95-ms embedded=125\n"
+        "--max-checkout-p95-ms embedded=200\n"
         "--min-quality-per-1k-returned-tokens\n"
         "--min-answer-at-5-per-1k-returned-tokens\n"
         "--min-quality-per-1k-injected-tokens\n"

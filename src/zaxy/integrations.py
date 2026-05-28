@@ -6,20 +6,23 @@ import json
 import os
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import tomlkit
 import yaml
 
-from zaxy.core import HandoffBundle
 from zaxy.domain import derive_domain, domain_default_session, slug_domain
 from zaxy.install import resolve_zaxy_executable
+
+if TYPE_CHECKING:
+    from zaxy.core import HandoffBundle
 
 MCPClient = Literal["claude-desktop", "claude-code", "codex", "cursor", "hermes", "vscode"]
 CodexConfigScope = Literal["project", "user"]
 HandoffAdapter = Literal["generic", "langgraph", "crewai", "autogen"]
 AgentFramework = Literal["langgraph", "crewai", "autogen"]
 FrameworkExtra = Literal["langgraph", "crewai", "autogen", "frameworks"]
+CoordinationAdapter = Literal["codex", "langgraph", "crewai", "mcp"]
 
 HERMES_MODEL_FACING_TOOLS: tuple[str, ...] = (
     "memory_capabilities",
@@ -374,6 +377,40 @@ def render_agent_integration_template(
     return _autogen_template(session_id=session_id, eventloom_path=eventloom_path)
 
 
+def render_coordination_adapter_template(
+    adapter: CoordinationAdapter | str,
+    *,
+    mission_id: str,
+    worker_id: str,
+    eventloom_path: str = ".eventloom",
+) -> str:
+    """Render a dependency-light starter for Zaxy Coordinate workflows."""
+    normalized = _normalize_coordination_adapter(str(adapter))
+    if normalized == "codex":
+        return _codex_coordination_template(
+            mission_id=mission_id,
+            worker_id=worker_id,
+            eventloom_path=eventloom_path,
+        )
+    if normalized == "langgraph":
+        return _langgraph_coordination_template(
+            mission_id=mission_id,
+            worker_id=worker_id,
+            eventloom_path=eventloom_path,
+        )
+    if normalized == "crewai":
+        return _crewai_coordination_template(
+            mission_id=mission_id,
+            worker_id=worker_id,
+            eventloom_path=eventloom_path,
+        )
+    return _mcp_coordination_template(
+        mission_id=mission_id,
+        worker_id=worker_id,
+        eventloom_path=eventloom_path,
+    )
+
+
 def render_framework_install_command(
     framework: FrameworkExtra | str,
     *,
@@ -478,6 +515,129 @@ async def zaxy_autogen_record_reply(reply: str) -> dict[str, str]:
 '''
 
 
+def _codex_coordination_template(*, mission_id: str, worker_id: str, eventloom_path: str) -> str:
+    return f'''"""Codex-style local worker starter for Zaxy Coordinate.
+
+Use this from a local agent wrapper, task script, or post-run hook. The helper
+records worker-local findings only; a coordinator still decides what becomes
+accepted parent mission state.
+"""
+
+from zaxy.adapters.coordination import CoordinationAdapter
+
+
+mission_id={mission_id!r}
+worker_id={worker_id!r}
+adapter = CoordinationAdapter(eventloom_path={eventloom_path!r}, actor=worker_id)
+
+
+def report_finding(summary: str, evidence: list[dict] | None = None, confidence: float | None = None) -> dict:
+    return adapter.report_finding(
+        mission_id,
+        worker_id,
+        summary=summary,
+        evidence=evidence or [],
+        confidence=confidence,
+    )
+
+
+def finish_worker(summary: str, next_steps: list[str] | None = None, risks: list[str] | None = None) -> dict:
+    return adapter.handoff(
+        mission_id,
+        summary=summary,
+        next_steps=next_steps or [],
+        risks=risks or [],
+    )
+'''
+
+
+def _langgraph_coordination_template(*, mission_id: str, worker_id: str, eventloom_path: str) -> str:
+    return f'''"""LangGraph node starter for Zaxy Coordinate.
+
+The node is dependency-light and has no framework import. It reports a
+worker-local finding from explicit state fields and returns Zaxy coordination
+metadata beside the original state.
+"""
+
+from zaxy.adapters.coordination import CoordinationAdapter
+
+
+async def zaxy_coordinate_langgraph_node(state: dict) -> dict:
+    adapter = CoordinationAdapter(eventloom_path={eventloom_path!r}, actor={worker_id!r})
+    finding = adapter.report_finding(
+        mission_id={mission_id!r},
+        worker_id={worker_id!r},
+        summary=str(state.get("coordination_summary") or state.get("latest_message") or ""),
+        evidence=state.get("coordination_evidence") or [],
+        confidence=state.get("coordination_confidence"),
+        claim_key=state.get("coordination_claim_key"),
+        claim_value=state.get("coordination_claim_value"),
+    )
+    return {{**state, "zaxy_coordination": finding}}
+'''
+
+
+def _crewai_coordination_template(*, mission_id: str, worker_id: str, eventloom_path: str) -> str:
+    return f'''"""CrewAI task-step starter for Zaxy Coordinate.
+
+Call this from a task callback or application-owned wrapper. It avoids CrewAI
+imports so your application keeps control of its Crew runtime objects.
+"""
+
+from zaxy.adapters.coordination import CoordinationAdapter
+
+
+async def zaxy_coordinate_crewai_step(summary: str, evidence: list[dict] | None = None) -> dict:
+    adapter = CoordinationAdapter(eventloom_path={eventloom_path!r}, actor={worker_id!r})
+    return adapter.report_finding(
+        mission_id={mission_id!r},
+        worker_id={worker_id!r},
+        summary=summary,
+        evidence=evidence or [],
+    )
+'''
+
+
+def _mcp_coordination_template(*, mission_id: str, worker_id: str, eventloom_path: str) -> str:
+    payload = [
+        {
+            "tool": "coordination_start",
+            "arguments": {
+                "eventloom_path": eventloom_path,
+                "mission_id": mission_id,
+                "objective": "replace with mission objective",
+            },
+        },
+        {
+            "tool": "coordination_worker_create",
+            "arguments": {
+                "eventloom_path": eventloom_path,
+                "mission_id": mission_id,
+                "worker_id": worker_id,
+            },
+        },
+        {
+            "tool": "coordination_report_finding",
+            "arguments": {
+                "eventloom_path": eventloom_path,
+                "mission_id": mission_id,
+                "worker_id": worker_id,
+                "summary": "replace with worker-local finding",
+                "evidence": [],
+            },
+        },
+        {
+            "tool": "coordination_checkout",
+            "arguments": {
+                "eventloom_path": eventloom_path,
+                "mission_id": mission_id,
+                "include_diagnostics": True,
+            },
+        },
+    ]
+    return json.dumps(payload, indent=2, sort_keys=True) + "\n"
+
+
 def _server_config(
     *,
     eventloom_path: str,
@@ -490,22 +650,26 @@ def _server_config(
     normalized_transport = transport.casefold()
     default_session = domain_default_session(domain)
     if normalized_transport == "stdio":
+        embedded_graph_path = f"{eventloom_path.rstrip('/')}/projections/embedded.kuzu"
         return {
             "command": zaxy_executable,
             "args": ["serve", "--eventloom-path", eventloom_path],
             "startup_timeout_sec": 90,
             "env": {
+                "EMBEDDED_GRAPH_PATH": embedded_graph_path,
                 "EVENTLOOM_PATH": eventloom_path,
                 "EVENTLOOM_THREAD": default_session,
                 "LOG_LEVEL": "ERROR",
                 "MCP_ADMIN_TOKEN_FILE": "",
                 "MCP_REMOTE_AUTH_TOKEN_FILE": "",
                 "NEO4J_CA_CERT": "",
-                "NEO4J_AUTO_START": "true",
+                "NEO4J_AUTO_START": "false",
                 "NEO4J_PASSWORD_FILE": "",
                 "NEO4J_URI": "bolt://localhost:7687",
                 "OPENAI_API_KEY_FILE": "",
                 "PATHLIGHT_ACCESS_TOKEN_FILE": "",
+                "PGGRAPH_AUTO_START": "false",
+                "PROJECTION_BACKEND": "embedded",
                 "ZAXY_DOMAIN": domain,
                 "ZAXY_ENV": "development",
             },
@@ -674,3 +838,10 @@ def _normalize_framework_extra(framework: str) -> FrameworkExtra:
         if normalized == spec.framework:
             return spec.extra
     raise ValueError("framework extra must be one of: langgraph, crewai, autogen, frameworks")
+
+
+def _normalize_coordination_adapter(adapter: str) -> CoordinationAdapter:
+    normalized = adapter.casefold().replace("_", "-")
+    if normalized in {"codex", "langgraph", "crewai", "mcp"}:
+        return normalized  # type: ignore[return-value]
+    raise ValueError("coordination adapter must be one of: codex, langgraph, crewai, mcp")

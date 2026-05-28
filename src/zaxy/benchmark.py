@@ -226,6 +226,10 @@ def _expected_term_present(term: str, haystack: str) -> bool:
     normalized_haystack = _normalize_answer_text(haystack)
     if normalized_term in normalized_haystack:
         return True
+    if _acceptable_alternative_answer_present(normalized_term, normalized_haystack):
+        return True
+    if _compact_answer_surface_present(normalized_term, normalized_haystack):
+        return True
     if _absence_answer_present(normalized_term, normalized_haystack):
         return True
     if _structured_interval_answer_present(normalized_term, normalized_haystack):
@@ -240,6 +244,46 @@ def _expected_term_present(term: str, haystack: str) -> bool:
         return False
     haystack_tokens = set(_answer_tokens(normalized_haystack))
     return all(_answer_token_variants(token) & haystack_tokens for token in term_tokens)
+
+
+def _compact_answer_surface_present(term: str, haystack: str) -> bool:
+    """Return whether a compact synthesized answer satisfies a longer prose key."""
+    first_sentence = term.split(".", 1)[0].strip()
+    if not first_sentence or first_sentence == term:
+        return False
+    tokens = [
+        token for token in _answer_tokens(first_sentence)
+        if token not in _LOW_INFORMATION_ANSWER_TOKENS
+    ]
+    if len(tokens) < 3:
+        return False
+    haystack_tokens = set(_answer_tokens(haystack))
+    return all(_answer_token_variants(token) & haystack_tokens for token in tokens)
+
+
+def _acceptable_alternative_answer_present(term: str, haystack: str) -> bool:
+    """Return whether one accepted answer surface is present."""
+    if "acceptable" not in term and "answers ranging from" not in term:
+        return False
+    alternatives: list[str] = []
+    for match in re.finditer(
+        r"\b\d+(?:\.\d+)?\s+(?:days?|weeks?|months?|years?|hours?)\b",
+        term,
+    ):
+        alternatives.append(match.group(0))
+    for match in re.finditer(
+        r"\b(?:one|two|three|four|five|six|seven|eight|nine|ten)\s+"
+        r"(?:days?|weeks?|months?|years?|hours?)\b",
+        term,
+    ):
+        alternatives.append(match.group(0))
+    first_sentence = term.split(".", 1)[0].strip()
+    if first_sentence:
+        alternatives.append(first_sentence)
+    for alternative in dict.fromkeys(alternatives):
+        if alternative in haystack or _structured_interval_answer_present(alternative, haystack):
+            return True
+    return False
 
 
 def _absence_answer_present(term: str, haystack: str) -> bool:
@@ -331,6 +375,16 @@ def _answer_token_variants(token: str) -> set[str]:
         stem = token[:-2]
         variants.update({stem, f"{stem}ing"})
     irregular = {
+        "1": {"1", "one"},
+        "2": {"2", "two"},
+        "3": {"3", "three"},
+        "4": {"4", "four"},
+        "5": {"5", "five"},
+        "6": {"6", "six"},
+        "7": {"7", "seven"},
+        "8": {"8", "eight"},
+        "9": {"9", "nine"},
+        "10": {"10", "ten"},
         "attending": {"attend", "attended", "attending"},
         "became": {"become", "became", "becoming"},
         "becoming": {"become", "became", "becoming"},

@@ -1,16 +1,19 @@
 # Graph Schema
 
-Neo4j is Zaxy's structured reasoning layer. It is not the source of truth; the
-Eventloom log is. The graph stores projections that make memory queryable by
-entity, relation, keyword, vector similarity, and temporal validity.
+The graph projection is Zaxy's structured reasoning layer. It is not the source
+of truth; the Eventloom log is. The default implementation is embedded Kuzu,
+with Neo4j retained as an optional sidecar and control backend. The graph stores
+projections that make memory queryable by entity, relation, keyword, vector
+similarity, and temporal validity.
 
 The provenance backbone starts with `Session` and `Event` nodes. Each projected
 event is linked through `(:Session)-[:HAS_EVENT]->(:Event)`, and the event then
 links to the facts it produced through `PROJECTED_ENTITY` and
 `PROJECTED_RELATION`. `Event` nodes also store Eventloom's `hash` and
 `prev_hash` fields and project the sealed linear path through
-`NEXT_EVENT`/`PREVIOUS_EVENT` relationships. This gives Neo4j a visible audit
-spine without changing Eventloom's role as the immutable source of truth.
+`NEXT_EVENT`/`PREVIOUS_EVENT` relationships. This gives the selected graph
+backend a visible audit spine without changing Eventloom's role as the
+immutable source of truth.
 
 The central memory fact shape remains `Entity`. Important properties include
 `session_id`, `name`, `entity_type`, `summary`, `valid_from`, `valid_to`,
@@ -32,8 +35,8 @@ dependencies, calls, and coverage records already carry `source_path` metadata;
 when that metadata is present, Zaxy links both the projected entity and its
 originating `Event` to the source through `CITES_SOURCE`. Those relationships
 carry line range, checksum, and Eventloom provenance where available. This gives
-Neo4j an inspectable citation layer while Eventloom remains the authority for
-the original event payload.
+the graph projection an inspectable citation layer while Eventloom remains the
+authority for the original event payload.
 
 Edges represent extracted relations between entities. Zaxy stores each edge in
 two forms: a compatibility `RELATES` relationship with a `relation_type`
@@ -47,8 +50,8 @@ edges must use `inferred=true`, a bounded `confidence`, an `inference_method`,
 and optional namespaced `evidence_*` properties. Zaxy writes that metadata to
 the `RELATES` edge, the typed relationship edge, and the `PROJECTED_RELATION`
 provenance edge so audit and traversal views do not disagree. This lets query
-traversal keep using the stable compatibility edge while Neo4j Browser and
-direct Cypher inspection can show semantic labels. For example, an agent can
+traversal keep using the stable compatibility edge while graph inspection tools
+can show semantic labels. For example, an agent can
 ask about a goal, expand to tasks, expand to decisions, and still know which
 facts were valid at the requested time.
 Lifecycle observation events can also link back to tasks when they carry an
@@ -156,20 +159,23 @@ LIMIT 25;
 ```
 
 The manual Cypher file under `scripts/setup_neo4j_indexes.cypher` documents the
-operational index setup for environments that apply Cypher separately.
+optional Neo4j sidecar index setup for environments that apply Cypher
+separately. Embedded Kuzu creates its projection schema through the embedded
+adapter and does not use that Cypher file.
 
 Invalidation does not delete nodes. `memory_invalidate` closes validity windows
 at `invalid_at`. This preserves history while preventing default current-time
 queries from returning stale facts. Temporal queries can still retrieve the fact
 if it was valid at the requested point.
 
-The graph code lives in `src/zaxy/graph.py` and is covered by unit tests with
-mocked Neo4j plus integration tests against Docker. Retrieval behavior is
-documented in [retrieval.md](retrieval.md). Event provenance is documented in
+The graph backend code lives in `src/zaxy/embedded_graph_store.py`,
+`src/zaxy/graph.py`, and backend adapters, with unit coverage and sidecar
+integration tests where applicable. Retrieval behavior is documented in
+[retrieval.md](retrieval.md). Event provenance is documented in
 [eventloom.md](eventloom.md). Production database configuration is covered in
 [configuration.md](configuration.md) and [deployment.md](deployment.md).
 
 When changing schema, follow the test-first rule from [testing.md](testing.md):
-write mock tests for generated Cypher semantics, integration tests for real
-Neo4j behavior, and update this page plus [README.md](../README.md) if the
-public contract changes.
+write mock tests for generated projection semantics, sidecar integration tests
+when backend-specific behavior changes, and update this page plus
+[README.md](../README.md) if the public contract changes.

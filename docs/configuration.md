@@ -6,17 +6,23 @@ secret files. Direct environment values win over `*_FILE` values. This keeps
 development simple while allowing production deployments to avoid plaintext
 secrets in environment dumps.
 
-Core Neo4j settings are `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`,
+Projection settings are `PROJECTION_BACKEND`, `EMBEDDED_GRAPH_PATH`,
+`LATTICEDB_PATH`, `PGGRAPH_DSN`, and the Neo4j settings used only when
+`PROJECTION_BACKEND=neo4j`. The default backend is `embedded`, which stores the
+repo-local Kuzu projection at `.eventloom/projections/embedded.kuzu` and does
+not start Docker or require a graph endpoint.
+
+Neo4j settings are `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`,
 `NEO4J_DATABASE`, `NEO4J_CA_CERT`, `NEO4J_TRUST_ALL`, and
 `NEO4J_AUTO_START`. Development defaults target `bolt://localhost:7687` with
-password `testpassword`. For localhost development MCP startup,
-`NEO4J_AUTO_START=true` lets Zaxy start or reuse a named Docker container,
-`zaxy-neo4j`, when Bolt is not reachable. The local happy path leaves
-`NEO4J_CA_CERT` and `NEO4J_PASSWORD_FILE` empty and keeps
-`NEO4J_TRUST_ALL=false`; TLS and secret-file settings are deployment concerns,
-not default local onboarding requirements. Production mode rejects the default
-password and requires TLS evidence when using a `bolt://` URI. Use `bolt+s://`
-or set `NEO4J_CA_CERT` to a trusted certificate path.
+password `testpassword`. When `PROJECTION_BACKEND=neo4j` in localhost
+development, install `zaxy-memory[neo4j]`; then `NEO4J_AUTO_START=true` lets
+Zaxy start or reuse a named Docker container, `zaxy-neo4j`, when Bolt is not
+reachable. The local embedded happy path leaves `NEO4J_AUTO_START=false`,
+`NEO4J_CA_CERT` empty, and `NEO4J_PASSWORD_FILE` empty. Production mode rejects
+the default password and requires TLS evidence only when Neo4j is the selected
+backend. Use `bolt+s://` or set `NEO4J_CA_CERT` to a trusted certificate path
+for production Neo4j.
 
 Eventloom settings are `EVENTLOOM_PATH`, `EVENTLOOM_THREAD`, and `ZAXY_DOMAIN`.
 The path is the directory containing session JSONL logs. The thread is the
@@ -54,7 +60,7 @@ Retrieval settings include `QUERY_DEFAULT_LIMIT`, `QUERY_SCORING_PROFILE`,
 `RETENTION_POLICY=none` is the default and preserves current retrieval
 behavior. `filter_expired` removes expired candidates at query time, while
 `decay` keeps candidates eligible but downranks stale or expired memory without
-mutating Eventloom or Neo4j facts. `RERANKER_PROVIDER=lexical` enables
+mutating Eventloom or projected facts. `RERANKER_PROVIDER=lexical` enables
 deterministic local reranking. `RERANKER_PROVIDER=http` sends fused candidates
 to a local/self-hosted endpoint. `RERANKER_PROVIDER=openai` uses an
 OpenAI-compatible chat-completions model and `OPENAI_API_KEY`.
@@ -79,9 +85,11 @@ scripts/validate-deployment.sh --root .
 scripts/release-check.sh --root .
 ```
 
-The deployment validator checks production mode, TLS configuration, remote MCP
-auth, admin-token configuration, and secret-file permissions. The full release
-gate also runs tests, package validation, and documentation validation. See
+The deployment validator checks production mode, selected sidecar TLS posture,
+remote MCP auth, admin-token configuration, and secret-file permissions. Embedded
+Kuzu production deployments do not need Neo4j certificate material unless
+`PROJECTION_BACKEND=neo4j` is selected. The full release gate also runs tests,
+package validation, and documentation validation. See
 [deployment.md](deployment.md), [security.md](security.md), and
 [runbook.md](runbook.md). The short setup path is still documented in
 [README.md](../README.md).

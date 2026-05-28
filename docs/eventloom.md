@@ -9,7 +9,7 @@ An event has a type, actor, payload, sequence number, timestamp, hash, previous
 hash, and optional security classification metadata. The exact Python model is
 in `src/zaxy/event.py`. The hash chain makes the log tamper-evident: replay can
 detect missing, reordered, or edited records. A corrupt projection should be
-fixed by replaying the log rather than patching Neo4j directly.
+fixed by replaying the log rather than patching the projection backend directly.
 
 Typed event names matter. Zaxy's extractor uses deterministic handlers for
 known events such as `goal.created`, `task.proposed`, and related lifecycle
@@ -46,10 +46,10 @@ zaxy viewer .eventloom --output eventloom-viewer.html
 
 `zaxy memory status` is the lightweight terminal inspection path. It summarizes
 session logs, event counts, latest sequence/hash, latest event type, and
-Eventloom integrity without requiring Neo4j. Use `--json` when scripts need the
-same fields in a stable machine-readable format. Add `--graph` when Neo4j is
-available and you need to compare Eventloom with its projection. Graph status
-reports latest projected sequence/hash, projection lag, missing
+Eventloom integrity without requiring a graph service. Use `--json` when
+scripts need the same fields in a stable machine-readable format. Add `--graph`
+when the selected projection backend is available and you need to compare
+Eventloom with its projection. Graph status reports latest projected sequence/hash, projection lag, missing
 `NEXT_EVENT`/`PREVIOUS_EVENT` chain links, and whether the latest graph hash
 matches the sealed log.
 `zaxy memory log` prints recent memory events in compact reverse-chronological
@@ -62,7 +62,8 @@ not claim semantic graph/fact diffs.
 
 The viewer reads one JSONL log or every `*.jsonl` file in an Eventloom
 directory. It highlights session bootstrap events, lifecycle events, integrity
-status, and underlying payloads without requiring Neo4j or an MCP client.
+status, and underlying payloads without requiring a graph service or an MCP
+client.
 
 Events are session-scoped. The `SessionManager` maps validated session IDs to
 per-session JSONL paths under `EVENTLOOM_PATH`. Multi-agent deployments should
@@ -87,17 +88,17 @@ file fingerprints with the prior refresh state for a session and source kind,
 then appends source lifecycle events such as `source.discovered`,
 `source.changed`, `source.unchanged`, and `source.deleted`. Derived rows are
 tracked through `projection.updated` and `projection.retired`; the latter is
-used for changed or deleted sources so the selected Neo4j or pgGraph backend can
-close active projection rows while the immutable source history remains
-replayable. Refresh state also records the transform version, so a future
+used for changed or deleted sources so the selected projection backend can close
+active projection rows while the immutable source history remains replayable.
+Refresh state also records the transform version, so a future
 extractor/chunker version bump can force unchanged files through the same
 retire-and-reindex path.
 
-Replay is the operational escape hatch. If Neo4j is unavailable, Eventloom still
-contains the history. If an extractor changes, replay can regenerate the graph.
-If a handoff needs context, replay reconstructs the sequence of events from a
-known point. This is why append performance and file locking are treated as core
-requirements.
+Replay is the operational escape hatch. If the selected graph projection is
+unavailable, Eventloom still contains the history. If an extractor changes,
+replay can regenerate the graph. If a handoff needs context, replay
+reconstructs the sequence of events from a known point. This is why append
+performance and file locking are treated as core requirements.
 
 When a new extractor is added for an event type that already exists in a log,
 rebuild the graph projection from Eventloom so retrieval can see the richer
@@ -108,8 +109,8 @@ zaxy reproject .eventloom/default.jsonl --session-id default
 ```
 
 Use `--from-seq` to reproject only newer events after a known migration point.
-Reprojection does not rewrite the Eventloom log; it rebuilds Neo4j projections
-from the immutable events using the current extractor registry.
+Reprojection does not rewrite the Eventloom log; it rebuilds selected graph
+projections from the immutable events using the current extractor registry.
 
 Do not store secrets in Eventloom payloads. Payloads are durable and may be
 exported to observability systems. Event appends redact common secret keys and

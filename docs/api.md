@@ -235,9 +235,11 @@ is sealed.
 
 Lower-level modules are public enough for advanced integration but should be
 used carefully: `EventLog` for direct JSONL operations, `extract` for rule-based
-projection, `GraphStore` for Neo4j operations, `QueryRouter` for retrieval, and
-`MemoryTracer` for Pathlight spans. Prefer `MemoryFabric` unless you are
-building tests, migrations, or specialized tooling.
+projection, projection backends for graph operations, `QueryRouter` for
+retrieval, and `MemoryTracer` for Pathlight spans. The plain install uses
+embedded Kuzu; install `zaxy-memory[neo4j]` for the optional Neo4j sidecar and
+`zaxy-memory[pathlight]` for Pathlight tracing. Prefer `MemoryFabric` unless you
+are building tests, migrations, or specialized tooling.
 
 For extractor and schema authoring, use the CLI helpers before editing
 production code:
@@ -253,11 +255,12 @@ Schema migrations are named, checksum-addressed, and still applied through
 
 Errors should be treated as operational signals. Validation errors normally mean
 the caller sent an unsafe session ID, oversized payload, invalid limit, or empty
-query. Graph errors usually mean Neo4j is unavailable, indexes are missing, or
-credentials are wrong. Event log errors usually mean filesystem permissions,
-lock contention, or integrity verification failed. In all cases, the Eventloom
-log should remain the recovery anchor: fix the environment, replay the log, and
-rebuild projections rather than inventing graph state by hand.
+query. Graph errors usually mean the selected projection backend is unavailable,
+indexes are missing, or backend credentials are wrong. Event log errors usually
+mean filesystem permissions, lock contention, or integrity verification failed.
+In all cases, the Eventloom log should remain the recovery anchor: fix the
+environment, replay the log, and rebuild projections rather than inventing graph
+state by hand.
 
 For long-running processes, create one fabric per service process and reuse it.
 Avoid constructing a new fabric for every query because each instance owns graph

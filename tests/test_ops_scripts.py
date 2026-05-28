@@ -372,7 +372,9 @@ def test_validate_deployment_rejects_plaintext_neo4j_without_ca(tmp_path: Path) 
     _write_deployment_fixture(root)
     (root / ".env").write_text(
         "ZAXY_ENV=production\n"
+        "PROJECTION_BACKEND=neo4j\n"
         "NEO4J_URI=bolt://neo4j:7687\n"
+        "MCP_ADMIN_TOKEN_FILE=secrets/mcp_admin_token.txt\n"
         "MCP_REMOTE_AUTH_TOKEN_FILE=secrets/mcp_remote_auth_token.txt\n",
         encoding="utf-8",
     )
@@ -387,6 +389,32 @@ def test_validate_deployment_rejects_plaintext_neo4j_without_ca(tmp_path: Path) 
 
     assert result.returncode != 0
     assert "NEO4J_CA_CERT" in result.stderr
+
+
+def test_validate_deployment_embedded_backend_ignores_neo4j_tls_settings(tmp_path: Path) -> None:
+    """Embedded production deployments should not require optional Neo4j TLS."""
+    root = tmp_path / "project"
+    root.mkdir()
+    _write_deployment_fixture(root)
+    (root / ".env").write_text(
+        "ZAXY_ENV=production\n"
+        "PROJECTION_BACKEND=embedded\n"
+        "NEO4J_URI=bolt://neo4j:7687\n"
+        "MCP_ADMIN_TOKEN_FILE=secrets/mcp_admin_token.txt\n"
+        "MCP_REMOTE_AUTH_TOKEN_FILE=secrets/mcp_remote_auth_token.txt\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        ["bash", "scripts/validate-deployment.sh", "--root", str(root)],
+        cwd=Path.cwd(),
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode == 0
+    assert "Deployment validation passed" in result.stdout
 
 
 def test_release_check_runs_quality_gates_in_order(tmp_path: Path) -> None:

@@ -685,6 +685,221 @@ class TestHandoffCreated:
         assert result.edges[0].relation_type == "created_handoff"
 
 
+class TestCoordinationEvents:
+    """Tests for multi-agent coordination event extractors."""
+
+    def test_mission_created_projects_mission_and_actor(self) -> None:
+        ev = _make_event(
+            "coordination.mission.created",
+            {"mission_id": "auth-main", "objective": "Ship auth refactor", "status": "active"},
+            actor="lead",
+        )
+
+        result = extract(ev)
+
+        mission = next(e for e in result.entities if e.entity_type == "mission")
+        assert mission.name == "auth-main"
+        assert mission.summary == "Ship auth refactor"
+        assert mission.properties == {"status": "active"}
+        assert result.edges[0].relation_type == "started_mission"
+
+    def test_worker_created_links_mission_to_worker(self) -> None:
+        ev = _make_event(
+            "coordination.worker.created",
+            {"mission_id": "auth-main", "worker_id": "auth-api", "status": "active"},
+            actor="lead",
+        )
+
+        result = extract(ev)
+
+        names = {entity.name for entity in result.entities}
+        assert {"auth-main", "auth-api"} <= names
+        assert next(e for e in result.entities if e.name == "auth-api").entity_type == "worker"
+        assert result.edges[0].source == "auth-main"
+        assert result.edges[0].target == "auth-api"
+        assert result.edges[0].relation_type == "mission_has_worker"
+
+    def test_assignment_created_links_worker_to_assignment(self) -> None:
+        ev = _make_event(
+            "coordination.assignment.created",
+            {
+                "mission_id": "auth-main",
+                "worker_id": "auth-api",
+                "assignment": "Trace API auth failures",
+                "status": "assigned",
+            },
+            actor="lead",
+        )
+
+        result = extract(ev)
+
+        assignment = next(e for e in result.entities if e.entity_type == "assignment")
+        assert assignment.name == "auth-main:auth-api:assignment:1"
+        assert assignment.summary == "Trace API auth failures"
+        assert assignment.properties == {"status": "assigned", "mission_id": "auth-main", "worker_id": "auth-api"}
+        assert result.edges[0].relation_type == "worker_has_assignment"
+
+    def test_finding_reported_projects_finding_with_evidence_and_confidence(self) -> None:
+        ev = _make_event(
+            "coordination.finding.reported",
+            {
+                "mission_id": "auth-main",
+                "worker_id": "auth-api",
+                "finding_id": "auth-api:finding:1",
+                "summary": "JWKS cache is expired.",
+                "evidence": [{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
+                "confidence": 0.91,
+                "claim_key": "auth.failure.cause",
+                "claim_value": "expired-jwks-cache",
+            },
+            actor="auth-api-agent",
+        )
+
+        result = extract(ev)
+
+        finding = next(e for e in result.entities if e.entity_type == "finding")
+        assert finding.name == "auth-api:finding:1"
+        assert finding.summary == "JWKS cache is expired."
+        assert finding.properties["status"] == "pending"
+        assert finding.properties["evidence_count"] == 1
+        assert finding.properties["confidence"] == 0.91
+        assert result.edges[0].relation_type == "worker_reported_finding"
+
+    def test_finding_reviewed_preserves_review_status_and_rationale(self) -> None:
+        ev = _make_event(
+            "coordination.finding.reviewed",
+            {
+                "mission_id": "auth-main",
+                "worker_id": "auth-api",
+                "finding_id": "auth-api:finding:1",
+                "status": "accepted",
+                "rationale": "Command-backed evidence.",
+            },
+            actor="lead",
+        )
+
+        result = extract(ev)
+
+        review = next(e for e in result.entities if e.entity_type == "finding_review")
+        assert review.name == "auth-main:auth-api:finding:1:review:1"
+        assert review.summary == "accepted Command-backed evidence."
+        assert review.properties == {"status": "accepted", "mission_id": "auth-main", "worker_id": "auth-api"}
+        assert result.edges[0].relation_type == "coordinator_reviewed_finding"
+
+    def test_finding_promoted_projects_parent_accepted_state_with_source_citation(self) -> None:
+        ev = _make_event(
+            "coordination.finding.promoted",
+            {
+                "mission_id": "auth-main",
+                "worker_id": "auth-api",
+                "finding_id": "auth-api:finding:1",
+                "summary": "JWKS cache is accepted cause.",
+                "source_event_seq": 7,
+                "source_event_hash": "b" * 64,
+                "status": "accepted",
+            },
+            actor="lead",
+        )
+
+        result = extract(ev)
+
+        promotion = next(e for e in result.entities if e.entity_type == "promotion")
+        assert promotion.name == "auth-main:auth-api:finding:1:promotion:1"
+        assert promotion.properties["status"] == "accepted"
+        assert promotion.properties["source_event_seq"] == 7
+        assert result.edges[0].relation_type == "finding_promoted_to_parent"
+
+    def test_conflict_detected_links_conflicting_findings(self) -> None:
+        ev = _make_event(
+            "coordination.conflict.detected",
+            {
+                "mission_id": "auth-main",
+                "conflict_id": "conflict-1",
+                "claim_key": "auth.failure.cause",
+                "conflict_type": "exact_claim",
+                "source_reference": None,
+                "finding_ids": ["auth-api:finding:1", "auth-ui:finding:1"],
+                "summary": "Workers disagree on auth failure cause.",
+            },
+            actor="zaxy",
+        )
+
+        result = extract(ev)
+
+        conflict = next(e for e in result.entities if e.entity_type == "conflict")
+        assert conflict.name == "conflict-1"
+        assert conflict.properties["claim_key"] == "auth.failure.cause"
+        assert conflict.properties["conflict_type"] == "exact_claim"
+        assert [edge.relation_type for edge in result.edges] == [
+            "mission_has_conflict",
+            "finding_conflicts_with",
+            "finding_conflicts_with",
+        ]
+
+    def test_source_state_conflict_detected_preserves_source_reference(self) -> None:
+        ev = _make_event(
+            "coordination.conflict.detected",
+            {
+                "mission_id": "auth-main",
+                "conflict_id": "conflict-source-1",
+                "claim_key": "source:src/auth/config.py",
+                "conflict_type": "source_state",
+                "source_reference": "src/auth/config.py",
+                "reason": "conflicting_source_snapshots",
+                "finding_ids": ["auth-api:finding:1", "auth-ui:finding:1"],
+                "summary": "Workers cite incompatible source snapshots.",
+            },
+            actor="zaxy",
+        )
+
+        result = extract(ev)
+
+        conflict = next(e for e in result.entities if e.entity_type == "conflict")
+        assert conflict.properties["conflict_type"] == "source_state"
+        assert conflict.properties["source_reference"] == "src/auth/config.py"
+        assert conflict.properties["reason"] == "conflicting_source_snapshots"
+        assert conflict.properties["finding_count"] == 2
+
+    def test_decision_recorded_links_mission_to_decision(self) -> None:
+        ev = _make_event(
+            "coordination.decision.recorded",
+            {
+                "mission_id": "auth-main",
+                "decision_id": "decision-1",
+                "decision": "Promote JWKS cache finding.",
+                "rationale": "Only command-backed claim.",
+            },
+            actor="lead",
+        )
+
+        result = extract(ev)
+
+        decision = next(e for e in result.entities if e.entity_type == "decision")
+        assert decision.name == "decision-1"
+        assert "Promote JWKS cache finding." in decision.summary
+        assert result.edges[0].relation_type == "mission_has_decision"
+
+    def test_handoff_created_links_mission_to_handoff(self) -> None:
+        ev = _make_event(
+            "coordination.handoff.created",
+            {
+                "mission_id": "auth-main",
+                "handoff_id": "handoff-1",
+                "summary": "Auth mission complete.",
+                "next_steps": ["Release branch"],
+            },
+            actor="lead",
+        )
+
+        result = extract(ev)
+
+        handoff = next(e for e in result.entities if e.entity_type == "handoff")
+        assert handoff.name == "handoff-1"
+        assert "Auth mission complete." in handoff.summary
+        assert "Release branch" in handoff.summary
+        assert result.edges[0].relation_type == "mission_has_handoff"
+
+
 class TestPreferenceChanged:
     """Tests for user.preference_changed extractor."""
 
@@ -787,6 +1002,50 @@ class TestDocumentIndexed:
         result = extract(ev)
 
         assert result.entities[0].properties["retrieval_salience"] == 4.0
+
+    def test_extracts_longmemeval_salient_memory_entity(self) -> None:
+        ev = _make_event(
+            "document.indexed",
+            {
+                "path": "longmemeval/user/session-1/salient-turn-0005.md",
+                "start_line": 1,
+                "end_line": 3,
+                "content": "I started yoga classes at Serenity Yoga on March 3.",
+                "longmemeval_session_id": "session-1",
+                "longmemeval_session_date": "2023/03/03 (Fri) 18:00",
+                "longmemeval_salient_memory_turn": True,
+                "turn_index": 5,
+                "role": "user",
+            },
+            actor="longmemeval",
+        )
+
+        result = extract(ev)
+
+        salient = next(entity for entity in result.entities if entity.entity_type == "longmemeval_memory")
+        assert salient.name == "longmemeval:memory:session-1:5"
+        assert salient.summary == "I started yoga classes at Serenity Yoga on March 3."
+        assert salient.properties == {
+            "longmemeval_session_id": "session-1",
+            "longmemeval_session_date": "2023/03/03 (Fri) 18:00",
+            "turn_index": 5,
+            "role": "user",
+            "source_path": "longmemeval/user/session-1/salient-turn-0005.md",
+            "source_start_line": 1,
+            "source_end_line": 3,
+        }
+        assert ExtractedEdge(
+            source="longmemeval:session:session-1",
+            target="longmemeval:memory:session-1:5",
+            relation_type="has_salient_memory",
+            valid_from="2024-01-01T00:00:00Z",
+        ) in result.edges
+        assert ExtractedEdge(
+            source="longmemeval:memory:session-1:5",
+            target="longmemeval/user/session-1/salient-turn-0005.md:1-3",
+            relation_type="derived_from_document",
+            valid_from="2024-01-01T00:00:00Z",
+        ) in result.edges
 
     def test_extracts_longmemeval_session_document_relationship(self) -> None:
         ev = _make_event(

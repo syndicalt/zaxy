@@ -12,19 +12,32 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from importlib import import_module
 from pathlib import Path
 from typing import Any
-
-from neo4j import AsyncDriver, AsyncGraphDatabase, TrustAll, TrustCustomCAs
 
 from zaxy.extract import ExtractedEdge, ExtractedEntity, ExtractionResult
 from zaxy.projection import ProjectionStore
 from zaxy.schema import apply_schema_migrations
-from zaxy.security import validate_limit, validate_session_id, validate_traversal_depth
+from zaxy.security import (
+    validate_limit,
+    validate_session_id,
+    validate_traversal_depth,
+    vector_has_signal,
+)
 
 _Neo4jPropertyValue = str | int | float | bool | list[str] | list[int] | list[float] | list[bool]
 _RELATION_TYPE_RE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _PROPERTY_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+
+
+def _load_async_neo4j() -> tuple[Any, type[Any], type[Any]]:
+    """Load Neo4j's async driver symbols only for the explicit Neo4j backend."""
+    try:
+        neo4j = import_module("neo4j")
+    except ImportError as exc:
+        raise RuntimeError('Neo4j backend requires `pip install "zaxy-memory[neo4j]"`') from exc
+    return neo4j.AsyncGraphDatabase, neo4j.TrustAll, neo4j.TrustCustomCAs
 
 
 @dataclass(frozen=True)
@@ -210,15 +223,16 @@ class GraphStore(ProjectionStore):
         self._auth = (user, password)
         self._ca_cert = ca_cert
         self._trust_all = trust_all
-        self._driver: AsyncDriver | None = None
+        self._driver: Any | None = None
         self.last_projection_steps: tuple[str, ...] = ()
 
     async def connect(self) -> None:
         """Initialize the async driver with optional TLS."""
+        async_graph_database, trust_all_cls, trust_custom_cas_cls = _load_async_neo4j()
         kwargs: dict[str, Any] = {"auth": self._auth}
         if self._trust_all:
             kwargs["encrypted"] = True
-            kwargs["trusted_certificates"] = TrustAll()
+            kwargs["trusted_certificates"] = trust_all_cls()
         elif self._ca_cert:
             if not Path(self._ca_cert).exists():
                 raise ValueError(
@@ -226,8 +240,8 @@ class GraphStore(ProjectionStore):
                     "Unset NEO4J_CA_CERT for plain local bolt:// Neo4j or provide a valid CA file."
                 )
             kwargs["encrypted"] = True
-            kwargs["trusted_certificates"] = TrustCustomCAs(self._ca_cert)
-        self._driver = AsyncGraphDatabase.driver(self._uri, **kwargs)
+            kwargs["trusted_certificates"] = trust_custom_cas_cls(self._ca_cert)
+        self._driver = async_graph_database.driver(self._uri, **kwargs)
 
     async def close(self) -> None:
         """Close the driver."""
@@ -1107,6 +1121,8 @@ class GraphStore(ProjectionStore):
     ) -> list[SearchResult]:
         """BM25 full-text search over entity names and summaries."""
         assert self._driver is not None
+        if limit <= 0:
+            return []
         limit = validate_limit(limit)
 
         cypher = "CALL db.index.fulltext.queryNodes('entity_fulltext', $query) YIELD node, score"
@@ -1128,10 +1144,11 @@ class GraphStore(ProjectionStore):
         cypher += " RETURN node, score LIMIT $limit"
 
         records, _, _ = await self._driver.execute_query(cypher, **params)
-        return [
-            SearchResult(entity=_record_to_entity(r["node"]), score=r["score"], source="keyword")
-            for r in records
-        ]
+        results = []
+        for record in records:
+            score = float(record["score"])
+            results.append(SearchResult(entity=_record_to_entity(record["node"]), score=score, raw_score=score, source="keyword"))
+        return results
 
     async def search_vector(
         self,
@@ -1142,6 +1159,10 @@ class GraphStore(ProjectionStore):
     ) -> list[SearchResult]:
         """Vector similarity search over entity embeddings."""
         assert self._driver is not None
+        if limit <= 0:
+            return []
+        if not vector_has_signal(embedding):
+            return []
         limit = validate_limit(limit)
 
         cypher = """
@@ -1166,10 +1187,11 @@ class GraphStore(ProjectionStore):
         cypher += " RETURN node, score"
 
         records, _, _ = await self._driver.execute_query(cypher, **params)
-        return [
-            SearchResult(entity=_record_to_entity(r["node"]), score=r["score"], source="vector")
-            for r in records
-        ]
+        results = []
+        for record in records:
+            score = float(record["score"])
+            results.append(SearchResult(entity=_record_to_entity(record["node"]), score=score, raw_score=score, source="vector"))
+        return results
 
 
 # ------------------------------------------------------------------

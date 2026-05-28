@@ -5,10 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from zaxy.synthesis import (
+    EvidenceLedger,
     build_count_ledger,
     build_currency_ledger,
     build_date_ledger,
     build_duration_ledger,
+    build_synthesis_plan,
     render_count_result,
     render_currency_result,
     render_date_interval_result,
@@ -41,12 +43,13 @@ def aggregate_candidate_projection(query: str, contexts: list[str]) -> EvidenceP
         lines.extend(currency_projection.lines)
         source_groups.extend(currency_projection.support_source_groups)
         rank += 1
-    duration_ledger = build_duration_ledger(query, contexts)
-    duration_projection = render_duration_result(duration_ledger, rank=rank)
-    if duration_projection.lines:
-        lines.extend(duration_projection.lines)
-        source_groups.extend(duration_projection.support_source_groups)
-        rank += 1
+    if not count_projection.lines:
+        duration_ledger = build_duration_ledger(query, contexts)
+        duration_projection = render_duration_result(duration_ledger, rank=rank)
+        if duration_projection.lines:
+            lines.extend(duration_projection.lines)
+            source_groups.extend(duration_projection.support_source_groups)
+            rank += 1
     date_ledger = build_date_ledger(query, contexts)
     date_projection = render_date_interval_result(date_ledger, rank=rank)
     if date_projection.lines:
@@ -61,18 +64,31 @@ def aggregate_candidate_projection(query: str, contexts: list[str]) -> EvidenceP
 def aggregate_evidence_score(query: str, context: str) -> int:
     """Return whether one context contains typed evidence before full synthesis succeeds."""
     score = 0
-    for ledger in (
-        build_count_ledger(query, [context]),
-        build_currency_ledger(query, [context]),
-        build_duration_ledger(query, [context]),
-        build_date_ledger(query, [context]),
-    ):
+    for ledger in _ranking_evidence_ledgers(query, context):
         included = ledger.included()
         if not included:
             continue
         score += len(included) * 3
         score += max(row.relevance for row in included)
     return score
+
+
+def _ranking_evidence_ledgers(query: str, context: str) -> tuple[EvidenceLedger, ...]:
+    """Build only the ledger families needed for single-source ranking."""
+    plan = build_synthesis_plan(query)
+    required = set(plan.required_kinds)
+    if "date" in required:
+        return (build_date_ledger(query, [context], plan=plan),)
+    ledgers = []
+    if "event" in required:
+        ledgers.append(build_count_ledger(query, [context], plan=plan))
+    if "currency" in required:
+        ledgers.append(build_currency_ledger(query, [context], plan=plan))
+    if "duration" in required or "number" in required:
+        ledgers.append(build_duration_ledger(query, [context], plan=plan))
+    if not ledgers:
+        ledgers.append(build_date_ledger(query, [context], plan=plan))
+    return tuple(ledgers)
 
 
 def aggregate_candidate_lines(query: str, contexts: list[str]) -> list[str]:

@@ -46,10 +46,10 @@ providers into `MemoryFabric`.
 Retrieval degrades by strategy instead of failing the whole query. If vector
 search is unavailable, exact, keyword, and traversal retrieval continue. If a
 reranker endpoint fails, Zaxy returns the built-in MMR order and records a
-`reranker unavailable` warning in score metadata. If Neo4j cannot be reached,
-`MemoryFabric.query()` falls back to the durable Eventloom log and marks
-returned contexts as degraded with the fallback reason. Embedding provider
-outages disable only vector participation for that call.
+`reranker unavailable` warning in score metadata. If the selected graph
+projection cannot be reached, `MemoryFabric.query()` falls back to the durable
+Eventloom log and marks returned contexts as degraded with the fallback reason.
+Embedding provider outages disable only vector participation for that call.
 
 Every graph-backed context chunk should cite its originating Eventloom event
 when provenance is available. Citations use the form
@@ -71,7 +71,7 @@ score that prefers facts asserted closer to the requested point in time while
 keeping old-but-still-valid facts eligible.
 
 Retention is retrieval-side and non-destructive. Eventloom remains immutable and
-Neo4j facts remain replayable; retention policies only filter or rescore
+projected facts remain replayable; retention policies only filter or rescore
 candidate context. `RETENTION_POLICY=filter_expired` hides results whose
 `expires_at` metadata is at or before the query time. `RETENTION_POLICY=decay`
 keeps results eligible but applies a half-life multiplier based on
@@ -136,7 +136,7 @@ claims against every production-grade vector RAG or file memory system.
 Use `zaxy benchmark-inventory` when the goal is release evidence rather than a
 live retrieval run. It emits the four MemPalace-comparable lanes, frozen
 versions, fingerprints, event/query counts, product claims, and required metrics
-without requiring Neo4j or provider quota.
+without requiring a graph sidecar or provider quota.
 
 The current public LongMemEval-compatible evidence is summarized in
 [benchmarks.md](benchmarks.md). The archived Zaxy-only 100-question report

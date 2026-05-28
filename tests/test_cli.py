@@ -13,7 +13,19 @@ from typer.main import get_command
 from typer.testing import CliRunner
 
 from zaxy.__main__ import app
+from zaxy.coordination import CoordinationManager
 from zaxy.event import EventLog
+
+
+def _git(cwd: Path, *args: str) -> str:
+    completed = subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return completed.stdout.strip()
 
 
 def test_version_option_reports_project_version() -> None:
@@ -128,7 +140,7 @@ def test_status_command_can_check_pggraph_projection_backend(
     assert "pgGraph: WARNING (pgGraph is not reachable; Docker is unavailable)" in result.output
     mock_runtime_cls.assert_called_once_with(
         dsn="postgresql://postgres:postgres@localhost:5432/zaxy",
-        enabled=True,
+        enabled=False,
     )
     assert "Neo4j:" not in result.output
 
@@ -152,7 +164,572 @@ def test_status_command_uses_repo_local_profile_for_bare_init(monkeypatch, tmp_p
     assert "Neo4j:" not in result.output
 
 
-@patch("zaxy.__main__.build_projection_store")
+def test_coordinate_cli_brief_reports_mission_worker_and_findings(tmp_path: Path) -> None:
+    """coordinate commands should expose a parent mission plus isolated worker findings."""
+    runner = CliRunner()
+    eventloom = tmp_path / ".eventloom"
+
+    result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "start",
+            "Ship auth refactor",
+            "--mission",
+            "auth-main",
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+    assert result.exit_code == 0
+    assert "Mission auth-main started" in result.output
+
+    result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "worker",
+            "create",
+            "--mission",
+            "auth-main",
+            "--worker",
+            "auth-api",
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+    assert result.exit_code == 0
+    assert "Worker auth-api registered" in result.output
+
+    result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "report",
+            "--mission",
+            "auth-main",
+            "--worker",
+            "auth-api",
+            "--summary",
+            "API failures trace to expired JWKS cache handling.",
+            "--evidence",
+            "pytest tests/test_auth.py -q",
+            "--claim-key",
+            "auth.failure.cause",
+            "--claim-value",
+            "expired-jwks-cache",
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+    assert result.exit_code == 0
+    assert "Finding " in result.output
+    finding_id = result.output.strip().split()[1]
+
+    result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "decide",
+            "--mission",
+            "auth-main",
+            "--finding",
+            finding_id,
+            "--status",
+            "accepted",
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+    assert result.exit_code == 0
+
+    result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "promote",
+            "--mission",
+            "auth-main",
+            "--finding",
+            finding_id,
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+    assert result.exit_code == 0
+
+    result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "brief",
+            "--mission",
+            "auth-main",
+            "--eventloom-path",
+            str(eventloom),
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["mission_id"] == "auth-main"
+    assert payload["workers"][0]["worker_id"] == "auth-api"
+    assert payload["accepted_findings"][0]["summary"] == "API failures trace to expired JWKS cache handling."
+    assert payload["accepted_findings"][0]["evidence"][0]["reference"] == "pytest tests/test_auth.py -q"
+
+
+def test_coordinate_report_cli_can_attach_git_and_test_metadata(tmp_path: Path) -> None:
+    """coordinate report should optionally attach branch/worktree and test-result evidence."""
+    runner = CliRunner()
+    eventloom = tmp_path / ".eventloom"
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init")
+    _git(repo, "config", "user.email", "test@example.test")
+    _git(repo, "config", "user.name", "Zaxy Test")
+    (repo / "auth.py").write_text("TOKEN_TTL = 10\n", encoding="utf-8")
+    _git(repo, "add", "auth.py")
+    _git(repo, "commit", "-m", "initial")
+    (repo / "auth.py").write_text("TOKEN_TTL = 20\n", encoding="utf-8")
+
+    runner.invoke(app, ["coordinate", "start", "Ship auth refactor", "--mission", "auth-main", "--eventloom-path", str(eventloom)])
+    runner.invoke(app, ["coordinate", "worker", "create", "--mission", "auth-main", "--worker", "auth-api", "--eventloom-path", str(eventloom)])
+
+    result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "report",
+            "--mission",
+            "auth-main",
+            "--worker",
+            "auth-api",
+            "--summary",
+            "API failures trace to expired JWKS cache handling.",
+            "--git-metadata",
+            str(repo),
+            "--test-result-json",
+            json.dumps({
+                "command": "pytest tests/test_auth.py -q",
+                "status": "passed",
+                "summary": "auth tests passed",
+                "exit_code": 0,
+            }),
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+
+    assert result.exit_code == 0
+    brief = CoordinationManager(eventloom_path=eventloom).brief("auth-main")
+    evidence = brief.pending_findings[0].evidence
+    git_evidence = next(item for item in evidence if item["kind"] == "git")
+    test_evidence = next(item for item in evidence if item["kind"] == "test_result")
+    assert git_evidence["worktree"] == str(repo.resolve())
+    assert git_evidence["dirty"] is True
+    assert {"path": "auth.py", "status": "M", "operation": "modified"} in git_evidence["changed_files"]
+    assert test_evidence == {
+        "kind": "test_result",
+        "reference": "pytest tests/test_auth.py -q",
+        "command": "pytest tests/test_auth.py -q",
+        "status": "passed",
+        "summary": "auth tests passed",
+        "exit_code": 0,
+    }
+
+
+def test_coordinate_report_cli_rejects_malformed_test_result_json(tmp_path: Path) -> None:
+    runner = CliRunner()
+    eventloom = tmp_path / ".eventloom"
+    runner.invoke(app, ["coordinate", "start", "Ship auth refactor", "--mission", "auth-main", "--eventloom-path", str(eventloom)])
+    runner.invoke(app, ["coordinate", "worker", "create", "--mission", "auth-main", "--worker", "auth-api", "--eventloom-path", str(eventloom)])
+
+    result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "report",
+            "--mission",
+            "auth-main",
+            "--worker",
+            "auth-api",
+            "--summary",
+            "Finding with bad test metadata.",
+            "--test-result-json",
+            "{not-json",
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "test result JSON" in result.output
+    assert CoordinationManager(eventloom_path=eventloom).brief("auth-main").pending_findings == []
+
+
+def test_coordinate_cli_checkout_returns_accepted_state_with_optional_diagnostics(tmp_path: Path) -> None:
+    """coordinate checkout should keep worker scratch state out of default prompt context."""
+    runner = CliRunner()
+    eventloom = tmp_path / ".eventloom"
+    runner.invoke(app, ["coordinate", "start", "Ship auth refactor", "--mission", "auth-main", "--eventloom-path", str(eventloom)])
+    runner.invoke(app, ["coordinate", "worker", "create", "--mission", "auth-main", "--worker", "auth-api", "--eventloom-path", str(eventloom)])
+    runner.invoke(app, ["coordinate", "worker", "create", "--mission", "auth-main", "--worker", "auth-ui", "--eventloom-path", str(eventloom)])
+    accepted_result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "report",
+            "--mission",
+            "auth-main",
+            "--worker",
+            "auth-api",
+            "--summary",
+            "API failures trace to expired JWKS cache handling.",
+            "--claim-key",
+            "auth.failure.cause",
+            "--claim-value",
+            "expired-jwks-cache",
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+    pending_result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "report",
+            "--mission",
+            "auth-main",
+            "--worker",
+            "auth-ui",
+            "--summary",
+            "UI refresh handling is missing retry state.",
+            "--claim-key",
+            "auth.failure.cause",
+            "--claim-value",
+            "missing-browser-refresh",
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+    assert accepted_result.exit_code == 0
+    assert pending_result.exit_code == 0
+    accepted_id = accepted_result.output.strip().split()[1]
+    pending_id = pending_result.output.strip().split()[1]
+    runner.invoke(app, ["coordinate", "decide", "--mission", "auth-main", "--finding", accepted_id, "--status", "accepted", "--eventloom-path", str(eventloom)])
+    runner.invoke(app, ["coordinate", "promote", "--mission", "auth-main", "--finding", accepted_id, "--eventloom-path", str(eventloom)])
+
+    result = runner.invoke(
+        app,
+        ["coordinate", "checkout", "--mission", "auth-main", "--eventloom-path", str(eventloom), "--json"],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert [finding["finding_id"] for finding in payload["accepted_findings"]] == [accepted_id]
+    assert payload["pending_findings"] == []
+    assert payload["conflicts"] == []
+    assert payload["excluded_pending_count"] == 1
+    assert pending_id not in payload["prompt"]
+
+    result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "checkout",
+            "--mission",
+            "auth-main",
+            "--eventloom-path",
+            str(eventloom),
+            "--include-diagnostics",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert [finding["finding_id"] for finding in payload["pending_findings"]] == [pending_id]
+    assert payload["conflicts"][0]["claim_key"] == "auth.failure.cause"
+
+
+def test_coordinate_cli_detect_conflicts_records_source_state_events(tmp_path: Path) -> None:
+    runner = CliRunner()
+    eventloom = tmp_path / ".eventloom"
+    manager = CoordinationManager(eventloom_path=eventloom)
+    manager.start_mission("auth-main", objective="Ship auth refactor", actor="lead")
+    manager.create_worker("auth-main", "auth-api", actor="lead")
+    manager.create_worker("auth-main", "auth-ui", actor="lead")
+    manager.report_finding(
+        "auth-main",
+        "auth-api",
+        summary="API worker saw one auth config snapshot.",
+        actor="auth-api-agent",
+        evidence=[{"kind": "file", "reference": "src/auth/config.py", "source_sha256": "a" * 64}],
+    )
+    manager.report_finding(
+        "auth-main",
+        "auth-ui",
+        summary="UI worker saw another auth config snapshot.",
+        actor="auth-ui-agent",
+        evidence=[{"kind": "file", "reference": "src/auth/config.py", "source_sha256": "b" * 64}],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "detect-conflicts",
+            "--mission",
+            "auth-main",
+            "--eventloom-path",
+            str(eventloom),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["recorded_count"] == 1
+    assert payload["events"][0]["conflict_type"] == "source_state"
+    assert payload["events"][0]["source_reference"] == "src/auth/config.py"
+
+
+def test_coordinate_cli_brief_can_enable_local_semantic_conflicts(tmp_path: Path) -> None:
+    runner = CliRunner()
+    eventloom = tmp_path / ".eventloom"
+    runner.invoke(app, ["coordinate", "start", "Ship auth refactor", "--mission", "auth-main", "--eventloom-path", str(eventloom)])
+    runner.invoke(app, ["coordinate", "worker", "create", "--mission", "auth-main", "--worker", "auth-api", "--eventloom-path", str(eventloom)])
+    runner.invoke(app, ["coordinate", "worker", "create", "--mission", "auth-main", "--worker", "auth-ui", "--eventloom-path", str(eventloom)])
+    runner.invoke(
+        app,
+        [
+            "coordinate",
+            "report",
+            "--mission",
+            "auth-main",
+            "--worker",
+            "auth-api",
+            "--summary",
+            "Token refresh retry is enabled in auth middleware.",
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+    runner.invoke(
+        app,
+        [
+            "coordinate",
+            "report",
+            "--mission",
+            "auth-main",
+            "--worker",
+            "auth-ui",
+            "--summary",
+            "Token refresh retry is disabled in browser session handling.",
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+
+    default_result = runner.invoke(
+        app,
+        ["coordinate", "brief", "--mission", "auth-main", "--eventloom-path", str(eventloom), "--json"],
+    )
+    semantic_result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "brief",
+            "--mission",
+            "auth-main",
+            "--eventloom-path",
+            str(eventloom),
+            "--semantic-conflicts",
+            "lexical",
+            "--json",
+        ],
+    )
+
+    assert default_result.exit_code == 0
+    assert json.loads(default_result.output)["conflicts"] == []
+    assert semantic_result.exit_code == 0
+    payload = json.loads(semantic_result.output)
+    assert payload["conflicts"][0]["conflict_type"] == "semantic"
+    assert payload["conflicts"][0]["reason"] == "local_lexical_contradiction:disabled/enabled"
+
+
+def test_coordinate_cli_ledger_reports_worker_quality_metrics(tmp_path: Path) -> None:
+    """coordinate ledger should expose worker-level outcome metrics."""
+    runner = CliRunner()
+    eventloom = tmp_path / ".eventloom"
+    runner.invoke(app, ["coordinate", "start", "Ship auth refactor", "--mission", "auth-main", "--eventloom-path", str(eventloom)])
+    runner.invoke(app, ["coordinate", "worker", "create", "--mission", "auth-main", "--worker", "auth-api", "--eventloom-path", str(eventloom)])
+    result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "report",
+            "--mission",
+            "auth-main",
+            "--worker",
+            "auth-api",
+            "--summary",
+            "API failures trace to expired JWKS cache handling.",
+            "--evidence",
+            "pytest tests/test_auth.py -q",
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+    finding_id = result.output.strip().split()[1]
+    runner.invoke(app, ["coordinate", "decide", "--mission", "auth-main", "--finding", finding_id, "--status", "accepted", "--eventloom-path", str(eventloom)])
+    runner.invoke(app, ["coordinate", "promote", "--mission", "auth-main", "--finding", finding_id, "--eventloom-path", str(eventloom)])
+
+    result = runner.invoke(
+        app,
+        ["coordinate", "ledger", "--mission", "auth-main", "--eventloom-path", str(eventloom), "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["mission_id"] == "auth-main"
+    assert payload["workers"][0]["worker_id"] == "auth-api"
+    assert payload["workers"][0]["accepted_findings"] == 1
+    assert payload["workers"][0]["test_backed_rate"] == 1.0
+
+
+def test_coordinate_cli_handoff_records_replayable_final_event(tmp_path: Path) -> None:
+    """coordinate handoff should create a parent mission handoff event."""
+    runner = CliRunner()
+    eventloom = tmp_path / ".eventloom"
+    runner.invoke(app, ["coordinate", "start", "Ship auth refactor", "--mission", "auth-main", "--eventloom-path", str(eventloom)])
+
+    result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "handoff",
+            "--mission",
+            "auth-main",
+            "--summary",
+            "Auth mission complete.",
+            "--next-step",
+            "Release branch",
+            "--risk",
+            "Token cache metrics are sparse",
+            "--eventloom-path",
+            str(eventloom),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["event_type"] == "coordination.handoff.created"
+    assert payload["mission_id"] == "auth-main"
+    assert payload["handoff_id"].startswith("auth-main:handoff:")
+    assert payload["summary"] == "Auth mission complete."
+    assert payload["next_steps"] == ["Release branch"]
+    assert payload["risks"] == ["Token cache metrics are sparse"]
+
+
+def test_coordinate_cli_approval_packet_and_apply_decisions(tmp_path: Path) -> None:
+    """coordinate approval commands should export and apply human review decisions."""
+    runner = CliRunner()
+    eventloom = tmp_path / ".eventloom"
+    runner.invoke(app, ["coordinate", "start", "Ship auth refactor", "--mission", "auth-main", "--eventloom-path", str(eventloom)])
+    runner.invoke(app, ["coordinate", "worker", "create", "--mission", "auth-main", "--worker", "auth-api", "--eventloom-path", str(eventloom)])
+    result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "report",
+            "--mission",
+            "auth-main",
+            "--worker",
+            "auth-api",
+            "--summary",
+            "Expired JWKS cache causes API failures.",
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+    finding_id = result.output.strip().split()[1]
+
+    packet_result = runner.invoke(
+        app,
+        ["coordinate", "approval-packet", "--mission", "auth-main", "--eventloom-path", str(eventloom), "--json"],
+    )
+    assert packet_result.exit_code == 0
+    packet = json.loads(packet_result.output)
+    assert packet["findings"][0]["finding_id"] == finding_id
+
+    decisions = json.dumps([{"finding_id": finding_id, "status": "accepted", "rationale": "Reviewed remotely.", "promote": True}])
+    apply_result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "apply-approval",
+            "--mission",
+            "auth-main",
+            "--decisions-json",
+            decisions,
+            "--eventloom-path",
+            str(eventloom),
+            "--json",
+        ],
+    )
+
+    assert apply_result.exit_code == 0
+    payload = json.loads(apply_result.output)
+    assert payload["reviewed_count"] == 1
+    assert payload["promoted_count"] == 1
+
+
+def test_coordinate_cli_review_export_outputs_markdown_and_json(tmp_path: Path) -> None:
+    """coordinate review-export should provide a static human review artifact."""
+    runner = CliRunner()
+    eventloom = tmp_path / ".eventloom"
+    runner.invoke(app, ["coordinate", "start", "Ship auth refactor", "--mission", "auth-main", "--eventloom-path", str(eventloom)])
+    runner.invoke(app, ["coordinate", "worker", "create", "--mission", "auth-main", "--worker", "auth-api", "--eventloom-path", str(eventloom)])
+    result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "report",
+            "--mission",
+            "auth-main",
+            "--worker",
+            "auth-api",
+            "--summary",
+            "Expired JWKS cache causes API failures.",
+            "--evidence",
+            "pytest tests/test_auth.py -q",
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+    finding_id = result.output.strip().split()[1]
+
+    markdown_result = runner.invoke(
+        app,
+        ["coordinate", "review-export", "--mission", "auth-main", "--eventloom-path", str(eventloom)],
+    )
+    json_result = runner.invoke(
+        app,
+        ["coordinate", "review-export", "--mission", "auth-main", "--eventloom-path", str(eventloom), "--json"],
+    )
+
+    assert markdown_result.exit_code == 0
+    assert "# Zaxy Coordinate Review: auth-main" in markdown_result.output
+    assert f"## {finding_id}" in markdown_result.output
+    assert "- Evidence: command `pytest tests/test_auth.py -q`" in markdown_result.output
+    assert json_result.exit_code == 0
+    payload = json.loads(json_result.output)
+    assert payload["read_only"] is True
+    assert payload["packet"]["findings"][0]["finding_id"] == finding_id
+    assert payload["markdown"] == markdown_result.output.rstrip()
+
+
+@patch("zaxy.projection_backends.build_projection_store")
 def test_memory_status_graph_json_reports_projection_health(
     mock_build_projection_store: MagicMock,
     tmp_path: Path,
@@ -219,7 +796,7 @@ def test_memory_status_graph_json_reports_projection_health(
     graph.close.assert_awaited_once()
 
 
-@patch("zaxy.__main__.build_projection_store")
+@patch("zaxy.projection_backends.build_projection_store")
 def test_memory_status_graph_can_use_pggraph_backend(
     mock_build_projection_store: MagicMock,
     tmp_path: Path,
@@ -279,7 +856,7 @@ def test_memory_status_graph_can_use_pggraph_backend(
     graph.close.assert_awaited_once()
 
 
-@patch("zaxy.__main__.build_projection_store")
+@patch("zaxy.projection_backends.build_projection_store")
 def test_memory_status_graph_can_use_embedded_backend(
     mock_build_projection_store: MagicMock,
     tmp_path: Path,
@@ -341,7 +918,7 @@ def test_memory_status_graph_can_use_embedded_backend(
     graph.close.assert_awaited_once()
 
 
-@patch("zaxy.__main__.build_projection_store")
+@patch("zaxy.projection_backends.build_projection_store")
 def test_memory_status_graph_uses_repo_local_profile_for_bare_init(
     mock_build_projection_store: MagicMock,
     monkeypatch,
@@ -390,7 +967,7 @@ def test_memory_status_graph_uses_repo_local_profile_for_bare_init(
     assert "Graph projection (backend=embedded):" in result.output
 
 
-@patch("zaxy.__main__.build_projection_store")
+@patch("zaxy.projection_backends.build_projection_store")
 def test_memory_status_graph_uses_profile_next_to_absolute_eventloom_path(
     mock_build_projection_store: MagicMock,
     monkeypatch,
@@ -453,7 +1030,7 @@ def test_memory_status_handles_empty_eventloom_directory(tmp_path: Path) -> None
     assert "Total events: 0" in result.output
 
 
-@patch("zaxy.__main__.build_projection_store")
+@patch("zaxy.projection_backends.build_projection_store")
 def test_memory_inferred_status_json_reports_graph_audit(
     mock_build_projection_store: MagicMock,
 ) -> None:
@@ -518,7 +1095,7 @@ def test_memory_inferred_status_json_reports_graph_audit(
     graph.close.assert_awaited_once()
 
 
-@patch("zaxy.__main__.build_projection_store")
+@patch("zaxy.projection_backends.build_projection_store")
 def test_memory_inferred_status_can_use_pggraph_backend(
     mock_build_projection_store: MagicMock,
 ) -> None:
@@ -563,7 +1140,7 @@ def test_memory_inferred_status_can_use_pggraph_backend(
     graph.close.assert_awaited_once()
 
 
-@patch("zaxy.__main__.build_projection_store")
+@patch("zaxy.projection_backends.build_projection_store")
 def test_memory_inferred_status_uses_repo_local_profile_for_bare_init(
     mock_build_projection_store: MagicMock,
     monkeypatch,
@@ -607,7 +1184,7 @@ def test_memory_inferred_status_uses_repo_local_profile_for_bare_init(
     graph.close.assert_awaited_once()
 
 
-@patch("zaxy.__main__.build_projection_store")
+@patch("zaxy.projection_backends.build_projection_store")
 def test_memory_inferred_status_text_reports_evidence_gaps(
     mock_build_projection_store: MagicMock,
 ) -> None:
@@ -1377,10 +1954,13 @@ def test_ide_config_command_prints_copyable_mcp_json() -> None:
     assert '"EVENTLOOM_THREAD": "zaxy-default"' in result.output
     assert '"ZAXY_DOMAIN": "zaxy"' in result.output
     assert '"ZAXY_ENV": "development"' in result.output
+    assert '"PROJECTION_BACKEND": "embedded"' in result.output
+    assert '"EMBEDDED_GRAPH_PATH": ".eventloom/projections/embedded.kuzu"' in result.output
     assert '"NEO4J_URI": "bolt://localhost:7687"' in result.output
-    assert '"NEO4J_AUTO_START": "true"' in result.output
+    assert '"NEO4J_AUTO_START": "false"' in result.output
     assert '"NEO4J_CA_CERT": ""' in result.output
     assert '"NEO4J_PASSWORD_FILE": ""' in result.output
+    assert '"PGGRAPH_AUTO_START": "false"' in result.output
     assert '"MCP_ADMIN_TOKEN_FILE": ""' in result.output
     assert '"MCP_REMOTE_AUTH_TOKEN_FILE": ""' in result.output
     assert '"OPENAI_API_KEY_FILE": ""' in result.output
@@ -1585,7 +2165,7 @@ def test_ide_config_command_rejects_project_codex_config_without_trust(tmp_path:
     assert not (tmp_path / ".codex" / "config.toml").exists()
 
 
-@patch("zaxy.__main__.mcp_main", new_callable=AsyncMock)
+@patch("zaxy.mcp_server.main", new_callable=AsyncMock)
 @patch("zaxy.mcp_server.ZaxyMCPServer")
 def test_serve_derives_workspace_defaults_when_not_overridden(
     mock_server_cls: MagicMock,
@@ -1615,7 +2195,7 @@ def test_serve_derives_workspace_defaults_when_not_overridden(
     assert kwargs["default_session_id"] == "zaxy-default"
 
 
-@patch("zaxy.__main__.mcp_main", new_callable=AsyncMock)
+@patch("zaxy.mcp_server.main", new_callable=AsyncMock)
 @patch("zaxy.mcp_server.ZaxyMCPServer")
 def test_serve_uses_repo_local_embedded_profile(
     mock_server_cls: MagicMock,
@@ -1669,6 +2249,29 @@ def test_integration_template_command_can_print_install_hint() -> None:
     assert result.exit_code == 0
     assert "python -m pip install 'zaxy-memory[crewai]'" in result.output
     assert "async def zaxy_crewai_memory_step" in result.output
+
+
+def test_coordinate_adapter_template_command_prints_coordination_starter() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "adapter-template",
+            "codex",
+            "--mission",
+            "auth-main",
+            "--worker",
+            "auth-api",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "CoordinationAdapter" in result.output
+    assert "mission_id='auth-main'" in result.output
+    assert "worker_id='auth-api'" in result.output
+    assert "adapter.report_finding" in result.output
 
 
 def test_integrations_command_lists_framework_registry() -> None:
@@ -3109,8 +3712,8 @@ def test_schema_recovery_plan_command_prints_recovery_guidance() -> None:
     runner = CliRunner()
 
     with (
-        patch("zaxy.__main__.GraphStore") as mock_store_cls,
-        patch("zaxy.__main__.fetch_schema_migration_records", new_callable=AsyncMock) as mock_fetch,
+        patch("zaxy.graph.GraphStore") as mock_store_cls,
+        patch("zaxy.schema.fetch_schema_migration_records", new_callable=AsyncMock) as mock_fetch,
     ):
         store = AsyncMock()
         mock_store_cls.return_value = store
@@ -3160,8 +3763,11 @@ def test_local_profile_command_prints_offline_env() -> None:
     result = runner.invoke(app, ["local-profile"])
 
     assert result.exit_code == 0
+    assert "PROJECTION_BACKEND=embedded" in result.output
+    assert "EMBEDDED_GRAPH_PATH=.eventloom/projections/embedded.kuzu" in result.output
     assert "EMBEDDING_PROVIDER=hash" in result.output
     assert "RERANKER_PROVIDER=lexical" in result.output
+    assert "NEO4J_AUTO_START=false" in result.output
     assert "NEO4J_URI=bolt://localhost:7687" in result.output
     assert "NEO4J_USER=neo4j" in result.output
     assert "NEO4J_PASSWORD=testpassword" in result.output
@@ -3180,7 +3786,10 @@ def test_local_profile_command_writes_output_file(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert "Wrote local profile" in result.output
     profile = target.read_text(encoding="utf-8")
+    assert "PROJECTION_BACKEND=embedded" in profile
+    assert "EMBEDDED_GRAPH_PATH=.eventloom/projections/embedded.kuzu" in profile
     assert "RERANKER_PROVIDER=lexical" in profile
+    assert "NEO4J_AUTO_START=false" in profile
     assert "NEO4J_URI=bolt://localhost:7687" in profile
     assert "NEO4J_CA_CERT=" in profile
     assert "NEO4J_PASSWORD_FILE=" in profile
@@ -3268,7 +3877,7 @@ def test_doctor_beta_readiness_reports_release_and_uat_gates() -> None:
     checks = {check["name"]: check for check in payload["checks"]}
     assert checks["release_smoke"]["status"] == "ok"
     assert checks["release_gate"]["status"] == "ok"
-    assert "parked-candidate exclusion" in checks["release_gate"]["message"]
+    assert "optional backend exclusion" in checks["release_gate"]["message"]
     assert checks["clean_repo_uat"]["status"] == "ok"
     assert checks["docs_happy_path"]["status"] == "ok"
     assert checks["capture_happy_path"]["status"] == "ok"
@@ -3993,7 +4602,7 @@ def test_init_command_json_includes_next_steps_and_capture_summary(tmp_path: Pat
     assert payload["capture"]["doctor_status"] == "warning"
 
 
-@patch("zaxy.__main__.build_projection_store")
+@patch("zaxy.projection_backends.build_projection_store")
 def test_reproject_command_replays_log_into_graph(mock_build_projection_store: MagicMock, tmp_path: Path) -> None:
     """reproject should rebuild graph projections from an Eventloom log."""
     log_path = tmp_path / "default.jsonl"
@@ -4041,7 +4650,7 @@ def test_reproject_command_replays_log_into_graph(mock_build_projection_store: M
     store.close.assert_awaited_once()
 
 
-@patch("zaxy.__main__.build_projection_store")
+@patch("zaxy.projection_backends.build_projection_store")
 def test_reproject_command_can_reset_and_rebuild_pggraph_backend(
     mock_build_projection_store: MagicMock,
     tmp_path: Path,
@@ -4088,7 +4697,7 @@ def test_reproject_command_can_reset_and_rebuild_pggraph_backend(
     store.close.assert_awaited_once()
 
 
-@patch("zaxy.__main__.build_projection_store")
+@patch("zaxy.projection_backends.build_projection_store")
 def test_reproject_command_can_reset_and_rebuild_embedded_backend(
     mock_build_projection_store: MagicMock,
     tmp_path: Path,
@@ -4130,7 +4739,7 @@ def test_reproject_command_can_reset_and_rebuild_embedded_backend(
     store.close.assert_awaited_once()
 
 
-@patch("zaxy.__main__.build_projection_store")
+@patch("zaxy.projection_backends.build_projection_store")
 def test_reproject_command_uses_repo_local_profile_for_bare_init(
     mock_build_projection_store: MagicMock,
     monkeypatch,
@@ -4169,7 +4778,7 @@ def test_reproject_command_uses_repo_local_profile_for_bare_init(
     store.close.assert_awaited_once()
 
 
-@patch("zaxy.__main__.build_projection_store")
+@patch("zaxy.projection_backends.build_projection_store")
 def test_reproject_command_uses_profile_next_to_absolute_eventloom_log(
     mock_build_projection_store: MagicMock,
     monkeypatch,
@@ -4206,7 +4815,7 @@ def test_reproject_command_uses_profile_next_to_absolute_eventloom_log(
     assert config.embedded_graph_path == embedded_path
 
 
-@patch("zaxy.__main__.build_projection_store")
+@patch("zaxy.projection_backends.build_projection_store")
 def test_reproject_command_closes_pggraph_backend_after_projection_failure(
     mock_build_projection_store: MagicMock,
     tmp_path: Path,
@@ -4377,11 +4986,23 @@ def test_dashboard_cli_help_exposes_localhost_default() -> None:
     assert "dashboard" in result.output
     assert options["--host"].default == "127.0.0.1"
     assert options["--port"].default == 8765
+    assert options["--projection-backend"].default is None
     assert options["--projection-backend"].help == (
-        "Projection backend for graph visualization: neo4j, pggraph, embedded, or latticedb"
+        "Projection backend for graph visualization: embedded, neo4j, pggraph, or latticedb"
     )
     assert options["--pggraph-dsn"].help == "pgGraph/PostgreSQL DSN for graph visualization"
     assert options["--embedded-graph-path"].help == "Embedded graph projection path for graph visualization"
+
+
+def test_status_cli_help_lists_all_projection_backends() -> None:
+    """status help should match the supported projection backend registry."""
+    command = get_command(app).commands["status"]
+    options = {option: parameter for parameter in command.params for option in parameter.opts}
+
+    assert options["--projection-backend"].default is None
+    assert options["--projection-backend"].help == (
+        "Projection backend to check: embedded, neo4j, pggraph, or latticedb"
+    )
 
 
 @patch("zaxy.dashboard.run_dashboard")

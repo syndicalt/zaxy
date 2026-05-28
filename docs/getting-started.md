@@ -1,8 +1,8 @@
 # Getting Started
 
 Zaxy is a local-first memory fabric for AI agents. It keeps the immutable
-work history in Eventloom JSONL files and projects structured facts into Neo4j
-so agents can retrieve connected, temporal context through MCP tools. The
+work history in Eventloom JSONL files and projects structured facts into an
+embedded Kuzu graph so agents can retrieve connected, temporal context through MCP tools. The
 fastest path is to install the CLI, run one local onboarding command, and
 verify that Eventloom plus the model-facing bootstrap are readable. For the
 architecture tradeoffs behind this shape, see [why-zaxy.md](why-zaxy.md).
@@ -63,18 +63,24 @@ For local development from a checkout:
 ```bash
 pip install -e ".[dev]"
 ./scripts/setup.sh
-docker compose up -d
 zaxy status
 ```
 
 `./scripts/setup.sh` creates `.env`, `.eventloom`, and local runtime
-directories. Development mode uses `neo4j/testpassword` and localhost-bound
-ports through `bolt://localhost:7687` with no Neo4j TLS override. The Docker
-Compose `zaxy` service still talks to its sibling Neo4j container internally;
-local CLI and MCP onboarding should use localhost. Production mode is
-different: `./scripts/setup.sh --production` writes secret files under
-`./secrets`, configures `ZAXY_ENV=production`, and expects a TLS-enabled Neo4j
-profile. See [deployment.md](deployment.md) before exposing remote SSE.
+directories. Development mode can still start optional Docker services for
+integration tests, but local CLI and MCP onboarding use the embedded graph
+profile by default. Production mode is different: `./scripts/setup.sh
+--production` writes secret files under `./secrets`, configures
+`ZAXY_ENV=production`, and expects any external sidecar backend to be configured
+explicitly. See [deployment.md](deployment.md) before exposing remote SSE.
+
+Start Docker sidecars only when you are running integration tests or explicitly
+comparing external backends:
+
+```bash
+docker compose --profile integration up -d neo4j-test neo4j-tls
+pytest -m integration
+```
 
 For an offline retrieval profile with no hosted services or API keys:
 
@@ -84,14 +90,12 @@ zaxy local-profile --projection-backend embedded --output .env.local
 zaxy local-profile --check
 ```
 
-This configures deterministic hash embeddings, lexical reranking, and local
-Neo4j auto-start at `bolt://localhost:7687`. It also clears local Neo4j TLS and
-password-file overrides so stale container or production settings do not leak
-into local CLI use. It is the recommended baseline for local development before
-switching to hosted embeddings or model-backed rerankers.
-Use `--projection-backend embedded` for the no-sidecar profile that writes
+This configures deterministic hash embeddings, lexical reranking,
 `PROJECTION_BACKEND=embedded`, `.eventloom/projections/embedded.kuzu`, and
-disables Neo4j/pgGraph autostart.
+disabled Neo4j/pgGraph autostart. It also clears local Neo4j TLS and
+password-file overrides so stale container or production settings do not leak
+into local CLI use. Use `--projection-backend neo4j` only when you explicitly
+want the optional sidecar profile, and install `zaxy-memory[neo4j]` first.
 
 Check local onboarding prerequisites before wiring an agent:
 
@@ -204,10 +208,11 @@ available, and the doctor capture-health result. The same block is available in
 Generated output files are non-destructive by default. Pass `--force` only when
 you intentionally want to replace generated config. `--infra check` reports the
 selected local projection backend and Docker posture without starting
-containers. Use `--infra start` when you explicitly want onboarding to start the
-local runtime. Neo4j remains the default backend. For experimental pgGraph
-bootstrap, install the optional extra and point Zaxy at a local pgGraph checkout
-so it can run the extension installer instead of starting plain Postgres:
+containers. Use `--infra start` when you explicitly want onboarding to prepare
+the selected local runtime. The default embedded backend creates only the local
+projection directory and lazy Kuzu database. For experimental pgGraph bootstrap,
+install the optional extra and point Zaxy at a local pgGraph checkout so it can
+run the extension installer instead of starting plain Postgres:
 
 ```bash
 pip install "zaxy-memory[pggraph]"
@@ -233,14 +238,16 @@ zaxy serve
 ```
 
 When stdio starts in local development mode, Zaxy checks the selected projection
-backend. With the default Neo4j backend, it checks `bolt://localhost:7687`. If
-Neo4j is not reachable and Docker is available, it starts a `zaxy-neo4j`
-container automatically and waits for Bolt before serving MCP tools. With
-`PROJECTION_BACKEND=pggraph`, it checks `PGGRAPH_DSN`; local automatic startup
-requires `PGGRAPH_REPO` to point at a pgGraph checkout containing
-`scripts/quickstart.sh`, because Zaxy must install pgGraph into the local
-PostgreSQL container before graph traversal is available. Set
-`NEO4J_AUTO_START=false` or `PGGRAPH_AUTO_START=false` to opt out.
+backend. With the default embedded backend, it opens the repo-local Kuzu
+projection path and does not start Docker. With `PROJECTION_BACKEND=neo4j`, it
+requires `pip install "zaxy-memory[neo4j]"` and checks
+`bolt://localhost:7687`. Set `NEO4J_AUTO_START=true` only when you want Zaxy to
+start a local `zaxy-neo4j` container automatically and wait for Bolt before
+serving MCP tools. With `PROJECTION_BACKEND=pggraph`, it checks `PGGRAPH_DSN`;
+local automatic startup requires `PGGRAPH_AUTO_START=true` and `PGGRAPH_REPO`
+pointing at a pgGraph checkout containing `scripts/quickstart.sh`, because Zaxy
+must install pgGraph into the local PostgreSQL container before graph traversal
+is available.
 
 To run the SSE transport for daemon-style clients:
 
@@ -267,8 +274,8 @@ session and source kind. Eventloom remains the audit log: each run records
 `source.discovered`, `source.changed`, `source.unchanged`, `source.deleted`,
 `projection.updated`, and `projection.retired` events as applicable. A transform
 version change is treated as a reprocessing trigger even when file bytes are
-unchanged. Neo4j is the default projection backend, and the same refresh command
-can target the experimental pgGraph adapter when it is explicitly selected:
+unchanged. The embedded projection backend is the default, and the same refresh
+command can target sidecar adapters when they are explicitly selected:
 
 ```bash
 zaxy refresh-context . \
@@ -344,6 +351,6 @@ these docs are the detailed operator and integrator reference.
 
 The mental model is simple: append operational facts, extract graph facts,
 retrieve connected context, and replay from the original event stream whenever
-you need auditability. Do not treat Neo4j as the source of truth. Neo4j is the
-reasoning layer. Eventloom is the durable history. MCP is the interface agents
-call.
+you need auditability. Do not treat any projection backend as the source of
+truth. The graph projection is the reasoning layer. Eventloom is the durable
+history. MCP is the interface agents call.

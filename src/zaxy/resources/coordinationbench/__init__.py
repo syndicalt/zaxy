@@ -1,0 +1,1 @@
+"""CoordinationBench adapter contract resources."""

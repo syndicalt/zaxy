@@ -12,6 +12,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from zaxy.compaction import build_compaction_projection, write_compaction_projection
+from zaxy.config import Settings
+from zaxy.coordination import CoordinationBrief
 from zaxy.core import (
     Context,
     ContextAssembly,
@@ -27,6 +29,7 @@ from zaxy.event import Event, EventLog
 from zaxy.query import ContextChunk
 from zaxy.refs import MemoryRef
 from zaxy.retrieval_profile import resolve_retrieval_profile
+from zaxy.verbatim import VerbatimIndex
 
 
 class BrokenEmbeddingProvider:
@@ -49,7 +52,7 @@ def test_memory_fabric_constructs_projection_store_through_factory(tmp_path: Pat
         fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
 
     assert fabric.graph is mock_build.return_value
-    assert mock_build.call_args.args[0].backend == "neo4j"
+    assert mock_build.call_args.args[0].backend == "embedded"
 
 
 def test_memory_fabric_accepts_explicit_pggraph_projection_backend(tmp_path: Path) -> None:
@@ -155,6 +158,41 @@ async def test_memory_fabric_queries_verbatim_eventloom_sources(tmp_path: Path) 
         "transcript_turn_index": 3,
         "transcript_role": "assistant",
     }
+
+
+async def test_memory_fabric_reuses_verbatim_index_until_eventloom_changes(tmp_path: Path) -> None:
+    """Repeated source-lane calls should not rebuild unchanged Eventloom indexes."""
+    fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+    session = fabric.session_manager.get("agent")
+    session.eventlog.append(
+        "transcript.turn",
+        actor="assistant",
+        payload={
+            "source": "codex",
+            "turn_index": 1,
+            "role": "assistant",
+            "content": "Cached verbatim source recall keeps answer assembly fast.",
+        },
+        thread="agent",
+    )
+
+    with patch("zaxy.core.VerbatimIndex.from_event_logs", wraps=VerbatimIndex.from_event_logs) as build_index:
+        await fabric.query_verbatim("cached source recall", session_id="agent", limit=1)
+        await fabric.query_verbatim("answer assembly fast", session_id="agent", limit=1)
+        session.eventlog.append(
+            "transcript.turn",
+            actor="assistant",
+            payload={
+                "source": "codex",
+                "turn_index": 2,
+                "role": "assistant",
+                "content": "A new event should invalidate the cached verbatim index.",
+            },
+            thread="agent",
+        )
+        await fabric.query_verbatim("new event invalidate", session_id="agent", limit=1)
+
+    assert build_index.call_count == 2
 
 
 async def test_memory_fabric_queries_packet_projection_sources(tmp_path: Path) -> None:
@@ -304,6 +342,39 @@ class TestLifecycle:
         fabric.graph.init_schema.assert_awaited_once()
         fabric.tracer.connect.assert_awaited_once()
         assert fabric._connected is True
+
+    async def test_connect_warms_projection_session_when_supported(self, fabric: MemoryFabric) -> None:
+        """connect() should prewarm embedded projection indexes before first checkout."""
+        fabric.graph.warm_session = AsyncMock()
+        fabric.settings.eventloom_thread = "agent-1"
+
+        await fabric.connect()
+
+        fabric.graph.warm_session.assert_awaited_once_with(session_id="agent-1")
+
+    async def test_connect_warms_source_index_for_configured_session(self, tmp_path: Path) -> None:
+        """connect() should prewarm Eventloom source recall before first answer-ready checkout."""
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        session = fabric.session_manager.get("agent-1")
+        session.eventlog.append(
+            "document.indexed",
+            actor="assistant",
+            payload={
+                "path": "memory.md",
+                "content": "Warm source recall before the first answer-ready checkout.",
+                "start_line": 1,
+                "end_line": 1,
+            },
+            thread="agent-1",
+        )
+        fabric.settings.eventloom_thread = "agent-1"
+
+        with patch("zaxy.core.VerbatimIndex.from_event_logs", wraps=VerbatimIndex.from_event_logs) as build_index:
+            await fabric.connect()
+            assert build_index.call_count == 1
+            await fabric.query_verbatim("answer-ready checkout", session_id="agent-1", limit=1)
+
+        assert build_index.call_count == 1
 
     async def test_connect_is_idempotent(self, fabric: MemoryFabric) -> None:
         """Multiple connect() calls should not re-initialize."""
@@ -889,6 +960,45 @@ class TestTranscriptIngestion:
 class TestQuery:
     """Tests for the read path."""
 
+    async def test_retrieve_returns_graph_context_without_source_assembly(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """retrieve() should expose backend evidence without answer-ready source synthesis."""
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content="Graph evidence only",
+                source="keyword",
+                score=1.0,
+                valid_from=None,
+                valid_to=None,
+                citation="eventloom://agent-1/events/1#aaaaaaaaaaaa",
+            )
+        ]
+
+        with patch.object(fabric, "query_verbatim", return_value=[]) as mock_query_verbatim:
+            results = await fabric.retrieve("Graph evidence", session_id="agent-1", limit=5)
+
+        mock_query_verbatim.assert_not_called()
+        assert len(results) == 1
+        assert results[0].content == "Graph evidence only"
+        assert results[0].source == "keyword"
+
+    async def test_retrieve_warms_requested_projection_session_once(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """retrieve() should prewarm non-default embedded sessions before router search."""
+        fabric.graph.warm_session = AsyncMock()
+        fabric.query_router.query.return_value = []
+        fabric._connected = True
+        fabric._warmed_projection_sessions = {"default"}
+
+        await fabric.retrieve("Graph evidence", session_id="agent-1", limit=5)
+        await fabric.retrieve("Graph evidence", session_id="agent-1", limit=5)
+
+        fabric.graph.warm_session.assert_awaited_once_with(session_id="agent-1")
+
     async def test_queries_router(self, fabric: MemoryFabric) -> None:
         """query() should delegate to QueryRouter."""
         fabric.query_router.query.return_value = [
@@ -997,6 +1107,500 @@ class TestQuery:
         assert results[0].metadata is not None
         assert results[0].metadata["reason"] == "graph retrieval unavailable"
         metrics.record_degraded_operation.assert_any_call("query", "graph_retrieval_unavailable")
+
+    async def test_query_reserves_source_lane_for_evidence_heavy_questions(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Raw query should recover cited source evidence before final prompt truncation."""
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content=f"graph candidate {index}",
+                source="vector",
+                score=2.0 - index / 10,
+                valid_from=None,
+                valid_to=None,
+                citation=f"eventloom://agent-1/events/{index}#{str(index) * 12}",
+            )
+            for index in range(5)
+        ]
+        source_context = Context(
+            content="answer-session-42 contains the house Rachel helped find.",
+            source="verbatim",
+            score=10.0,
+            metadata={
+                "citation": "eventloom://agent-1/events/42#cccccccccccc",
+                "source_kind": "document",
+            },
+        )
+
+        with patch.object(fabric, "query_verbatim", return_value=[source_context]) as mock_query_verbatim:
+            results = await fabric.query(
+                "How many days did it take to find a house after starting to work with Rachel?",
+                session_id="agent-1",
+                limit=5,
+            )
+
+        mock_query_verbatim.assert_any_call(
+            "How many days did it take to find a house after starting to work with Rachel?",
+            limit=24,
+            session_id="agent-1",
+        )
+        assert len(results) == 5
+        assert results[-1].source == "verbatim"
+        assert results[-1].metadata is not None
+        assert results[-1].metadata["assembly_lane"] == "verbatim"
+        assert "answer-session-42" in results[-1].content
+
+    async def test_query_expands_source_lane_with_graph_answer_concepts(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Graph-derived answer concepts should recover verbatim evidence on raw query."""
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content="graph says Max is a Golden Retriever",
+                source="keyword",
+                score=2.0,
+                valid_from=None,
+                valid_to=None,
+                citation="eventloom://agent-1/events/1#aaaaaaaaaaaa",
+            )
+        ]
+        distractor = Context(
+            content="longmemeval_session_id=distractor my dog enjoys trail walks.",
+            source="verbatim",
+            score=1.0,
+            metadata={"citation": "eventloom://agent-1/events/2#bbbbbbbbbbbb"},
+        )
+        answer = Context(
+            content="longmemeval_session_id=answer Max is a Golden Retriever.",
+            source="verbatim",
+            score=1.0,
+            metadata={"citation": "eventloom://agent-1/events/3#cccccccccccc"},
+        )
+
+        async def query_verbatim_side_effect(
+            query: str,
+            *,
+            limit: int,
+            session_id: str,
+        ) -> list[Context]:
+            del limit, session_id
+            if "Golden Retriever" in query:
+                return [answer]
+            return [distractor]
+
+        with patch.object(
+            fabric,
+            "query_verbatim",
+            side_effect=query_verbatim_side_effect,
+        ) as mock_query_verbatim:
+            results = await fabric.query("What breed is my dog?", session_id="agent-1", limit=5)
+
+        called_queries = [call.args[0] for call in mock_query_verbatim.call_args_list]
+        assert called_queries[0] == "What breed is my dog?"
+        assert any("Golden Retriever" in query for query in called_queries[1:])
+        assert any("longmemeval_session_id=answer" in result.content for result in results)
+
+    async def test_query_prioritizes_aggregation_source_expansions(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Aggregation expansions should beat noisy raw source matches."""
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content="graph found a general travel memory",
+                source="keyword",
+                score=2.0,
+                valid_from=None,
+                valid_to=None,
+                citation="eventloom://agent-1/events/1#aaaaaaaaaaaa",
+            )
+        ]
+        distractor = Context(
+            content="longmemeval_session_id=distractor I visited Munich.",
+            source="verbatim",
+            score=20.0,
+            metadata={"citation": "eventloom://agent-1/events/2#bbbbbbbbbbbb"},
+        )
+        answer = Context(
+            content="longmemeval_session_id=answer_55a6940c_1 I saw a dermatologist.",
+            source="verbatim",
+            score=10.0,
+            metadata={"citation": "eventloom://agent-1/events/3#cccccccccccc"},
+        )
+
+        async def query_verbatim_side_effect(
+            query: str,
+            *,
+            limit: int,
+            session_id: str,
+        ) -> list[Context]:
+            del limit, session_id
+            if query == "doctor physician dermatologist ent visited saw appointment":
+                return [answer]
+            return [distractor]
+
+        with patch.object(
+            fabric,
+            "query_verbatim",
+            side_effect=query_verbatim_side_effect,
+        ) as mock_query_verbatim:
+            results = await fabric.query(
+                "How many different doctors did I visit?",
+                session_id="agent-1",
+                limit=5,
+            )
+
+        called_queries = [call.args[0] for call in mock_query_verbatim.call_args_list]
+        assert called_queries[0] == "doctor physician dermatologist ent visited saw appointment"
+        answer_rank = next(
+            index for index, result in enumerate(results) if "longmemeval_session_id=answer_55a6940c_1" in result.content
+        )
+        distractor_rank = next(
+            index for index, result in enumerate(results) if "longmemeval_session_id=distractor" in result.content
+        )
+        assert answer_rank < distractor_rank
+
+    async def test_query_leaves_typed_source_ordering_to_synthesis_bundle(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Raw query should not evidence-rank sources twice before assembly."""
+        answer = Context(
+            content="longmemeval_session_id=answer I bought bike lights for $40.",
+            source="verbatim",
+            score=10.0,
+            metadata={"citation": "eventloom://agent-1/events/2#bbbbbbbbbbbb"},
+        )
+        distractor = Context(
+            content="longmemeval_session_id=distractor I bought hiking boots for $90.",
+            source="verbatim",
+            score=8.0,
+            metadata={"citation": "eventloom://agent-1/events/3#cccccccccccc"},
+        )
+
+        ordered = fabric._order_source_contexts_for_assembly(
+            "How much total money have I spent on bike-related expenses?",
+            [distractor, answer],
+        )
+
+        assert ordered == [distractor, answer]
+
+    async def test_query_adds_source_synthesis_bundle_for_aggregation(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Raw aggregation query should compact multiple source groups into one context."""
+        fabric.query_router.query.return_value = []
+        source_texts = [
+            "longmemeval_session_id=answer_1 I visited a dermatologist for a skin check.",
+            "longmemeval_session_id=answer_2 I saw an ENT specialist about sinus pain.",
+            "longmemeval_session_id=answer_3 I had an appointment with my primary care physician.",
+        ]
+        source_contexts = [
+            Context(
+                content=content,
+                source="verbatim",
+                score=10.0 - index,
+                metadata={"citation": f"eventloom://agent-1/events/{index}#cccccccccccc"},
+            )
+            for index, content in enumerate(source_texts, start=1)
+        ]
+
+        with patch.object(fabric, "query_verbatim", return_value=source_contexts):
+            results = await fabric.query(
+                "How many different doctors did I visit?",
+                session_id="agent-1",
+                limit=5,
+            )
+
+        assert results[0].source == "verbatim"
+        assert results[0].metadata is not None
+        assert results[0].metadata["source_kind"] == "source_synthesis"
+        assert "zaxy_synthesis_bundle=true" in results[0].content
+        assert "answer_1" in results[0].content
+        assert "answer_2" in results[0].content
+        assert "answer_3" in results[0].content
+
+    async def test_query_adds_absence_bundle_when_source_synthesis_defers(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Missing target evidence should produce an absence bundle from cited sources."""
+        fabric.query_router.query.return_value = []
+        source_contexts = [
+            Context(
+                content=(
+                    "content=longmemeval_session_id=answer_e5131a1b_abs_1 "
+                    "I've been working professionally for 9 years and currently use a physical notebook."
+                ),
+                source="verbatim",
+                score=8.0,
+                metadata={"citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa"},
+            ),
+            Context(
+                content=(
+                    "content=longmemeval_session_id=answer_e5131a1b_abs_2 "
+                    "I've been working at NovaTech for about 4 years and 3 months now."
+                ),
+                source="verbatim",
+                score=7.5,
+                metadata={"citation": "eventloom://agent-1/events/2#bbbbbbbbbbbb"},
+            ),
+        ]
+
+        with patch.object(fabric, "query_verbatim", return_value=source_contexts):
+            results = await fabric.query(
+                "How long have I been working before I started my current job at Google?",
+                session_id="agent-1",
+                limit=5,
+            )
+
+        assert results[0].source == "verbatim"
+        assert results[0].metadata is not None
+        assert results[0].metadata["source_kind"] == "source_absence"
+        assert "zaxy_absence_check=true" in results[0].content
+        assert "answer_e5131a1b_abs_1" in results[0].content
+        assert "answer_e5131a1b_abs_2" in results[0].content
+
+    async def test_query_synthesizes_elapsed_duration_at_prior_event(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Answer-ready query should subtract event age from current duration evidence."""
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content=(
+                    "longmemeval_session_id=answer_436d4309_1 "
+                    "I've been taking weekly guitar lessons with a new instructor, Alex, "
+                    "for six weeks now."
+                ),
+                source="keyword",
+                score=3.0,
+                valid_from=None,
+                valid_to=None,
+                citation="file://longmemeval/answer_436d4309_1.md:1",
+            ),
+            ContextChunk(
+                content=(
+                    "longmemeval_session_id=answer_436d4309_2 "
+                    "summary references the new guitar amp source."
+                ),
+                source="keyword",
+                score=2.0,
+                valid_from=None,
+                valid_to=None,
+                citation="file://longmemeval/answer_436d4309_2.md:1",
+            ),
+        ]
+        source_contexts = [
+            Context(
+                content=(
+                    "longmemeval_session_id=answer_436d4309_1 "
+                    "I've been taking weekly guitar lessons with a new instructor, Alex, "
+                    "for six weeks now."
+                ),
+                source="verbatim",
+                score=9.0,
+                metadata={"citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa"},
+            ),
+            Context(
+                content=(
+                    "longmemeval_session_id=answer_436d4309_2 "
+                    "I just got a new amp two weeks ago."
+                ),
+                source="verbatim",
+                score=8.0,
+                metadata={"citation": "eventloom://agent-1/events/2#bbbbbbbbbbbb"},
+            ),
+        ]
+
+        with patch.object(fabric, "query_verbatim", return_value=source_contexts):
+            results = await fabric.query(
+                "How long had I been taking guitar lessons when I bought the new guitar amp?",
+                session_id="agent-1",
+                limit=5,
+            )
+
+        bundle = next(result for result in results if (result.metadata or {}).get("source_kind") == "source_synthesis")
+        assert "elapsed_at_event_answer=Four weeks" in bundle.content
+
+    async def test_query_backfills_graph_source_groups_for_elapsed_synthesis(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Graph-ranked provenance groups should get verbatim backfill before synthesis."""
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content=(
+                    "longmemeval_session_id=answer_436d4309_1 "
+                    "I've been taking weekly guitar lessons with a new instructor, Alex, "
+                    "for six weeks now."
+                ),
+                source="keyword",
+                score=3.0,
+                valid_from=None,
+                valid_to=None,
+                citation="file://longmemeval/answer_436d4309_1.md:1",
+            ),
+            ContextChunk(
+                content=(
+                    "longmemeval_session_id=answer_436d4309_2 "
+                    "summary references the new guitar amp source."
+                ),
+                source="keyword",
+                score=2.0,
+                valid_from=None,
+                valid_to=None,
+                citation="file://longmemeval/answer_436d4309_2.md:1",
+            ),
+        ]
+        noisy_sources = [
+            Context(
+                content=(
+                    f"longmemeval_session_id=distractor_{index} "
+                    "I've been playing guitar for six weeks now."
+                ),
+                source="verbatim",
+                score=20.0 - index,
+                metadata={"citation": f"eventloom://agent-1/events/{index}#aaaaaaaaaaaa"},
+            )
+            for index in range(20)
+        ]
+        amp_source = Context(
+            content=(
+                "longmemeval_session_id=answer_436d4309_2 "
+                "I just got a new amp two weeks ago."
+            ),
+            source="verbatim",
+            score=4.0,
+            metadata={"citation": "eventloom://agent-1/events/42#bbbbbbbbbbbb"},
+        )
+
+        async def query_verbatim_side_effect(
+            query: str,
+            *,
+            limit: int,
+            session_id: str,
+        ) -> list[Context]:
+            del limit, session_id
+            if query == "answer_436d4309_2":
+                return [amp_source]
+            return noisy_sources
+
+        with patch.object(
+            fabric,
+            "query_verbatim",
+            side_effect=query_verbatim_side_effect,
+        ):
+            results = await fabric.query(
+                "How long had I been taking guitar lessons when I bought the new guitar amp?",
+                session_id="agent-1",
+                limit=5,
+            )
+
+        bundle = next(result for result in results if (result.metadata or {}).get("source_kind") == "source_synthesis")
+        assert "elapsed_at_event_answer=Four weeks" in bundle.content
+        assert "source_id=answer_436d4309_2" in bundle.content
+
+    async def test_query_synthesizes_from_graph_evidence_when_source_lane_drifts(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Answer-ready synthesis should use cited graph evidence, not only source-lane hits."""
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content=(
+                    "longmemeval/gpt4/session/answer_1/salient-turn-0003.md:1-6 "
+                    "(document) — summary=longmemeval_session_id=answer_1 "
+                    "I recently had an issue with my car's GPS system on 3/22, "
+                    "and I had to take it back to the dealership to get it fixed."
+                ),
+                source="keyword",
+                score=3.0,
+                valid_from=None,
+                valid_to=None,
+                citation="file://longmemeval/gpt4/session/answer_1/salient-turn-0003.md:1",
+            ),
+            ContextChunk(
+                content=(
+                    "longmemeval/gpt4/session/answer_2/salient-turn-0001.md:1-6 "
+                    "(document) — summary=longmemeval_session_id=answer_2 "
+                    "I just got my car serviced for the first time on March 15th."
+                ),
+                source="keyword",
+                score=2.0,
+                valid_from=None,
+                valid_to=None,
+                citation="file://longmemeval/gpt4/session/answer_2/salient-turn-0001.md:1",
+            ),
+        ]
+        source_contexts = [
+            Context(
+                content=(
+                    "longmemeval_session_id=distractor "
+                    "I am researching a newer Toyota Corolla hybrid."
+                ),
+                source="verbatim",
+                score=9.0,
+                metadata={"citation": "eventloom://agent-1/events/1#cccccccccccc"},
+            )
+        ]
+
+        with patch.object(fabric, "query_verbatim", return_value=source_contexts):
+            results = await fabric.query(
+                "What was the first issue I had with my new car after its first service?",
+                session_id="agent-1",
+                limit=5,
+            )
+
+        bundle = next(result for result in results if result.metadata.get("source_kind") == "source_synthesis")
+        assert "issue_candidate=GPS system not functioning correctly" in bundle.content
+
+    async def test_query_promotes_later_high_evidence_source_hits(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Source-lane hits from expanded queries should be evidence-ordered before assembly."""
+        fabric.query_router.query.return_value = []
+        source_contexts = [
+            Context(
+                content=(
+                    "longmemeval_session_id=distractor "
+                    "For a hike, a prime lens like the 50mm can be a good choice for photography."
+                ),
+                source="verbatim",
+                score=30.0,
+                metadata={"citation": "eventloom://agent-1/events/1#cccccccccccc"},
+            ),
+            Context(
+                content=(
+                    "longmemeval_session_id=answer_b9d9150e_2 "
+                    "I recently got a new 50mm f/1.8 prime lens that I'm still getting used to."
+                ),
+                source="verbatim",
+                score=20.0,
+                metadata={"citation": "eventloom://agent-1/events/2#dddddddddddd"},
+            ),
+        ]
+
+        with patch.object(fabric, "query_verbatim", return_value=source_contexts):
+            results = await fabric.query(
+                "Which event happened first, the road trip to the coast or the arrival of the new prime lens?",
+                session_id="agent-1",
+                limit=5,
+            )
+
+        assert any("answer_b9d9150e_2" in result.content for result in results[:5])
+        distractor_rank = next(
+            index for index, result in enumerate(results) if "longmemeval_session_id=distractor" in result.content
+        )
+        answer_rank = next(
+            index for index, result in enumerate(results) if "answer_b9d9150e_2" in result.content
+        )
+        assert answer_rank <= distractor_rank + 1
 
     async def test_traces_query(self, fabric: MemoryFabric) -> None:
         """query() should emit a Pathlight trace with result count."""
@@ -2349,3 +2953,204 @@ class TestHandoff:
         summary = await fabric.handoff_summary(session_id="agent-2")
         fabric.session_manager.handoff_summary.assert_called_once_with("agent-2")
         assert summary["event_count"] == 7
+
+
+class TestCoordinationAPI:
+    """Tests for MemoryFabric coordination convenience methods."""
+
+    async def test_coordinate_methods_write_projected_parent_and_worker_events(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """MemoryFabric should expose the high-level coordination workflow."""
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        fabric.graph = AsyncMock()
+        fabric.tracer = AsyncMock()
+
+        await fabric.coordinate_start_mission("auth-main", objective="Ship auth refactor", actor="lead")
+        await fabric.coordinate_create_worker("auth-main", "auth-api", actor="lead")
+        finding = await fabric.coordinate_report_finding(
+            "auth-main",
+            "auth-api",
+            summary="API failures trace to expired JWKS cache handling.",
+            actor="auth-api-agent",
+            evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
+            claim_key="auth.failure.cause",
+            claim_value="expired-jwks-cache",
+        )
+        await fabric.coordinate_review_finding("auth-main", finding.finding_id or "", status="accepted", actor="lead")
+        await fabric.coordinate_promote_finding("auth-main", finding.finding_id or "", actor="lead")
+
+        brief = await fabric.coordinate_brief("auth-main")
+
+        assert isinstance(brief, CoordinationBrief)
+        assert brief.accepted_findings[0].finding_id == finding.finding_id
+        assert fabric.graph.upsert_extraction.await_count == 5
+
+    async def test_coordinate_checkout_returns_accepted_state_only(self, tmp_path: Path) -> None:
+        """MemoryFabric should expose accepted coordination checkout for prompt injection."""
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        fabric.graph = AsyncMock()
+        fabric.tracer = AsyncMock()
+
+        await fabric.coordinate_start_mission("auth-main", objective="Ship auth refactor", actor="lead")
+        await fabric.coordinate_create_worker("auth-main", "auth-api", actor="lead")
+        await fabric.coordinate_create_worker("auth-main", "auth-ui", actor="lead")
+        finding = await fabric.coordinate_report_finding(
+            "auth-main",
+            "auth-api",
+            summary="API failures trace to expired JWKS cache handling.",
+            actor="auth-api-agent",
+        )
+        await fabric.coordinate_report_finding(
+            "auth-main",
+            "auth-ui",
+            summary="UI refresh handling is missing retry state.",
+            actor="auth-ui-agent",
+        )
+        await fabric.coordinate_review_finding("auth-main", finding.finding_id or "", status="accepted", actor="lead")
+        await fabric.coordinate_promote_finding("auth-main", finding.finding_id or "", actor="lead")
+
+        checkout = await fabric.coordinate_checkout("auth-main")
+
+        assert checkout.accepted_findings[0].finding_id == finding.finding_id
+        assert checkout.pending_findings == []
+        assert checkout.excluded_pending_count == 1
+
+    async def test_coordinate_brief_uses_configured_local_semantic_conflict_provider(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """MemoryFabric should pass the configured semantic adapter into coordination state."""
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        fabric.settings = Settings(_env_file=None, coordination_semantic_conflict_provider="lexical")
+        fabric.graph = AsyncMock()
+        fabric.tracer = AsyncMock()
+
+        await fabric.coordinate_start_mission("auth-main", objective="Ship auth refactor", actor="lead")
+        await fabric.coordinate_create_worker("auth-main", "auth-api", actor="lead")
+        await fabric.coordinate_create_worker("auth-main", "auth-ui", actor="lead")
+        await fabric.coordinate_report_finding(
+            "auth-main",
+            "auth-api",
+            summary="Token refresh retry is enabled in auth middleware.",
+            actor="auth-api-agent",
+        )
+        await fabric.coordinate_report_finding(
+            "auth-main",
+            "auth-ui",
+            summary="Token refresh retry is disabled in browser session handling.",
+            actor="auth-ui-agent",
+        )
+
+        brief = await fabric.coordinate_brief("auth-main")
+
+        assert brief.conflicts[0].conflict_type == "semantic"
+        assert brief.conflicts[0].reason == "local_lexical_contradiction:disabled/enabled"
+
+    async def test_coordinate_performance_ledger_returns_worker_metrics(self, tmp_path: Path) -> None:
+        """MemoryFabric should expose replay-backed coordination worker metrics."""
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        fabric.graph = AsyncMock()
+        fabric.tracer = AsyncMock()
+
+        await fabric.coordinate_start_mission("auth-main", objective="Ship auth refactor", actor="lead")
+        await fabric.coordinate_create_worker("auth-main", "auth-api", actor="lead")
+        finding = await fabric.coordinate_report_finding(
+            "auth-main",
+            "auth-api",
+            summary="API failures trace to expired JWKS cache handling.",
+            actor="auth-api-agent",
+            evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
+        )
+        await fabric.coordinate_review_finding("auth-main", finding.finding_id or "", status="accepted", actor="lead")
+        await fabric.coordinate_promote_finding("auth-main", finding.finding_id or "", actor="lead")
+
+        ledger = await fabric.coordinate_performance_ledger("auth-main")
+
+        assert ledger.worker("auth-api").accepted_findings == 1
+        assert ledger.worker("auth-api").test_backed_findings == 1
+
+    async def test_coordinate_create_handoff_projects_parent_event(self, tmp_path: Path) -> None:
+        """MemoryFabric should expose final coordination handoff creation."""
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        fabric.graph = AsyncMock()
+        fabric.tracer = AsyncMock()
+
+        await fabric.coordinate_start_mission("auth-main", objective="Ship auth refactor", actor="lead")
+        handoff = await fabric.coordinate_create_handoff(
+            "auth-main",
+            summary="Auth mission complete.",
+            next_steps=["Release branch"],
+            risks=["Token cache metrics are sparse"],
+            actor="lead",
+        )
+
+        assert handoff.event.type == "coordination.handoff.created"
+        assert handoff.event.payload["next_steps"] == ["Release branch"]
+        assert handoff.event.payload["risks"] == ["Token cache metrics are sparse"]
+        assert fabric.graph.upsert_extraction.await_count == 2
+
+    async def test_coordinate_approval_packet_and_apply_decisions(self, tmp_path: Path) -> None:
+        """MemoryFabric should expose remote approval packet and application helpers."""
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        fabric.graph = AsyncMock()
+        fabric.tracer = AsyncMock()
+
+        await fabric.coordinate_start_mission("auth-main", objective="Ship auth refactor", actor="lead")
+        await fabric.coordinate_create_worker("auth-main", "auth-api", actor="lead")
+        finding = await fabric.coordinate_report_finding(
+            "auth-main",
+            "auth-api",
+            summary="Expired JWKS cache causes API failures.",
+            actor="auth-api-agent",
+            evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
+        )
+
+        packet = await fabric.coordinate_approval_packet("auth-main")
+        result = await fabric.coordinate_apply_approval_decisions(
+            "auth-main",
+            [{"finding_id": finding.finding_id, "status": "accepted", "rationale": "Command-backed.", "promote": True}],
+            actor="reviewer",
+        )
+
+        assert packet.findings[0].finding_id == finding.finding_id
+        assert result.reviewed_count == 1
+        assert result.promoted_count == 1
+        assert fabric.graph.upsert_extraction.await_count == 5
+
+    async def test_coordinate_record_detected_conflicts_projects_source_state_conflict(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """MemoryFabric should materialize deterministic conflicts for graph projection."""
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        fabric.graph = AsyncMock()
+        fabric.tracer = AsyncMock()
+
+        await fabric.coordinate_start_mission("auth-main", objective="Ship auth refactor", actor="lead")
+        await fabric.coordinate_create_worker("auth-main", "auth-api", actor="lead")
+        await fabric.coordinate_create_worker("auth-main", "auth-ui", actor="lead")
+        await fabric.coordinate_report_finding(
+            "auth-main",
+            "auth-api",
+            summary="API worker saw one auth config snapshot.",
+            actor="auth-api-agent",
+            evidence=[{"kind": "file", "reference": "src/auth/config.py", "source_sha256": "a" * 64}],
+        )
+        await fabric.coordinate_report_finding(
+            "auth-main",
+            "auth-ui",
+            summary="UI worker saw another auth config snapshot.",
+            actor="auth-ui-agent",
+            evidence=[{"kind": "file", "reference": "src/auth/config.py", "source_sha256": "b" * 64}],
+        )
+
+        results = await fabric.coordinate_record_detected_conflicts("auth-main", actor="zaxy")
+
+        assert len(results) == 1
+        assert results[0].event.payload["conflict_type"] == "source_state"
+        extraction = fabric.graph.upsert_extraction.await_args_list[-1].args[0]
+        conflict = next(entity for entity in extraction.entities if entity.entity_type == "conflict")
+        assert conflict.properties["source_reference"] == "src/auth/config.py"
+        assert fabric.graph.upsert_extraction.await_count == 6

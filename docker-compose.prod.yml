@@ -1,5 +1,6 @@
 services:
   neo4j:
+    profiles: ["neo4j"]
     image: neo4j:5.26-community
     ports:
       - "127.0.0.1:7474:7474"
@@ -30,12 +31,12 @@ services:
       dockerfile: Dockerfile
     environment:
       ZAXY_ENV: production
-      NEO4J_URI: "${NEO4J_URI:-bolt://neo4j:7687}"
-      NEO4J_USER: "${NEO4J_USER:-neo4j}"
-      NEO4J_PASSWORD_FILE: /run/secrets/neo4j_password
-      NEO4J_DATABASE: "${NEO4J_DATABASE:-neo4j}"
-      NEO4J_CA_CERT: "${NEO4J_CA_CERT:-/ssl/bolt/trusted/public.crt}"
-      NEO4J_TRUST_ALL: "${NEO4J_TRUST_ALL:-false}"
+      PROJECTION_BACKEND: "${PROJECTION_BACKEND:-embedded}"
+      EMBEDDED_GRAPH_PATH: "${EMBEDDED_GRAPH_PATH:-/app/.eventloom/projections/embedded.kuzu}"
+      LATTICEDB_PATH: "${LATTICEDB_PATH:-/app/.eventloom/projections/memory.latticedb}"
+      NEO4J_AUTO_START: "${NEO4J_AUTO_START:-false}"
+      PGGRAPH_DSN: "${PGGRAPH_DSN:-postgresql://postgres:postgres@pggraph:5432/zaxy}"
+      PGGRAPH_AUTO_START: "${PGGRAPH_AUTO_START:-false}"
       EVENTLOOM_PATH: /app/.eventloom
       EVENTLOOM_THREAD: "${EVENTLOOM_THREAD:-default}"
       PATHLIGHT_URL: "${PATHLIGHT_URL:-http://pathlight-collector:4100}"
@@ -56,6 +57,35 @@ services:
       OPENAI_BASE_URL: "${OPENAI_BASE_URL:-https://api.openai.com/v1}"
       OPENAI_API_KEY_FILE: /run/secrets/openai_api_key
     secrets:
+      - mcp_admin_token
+      - mcp_remote_auth_token
+      - openai_api_key
+      - pathlight_access_token
+    volumes:
+      - eventloom_data:/app/.eventloom
+    healthcheck:
+      test: ["CMD", "zaxy", "status"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+
+  zaxy-neo4j:
+    profiles: ["neo4j"]
+    extends:
+      service: zaxy
+    environment:
+      ZAXY_ENV: production
+      PROJECTION_BACKEND: neo4j
+      NEO4J_URI: "${NEO4J_URI:-bolt://neo4j:7687}"
+      NEO4J_USER: "${NEO4J_USER:-neo4j}"
+      NEO4J_PASSWORD_FILE: /run/secrets/neo4j_password
+      NEO4J_DATABASE: "${NEO4J_DATABASE:-neo4j}"
+      NEO4J_CA_CERT: "${NEO4J_CA_CERT:-/ssl/bolt/trusted/public.crt}"
+      NEO4J_TRUST_ALL: "${NEO4J_TRUST_ALL:-false}"
+      NEO4J_AUTO_START: "false"
+    secrets:
       - neo4j_password
       - mcp_admin_token
       - mcp_remote_auth_token
@@ -67,13 +97,6 @@ services:
     depends_on:
       neo4j:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "zaxy", "status"]
-      interval: 10s
-      timeout: 5s
-      start_period: 10s
-      retries: 3
-    restart: unless-stopped
 
 secrets:
   neo4j_auth:
