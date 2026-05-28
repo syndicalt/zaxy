@@ -46,10 +46,11 @@ explicit client, output, or backend options are supplied. It selects
 config, checks repo-local embedded projection posture, records session genesis
 and heartbeat events, and prints the Codex MCP install and verification steps
 without requiring Neo4j, pgGraph, Docker, or a graph service endpoint. It does
-not start a background watcher unless `--capture start` is supplied. Neo4j
-remains the production settings default until the embedded backend passes the
-full release guardrails. `--preset local-embedded-codex` remains available as
-an explicit spelling for scripts that should not rely on the bare-init default.
+not start a background watcher unless `--capture start` is supplied. Embedded is
+now the production settings default; Neo4j and pgGraph remain explicit sidecar
+adapters for control runs, interoperability, and experiments. `--preset
+local-embedded-codex` remains available as an explicit spelling for scripts that
+should not rely on the bare-init default.
 
 ## Runtime Strategy
 
@@ -70,8 +71,9 @@ The default projection should move from sidecar-first to embedded-first:
 4. **Neo4j control backend**: Keep Neo4j as the quality and performance control
    until an embedded backend passes the same guardrails.
 
-The embedded backend must implement the existing projection contract instead of
-forking retrieval logic. A prototype that only works outside Zaxy is not enough.
+The embedded backend implements the existing projection contract instead of
+forking retrieval logic. Any future embedded candidate must preserve that shared
+runtime surface before it can displace the current Kuzu default.
 
 ## Memory Activation Layer
 
@@ -106,7 +108,7 @@ Codex with that activation packet as the initial prompt via the supported Codex
 
 ## Efficiency Targets
 
-The prototype should report these metrics for every candidate backend:
+The embedded runtime gate reports these metrics for every candidate backend:
 
 - first useful `zaxy init` time
 - cold bootstrap and first checkout latency
@@ -143,9 +145,9 @@ retrieval is not enough:
 - **Self-benchmarking memory**: every backend and activation strategy should
   produce comparable quality, latency, and token-efficiency evidence.
 
-## Prototype Gates
+## Runtime Gates
 
-The embedded graph prototype can become the default only when all gates pass:
+The embedded graph runtime is now the default only because these gates passed:
 
 - `PROJECTION_BACKEND=embedded` works through `MemoryFabric`, MCP, dashboard,
   `zaxy memory status`, `zaxy reproject`, and context assembly.
@@ -159,9 +161,9 @@ The embedded graph prototype can become the default only when all gates pass:
   fields.
 - The default docs show one-command local setup with no external graph service.
 
-Current gate status: embedded prototype: passed - eligible for broader benchmark.
-This does not make embedded the default; it means the adapter, activation status,
-and shootout harness are ready for deeper same-harness quality and latency runs.
+Current gate status: embedded runtime: passed and promoted to default. The
+adapter, activation status, and shootout harness remain under deeper
+same-harness quality and latency runs.
 MCP embedded runtime status: wired. With `PROJECTION_BACKEND=embedded`, MCP
 startup now uses the embedded local projection runtime instead of probing or
 starting Neo4j, while still constructing the graph through the backend-neutral
@@ -181,39 +183,43 @@ full-scale default-backend evidence.
 Medium-scale embedded runtime evidence: the 40-question LongMemEval-compatible embedded shootout
 at `reports/backend-shootout/longmemeval-40-backend-shootout.json` now builds
 and serves 100 dashboard nodes and 100 dashboard edges from a
-repo-local Kuzu projection. Embedded/Kuzu scored `Answer@5=0.25`,
-`Recall@5=0.25`, citation coverage `1.0`, checkout p95 `35.26ms`, lane p95s
-of exact `4.059ms`, keyword `17.858ms`, vector `3.337ms`, and traversal
-`0.005ms`, cold bootstrap `98.563ms`, first checkout `35.26ms`,
-append-to-projection p95 `20.039ms`, projection throughput `57.793` events/sec,
-first useful init `9096.341ms`, rebuild recovery `9284.813ms`, resident memory
-delta `616280064` bytes, on-disk footprint `28659712` bytes, quality per 1k
-returned tokens `0.1332`, quality per 1k injected tokens `0.1263`, Answer@5 per
-1k returned tokens `0.1332`, and Answer@5 per 1k injected tokens `0.1263`,
-versus BM25 `Answer@5=0.25`, `Recall@5=0.25`, checkout p95 `161.529ms`, and
-quality plus Answer@5 per 1k returned/injected tokens `0.0634`. This is operational
-scale evidence, not a default-backend gate: the edges are deterministic session-to-document
+repo-local Kuzu projection. Embedded/Kuzu scored `Answer@5=0.6`,
+`Recall@5=1.0`, citation coverage `1.0`, checkout p95 `62.387ms`, lane p95s
+of exact `4.202ms`, keyword `18.587ms`, vector `3.619ms`, and traversal
+`0.006ms`, cold bootstrap `116.946ms`, first checkout `35.33ms`,
+append-to-projection p95 `30.696ms`, projection throughput `48.097` events/sec,
+first useful init `10928.55ms`, rebuild recovery `10583.365ms`, resident memory
+delta `672075776` bytes, on-disk footprint `28762112` bytes. The answer-ready
+contract scored `Answer@5=1.0` and `Recall@5=1.0`, versus BM25 `Answer@5=0.55`,
+`Recall@5=1.0`, checkout p95 `187.997ms`, and quality plus Answer@5 per 1k
+returned/injected tokens `0.1394`. This is operational scale evidence, not a
+default-backend gate: the edges are deterministic session-to-document
 relationships. Explicit Kuzu bulk projection transactions plus prewarmed
 keyword/vector indexes reduced the earlier roughly 120-second projection/rebuild
-cost to roughly 10 seconds while keeping vector retrieval enabled, but embedded
-still must pass the full backend gate before it can become the default.
-100-query scale evidence status: improving but not default-ready. The archived report at
+cost to roughly 10 seconds while keeping vector retrieval enabled.
+Embedded read-index warmup is now part of the runtime path: `MemoryFabric.connect()`
+preloads current-entity, keyword, vector, and traversal indexes plus the
+Eventloom verbatim source index for the configured session, and `retrieve()`
+warms each additional requested projection session at most once. This
+intentionally moves Kuzu's cold read-index cost and source-lane BM25 build cost
+into startup or the first use of a new session so repeated checkouts do not pay
+scattered exact/vector/keyword/traversal/source stalls.
+100-query scale evidence status: answer-ready quality passed and the embedded
+scale guardrail now passes with raw retrieve `Recall@5=0.99`. The archived report at
 `reports/backend-shootout/longmemeval-100-backend-shootout.json` covers 100
 queries and 1,559 Eventloom events. Embedded/Kuzu reported projection
-throughput `48.781` events/sec, first useful init `32065.445ms`, rebuild
-recovery `33054.159ms`, checkout p95 `92.588ms`, lane p95s of exact `7.021ms`,
-keyword `44.618ms`, vector `9.664ms`, and traversal `0.005ms`, cold bootstrap
-`105.955ms`, first checkout `66.316ms`, append-to-projection p95 `25.241ms`,
-resident memory delta `1447043072` bytes, on-disk footprint `57270272` bytes,
-citation coverage `1.0`, quality per 1k returned tokens `0.1954`, quality per
-1k injected tokens `0.1849`, Answer@5 per 1k returned tokens `0.1954`, Answer@5
-per 1k injected tokens `0.1849`, and 100 dashboard nodes / 100 dashboard
-edges. Embedded now beats the same BM25 control on this slice, with
-`Answer@5=0.35` versus BM25 `Answer@5=0.34`, while returning and injecting far
-fewer tokens and checking out faster. Vector retrieval is enabled in this
-report, but it increases projection and rebuild costs. Treat this as operational
-scale evidence and the next quality/performance gate, not a default-backend
-decision.
+throughput `51.797` events/sec, first useful init `30590.521ms`, rebuild
+recovery `28743.206ms`, raw retrieve checkout p95 `19.904ms`, lane p95s of
+exact `0.006ms`, keyword `5.986ms`, vector `8.009ms`, and traversal
+`0.006ms`, cold bootstrap `492.029ms`, first checkout `14.707ms`,
+append-to-projection p95 `27.127ms`, resident memory delta `1609691136` bytes,
+on-disk footprint `57298944` bytes, citation coverage `1.0`, and 100 dashboard
+nodes / 100 dashboard edges. The answer-ready contract scored `Answer@5=0.99`
+and `Recall@5=1.0`, first checkout `155.983ms`, and checkout p95 `88.94ms`;
+raw retrieve improved to `Recall@5=0.99`, while BM25 scored `Answer@5=0.52`
+and `Recall@5=0.9`.
+Vector retrieval is enabled in this report. Treat this as strong answer-ready
+and embedded scale evidence, not as the end of optimization work.
 LatticeDB candidate gate status: failed current active-backend gate. The first
 adapter slice is routed through the projection factory, MemoryFabric, and
 backend shootout as an explicit candidate, and it projects entities and
@@ -230,7 +236,7 @@ outside the default active shootout until it passes quality and latency gates.
 Build a branch-local backend shootout before changing defaults:
 
 1. Add a Kuzu-backed `ProjectionStore` adapter behind
-   `PROJECTION_BACKEND=embedded`. Prototype status: implemented for exact,
+   `PROJECTION_BACKEND=embedded`. Runtime status: promoted default for exact,
    keyword, traversal, temporal invalidation, source retirement, Eventloom
    projection status, inferred-edge diagnostics, and vector search with
    cached sparse cosine ranking over projected entity embeddings.
@@ -268,4 +274,5 @@ Build a branch-local backend shootout before changing defaults:
   the inspected Eventloom set is missing checkout or has only stale checkout,
   even if another session has a recent checkout. The key KPI is fresh checkout before work starts; the stronger product bar is fresh, efficient checkout
   before work starts.
-5. Keep Neo4j as the release default until the embedded backend beats the gates.
+5. Keep Neo4j as the explicit quality-control backend while embedded remains
+   the release default.

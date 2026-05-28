@@ -43,6 +43,8 @@ def main() -> None:
         {
             "query": case.query,
             "expected_terms": list(case.expected_terms),
+            "identity_terms": list(case.identity_terms),
+            "source_terms": list(case.source_terms),
         }
         for case in cases
     ]

@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zaxy.dev/schemas/coordinationbench/result.schema.json",
+  "title": "CoordinationBench Result",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "name",
+    "adapter_contract",
+    "workload_fingerprint",
+    "manifest",
+    "cases"
+  ],
+  "properties": {
+    "name": {
+      "enum": ["mem0", "agent_memory", "activegraph"]
+    },
+    "adapter_contract": {
+      "const": "coordinationbench-v1"
+    },
+    "workload_fingerprint": {
+      "type": "string",
+      "minLength": 1
+    },
+    "generated_at_utc": {
+      "type": "string"
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "name",
+        "display_name",
+        "adapter_contract",
+        "adapter_version",
+        "install_command",
+        "run_command",
+        "source_url",
+        "source_ref"
+      ],
+      "properties": {
+        "name": {
+          "enum": ["mem0", "agent_memory", "activegraph"]
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "adapter_contract": {
+          "const": "coordinationbench-v1"
+        },
+        "adapter_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "install_command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "run_command": {
+          "oneOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          ]
+        },
+        "source_url": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_ref": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["case_id"],
+        "properties": {
+          "case_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "accepted_findings": {
+            "type": "array"
+          },
+          "stale_findings": {
+            "type": "array"
+          },
+          "conflicts": {
+            "type": "array"
+          },
+          "returned_text": {
+            "type": "string"
+          },
+          "injected_text": {
+            "type": "string"
+          },
+          "latency_ms": {
+            "type": "number"
+          }
+        }
+      }
+    }
+  }
+}

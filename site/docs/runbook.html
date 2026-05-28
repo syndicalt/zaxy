@@ -22,18 +22,22 @@
       <p>Zaxy is an event-sourced temporal knowledge graph fabric for AI agent memory. It consists of three layers:</p>
       <ol>
         <li><strong>Eventloom</strong> (bottom): Immutable append-only JSONL logs with SHA-256 hash chains.</li>
-        <li><strong>Neo4j</strong> (core): Bi-temporal knowledge graph with entity/relationship validity windows.</li>
+        <li><strong>Embedded Kuzu projection</strong> (default): Repo-local bi-temporal graph projection with entity/relationship validity windows.</li>
         <li><strong>Pathlight</strong> (optional top layer): Observability, tracing, and debugging dashboard.</li>
       </ol>
+      <p>Neo4j and pgGraph are optional sidecar projection backends. Use them only when you explicitly need same-harness control runs or existing infrastructure interop. Install Neo4j support with <code>zaxy-memory[neo4j]</code>. Install Pathlight tracing support with <code>zaxy-memory[pathlight]</code> before setting <code>PATHLIGHT_ENABLED=true</code>.</p>
       <h2 id="quick-start">Quick Start</h2>
-      <pre><code class="language-bash"># Start infrastructure
-docker compose up -d neo4j
-
-# Install Zaxy
+      <pre><code class="language-bash"># Install Zaxy
 pip install -e &quot;.[dev]&quot;
 
-# Verify connectivity
-python -m zaxy status
+# Initialize local memory with the embedded graph profile
+python -m zaxy init
+
+# The generated local profile should select the no-sidecar backend
+grep -q &quot;PROJECTION_BACKEND=embedded&quot; .env.local
+
+# Verify local Eventloom, capture, and embedded graph posture
+python -m zaxy doctor --eventloom-path .eventloom
 
 # Run tests
 pytest
@@ -55,7 +59,7 @@ python -m zaxy serve --transport sse --port 8080</code></pre>
 python -m zaxy status
 
 # Or manually:
-curl http://localhost:7474  # Neo4j HTTP
+python -m zaxy memory status --eventloom-path .eventloom --graph
 
 # Only when PATHLIGHT_ENABLED=true:
 curl http://localhost:4100/health  # Pathlight collector
@@ -73,7 +77,7 @@ python -m zaxy replay .eventloom/work.jsonl --json
 # Write a standalone HTML viewer for one log or an Eventloom directory
 python -m zaxy viewer .eventloom --output eventloom-viewer.html
 
-# Rebuild Neo4j projection after extractor changes
+# Rebuild the selected projection after extractor changes
 python -m zaxy reproject .eventloom/default.jsonl --session-id default
 
 # Audit identity and citation safety before compacting
@@ -142,9 +146,14 @@ python -m zaxy compact .eventloom/work.jsonl --snapshot-every 10000</code></pre>
             <td><strong>Critical</strong> — immutable source of truth</td>
           </tr>
           <tr>
-            <td>Neo4j database</td>
-            <td>Docker volume <code>neo4j_data</code></td>
-            <td>High — can be rebuilt from Eventloom</td>
+            <td>Embedded Kuzu projection</td>
+            <td><code>.eventloom/projections/embedded.kuzu</code></td>
+            <td>Medium — can be rebuilt from Eventloom</td>
+          </tr>
+          <tr>
+            <td>Optional sidecar projection</td>
+            <td>Backend-specific volume or service</td>
+            <td>Medium — can be rebuilt from Eventloom</td>
           </tr>
           <tr>
             <td>Pathlight traces</td>
@@ -158,7 +167,7 @@ python -m zaxy compact .eventloom/work.jsonl --snapshot-every 10000</code></pre>
   --root . \
   --output-dir /backups/zaxy \
   --name &quot;zaxy-$(date -u +%Y%m%dT%H%M%SZ)&quot;</code></pre>
-      <p>This archives <code>.eventloom/</code> and non-secret operational docs/config templates, excludes <code>secrets/</code> and <code>.certs/</code>, and writes a <code>.sha256</code> manifest next to the archive. Neo4j can be rebuilt from Eventloom; take a separate Neo4j dump only when fast point-in-time restore matters more than minimizing backup surface.</p>
+      <p>This archives <code>.eventloom/</code> and non-secret operational docs/config templates, excludes <code>secrets/</code> and <code>.certs/</code>, and writes a <code>.sha256</code> manifest next to the archive. Graph projections can be rebuilt from Eventloom; back up optional sidecar stores only when fast point-in-time restore matters more than minimizing backup surface.</p>
       <h3 id="recovery-procedures">Recovery Procedures</h3>
       <pre><code class="language-bash">scripts/restore.sh \
   --archive /backups/zaxy/zaxy-20260506T120000Z.tar.gz \
@@ -197,13 +206,17 @@ python -m zaxy compact .eventloom/work.jsonl --snapshot-every 10000</code></pre>
             <td>&gt;50GB</td>
           </tr>
           <tr>
-            <td>Neo4j disk usage</td>
+            <td>Projection disk usage</td>
             <td>&lt;80%</td>
             <td>&gt;90%</td>
           </tr>
         </tbody>
       </table>
-      <h3 id="neo4j-monitoring">Neo4j Monitoring</h3>
+      <h3 id="graph-projection-monitoring">Graph Projection Monitoring</h3>
+      <p>For the default embedded backend:</p>
+      <pre><code class="language-bash">python -m zaxy memory status --eventloom-path .eventloom --graph --json
+python -m zaxy memory inferred-status --session-id default --json</code></pre>
+      <p>For the optional Neo4j sidecar:</p>
       <pre><code class="language-cypher">// Check database size
 CALL dbms.database.state(&quot;neo4j&quot;) YIELD status;
 
@@ -262,23 +275,32 @@ MATCH (e:Entity) WHERE e.valid_to IS NULL RETURN count(e) AS active_entities;</c
       <ol>
         <li>If corrupted disk: Check filesystem integrity (<code>fsck</code>, SMART tests).</li>
       </ol>
-      <h3 id="neo4j-connection-refused">&quot;Neo4j connection refused&quot;</h3>
+      <h3 id="graph-projection-unavailable">&quot;Graph projection unavailable&quot;</h3>
       <ol>
-        <li>Check container status:</li>
+        <li>For the default embedded backend, check the repo-local projection path:</li>
       </ol>
-      <pre><code class="language-bash">   docker compose ps neo4j
+      <pre><code class="language-bash">   python -m zaxy status --projection-backend embedded
+   python -m zaxy memory status --eventloom-path .eventloom --graph --projection-backend embedded</code></pre>
+      <ol>
+        <li>Rebuild from Eventloom if the projection is stale or missing:</li>
+      </ol>
+      <pre><code class="language-bash">   python -m zaxy reproject .eventloom/default.jsonl --session-id default --projection-backend embedded</code></pre>
+      <ol>
+        <li>For the optional Neo4j sidecar, install the extra and check container status:</li>
+      </ol>
+      <pre><code class="language-bash">   pip install &quot;zaxy-memory[neo4j]&quot;
+   docker compose ps neo4j
    docker compose logs neo4j</code></pre>
-      <ol>
-        <li>Check memory: Neo4j needs at least 2GB heap.</li>
-      </ol>
-      <pre><code class="language-bash">   docker compose exec neo4j neo4j-admin memrec</code></pre>
-      <ol>
-        <li>Check ports:</li>
-      </ol>
-      <pre><code class="language-bash">   netstat -tlnp | grep 7687</code></pre>
+      <p>Check memory and ports only when that sidecar is selected:</p>
+      <pre><code class="language-bash">   docker compose exec neo4j neo4j-admin memrec
+   netstat -tlnp | grep 7687</code></pre>
       <h3 id="performance-degradation">Performance Degradation</h3>
       <ol>
-        <li><strong>Query slow?</strong> Check Neo4j query plan:</li>
+        <li><strong>Query slow?</strong> Check projection status and benchmark the selected backend:</li>
+      </ol>
+      <pre><code class="language-bash">   python -m zaxy memory status --eventloom-path .eventloom --graph --json</code></pre>
+      <ol>
+        <li><strong>Optional Neo4j query slow?</strong> Check Neo4j query plan:</li>
       </ol>
       <pre><code class="language-cypher">   PROFILE MATCH (e:Entity {name: &quot;X&quot;}) RETURN e;</code></pre>
       <ol>
@@ -286,30 +308,31 @@ MATCH (e:Entity) WHERE e.valid_to IS NULL RETURN count(e) AS active_entities;</c
       </ol>
       <pre><code class="language-bash">   iostat -x 1</code></pre>
       <ol>
-        <li><strong>Graph upsert slow?</strong> Check for missing indexes:</li>
+        <li><strong>Graph upsert slow?</strong> Check for missing indexes in the selected backend:</li>
       </ol>
       <pre><code class="language-cypher">   SHOW INDEXES;</code></pre>
       <h2 id="scaling-considerations">Scaling Considerations</h2>
       <h3 id="current">Current</h3>
       <ul>
         <li>One Eventloom file per session/agent</li>
-        <li>Single Neo4j instance</li>
+        <li>Repo-local embedded Kuzu projection by default</li>
         <li>Optional Pathlight tracing</li>
+        <li>Embedded read-index warmup and hot caches for current entities, exact lookup, keyword, vector, traversal, temporal snapshots, and verbatim source lanes</li>
       </ul>
       <h3 id="future-scale-out">Future Scale-Out</h3>
       <ul>
-        <li>Neo4j Aura or causal clustering</li>
+        <li>Optional Neo4j Aura, pgGraph/PostgreSQL, or future ContinuityDB-backed projection for teams that need external infrastructure</li>
         <li>Kafka/NATS for event log aggregation</li>
-        <li>Add Redis hot cache between Eventloom and Neo4j</li>
+        <li>Keep embedded read-index warmup and hot caches benchmark-gated: add or retain cache layers only when release reports show lower checkout latency or better token-efficient retrieval without weakening citations, temporal semantics, or projection integrity diagnostics</li>
       </ul>
       <h2 id="security">Security</h2>
       <h3 id="encryption">Encryption</h3>
       <ul>
-        <li><strong>At rest</strong>: Neo4j Enterprise supports native encryption. For Community, use encrypted volumes (LUKS, AWS EBS encryption).</li>
-        <li><strong>In transit</strong>: Use <code>bolt+s</code> (TLS) for Neo4j connections.</li>
+        <li><strong>At rest</strong>: Eventloom and embedded projection files should live on encrypted volumes for production workstations or servers.</li>
+        <li><strong>In transit</strong>: Use <code>bolt+s</code> (TLS) only when using the optional Neo4j sidecar.</li>
       </ul>
       <h3 id="access-control">Access Control</h3>
-      <pre><code class="language-bash"># Neo4j: Create read-only user for agents
+      <pre><code class="language-bash"># Optional Neo4j sidecar: create read-only user for agents
 CREATE USER agent_reader SET PASSWORD &#x27;secure_password&#x27;;
 GRANT ROLE reader TO agent_reader;</code></pre>
       <h3 id="secrets-management">Secrets Management</h3>
@@ -317,10 +340,13 @@ GRANT ROLE reader TO agent_reader;</code></pre>
       <pre><code class="language-bash"># Local production scaffold
 ./scripts/setup.sh --production
 
-# Starts Neo4j and Zaxy with Docker secrets from ./secrets/
+# Starts embedded-backed Zaxy with Docker secrets from ./secrets/
+docker compose -f docker-compose.prod.yml up -d
+
+# Optional Neo4j sidecar profile
 ./scripts/generate-certs.sh .certs
-docker compose -f docker-compose.prod.yml up -d</code></pre>
-      <p>Production mode rejects <code>NEO4J_PASSWORD=testpassword</code>. When using the generated custom CA, set <code>NEO4J_URI=bolt://...</code> with <code>NEO4J_CA_CERT</code> so the Neo4j driver enables encryption and trusts the mounted CA.</p>
+docker compose -f docker-compose.prod.yml --profile neo4j up -d zaxy-neo4j</code></pre>
+      <p>Production mode rejects <code>NEO4J_PASSWORD=testpassword</code> only when <code>PROJECTION_BACKEND=neo4j</code>. When using the generated custom CA for the optional Neo4j sidecar, set <code>NEO4J_URI=bolt://...</code> with <code>NEO4J_CA_CERT</code> so the Neo4j driver enables encryption and trusts the mounted CA.</p>
       <p>For external secret managers such as Vault or AWS Secrets Manager, write values to mounted files and set:</p>
       <pre><code class="language-bash">NEO4J_PASSWORD_FILE=/run/secrets/neo4j_password
 MCP_ADMIN_TOKEN_FILE=/run/secrets/mcp_admin_token
@@ -336,14 +362,14 @@ PATHLIGHT_ACCESS_TOKEN_FILE=/run/secrets/pathlight_access_token</code></pre>
       <ul>
         <li>Compact Eventloom logs</li>
         <li>Review and update extraction rules</li>
-        <li>Update Neo4j to latest patch version</li>
+        <li>Update optional sidecar backends to latest patch versions</li>
         <li>Run full integration test suite</li>
       </ul>
       <h3 id="quarterly">Quarterly</h3>
       <ul>
         <li>Performance benchmark regression test: <code>pytest tests/test_competitive_benchmarks.py --benchmark-only --no-cov</code></li>
-        <li>Frozen live retrieval benchmark: <code>scripts/live-benchmark.sh --embedding-provider openai --workload frozen --runs 1 --reset-graph</code></li>
-        <li>Representative retrieval benchmark suite: <code>scripts/live-benchmark.sh --embedding-provider openai --workload suite --subjects 100 --documents 250 --sessions 50 --runs 1 --reset-graph</code></li>
+        <li>Frozen live retrieval benchmark: <code>scripts/live-benchmark.sh --workload frozen --runs 1 --reset-graph</code></li>
+        <li>Representative retrieval benchmark suite: <code>scripts/live-benchmark.sh --workload suite --subjects 100 --documents 250 --sessions 50 --runs 1 --reset-graph</code></li>
         <li>Benchmark guardrail check: <code>zaxy benchmark-compare reports/benchmarks/live-benchmark.json --baseline reports/benchmarks/baseline-live-benchmark.json --max-p95-ms 500 --max-p99-ms 750</code></li>
         <li>Capacity planning review</li>
         <li>Security audit (dependency updates, key rotation)</li>
@@ -352,7 +378,7 @@ PATHLIGHT_ACCESS_TOKEN_FILE=/run/secrets/pathlight_access_token</code></pre>
       <p>Before promoting a build, run:</p>
       <pre><code class="language-bash">zaxy doctor --release-smoke
 scripts/release-check.sh --root .</code></pre>
-      <p>The release smoke check verifies the package version, changelog entry, publish workflow, and PyPI Trusted Publishing posture. The release gate runs <code>ruff</code>, <code>mypy</code>, the full coverage-gated pytest suite, Python artifact build/metadata validation, public site/documentation validation, deployment validation, backend shootout evidence, injected-token efficiency floors, and 100-query embedded scale validation. A release is not ready until all gates pass, the production <code>.env</code> points at TLS-enabled Neo4j, remote MCP/SSE bearer auth is configured, and secret files are not world-readable.</p>
+      <p>The release smoke check verifies the package version, changelog entry, publish workflow, and PyPI Trusted Publishing posture. The release gate runs <code>ruff</code>, <code>mypy</code>, the full coverage-gated pytest suite, Python artifact build/metadata validation, public site/documentation validation, deployment validation, backend shootout evidence, injected-token efficiency floors, and 100-query embedded scale validation. A release is not ready until all gates pass, the production <code>.env</code> selects the intended projection backend, optional Neo4j deployments use TLS-enabled Bolt with <code>zaxy-memory[neo4j]</code> installed, remote MCP/SSE bearer auth is configured, and secret files are not world-readable.</p>
       <h2 id="prometheus-alerts">Prometheus Alerts</h2>
       <pre><code class="language-yaml">groups:
   - name: zaxy-degraded-mode rules:
@@ -403,7 +429,7 @@ scripts/release-check.sh --root .</code></pre>
       <h3 id="escalation">Escalation</h3>
       <ul>
         <li><strong>Zaxy maintainers</strong>: GitHub Issues</li>
-        <li><strong>Neo4j support</strong>: neo4j.com/support</li>
+        <li><strong>Neo4j support</strong>: neo4j.com/support, when using the optional Neo4j sidecar</li>
         <li><strong>Pathlight issues</strong>: syndicalt/pathlight GitHub</li>
       </ul>
       <h2 id="reference">Reference</h2>
@@ -417,6 +443,16 @@ scripts/release-check.sh --root .</code></pre>
           </tr>
         </thead>
         <tbody>
+          <tr>
+            <td><code>PROJECTION_BACKEND</code></td>
+            <td><code>embedded</code></td>
+            <td>Projection backend: <code>embedded</code>, <code>neo4j</code>, <code>pggraph</code>, or <code>latticedb</code></td>
+          </tr>
+          <tr>
+            <td><code>EMBEDDED_GRAPH_PATH</code></td>
+            <td><code>.eventloom/projections/embedded.kuzu</code></td>
+            <td>Repo-local embedded Kuzu projection path</td>
+          </tr>
           <tr>
             <td><code>NEO4J_URI</code></td>
             <td><code>bolt://localhost:7687</code></td>
@@ -449,8 +485,8 @@ scripts/release-check.sh --root .</code></pre>
           </tr>
           <tr>
             <td><code>NEO4J_AUTO_START</code></td>
-            <td><code>true</code></td>
-            <td>Auto-start a local Docker Neo4j container for localhost development MCP startup</td>
+            <td><code>false</code></td>
+            <td>Auto-start a local Docker Neo4j container only when explicitly enabled with <code>PROJECTION_BACKEND=neo4j</code></td>
           </tr>
           <tr>
             <td><code>NEO4J_AUTO_START_IMAGE</code></td>
@@ -615,7 +651,7 @@ scripts/release-check.sh --root .</code></pre>
           <tr>
             <td><code>EMBEDDING_DIMENSION</code></td>
             <td><code>1536</code></td>
-            <td>Vector dimension; must match the Neo4j vector index</td>
+            <td>Vector dimension; must match the selected projection backend vector index</td>
           </tr>
           <tr>
             <td><code>OPENAI_API_KEY</code></td>

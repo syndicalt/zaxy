@@ -19,7 +19,7 @@
     <article class="doc-content">
       <h1 id="zaxy">Zaxy</h1>
       <p><strong>Event-sourced temporal knowledge graph fabric for AI agent memory.</strong></p>
-      <p>Zaxy replaces markdown files + vector DBs with a structured, replayable, bi-temporal memory system built on Eventloom and Neo4j, with optional Pathlight tracing.</p>
+      <p>Zaxy replaces markdown files + vector DBs with a structured, replayable, bi-temporal memory system built on Eventloom and an embedded Kuzu graph projection, with optional Neo4j, pgGraph, and Pathlight integrations. The plain install uses embedded Kuzu. Install <code>zaxy-memory[neo4j]</code> only for the optional Neo4j sidecar, and <code>zaxy-memory[pathlight]</code> only for Pathlight tracing.</p>
       <h2 id="quick-start">Quick Start</h2>
       <h3 id="five-minute-local-smoke-test">Five-minute local smoke test</h3>
       <pre><code class="language-bash"># Install the Zaxy CLI before generating MCP config. The distribution is
@@ -40,7 +40,7 @@ zaxy doctor --eventloom-path .eventloom</code></pre>
       <pre><code class="language-bash">zaxy init . --domain my-project --preset local-claude --infra check</code></pre>
       <p>For Hermes Agent:</p>
       <pre><code class="language-bash">zaxy ide-config hermes --install</code></pre>
-      <p>For repository development, use <code>pip install -e &quot;.[dev]&quot;</code>, <code>./scripts/setup.sh</code>, and <code>docker compose up -d</code>. Production setup writes Docker secret files under <code>./secrets/</code>; see <a href="docs/deployment.html">docs/deployment.md</a>.</p>
+      <p>For repository development, use <code>pip install -e &quot;.[dev]&quot;</code>, <code>./scripts/setup.sh</code>, and <code>zaxy status</code>. Start Docker sidecars only for integration tests or explicit backend comparisons. Production setup writes Docker secret files under <code>./secrets/</code>; see <a href="docs/deployment.html">docs/deployment.md</a>.</p>
       <h2 id="architecture">Architecture</h2>
       <pre><code>Agent (LangGraph / Any MCP Client)
     |
@@ -48,7 +48,7 @@ zaxy doctor --eventloom-path .eventloom</code></pre>
 MCP Server — memory_append / memory_query / memory_feedback / memory_replay / memory_invalidate
     |
     v
-Eventloom (immutable JSONL log)  →  Hybrid Extraction  →  Neo4j (temporal KG)
+Eventloom (immutable JSONL log)  →  Hybrid Extraction  →  Embedded Kuzu graph
     |                                                               |
     +—————— Optional Pathlight traces ———————————————→  Query Router
                                                               |
@@ -81,8 +81,8 @@ Eventloom (immutable JSONL log)  →  Hybrid Extraction  →  Neo4j (temporal KG
         <li><strong>Hybrid retrieval</strong>: Exact + keyword + vector + graph traversal with configurable fusion weights.</li>
         <li><strong>Session sharding</strong>: One Eventloom log per agent/session, with a shared graph.</li>
         <li><strong>MCP-native</strong>: Drop-in memory for any MCP-compatible agent framework over stdio or SSE.</li>
-        <li><strong>Observable</strong>: Optional Pathlight traces, breakpoints, and diff support.</li>
-        <li><strong>Hardened local defaults</strong>: bounded MCP inputs, safe session IDs, localhost-bound Neo4j ports, and optional admin token support for replay/invalidation.</li>
+        <li><strong>Observable</strong>: Optional Pathlight traces, breakpoints, and diff support via <code>zaxy-memory[pathlight]</code>.</li>
+        <li><strong>Hardened local defaults</strong>: bounded MCP inputs, safe session IDs, no-sidecar embedded graph projection, and optional admin token support for replay/invalidation.</li>
       </ul>
       <h2 id="project-structure">Project Structure</h2>
       <table>
@@ -102,8 +102,12 @@ Eventloom (immutable JSONL log)  →  Hybrid Extraction  →  Neo4j (temporal KG
             <td>Hybrid extraction engine + rule registry</td>
           </tr>
           <tr>
+            <td><code>src/zaxy/embedded_graph_store.py</code></td>
+            <td>Embedded Kuzu projection store</td>
+          </tr>
+          <tr>
             <td><code>src/zaxy/graph.py</code></td>
-            <td>Neo4j bi-temporal wrapper</td>
+            <td>Optional Neo4j bi-temporal wrapper via <code>zaxy-memory[neo4j]</code></td>
           </tr>
           <tr>
             <td><code>src/zaxy/query.py</code></td>
@@ -115,7 +119,7 @@ Eventloom (immutable JSONL log)  →  Hybrid Extraction  →  Neo4j (temporal KG
           </tr>
           <tr>
             <td><code>src/zaxy/trace.py</code></td>
-            <td>Pathlight observability hooks</td>
+            <td>Optional Pathlight observability hooks</td>
           </tr>
           <tr>
             <td><code>src/zaxy/core.py</code></td>
@@ -163,7 +167,7 @@ Eventloom (immutable JSONL log)  →  Hybrid Extraction  →  Neo4j (temporal KG
       <h2 id="development">Development</h2>
       <ul>
         <li><strong>Tests first</strong> (Karpathy rule). Every public function has a test.</li>
-        <li><strong>Unit tests</strong> mock Neo4j/Pathlight. <strong>Integration tests</strong> use Docker.</li>
+        <li><strong>Unit tests</strong> mock external services. <strong>Integration tests</strong> use Docker for optional sidecar backends.</li>
         <li><strong>Coverage gate: ≥90%</strong> enforced by CI.</li>
         <li><strong>Lint/format</strong>: <code>ruff</code>. <strong>Types</strong>: <code>mypy</code>.</li>
       </ul>
@@ -171,9 +175,8 @@ Eventloom (immutable JSONL log)  →  Hybrid Extraction  →  Neo4j (temporal KG
 pytest
 
 # Run integration tests (requires Docker)
-docker compose up -d neo4j-test
 ./scripts/generate-certs.sh .certs
-docker compose up -d neo4j-tls
+docker compose --profile integration up -d neo4j-test neo4j-tls
 pytest -m integration --no-cov
 
 # Lint and type-check
@@ -183,13 +186,15 @@ mypy src
 # Competitive retrieval benchmark harness
 pytest tests/test_competitive_benchmarks.py --benchmark-only --no-cov
 
-# Frozen live benchmark: markdown vs BM25 vs vector vs markdown+vector vs Zaxy
-scripts/live-benchmark.sh --embedding-provider openai --workload frozen --runs 1 --reset-graph
+# Frozen live benchmark: markdown vs BM25 vs vector vs markdown+vector vs embedded Zaxy
+# Uses deterministic hash embeddings and embedded projection by default.
+scripts/live-benchmark.sh --workload frozen --runs 1 --reset-graph
 
 # Representative benchmark suite: temporal memory + docs + transcripts + mixed context
-scripts/live-benchmark.sh --embedding-provider openai --workload suite --subjects 100 --documents 250 --sessions 50 --runs 1 --reset-graph
+scripts/live-benchmark.sh --workload suite --subjects 100 --documents 250 --sessions 50 --runs 1 --reset-graph
 
 # LongMemEval-compatible memory benchmark and BM25 comparison
+# Plain benchmark commands use the embedded projection backend by default.
 zaxy benchmark --embedding-provider hash --workload longmemeval \
   --dataset .cache/zaxy/benchmarks/longmemeval_oracle.json \
   --questions 100 --runs 1 --limit 10 --zaxy-backend checkout \

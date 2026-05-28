@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-from zaxy import CrewAIMemoryAdapter, create_crewai_memory_step
+from zaxy import CrewAIMemoryAdapter, create_crewai_coordination_step, create_crewai_memory_step
 from zaxy.core import Context, ContextAssembly
 from zaxy.integrations import list_framework_integration_specs
 
@@ -110,6 +110,26 @@ async def test_crewai_memory_step_returns_prompt_text() -> None:
 
     assert prompt == "Use CrewAI memory."
     assert calls[0][0] == "after_turn"
+
+
+@pytest.mark.asyncio
+async def test_crewai_coordination_step_reports_explicit_worker_finding(tmp_path) -> None:
+    """Coordinate step should report explicit task findings into worker-local state."""
+    step = create_crewai_coordination_step(
+        mission_id="auth-main",
+        worker_id="auth-api",
+        eventloom_path=str(tmp_path / ".eventloom"),
+    )
+
+    finding = await step(
+        "API failures trace to expired JWKS cache handling",
+        evidence=[{"kind": "source", "reference": "src/auth.py:12"}],
+    )
+
+    assert finding["event_type"] == "coordination.finding.reported"
+    assert finding["mission_id"] == "auth-main"
+    assert finding["worker_id"] == "auth-api"
+    assert finding["finding_id"]
 
 
 @pytest.mark.asyncio

@@ -1,8 +1,9 @@
 """Hybrid extraction engine: rule-based + LLM fallback.
 
-Typed Eventloom events are mapped deterministically to graph nodes and edges
-by registered extractors. Unknown or unstructured events fall back to an LLM
-for entity/relation extraction via Graphiti.
+Typed Eventloom events are mapped deterministically to graph nodes and edges by
+registered extractors. Unknown or unstructured events can use an explicit LLM
+extractor implementation without adding a graph-memory abstraction dependency to
+the core runtime.
 
 This design cuts LLM extraction costs by 60–80%% for agents that emit
 structured event types.
@@ -723,6 +724,269 @@ def _extract_handoff_created(event: Event) -> ExtractionResult:
         edges=[edge],
         source_event_seq=event.seq,
     )
+
+
+@register("coordination.mission.created")
+def _extract_coordination_mission_created(event: Event) -> ExtractionResult:
+    """Extract a high-level coordinator mission."""
+    mission_id = _coordination_mission_id(event)
+    status = _optional_text(event.payload.get("status")) or "active"
+    mission = ExtractedEntity(
+        name=mission_id,
+        entity_type="mission",
+        observed_at=event.timestamp,
+        summary=_optional_text(event.payload.get("objective")),
+        properties=_compact_properties({"status": status}),
+    )
+    actor = ExtractedEntity(name=event.actor, entity_type="actor", observed_at=event.timestamp)
+    edge = ExtractedEdge(
+        source=event.actor,
+        target=mission_id,
+        relation_type="started_mission",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(entities=[mission, actor], edges=[edge], source_event_seq=event.seq)
+
+
+@register("coordination.worker.created")
+def _extract_coordination_worker_created(event: Event) -> ExtractionResult:
+    """Extract a registered worker under a mission."""
+    mission_id = _coordination_mission_id(event)
+    worker_id = _coordination_worker_id(event)
+    mission = ExtractedEntity(name=mission_id, entity_type="mission", observed_at=event.timestamp)
+    worker = ExtractedEntity(
+        name=worker_id,
+        entity_type="worker",
+        observed_at=event.timestamp,
+        properties=_compact_properties(
+            {
+                "mission_id": mission_id,
+                "status": _optional_text(event.payload.get("status")) or "active",
+            }
+        ),
+    )
+    edge = ExtractedEdge(
+        source=mission_id,
+        target=worker_id,
+        relation_type="mission_has_worker",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(entities=[mission, worker], edges=[edge], source_event_seq=event.seq)
+
+
+@register("coordination.assignment.created")
+def _extract_coordination_assignment_created(event: Event) -> ExtractionResult:
+    """Extract a worker assignment."""
+    mission_id = _coordination_mission_id(event)
+    worker_id = _coordination_worker_id(event)
+    assignment_id = (
+        _optional_text(event.payload.get("assignment_id"))
+        or f"{mission_id}:{worker_id}:assignment:{event.seq}"
+    )
+    assignment = ExtractedEntity(
+        name=assignment_id,
+        entity_type="assignment",
+        observed_at=event.timestamp,
+        summary=_optional_text(event.payload.get("assignment")),
+        properties=_compact_properties(
+            {
+                "status": _optional_text(event.payload.get("status")) or "assigned",
+                "mission_id": mission_id,
+                "worker_id": worker_id,
+            }
+        ),
+    )
+    worker = ExtractedEntity(name=worker_id, entity_type="worker", observed_at=event.timestamp)
+    edge = ExtractedEdge(
+        source=worker_id,
+        target=assignment_id,
+        relation_type="worker_has_assignment",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(entities=[worker, assignment], edges=[edge], source_event_seq=event.seq)
+
+
+@register("coordination.finding.reported")
+def _extract_coordination_finding_reported(event: Event) -> ExtractionResult:
+    """Extract a worker-local finding with evidence metadata."""
+    mission_id = _coordination_mission_id(event)
+    worker_id = _coordination_worker_id(event)
+    finding_id = _coordination_finding_id(event)
+    evidence = event.payload.get("evidence")
+    evidence_count = len(evidence) if isinstance(evidence, list) else 0
+    finding = ExtractedEntity(
+        name=finding_id,
+        entity_type="finding",
+        observed_at=event.timestamp,
+        summary=_optional_text(event.payload.get("summary")),
+        properties=_compact_properties(
+            {
+                "status": _optional_text(event.payload.get("status")) or "pending",
+                "mission_id": mission_id,
+                "worker_id": worker_id,
+                "evidence_count": evidence_count,
+                "confidence": _bounded_float(event.payload.get("confidence")),
+                "claim_key": _optional_text(event.payload.get("claim_key")),
+                "claim_value": _optional_text(event.payload.get("claim_value")),
+            }
+        ),
+    )
+    worker = ExtractedEntity(name=worker_id, entity_type="worker", observed_at=event.timestamp)
+    edge = ExtractedEdge(
+        source=worker_id,
+        target=finding_id,
+        relation_type="worker_reported_finding",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(entities=[worker, finding], edges=[edge], source_event_seq=event.seq)
+
+
+@register("coordination.finding.reviewed")
+def _extract_coordination_finding_reviewed(event: Event) -> ExtractionResult:
+    """Extract a coordinator review of a worker finding."""
+    mission_id = _coordination_mission_id(event)
+    worker_id = _coordination_worker_id(event)
+    finding_id = _coordination_finding_id(event)
+    status = _optional_text(event.payload.get("status")) or "reviewed"
+    review_id = f"{mission_id}:{finding_id}:review:{event.seq}"
+    review = ExtractedEntity(
+        name=review_id,
+        entity_type="finding_review",
+        observed_at=event.timestamp,
+        summary=_join_summary(status, event.payload.get("rationale")),
+        properties=_compact_properties({"status": status, "mission_id": mission_id, "worker_id": worker_id}),
+    )
+    finding = ExtractedEntity(name=finding_id, entity_type="finding", observed_at=event.timestamp)
+    edge = ExtractedEdge(
+        source=event.actor,
+        target=finding_id,
+        relation_type="coordinator_reviewed_finding",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(entities=[finding, review], edges=[edge], source_event_seq=event.seq)
+
+
+@register("coordination.finding.promoted")
+def _extract_coordination_finding_promoted(event: Event) -> ExtractionResult:
+    """Extract accepted parent state promoted from a worker finding."""
+    mission_id = _coordination_mission_id(event)
+    finding_id = _coordination_finding_id(event)
+    promotion_id = f"{mission_id}:{finding_id}:promotion:{event.seq}"
+    promotion = ExtractedEntity(
+        name=promotion_id,
+        entity_type="promotion",
+        observed_at=event.timestamp,
+        summary=_optional_text(event.payload.get("summary")),
+        properties=_compact_properties(
+            {
+                "status": _optional_text(event.payload.get("status")) or "accepted",
+                "mission_id": mission_id,
+                "worker_id": _optional_text(event.payload.get("worker_id")),
+                "finding_id": finding_id,
+                "source_event_seq": event.payload.get("source_event_seq"),
+                "source_event_hash": _optional_text(event.payload.get("source_event_hash")),
+                "claim_key": _optional_text(event.payload.get("claim_key")),
+                "claim_value": _optional_text(event.payload.get("claim_value")),
+            }
+        ),
+    )
+    mission = ExtractedEntity(name=mission_id, entity_type="mission", observed_at=event.timestamp)
+    edge = ExtractedEdge(
+        source=finding_id,
+        target=promotion_id,
+        relation_type="finding_promoted_to_parent",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(entities=[mission, promotion], edges=[edge], source_event_seq=event.seq)
+
+
+@register("coordination.conflict.detected")
+def _extract_coordination_conflict_detected(event: Event) -> ExtractionResult:
+    """Extract a deterministic conflict between worker findings."""
+    mission_id = _coordination_mission_id(event)
+    conflict_id = _optional_text(event.payload.get("conflict_id")) or f"{mission_id}:conflict:{event.seq}"
+    finding_ids = _string_list(event.payload.get("finding_ids"))
+    conflict = ExtractedEntity(
+        name=conflict_id,
+        entity_type="conflict",
+        observed_at=event.timestamp,
+        summary=_optional_text(event.payload.get("summary")),
+        properties=_compact_properties(
+            {
+                "mission_id": mission_id,
+                "claim_key": _optional_text(event.payload.get("claim_key")),
+                "conflict_type": _optional_text(event.payload.get("conflict_type")) or "exact_claim",
+                "reason": _optional_text(event.payload.get("reason")),
+                "source_reference": _optional_text(event.payload.get("source_reference")),
+                "finding_count": len(finding_ids),
+            }
+        ),
+    )
+    mission = ExtractedEntity(name=mission_id, entity_type="mission", observed_at=event.timestamp)
+    entities = [mission, conflict]
+    edges = [
+        ExtractedEdge(
+            source=mission_id,
+            target=conflict_id,
+            relation_type="mission_has_conflict",
+            valid_from=event.timestamp,
+        )
+    ]
+    for finding_id in finding_ids:
+        entities.append(ExtractedEntity(name=finding_id, entity_type="finding", observed_at=event.timestamp))
+        edges.append(
+            ExtractedEdge(
+                source=finding_id,
+                target=conflict_id,
+                relation_type="finding_conflicts_with",
+                valid_from=event.timestamp,
+            )
+        )
+    return ExtractionResult(entities=entities, edges=edges, source_event_seq=event.seq)
+
+
+@register("coordination.decision.recorded")
+def _extract_coordination_decision_recorded(event: Event) -> ExtractionResult:
+    """Extract a coordinator decision."""
+    mission_id = _coordination_mission_id(event)
+    decision_id = _optional_text(event.payload.get("decision_id")) or f"{mission_id}:decision:{event.seq}"
+    decision = ExtractedEntity(
+        name=decision_id,
+        entity_type="decision",
+        observed_at=event.timestamp,
+        summary=_join_summary(event.payload.get("decision"), event.payload.get("rationale")),
+        properties=_compact_properties({"mission_id": mission_id}),
+    )
+    mission = ExtractedEntity(name=mission_id, entity_type="mission", observed_at=event.timestamp)
+    edge = ExtractedEdge(
+        source=mission_id,
+        target=decision_id,
+        relation_type="mission_has_decision",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(entities=[mission, decision], edges=[edge], source_event_seq=event.seq)
+
+
+@register("coordination.handoff.created")
+def _extract_coordination_handoff_created(event: Event) -> ExtractionResult:
+    """Extract a final mission handoff."""
+    mission_id = _coordination_mission_id(event)
+    handoff_id = _optional_text(event.payload.get("handoff_id")) or f"{mission_id}:handoff:{event.seq}"
+    handoff = ExtractedEntity(
+        name=handoff_id,
+        entity_type="handoff",
+        observed_at=event.timestamp,
+        summary=_join_summary(event.payload.get("summary"), event.payload.get("next_steps"), event.payload.get("risks")),
+        properties=_compact_properties({"mission_id": mission_id, "status": "created"}),
+    )
+    mission = ExtractedEntity(name=mission_id, entity_type="mission", observed_at=event.timestamp)
+    edge = ExtractedEdge(
+        source=mission_id,
+        target=handoff_id,
+        relation_type="mission_has_handoff",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(entities=[mission, handoff], edges=[edge], source_event_seq=event.seq)
 
 
 @register("user.preference_changed")
@@ -1782,6 +2046,21 @@ def _optional_text(value: object) -> str | None:
     return text or None
 
 
+def _coordination_mission_id(event: Event) -> str:
+    """Return the mission identifier for a coordination event."""
+    return _optional_text(event.payload.get("mission_id") or event.payload.get("parent_session_id") or event.thread) or "default"
+
+
+def _coordination_worker_id(event: Event) -> str:
+    """Return the worker identifier for a coordination event."""
+    return _optional_text(event.payload.get("worker_id") or event.payload.get("worker_session_id")) or "worker"
+
+
+def _coordination_finding_id(event: Event) -> str:
+    """Return the finding identifier for a coordination event."""
+    return _optional_text(event.payload.get("finding_id")) or f"{_coordination_worker_id(event)}:finding:{event.seq}"
+
+
 def _required_text(value: object, *, field: str, event_seq: int) -> str:
     """Return required text or raise a precise extraction error."""
     if text := _optional_text(value):
@@ -1991,7 +2270,66 @@ def _document_session_context(
         relation_type="has_document_chunk",
         valid_from=event.timestamp,
     )
-    return [session], [edge]
+    entities = [session]
+    edges = [edge]
+    salient = _longmemeval_salient_memory(event, session_name=session_name, document_name=document_name)
+    if salient is not None:
+        memory, memory_edges = salient
+        entities.append(memory)
+        edges.extend(memory_edges)
+    return entities, edges
+
+
+def _longmemeval_salient_memory(
+    event: Event,
+    *,
+    session_name: str,
+    document_name: str,
+) -> tuple[ExtractedEntity, list[ExtractedEdge]] | None:
+    """Promote LongMemEval salient turns into first-class memory nodes."""
+    if event.payload.get("longmemeval_salient_memory_turn") is not True:
+        return None
+    session_id = _optional_text(event.payload.get("longmemeval_session_id"))
+    turn_index = _optional_positive_int(event.payload.get("turn_index"))
+    content = _optional_text(event.payload.get("content"))
+    if session_id is None or turn_index is None or content is None:
+        return None
+    start_line = _positive_int(event.payload.get("start_line"), default=1)
+    end_line = _positive_int(event.payload.get("end_line"), default=start_line)
+    path = _optional_text(event.payload.get("path")) or "document"
+    memory_name = f"longmemeval:memory:{session_id}:{turn_index}"
+    properties: dict[str, Any] = {
+        "longmemeval_session_id": session_id,
+        "turn_index": turn_index,
+        "source_path": path,
+        "source_start_line": start_line,
+        "source_end_line": end_line,
+    }
+    if session_date := _optional_text(event.payload.get("longmemeval_session_date")):
+        properties["longmemeval_session_date"] = session_date
+    if role := _optional_text(event.payload.get("role")):
+        properties["role"] = role
+    memory = ExtractedEntity(
+        name=memory_name,
+        entity_type="longmemeval_memory",
+        observed_at=event.timestamp,
+        summary=content,
+        properties=properties,
+    )
+    return memory, [
+        ExtractedEdge(
+            source=session_name,
+            target=memory_name,
+            relation_type="has_salient_memory",
+            valid_from=event.timestamp,
+        ),
+        ExtractedEdge(
+            source=memory_name,
+            target=document_name,
+            relation_type="derived_from_document",
+            valid_from=event.timestamp,
+        ),
+    ]
 
 
 def _refresh_transform_properties(payload: dict[str, Any]) -> dict[str, Any]:

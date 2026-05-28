@@ -17,8 +17,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
-from neo4j import AsyncDriver
-
 from zaxy.benchmark import (
     BenchmarkCase,
     RetrievalScore,
@@ -43,8 +41,10 @@ from zaxy.retrieval_plan import (
     filter_superseded_preference_source_results,
     reserve_source_lane,
     should_query_source_lane,
+    should_try_absence_bundle_first,
     source_context_group,
     source_lane_candidate_limit,
+    source_lane_priority,
     source_lane_queries,
     source_synthesis_bundle,
 )
@@ -805,8 +805,7 @@ class ZaxyRetriever:
             lexical_results,
         )
         synthesis_sources = _synthesis_context_pool(graph_results, lexical_results)
-        intent = classify_retrieval_intent(query, limit=limit)
-        if "absence_check" in intent.reasons:
+        if should_try_absence_bundle_first(query, limit=limit):
             synthesis_bundle = absence_check_bundle(
                 query=query,
                 source_results=lexical_results,
@@ -880,6 +879,8 @@ class ZaxyRetriever:
             bridge_limit: int | None = None,
         ) -> list[str]:
             primary_results = collect(candidate_queries[0], candidate_limit)
+            if any(source_lane_priority(result) >= 2 for result in primary_results):
+                return primary_results
             bridge_results: list[str] = []
             if bridge_limit is None or bridge_limit > 0:
                 bridge_candidate_limit = candidate_limit if bridge_limit is None else bridge_limit
@@ -1021,19 +1022,34 @@ class ZaxyCheckoutRetriever(ZaxyRetriever):
             graph_results,
             lexical_results,
         )
-        synthesis_bundle = source_synthesis_bundle(
-            query=query,
-            source_results=lexical_results,
-            limit=limit,
-            preferred_source_groups=[
-                source_context_group(result)
-                for result in graph_results
-            ],
-        ) or absence_check_bundle(
-            query=query,
-            source_results=lexical_results,
-            limit=limit,
-        )
+        if should_try_absence_bundle_first(query, limit=limit):
+            synthesis_bundle = absence_check_bundle(
+                query=query,
+                source_results=lexical_results,
+                limit=limit,
+            ) or source_synthesis_bundle(
+                query=query,
+                source_results=lexical_results,
+                limit=limit,
+                preferred_source_groups=[
+                    source_context_group(result)
+                    for result in graph_results
+                ],
+            )
+        else:
+            synthesis_bundle = source_synthesis_bundle(
+                query=query,
+                source_results=lexical_results,
+                limit=limit,
+                preferred_source_groups=[
+                    source_context_group(result)
+                    for result in graph_results
+                ],
+            ) or absence_check_bundle(
+                query=query,
+                source_results=lexical_results,
+                limit=limit,
+            )
         selected_results = reserve_source_lane(
             lexical_results,
             lexical_results,
@@ -2345,7 +2361,7 @@ async def _reset_benchmark_graph(
 
 
 async def _delete_graph_items_in_batches(
-    driver: AsyncDriver,
+    driver: Any,
     cypher: str,
     *,
     batch_size: int,

@@ -1,0 +1,1167 @@
+[
+  {
+    "expected_terms": [
+      "GPS system not functioning correctly"
+    ],
+    "identity_terms": [
+      "answer_4be1b6b4_2",
+      "answer_4be1b6b4_3",
+      "answer_4be1b6b4_1"
+    ],
+    "query": "What was the first issue I had with my new car after its first service?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "'Data Analysis using Python' webinar"
+    ],
+    "identity_terms": [
+      "answer_1c6b85ea_1",
+      "answer_1c6b85ea_2"
+    ],
+    "query": "Which event did I attend first, the 'Effective Time Management' workshop or the 'Data Analysis using Python' webinar?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "bike"
+    ],
+    "identity_terms": [
+      "answer_b535969f_2",
+      "answer_b535969f_1"
+    ],
+    "query": "Which vehicle did I take care of first in February, the bike or the car?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "Samsung Galaxy S22"
+    ],
+    "identity_terms": [
+      "answer_5328c3c2_1",
+      "answer_5328c3c2_2"
+    ],
+    "query": "Which device did I got first, the Samsung Galaxy S22 or the Dell XPS 13?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "7 days. 8 days (including the last day) is also acceptable."
+    ],
+    "identity_terms": [
+      "answer_e936197f_1",
+      "answer_e936197f_2"
+    ],
+    "query": "How many days before the team meeting I was preparing for did I attend the workshop on 'Effective Communication in the Workplace'?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "30 days. 31 days (including the last day) is also acceptable."
+    ],
+    "identity_terms": [
+      "answer_6ea1541e_2",
+      "answer_6ea1541e_1"
+    ],
+    "query": "How many days had passed between the Sunday mass at St. Mary's Church and the Ash Wednesday service at the cathedral?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "14 days. 15 days (including the last day) is also acceptable."
+    ],
+    "identity_terms": [
+      "answer_d39b7977_1",
+      "answer_d39b7977_2"
+    ],
+    "query": "How many days did it take for me to find a house I loved after starting to work with Rachel?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "Tomatoes"
+    ],
+    "identity_terms": [
+      "answer_7a4a93f1_2",
+      "answer_7a4a93f1_1"
+    ],
+    "query": "Which seeds were started first, the tomatoes or the marigolds?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "21 days. 22 days (including the last day) is also acceptable."
+    ],
+    "identity_terms": [
+      "answer_1cc3cd0c_2",
+      "answer_1cc3cd0c_1"
+    ],
+    "query": "How many days had passed between the Hindu festival of Holi and the Sunday mass at St. Mary's Church?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "4 days."
+    ],
+    "identity_terms": [
+      "answer_b3763b6b_1",
+      "answer_b3763b6b_2"
+    ],
+    "query": "How many days before the 'Rack Fest' did I participate in the 'Turbocharged Tuesdays' event?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "white Adidas sneakers"
+    ],
+    "identity_terms": [
+      "answer_099c1b6c_3",
+      "answer_099c1b6c_1",
+      "answer_099c1b6c_2",
+      "answer_099c1b6c_4",
+      "answer_099c1b6c_5"
+    ],
+    "query": "Which pair of shoes did I clean last month?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "The malfunction of the stand mixer"
+    ],
+    "identity_terms": [
+      "answer_c4e5d969_1",
+      "answer_c4e5d969_2"
+    ],
+    "query": "Which event happened first, the purchase of the coffee maker or the malfunction of the stand mixer?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "14 days. 8 days (including the last day) is also acceptable."
+    ],
+    "identity_terms": [
+      "answer_932ea3bf_2",
+      "answer_932ea3bf_1"
+    ],
+    "query": "How many days had passed between the 'Walk for Hunger' event and the 'Coastal Cleanup' event?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "Training pads for Luna"
+    ],
+    "identity_terms": [
+      "answer_d50a8a33_2",
+      "answer_d50a8a33_1"
+    ],
+    "query": "Which item did I purchase first, the dog bed for Max or the training pads for Luna?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "Fixing the fence"
+    ],
+    "identity_terms": [
+      "answer_b3070ec4_1",
+      "answer_b3070ec4_2"
+    ],
+    "query": "Which task did I complete first, fixing the fence or trimming the goats' hooves?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "4"
+    ],
+    "identity_terms": [
+      "answer_4ffa04a2_1",
+      "answer_4ffa04a2_6",
+      "answer_4ffa04a2_5",
+      "answer_4ffa04a2_4",
+      "answer_4ffa04a2_2",
+      "answer_4ffa04a2_3"
+    ],
+    "query": "How many charity events did I participate in before the 'Run for the Cure' event?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "4 years and 9 months"
+    ],
+    "identity_terms": [
+      "answer_e5131a1b_1",
+      "answer_e5131a1b_2"
+    ],
+    "query": "How long have I been working before I started my current job at NovaTech?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "'The Hate U Give'"
+    ],
+    "identity_terms": [
+      "answer_3e11e0ae_2",
+      "answer_3e11e0ae_1"
+    ],
+    "query": "Which book did I finish reading first, 'The Hate U Give' or 'The Nightingale'?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "Smart thermostat"
+    ],
+    "identity_terms": [
+      "answer_30dfe889_2",
+      "answer_30dfe889_1"
+    ],
+    "query": "Which device did I set up first, the smart thermostat or the mesh network system?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "Five months ago"
+    ],
+    "identity_terms": [
+      "answer_ab603dd5_2",
+      "answer_ab603dd5_1"
+    ],
+    "query": "How many months ago did I book the Airbnb in San Francisco?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "5.5 weeks"
+    ],
+    "identity_terms": [
+      "answer_5e3bb940_1",
+      "answer_5e3bb940_3",
+      "answer_5e3bb940_2"
+    ],
+    "query": "How long did I take to finish 'The Seven Husbands of Evelyn Hugo' and 'The Nightingale' combined?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "June 3rd"
+    ],
+    "identity_terms": [
+      "answer_0a00c163_1",
+      "answer_0a00c163_2"
+    ],
+    "query": "What was the date on which I attended the first BBQ event in June?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "7 days. 8 days (including the last day) is also acceptable."
+    ],
+    "identity_terms": [
+      "answer_70dc7d08_1",
+      "answer_70dc7d08_2"
+    ],
+    "query": "How many days before I bought the iPhone 13 Pro did I attend the Holiday Market?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "'Game of Thrones'"
+    ],
+    "identity_terms": [
+      "answer_fb793c87_2",
+      "answer_fb793c87_1"
+    ],
+    "query": "Which show did I start watching first, 'The Crown' or 'Game of Thrones'?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "Two weeks"
+    ],
+    "identity_terms": [
+      "answer_cf425855_2",
+      "answer_cf425855_1"
+    ],
+    "query": "How long had I been a member of 'Book Lovers Unite' when I attended the meetup?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "2 months"
+    ],
+    "identity_terms": [
+      "answer_cdba3d9f_1",
+      "answer_cdba3d9f_2"
+    ],
+    "query": "How long had I been watching stand-up comedy specials regularly when I attended the open mic night at the local comedy club?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "6:45 AM"
+    ],
+    "identity_terms": [
+      "answer_9af4e346_1",
+      "answer_9af4e346_2"
+    ],
+    "query": "What time do I wake up on Tuesdays and Thursdays?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "14 days. 15 days (including the last day) is also acceptable."
+    ],
+    "identity_terms": [
+      "answer_5e3eeb12_1",
+      "answer_5e3eeb12_2"
+    ],
+    "query": "How many days had passed since I bought my Adidas running shoes when I realized one of the shoelaces on my old Converse sneakers had broken?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "The arrival of the new prime lens"
+    ],
+    "identity_terms": [
+      "answer_b9d9150e_2",
+      "answer_b9d9150e_1"
+    ],
+    "query": "Which event happened first, the road trip to the coast or the arrival of the new prime lens?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "United Airlines"
+    ],
+    "identity_terms": [
+      "answer_8a42fedf_1",
+      "answer_8a42fedf_3",
+      "answer_8a42fedf_2"
+    ],
+    "query": "Which airline did I fly with the most in March and April?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "Two months"
+    ],
+    "identity_terms": [
+      "answer_be73098b_1",
+      "answer_be73098b_2"
+    ],
+    "query": "How long had I been bird watching when I attended the bird watching workshop?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "The solo trip to Thailand"
+    ],
+    "identity_terms": [
+      "answer_72d9aa58_2",
+      "answer_72d9aa58_1"
+    ],
+    "query": "Which trip did I take first, the one to Europe with family or the solo trip to Thailand?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "new router"
+    ],
+    "identity_terms": [
+      "answer_da704e79_1",
+      "answer_da704e79_2"
+    ],
+    "query": "Which device did I set up first, the smart thermostat or the new router?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "Persistent cough"
+    ],
+    "identity_terms": [
+      "answer_6a78e959_1",
+      "answer_6a78e959_2"
+    ],
+    "query": "Which health issue did I deal with first, the persistent cough or the skin tag removal?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "27"
+    ],
+    "identity_terms": [
+      "answer_991d55e5_1",
+      "answer_991d55e5_2"
+    ],
+    "query": "How old was I when I moved to the United States?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "One week. Answers ranging from 7 days to 10 days are also acceptable."
+    ],
+    "identity_terms": [
+      "answer_54f0d6f9_2",
+      "answer_54f0d6f9_1"
+    ],
+    "query": "How long had I been using the new area rug when I rearranged my living room furniture?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "7 days. 8 days (including the last day) is also acceptable."
+    ],
+    "identity_terms": [
+      "answer_016f6bd4_1",
+      "answer_016f6bd4_2"
+    ],
+    "query": "How many days before my best friend's birthday party did I order her gift?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "The family road trip across the American Southwest"
+    ],
+    "identity_terms": [
+      "answer_8464304d_1",
+      "answer_8464304d_2"
+    ],
+    "query": "Which trip did the narrator take first, the solo trip to Europe or the family road trip across the American Southwest?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "Two weeks"
+    ],
+    "identity_terms": [
+      "answer_aa930b56_2",
+      "answer_aa930b56_1"
+    ],
+    "query": "How long did I use my new binoculars before I saw the American goldfinches returning to the area?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "Tom"
+    ],
+    "identity_terms": [
+      "answer_e60a93ff_2",
+      "answer_e60a93ff_1"
+    ],
+    "query": "Who did I meet first, Mark and Sarah or Tom?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "one week"
+    ],
+    "identity_terms": [
+      "answer_5fcca8bc_2",
+      "answer_5fcca8bc_1"
+    ],
+    "query": "How many weeks have I been accepted into the exchange program when I started attending the pre-departure orientation sessions?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "Page Turners"
+    ],
+    "identity_terms": [
+      "answer_544fe66c_2",
+      "answer_544fe66c_1",
+      "answer_544fe66c_3"
+    ],
+    "query": "Which group did I join first, 'Page Turners' or 'Marketing Professionals'?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "Four weeks"
+    ],
+    "identity_terms": [
+      "answer_436d4309_1",
+      "answer_436d4309_2"
+    ],
+    "query": "How long had I been taking guitar lessons when I bought the new guitar amp?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "Disney+"
+    ],
+    "identity_terms": [
+      "answer_7a36e820_2",
+      "answer_7a36e820_1",
+      "answer_7a36e820_3"
+    ],
+    "query": "Which streaming service did I start using most recently?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "2"
+    ],
+    "identity_terms": [
+      "answer_aaf71ce2_2",
+      "answer_aaf71ce2_1",
+      "answer_aaf71ce2_3"
+    ],
+    "query": "How many months before my anniversary did Rachel get engaged?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "Receiving the new phone case"
+    ],
+    "identity_terms": [
+      "answer_5a78688d_2",
+      "answer_5a78688d_1"
+    ],
+    "query": "Which event happened first, the narrator losing their phone charger or the narrator receiving their new phone case?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "the woman selling jam at the farmer's market"
+    ],
+    "identity_terms": [
+      "answer_a68db5db_2",
+      "answer_a68db5db_1"
+    ],
+    "query": "Who did I meet first, the woman selling jam at the farmer's market or the tourist from Australia?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "The meeting with Rachel"
+    ],
+    "identity_terms": [
+      "answer_faad7d7a_2",
+      "answer_faad7d7a_1"
+    ],
+    "query": "Which event happened first, the meeting with Rachel or the pride parade?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "the photo album for my mom"
+    ],
+    "identity_terms": [
+      "answer_11a8f823_2",
+      "answer_11a8f823_1"
+    ],
+    "query": "Which gift did I buy first, the necklace for my sister or the photo album for my mom?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "volleyball league"
+    ],
+    "identity_terms": [
+      "answer_53582e7e_1",
+      "answer_53582e7e_2"
+    ],
+    "query": "Which event did I participate in first, the volleyball league or the charity 5K run to raise money for a local children's hospital?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "Spanish classes"
+    ],
+    "identity_terms": [
+      "answer_b10f3828_2",
+      "answer_b10f3828_1"
+    ],
+    "query": "Which event happened first, my attendance at a cultural festival or the start of my Spanish classes?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "Japanese Zero fighter plane model"
+    ],
+    "identity_terms": [
+      "answer_d8e33f5c_1",
+      "answer_d8e33f5c_2"
+    ],
+    "query": "Which project did I start first, the Ferrari model or the Japanese Zero fighter plane model?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "Alex"
+    ],
+    "identity_terms": [
+      "answer_65600ff6_1",
+      "answer_65600ff6_2"
+    ],
+    "query": "Who became a parent first, Rachel or Alex?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "7 days. 8 days (including the last day) is also acceptable."
+    ],
+    "identity_terms": [
+      "answer_124f5dc3_2",
+      "answer_124f5dc3_1"
+    ],
+    "query": "How many days had passed between the day I bought a gift for my brother's graduation ceremony and the day I bought a birthday gift for my best friend?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "The information provided is not enough. You mentioned fixing the fence but did not mention purchasing cows from Peter."
+    ],
+    "identity_terms": [
+      "answer_b3070ec4_abs_1",
+      "answer_b3070ec4_abs_2"
+    ],
+    "query": "Which task did I complete first, fixing the fence or purchasing three cows from Peter?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "The information provided is not enough. From the information provided, You haven't started working at Google yet."
+    ],
+    "identity_terms": [
+      "answer_e5131a1b_abs_2",
+      "answer_e5131a1b_abs_1"
+    ],
+    "query": "How long have I been working before I started my current job at Google?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "The information provided is not enough. You only mentioned booking Airbnb in San Francisco."
+    ],
+    "identity_terms": [
+      "answer_ab603dd5_abs_1",
+      "answer_ab603dd5_abs_2"
+    ],
+    "query": "When did I book the Airbnb in Sacramento?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "The information provided is not enough. You mentioned getting the iPhone 13 Pro and attending the market, but you did not mention buying an iPad."
+    ],
+    "identity_terms": [
+      "answer_70dc7d08_abs_2",
+      "answer_70dc7d08_abs_1"
+    ],
+    "query": "How many days before I bought my iPad did I attend the Holiday Market?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "The information provided is not enough. You did not mention starting the Porsche 991 Turbo S model."
+    ],
+    "identity_terms": [
+      "answer_d8e33f5c_abs_1",
+      "answer_d8e33f5c_abs_2"
+    ],
+    "query": "Which project did I start first, the Ferrari model or the Porsche 991 Turbo S model?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "The information provided is not enough. You mentioned Alex becoming a parent in January, but you didn't mention anything about Tom."
+    ],
+    "identity_terms": [
+      "answer_65600ff6_abs_2",
+      "answer_65600ff6_abs_1"
+    ],
+    "query": "Who became a parent first, Tom or Alex?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "3"
+    ],
+    "identity_terms": [
+      "answer_afa9873b_2",
+      "answer_afa9873b_3",
+      "answer_afa9873b_1"
+    ],
+    "query": "How many items of clothing do I need to pick up or return from a store?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "2"
+    ],
+    "identity_terms": [
+      "answer_ec904b3c_4",
+      "answer_ec904b3c_2",
+      "answer_ec904b3c_1",
+      "answer_ec904b3c_3"
+    ],
+    "query": "How many projects have I led or am currently leading?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "I have worked on or bought five model kits. The scales of the models are: Revell F-15 Eagle (scale not mentioned), Tamiya 1/48 scale Spitfire Mk.V, 1/16 scale German Tiger I tank, 1/72 scale B-29 bomber, and 1/24 scale '69 Camaro."
+    ],
+    "identity_terms": [
+      "answer_593bdffd_1",
+      "answer_593bdffd_2",
+      "answer_593bdffd_3",
+      "answer_593bdffd_4"
+    ],
+    "query": "How many model kits have I worked on or bought?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "8 days."
+    ],
+    "identity_terms": [
+      "answer_a8b4290f_2",
+      "answer_a8b4290f_3",
+      "answer_a8b4290f_1"
+    ],
+    "query": "How many days did I spend on camping trips in the United States this year?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "3.5 weeks"
+    ],
+    "identity_terms": [
+      "answer_86c505e7_1",
+      "answer_86c505e7_2"
+    ],
+    "query": "How many weeks did it take me to watch all the Marvel Cinematic Universe movies and the main Star Wars films?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "3"
+    ],
+    "identity_terms": [
+      "answer_c2204106_2",
+      "answer_c2204106_3",
+      "answer_c2204106_1"
+    ],
+    "query": "How many plants did I acquire in the last month?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "$185"
+    ],
+    "identity_terms": [
+      "answer_2880eb6c_3",
+      "answer_2880eb6c_1",
+      "answer_2880eb6c_4",
+      "answer_2880eb6c_2"
+    ],
+    "query": "How much total money have I spent on bike-related expenses since the start of the year?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "15 hours for getting to the three destinations (or 30 hours for the round trip)"
+    ],
+    "identity_terms": [
+      "answer_526354c8_1",
+      "answer_526354c8_2",
+      "answer_526354c8_3"
+    ],
+    "query": "How many hours in total did I spend driving to my three road trip destinations combined?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "I visited three different doctors: a primary care physician, an ENT specialist, and a dermatologist."
+    ],
+    "identity_terms": [
+      "answer_55a6940c_3",
+      "answer_55a6940c_1",
+      "answer_55a6940c_2"
+    ],
+    "query": "How many different doctors did I visit?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "2 AM"
+    ],
+    "identity_terms": [
+      "answer_f9de4602_1",
+      "answer_f9de4602_2"
+    ],
+    "query": "What time did I go to bed on the day before I had a doctor's appointment?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "3"
+    ],
+    "identity_terms": [
+      "answer_56d02cab_3",
+      "answer_56d02cab_2",
+      "answer_56d02cab_1",
+      "answer_56d02cab_4"
+    ],
+    "query": "How many different types of citrus fruits have I used in my cocktail recipes?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "I attended four movie festivals."
+    ],
+    "identity_terms": [
+      "answer_cf9e3940_1",
+      "answer_cf9e3940_2",
+      "answer_cf9e3940_3"
+    ],
+    "query": "How many movie festivals that I attended?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "17 days"
+    ],
+    "identity_terms": [
+      "answer_a4204937_1",
+      "answer_a4204937_2"
+    ],
+    "query": "How many days did I take social media breaks in total?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "3"
+    ],
+    "identity_terms": [
+      "answer_c65042d7_2",
+      "answer_c65042d7_1",
+      "answer_c65042d7_3"
+    ],
+    "query": "How many tanks do I currently have, including the one I set up for my friend's kid?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "$2,500"
+    ],
+    "identity_terms": [
+      "answer_ef74281f_2",
+      "answer_ef74281f_3",
+      "answer_ef74281f_1"
+    ],
+    "query": "What is the total amount I spent on luxury items in the past few months?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "140 hours"
+    ],
+    "identity_terms": [
+      "answer_8d015d9d_3",
+      "answer_8d015d9d_1",
+      "answer_8d015d9d_2",
+      "answer_8d015d9d_5",
+      "answer_8d015d9d_4"
+    ],
+    "query": "How many hours have I spent playing games in total?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "I attended three weddings. The couples were Rachel and Mike, Emily and Sarah, and Jen and Tom."
+    ],
+    "identity_terms": [
+      "answer_e7b0637e_1",
+      "answer_e7b0637e_3",
+      "answer_e7b0637e_2"
+    ],
+    "query": "How many weddings have I attended in this year?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "5"
+    ],
+    "identity_terms": [
+      "answer_fa526fc0_3",
+      "answer_fa526fc0_4",
+      "answer_fa526fc0_1",
+      "answer_fa526fc0_2"
+    ],
+    "query": "How many babies were born to friends and family members in the last few months?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "4"
+    ],
+    "identity_terms": [
+      "answer_8858d9dc_3",
+      "answer_8858d9dc_2",
+      "answer_8858d9dc_1",
+      "answer_8858d9dc_4"
+    ],
+    "query": "How many pieces of furniture did I buy, assemble, sell, or fix in the past few months?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "4"
+    ],
+    "identity_terms": [
+      "answer_733e443a_3",
+      "answer_733e443a_1",
+      "answer_733e443a_2",
+      "answer_733e443a_4"
+    ],
+    "query": "How many times did I bake something in the past two weeks?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "2"
+    ],
+    "identity_terms": [
+      "answer_990c8992_3",
+      "answer_990c8992_2",
+      "answer_990c8992_1"
+    ],
+    "query": "How many different museums or galleries did I visit in the month of February?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "4"
+    ],
+    "identity_terms": [
+      "answer_5a0d28f8_4",
+      "answer_5a0d28f8_2",
+      "answer_5a0d28f8_1",
+      "answer_5a0d28f8_3"
+    ],
+    "query": "How many different cuisines have I learned to cook or tried out in the past few months?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "I viewed four properties before making an offer on the townhouse in the Brookside neighborhood. The reasons I didn't make an offer on them were: the kitchen of the bungalow needed serious renovation, the property in Cedar Creek was out of my budget, the noise from the highway was a deal-breaker for the 1-bedroom condo, and my offer on the 2-bedroom condo was rejected due to a higher bid."
+    ],
+    "identity_terms": [
+      "answer_a679a86a_3",
+      "answer_a679a86a_1",
+      "answer_a679a86a_5",
+      "answer_a679a86a_4",
+      "answer_a679a86a_2"
+    ],
+    "query": "How many properties did I view before making an offer on the townhouse in the Brookside neighborhood?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "3"
+    ],
+    "identity_terms": [
+      "answer_c008e5df_3",
+      "answer_c008e5df_1",
+      "answer_c008e5df_2"
+    ],
+    "query": "How many different types of food delivery services have I used recently?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "0.5 hours"
+    ],
+    "identity_terms": [
+      "answer_a21f3697_3",
+      "answer_a21f3697_2",
+      "answer_a21f3697_1"
+    ],
+    "query": "How many hours of jogging and yoga did I do last week?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "TikTok"
+    ],
+    "identity_terms": [
+      "answer_203bf3fa_2",
+      "answer_203bf3fa_1",
+      "answer_203bf3fa_3"
+    ],
+    "query": "Which social media platform did I gain the most followers on over the past month?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "Thrive Market"
+    ],
+    "identity_terms": [
+      "answer_6a3b5c13_2",
+      "answer_6a3b5c13_1",
+      "answer_6a3b5c13_3",
+      "answer_6a3b5c13_4"
+    ],
+    "query": "Which grocery store did I spend the most money at in the past month?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "$270"
+    ],
+    "identity_terms": [
+      "answer_eaa8e3ef_1",
+      "answer_eaa8e3ef_2"
+    ],
+    "query": "How much more did I spend on accommodations per night in Hawaii compared to Tokyo?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "4"
+    ],
+    "identity_terms": [
+      "answer_901a6763_3",
+      "answer_901a6763_4",
+      "answer_901a6763_1",
+      "answer_901a6763_2"
+    ],
+    "query": "How many different art-related events did I attend in the past month?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "59.6"
+    ],
+    "identity_terms": [
+      "answer_2504635e_1",
+      "answer_2504635e_2",
+      "answer_2504635e_3"
+    ],
+    "query": "What is the average age of me, my parents, and my grandparents?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "2"
+    ],
+    "identity_terms": [
+      "answer_39900a0a_1",
+      "answer_39900a0a_2",
+      "answer_39900a0a_3"
+    ],
+    "query": "How many doctor's appointments did I go to in March?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "5 days. 6 days (including the last day) is also acceptable."
+    ],
+    "identity_terms": [
+      "answer_05d808e6_2",
+      "answer_05d808e6_1"
+    ],
+    "query": "How many days did it take for me to receive the new remote shutter release after I ordered it?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "4"
+    ],
+    "identity_terms": [
+      "answer_02b63d04_2",
+      "answer_02b63d04_1",
+      "answer_02b63d04_5",
+      "answer_02b63d04_3",
+      "answer_02b63d04_4"
+    ],
+    "query": "How many health-related devices do I use in a day?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "17"
+    ],
+    "identity_terms": [
+      "answer_3e5fea0e_1",
+      "answer_3e5fea0e_2"
+    ],
+    "query": "How many fish are there in total in both of my aquariums?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "5"
+    ],
+    "identity_terms": [
+      "answer_8f6b938d_4",
+      "answer_8f6b938d_1",
+      "answer_8f6b938d_3",
+      "answer_8f6b938d_2"
+    ],
+    "query": "How many fitness classes do I attend in a typical week?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "5 days. 6 days (including the last day) is also acceptable."
+    ],
+    "identity_terms": [
+      "answer_e0956e0a_1",
+      "answer_e0956e0a_2"
+    ],
+    "query": "How many days did it take for my laptop backpack to arrive after I bought it?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "3"
+    ],
+    "identity_terms": [
+      "answer_fcff2dc4_1",
+      "answer_fcff2dc4_3",
+      "answer_fcff2dc4_2"
+    ],
+    "query": "How many pieces of jewelry did I acquire in the last two months?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "$5,850"
+    ],
+    "identity_terms": [
+      "answer_1de862d6_1",
+      "answer_1de862d6_2",
+      "answer_1de862d6_3"
+    ],
+    "query": "How much money did I raise in total through all the charity events I participated in?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "2"
+    ],
+    "identity_terms": [
+      "answer_e7fe8c8b_2",
+      "answer_e7fe8c8b_1",
+      "answer_e7fe8c8b_3"
+    ],
+    "query": "How many projects have I been working on simultaneously, excluding my thesis?",
+    "source_terms": []
+  },
+  {
+    "expected_terms": [
+      "I currently own 4 musical instruments. I've had the Fender Stratocaster electric guitar for 5 years, the Yamaha FG800 acoustic guitar for 8 years, the 5-piece Pearl Export drum set for an unspecified amount of time, and the Korg B1 piano for 3 years."
+    ],
+    "identity_terms": [
+      "answer_3826dc55_5",
+      "answer_3826dc55_3",
+      "answer_3826dc55_2",
+      "answer_3826dc55_4",
+      "answer_3826dc55_1"
+    ],
+    "query": "How many musical instruments do I currently own?",
+    "source_terms": []
+  }
+]

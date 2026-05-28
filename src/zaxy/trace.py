@@ -16,8 +16,12 @@ from typing import Any
 from zaxy.config import get_settings
 from zaxy.security import query_hash
 
+AsyncPathlight: Any = None
+
 try:
-    from pathlight import AsyncPathlight
+    from pathlight import AsyncPathlight as _AsyncPathlight
+
+    AsyncPathlight = _AsyncPathlight
     _HAS_PATHLIGHT = True
 except ImportError:
     _HAS_PATHLIGHT = False

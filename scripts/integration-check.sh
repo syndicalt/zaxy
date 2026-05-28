@@ -13,7 +13,7 @@ Usage: scripts/integration-check.sh [--start|--require|--skip-if-unavailable] [-
 Run the local test suite with explicit Neo4j integration-service handling.
 
 Modes:
-  --start                Generate TLS certs, start neo4j-test and neo4j-tls, then run pytest.
+  --start                Generate TLS certs, start the integration profile, then run pytest.
   --require              Require neo4j-test and neo4j-tls to already be reachable, then run pytest.
   --skip-if-unavailable  Run pytest without tests/test_graph.py when Neo4j test ports are closed.
 
@@ -75,7 +75,7 @@ print_start_hint() {
 Neo4j integration services are not reachable.
 Start them with:
   ./scripts/generate-certs.sh .certs
-  docker compose up -d neo4j-test neo4j-tls
+  docker compose --profile integration up -d neo4j-test neo4j-tls
 
 Or let this helper start them:
   scripts/integration-check.sh --start
@@ -112,7 +112,7 @@ wait_for_services() {
 
 start_services() {
   "${ROOT}/scripts/generate-certs.sh" "${ROOT}/.certs"
-  docker_compose up -d neo4j-test neo4j-tls
+  docker_compose --profile integration up -d neo4j-test neo4j-tls
   wait_for_services
 }
 

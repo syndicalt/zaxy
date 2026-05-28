@@ -36,9 +36,32 @@ zaxy integrations --json
 zaxy integrations --recommendation --json</code></pre>
       <p>Each entry reports the framework package, optional extra, starter function, current maturity, and whether a framework-native adapter package exists. LangGraph reports <code>native-preview</code> with <code>native_adapter=zaxy.adapters.langgraph</code>. CrewAI reports <code>native-preview</code> with <code>native_adapter=zaxy.adapters.crewai</code>. AutoGen remains template-only with <code>native_adapter=not-yet-packaged</code>.</p>
       <p>The current maintained integration recommendation is <code>common-native-preview-contract</code> on the model-facing UX hardening track. The reasoning is deliberately conservative: LangGraph and CrewAI already exercise the shared Memory Checkout, observation, and feedback flow, while AutoGen remains template-only until runtime hooks are validated in real usage. The next adapter work should stabilize shared payload keys and feedback behavior across native-preview adapters before promoting another framework-native package.</p>
+      <h2 id="coordinate-adapter-contract">Coordinate Adapter Contract</h2>
+      <p>Zaxy Coordinate has a dependency-light adapter contract for orchestrators that already own worker spawning, worktrees, containers, or task scheduling:</p>
+      <pre><code class="language-python">from zaxy.adapters.coordination import CoordinationAdapter
+
+adapter = CoordinationAdapter(eventloom_path=&quot;.eventloom&quot;, actor=&quot;coordinator&quot;)
+adapter.start_mission(&quot;auth-main&quot;, objective=&quot;Ship auth refactor&quot;)
+adapter.create_worker(&quot;auth-main&quot;, &quot;auth-api&quot;)
+adapter.assign(&quot;auth-main&quot;, &quot;auth-api&quot;, &quot;Trace API auth failures&quot;)
+finding = adapter.report_finding(
+    &quot;auth-main&quot;,
+    &quot;auth-api&quot;,
+    summary=&quot;API failures trace to expired JWKS cache handling&quot;,
+    evidence=[{&quot;kind&quot;: &quot;source&quot;, &quot;reference&quot;: &quot;src/auth.py:12&quot;}],
+    claim_key=&quot;auth.failure.cause&quot;,
+    claim_value=&quot;expired-jwks-cache&quot;,
+)</code></pre>
+      <p>The adapter returns JSON-friendly payloads with Eventloom event sequence and hash metadata. It does not infer findings from transcripts and does not spawn workers; callers must pass explicit summaries, evidence, confidence, and claim fields.</p>
+      <p>Generate coordination starters:</p>
+      <pre><code class="language-bash">zaxy coordinate adapter-template codex --mission auth-main --worker auth-api
+zaxy coordinate adapter-template langgraph --mission auth-main --worker auth-api
+zaxy coordinate adapter-template crewai --mission auth-main --worker auth-api
+zaxy coordinate adapter-template mcp --mission auth-main --worker auth-api</code></pre>
       <h2 id="langgraph-native-preview">LangGraph Native Preview</h2>
       <p>Use the native-preview adapter when you want Zaxy to behave like a LangGraph node without requiring Zaxy to own your graph schema:</p>
       <pre><code class="language-python">from zaxy.adapters.langgraph import (
+    create_langgraph_coordination_node,
     LangGraphMemoryAdapter,
     create_langgraph_memory_checkout_node,
     create_langgraph_memory_node,
@@ -46,6 +69,7 @@ zaxy integrations --recommendation --json</code></pre>
 
 memory_node = create_langgraph_memory_node(session_id=&quot;my-agent&quot;)
 checkout_node = create_langgraph_memory_checkout_node(session_id=&quot;my-agent&quot;)
+coordinate_node = create_langgraph_coordination_node(mission_id=&quot;auth-main&quot;, worker_id=&quot;auth-api&quot;)
 adapter = LangGraphMemoryAdapter(session_id=&quot;my-agent&quot;)</code></pre>
       <p><code>create_langgraph_memory_node()</code> returns an async node that reads the latest message from <code>state[&quot;messages&quot;]</code> or <code>state[&quot;latest_message&quot;]</code>, records the turn as <code>transcript.turn</code>, assembles prompt-ready context, and returns the original state with:</p>
       <ul>
@@ -59,6 +83,7 @@ adapter = LangGraphMemoryAdapter(session_id=&quot;my-agent&quot;)</code></pre>
       <h2 id="crewai-native-preview">CrewAI Native Preview</h2>
       <p>Use the CrewAI adapter from task callbacks, custom task wrappers, or any application-owned lifecycle point. Zaxy does not import CrewAI or require a specific CrewAI object model:</p>
       <pre><code class="language-python">from zaxy.adapters.crewai import (
+    create_crewai_coordination_step,
     CrewAIMemoryAdapter,
     create_crewai_memory_checkout_step,
     create_crewai_memory_step,
@@ -66,6 +91,7 @@ adapter = LangGraphMemoryAdapter(session_id=&quot;my-agent&quot;)</code></pre>
 
 memory_step = create_crewai_memory_step(session_id=&quot;my-crew&quot;)
 checkout_step = create_crewai_memory_checkout_step(session_id=&quot;my-crew&quot;)
+coordinate_step = create_crewai_coordination_step(mission_id=&quot;auth-main&quot;, worker_id=&quot;auth-api&quot;)
 adapter = CrewAIMemoryAdapter(session_id=&quot;my-crew&quot;)</code></pre>
       <p><code>create_crewai_memory_step()</code> returns an async callable that accepts task input and returns prompt-ready memory text. <code>CrewAIMemoryAdapter.before_task()</code> returns a richer payload containing:</p>
       <ul>

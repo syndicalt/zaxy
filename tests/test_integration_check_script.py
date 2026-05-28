@@ -26,7 +26,7 @@ def test_integration_check_script_can_start_neo4j_services_explicitly() -> None:
 
     assert "--start" in script
     assert "generate-certs.sh" in script
-    assert "neo4j-test neo4j-tls" in script
+    assert "--profile integration up -d neo4j-test neo4j-tls" in script
     assert "7688" in script
     assert "7689" in script
 
@@ -37,7 +37,7 @@ def test_integration_check_script_can_skip_graph_tests_when_services_are_absent(
 
     assert "--skip-if-unavailable" in script
     assert "--ignore=tests/test_graph.py" in script
-    assert "docker compose up -d neo4j-test neo4j-tls" in script
+    assert "docker compose --profile integration up -d neo4j-test neo4j-tls" in script
 
 
 def test_testing_docs_describe_integration_check_helper() -> None:

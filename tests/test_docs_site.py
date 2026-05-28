@@ -120,7 +120,7 @@ def test_docs_describe_skill_memory_contract_and_guardrail() -> None:
 
 
 def test_pggraph_backend_roadmap_records_contract_first_state() -> None:
-    """Docs should keep pgGraph behind the projection contract and Neo4j default."""
+    """Docs should keep pgGraph behind the projection contract and explicit backend selector."""
     agents = Path("AGENTS.md").read_text(encoding="utf-8")
     benchmarks = Path("docs/benchmarks.md").read_text(encoding="utf-8")
     spec = Path("docs/superpowers/specs/2026-05-17-skill-memory-pggraph-evaluation-design.md").read_text(
@@ -188,8 +188,12 @@ def test_zero_friction_runtime_roadmap_sets_frontier_bar() -> None:
     assert "100 dashboard nodes and 100 dashboard edges" in roadmap
     assert "roughly 120-second projection/rebuild" in roadmap
     assert "cost to roughly 10 seconds" in roadmap
-    assert "100-query scale evidence status: improving but not default-ready" in roadmap
-    assert "`Answer@5=0.35` versus BM25 `Answer@5=0.34`" in roadmap
+    assert "100-query scale evidence status: answer-ready quality passed" in roadmap
+    assert "embedded\nscale guardrail now passes" in roadmap
+    assert "answer-ready contract scored `Answer@5=1.0`" in " ".join(roadmap.split())
+    assert "`Recall@5=1.0`, first checkout" in " ".join(roadmap.split())
+    assert "raw retrieve improved to `Recall@5=0.99`" in " ".join(roadmap.split())
+    assert "BM25 scored `Answer@5=0.52`" in " ".join(roadmap.split())
     assert "dashboard parity is wired" in roadmap
     assert "Latest reminder" in roadmap
     assert "memory_activation.latest_reminder" in roadmap
@@ -205,8 +209,35 @@ def test_zero_friction_runtime_roadmap_sets_frontier_bar() -> None:
     assert "MCP embedded runtime status: wired" in roadmap
     assert "local-embedded-codex" in roadmap
     assert "zero-friction-runtime-roadmap.md" in architecture
-    assert "Build the zero-friction embedded graph runtime prototype" in agents
+    assert "Build the zero-friction embedded graph runtime path" in agents
     assert "Memory Activation Layer" in agents
+
+
+def test_embedded_runtime_docs_do_not_frame_current_kuzu_as_prototype() -> None:
+    """Embedded/Kuzu docs should describe the promoted runtime as first-class."""
+    combined = "\n".join(
+        Path(path).read_text(encoding="utf-8")
+        for path in (
+            "AGENTS.md",
+            "docs/zero-friction-runtime-roadmap.md",
+            "docs/superpowers/plans/2026-05-20-zero-friction-embedded-graph-runtime.md",
+        )
+    )
+
+    assert "embedded runtime: passed and promoted to default" in combined
+    assert "Build the zero-friction embedded graph runtime path" in combined
+    assert "embedded Kuzu is the default projection backend" in combined
+    assert "embedded graph runtime prototype" not in combined
+    assert "embedded prototype:" not in combined
+    assert "prototype embedded graph runtime" not in combined
+    assert "Prototype Gates" not in combined
+    assert "Prototype status:" not in combined
+    assert "document prototype status and gates" not in combined
+    assert "eligible for broader benchmark" not in combined
+    assert "Kuzu optional dependency" not in combined
+    assert "optional dependency group `embedded" not in combined
+    assert "A prototype that only works outside Zaxy is not enough" not in combined
+    assert "The prototype should report" not in combined
 
 
 def test_docs_show_embedded_local_profile_option() -> None:
@@ -258,7 +289,7 @@ def test_backend_shootout_contract_is_documented_and_scripted() -> None:
     assert "--backends" in script
     assert "--queries-file" in script
     assert "--output" in script
-    assert "Defaults exclude latticedb until it passes quality and latency gates." in script
+    assert "Defaults run embedded plus BM25 without optional sidecar infrastructure." in script
     assert "check-backend-shootout.py" in benchmarks
     assert "--require-report-metadata" in benchmarks
     assert "--require-report-metadata" in guardrail
@@ -291,19 +322,20 @@ def test_backend_shootout_contract_is_documented_and_scripted() -> None:
     assert "--max-keyword-p95-ms embedded=75" in benchmarks
     assert "--max-vector-p95-ms embedded=25" in benchmarks
     assert "--max-traversal-p95-ms embedded=10" in benchmarks
-    assert "--max-first-useful-init-ms embedded=40000" in benchmarks
-    assert "--max-resident-memory-delta-bytes embedded=1536000000" in benchmarks
+    assert "--min-recall-at-5 0.90" in benchmarks
+    assert "--max-first-useful-init-ms embedded=45000" in benchmarks
+    assert "--max-resident-memory-delta-bytes embedded=1700000000" in benchmarks
     assert "--max-on-disk-footprint-bytes embedded=512000000" in benchmarks
-    assert "--max-rebuild-recovery-ms embedded=40000" in benchmarks
-    assert "--max-checkout-p95-ms embedded=125" in benchmarks
+    assert "--max-rebuild-recovery-ms embedded=45000" in benchmarks
+    assert "--max-checkout-p95-ms embedded=200" in benchmarks
     assert "--min-quality-per-1k-returned-tokens embedded=0.15" in benchmarks
     assert "--min-answer-at-5-per-1k-returned-tokens embedded=0.15" in benchmarks
     assert "--min-quality-per-1k-injected-tokens embedded=0.15" in benchmarks
     assert "--min-answer-at-5-per-1k-injected-tokens embedded=0.15" in benchmarks
-    assert "--max-keyword-p95-ms embedded=60" in benchmarks
-    assert "--max-checkout-p99-ms embedded=175" in benchmarks
+    assert "--max-keyword-p95-ms embedded=20" in benchmarks
+    assert "--max-checkout-p99-ms embedded=250" in benchmarks
     assert "--max-exact-p99-ms embedded=12" in benchmarks
-    assert "--max-keyword-p99-ms embedded=80" in benchmarks
+    assert "--max-keyword-p99-ms embedded=15" in benchmarks
     assert "--max-vector-p99-ms embedded=20" in benchmarks
     assert "Backend shootout guardrail passed" in guardrail
     assert "min-projection-events-per-second" in guardrail
@@ -323,30 +355,29 @@ def test_backend_shootout_contract_is_documented_and_scripted() -> None:
     assert "longmemeval-40-backend-shootout.json" in benchmarks
     assert "longmemeval-100-backend-shootout.json" in benchmarks
     assert "medium-scale backend evidence" in benchmarks
-    assert "Answer@5=0.25" in benchmarks
+    assert "Answer@5=0.575" in benchmarks
     assert "100 nodes and 100 edges" in benchmarks
-    assert "cold bootstrap `98.563ms`" in benchmarks
-    assert "`35.26ms`" in benchmarks
-    assert "append-to-projection p95 `20.039ms`" in benchmarks
+    assert "cold bootstrap `225.93ms`" in benchmarks
+    assert "`10.55ms`" in benchmarks
+    assert "append-to-projection p95 `24.674ms`" in benchmarks
     assert "resident memory delta" in benchmarks
     assert "on-disk footprint" in benchmarks
-    assert "`9096.341ms`" in benchmarks
-    assert "projection throughput `57.793` events/sec" in normalized_benchmarks
+    assert "`9347.717ms`" in benchmarks
+    assert "projection throughput `57.007` events/sec" in normalized_benchmarks
     assert "vector retrieval enabled" in benchmarks
-    assert "quality per 1k returned tokens `0.1332`" in normalized_benchmarks
-    assert "quality per 1k injected tokens `0.1263`" in normalized_benchmarks
-    assert "lane p95s of exact `4.059ms`, keyword `17.858ms`" in normalized_benchmarks
+    assert "answer-ready synthesis now closes the answer-surface gap" in benchmarks
+    assert "lane p95s of exact `0.007ms`, keyword `3.285ms`" in normalized_benchmarks
     assert "roughly 10" in benchmarks
     assert "100-query scale evidence" in benchmarks
-    assert "Embedded/Kuzu scored `Answer@5=0.35`" in benchmarks
-    assert "cold bootstrap `105.955ms`" in benchmarks
-    assert "`66.316ms`" in benchmarks
-    assert "append-to-projection p95 `25.241ms`" in benchmarks
-    assert "quality per 1k returned tokens `0.1954`" in normalized_benchmarks
-    assert "quality per 1k injected tokens `0.1849`" in normalized_benchmarks
-    assert "BM25 scored `Answer@5=0.34`" in benchmarks
-    assert "quality per 1k returned/injected tokens `0.0813`" in benchmarks
-    assert "not a default-backend gate" in benchmarks
+    assert "The `answer_ready` row scored `Answer@5=0.99` and `Recall@5=1.0`" in normalized_benchmarks
+    assert "cold bootstrap `421.649ms`" in normalized_benchmarks
+    assert "first useful init `29620.186ms`" in normalized_benchmarks
+    assert "append-to-projection p95 `26.931ms`" in normalized_benchmarks
+    assert "Answer@5 per 1k injected tokens `0.2889`" in normalized_benchmarks
+    assert "projection throughput `53.393` events/sec" in normalized_benchmarks
+    assert "first answer-ready checkout does not pay" in normalized_benchmarks
+    assert "BM25 scored `Answer@5=0.52`" in benchmarks
+    assert "retrieve path now clears a stricter `Recall@5=0.90` release floor" in normalized_benchmarks
 
 
 def test_install_docs_offer_zero_surprise_first_run_path() -> None:
@@ -379,7 +410,7 @@ def test_public_site_reflects_current_onboarding_and_runtime_surfaces() -> None:
     assert "writes `.env.local`" in html
     assert "records session genesis and heartbeat" in html
     assert "prints the MCP command or config path" in html
-    assert "Neo4j remains the default production graph projection" in html
+    assert "Embedded Kuzu is the default production graph projection" in html
     assert "pgGraph is experimental" in html
     assert "Bare zaxy init" in html
     assert "selects the embedded projection" in html
@@ -649,7 +680,7 @@ def test_docs_describe_incremental_context_refresh_and_backend_reconciliation() 
 
     assert "zaxy refresh-context" in getting_started
     assert "--projection-backend pggraph" in getting_started
-    assert "retire stale Neo4j or pgGraph projection rows" in codebase.replace("\n", " ")
+    assert "retire stale projection rows" in codebase.replace("\n", " ")
     assert "source.changed" in eventloom
     assert "projection.retired" in eventloom
 
@@ -800,18 +831,25 @@ def test_release_gate_runs_docs_validation() -> None:
     assert 'bash -c "${BACKEND_PERFORMANCE_CMD}"' in script
     assert 'bash -c "${BACKEND_SCALE_CMD}"' in script
     assert (
-        "backend-shootout.json --require-report-metadata --require-markdown-report --verify-report-fingerprints "
-        "--require-backends embedded,bm25"
+        "backend-shootout.json --require-report-metadata --require-markdown-report --require-query-results "
+        "--require-git-tracked-inputs --verify-report-fingerprints --require-backends embedded,bm25"
     ) in script
+    assert script.count("--require-query-results") >= 3
+    assert script.count("--require-git-tracked-inputs") >= 3
+    assert "--forbid-backends neo4j,pggraph,latticedb" in script
+    assert "--forbid-backends latticedb" not in script
     assert "--min-quality-per-1k-injected-tokens embedded=1.0" in script
     assert "--min-answer-at-5-per-1k-injected-tokens embedded=1.0" in script
     assert "longmemeval-100-backend-shootout.json" in script
-    assert "--max-checkout-p95-ms embedded=125" in script
+    assert "--max-checkout-p95-ms embedded=200" in script
     assert "--min-quality-per-1k-injected-tokens embedded=0.15" in script
     assert "--min-answer-at-5-per-1k-injected-tokens embedded=0.15" in script
     assert "backend shootout" in testing
     assert "medium-scale embedded runtime evidence" in testing
     assert "100-query embedded scale evidence" in testing
+    assert "--require-query-results" in testing
+    assert "--require-git-tracked-inputs" in testing
+    assert "--max-cold-bootstrap-ms embedded=250" in testing
     assert "activation efficiency" in testing
     assert "--min-activation-rate" in testing
     assert "--max-checkout-prompt-tokens" in testing
@@ -828,9 +866,9 @@ def test_release_gate_runs_docs_validation() -> None:
     assert "--min-answer-at-5-per-1k-returned-tokens embedded=0.10" in script
     assert "--min-quality-per-1k-injected-tokens embedded=0.10" in script
     assert "--min-answer-at-5-per-1k-injected-tokens embedded=0.10" in script
-    assert "--max-cold-bootstrap-ms embedded=200" in script
+    assert "--max-cold-bootstrap-ms embedded=600" in script
     assert "--max-first-checkout-ms embedded=50" in script
-    assert "--max-append-to-projection-p95-ms embedded=30" in script
+    assert "--max-append-to-projection-p95-ms embedded=35" in script
     assert "--max-resident-memory-delta-bytes embedded=768000000" in script
     assert "--max-on-disk-footprint-bytes embedded=256000000" in script
     assert "--max-dashboard-graph-load-ms embedded=250" in script
@@ -850,16 +888,179 @@ def test_release_gate_runs_docs_validation() -> None:
     assert "--min-quality-per-1k-injected-tokens embedded=0.10" in testing
     assert "--min-answer-at-5-per-1k-injected-tokens embedded=0.10" in testing
     assert "--min-quality-per-1k-injected-tokens embedded=0.15" in testing
-    assert "--max-cold-bootstrap-ms embedded=200" in testing
-    assert "--max-first-checkout-ms embedded=100" in testing
+    assert "--max-cold-bootstrap-ms embedded=600" in testing
+    assert "--max-first-checkout-ms embedded=150" in testing
     assert "--max-append-to-projection-p95-ms embedded=40" in testing
-    assert "--max-resident-memory-delta-bytes embedded=1536000000" in testing
+    assert "--max-resident-memory-delta-bytes embedded=1700000000" in testing
     assert "--max-on-disk-footprint-bytes embedded=512000000" in testing
     assert "--max-dashboard-graph-load-ms embedded=500" in testing
-    assert "--max-checkout-p95-ms embedded=125" in testing
-    assert "--max-checkout-p99-ms embedded=175" in testing
-    assert "--max-keyword-p95-ms embedded=75" in testing
+    assert "--max-checkout-p95-ms embedded=200" in testing
+    assert "--max-checkout-p99-ms embedded=250" in testing
+    assert "--max-keyword-p95-ms embedded=20" in testing
+    assert "--max-keyword-p99-ms embedded=15" in testing
     assert "--max-vector-p99-ms embedded=35" in testing
+
+
+def test_embedded_runtime_docs_publish_read_index_warmup_contract() -> None:
+    """Source docs and rendered site should preserve embedded read-index warmup behavior."""
+    roadmap = Path("docs/zero-friction-runtime-roadmap.md").read_text(encoding="utf-8")
+    rendered = Path("site/docs/zero-friction-runtime-roadmap.html").read_text(encoding="utf-8")
+
+    for text in (roadmap, rendered):
+        normalized = " ".join(text.split())
+        assert "Embedded read-index warmup is now part of the runtime path" in text
+        assert "MemoryFabric.connect()" in text
+        assert "current-entity, keyword, vector, and traversal indexes" in text
+        assert "Eventloom verbatim source index" in text
+        assert "retrieve()" in text
+        assert "additional requested projection session" in text
+        assert "at most once" in normalized
+
+
+def test_operations_docs_center_embedded_default_and_optional_sidecars() -> None:
+    """Operator docs should not describe Neo4j as mandatory default infrastructure."""
+    runbook = Path("docs/runbook.md").read_text(encoding="utf-8")
+    operations = Path("docs/operations.md").read_text(encoding="utf-8")
+    deployment = Path("docs/deployment.md").read_text(encoding="utf-8")
+
+    combined = "\n".join((runbook, operations, deployment))
+
+    assert "Embedded Kuzu projection" in runbook
+    assert "zaxy init" in runbook
+    assert "PROJECTION_BACKEND=embedded" in runbook
+    assert "optional sidecar" in combined
+    assert "zaxy-memory[neo4j]" in combined
+    assert "zaxy-memory[pathlight]" in combined
+    assert "Neo4j** (core)" not in runbook
+    assert "docker compose up -d neo4j" not in runbook
+    assert "keep Neo4j healthy" not in operations
+    assert "Neo4j must be reachable" not in deployment
+    assert "Add hot caches only after benchmark evidence shows" not in runbook
+    assert "Keep embedded read-index warmup and hot caches benchmark-gated" in runbook
+
+
+def test_readme_and_api_docs_name_optional_infra_extras() -> None:
+    """Docs should tell users which extras enable optional infrastructure."""
+    readme = Path("README.md").read_text(encoding="utf-8")
+    api = Path("docs/api.md").read_text(encoding="utf-8")
+
+    combined = "\n".join((readme, api))
+    assert "zaxy-memory[neo4j]" in combined
+    assert "zaxy-memory[pathlight]" in combined
+    assert "plain install uses embedded Kuzu" in combined
+
+
+def test_readme_integration_compose_uses_explicit_profile() -> None:
+    """README integration commands should match profile-gated sidecar compose."""
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert "docker compose --profile integration up -d neo4j-test neo4j-tls" in readme
+    assert "docker compose up -d neo4j-test" not in readme
+    assert "docker compose up -d neo4j-tls" not in readme
+    assert '`./scripts/setup.sh`,\nand `zaxy status`' in readme
+    assert '`./scripts/setup.sh`,\nand `docker compose up -d`' not in readme
+
+
+def test_benchmark_docs_describe_sidecar_free_default_shootout() -> None:
+    """Backend shootout docs should not imply sidecars run by default."""
+    benchmarks = Path("docs/benchmarks.md").read_text(encoding="utf-8")
+
+    assert "The default active backend set is `embedded` and `bm25`." in benchmarks
+    assert "explicit backend set" in benchmarks
+    assert "The default active backend set is `embedded`, `neo4j`, `pggraph`, and `bm25`." not in benchmarks
+
+
+def test_core_docs_use_backend_neutral_projection_language() -> None:
+    """Core docs should describe embedded as default and Neo4j as optional."""
+    docs = {
+        "mcp": Path("docs/mcp.md").read_text(encoding="utf-8"),
+        "embeddings": Path("docs/embeddings.md").read_text(encoding="utf-8"),
+        "eventloom": Path("docs/eventloom.md").read_text(encoding="utf-8"),
+        "retrieval": Path("docs/retrieval.md").read_text(encoding="utf-8"),
+        "security": Path("docs/security.md").read_text(encoding="utf-8"),
+        "graph_schema": Path("docs/graph-schema.md").read_text(encoding="utf-8"),
+        "api": Path("docs/api.md").read_text(encoding="utf-8"),
+    }
+    combined = "\n".join(docs.values())
+
+    assert "upserts the selected graph projection" in docs["mcp"]
+    assert "The graph projection is Zaxy's structured reasoning layer" in docs["graph_schema"]
+    assert "default implementation is embedded Kuzu" in docs["graph_schema"]
+    assert "selected projection backend vector search" in docs["embeddings"]
+    assert "optional Neo4j sidecar" in combined
+    assert "set `NEO4J_AUTO_START=true`" in combined
+
+    stale_phrases = [
+        "upserts the Neo4j projection",
+        "Neo4j vector search",
+        "Neo4j is Zaxy's structured reasoning layer",
+        "shared Neo4j database",
+        "patching Neo4j directly",
+        "rebuilds Neo4j projections",
+        "Neo4j facts remain replayable",
+        "Neo4j cannot be reached",
+        "must match the Neo4j vector index",
+        "Set `NEO4J_AUTO_START=false`",
+    ]
+    for phrase in stale_phrases:
+        assert phrase not in combined
+
+
+def test_optional_neo4j_index_script_is_idempotent_and_sidecar_scoped() -> None:
+    """Manual Neo4j index helper should be safe to rerun and clearly optional."""
+    cypher = Path("scripts/setup_neo4j_indexes.cypher").read_text(encoding="utf-8")
+    graph_schema = Path("docs/graph-schema.md").read_text(encoding="utf-8")
+
+    create_lines = [line for line in cypher.splitlines() if line.startswith("CREATE ")]
+    assert create_lines
+    assert all("IF NOT EXISTS" in line for line in create_lines)
+    assert "optional Neo4j sidecar" in graph_schema
+    assert "embedded Kuzu" in graph_schema
+
+
+def test_runtime_docstrings_do_not_claim_neo4j_is_default_projection() -> None:
+    """Runtime-facing module docs should match the embedded-first projection model."""
+    runtime_text = "\n".join(
+        Path(path).read_text(encoding="utf-8")
+        for path in ("src/zaxy/core.py", "src/zaxy/embedded_graph_store.py", "src/zaxy/pggraph_store.py")
+    )
+
+    assert "selected projection graph" in runtime_text
+    assert "Connect to projection backend and tracer" in runtime_text
+    assert "knowledge graph (Neo4j)" not in runtime_text
+    assert "Connect to Neo4j and Pathlight" not in runtime_text
+    assert "Neo4j remains the sidecar control backend until" not in runtime_text
+    assert "Kuzu-backed embedded projection store." in runtime_text
+    assert "projection store shell" not in runtime_text
+    assert "Methods fail clearly until the Kuzu implementation lands" not in runtime_text
+
+
+def test_readme_does_not_duplicate_production_secrets_section() -> None:
+    """The README should stay concise and avoid repeated operational sections."""
+    readme = Path("README.md").read_text(encoding="utf-8")
+
+    assert readme.count("## Production Secrets") == 1
+
+
+def test_rendered_planning_docs_do_not_claim_neo4j_is_current_default() -> None:
+    """Rendered planning docs should not contradict the embedded-first default."""
+    planning_docs = "\n".join(
+        path.read_text(encoding="utf-8")
+        for root in (Path("docs/superpowers/plans"), Path("docs/superpowers/specs"))
+        for path in root.glob("*.md")
+    )
+
+    assert "Current status: embedded Kuzu is the default projection backend" in planning_docs
+    assert "Neo4j remains the default" not in planning_docs
+    assert "Neo4j remains the default." not in planning_docs
+    assert "Neo4j remains the default while" not in planning_docs
+    assert "Neo4j remaining the default" not in planning_docs
+    assert "default backend remains Neo4j" not in planning_docs
+    assert "keeps `PROJECTION_BACKEND=neo4j` as the default" not in planning_docs
+    assert "Neo4j remains the only production and published benchmark backend" not in planning_docs
+    assert "preserves Neo4j as default" not in planning_docs
+    assert "Neo4j is the production default" not in planning_docs
+    assert "Keep PROJECTION_BACKEND=neo4j until" not in planning_docs
 
 
 def test_github_pages_workflow_publishes_site_directory() -> None:

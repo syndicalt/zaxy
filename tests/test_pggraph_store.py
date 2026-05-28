@@ -255,6 +255,47 @@ async def test_pggraph_store_search_keyword_returns_scored_results() -> None:
 
 
 @pytest.mark.asyncio
+async def test_pggraph_store_search_keyword_zero_limit_skips_database() -> None:
+    connection = FakeConnection()
+    store = PgGraphStore("postgresql://test", connection=connection)
+
+    assert await store.search_keyword("memory", limit=0, session_id="agent-1") == []
+    assert connection.statements == []
+
+
+@pytest.mark.asyncio
+async def test_pggraph_store_search_keyword_converts_score_once() -> None:
+    class _CountingScore:
+        float_calls = 0
+
+        def __float__(self) -> float:
+            self.float_calls += 1
+            return 0.8
+
+    score = _CountingScore()
+    connection = FakeConnection()
+    connection.cursor_obj.rows = [
+        {
+            "name": "Zaxy",
+            "entity_type": "project",
+            "valid_from": "2026-05-18T00:00:00Z",
+            "valid_to": None,
+            "summary": "Memory product",
+            "properties": {},
+            "session_id": "agent-1",
+            "score": score,
+        }
+    ]
+    store = PgGraphStore("postgresql://test", connection=connection)
+
+    results = await store.search_keyword("memory", session_id="agent-1")
+
+    assert results[0].score == 0.8
+    assert results[0].raw_score == 0.8
+    assert score.float_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_pggraph_store_search_keyword_builds_natural_language_tsquery() -> None:
     connection = FakeConnection()
     store = PgGraphStore("postgresql://test", connection=connection)
@@ -617,6 +658,56 @@ async def test_pggraph_store_search_vector_uses_pgvector_cosine_distance() -> No
     assert isinstance(params, dict)
     assert params["embedding"] == "[0.1,0.2,0.3]"
     assert params["limit"] == 3
+
+
+@pytest.mark.asyncio
+async def test_pggraph_store_search_vector_zero_limit_skips_database() -> None:
+    connection = FakeConnection()
+    store = PgGraphStore("postgresql://test", connection=connection)
+
+    assert await store.search_vector([0.1, 0.2, 0.3], limit=0, session_id="agent-1") == []
+    assert connection.statements == []
+
+
+@pytest.mark.asyncio
+async def test_pggraph_store_search_vector_zero_norm_skips_database() -> None:
+    connection = FakeConnection()
+    store = PgGraphStore("postgresql://test", connection=connection)
+
+    assert await store.search_vector([0.0, 0.0, 0.0], session_id="agent-1") == []
+    assert connection.statements == []
+
+
+@pytest.mark.asyncio
+async def test_pggraph_store_search_vector_converts_score_once() -> None:
+    class _CountingScore:
+        float_calls = 0
+
+        def __float__(self) -> float:
+            self.float_calls += 1
+            return 0.91
+
+    score = _CountingScore()
+    connection = FakeConnection()
+    connection.cursor_obj.rows = [
+        {
+            "name": "Zaxy",
+            "entity_type": "project",
+            "valid_from": "2026-05-18T00:00:00Z",
+            "valid_to": None,
+            "summary": "Memory product",
+            "properties": {},
+            "session_id": "agent-1",
+            "score": score,
+        }
+    ]
+    store = PgGraphStore("postgresql://test", connection=connection)
+
+    results = await store.search_vector([0.1, 0.2, 0.3], session_id="agent-1")
+
+    assert results[0].score == 0.91
+    assert results[0].raw_score == 0.91
+    assert score.float_calls == 1
 
 
 @pytest.mark.integration

@@ -17,6 +17,7 @@ from zaxy.integrations import (
     recommend_framework_integration_target,
     render_agent_integration_template,
     render_codex_mcp_add_command,
+    render_coordination_adapter_template,
     render_framework_install_command,
     render_handoff_adapter,
     render_mcp_client_config,
@@ -41,17 +42,20 @@ def test_renders_claude_desktop_mcp_config_without_secrets() -> None:
     assert server["args"] == ["serve", "--eventloom-path", ".eventloom"]
     assert server["startup_timeout_sec"] == 90
     assert server["env"] == {
+        "EMBEDDED_GRAPH_PATH": ".eventloom/projections/embedded.kuzu",
         "EVENTLOOM_PATH": ".eventloom",
         "EVENTLOOM_THREAD": "zaxy-default",
         "LOG_LEVEL": "ERROR",
         "MCP_ADMIN_TOKEN_FILE": "",
         "MCP_REMOTE_AUTH_TOKEN_FILE": "",
         "NEO4J_CA_CERT": "",
-        "NEO4J_AUTO_START": "true",
+        "NEO4J_AUTO_START": "false",
         "NEO4J_PASSWORD_FILE": "",
         "NEO4J_URI": "bolt://localhost:7687",
         "OPENAI_API_KEY_FILE": "",
         "PATHLIGHT_ACCESS_TOKEN_FILE": "",
+        "PGGRAPH_AUTO_START": "false",
+        "PROJECTION_BACKEND": "embedded",
         "ZAXY_DOMAIN": "zaxy",
         "ZAXY_ENV": "development",
     }
@@ -428,6 +432,48 @@ def test_renders_autogen_template_with_pre_reply_memory_checkout() -> None:
     assert "await fabric.checkout_memory" in template
     assert "session_id='agent-1'" in template
     assert '"zaxy_context": checkout.prompt' in template
+
+
+def test_renders_codex_coordination_adapter_template() -> None:
+    """Codex-style local workers should get a real CoordinationManager starter."""
+    template = render_coordination_adapter_template(
+        "codex",
+        mission_id="auth-main",
+        worker_id="auth-api",
+        eventloom_path=".eventloom",
+    )
+
+    assert "from zaxy.adapters.coordination import CoordinationAdapter" in template
+    assert "mission_id='auth-main'" in template
+    assert "worker_id='auth-api'" in template
+    assert "adapter.report_finding" in template
+    assert "adapter.handoff" in template
+    assert "subprocess" not in template
+
+
+def test_renders_framework_coordination_adapter_template_without_framework_imports() -> None:
+    """Framework coordination starters should stay dependency-light."""
+    langgraph = render_coordination_adapter_template("langgraph", mission_id="mission-1", worker_id="worker-1")
+    crewai = render_coordination_adapter_template("crewai", mission_id="mission-1", worker_id="worker-1")
+
+    assert "async def zaxy_coordinate_langgraph_node" in langgraph
+    assert "adapter.report_finding" in langgraph
+    assert "import langgraph" not in langgraph.casefold()
+    assert "async def zaxy_coordinate_crewai_step" in crewai
+    assert "adapter.report_finding" in crewai
+    assert "import crewai" not in crewai.casefold()
+
+
+def test_renders_generic_mcp_coordination_adapter_template() -> None:
+    """Generic MCP clients should get the exact tool-call sequence for Coordinate."""
+    template = render_coordination_adapter_template("mcp", mission_id="auth-main", worker_id="auth-api")
+
+    assert "coordination_start" in template
+    assert "coordination_worker_create" in template
+    assert "coordination_report_finding" in template
+    assert "coordination_checkout" in template
+    assert '"mission_id": "auth-main"' in template
+    assert '"worker_id": "auth-api"' in template
 
 
 def test_renders_framework_extra_install_commands() -> None:

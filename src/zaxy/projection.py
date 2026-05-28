@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Protocol
 
-from zaxy.extract import ExtractionResult
-
 if TYPE_CHECKING:
+    from zaxy.extract import ExtractionResult
     from zaxy.graph import (
         GraphEntity,
         GraphEventProjectionStatus,

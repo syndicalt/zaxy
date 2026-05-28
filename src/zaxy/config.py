@@ -72,8 +72,8 @@ class Settings(BaseSettings):
         description="Neo4j database name",
     )
     neo4j_auto_start: bool = Field(
-        default=True,
-        description="Automatically start local Neo4j for localhost development MCP use",
+        default=False,
+        description="Automatically start local Neo4j when explicitly using the Neo4j backend",
     )
     neo4j_auto_start_image: str = Field(
         default="neo4j:5.26-community",
@@ -100,8 +100,8 @@ class Settings(BaseSettings):
     # Projection backend
     # ------------------------------------------------------------------
     projection_backend: str = Field(
-        default="neo4j",
-        description="Projection backend: neo4j, experimental pggraph, embedded, or latticedb",
+        default="embedded",
+        description="Projection backend: embedded, neo4j, pggraph, or latticedb",
     )
     embedded_graph_path: str = Field(
         default=".eventloom/projections/embedded.kuzu",
@@ -116,7 +116,7 @@ class Settings(BaseSettings):
         description="Experimental pgGraph PostgreSQL DSN",
     )
     pggraph_auto_start: bool = Field(
-        default=True,
+        default=False,
         description="Automatically start local pgGraph/PostgreSQL for development when selected",
     )
     pggraph_auto_start_image: str = Field(
@@ -374,6 +374,42 @@ class Settings(BaseSettings):
         description="OpenAI-compatible chat model used for reranking",
     )
 
+    # ------------------------------------------------------------------
+    # Coordination
+    # ------------------------------------------------------------------
+    coordination_semantic_conflict_provider: str = Field(
+        default="none",
+        description="Coordination semantic conflict provider: none, lexical, or http",
+    )
+    coordination_semantic_conflict_url: str | None = Field(
+        default=None,
+        description="Hosted coordination semantic conflict adapter URL",
+    )
+    coordination_semantic_conflict_api_key: str | None = Field(
+        default=None,
+        description="Optional bearer token for hosted coordination semantic conflict adapter",
+    )
+    coordination_semantic_conflict_api_key_file: str | None = Field(
+        default=None,
+        description="Path to a file containing the hosted coordination semantic conflict bearer token",
+    )
+    coordination_semantic_conflict_min_confidence: float = Field(
+        default=0.7,
+        ge=0.0,
+        le=1.0,
+        description="Minimum hosted semantic conflict confidence accepted into coordination state",
+    )
+    coordination_semantic_conflict_timeout_seconds: float = Field(
+        default=30.0,
+        gt=0.0,
+        description="Hosted semantic conflict adapter request timeout in seconds",
+    )
+    coordination_semantic_min_shared_subject_tokens: int = Field(
+        default=2,
+        ge=1,
+        description="Minimum shared non-polarity subject tokens for lexical coordination semantic conflicts",
+    )
+
     def model_post_init(self, __context: Any) -> None:
         """Load Docker/Kubernetes-style secret files after env parsing."""
         self._load_secret_file("NEO4J_PASSWORD", "neo4j_password", "neo4j_password_file")
@@ -390,6 +426,11 @@ class Settings(BaseSettings):
         )
         self._load_secret_file("OPENAI_API_KEY", "openai_api_key", "openai_api_key_file")
         self._load_secret_file("RERANKER_API_KEY", "reranker_api_key", "reranker_api_key_file")
+        self._load_secret_file(
+            "COORDINATION_SEMANTIC_CONFLICT_API_KEY",
+            "coordination_semantic_conflict_api_key",
+            "coordination_semantic_conflict_api_key_file",
+        )
         self._load_secret_file(
             "PATHLIGHT_ACCESS_TOKEN",
             "pathlight_access_token",
@@ -416,10 +457,11 @@ class Settings(BaseSettings):
     def _validate_production_security(self) -> Settings:
         """Reject known-insecure production defaults."""
         if self.zaxy_env.lower() == "production":
-            if self.neo4j_password == "testpassword":
-                raise ValueError("NEO4J_PASSWORD must be overridden in production")
-            if self.neo4j_uri.startswith("bolt://") and not self.neo4j_ca_cert:
-                raise ValueError("NEO4J_URI must use TLS or NEO4J_CA_CERT in production")
+            if self.projection_backend.casefold().strip() == "neo4j":
+                if self.neo4j_password == "testpassword":
+                    raise ValueError("NEO4J_PASSWORD must be overridden in production")
+                if self.neo4j_uri.startswith("bolt://") and not self.neo4j_ca_cert:
+                    raise ValueError("NEO4J_URI must use TLS or NEO4J_CA_CERT in production")
             if not self.mcp_admin_token:
                 raise ValueError("MCP_ADMIN_TOKEN must be configured in production")
             has_static_remote_auth = bool(self.mcp_remote_auth_token)

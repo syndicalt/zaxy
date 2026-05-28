@@ -7,7 +7,11 @@ from typing import Any
 
 import pytest
 
-from zaxy.adapters.langgraph import LangGraphMemoryAdapter, create_langgraph_memory_node
+from zaxy.adapters.langgraph import (
+    LangGraphMemoryAdapter,
+    create_langgraph_coordination_node,
+    create_langgraph_memory_node,
+)
 from zaxy.core import Context, ContextAssembly
 from zaxy.integrations import list_framework_integration_specs
 
@@ -102,6 +106,31 @@ async def test_langgraph_memory_node_uses_adapter_before_model() -> None:
 
     assert state["zaxy_context"] == "Use source-aware memory."
     assert calls[0][0] == "after_turn"
+
+
+@pytest.mark.asyncio
+async def test_langgraph_coordination_node_reports_explicit_worker_finding(tmp_path) -> None:
+    """Coordinate node should append worker-local findings without framework imports."""
+    node = create_langgraph_coordination_node(
+        mission_id="auth-main",
+        worker_id="auth-api",
+        eventloom_path=str(tmp_path / ".eventloom"),
+    )
+
+    state = await node(
+        {
+            "coordination_summary": "API failures trace to expired JWKS cache handling",
+            "coordination_evidence": [{"kind": "source", "reference": "src/auth.py:12"}],
+            "coordination_claim_key": "auth.failure.cause",
+            "coordination_claim_value": "expired-jwks-cache",
+        }
+    )
+
+    finding = state["zaxy_coordination"]
+    assert finding["event_type"] == "coordination.finding.reported"
+    assert finding["mission_id"] == "auth-main"
+    assert finding["worker_id"] == "auth-api"
+    assert finding["finding_id"]
 
 
 @pytest.mark.asyncio

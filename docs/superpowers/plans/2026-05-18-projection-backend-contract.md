@@ -2,7 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Extract a backend-neutral projection contract and backend factory so Neo4j remains the default while pgGraph can be evaluated behind the same retrieval and projection surface.
+**Goal:** Extract a backend-neutral projection contract and backend factory so pgGraph and future backends can be evaluated behind the same retrieval and projection surface. Historical note: this plan was written before the embedded Kuzu promotion, when Neo4j was still the default projection backend.
+
+**Current status:** embedded Kuzu is the default projection backend. Neo4j remains useful as a sidecar control backend, not as the default local requirement.
 
 **Architecture:** Eventloom remains the source of truth. `GraphStore` becomes the first concrete implementation of a typed `ProjectionStore` contract, and all high-level construction paths use a backend factory instead of instantiating Neo4j directly. The pgGraph path is explicitly experimental and unavailable until a real adapter passes the same contract and benchmark gates.
 
@@ -14,7 +16,8 @@
 
 - Modify `src/zaxy/projection.py`: replace loose `object` returns with concrete projection-store method signatures and add read-only/invalidation methods used by checkout, CLI, and dashboard surfaces.
 - Create `src/zaxy/projection_backends.py`: central projection backend factory and config dataclass.
-- Modify `src/zaxy/config.py`: add `projection_backend` setting with default `neo4j`.
+- Modify `src/zaxy/config.py`: add `projection_backend` setting. Historical
+  implementation default was `neo4j`; current default is `embedded`.
 - Modify `src/zaxy/core.py`, `src/zaxy/mcp_server.py`, `src/zaxy/live_benchmark.py`, and `src/zaxy/__main__.py`: instantiate graph projection stores through the factory where behavior must stay backend-neutral.
 - Test in `tests/test_projection.py`, `tests/test_config.py`, `tests/test_core.py`, `tests/test_mcp.py`, and targeted benchmark CLI tests if constructor wiring changes.
 - Modify `docs/superpowers/specs/2026-05-17-skill-memory-pggraph-evaluation-design.md`, `docs/benchmarks.md`, and `AGENTS.md`: record Skill Memory completion and the pgGraph contract-first evaluation state.
@@ -317,8 +320,9 @@ Create `src/zaxy/projection_backends.py`:
 ```python
 """Projection backend construction.
 
-Neo4j is the production default. pgGraph is exposed only as an explicit
-experimental target until an adapter passes the same contract and benchmarks.
+Embedded Kuzu is the local production default. Neo4j remains the sidecar control
+backend, and pgGraph is exposed only as an explicit experimental target until it
+passes the same contract and benchmarks.
 """
 
 from __future__ import annotations
@@ -355,15 +359,15 @@ def build_projection_store(config: ProjectionBackendConfig) -> ProjectionStore:
     if backend == "pggraph":
         raise NotImplementedError(
             "pgGraph backend is experimental and has no adapter yet. "
-            "Keep PROJECTION_BACKEND=neo4j until pgGraph passes the projection contract and benchmark gates."
+            "Use PROJECTION_BACKEND=pggraph only after pgGraph passes the projection contract and benchmark gates."
         )
-    raise ValueError("projection backend must be one of: neo4j, pggraph")
+    raise ValueError("projection backend must be one of: embedded, neo4j, pggraph, latticedb")
 ```
 
 Add to `Settings` in `src/zaxy/config.py`:
 
 ```python
-projection_backend: str = Field(default="neo4j", validation_alias="PROJECTION_BACKEND")
+projection_backend: str = Field(default="embedded", validation_alias="PROJECTION_BACKEND")
 ```
 
 - [ ] **Step 4: Run tests to verify GREEN**
@@ -515,7 +519,7 @@ Build the experimental pgGraph adapter behind `PROJECTION_BACKEND=pggraph` only 
 Update the pgGraph spec with the current upstream posture from the docs checked on May 18, 2026:
 
 ```markdown
-As of May 18, 2026, pgGraph docs describe version 0.1.0, PostgreSQL 13-18 support, and alpha status for experimentation, demos, benchmarks, and early feedback. Zaxy therefore keeps `PROJECTION_BACKEND=neo4j` as the default and treats `PROJECTION_BACKEND=pggraph` as unavailable until an adapter passes the benchmark gates.
+As of May 18, 2026, pgGraph docs describe version 0.1.0, PostgreSQL 13-18 support, and alpha status for experimentation, demos, benchmarks, and early feedback. At that point Zaxy used `PROJECTION_BACKEND=neo4j` as the default and treated `PROJECTION_BACKEND=pggraph` as unavailable until an adapter passed the benchmark gates. Current status: embedded Kuzu is the default projection backend, and pgGraph is an explicit sidecar evaluation backend.
 ```
 
 - [ ] **Step 4: Run docs tests**
@@ -586,7 +590,7 @@ Run:
 rg -n "PROJECTION_BACKEND|pggraph|GraphStore\\(" src/zaxy tests docs AGENTS.md
 ```
 
-Expected: pgGraph is documented as experimental, default backend remains Neo4j, and any remaining direct `GraphStore(` construction is either in the Neo4j adapter/factory, tests, or Neo4j-specific CLI/schema code.
+Expected: pgGraph is documented as experimental, embedded Kuzu remains the default backend, and any remaining direct `GraphStore(` construction is either in the Neo4j adapter/factory, tests, or Neo4j-specific CLI/schema code.
 
 - [ ] **Step 5: Commit final fixes if needed**
 

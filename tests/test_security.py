@@ -13,6 +13,7 @@ from zaxy.security import (
     validate_query,
     validate_session_id,
     validate_traversal_depth,
+    vector_has_signal,
 )
 
 
@@ -115,3 +116,15 @@ class TestValidation:
         assert validate_traversal_depth(3) == 3
         with pytest.raises(ValueError, match="between"):
             validate_traversal_depth(6)
+
+    def test_vector_signal_check_uses_loop_hot_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Vector signal checks run on retrieval hot paths and should avoid generator helpers."""
+        monkeypatch.setattr(
+            "builtins.any",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                AssertionError("vector signal check should not allocate an any() generator")
+            ),
+        )
+
+        assert vector_has_signal([0.0, 0.0, 1.0]) is True
+        assert vector_has_signal([0.0, 0.0, 0.0]) is False

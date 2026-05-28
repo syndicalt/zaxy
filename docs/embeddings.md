@@ -3,7 +3,7 @@
 Embeddings are optional but important for semantic retrieval. Zaxy supports a
 deterministic local hash provider and an OpenAI-compatible hosted provider. Both
 produce fixed-size vectors attached to extracted entities and query text, then
-Neo4j vector search participates in result fusion.
+selected projection backend vector search participates in result fusion.
 
 The hash provider is designed for tests, offline development, and deterministic
 behavior. It does not provide high-quality semantic meaning, but it allows vector
@@ -19,13 +19,11 @@ zaxy local-profile --projection-backend embedded --output .env.local
 zaxy local-profile --check
 ```
 
-The generated profile uses `EMBEDDING_PROVIDER=hash`,
-`RERANKER_PROVIDER=lexical`, and `NEO4J_AUTO_START=true`. It intentionally omits
-hosted API key variables so the default local path stays offline and
-deterministic.
-Use `zaxy local-profile --projection-backend embedded` when the same offline
-embedding/reranker defaults should target the embedded graph projection and
-avoid sidecar autostart.
+The generated profile uses `PROJECTION_BACKEND=embedded`,
+`EMBEDDING_PROVIDER=hash`, `RERANKER_PROVIDER=lexical`, and sidecar autostart
+disabled. It intentionally omits hosted API key variables so the default local
+path stays offline and deterministic. Use an explicit sidecar profile only when
+you need a Neo4j or pgGraph comparison target.
 
 The hosted provider is selected with:
 
@@ -37,9 +35,9 @@ OPENAI_API_KEY_FILE=secrets/openai_api_key.txt
 ```
 
 `OPENAI_BASE_URL` can point at any OpenAI-compatible embeddings endpoint. Keep
-`EMBEDDING_DIMENSION` aligned with the model and the Neo4j vector index. If the
-dimension changes, rebuild the vector index and replay affected events so entity
-vectors are regenerated consistently.
+`EMBEDDING_DIMENSION` aligned with the model and the selected backend vector
+index. If the dimension changes, rebuild the vector index and replay affected
+events so entity vectors are regenerated consistently.
 
 Secrets should be supplied through `OPENAI_API_KEY_FILE` in production. Direct
 `OPENAI_API_KEY` is convenient for local testing but can leak through process
@@ -53,8 +51,8 @@ to the graph fact being stored.
 
 If hosted embedding calls fail, treat the event log as the recovery source. Fix
 configuration, replay the Eventloom log, and rebuild graph projections. Do not
-manually patch vectors in Neo4j unless you are doing a controlled maintenance
-operation documented in [operations.md](operations.md).
+manually patch vectors in a projection backend unless you are doing a controlled
+maintenance operation documented in [operations.md](operations.md).
 
 Related pages: [retrieval.md](retrieval.md), [graph-schema.md](graph-schema.md),
 [deployment.md](deployment.md), and [README.md](../README.md). The public site

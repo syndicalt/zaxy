@@ -157,7 +157,7 @@
         <h2>Hybrid search for agent context.</h2>
       </div>
       <p>
-        Zaxy routes queries through exact entity lookup, Neo4j full-text search,
+        Zaxy routes queries through exact entity lookup, embedded graph keyword search,
         vector similarity, graph traversal, and verbatim Eventloom retrieval. Memory
         Checkout turns those lanes into compact cited context so agents receive
         connected facts instead of raw transcript piles. Checkout diagnostics show
@@ -172,17 +172,18 @@
         <p class="eyebrow">Projection backends</p>
         <h2>Eventloom stays canonical. Graph backends are projections.</h2>
         <p>
-          Neo4j remains the default production graph projection. pgGraph is experimental
-          behind <code>PROJECTION_BACKEND=pggraph</code> for teams
-          evaluating Postgres-local graph traversal, pgvector ranking, and temporal
-          retrieval without moving the source of truth out of Eventloom. Bare zaxy init
+          Embedded Kuzu is the default production graph projection. Neo4j remains
+          the sidecar control backend, and pgGraph is experimental behind
+          <code>PROJECTION_BACKEND=pggraph</code> for teams evaluating
+          Postgres-local graph traversal, pgvector ranking, and temporal retrieval
+          without moving the source of truth out of Eventloom. Bare zaxy init
           selects the embedded projection for no-sidecar local onboarding without
           requiring an external graph service.
         </p>
       </div>
       <div class="value-grid">
-        <article><h3>Default: Neo4j</h3><p>Battle-tested graph projection for temporal entities, source citations, inferred edges, and traversal-backed retrieval.</p></article>
-        <article><h3>Local embedded</h3><p>Bare <code>zaxy init</code> uses the repo-local embedded projection path for no-sidecar Codex onboarding.</p></article>
+        <article><h3>Default: embedded</h3><p>Repo-local Kuzu projection for temporal entities, source citations, inferred edges, and traversal-backed retrieval.</p></article>
+        <article><h3>Control: Neo4j</h3><p>Explicit sidecar backend for same-harness quality comparisons and teams that already operate Neo4j. Install with <code>zaxy-memory[neo4j]</code>.</p></article>
         <article><h3>Experimental: pgGraph</h3><p>Available behind an explicit backend selector and guarded by same-harness quality, citation, latency, and operations comparisons.</p></article>
         <article><h3>Recoverable projection</h3><p>Rebuild a selected backend from Eventloom with <code>zaxy reproject --projection-backend pggraph --reset-projection</code>.</p></article>
       </div>
@@ -210,15 +211,16 @@
           dashboard resolves one workspace by default and shows Eventloom sessions,
           graph projection status, recent events, graph neighborhoods, Checkout
           diagnostics, Last bootstrap, Last checkout, Last feedback, and
-          stale-memory warnings. Neo4j is the default graph provider; pass
+          stale-memory warnings. Embedded is the default graph provider; pass
           <code>--projection-backend pggraph --pggraph-dsn ...</code> to inspect
-          the experimental pgGraph projection.
+          the experimental pgGraph projection or <code>--projection-backend neo4j</code>
+          to inspect a Neo4j projection.
         </p>
       </div>
       <div class="value-grid">
         <article><h3>Read-only by design</h3><p>API routes reject writes; the dashboard is for runtime memory/debugging, not editing facts or invalidating history.</p></article>
         <article><h3>Local scope</h3><p>The header shows workspace, Eventloom path, domain, session, read-only mode, and graph connection status.</p></article>
-        <article><h3>Useful when degraded</h3><p>If Neo4j is unreachable, Eventloom still renders a fallback provenance graph so sessions are not blank.</p></article>
+        <article><h3>Useful when degraded</h3><p>If a selected sidecar is unreachable, Eventloom still renders a fallback provenance graph so sessions are not blank.</p></article>
       </div>
     </section>
 

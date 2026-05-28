@@ -117,7 +117,7 @@ async def _type_probe(store: ProjectionStore) -> None:
     assert_type(vector, list[SearchResult])
 
 
-def test_build_projection_store_defaults_to_neo4j() -> None:
+def test_build_projection_store_routes_neo4j_to_adapter() -> None:
     store = build_projection_store(
         ProjectionBackendConfig(
             backend="neo4j",
@@ -181,6 +181,18 @@ def test_build_projection_store_requires_embedded_graph_path() -> None:
         )
 
 
+@pytest.mark.asyncio
+async def test_embedded_store_missing_kuzu_error_points_to_core_install(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Embedded Kuzu is a core dependency, so remediation should not point to a redundant extra."""
+    monkeypatch.setattr("zaxy.embedded_graph_store.importlib.util.find_spec", lambda name: None)
+    store = EmbeddedGraphStore(tmp_path / "embedded.kuzu")
+
+    with pytest.raises(RuntimeError, match='pip install "zaxy-memory"') as exc_info:
+        await store.connect()
+
+    assert "zaxy-memory[embedded]" not in str(exc_info.value)
+
+
 def test_build_projection_store_routes_latticedb_to_adapter(tmp_path: Path) -> None:
     graph_path = tmp_path / ".eventloom" / "projections" / "memory.latticedb"
 
@@ -207,6 +219,24 @@ def test_build_projection_store_requires_latticedb_path() -> None:
         build_projection_store(
             ProjectionBackendConfig(
                 backend="latticedb",
+                neo4j_uri="bolt://localhost:7687",
+                neo4j_user="neo4j",
+                neo4j_password="testpassword",
+                neo4j_ca_cert=None,
+                neo4j_trust_all=False,
+            )
+        )
+
+
+def test_build_projection_store_invalid_backend_error_lists_embedded_first() -> None:
+    """Factory errors should present embedded as the default production path."""
+    with pytest.raises(
+        ValueError,
+        match="projection backend must be one of: embedded, neo4j, pggraph, latticedb",
+    ):
+        build_projection_store(
+            ProjectionBackendConfig(
+                backend="unknown",
                 neo4j_uri="bolt://localhost:7687",
                 neo4j_user="neo4j",
                 neo4j_password="testpassword",

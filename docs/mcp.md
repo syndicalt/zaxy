@@ -7,9 +7,9 @@ application code.
 
 `memory_append(event_type, actor, payload, thread?)` appends a typed event to
 the Eventloom log for the selected session, extracts graph entities and edges,
-upserts the Neo4j projection, records metrics, and emits a Pathlight span when
-tracing is enabled. Payload size is bounded and session IDs are validated before
-they affect filesystem paths.
+upserts the selected graph projection, records metrics, and emits a Pathlight
+span when tracing is enabled. Payload size is bounded and session IDs are
+validated before they affect filesystem paths.
 
 `memory_query(query, temporal_filter?, limit?)` returns ranked context chunks.
 The query router validates the string and limit, optionally embeds the query,
@@ -21,7 +21,7 @@ available so clients can display or replay the source event. Results also
 include `score_explanation` metadata for ranking diagnostics.
 
 `memory_verbatim(query, session_id?, limit?)` returns exact source chunks from
-the Eventloom log without requiring Neo4j. It is the source-recall lane for
+the Eventloom log without requiring a graph service. It is the source-recall lane for
 questions that need raw transcript turns, document chunks, identifiers, quoted
 phrases, or file/source citations. Results include the raw content, BM25 score,
 `eventloom://...` citation, source kind, and source metadata such as document
@@ -234,6 +234,25 @@ then assembles context for the next model call.
 summary and integrity status. These lifecycle tools are session-scoped under
 remote SSE auth just like query and append.
 
+Coordination tools package the parent mission plus worker session workflow:
+`coordination_start`, `coordination_worker_create`, `coordination_assign`,
+`coordination_report_finding`, `coordination_merge_brief`,
+`coordination_checkout`, `coordination_performance_ledger`,
+`coordination_approval_packet`, `coordination_apply_approval`,
+`coordination_review_finding`, `coordination_promote`, and
+`coordination_handoff`. They preserve worker-local findings until a coordinator
+review promotes accepted state into the parent mission history. The first merge
+brief, accepted checkout, and performance ledger are replay-backed and do not
+require graph availability. `coordination_checkout` returns promoted parent
+state by default; set `include_diagnostics` to include pending findings and
+conflicts as non-authoritative diagnostics. `coordination_performance_ledger`
+returns per-worker outcome metrics such as accepted, rejected, duplicate,
+missing-evidence, and test-backed finding rates. `coordination_handoff` appends
+a replayable parent mission event with summary, next steps, and risks. The
+approval tools export pending/conflicted findings for remote review and apply
+returned decisions as ordinary review events, with promotion only when a
+decision explicitly sets `promote`.
+
 MCP dispatch also performs automatic lifecycle capture by default. After each
 tool call, Zaxy appends a `tool.call.completed` event to the resolved session
 with the tool name, status, argument keys, and a bounded result summary. Raw
@@ -350,14 +369,15 @@ prints a `zaxy capture start --workspace .` command. That managed watcher reads
 Codex's local session JSONL and appends normalized Eventloom observations. It
 does not proxy provider traffic or require an OpenAI API key.
 For supervised checks, add `--watch-iterations <n>` to run a bounded number of
-capture passes to the underlying `zaxy codex-capture --watch` command. When
-Neo4j is reachable, add `--graph` to `zaxy capture start` so newly captured
-observations are also projected into the graph during the same pass.
+capture passes to the underlying `zaxy codex-capture --watch` command. Add
+`--graph` to `zaxy capture start` when the selected projection backend should
+receive newly captured observations during the same pass.
 
 Hook adapters do not proxy tool execution. Agents and tools continue to execute
 normally while hooks append lightweight Eventloom observations through
 `zaxy hook-event`. The sink is intentionally graph-independent so session stop
-and pre-compaction hooks can record provenance even when Neo4j is unavailable.
+and pre-compaction hooks can record provenance even when the selected graph
+projection is unavailable.
 Custom clients can implement the same contract by emitting normalized triggers
 such as `session-start`, `stop`, `precompact`, `checkpoint`, `command`, and
 `file-edit`. Command and file-edit triggers become first-class
@@ -386,13 +406,14 @@ derive those values from the active project. For remote SSE configs, the same
 default is sent through the session header.
 
 For local stdio clients, the generated config is intentionally self-contained:
-it forces development-mode localhost settings and enables `NEO4J_AUTO_START`.
-On startup, Zaxy reuses `bolt://localhost:7687` when it is already available;
-otherwise it starts a named Docker container, `zaxy-neo4j`, with the default
-local credentials. Generated stdio configs set `startup_timeout_sec` to `90`
-so MCP clients do not kill startup while Docker is creating or warming the
-local Neo4j container. Set `NEO4J_AUTO_START=false` or provide a non-local
-`NEO4J_URI` when you want to manage Neo4j yourself.
+it forces development-mode local settings and defaults to the embedded Kuzu
+projection. Generated stdio configs set `startup_timeout_sec` to `90` so MCP
+clients do not kill startup while local indexes are opening or optional
+sidecars are warming. If you explicitly choose the optional Neo4j sidecar, Zaxy
+can reuse `bolt://localhost:7687` or start a named Docker container,
+`zaxy-neo4j`, with the default local credentials. Leave `NEO4J_AUTO_START=false`
+when you manage Neo4j yourself; set `NEO4J_AUTO_START=true` only when you want
+Zaxy to start that local sidecar.
 
 Run SSE daemon mode:
 

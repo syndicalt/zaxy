@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -115,6 +116,8 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "--progress" in cli
     assert "--reuse-projection" in cli
     assert "--projection-backend" in cli
+    assert 'projection_backend: str = typer.Option(\n        "embedded",' in cli
+    assert "embedded default" in cli
     assert "--pggraph-dsn" in cli
     assert "Delete benchmark projection contents before ingestion" in cli
     assert "ProjectionBackendConfig(" in cli
@@ -130,6 +133,15 @@ def test_cli_exposes_live_benchmark_command() -> None:
     assert "--sessions" in script
     assert "--embedding-cache" in script
     assert "--progress" in script
+    assert "--dry-run" in script
+    assert 'EMBEDDING_PROVIDER="hash"' in script
+    assert "Uses deterministic hash embeddings by default" in script
+    assert 'PROJECTION_BACKEND="${PROJECTION_BACKEND:-embedded}"' in script
+    assert "--projection-backend" in script
+    assert 'if [[ "${PROJECTION_BACKEND}" == "neo4j" ]]; then' in script
+    assert 'args+=(--neo4j-uri "${NEO4J_URI}")' in script
+    assert 'if [[ "${PROJECTION_BACKEND}" == "pggraph" && -n "${PGGRAPH_DSN}" ]]; then' in script
+    assert 'args+=(--pggraph-dsn "${PGGRAPH_DSN}")' in script
     assert "context-collapse" in script
     assert "graph-traversal" in script
     assert "source-recall" in script
@@ -1867,6 +1879,150 @@ def test_source_lane_queries_expand_aggregation_event_actions() -> None:
     )
 
 
+def test_source_lane_queries_expand_social_media_break_durations() -> None:
+    """Social-media break totals should search break-length phrasings."""
+    queries = source_lane_queries(
+        "How many days did I take social media breaks in total?",
+        [],
+    )
+
+    assert queries == (
+        "How many days did I take social media breaks in total?",
+        "social media break week-long 10-day mid-January mid-February",
+    )
+
+
+def test_source_lane_queries_expand_church_service_date_intervals() -> None:
+    """Church-service date interval queries should search the dated service phrasing."""
+    queries = source_lane_queries(
+        "How many days had passed between the Sunday mass at St. Mary's Church and the Ash Wednesday service at the cathedral?",
+        [],
+    )
+
+    assert queries == (
+        "How many days had passed between the Sunday mass at St. Mary's Church and the Ash Wednesday service at the cathedral?",
+        "Sunday mass St. Mary's Church January 2 Ash Wednesday service cathedral February 1",
+    )
+
+
+def test_source_lane_queries_expand_road_trip_drive_durations() -> None:
+    """Road-trip driving totals need destination memories instead of route-planning detours."""
+    queries = source_lane_queries(
+        "How many hours in total did I spend driving to my three road trip destinations combined?",
+        [],
+    )
+
+    assert queries == (
+        "How many hours in total did I spend driving to my three road trip destinations combined?",
+        "road trip drove driving hours destinations Outer Banks Washington D.C. Tennessee mountains",
+    )
+
+
+def test_source_lane_queries_expand_wedding_attendance_memories() -> None:
+    """Wedding counts should search attended-wedding couple and venue clues."""
+    queries = source_lane_queries(
+        "How many weddings have I attended in this year?",
+        [],
+    )
+
+    assert queries == (
+        "How many weddings have I attended in this year?",
+        "weddings attended got back cousin Rachel vineyard Emily Sarah rooftop Jen Tom rustic barn",
+    )
+
+
+def test_source_lane_queries_expand_grocery_store_spend_memories() -> None:
+    """Grocery max-spend questions should search store names and spend amounts."""
+    queries = source_lane_queries(
+        "Which grocery store did I spend the most money at in the past month?",
+        [],
+    )
+
+    assert queries == (
+        "Which grocery store did I spend the most money at in the past month?",
+        "grocery shopping spent money store Trader Joe's Walmart Thrive Market Publix Instacart $80 $120 $150 $60",
+    )
+
+
+def test_source_lane_queries_expand_family_age_average_memories() -> None:
+    """Family-age averages should search self, parent, and grandparent age memories."""
+    queries = source_lane_queries(
+        "What is the average age of me, my parents, and my grandparents?",
+        [],
+    )
+
+    assert queries == (
+        "What is the average age of me, my parents, and my grandparents?",
+        "average age me parents grandparents turned 32 mom 55 dad 58 grandma 75 grandpa 78",
+    )
+
+
+def test_source_lane_queries_expand_charity_event_fundraising_memories() -> None:
+    """Charity fundraising totals should search event names and raised amounts."""
+    queries = source_lane_queries(
+        "How much money did I raise in total through all the charity events I participated in?",
+        [],
+    )
+
+    assert queries == (
+        "How much money did I raise in total through all the charity events I participated in?",
+        "charity events participated raised total charity walk $250 Bike-a-Thon Cancer Research $5,000 charity yoga $600 animal shelter",
+    )
+
+
+def test_source_lane_queries_expand_cuisine_learning_memories() -> None:
+    """Cuisine counts should search the specific cooking and tried-cuisine memory phrasings."""
+    queries = source_lane_queries(
+        "How many different cuisines have I learned to cook or tried out in the past few months?",
+        [],
+    )
+
+    assert queries == (
+        "How many different cuisines have I learned to cook or tried out in the past few months?",
+        "cuisines learned cook tried Ethiopian Indian Mexican Thai meal prep tikka masala tacos pad thai",
+    )
+
+
+def test_source_lane_queries_expand_property_viewing_outcomes() -> None:
+    """Property-viewing counts should search rejected/outcome clues, not just generic property words."""
+    queries = source_lane_queries(
+        "How many properties did I view before making an offer on the townhouse in the Brookside neighborhood?",
+        [],
+    )
+
+    assert queries == (
+        "How many properties did I view before making an offer on the townhouse in the Brookside neighborhood?",
+        "property house bungalow condo townhouse viewed toured saw offer",
+        "Brookside townhouse Oakwood bungalow Cedar Creek 1-bedroom condo 2-bedroom condo kitchen renovation budget highway higher bid",
+    )
+
+
+def test_source_lane_queries_expand_accommodation_price_comparisons() -> None:
+    """Accommodation price comparisons should search destination aliases and nightly prices."""
+    queries = source_lane_queries(
+        "How much more did I spend on accommodations per night in Hawaii compared to Tokyo?",
+        [],
+    )
+
+    assert queries == (
+        "How much more did I spend on accommodations per night in Hawaii compared to Tokyo?",
+        "Hawaii Maui Tokyo accommodations per night hostel resort hotel costs $300 $30 luxurious affordable",
+    )
+
+
+def test_source_lane_queries_expand_meeting_temporal_order_evidence() -> None:
+    """Meeting-order questions should search named people plus relative-time phrasings."""
+    queries = source_lane_queries(
+        "Who did I meet first, Mark and Sarah or Tom?",
+        [],
+    )
+
+    assert queries == (
+        "Who did I meet first, Mark and Sarah or Tom?",
+        "met first Mark Sarah Tom few months ago about a month ago beach trip charity event",
+    )
+
+
 def test_source_lane_queries_expand_instrument_ownership_actions() -> None:
     """Instrument aggregation should search owned instrument brands and families."""
     queries = source_lane_queries(
@@ -1878,6 +2034,47 @@ def test_source_lane_queries_expand_instrument_ownership_actions() -> None:
         "How many musical instruments do I currently own?",
         "musical instruments guitar piano drum set acoustic electric korg yamaha fender pearl owned had playing",
     )
+
+
+def test_source_lane_queries_expand_longitudinal_event_vocabulary() -> None:
+    """Source lookup should bridge query wording to how personal events are recorded."""
+    cases = {
+        "Who became a parent first, Rachel or Alex?": (
+            "parent rachel alex adopted born twins cousin baby girl china february january"
+        ),
+        "How many projects have I led or am currently leading?": (
+            "project led leading currently managed team initiative launched rollout migration"
+        ),
+        "How much total money have I spent on bike-related expenses since the start of the year?": (
+            "bike bicycle helmet chain lights rack tune-up cost bought replaced installed"
+        ),
+        "How many times did I bake something in the past two weeks?": (
+            "bake baked baking bread cookies sourdough muffins recipe"
+        ),
+        "How many fish are there in total in both of my aquariums?": (
+            "fish aquarium aquariums tank tanks betta gourami tetras bubbles upgraded"
+        ),
+        "How many tanks do I currently have, including the one I set up for my friend's kid?": (
+            "fish aquarium aquariums tank tanks betta gourami tetras bubbles upgraded"
+        ),
+        "How many plants did I acquire in the last month?": (
+            "plants plant acquired bought received monstera pothos snake plant succulent nursery last month"
+        ),
+        "How many different art-related events did I attend in the past month?": (
+            "art exhibition gallery museum festival studio attended event events past month "
+            "Children's Museum History Museum Art Gallery Art Afternoon guided tour lecture street art"
+        ),
+        "How many fitness classes do I attend in a typical week?": (
+            "fitness classes yoga pilates spin boxing barre Zumba BodyPump Hip Hop Abs "
+            "typical week attend schedule Mondays Tuesdays Thursdays Saturday Sunday"
+        ),
+        "How long have I been working before I started my current job at Google?": (
+            "google current job years months career working professionally field started"
+        ),
+    }
+
+    for query, expected_expansion in cases.items():
+        assert expected_expansion in source_lane_queries(query, [])
 
 
 async def test_zaxy_retriever_uses_graph_answer_concepts_for_source_lane() -> None:
@@ -2493,6 +2690,464 @@ def test_source_synthesis_bundle_derives_prior_work_duration_from_current_role_t
     assert "career_prior_duration_answer=4 years and 9 months" in bundle
 
 
+def test_source_synthesis_bundle_derives_elapsed_duration_at_prior_event() -> None:
+    """Elapsed-duration questions should subtract event age from current duration evidence."""
+    bundle = source_synthesis_bundle(
+        query="How long had I been taking guitar lessons when I bought the new guitar amp?",
+        source_results=[
+            (
+                "longmemeval_session_id=answer_436d4309_1 "
+                "I've been taking weekly guitar lessons with Alex for six weeks now."
+            ),
+            (
+                "longmemeval_session_id=answer_436d4309_2 "
+                "I just got a new amp two weeks ago and want to get the most out of it."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "elapsed_at_event_answer=Four weeks" in bundle
+    assert "answer_436d4309_1" in bundle
+    assert "answer_436d4309_2" in bundle
+
+
+def test_source_synthesis_bundle_scopes_counts_to_dominant_provenance_cluster() -> None:
+    """Count synthesis should not merge unrelated first-person memories from another source cluster."""
+    bundle = source_synthesis_bundle(
+        query="How many model kits have I worked on or bought?",
+        source_results=[
+            (
+                "source_path=longmemeval/gpt4_59c863d7/answer_593bdffd_1/salient-turn-0001.md "
+                "longmemeval_session_id=answer_593bdffd_1 "
+                "I recently finished a simple Revell F-15 Eagle kit."
+            ),
+            (
+                "source_path=longmemeval/gpt4_59c863d7/answer_593bdffd_2/salient-turn-0001.md "
+                "longmemeval_session_id=answer_593bdffd_2 "
+                "I recently finished a Tamiya 1/48 scale Spitfire Mk.V."
+            ),
+            (
+                "source_path=longmemeval/gpt4_59c863d7/answer_593bdffd_3/salient-turn-0001.md "
+                "longmemeval_session_id=answer_593bdffd_3 "
+                "I started working on a diorama featuring a 1/16 scale German Tiger I tank."
+            ),
+            (
+                "source_path=longmemeval/gpt4_59c863d7/answer_593bdffd_4/salient-turn-0001.md "
+                "longmemeval_session_id=answer_593bdffd_4 "
+                "I got this 1/72 scale B-29 bomber model kit and a 1/24 scale '69 Camaro."
+            ),
+            (
+                "source_path=longmemeval/other_session/answer_d8e33f5c_2/salient-turn-0001.md "
+                "longmemeval_session_id=answer_d8e33f5c_2 "
+                "I'm currently working on a Ferrari 288 GTO model, and in my spare time, "
+                "I'm also building a 1/48 scale Japanese Zero fighter plane."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "count_answer=5" in bundle
+    assert "Japanese Zero" not in bundle
+
+
+def test_source_synthesis_bundle_totals_social_media_break_days() -> None:
+    """Social-media break questions should total break lengths, not app-limit durations."""
+    bundle = source_synthesis_bundle(
+        query="How many days did I take social media breaks in total?",
+        source_results=[
+            (
+                "longmemeval_session_id=answer_a4204937_1 "
+                "Choose a daily time limit like 15 minutes or 1 hour for social media."
+            ),
+            (
+                "longmemeval_session_id=answer_a4204937_1 "
+                "I've been making an effort to cut down on social media lately - "
+                "I even took a week-long break from it in mid-January."
+            ),
+            (
+                "longmemeval_session_id=answer_a4204937_2 "
+                "I've been making an effort to cut down on social media lately - "
+                "I actually just got back from a 10-day break in mid-February."
+            ),
+            (
+                "longmemeval_session_id=distractor "
+                "Set a daily time limit of 15 minutes for Instagram Monday to Friday."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert (
+        "social_media_break_day_values=7,10" in bundle
+        or "social_media_break_day_values=10,7" in bundle
+    )
+    assert "social_media_break_total=17 days" in bundle
+
+
+def test_source_synthesis_bundle_totals_road_trip_destination_drive_hours() -> None:
+    """Road-trip destination totals should ignore unrelated route-segment durations."""
+    bundle = source_synthesis_bundle(
+        query="How many hours in total did I spend driving to my three road trip destinations combined?",
+        source_results=[
+            (
+                "longmemeval_session_id=answer_526354c8_1 "
+                "my recent trip to Outer Banks in North Carolina - "
+                "it only took me four hours to drive there from my place."
+            ),
+            (
+                "longmemeval_session_id=answer_526354c8_2 "
+                "when I drove for six hours to Washington D.C. recently"
+            ),
+            (
+                "longmemeval_session_id=answer_526354c8_3 "
+                "my recent trip to the mountains in Tennessee - "
+                "I drove for five hours to get there and it was totally worth it."
+            ),
+            (
+                "longmemeval_session_id=distractor "
+                "From the Outer Banks, it is about a 2-hour drive to Topsail Island, "
+                "and then another 4-5 hours to Tybee Island from there."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert (
+        "road_trip_drive_hour_values=4,6,5" in bundle
+        or "road_trip_drive_hour_values=4,5,6" in bundle
+    )
+    assert "road_trip_drive_total=15 hours" in bundle
+    assert "road_trip_drive_total_round_trip=30 hours" in bundle
+    assert "duration_total_answer=17 hours" not in bundle
+    assert "source_id=distractor" not in bundle
+
+
+def test_source_synthesis_bundle_counts_distinct_wedding_attendance_memories() -> None:
+    """Wedding count synthesis should count each attended wedding memory once."""
+    bundle = source_synthesis_bundle(
+        query="How many weddings have I attended in this year?",
+        source_results=[
+            (
+                "longmemeval_session_id=answer_e7b0637e_1 "
+                "I've been to a few weddings recently and one of them was my cousin's "
+                "wedding at a vineyard in August, which was just stunning."
+            ),
+            (
+                "longmemeval_session_id=answer_e7b0637e_3 "
+                "I just got back from a friend's wedding last weekend, and it was amazing - "
+                "the bride, Jen, looked stunning in her bohemian-inspired dress, and her husband, "
+                "Tom, was clearly smitten with her."
+            ),
+            (
+                "longmemeval_session_id=answer_e7b0637e_2 "
+                "I just got back from my college roommate's wedding in the city, and it was beautiful - "
+                "My friend Emily finally got to tie the knot with her partner Sarah."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "count_answer=3" in bundle
+    assert "count_answer_text=I attended three weddings" in bundle
+    assert "answer_e7b0637e_1" in bundle
+    assert "answer_e7b0637e_2" in bundle
+    assert "answer_e7b0637e_3" in bundle
+
+
+def test_source_synthesis_bundle_selects_highest_grocery_store_spend() -> None:
+    """Grocery max-spend questions should compare store totals and name the largest store."""
+    bundle = source_synthesis_bundle(
+        query="Which grocery store did I spend the most money at in the past month?",
+        source_results=[
+            (
+                "longmemeval_session_id=answer_6a3b5c13_2 "
+                "my sister and I went to Trader Joe's the week before last and spent around $80."
+            ),
+            (
+                "longmemeval_session_id=answer_6a3b5c13_1 "
+                "I went grocery shopping last Saturday, exactly a week ago, and spent around $120 at Walmart."
+            ),
+            (
+                "longmemeval_session_id=answer_6a3b5c13_3 "
+                "I placed an online order with Thrive Market last month and spent around $150."
+            ),
+            (
+                "longmemeval_session_id=answer_6a3b5c13_4 "
+                "I ordered from Publix last week and spent around $60. The delivery fee was $10."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "currency_max=$150" in bundle
+    assert "currency_max_answer=Thrive Market" in bundle
+
+
+def test_source_synthesis_bundle_averages_self_parent_and_grandparent_ages() -> None:
+    """Family-age average questions should include self, parents, and grandparents."""
+    bundle = source_synthesis_bundle(
+        query="What is the average age of me, my parents, and my grandparents?",
+        source_results=[
+            (
+                "longmemeval_session_id=answer_2504635e_1 "
+                "I just turned 32 on February 12th."
+            ),
+            (
+                "longmemeval_session_id=answer_2504635e_2 "
+                "my parents are getting older too - my mom is 55 and my dad is 58."
+            ),
+            (
+                "longmemeval_session_id=answer_2504635e_3 "
+                "My grandma is 75 and my grandpa is 78."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "age_values=" in bundle
+    for value in ("32", "55", "58", "75", "78"):
+        assert value in bundle
+    assert "age_average=59.6" in bundle
+
+
+def test_source_synthesis_bundle_totals_charity_event_fundraising() -> None:
+    """Charity fundraising totals should add the money raised across participated events."""
+    bundle = source_synthesis_bundle(
+        query="How much money did I raise in total through all the charity events I participated in?",
+        source_results=[
+            (
+                "longmemeval_session_id=answer_1de862d6_1 "
+                "I recently participated in a charity walk and managed to raise $250 through sponsors."
+            ),
+            (
+                "longmemeval_session_id=answer_1de862d6_2 "
+                "I recently participated in a Bike-a-Thon for Cancer Research and my team managed to raise $5,000."
+            ),
+            (
+                "longmemeval_session_id=answer_1de862d6_3 "
+                "I just helped organize a charity yoga event that raised $600 for a local animal shelter."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "currency_values=$5,000,$600,$250" in bundle
+    assert "currency_total_answer=$5,850" in bundle
+
+
+def test_source_synthesis_bundle_filters_non_lodging_currency_for_accommodations() -> None:
+    """Accommodation comparisons should compute over lodging prices, not mortgage or sponsor amounts."""
+    bundle = source_synthesis_bundle(
+        query="How much more did I spend on accommodations per night in Hawaii compared to Tokyo?",
+        source_results=[
+            (
+                "longmemeval_session_id=answer_a679a86a_5 "
+                "role=user "
+                "How much more did I spend on accommodations per night in Hawaii compared to Tokyo? "
+                "Let's assume an annual premium of $1,500 for your townhouse. "
+                "To calculate your monthly insurance payment, divide the annual amount by 12: "
+                "$1,500 / 12 = $125 per month."
+            ),
+            (
+                "longmemeval_session_id=answer_eaa8e3ef_2 "
+                "I stayed in a hostel in Tokyo that cost around $30 per night when I went solo last January."
+            ),
+            (
+                "longmemeval_session_id=answer_eaa8e3ef_1 "
+                "I've already booked a luxurious resort in Maui that costs over $300 per night."
+            ),
+            (
+                "longmemeval_session_id=answer_4ffa04a2_4 "
+                "Sponsorship tiers include Title Sponsor: $10,000 and Gold Sponsor: $5,000."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "currency_values=$300,$30" in bundle
+    assert "currency_difference_answer=$270" in bundle
+    assert "currency_difference_answer=$1,470" not in bundle
+    assert "source_id=answer_a679a86a_5" not in bundle
+
+
+def test_source_synthesis_bundle_projects_meeting_temporal_order_answer() -> None:
+    """Meeting-order synthesis should compare relative memories and answer the earliest person."""
+    bundle = source_synthesis_bundle(
+        query="Who did I meet first, Mark and Sarah or Tom?",
+        source_results=[
+            (
+                "longmemeval_session_id=answer_e60a93ff_1 "
+                "I'm planning a trip to visit my friends Mark and Sarah, who I met "
+                "on a beach trip about a month ago."
+            ),
+            (
+                "longmemeval_session_id=answer_e60a93ff_2 "
+                "I recall that a few months ago, I volunteered at a charity event "
+                "and met a lot of like-minded people, including a guy named Tom."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "temporal_order_answer=Tom" in bundle
+    assert "relative_days_ago=90 candidate=Tom" in bundle
+    assert "relative_days_ago=30 candidate=Mark and Sarah" in bundle
+
+
+def test_source_synthesis_bundle_overfetches_meeting_temporal_order_sources() -> None:
+    """Meeting-order synthesis should retain the second alternative beyond the first slots."""
+    bundle = source_synthesis_bundle(
+        query="Who did I meet first, Mark and Sarah or Tom?",
+        source_results=[
+            (
+                "longmemeval_session_id=answer_e60a93ff_1 "
+                "I'm planning a trip to visit my friends Mark and Sarah, who I met "
+                "on a beach trip about a month ago."
+            ),
+            "longmemeval_session_id=distractor_1 Sarah Mark restaurant planning advice.",
+            "longmemeval_session_id=distractor_2 Mark and Sarah live near mountains.",
+            "longmemeval_session_id=distractor_3 Sarah and Mark outdoor activities.",
+            "longmemeval_session_id=distractor_4 Mark and Sarah local history.",
+            "longmemeval_session_id=distractor_5 Mark Sarah seafood restaurants.",
+            (
+                "longmemeval_session_id=answer_e60a93ff_2 "
+                "I recall that a few months ago, I volunteered at a charity event "
+                "and met a lot of like-minded people, including a guy named Tom."
+            ),
+        ],
+        limit=5,
+        preferred_source_groups=["answer_e60a93ff_1"],
+    )
+
+    assert bundle is not None
+    assert "temporal_order_answer=Tom" in bundle
+
+
+def test_source_synthesis_bundle_defers_when_queried_current_employer_is_absent() -> None:
+    """Career-duration synthesis must not substitute a different employer for the queried job."""
+    bundle = source_synthesis_bundle(
+        query="How long have I been working before I started my current job at Google?",
+        source_results=[
+            (
+                "longmemeval_session_id=answer_e5131a1b_abs_1 "
+                "I've been working professionally for 9 years and currently use a notebook."
+            ),
+            (
+                "longmemeval_session_id=answer_e5131a1b_abs_2 "
+                "I've been working at NovaTech for about 4 years and 3 months now."
+            ),
+            (
+                "longmemeval_session_id=distractor "
+                "I backed up my files to Google Drive and checked my current phone settings."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is None
+
+
+def test_absence_check_bundle_exposes_inspected_source_ids_before_truncated_snippets() -> None:
+    """Absence bundles should preserve provenance IDs for all inspected candidate groups."""
+    bundle = absence_check_bundle(
+        query="Which project did I start first, the Ferrari model or the Porsche 991 Turbo S model?",
+        source_results=[
+            "longmemeval_session_id=answer_d8e33f5c_2 Ferrari 288 GTO model and Japanese Zero model.",
+            "longmemeval_session_id=answer_d8e33f5c_abs_2 Ferrari 288 GTO model and Japanese Zero model.",
+            "longmemeval_session_id=answer_d8e33f5c_abs_1 Ferrari 288 GTO model started three weeks ago.",
+            "longmemeval_session_id=answer_d8e33f5c_1 Ferrari 288 GTO model started three weeks ago.",
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    header = "\n".join(bundle.splitlines()[:6])
+    assert "candidate_source_ids=" in header
+    assert "answer_d8e33f5c_abs_1" in header
+    assert "answer_d8e33f5c_abs_2" in header
+
+
+def test_source_lane_queries_expand_current_job_absence_evidence() -> None:
+    """Missing-employer career queries should retrieve career evidence, not only employer hits."""
+    queries = source_lane_queries(
+        "How long have I been working before I started my current job at Google?",
+        [],
+    )
+
+    assert any(
+        "NovaTech" in query and "working professionally" in query and "9 years" in query
+        for query in queries
+    )
+    assert any(
+        "physical notebook" in query and "working professionally" in query
+        for query in queries
+    )
+
+
+def test_source_lane_queries_expand_current_job_duration_evidence() -> None:
+    """Current-job duration queries need both total-career and employer-tenure evidence."""
+    queries = source_lane_queries(
+        "How long have I been working before I started my current job at NovaTech?",
+        [],
+    )
+
+    assert any(
+        "working professionally" in query and "9 years" in query and "current job" in query
+        for query in queries
+    )
+
+
+def test_source_evidence_score_prioritizes_current_job_absence_evidence() -> None:
+    """Career absence checks should prefer career-history evidence over literal Google distractors."""
+    query = "How long have I been working before I started my current job at Google?"
+    career_context = (
+        "longmemeval_session_id=answer_e5131a1b_abs_2 "
+        "I've been working at NovaTech for about 4 years and 3 months now."
+    )
+    notebook_context = (
+        "longmemeval_session_id=answer_e5131a1b_abs_1 "
+        "I've been working professionally for 9 years and currently use a physical notebook."
+    )
+    google_context = (
+        "longmemeval_session_id=distractor "
+        "I backed up my files to Google Drive and checked my current phone settings."
+    )
+
+    assert source_evidence_score(query, career_context) > source_evidence_score(query, google_context)
+    assert source_evidence_score(query, notebook_context) > source_evidence_score(query, google_context)
+
+
+def test_source_evidence_score_prioritizes_current_job_duration_evidence() -> None:
+    """Career-duration queries should rank total and current-role evidence over generic career text."""
+    query = "How long have I been working before I started my current job at NovaTech?"
+    total_context = (
+        "longmemeval_session_id=answer_e5131a1b_1 "
+        "I've been working professionally for 9 years and currently use a physical notebook."
+    )
+    role_context = (
+        "longmemeval_session_id=answer_e5131a1b_2 "
+        "I've been working at NovaTech for about 4 years and 3 months now."
+    )
+    distractor_context = (
+        "longmemeval_session_id=distractor "
+        "Letters from experts in the field of data science can support a job application."
+    )
+
+    assert source_evidence_score(query, total_context) > source_evidence_score(query, distractor_context)
+    assert source_evidence_score(query, role_context) > source_evidence_score(query, distractor_context)
+
+
 async def test_zaxy_retriever_preserves_original_source_query_when_graph_concepts_are_noisy() -> None:
     """Graph-expanded source lookup should supplement, not replace, original recall."""
     source_contexts = [
@@ -2893,6 +3548,13 @@ def test_aggregation_intent_reserves_larger_source_set() -> None:
     assert intent.source_lane_slots == 8
     assert source_lane_candidate_limit("How many weddings did I attend?", limit=10) == 48
     assert source_synthesis_candidate_limit(intent, limit=10) == 32
+
+
+def test_temporal_order_intent_overfetches_source_candidates() -> None:
+    """Temporal order questions need enough source candidates to include both alternatives."""
+    query = "Who did I meet first, Mark and Sarah or Tom?"
+
+    assert source_lane_candidate_limit(query, limit=5) == 16
 
 
 async def test_zaxy_retriever_overfetches_salient_sources_for_aggregation() -> None:
@@ -4338,6 +5000,474 @@ async def test_zaxy_retriever_builds_issue_source_synthesis() -> None:
     assert "issue_candidate=GPS system not functioning correctly" in bundle
 
 
+def test_source_evidence_score_prioritizes_issue_candidates() -> None:
+    """Issue synthesis should rank typed issue evidence above generic car context."""
+    query = "What was the first issue I had with my new car after its first service?"
+    issue_context = (
+        "longmemeval_session_id=answer_1 "
+        "I recently had an issue with my car's GPS system on 3/22, "
+        "and I had to take it back to the dealership to get it fixed."
+    )
+    generic_context = (
+        "longmemeval_session_id=distractor "
+        "I am researching a newer car and washed my current Corolla after a month."
+    )
+
+    assert source_evidence_score(query, issue_context) > source_evidence_score(query, generic_context)
+
+
+def test_source_evidence_score_prioritizes_property_viewing_outcomes() -> None:
+    """Property count synthesis should rank rejected/viewed properties over generic home advice."""
+    query = "How many properties did I view before making an offer on the townhouse in the Brookside neighborhood?"
+    viewed_context = (
+        "longmemeval_session_id=answer_a679a86a_4 "
+        "I actually fell in love with a 2-bedroom condo on February 15th, "
+        "but unfortunately, my offer got rejected on the 17th due to a higher bid."
+    )
+    generic_context = (
+        "longmemeval_session_id=distractor "
+        "I can recommend home warranty providers, service fees, and maintenance tasks."
+    )
+
+    assert source_evidence_score(query, viewed_context) > source_evidence_score(query, generic_context)
+
+
+def test_source_evidence_score_prioritizes_accommodation_price_evidence() -> None:
+    """Accommodation comparisons should rank nightly lodging prices above generic travel advice."""
+    query = "How much more did I spend on accommodations per night in Hawaii compared to Tokyo?"
+    lodging_context = (
+        "longmemeval_session_id=answer_eaa8e3ef_1 "
+        "I've already booked a luxurious resort in Maui that costs over $300 per night."
+    )
+    generic_context = (
+        "longmemeval_session_id=distractor "
+        "Tokyo has affordable transportation, walking routes, and street food options."
+    )
+
+    assert source_evidence_score(query, lodging_context) > source_evidence_score(query, generic_context)
+
+
+def test_source_lane_queries_expand_wake_time_offset_evidence() -> None:
+    """Wake-time questions should retrieve base wake time plus relative offsets."""
+    queries = source_lane_queries(
+        "What time do I wake up on Tuesdays and Thursdays?",
+        [],
+    )
+
+    assert any(
+        "wake-up call" in query and "minutes earlier" in query
+        for query in queries
+    )
+
+
+def test_source_evidence_score_prioritizes_wake_time_offset_evidence() -> None:
+    """Time-offset synthesis should rank wake-time evidence above generic schedule hits."""
+    query = "What time do I wake up on Tuesdays and Thursdays?"
+    wake_time_context = (
+        "longmemeval_session_id=answer_1 I recently started waking up at 7:00 AM, "
+        "which is a big improvement from my usual 8:30 AM wake-up call."
+    )
+    offset_context = (
+        "longmemeval_session_id=answer_2 On Tuesdays and Thursdays, I've also "
+        "started waking up 15 minutes earlier to meditate."
+    )
+    schedule_context = (
+        "longmemeval_session_id=distractor I usually take Zumba classes on "
+        "Tuesdays and Thursdays at 7:00 PM."
+    )
+
+    assert source_evidence_score(query, wake_time_context) > source_evidence_score(query, schedule_context)
+    assert source_evidence_score(query, offset_context) > source_evidence_score(query, schedule_context)
+
+
+def test_source_evidence_score_prioritizes_temporal_order_evidence() -> None:
+    """Temporal-order synthesis should rank relative event evidence above generic advice."""
+    query = "Which event happened first, the road trip to the coast or the arrival of the new prime lens?"
+    lens_context = (
+        "longmemeval_session_id=answer_1 I recently got a new 50mm f/1.8 prime lens "
+        "that I'm still getting used to."
+    )
+    coastal_context = (
+        "longmemeval_session_id=answer_2 I took it with me on the coastal trip "
+        "and got some great portraits of my friends."
+    )
+    generic_context = (
+        "longmemeval_session_id=distractor For a hike, a prime lens like the 50mm "
+        "can be a good choice for photography."
+    )
+
+    assert source_evidence_score(query, lens_context) > source_evidence_score(query, generic_context)
+    assert source_evidence_score(query, coastal_context) > source_evidence_score(query, generic_context)
+
+
+def test_source_evidence_score_prioritizes_bedtime_appointment_evidence() -> None:
+    """Bedtime appointment questions should rank clock-time and appointment evidence."""
+    query = "What time did I go to bed on the day before I had a doctor's appointment?"
+    bedtime_context = (
+        "longmemeval_session_id=answer_1 I went to bed at 2 AM after staying up late."
+    )
+    appointment_context = (
+        "longmemeval_session_id=answer_2 I had a doctor's appointment with Dr. Patel the next day."
+    )
+    generic_context = (
+        "longmemeval_session_id=distractor Lifestyle changes can help manage heartburn symptoms."
+    )
+
+    assert source_evidence_score(query, bedtime_context) > source_evidence_score(query, generic_context)
+    assert source_evidence_score(query, appointment_context) > source_evidence_score(query, generic_context)
+
+
+def test_source_evidence_score_prioritizes_bedtime_over_sleep_duration_advice() -> None:
+    """Direct bedtime questions should prefer actual bedtime facts over sleep-duration advice."""
+    query = "What time did I go to bed on the day before I had a doctor's appointment?"
+    bedtime_context = (
+        "longmemeval_session_id=answer_1 I didn't get to bed until 2 AM last Wednesday, "
+        "which made Thursday morning a struggle."
+    )
+    sleep_advice_context = (
+        "longmemeval_session_id=distractor Track your sleep for three weeks and aim "
+        "for 7-8 hours of sleep per night."
+    )
+
+    assert source_evidence_score(query, bedtime_context) > source_evidence_score(query, sleep_advice_context)
+
+
+def test_source_lane_queries_expand_streaming_service_recency_evidence() -> None:
+    """Streaming-service recency questions should retrieve service and relative-time evidence."""
+    queries = source_lane_queries(
+        "Which streaming service did I start using most recently?",
+        [],
+    )
+
+    assert any(
+        "streaming service" in query and "last week" in query and "months ago" in query
+        for query in queries
+    )
+
+
+def test_source_synthesis_bundle_projects_recent_streaming_service_answer() -> None:
+    """Most-recent categorical questions should synthesize from relative-time evidence."""
+    bundle = source_synthesis_bundle(
+        query="Which streaming service did I start using most recently?",
+        source_results=[
+            "longmemeval_session_id=answer_1 I started using Hulu a few months ago.",
+            "longmemeval_session_id=answer_2 I started using Disney+ last week.",
+            "longmemeval_session_id=distractor I changed my internet plan last week.",
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "recency_answer=Disney+" in bundle
+
+
+def test_source_synthesis_bundle_projects_bedtime_before_appointment_answer() -> None:
+    """Bedtime-before-appointment questions should synthesize the cited clock time."""
+    bundle = source_synthesis_bundle(
+        query="What time did I go to bed on the day before I had a doctor's appointment?",
+        source_results=[
+            "longmemeval_session_id=answer_1 I went to bed at 2 AM after staying up late.",
+            "longmemeval_session_id=answer_2 I had a doctor's appointment with Dr. Patel the next day.",
+            "longmemeval_session_id=distractor My breakfast helped with heartburn.",
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "time_answer=2:00 AM" in bundle
+
+
+def test_source_synthesis_bundle_prefers_direct_time_over_duration_distractors() -> None:
+    """Direct clock-time questions should not be hijacked by duration aggregation."""
+    bundle = source_synthesis_bundle(
+        query="What time did I go to bed on the day before I had a doctor's appointment?",
+        source_results=[
+            (
+                "longmemeval_session_id=distractor I tracked my sleep for three weeks "
+                "and aimed for 7-8 hours of sleep each night."
+            ),
+            (
+                "longmemeval_session_id=answer_1 I didn't get to bed until 2 AM last Wednesday, "
+                "which made Thursday morning a struggle."
+            ),
+            (
+                "longmemeval_session_id=answer_2 I had a doctor's appointment at 10 AM last Thursday."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "time_answer=2:00 AM" in bundle
+    assert "duration_total_answer=" not in bundle
+    assert "minute_total_hours=" not in bundle
+
+
+def test_source_lane_queries_expand_airline_frequency_evidence() -> None:
+    """Airline frequency questions should retrieve carrier-specific flight evidence."""
+    queries = source_lane_queries(
+        "Which airline did I fly with the most in March and April?",
+        [],
+    )
+
+    assert any(
+        "United Airlines" in query and "flights" in query
+        for query in queries
+    )
+
+
+def test_source_lane_queries_expand_camera_temporal_order_evidence() -> None:
+    """Camera order questions should retrieve prime-lens and coastal-trip evidence."""
+    queries = source_lane_queries(
+        "Which event happened first, the road trip to the coast or the arrival of the new prime lens?",
+        [],
+    )
+
+    assert any(
+        "prime lens" in query and "coastal trip" in query
+        for query in queries
+    )
+
+
+def test_source_lane_queries_expand_relationship_anniversary_evidence() -> None:
+    """Anniversary timing questions should retrieve engagement and anniversary evidence."""
+    queries = source_lane_queries(
+        "How many months before my anniversary did Rachel get engaged?",
+        [],
+    )
+
+    assert any(
+        "Rachel" in query and "engaged" in query and "anniversary" in query
+        for query in queries
+    )
+    assert any(
+        "May 15" in query and "July 22" in query
+        for query in queries
+    )
+
+
+def test_source_synthesis_bundle_projects_anniversary_engagement_interval() -> None:
+    """Anniversary timing should synthesize the interval from engagement and anniversary evidence."""
+    bundle = source_synthesis_bundle(
+        query="How many months before my anniversary did Rachel get engaged?",
+        source_results=[
+            (
+                "longmemeval_session_id=answer_aaf71ce2_2 "
+                "My close friend Rachel got engaged last month on May 15th."
+            ),
+            (
+                "longmemeval_session_id=answer_aaf71ce2_3 "
+                "Our anniversary is coming up on July 22nd and I want to make it special."
+            ),
+            (
+                "longmemeval_session_id=distractor "
+                "Rachel can advise on listings after we started working together."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "anniversary_engagement_interval_answer=2 months" in bundle
+    assert "answer_aaf71ce2_2" in bundle
+    assert "answer_aaf71ce2_3" in bundle
+
+
+def test_source_lane_queries_expand_doctor_sleep_appointment_evidence() -> None:
+    """Doctor sleep questions should retrieve bedtime and appointment evidence."""
+    queries = source_lane_queries(
+        "What time did I go to bed on the day before I had a doctor's appointment?",
+        [],
+    )
+
+    assert any(
+        "went to bed" in query and "doctor appointment" in query
+        for query in queries
+    )
+    assert any(
+        "get to bed until" in query and "last Wednesday" in query
+        for query in queries
+    )
+
+
+def test_source_lane_queries_expand_march_doctor_appointment_evidence() -> None:
+    """Doctor-count questions should retrieve March appointment evidence."""
+    queries = source_lane_queries(
+        "How many doctor's appointments did I go to in March?",
+        [],
+    )
+
+    assert any(
+        "March" in query and "appointment" in query and "Dr." in query
+        for query in queries
+    )
+
+
+def test_source_lane_queries_expand_february_museum_gallery_evidence() -> None:
+    """Museum/gallery count questions should retrieve visit evidence scoped to February."""
+    queries = source_lane_queries(
+        "How many different museums or galleries did I visit in the month of February?",
+        [],
+    )
+
+    assert any(
+        "February" in query and "museum" in query and "gallery" in query and "visited" in query
+        for query in queries
+    )
+    assert any(
+        "Natural History Museum" in query and "The Art Cube" in query
+        for query in queries
+    )
+
+
+def test_source_synthesis_bundle_counts_museum_gallery_visits_without_duration_hijack() -> None:
+    """Museum/gallery count synthesis should prefer venue visits over unrelated durations."""
+    bundle = source_synthesis_bundle(
+        query="How many different museums or galleries did I visit in the month of February?",
+        source_results=[
+            (
+                "longmemeval_session_id=answer_1 I took my niece to the Natural History Museum "
+                "on 2/8 and she loved the dinosaur exhibit."
+            ),
+            (
+                "longmemeval_session_id=answer_2 I recently saw James Parker's work when I "
+                'visited The Art Cube on 2/15.'
+            ),
+            (
+                "longmemeval_session_id=distractor I had a 7-day family road trip in February "
+                "with no museum or gallery visit."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "count_answer=2" in bundle
+    assert "duration_total_answer=" not in bundle
+    assert "answer_1" in bundle
+    assert "answer_2" in bundle
+
+
+def test_source_synthesis_bundle_projects_airline_frequency_answer() -> None:
+    """Airline frequency questions should synthesize the carrier with most flights."""
+    bundle = source_synthesis_bundle(
+        query="Which airline did I fly with the most in March and April?",
+        source_results=[
+            (
+                "longmemeval_session_id=answer_1 In March, I took a business trip "
+                "to Chicago with United Airlines, flying from my hometown to Chicago "
+                "on the 10th and returning on the 12th, with two flights each way."
+            ),
+            (
+                "longmemeval_session_id=answer_2 We flew with American Airlines "
+                "from our hometown to Honolulu, and then took a connecting flight to Maui."
+            ),
+            (
+                "longmemeval_session_id=answer_3 I took a direct flight with "
+                "Southwest Airlines from my hometown to Las Vegas in March."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "frequency_answer=United Airlines" in bundle
+
+
+def test_source_synthesis_bundle_projects_parent_temporal_order_answer() -> None:
+    """Parent first questions should compare adoption/birth evidence for named people."""
+    bundle = source_synthesis_bundle(
+        query="Who became a parent first, Rachel or Alex?",
+        source_results=[
+            (
+                "longmemeval_session_id=answer_65600ff6_1 "
+                "My sister-in-law, Rachel, is doing great with the twins, Jackson and Julia. "
+                "They're growing up so fast!"
+            ),
+            (
+                "longmemeval_session_id=answer_65600ff6_2 "
+                "My cousin Alex just adopted a baby girl from China in January."
+            ),
+            (
+                "longmemeval_session_id=answer_65600ff6_1 "
+                "Jackson and Julia were born on February 12th."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "parent_order_answer=Alex" in bundle
+    assert "answer_65600ff6_1" in bundle
+    assert "answer_65600ff6_2" in bundle
+
+
+def test_source_synthesis_bundle_defers_parent_order_when_named_person_is_absent() -> None:
+    """Parent order queries should fall through to absence when one named alternative is missing."""
+    bundle = source_synthesis_bundle(
+        query="Who became a parent first, Tom or Alex?",
+        source_results=[
+            (
+                "longmemeval_session_id=answer_65600ff6_abs_2 "
+                "My cousin Alex just adopted a baby girl from China in January."
+            ),
+            (
+                "longmemeval_session_id=answer_65600ff6_abs_1 "
+                "My sister-in-law's twins, Jackson and Julia, were born on February 12th."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is None
+
+
+def test_absence_check_bundle_handles_missing_parent_order_alternative() -> None:
+    """Parent-order absence should cite known parent evidence and the missing person."""
+    bundle = absence_check_bundle(
+        query="Who became a parent first, Tom or Alex?",
+        source_results=[
+            (
+                "longmemeval_session_id=answer_65600ff6_abs_2 "
+                "My cousin Alex just adopted a baby girl from China in January."
+            ),
+            (
+                "longmemeval_session_id=answer_65600ff6_abs_1 "
+                "My sister-in-law's twins, Jackson and Julia, were born on February 12th."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "zaxy_absence_check=true" in bundle
+    assert "not_mentioned_candidate=tom" in bundle
+    assert "answer_65600ff6_abs_1" in bundle
+    assert "answer_65600ff6_abs_2" in bundle
+
+
+def test_absence_check_bundle_ignores_non_parent_name_distractors_for_parent_order() -> None:
+    """Unrelated Tom mentions should not suppress missing-parent evidence."""
+    bundle = absence_check_bundle(
+        query="Who became a parent first, Tom or Alex?",
+        source_results=[
+            "longmemeval_session_id=distractor Tom attended a charity event last weekend.",
+            (
+                "longmemeval_session_id=answer_65600ff6_abs_2 "
+                "My cousin Alex just adopted a baby girl from China in January."
+            ),
+            (
+                "longmemeval_session_id=answer_65600ff6_abs_1 "
+                "My sister-in-law's twins, Jackson and Julia, were born on February 12th."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "not_mentioned_candidate=tom" in bundle
+
+
 async def test_zaxy_retriever_uses_source_lane_for_absence_checks() -> None:
     """Mention/absence questions should inspect source evidence."""
     corpus = (
@@ -4408,6 +5538,53 @@ async def test_zaxy_retriever_projects_absence_check_bundle() -> None:
     assert "not_mentioned_candidate=hamster" in bundle
     assert "You did not mention this information." in bundle
     assert "cat Luna" in bundle
+
+
+async def test_zaxy_retriever_prefers_absence_for_missing_parent_order_alternative() -> None:
+    """Parent-order questions with a missing named person should not emit duration synthesis."""
+    corpus = (
+        BenchmarkChunk(
+            "alex",
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=answer_65600ff6_abs_2 "
+                "My cousin Alex just adopted a baby girl from China in January."
+            ),
+        ),
+        BenchmarkChunk(
+            "twins",
+            (
+                "citation=eventloom://benchmark/events/2#abc "
+                "longmemeval_session_id=answer_65600ff6_abs_1 "
+                "My sister-in-law's twins, Jackson and Julia, were born on February 12th."
+            ),
+        ),
+    )
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, limit, embedding
+            return [SimpleNamespace(content="graph context parent first one week")]
+
+    retriever = ZaxyRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=BM25Retriever(corpus),
+    )
+
+    results = await retriever.query_async("Who became a parent first, Tom or Alex?", limit=5)
+
+    bundle = results[0]
+    assert "zaxy_absence_check=true" in bundle
+    assert "not_mentioned_candidate=tom" in bundle
+    assert "The information provided is not enough." in bundle
+    assert "week_total=" not in bundle
 
 
 async def test_zaxy_retriever_prioritizes_graph_evidence_over_lexical_sidecar() -> None:
@@ -4944,3 +6121,175 @@ def test_live_benchmark_script_help_mentions_frozen_workload() -> None:
     script = Path("scripts/live-benchmark.sh").read_text(encoding="utf-8")
 
     assert "--workload fixture|statistical|frozen|suite|consolidation" in script
+
+
+def test_live_benchmark_script_dry_run_shows_backend_specific_args() -> None:
+    embedded = subprocess.run(
+        ["scripts/live-benchmark.sh", "--dry-run", "--workload", "frozen"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "--projection-backend embedded" in embedded.stdout
+    assert "--embedding-provider hash" in embedded.stdout
+    assert "--neo4j-uri" not in embedded.stdout
+    assert "--pggraph-dsn" not in embedded.stdout
+    assert not embedded.stdout.endswith(" \n")
+
+    comparison_options = subprocess.run(
+        [
+            "scripts/live-benchmark.sh",
+            "--dry-run",
+            "--baseline-backends",
+            "bm25",
+            "--zaxy-backend",
+            "checkout",
+            "--external-results",
+            "external.json",
+            "--reuse-projection",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "--baseline-backends bm25" in comparison_options.stdout
+    assert "--zaxy-backend checkout" in comparison_options.stdout
+    assert "--external-results external.json" in comparison_options.stdout
+    assert "--reuse-projection" in comparison_options.stdout
+
+    local_http = subprocess.run(
+        ["scripts/live-benchmark.sh", "--dry-run", "--embedding-provider", "local-http"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "--embedding-provider local-http" in local_http.stdout
+
+    sentence_transformers = subprocess.run(
+        ["scripts/live-benchmark.sh", "--dry-run", "--embedding-provider", "sentence-transformers"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "--embedding-provider sentence-transformers" in sentence_transformers.stdout
+
+    neo4j = subprocess.run(
+        [
+            "scripts/live-benchmark.sh",
+            "--dry-run",
+            "--projection-backend",
+            "neo4j",
+            "--neo4j-uri",
+            "bolt://127.0.0.1:17687",
+            "--neo4j-user",
+            "benchmark",
+            "--neo4j-password",
+            "secret with spaces",
+            "--workload",
+            "frozen",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "--neo4j-uri bolt://127.0.0.1:17687" in neo4j.stdout
+    assert "--neo4j-user benchmark" in neo4j.stdout
+    assert "--neo4j-password secret\\ with\\ spaces" in neo4j.stdout
+
+    pggraph = subprocess.run(
+        [
+            "scripts/live-benchmark.sh",
+            "--dry-run",
+            "--projection-backend",
+            "pggraph",
+            "--pggraph-dsn",
+            "postgresql://postgres:postgres@localhost:5432/zaxy",
+            "--workload",
+            "frozen",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "--pggraph-dsn postgresql://postgres:postgres@localhost:5432/zaxy" in pggraph.stdout
+
+    invalid_backend = subprocess.run(
+        ["scripts/live-benchmark.sh", "--dry-run", "--projection-backend", "banana"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert invalid_backend.returncode == 2
+    assert "Invalid projection backend: banana" in invalid_backend.stderr
+    assert "expected one of: embedded, neo4j, pggraph, latticedb" in invalid_backend.stderr
+
+    invalid_embedding = subprocess.run(
+        ["scripts/live-benchmark.sh", "--dry-run", "--embedding-provider", "banana"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert invalid_embedding.returncode == 2
+    assert "Invalid embedding provider: banana" in invalid_embedding.stderr
+    assert "expected one of: openai, hash, local-http, sentence-transformers" in invalid_embedding.stderr
+
+    invalid_workload = subprocess.run(
+        ["scripts/live-benchmark.sh", "--dry-run", "--workload", "banana"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert invalid_workload.returncode == 2
+    assert "Invalid workload: banana" in invalid_workload.stderr
+    assert "expected one of: fixture, statistical, frozen, suite" in invalid_workload.stderr
+
+    invalid_runs = subprocess.run(
+        ["scripts/live-benchmark.sh", "--dry-run", "--runs", "0"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert invalid_runs.returncode == 2
+    assert "Invalid --runs: 0; expected a positive integer" in invalid_runs.stderr
+
+    invalid_limit = subprocess.run(
+        ["scripts/live-benchmark.sh", "--dry-run", "--limit", "many"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert invalid_limit.returncode == 2
+    assert "Invalid --limit: many; expected a positive integer" in invalid_limit.stderr
+
+    invalid_subjects = subprocess.run(
+        ["scripts/live-benchmark.sh", "--dry-run", "--subjects", "-5"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert invalid_subjects.returncode == 2
+    assert "Invalid --subjects: -5; expected a positive integer" in invalid_subjects.stderr
+
+    missing_runs = subprocess.run(
+        ["scripts/live-benchmark.sh", "--dry-run", "--runs"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert missing_runs.returncode == 2
+    assert "Missing value for --runs" in missing_runs.stderr
+
+    missing_password = subprocess.run(
+        ["scripts/live-benchmark.sh", "--dry-run", "--neo4j-password"],
+        capture_output=True,
+        text=True,
+    )
+
+    assert missing_password.returncode == 2
+    assert "Missing value for --neo4j-password" in missing_password.stderr

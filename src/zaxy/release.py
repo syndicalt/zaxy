@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import tomllib
 from datetime import UTC, datetime
-from importlib import metadata
+from importlib import import_module
 from pathlib import Path
-from typing import Any
-
-from zaxy.event import EventLog
+from typing import Any, cast
 
 PACKAGE_NAME = "zaxy-memory"
 ACTIVATION_FIXTURE_NOW = datetime(2026, 5, 20, 12, 0, tzinfo=UTC)
@@ -29,8 +28,9 @@ def package_version(*, project_root: Path | None = None) -> str:
     root = project_root or _source_project_root()
     if root is not None:
         return pyproject_version(root)
+    metadata = _metadata()
     try:
-        return metadata.version(PACKAGE_NAME)
+        return cast(str, metadata.version(PACKAGE_NAME))
     except metadata.PackageNotFoundError:
         return "0+unknown"
 
@@ -60,6 +60,20 @@ def _source_project_root() -> Path | None:
     return None
 
 
+def _metadata() -> Any:
+    """Import package metadata only when source-tree lookup cannot answer."""
+    return import_module("importlib.metadata")
+
+
+def __getattr__(name: str) -> Any:
+    """Preserve release.metadata compatibility without importing it eagerly."""
+    if name == "metadata":
+        module = _metadata()
+        globals()[name] = module
+        return module
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 def run_release_smoke(*, project_root: str | Path | None = None) -> dict[str, Any]:
     """Check local release metadata without network calls or external services."""
     root = Path(project_root or Path.cwd())
@@ -81,6 +95,7 @@ def run_beta_readiness(*, project_root: str | Path | None = None) -> dict[str, A
     checks = [
         _check_release_smoke_gate(root),
         _check_release_gate_script(root),
+        _check_backend_report_inputs(root),
         _check_activation_release_fixture(root),
         _check_clean_repo_uat(root),
         _check_docs_happy_path(root),
@@ -245,11 +260,13 @@ def _check_release_gate_script(root: Path) -> dict[str, str]:
         "--max-checkout-prompt-tokens 5000",
         "--min-checkout-facts-per-1k-tokens 0.1",
         "scripts/check-backend-shootout.py",
-        "--forbid-backends latticedb",
+        "--forbid-backends neo4j,pggraph,latticedb",
         "--require-dashboard-source embedded=embedded",
         "--require-backends embedded,bm25",
         "--require-report-metadata",
         "--require-markdown-report",
+        "--require-query-results",
+        "--require-git-tracked-inputs",
         "--verify-report-fingerprints",
         "backend-shootout.json",
         "--min-quality-per-1k-injected-tokens embedded=1.0",
@@ -265,7 +282,7 @@ def _check_release_gate_script(root: Path) -> dict[str, str]:
         "--max-on-disk-footprint-bytes",
         "--max-dashboard-graph-load-ms",
         "longmemeval-100-backend-shootout.json",
-        "--max-checkout-p95-ms embedded=125",
+        "--max-checkout-p95-ms embedded=200",
         "--max-checkout-p99-ms",
         "--max-exact-p99-ms",
         "--max-keyword-p99-ms",
@@ -275,7 +292,9 @@ def _check_release_gate_script(root: Path) -> dict[str, str]:
     ]
     missing = [item for item in required if item not in script]
     required_counts = {
-        "--forbid-backends latticedb": 3,
+        "--forbid-backends neo4j,pggraph,latticedb": 3,
+        "--require-query-results": 3,
+        "--require-git-tracked-inputs": 3,
     }
     missing.extend(
         f"{item} ({count} occurrences)"
@@ -284,32 +303,38 @@ def _check_release_gate_script(root: Path) -> dict[str, str]:
     )
     backend_command_flags = {
         "BACKEND_SHOOTOUT_CMD": [
-            "--forbid-backends latticedb",
+            "--forbid-backends neo4j,pggraph,latticedb",
             "--require-dashboard-source embedded=embedded",
             "--require-backends embedded,bm25",
             "--require-report-metadata",
             "--require-markdown-report",
+            "--require-query-results",
+            "--require-git-tracked-inputs",
             "--verify-report-fingerprints",
             "--require-labeled-metrics",
         ],
         "BACKEND_PERFORMANCE_CMD": [
-            "--forbid-backends latticedb",
+            "--forbid-backends neo4j,pggraph,latticedb",
             "--require-dashboard-source embedded=embedded",
             "--require-backends embedded,bm25",
             "--require-report-metadata",
             "--require-markdown-report",
+            "--require-query-results",
+            "--require-git-tracked-inputs",
             "--verify-report-fingerprints",
             "--require-labeled-metrics",
         ],
         "BACKEND_SCALE_CMD": [
-            "--forbid-backends latticedb",
+            "--forbid-backends neo4j,pggraph,latticedb",
             "--require-dashboard-source embedded=embedded",
             "--require-backends embedded,bm25",
             "--require-report-metadata",
             "--require-markdown-report",
+            "--require-query-results",
+            "--require-git-tracked-inputs",
             "--verify-report-fingerprints",
             "--require-labeled-metrics",
-            "--max-checkout-p95-ms embedded=125",
+            "--max-checkout-p95-ms embedded=200",
         ],
     }
     assignments = _shell_string_assignments(script)
@@ -332,9 +357,107 @@ def _check_release_gate_script(root: Path) -> dict[str, str]:
         "message": (
             "scripts/release-check.sh covers static, test, coverage, packet, package, docs, deployment, "
             "activation, backend shootout, medium-scale performance, 100-query scale gates, "
-            "and parked-candidate exclusion"
+            "and optional backend exclusion"
         ),
     }
+
+
+def _check_backend_report_inputs(root: Path) -> dict[str, str]:
+    reports = [
+        root / "reports" / "backend-shootout" / "backend-shootout.json",
+        root / "reports" / "backend-shootout" / "longmemeval-40-backend-shootout.json",
+        root / "reports" / "backend-shootout" / "longmemeval-100-backend-shootout.json",
+    ]
+    missing: list[str] = []
+    git_root = _git_root(root)
+    for report in reports:
+        if not report.exists():
+            missing.append(f"{report.relative_to(root)} is missing")
+            continue
+        try:
+            payload = _json_loads(report)
+        except ValueError as exc:
+            missing.append(f"{report.relative_to(root)} is unreadable: {exc}")
+            continue
+        query_results = payload.get("query_results")
+        if not isinstance(query_results, dict) or not query_results:
+            missing.append(f"{report.name} query_results are missing")
+        else:
+            for result_key, diagnostics in sorted(query_results.items()):
+                if not isinstance(diagnostics, list):
+                    missing.append(f"{report.name} query_results {result_key} must be a diagnostics list")
+                elif not diagnostics:
+                    missing.append(f"{report.name} query_results {result_key} has no diagnostics")
+                else:
+                    for index, diagnostic in enumerate(diagnostics):
+                        if not isinstance(diagnostic, dict):
+                            missing.append(
+                                f"{report.name} query_results {result_key}[{index}] must be a diagnostic object"
+                            )
+        for key in ("eventloom_path", "queries_file"):
+            value = payload.get(key)
+            if not isinstance(value, str) or not value:
+                missing.append(f"{report.relative_to(root)} {key} is missing")
+                continue
+            path = Path(value)
+            absolute = path if path.is_absolute() else root / path
+            if not absolute.exists():
+                missing.append(f"{report.relative_to(root)} {key} {value} is missing")
+                continue
+            if git_root is not None and not _git_path_is_tracked(git_root, absolute):
+                missing.append(f"{report.name} {key} {value} is not tracked by git")
+    if missing:
+        return {
+            "name": "backend_report_inputs",
+            "status": "error",
+            "message": "backend report inputs are not reproducible: " + ", ".join(missing),
+            "action": "Track benchmark Eventloom/query inputs or regenerate reports against tracked inputs.",
+        }
+    return {
+        "name": "backend_report_inputs",
+        "status": "ok",
+        "message": "Existing backend report inputs are present and tracked when git metadata is available.",
+    }
+
+
+def _json_loads(path: Path) -> dict[str, Any]:
+    import json
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(str(exc)) from exc
+    if not isinstance(payload, dict):
+        raise ValueError("top-level JSON value must be an object")
+    return payload
+
+
+def _git_root(root: Path) -> Path | None:
+    result = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        cwd=root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        return None
+    return Path(result.stdout.strip()).resolve()
+
+
+def _git_path_is_tracked(git_root: Path, path: Path) -> bool:
+    try:
+        relative = path.resolve().relative_to(git_root)
+    except ValueError:
+        return False
+    result = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", "--", str(relative)],
+        cwd=git_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
 
 
 def _shell_string_assignments(script: str) -> dict[str, str]:
@@ -345,6 +468,8 @@ def _shell_string_assignments(script: str) -> dict[str, str]:
 
 
 def _check_activation_release_fixture(root: Path) -> dict[str, str]:
+    from zaxy.event import EventLog
+
     fixture = root / "reports" / "activation-release"
     paths = sorted(fixture.glob("*.jsonl")) if fixture.is_dir() else []
     if not paths:

@@ -86,6 +86,10 @@ venv.bak/
 reports/backend-shootout/*.kuzu
 reports/backend-shootout/*.db
 reports/backend-shootout/*.db-wal
+reports/backend-shootout/*-diagnostics.json
+reports/backend-shootout/*-diagnostics.md
+reports/backend-shootout/*-target-diagnostics.json
+reports/backend-shootout/*-target-diagnostics.md
 
 # Local feature worktrees
 .worktrees/

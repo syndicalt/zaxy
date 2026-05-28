@@ -102,11 +102,11 @@ zaxy refresh-context . --kind codebase --session-id zaxy-default
 
 `refresh-context` persists file fingerprints under `.eventloom/context-refresh/`
 and indexes only changed or newly discovered files. When a source changes or is
-deleted, the command asks the active projection backend to retire stale Neo4j or
-pgGraph projection rows derived from that path before appending the new
-projection events. This stale-row retirement keeps current retrieval from
-seeing old symbols, imports, calls, document chunks, and coverage rows while
-preserving the older Eventloom history for replay and temporal audit.
+deleted, the command asks the active projection backend to retire stale
+projection rows derived from that path before appending the new projection
+events. This stale-row retirement keeps current retrieval from seeing old
+symbols, imports, calls, document chunks, and coverage rows while preserving the
+older Eventloom history for replay and temporal audit.
 
 Related pages: [eventloom.md](eventloom.md), [retrieval.md](retrieval.md),
 [graph-schema.md](graph-schema.md), and [runbook.md](runbook.md). The public

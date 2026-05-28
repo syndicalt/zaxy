@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import builtins
 import importlib.util
 from pathlib import Path
 
 import pytest
 
 from zaxy.extract import ExtractedEdge, ExtractedEntity, ExtractionResult
+from zaxy.graph import GraphEntity
 from zaxy.latticedb_store import LatticeDBStore
 
 
@@ -20,6 +22,93 @@ async def test_latticedb_store_fails_clearly_when_optional_dependency_is_missing
 
     with pytest.raises(RuntimeError, match='zaxy-memory\\[latticedb\\]'):
         await store.connect()
+
+
+@pytest.mark.asyncio
+async def test_latticedb_store_keyword_fallback_converts_score_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fallback keyword scoring should reuse one float conversion for score and raw_score."""
+    store = LatticeDBStore(Path("unused.latticedb"))
+    entity = GraphEntity(
+        name="Fallback Goal",
+        entity_type="goal",
+        valid_from="2026-05-20T01:00:00Z",
+        valid_to=None,
+        properties={"summary": "memory graph"},
+        session_id="agent-1",
+    )
+    original_float = builtins.float
+    float_calls = 0
+
+    def tracking_float(value: object) -> float:
+        nonlocal float_calls
+        float_calls += 1
+        return original_float(value)
+
+    monkeypatch.setattr(store, "_search_keyword_native", lambda *args, **kwargs: [])
+    monkeypatch.setattr(store, "_entity_node_ids", lambda: [1])
+    monkeypatch.setattr(
+        store,
+        "_node_property",
+        lambda node_id, property_name: {
+            "session_id": "agent-1",
+            "name": entity.name,
+            "entity_type": entity.entity_type,
+            "summary": entity.properties["summary"],
+        }[property_name],
+    )
+    monkeypatch.setattr(store, "_is_visible_at", lambda node_id, temporal_point: True)
+    monkeypatch.setattr(store, "_entity_from_node_id", lambda node_id: entity)
+    monkeypatch.setattr(builtins, "float", tracking_float)
+
+    results = await store.search_keyword("memory", session_id="agent-1")
+
+    assert [result.entity.name for result in results] == ["Fallback Goal"]
+    assert results[0].score == 1.0
+    assert results[0].raw_score == 1.0
+    assert float_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_latticedb_store_keyword_zero_limit_skips_projection_reads(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Zero-result keyword queries should not call native FTS or scan fallback nodes."""
+    store = LatticeDBStore(Path("unused.latticedb"))
+
+    def fail_keyword_native(*args: object, **kwargs: object) -> list[object]:
+        raise AssertionError("zero-limit keyword query should not call native FTS")
+
+    def fail_entity_node_ids() -> list[object]:
+        raise AssertionError("zero-limit keyword query should not scan fallback nodes")
+
+    monkeypatch.setattr(store, "_search_keyword_native", fail_keyword_native)
+    monkeypatch.setattr(store, "_entity_node_ids", fail_entity_node_ids)
+
+    assert await store.search_keyword("memory graph", limit=0, session_id="agent-1") == []
+
+
+@pytest.mark.asyncio
+async def test_latticedb_store_vector_zero_limit_skips_database(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Zero-result vector queries should not require a database read transaction."""
+    store = LatticeDBStore(Path("unused.latticedb"))
+
+    def fail_database() -> object:
+        raise AssertionError("zero-limit vector query should not require LatticeDB")
+
+    monkeypatch.setattr(store, "_require_database", fail_database)
+
+    assert await store.search_vector([1.0, 0.0], limit=0, session_id="agent-1") == []
+
+
+@pytest.mark.asyncio
+async def test_latticedb_store_vector_zero_norm_skips_database(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Zero-norm vector queries should not require a database read transaction."""
+    store = LatticeDBStore(Path("unused.latticedb"))
+
+    def fail_database() -> object:
+        raise AssertionError("zero-norm vector query should not require LatticeDB")
+
+    monkeypatch.setattr(store, "_require_database", fail_database)
+
+    assert await store.search_vector([0.0, 0.0], session_id="agent-1") == []
 
 
 @pytest.mark.skipif(importlib.util.find_spec("latticedb") is None, reason="latticedb is not installed")

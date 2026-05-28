@@ -19,7 +19,18 @@ import httpx
 from zaxy.graph import GraphEntity, SearchResult
 from zaxy.metrics import get_metrics
 from zaxy.projection import ProjectionStore
-from zaxy.security import validate_limit, validate_query, validate_session_id
+from zaxy.retrieval_plan import source_lane_queries
+from zaxy.security import validate_limit, validate_query, validate_session_id, vector_has_signal
+
+_TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
+_USER_ID_RE = re.compile(r"\buser-\d{4}\b")
+_DURABLE_IDENTIFIER_RE = re.compile(r"\b[A-Za-z]+(?:-[A-Za-z0-9]+)+\b")
+_EXACT_CANDIDATE_RE = (
+    re.compile(r"\bGoal\s+\d{4}\b"),
+    re.compile(r"\btask-\d{4}\b"),
+    re.compile(r"\buser-\d{4}:[A-Za-z0-9_.-]+\b"),
+    _USER_ID_RE,
+)
 
 QUERY_EXPANSIONS: dict[str, tuple[str, ...]] = {
     "auth": ("authentication", "authorization"),
@@ -138,14 +149,27 @@ class LexicalReranker:
 
     name = "lexical"
 
-    def __init__(self, weight: float = 0.35) -> None:
+    def __init__(self, weight: float = 0.8) -> None:
         self.weight = weight
 
-    async def rerank(self, query: str, results: list[SearchResult], *, limit: int) -> list[SearchResult]:
+    async def rerank(
+        self,
+        query: str,
+        results: list[SearchResult],
+        *,
+        limit: int,
+        entity_token_cache: dict[tuple[str, str, str], set[str]] | None = None,
+    ) -> list[SearchResult]:
         query_tokens = _tokens(query)
+        entity_token_cache = _entity_token_cache(results, entity_token_cache=entity_token_cache)
         reranked: list[SearchResult] = []
         for result in results:
-            score = _lexical_rerank_score(query_tokens, result.entity)
+            score = _lexical_rerank_score_for_result(
+                query_tokens,
+                query,
+                result,
+                entity_token_cache=entity_token_cache,
+            )
             weighted_score = result.score + (self.weight * score)
             reranked.append(
                 replace(
@@ -155,7 +179,7 @@ class LexicalReranker:
                     reranker=self.name,
                     rerank_score=score,
                 )
-            )
+        )
         return sorted(reranked, key=lambda item: item.ranking_score or item.score, reverse=True)[:limit]
 
 
@@ -308,6 +332,7 @@ class QueryRouter:
         """
         validate_query(query)
         lim = validate_limit(limit, default=self.default_limit)
+        candidate_limit = _candidate_limit(lim)
         scope = validate_session_id(session_id or self.session_id)
         results: list[SearchResult] = []
 
@@ -342,11 +367,11 @@ class QueryRouter:
 
         # 2. Vector search (if embedding provided)
         vector_hits: list[SearchResult] = []
-        if embedding:
+        if embedding and vector_has_signal(embedding):
             try:
                 vector_hits = await self.store.search_vector(
                     embedding,
-                    limit=lim,
+                    limit=candidate_limit,
                     temporal_point=temporal_point,
                     session_id=scope,
                 )
@@ -375,7 +400,7 @@ class QueryRouter:
             try:
                 query_hits = await self.store.search_keyword(
                     keyword_query,
-                    limit=lim,
+                    limit=candidate_limit,
                     temporal_point=temporal_point,
                     session_id=scope,
                 )
@@ -414,7 +439,7 @@ class QueryRouter:
             keyword_hits=keyword_hits,
             identifier_terms=identifier_terms,
         )
-        if traversal_seeds and await self._has_traversal_edges(scope):
+        if traversal_seeds and (temporal_point is not None or await self._has_traversal_edges(scope)):
             for hit in traversal_seeds:
                 try:
                     neighbors = await self.store.search_traversal(
@@ -485,20 +510,60 @@ class QueryRouter:
         return available
 
     async def _rank(self, query: str, results: list[SearchResult], limit: int) -> list[SearchResult]:
-        candidates = _mmr_rank(
+        mmr_pool_limit = _mmr_pool_limit(limit, has_reranker=self.reranker is not None)
+        mmr_inputs = _bounded_mmr_candidates(
             results,
-            limit=len(results),
+            limit=mmr_pool_limit,
+            traversal_bonus=self.scoring_profile.traversal_bonus,
+        )
+        entity_token_cache = _entity_token_cache(mmr_inputs)
+        candidates = _mmr_rank(
+            mmr_inputs,
+            limit=len(mmr_inputs) if self.reranker is not None else limit,
             lambda_score=self.scoring_profile.mmr_lambda,
             traversal_bonus=self.scoring_profile.traversal_bonus,
+            entity_token_cache=entity_token_cache,
         )
         if self.reranker is None:
             return candidates[:limit]
         try:
-            reranked = await self.reranker.rerank(query, candidates, limit=limit)
+            if isinstance(self.reranker, LexicalReranker):
+                reranked = await self.reranker.rerank(
+                    query,
+                    candidates,
+                    limit=limit,
+                    entity_token_cache=entity_token_cache,
+                )
+            else:
+                reranked = await self.reranker.rerank(query, candidates, limit=limit)
         except Exception:
             get_metrics().record_degraded_operation("query", "reranker_unavailable")
             return [_with_warnings(candidate, ["reranker unavailable"]) for candidate in candidates[:limit]]
         return reranked[:limit]
+
+
+def _mmr_pool_limit(limit: int, *, has_reranker: bool) -> int:
+    """Return the bounded candidate pool considered by MMR."""
+    if has_reranker:
+        return max(limit * 4, 20)
+    return max(limit * 3, 16)
+
+
+def _bounded_mmr_candidates(
+    results: list[SearchResult],
+    *,
+    limit: int,
+    traversal_bonus: float,
+) -> list[SearchResult]:
+    """Keep the highest-value candidates before the quadratic MMR stage."""
+    if len(results) <= limit:
+        return results
+    source_bonus = {"traversal": traversal_bonus}
+    return sorted(
+        results,
+        key=lambda result: result.score + source_bonus.get(result.source, 0.0),
+        reverse=True,
+    )[:limit]
 
 
 def build_reranker(settings: Any) -> Reranker | None:
@@ -540,6 +605,11 @@ def build_retention_policy(settings: Any) -> RetentionPolicy:
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
+
+def _candidate_limit(prompt_limit: int) -> int:
+    """Return the internal retrieval budget used before final prompt truncation."""
+    return min(50, max(prompt_limit, prompt_limit * 4))
+
 
 def _to_chunk(result: SearchResult) -> ContextChunk:
     """Convert a SearchResult to a ContextChunk."""
@@ -650,14 +720,8 @@ def _diagnostic_metadata(entity: GraphEntity) -> dict[str, Any] | None:
 def _exact_candidates(query: str) -> list[str]:
     """Return exact entity candidates named inside a natural-language query."""
     candidates = [query]
-    patterns = [
-        r"\bGoal\s+\d{4}\b",
-        r"\btask-\d{4}\b",
-        r"\buser-\d{4}:[A-Za-z0-9_.-]+\b",
-        r"\buser-\d{4}\b",
-    ]
-    for pattern in patterns:
-        candidates.extend(match.group(0) for match in re.finditer(pattern, query))
+    for pattern in _EXACT_CANDIDATE_RE:
+        candidates.extend(match.group(0) for match in pattern.finditer(query))
     candidates.extend(_identifier_terms(query))
     candidates.extend(_structured_preference_candidates(query))
 
@@ -672,7 +736,7 @@ def _exact_candidates(query: str) -> list[str]:
 
 def _structured_preference_candidates(query: str) -> list[str]:
     """Infer deterministic preference entity names from common memory questions."""
-    user_ids = re.findall(r"\buser-\d{4}\b", query)
+    user_ids = [match.group(0) for match in _USER_ID_RE.finditer(query)]
     if not user_ids:
         return []
     lowered = query.casefold()
@@ -692,9 +756,26 @@ def _identifier_terms(query: str) -> tuple[str, ...]:
     return tuple(
         dict.fromkeys(
             match.group(0)
-            for match in re.finditer(r"\b[A-Za-z]+(?:-[A-Za-z0-9]+)+\b", query)
+            for match in _DURABLE_IDENTIFIER_RE.finditer(query)
+            if _looks_like_durable_identifier(match.group(0))
         )
     )
+
+
+def _looks_like_durable_identifier(value: str) -> bool:
+    """Return true for code-like hyphenated IDs, not natural adjective compounds."""
+    parts = value.split("-")
+    if len(parts) < 2:
+        return False
+    for part in parts:
+        for char in part:
+            if char.isdigit():
+                return True
+    durable_markers = {"id", "uuid", "code", "ticket", "task", "goal"}
+    for part in parts:  # noqa: SIM110 - avoid generator allocation on query hot paths.
+        if part.casefold() in durable_markers:
+            return True
+    return False
 
 
 def _identifier_boosted_score(
@@ -705,7 +786,7 @@ def _identifier_boosted_score(
     if not identifiers:
         return base_score
     searchable = _entity_identifier_text(entity).casefold()
-    if any(identifier.casefold() in searchable for identifier in identifiers):
+    if _identifier_in_text(searchable, identifiers):
         return max(base_score, 1.35)
     return base_score
 
@@ -724,14 +805,17 @@ def _suppress_identifier_fuzzy_distractors(
     """
     if not identifiers:
         return results
-    if not any(_entity_matches_identifier(result.entity, identifiers) for result in results):
+    has_identifier_match = False
+    retained: list[SearchResult] = []
+    for result in results:
+        matches_identifier = _entity_matches_identifier(result.entity, identifiers)
+        if matches_identifier:
+            has_identifier_match = True
+        if result.source == "exact" or result.source == "traversal" or matches_identifier:
+            retained.append(result)
+    if not has_identifier_match:
         return results
-    return [
-        result
-        for result in results
-        if result.source in {"exact", "traversal"}
-        or _entity_matches_identifier(result.entity, identifiers)
-    ]
+    return retained
 
 
 def _entity_identifier_text(entity: GraphEntity) -> str:
@@ -745,16 +829,21 @@ def _entity_identifier_text(entity: GraphEntity) -> str:
 
 def _expanded_queries(query: str) -> list[str]:
     """Return the original query plus deterministic synonym expansions."""
-    tokens = re.findall(r"[A-Za-z0-9]+", query.lower())
+    tokens = _TOKEN_RE.findall(query.lower())
     expanded_terms: list[str] = []
     for token in tokens:
         expanded_terms.extend(QUERY_EXPANSIONS.get(token, ()))
     expanded_terms.extend(_phrase_expansions(tokens))
     expanded_terms = _unique(expanded_terms)
     identifier_terms = list(_identifier_terms(query))
+    planned_queries = [
+        planned_query
+        for planned_query in source_lane_queries(query, [])
+        if planned_query != query
+    ]
     if not expanded_terms:
-        return [query, *identifier_terms]
-    return [query, f"{query} {' '.join(expanded_terms)}", *identifier_terms]
+        return _unique([query, *planned_queries, *identifier_terms])
+    return _unique([query, f"{query} {' '.join(expanded_terms)}", *planned_queries, *identifier_terms])
 
 
 def _phrase_expansions(tokens: list[str]) -> tuple[str, ...]:
@@ -832,16 +921,22 @@ def _inferred_edge_trust_metadata(properties: dict[str, Any]) -> dict[str, float
         _bounded_float(value, default=0.0)
         for value in _list_property(properties.get("_path_inferred_confidences"))
     ]
-    average_confidence = (
-        sum(confidences[:inferred_edge_count]) / inferred_edge_count
-        if confidences
-        else 0.0
-    )
+    confidence_total = 0.0
+    confidence_count = 0
+    for confidence in confidences:
+        if confidence_count >= inferred_edge_count:
+            break
+        confidence_total += confidence
+        confidence_count += 1
+    average_confidence = confidence_total / inferred_edge_count if confidence_count else 0.0
     methods = [
         str(method).strip().casefold()
         for method in _list_property(properties.get("_path_inference_methods"))
     ]
-    method_count = sum(1 for method in methods if method and method != "unknown")
+    method_count = 0
+    for method in methods:
+        if method and method != "unknown":
+            method_count += 1
     source_count = _positive_int(properties.get("_path_inferred_source_event_count"))
     evidenced_edge_count = _positive_int(properties.get("_path_inferred_evidenced_edge_count"))
     if evidenced_edge_count == 0 and _positive_int(properties.get("_path_inferred_evidence_count")) > 0:
@@ -888,7 +983,14 @@ def _traversal_seeds(
 
 def _entity_matches_identifier(entity: GraphEntity, identifiers: tuple[str, ...]) -> bool:
     searchable = _entity_identifier_text(entity).casefold()
-    return any(identifier.casefold() in searchable for identifier in identifiers)
+    return _identifier_in_text(searchable, identifiers)
+
+
+def _identifier_in_text(searchable: str, identifiers: tuple[str, ...]) -> bool:
+    for identifier in identifiers:  # noqa: SIM110 - avoid generator allocation on query hot paths.
+        if identifier.casefold() in searchable:
+            return True
+    return False
 
 
 def _unique_search_results(results: list[SearchResult]) -> list[SearchResult]:
@@ -1000,15 +1102,13 @@ def _mmr_rank(
     limit: int,
     lambda_score: float = 0.7,
     traversal_bonus: float = 0.1,
+    entity_token_cache: dict[tuple[str, str, str], set[str]] | None = None,
 ) -> list[SearchResult]:
     """Rank by weighted relevance while penalizing near-duplicate context."""
     candidates = sorted(results, key=lambda x: x.score, reverse=True)
     selected: list[SearchResult] = []
     source_bonus = {"traversal": traversal_bonus}
-    token_cache = {
-        (result.entity.name, result.entity.entity_type, result.entity.valid_from): _entity_tokens(result.entity)
-        for result in results
-    }
+    token_cache = _entity_token_cache(results, entity_token_cache=entity_token_cache)
     max_similarity_by_candidate = [0.0 for _ in candidates]
     latest_selected: SearchResult | None = None
 
@@ -1048,6 +1148,20 @@ def _mmr_rank(
     return selected
 
 
+def _entity_token_cache(
+    results: list[SearchResult],
+    *,
+    entity_token_cache: dict[tuple[str, str, str], set[str]] | None = None,
+) -> dict[tuple[str, str, str], set[str]]:
+    """Return a token cache for the candidate entities, preserving caller state."""
+    token_cache = entity_token_cache if entity_token_cache is not None else {}
+    for result in results:
+        key = _entity_token_cache_key(result.entity)
+        if key not in token_cache:
+            token_cache[key] = _entity_tokens(result.entity)
+    return token_cache
+
+
 def _entity_similarity(
     left: GraphEntity,
     right: GraphEntity,
@@ -1058,8 +1172,8 @@ def _entity_similarity(
         left_tokens = _entity_tokens(left)
         right_tokens = _entity_tokens(right)
     else:
-        left_tokens = token_cache[(left.name, left.entity_type, left.valid_from)]
-        right_tokens = token_cache[(right.name, right.entity_type, right.valid_from)]
+        left_tokens = token_cache[_entity_token_cache_key(left)]
+        right_tokens = token_cache[_entity_token_cache_key(right)]
     if not left_tokens or not right_tokens:
         return 0.0
     smaller, larger = (
@@ -1067,7 +1181,10 @@ def _entity_similarity(
         if len(left_tokens) <= len(right_tokens)
         else (right_tokens, left_tokens)
     )
-    intersection_count = sum(1 for token in smaller if token in larger)
+    intersection_count = 0
+    for token in smaller:
+        if token in larger:
+            intersection_count += 1
     union_count = len(left_tokens) + len(right_tokens) - intersection_count
     return intersection_count / union_count if union_count else 0.0
 
@@ -1083,16 +1200,29 @@ def _entity_tokens(entity: GraphEntity) -> set[str]:
             text_parts.append(str(value))
     return {
         token
-        for token in re.findall(r"[A-Za-z0-9]+", " ".join(text_parts).lower())
+        for token in _TOKEN_RE.findall(" ".join(text_parts).lower())
         if len(token) > 1
     }
 
 
-def _lexical_rerank_score(query_tokens: set[str], entity: GraphEntity) -> float:
+def _entity_token_cache_key(entity: GraphEntity) -> tuple[str, str, str]:
+    return (entity.name, entity.entity_type, entity.valid_from)
+
+
+def _lexical_rerank_score(
+    query_tokens: set[str],
+    entity: GraphEntity,
+    *,
+    entity_token_cache: dict[tuple[str, str, str], set[str]] | None = None,
+) -> float:
     """Score an entity for second-stage lexical relevance."""
     if not query_tokens:
         return 0.0
-    entity_tokens = _entity_tokens(entity)
+    entity_tokens = (
+        entity_token_cache[_entity_token_cache_key(entity)]
+        if entity_token_cache is not None
+        else _entity_tokens(entity)
+    )
     overlap = len(query_tokens & entity_tokens) / len(query_tokens)
     phrase_bonus = 0.0
     lower_text = " ".join([entity.name, str(entity.properties.get("summary", ""))]).lower()
@@ -1102,8 +1232,34 @@ def _lexical_rerank_score(query_tokens: set[str], entity: GraphEntity) -> float:
     return min(overlap + phrase_bonus, 1.0)
 
 
+def _lexical_rerank_score_for_result(
+    base_tokens: set[str],
+    query: str,
+    result: SearchResult,
+    *,
+    entity_token_cache: dict[tuple[str, str, str], set[str]] | None = None,
+) -> float:
+    """Score a result against the user query and its matched expansion."""
+    score = _lexical_rerank_score(
+        base_tokens,
+        result.entity,
+        entity_token_cache=entity_token_cache,
+    )
+    matched_query = result.matched_query
+    if not matched_query or matched_query == query:
+        return score
+    return max(
+        score,
+        _lexical_rerank_score(
+            _tokens(matched_query),
+            result.entity,
+            entity_token_cache=entity_token_cache,
+        ),
+    )
+
+
 def _tokens(value: str) -> set[str]:
-    return {token for token in re.findall(r"[A-Za-z0-9]+", value.lower()) if len(token) > 1}
+    return {token for token in _TOKEN_RE.findall(value.lower()) if len(token) > 1}
 
 
 def _apply_temporal_score(

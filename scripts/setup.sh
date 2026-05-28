@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Setup script for Zaxy.
-# Generates .env file, creates directories, and validates Docker services.
+# Generates .env file, creates directories, and detects optional Docker sidecars.
 # Usage: ./scripts/setup.sh [--production]
 
 set -euo pipefail
@@ -54,11 +54,12 @@ if [[ ! -f "${ENV_FILE}" ]]; then
 # Mode: ${MODE}
 
 ZAXY_ENV=${ZAXY_ENV}
-NEO4J_URI=${NEO4J_URI}
-NEO4J_USER=neo4j
-NEO4J_DATABASE=neo4j
-NEO4J_CA_CERT=${NEO4J_CA_CERT}
-NEO4J_TRUST_ALL=false
+PROJECTION_BACKEND=embedded
+EMBEDDED_GRAPH_PATH=.eventloom/projections/embedded.kuzu
+LATTICEDB_PATH=.eventloom/projections/memory.latticedb
+NEO4J_AUTO_START=false
+PGGRAPH_DSN=postgresql://postgres:postgres@localhost:5432/zaxy
+PGGRAPH_AUTO_START=false
 
 EVENTLOOM_PATH=.eventloom
 EVENTLOOM_THREAD=default
@@ -84,14 +85,18 @@ EOF
 
     if [[ "${MODE}" != "--production" ]]; then
         {
+            echo "NEO4J_URI=${NEO4J_URI}"
+            echo "NEO4J_USER=neo4j"
             echo "NEO4J_PASSWORD=${NEO4J_PASSWORD}"
             echo "NEO4J_PASSWORD_FILE="
+            echo "NEO4J_DATABASE=neo4j"
+            echo "NEO4J_CA_CERT=${NEO4J_CA_CERT}"
+            echo "NEO4J_TRUST_ALL=false"
             echo "MCP_ADMIN_TOKEN=${MCP_ADMIN_TOKEN}"
             echo "MCP_REMOTE_AUTH_TOKEN=${MCP_REMOTE_AUTH_TOKEN}"
         } >> "${ENV_FILE}"
     else
         {
-            echo "NEO4J_PASSWORD_FILE=secrets/neo4j_password.txt"
             echo "MCP_ADMIN_TOKEN_FILE=secrets/mcp_admin_token.txt"
             echo "MCP_REMOTE_AUTH_TOKEN_FILE=secrets/mcp_remote_auth_token.txt"
             echo "OPENAI_API_KEY_FILE=secrets/openai_api_key.txt"
@@ -111,26 +116,23 @@ fi
 # Create directories
 # ------------------------------------------------------------------
 mkdir -p "${PROJECT_ROOT}/.eventloom"
-mkdir -p "${PROJECT_ROOT}/.volumes/neo4j_data"
-mkdir -p "${PROJECT_ROOT}/.volumes/neo4j_logs"
+mkdir -p "${PROJECT_ROOT}/.eventloom/projections"
 mkdir -p "${SECRETS_DIR}"
 
 echo "   ✅ Created directories"
 
 # ------------------------------------------------------------------
-# Validate Docker
+# Detect optional Docker sidecar tooling
 # ------------------------------------------------------------------
+DOCKER_AVAILABLE=false
 if ! command -v docker &> /dev/null; then
-    echo "   ❌ Docker is not installed"
-    exit 1
+    echo "   ⚠️  Docker unavailable; skipping optional sidecar validation"
+elif ! docker compose version &> /dev/null && ! docker-compose version &> /dev/null; then
+    echo "   ⚠️  Docker Compose unavailable; skipping optional sidecar validation"
+else
+    DOCKER_AVAILABLE=true
+    echo "   ✅ Optional Docker sidecar tooling available"
 fi
-
-if ! docker compose version &> /dev/null && ! docker-compose version &> /dev/null; then
-    echo "   ❌ Docker Compose is not installed"
-    exit 1
-fi
-
-echo "   ✅ Docker available"
 
 # ------------------------------------------------------------------
 # Summary
@@ -139,9 +141,16 @@ echo ""
 echo "📋 Setup complete. Next steps:"
 echo ""
 if [[ "${MODE}" == "--production" ]]; then
-    echo "   docker compose -f docker-compose.prod.yml up -d"
+    echo "   scripts/validate-deployment.sh --root ."
+    if [[ "${DOCKER_AVAILABLE}" == "true" ]]; then
+        echo "   docker compose -f docker-compose.prod.yml up -d   # embedded production service"
+        echo "   docker compose -f docker-compose.prod.yml --profile neo4j up -d zaxy-neo4j   # optional Neo4j sidecar"
+    fi
 else
-    echo "   docker compose up -d"
+    echo "   zaxy status"
+    if [[ "${DOCKER_AVAILABLE}" == "true" ]]; then
+        echo "   docker compose --profile integration up -d neo4j-test neo4j-tls   # optional integration sidecars"
+    fi
     echo "   pytest -m integration"
 fi
 echo ""

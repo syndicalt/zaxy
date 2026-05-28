@@ -17,7 +17,12 @@ from zaxy.graph import (
     GraphInferredEdgeStatus,
     SearchResult,
 )
-from zaxy.security import validate_limit, validate_session_id, validate_traversal_depth
+from zaxy.security import (
+    validate_limit,
+    validate_session_id,
+    validate_traversal_depth,
+    vector_has_signal,
+)
 
 PGGRAPH_SCHEMA_SQL = """
 CREATE EXTENSION IF NOT EXISTS vector;
@@ -173,8 +178,9 @@ _KEYWORD_STOP_WORDS = frozenset(
 class PgGraphStore:
     """Async PostgreSQL/pgGraph projection backend.
 
-    The implementation is intentionally experimental. Neo4j remains the default
-    production and benchmark backend until this adapter passes the same gates.
+    The implementation is intentionally experimental. Embedded Kuzu remains the
+    default backend, while pgGraph is available only for explicit sidecar
+    experiments until this adapter passes the same gates.
     """
 
     def __init__(self, dsn: str, *, connection: Any | None = None) -> None:
@@ -397,6 +403,8 @@ class PgGraphStore:
         session_id: str = "default",
     ) -> list[SearchResult]:
         """Search by lexical relevance."""
+        if limit <= 0:
+            return []
         rows = await self._fetch_all(
             """
             WITH search AS (
@@ -448,15 +456,11 @@ class PgGraphStore:
                 "limit": validate_limit(limit),
             },
         )
-        return [
-            SearchResult(
-                entity=_row_to_entity(row),
-                score=float(row.get("score") or 0.0),
-                raw_score=float(row.get("score") or 0.0),
-                source="keyword",
-            )
-            for row in rows
-        ]
+        results = []
+        for row in rows:
+            score = float(row.get("score") or 0.0)
+            results.append(SearchResult(entity=_row_to_entity(row), score=score, raw_score=score, source="keyword"))
+        return results
 
     async def search_traversal(
         self,
@@ -525,6 +529,10 @@ class PgGraphStore:
         session_id: str = "default",
     ) -> list[SearchResult]:
         """Search by vector similarity."""
+        if limit <= 0:
+            return []
+        if not vector_has_signal(embedding):
+            return []
         rows = await self._fetch_all(
             """
             SELECT
@@ -559,15 +567,11 @@ class PgGraphStore:
                 "limit": validate_limit(limit),
             },
         )
-        return [
-            SearchResult(
-                entity=_row_to_entity(row),
-                score=float(row.get("score") or 0.0),
-                raw_score=float(row.get("score") or 0.0),
-                source="vector",
-            )
-            for row in rows
-        ]
+        results = []
+        for row in rows:
+            score = float(row.get("score") or 0.0)
+            results.append(SearchResult(entity=_row_to_entity(row), score=score, raw_score=score, source="vector"))
+        return results
 
     async def has_traversal_edges(self, session_id: str = "default") -> bool:
         """Return whether a session has active pgGraph edges for traversal."""

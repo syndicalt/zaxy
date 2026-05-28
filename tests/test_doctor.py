@@ -10,7 +10,7 @@ from zaxy.event import EventLog
 
 
 def test_run_doctor_reports_local_setup_ok(tmp_path: Path, monkeypatch) -> None:
-    """Doctor should validate local-only setup without requiring live Neo4j."""
+    """Doctor should validate local-only setup with the embedded projection default."""
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
     settings = Settings(
         _env_file=None,
@@ -40,9 +40,9 @@ def test_run_doctor_reports_local_setup_ok(tmp_path: Path, monkeypatch) -> None:
         "observation_coverage": "warning",
         "capture_health": "warning",
         "packet_memory": "warning",
-        "neo4j": "ok",
-        "production": "ok",
-    }
+            "embedded_graph": "ok",
+            "production": "ok",
+        }
     assert (tmp_path / ".eventloom").is_dir()
 
 

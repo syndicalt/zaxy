@@ -2,13 +2,12 @@
 
 The MemoryFabric is the primary interface for agents to persist and query
 context. It coordinates between Eventloom (immutable log), the temporal
-knowledge graph (Neo4j), hybrid extraction, and Pathlight tracing.
+selected projection graph, hybrid extraction, and optional tracing.
 
 Example::
 
     fabric = MemoryFabric(
         eventloom_path=".eventloom/agent.jsonl",
-        neo4j_uri="bolt://localhost:7687",
     )
     await fabric.connect()
     await fabric.append("goal.created", actor="user", payload={"title": "Ship it"})
@@ -58,7 +57,17 @@ from zaxy.projection_backends import ProjectionBackendConfig, build_projection_s
 from zaxy.query import QueryRouter, build_reranker, build_retention_policy
 from zaxy.recall import RecallCandidateSet, build_recall_candidate_set, empty_recall_candidate_set
 from zaxy.refs import MemoryRef, MemoryRefStore
-from zaxy.retrieval_plan import build_evidence_plan, source_lane_candidate_limit
+from zaxy.retrieval_intent import classify_retrieval_intent
+from zaxy.retrieval_plan import (
+    absence_check_bundle,
+    bridge_source_lane_queries,
+    build_evidence_plan,
+    should_try_absence_bundle_first,
+    source_context_group,
+    source_lane_candidate_limit,
+    source_lane_queries,
+    source_synthesis_bundle,
+)
 from zaxy.retrieval_profile import (
     RetrievalProfile,
     apply_retrieval_profile,
@@ -320,16 +329,20 @@ class MemoryFabric:
             packet_memory_enabled=resolved_settings.context_packet_memory_enabled,
             packet_memory_slots=resolved_settings.context_packet_memory_slots,
         )
+        self._verbatim_index_cache: dict[str, tuple[tuple[int, int], VerbatimIndex]] = {}
         self._initialized_workspaces: dict[tuple[str, str], WorkspaceProfile] = {}
         self._initialized_instruction_signatures: dict[tuple[str, str], str] = {}
+        self._warmed_projection_sessions: set[str] = set()
         self._connected = False
 
     async def connect(self) -> None:
-        """Connect to Neo4j and Pathlight. Idempotent."""
+        """Connect to projection backend and tracer. Idempotent."""
         if self._connected:
             return
         await self.graph.connect()
         await self.graph.init_schema()
+        await self._warm_projection_session(self.settings.eventloom_thread)
+        self._warm_source_index(self.settings.eventloom_thread)
         await self.tracer.connect()
         self._connected = True
 
@@ -337,7 +350,30 @@ class MemoryFabric:
         """Close all connections. Idempotent."""
         await self.graph.close()
         await self.tracer.close()
+        self._verbatim_index_cache = {}
+        self._warmed_projection_sessions = set()
         self._connected = False
+
+    async def _warm_projection_session(self, session_id: str) -> None:
+        """Warm optional backend read indexes once per session."""
+        if session_id in self._warmed_projection_sessions:
+            return
+        warm_session = getattr(self.graph, "warm_session", None)
+        if warm_session is None:
+            self._warmed_projection_sessions.add(session_id)
+            return
+        try:
+            await warm_session(session_id=session_id)
+        except Exception:
+            get_metrics().record_degraded_operation("query", "projection_warmup_unavailable")
+        self._warmed_projection_sessions.add(session_id)
+
+    def _warm_source_index(self, session_id: str) -> None:
+        """Warm Eventloom source recall index for the active session."""
+        try:
+            self._verbatim_index(session_id)
+        except Exception:
+            get_metrics().record_degraded_operation("query", "source_index_warmup_unavailable")
 
     async def append(
         self,
@@ -603,12 +639,59 @@ class MemoryFabric:
         limit: int = 10,
         embedding: list[float] | None = None,
         session_id: str = "default",
+        include_source_lane: bool = True,
     ) -> list[Context]:
-        """Query the temporal knowledge graph for relevant context.
+        """Return answer-ready context assembled from retrieval and source evidence."""
+        import time
 
-        This is the primary read path. It runs hybrid retrieval
-        (exact + vector + keyword + traversal) and returns ranked context chunks.
-        """
+        validate_query(query)
+        sid = validate_session_id(session_id)
+        start = time.perf_counter()
+        contexts = await self.retrieve(
+            query,
+            temporal_point=temporal_point,
+            limit=limit,
+            embedding=embedding,
+            session_id=sid,
+        )
+        source_contexts = (
+            await self._query_source_lane(query, contexts, sid, limit)
+            if include_source_lane
+            else []
+        )
+        if source_contexts:
+            contexts = self.context_assembly_policy.assemble(
+                contexts,
+                source_contexts,
+                [],
+                limit=limit,
+                query=query,
+            )
+        else:
+            contexts = contexts[:limit]
+        contexts = self._merge_projection_contexts(contexts, query, limit)
+        duration_ms = (time.perf_counter() - start) * 1000
+
+        await self._trace_query_best_effort(query, len(contexts), duration_ms, temporal_point)
+
+        query_source = "eventloom" if contexts and all(context.source == "eventloom" for context in contexts) else None
+        if query_source is None:
+            get_metrics().record_query(duration_ms / 1000.0)
+        else:
+            get_metrics().record_query(duration_ms / 1000.0, source=query_source)
+
+        return contexts
+
+    async def retrieve(
+        self,
+        query: str,
+        temporal_point: str | None = None,
+        limit: int = 10,
+        embedding: list[float] | None = None,
+        session_id: str = "default",
+        trace: bool = False,
+    ) -> list[Context]:
+        """Retrieve backend evidence without source-lane answer assembly."""
         import time
 
         validate_query(query)
@@ -625,9 +708,12 @@ class MemoryFabric:
                     limit,
                 )
                 duration_ms = (time.perf_counter() - start) * 1000
-                await self._trace_query_best_effort(query, len(chunks), duration_ms, temporal_point)
-                get_metrics().record_query(duration_ms / 1000.0, source="eventloom")
+                if trace:
+                    await self._trace_query_best_effort(query, len(chunks), duration_ms, temporal_point)
+                if trace:
+                    get_metrics().record_query(duration_ms / 1000.0, source="eventloom")
                 return chunks
+        await self._warm_projection_session(sid)
 
         query_embedding = embedding
         if query_embedding is None and self.embedding_provider is not None:
@@ -653,16 +739,11 @@ class MemoryFabric:
                 limit,
             )
             duration_ms = (time.perf_counter() - start) * 1000
-            await self._trace_query_best_effort(query, len(contexts), duration_ms, temporal_point)
-            get_metrics().record_query(duration_ms / 1000.0, source="eventloom")
+            if trace:
+                await self._trace_query_best_effort(query, len(contexts), duration_ms, temporal_point)
+            if trace:
+                get_metrics().record_query(duration_ms / 1000.0, source="eventloom")
             return contexts
-        duration_ms = (time.perf_counter() - start) * 1000
-
-        await self._trace_query_best_effort(query, len(router_chunks), duration_ms, temporal_point)
-
-        # Metrics
-        get_metrics().record_query(duration_ms / 1000.0)
-
         contexts = []
         for c in router_chunks:
             metadata: dict[str, Any] = {}
@@ -686,7 +767,179 @@ class MemoryFabric:
                     metadata=metadata or None,
                 )
             )
-        return self._merge_projection_contexts(contexts, query, limit)
+        contexts = contexts[:limit]
+        duration_ms = (time.perf_counter() - start) * 1000
+
+        if trace:
+            await self._trace_query_best_effort(query, len(contexts), duration_ms, temporal_point)
+
+        if trace:
+            get_metrics().record_query(duration_ms / 1000.0)
+
+        return contexts
+
+    async def _query_source_lane(
+        self,
+        query: str,
+        graph_contexts: list[Context],
+        session_id: str,
+        limit: int,
+    ) -> list[Context]:
+        """Return bounded verbatim source evidence for raw query results."""
+        candidate_limit = self.context_assembly_policy.verbatim_candidate_limit(
+            query=query,
+            limit=limit,
+        )
+        if candidate_limit <= 0:
+            return []
+        graph_texts = [context.content for context in graph_contexts]
+        source_contexts: list[Context] = []
+        seen: set[tuple[str, str]] = set()
+        queries = self._ordered_source_lane_queries(query, graph_texts, limit)
+        for source_query in queries:
+            try:
+                hits = await self.query_verbatim(source_query, limit=candidate_limit, session_id=session_id)
+            except Exception:
+                get_metrics().record_degraded_operation("query", "source_lane_unavailable")
+                continue
+            self._extend_unique_source_contexts(source_contexts, hits, seen)
+            for bridge_query in bridge_source_lane_queries(query, [context.content for context in hits]):
+                try:
+                    bridge_hits = await self.query_verbatim(
+                        bridge_query,
+                        limit=candidate_limit,
+                        session_id=session_id,
+                    )
+                except Exception:
+                    get_metrics().record_degraded_operation("query", "source_lane_unavailable")
+                    continue
+                self._extend_unique_source_contexts(source_contexts, bridge_hits, seen)
+        for source_group in self._graph_source_groups_for_backfill(graph_contexts, limit):
+            try:
+                hits = await self.query_verbatim(source_group, limit=max(1, min(candidate_limit, 3)), session_id=session_id)
+            except Exception:
+                get_metrics().record_degraded_operation("query", "source_lane_unavailable")
+                continue
+            self._extend_unique_source_contexts(source_contexts, hits, seen)
+        source_contexts = self._order_source_contexts_for_assembly(query, source_contexts)
+        return self._with_source_synthesis_bundle(query, graph_contexts, source_contexts, limit)
+
+    @staticmethod
+    def _ordered_source_lane_queries(query: str, graph_contexts: list[str], limit: int) -> list[str]:
+        """Return source-lane queries in runtime recall order."""
+        queries = list(source_lane_queries(query, graph_contexts))
+        if len(queries) <= 1:
+            return queries
+        intent = classify_retrieval_intent(query, limit=limit)
+        if {"aggregation", "aggregation_question"} & set(intent.reasons):
+            return [*queries[1:], queries[0]]
+        return queries
+
+    @staticmethod
+    def _with_source_synthesis_bundle(
+        query: str,
+        graph_contexts: list[Context],
+        source_contexts: list[Context],
+        limit: int,
+    ) -> list[Context]:
+        """Prepend compact multi-source evidence when the query needs synthesis."""
+        synthesis_contexts = _prefer_verbatim_for_duplicate_source_groups(
+            source_contexts,
+            graph_contexts,
+        )
+        if not synthesis_contexts:
+            return source_contexts
+        preferred_source_groups = [
+            source_context_group(_source_context_text(context))
+            for context in graph_contexts
+        ]
+        source_kind = "source_absence"
+        assembly_hint = "source_absence"
+        if should_try_absence_bundle_first(query, limit=limit):
+            bundle = absence_check_bundle(
+                query=query,
+                source_results=synthesis_contexts,
+                limit=limit,
+            )
+            if bundle is None:
+                source_kind = "source_synthesis"
+                assembly_hint = "source_synthesis"
+                bundle = source_synthesis_bundle(
+                    query=query,
+                    source_results=synthesis_contexts,
+                    limit=limit,
+                    preferred_source_groups=preferred_source_groups,
+                )
+        else:
+            source_kind = "source_synthesis"
+            assembly_hint = "source_synthesis"
+            bundle = source_synthesis_bundle(
+                query=query,
+                source_results=synthesis_contexts,
+                limit=limit,
+                preferred_source_groups=preferred_source_groups,
+            )
+            if bundle is None:
+                source_kind = "source_absence"
+                assembly_hint = "source_absence"
+                bundle = absence_check_bundle(
+                    query=query,
+                    source_results=synthesis_contexts,
+                    limit=limit,
+                )
+        if bundle is None:
+            return source_contexts
+        synthesis = Context(
+            content=bundle,
+            source="verbatim",
+            score=max((context.score for context in source_contexts), default=0.0) + 1.0,
+            metadata={
+                "source_kind": source_kind,
+                "assembly_hint": assembly_hint,
+            },
+        )
+        return [synthesis, *source_contexts]
+
+    @staticmethod
+    def _graph_source_groups_for_backfill(
+        graph_contexts: list[Context],
+        limit: int,
+    ) -> list[str]:
+        """Return graph-ranked provenance groups that should be verbatim-backfilled."""
+        groups: list[str] = []
+        seen: set[str] = set()
+        for context in graph_contexts[: max(0, limit)]:
+            group = source_context_group(_source_context_text(context))
+            if group == "unknown" or group in seen:
+                continue
+            seen.add(group)
+            groups.append(group)
+        return groups
+
+    @staticmethod
+    def _order_source_contexts_for_assembly(
+        query: str,
+        source_contexts: list[Context],
+    ) -> list[Context]:
+        """Preserve source-rank order before synthesis performs typed ranking."""
+        del query
+        return source_contexts
+
+    @staticmethod
+    def _extend_unique_source_contexts(
+        target: list[Context],
+        contexts: list[Context],
+        seen: set[tuple[str, str]],
+    ) -> None:
+        """Append source contexts once while preserving retrieval order."""
+        for context in contexts:
+            metadata = context.metadata or {}
+            citation = str(metadata.get("citation") or "")
+            key = (citation, context.content)
+            if key in seen:
+                continue
+            seen.add(key)
+            target.append(context)
 
     async def query_page(
         self,
@@ -751,7 +1004,7 @@ class MemoryFabric:
         """Retrieve exact Eventloom source chunks without requiring graph services."""
         validate_query(query)
         sid = validate_session_id(session_id)
-        index = VerbatimIndex.from_event_logs([self.session_manager.get(sid).eventlog])
+        index = self._verbatim_index(sid)
         contexts: list[Context] = []
         for hit in index.query(query, limit=limit):
             contexts.append(
@@ -767,6 +1020,17 @@ class MemoryFabric:
                 )
             )
         return contexts
+
+    def _verbatim_index(self, session_id: str) -> VerbatimIndex:
+        """Return a cached verbatim index for the current Eventloom file state."""
+        eventlog = self.session_manager.get(session_id).eventlog
+        signature = _eventlog_file_signature(eventlog)
+        cached = self._verbatim_index_cache.get(session_id)
+        if cached is not None and cached[0] == signature:
+            return cached[1]
+        index = VerbatimIndex.from_event_logs([eventlog])
+        self._verbatim_index_cache[session_id] = (signature, index)
+        return index
 
     def _query_eventlog_fallback(
         self,
@@ -922,7 +1186,12 @@ class MemoryFabric:
         prompt_limit = validate_limit(limit)
         candidate_limit = prompt_limit if recall_limit is None else validate_limit(max(prompt_limit, recall_limit))
         replay = await self.replay(from_seq=replay_from_seq, session_id=sid)
-        graph_contexts = await self.query(query, limit=candidate_limit, session_id=sid)
+        graph_contexts = await self.query(
+            query,
+            limit=candidate_limit,
+            session_id=sid,
+            include_source_lane=False,
+        )
         verbatim_candidate_limit = self.context_assembly_policy.verbatim_candidate_limit(
             query=query,
             limit=candidate_limit,
@@ -1184,6 +1453,183 @@ class MemoryFabric:
             replay_from_seq=1,
             limit=limit,
         )
+
+    async def coordinate_start_mission(
+        self,
+        mission_id: str,
+        *,
+        objective: str,
+        actor: str = "coordinator",
+    ) -> Any:
+        """Start a parent coordination mission and project it."""
+        result = self._coordination_manager().start_mission(mission_id, objective=objective, actor=actor)
+        await self._project_event(result.event, session_id=result.mission_id)
+        return result
+
+    async def coordinate_create_worker(
+        self,
+        mission_id: str,
+        worker_id: str,
+        *,
+        actor: str = "coordinator",
+    ) -> Any:
+        """Register a worker session under a parent mission and project it."""
+        result = self._coordination_manager().create_worker(mission_id, worker_id, actor=actor)
+        await self._project_event(result.event, session_id=result.mission_id)
+        return result
+
+    async def coordinate_assign(
+        self,
+        mission_id: str,
+        worker_id: str,
+        assignment: str,
+        *,
+        actor: str = "coordinator",
+    ) -> Any:
+        """Assign scoped work to a coordination worker and project it."""
+        result = self._coordination_manager().assign(mission_id, worker_id, assignment, actor=actor)
+        await self._project_event(result.event, session_id=result.mission_id)
+        return result
+
+    async def coordinate_report_finding(
+        self,
+        mission_id: str,
+        worker_id: str,
+        *,
+        summary: str,
+        actor: str,
+        evidence: list[dict[str, Any]] | None = None,
+        confidence: float | None = None,
+        claim_key: str | None = None,
+        claim_value: str | None = None,
+        finding_id: str | None = None,
+    ) -> Any:
+        """Record a worker-local finding and project it in the worker session."""
+        result = self._coordination_manager().report_finding(
+            mission_id,
+            worker_id,
+            summary=summary,
+            actor=actor,
+            evidence=evidence,
+            confidence=confidence,
+            claim_key=claim_key,
+            claim_value=claim_value,
+            finding_id=finding_id,
+        )
+        await self._project_event(result.event, session_id=result.worker_id or worker_id)
+        return result
+
+    async def coordinate_review_finding(
+        self,
+        mission_id: str,
+        finding_id: str,
+        *,
+        status: str,
+        actor: str = "coordinator",
+        rationale: str | None = None,
+    ) -> Any:
+        """Record a coordinator review decision and project it."""
+        result = self._coordination_manager().review_finding(
+            mission_id,
+            finding_id,
+            status=status,
+            actor=actor,
+            rationale=rationale,
+        )
+        await self._project_event(result.event, session_id=result.mission_id)
+        return result
+
+    async def coordinate_promote_finding(
+        self,
+        mission_id: str,
+        finding_id: str,
+        *,
+        actor: str = "coordinator",
+    ) -> Any:
+        """Promote a finding into the parent mission history and project it."""
+        result = self._coordination_manager().promote_finding(mission_id, finding_id, actor=actor)
+        await self._project_event(result.event, session_id=result.mission_id)
+        return result
+
+    async def coordinate_brief(self, mission_id: str) -> Any:
+        """Return a replay-backed coordination brief."""
+        return self._coordination_manager().brief(mission_id)
+
+    async def coordinate_checkout(self, mission_id: str, *, include_diagnostics: bool = False) -> Any:
+        """Return accepted coordination state for prompt injection."""
+        return self._coordination_manager().checkout(mission_id, include_diagnostics=include_diagnostics)
+
+    async def coordinate_performance_ledger(self, mission_id: str) -> Any:
+        """Return replay-backed worker outcome metrics for a coordination mission."""
+        return self._coordination_manager().performance_ledger(mission_id)
+
+    async def coordinate_create_handoff(
+        self,
+        mission_id: str,
+        *,
+        summary: str,
+        actor: str = "coordinator",
+        next_steps: list[str] | None = None,
+        risks: list[str] | None = None,
+    ) -> Any:
+        """Create a final parent mission handoff and project it."""
+        result = self._coordination_manager().create_handoff(
+            mission_id,
+            summary=summary,
+            actor=actor,
+            next_steps=next_steps,
+            risks=risks,
+        )
+        await self._project_event(result.event, session_id=result.mission_id)
+        return result
+
+    async def coordinate_approval_packet(self, mission_id: str) -> Any:
+        """Return a portable remote approval packet for pending coordination findings."""
+        return self._coordination_manager().approval_packet(mission_id)
+
+    async def coordinate_apply_approval_decisions(
+        self,
+        mission_id: str,
+        decisions: list[dict[str, Any]],
+        *,
+        actor: str = "coordinator",
+    ) -> Any:
+        """Apply remote approval decisions and project all resulting events."""
+        result = self._coordination_manager().apply_approval_decisions(
+            mission_id,
+            decisions,
+            actor=actor,
+        )
+        for event in result.events:
+            await self._project_event(event, session_id=result.mission_id)
+        return result
+
+    async def coordinate_record_detected_conflicts(
+        self,
+        mission_id: str,
+        *,
+        actor: str = "zaxy",
+    ) -> Any:
+        """Materialize deterministic coordination conflicts and project them."""
+        results = self._coordination_manager().record_detected_conflicts(
+            mission_id,
+            actor=actor,
+        )
+        for result in results:
+            await self._project_event(result.event, session_id=result.mission_id)
+        return results
+
+    def _coordination_manager(self) -> Any:
+        """Return a coordination manager bound to this fabric's session manager."""
+        from zaxy.coordination import CoordinationManager
+        from zaxy.coordination_semantic import build_semantic_conflict_detector
+
+        manager = CoordinationManager(
+            eventloom_path=self.eventloom_path,
+            semantic_conflict_detector=build_semantic_conflict_detector(self.settings),
+        )
+        manager.session_manager = self.session_manager
+        return manager
 
     async def invalidate(
         self,
@@ -1695,6 +2141,74 @@ def _checkout_source_lane(context: Context) -> str:
     return "graph"
 
 
+def _source_context_text(context: Context) -> str:
+    """Return source text with compact metadata used by retrieval planning helpers."""
+    metadata = context.metadata or {}
+    prefixes: list[str] = []
+    citation = metadata.get("citation")
+    if citation:
+        prefixes.append(f"citation={citation}")
+    source_path = metadata.get("source_path")
+    if source_path:
+        prefixes.append(f"source_path={source_path}")
+    event_thread = metadata.get("event_thread")
+    if event_thread:
+        prefixes.append(f"thread={event_thread}")
+    source_kind = metadata.get("source_kind")
+    if source_kind:
+        prefixes.append(f"source_kind={source_kind}")
+    if not prefixes:
+        return context.content
+    return " ".join([*prefixes, context.content])
+
+
+def _unique_synthesis_context_texts(contexts: list[Context]) -> list[str]:
+    """Return synthesis candidate text once while preserving rank order."""
+    texts: list[str] = []
+    seen: set[str] = set()
+    for context in contexts:
+        text = _source_context_text(context)
+        if text in seen:
+            continue
+        seen.add(text)
+        texts.append(text)
+    return texts
+
+
+def _prefer_verbatim_for_duplicate_source_groups(
+    source_contexts: list[Context],
+    graph_contexts: list[Context],
+) -> list[str]:
+    """Return synthesis candidates while avoiding graph summaries over full source text."""
+    source_groups = {
+        source_context_group(_source_context_text(context))
+        for context in source_contexts
+    }
+    contexts = [
+        *source_contexts,
+        *[
+            context
+            for context in graph_contexts
+            if source_context_group(_source_context_text(context)) not in source_groups
+        ],
+    ]
+    return _unique_synthesis_context_texts(contexts)
+
+
+def _append_context_once(
+    target: list[Context],
+    context: Context,
+    seen: set[tuple[str, str]],
+) -> None:
+    metadata = context.metadata or {}
+    citation = str(metadata.get("citation") or "")
+    key = (citation, context.content)
+    if key in seen:
+        return
+    seen.add(key)
+    target.append(context)
+
+
 def _context_citation(context: Context) -> str | None:
     metadata = context.metadata or {}
     citation = metadata.get("citation")
@@ -1848,6 +2362,15 @@ def _compaction_projection_paths(
     for path in ordered:
         unique.setdefault(path.resolve(), path)
     return tuple(unique.values())
+
+
+def _eventlog_file_signature(eventlog: EventLog) -> tuple[int, int]:
+    """Return a cheap invalidation signature for a local Eventloom log."""
+    try:
+        stat = eventlog.path.stat()
+    except FileNotFoundError:
+        return (0, 0)
+    return (stat.st_mtime_ns, stat.st_size)
 
 
 def _tokens(value: str) -> set[str]:

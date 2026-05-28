@@ -15,6 +15,14 @@ Example::
 
 from __future__ import annotations
 
+import sys
+
+if len(sys.argv) > 1 and sys.argv[1] == "--version":
+    from zaxy.release import package_version
+
+    print(f"zaxy {package_version()}")
+    raise SystemExit(0)
+
 import json
 import os
 import subprocess
@@ -25,152 +33,98 @@ from contextlib import suppress
 from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import typer
-import yaml
 
-from zaxy.benchmark import build_competitive_event_log, competitive_cases
-from zaxy.capabilities import (
-    build_memory_bootstrap,
-    build_memory_capabilities,
-    format_memory_bootstrap,
-    format_memory_capabilities,
-)
-from zaxy.capture_manager import inspect_codex_capture, start_codex_capture, stop_codex_capture
-from zaxy.capture_soak import build_capture_soak_report, format_capture_soak_report
-from zaxy.codex_capture import capture_codex_sessions
-from zaxy.compaction import (
-    audit_event_log,
-    build_compaction_projection,
-    write_compaction_projection,
-)
-from zaxy.config import Settings, get_settings
-from zaxy.core import MemoryFabric
-from zaxy.doctor import (
-    format_doctor_report,
-    format_packet_memory_report,
-    packet_memory_report,
-    run_doctor,
-)
-from zaxy.domain import derive_domain, domain_default_session
-from zaxy.embedding import (
-    EmbeddingProvider,
-    HashEmbeddingProvider,
-    LocalHTTPEmbeddingProvider,
-    OpenAIEmbeddingProvider,
-    SentenceTransformersEmbeddingProvider,
-)
-from zaxy.event import Event, EventLog
-from zaxy.extract import extract
-from zaxy.extract_templates import ExtractorTemplateSpec, render_extractor_template
-from zaxy.graph import GraphStore
-from zaxy.hooks import (
-    build_hook_payload,
-    format_hook_status,
-    hook_event_type,
-    inspect_hook_status,
-    render_hook_config,
-    write_claude_code_hook_config,
-    write_hook_config,
-)
-from zaxy.integrations import (
-    list_framework_integration_specs,
-    recommend_framework_integration_target,
-    render_agent_integration_template,
-    render_codex_mcp_add_command,
-    render_framework_install_command,
-    render_mcp_client_config,
-    write_codex_mcp_config,
-    write_hermes_mcp_config,
-    write_project_mcp_client_config,
-)
-from zaxy.lifecycle import build_compaction_completed_event
-from zaxy.live_benchmark import (
-    BenchmarkWorkload,
-    BM25Retriever,
-    CachedEmbeddingProvider,
-    CentroidConsolidationRetriever,
-    ExternalBenchmarkResult,
-    MarkdownRetriever,
-    MarkdownVectorRetriever,
-    VectorRetriever,
-    ZaxyCheckoutRetriever,
-    _build_source_lane_retriever,
-    benchmark_live_retrievers,
-    benchmark_projection_cache_key,
-    benchmark_query_scope_resolver,
-    build_benchmark_suite_workload,
-    build_consolidation_collapse_workload,
-    build_context_collapse_workload,
-    build_frozen_statistical_workload,
-    build_graph_traversal_workload,
-    build_live_zaxy_retriever,
-    build_longmemeval_workload,
-    build_mempalace_workload_inventory,
-    build_source_recall_workload,
-    build_statistical_event_log,
-    build_temporal_recall_workload,
-    compare_benchmark_reports,
-    corpus_from_event_log,
-    format_benchmark_comparison,
-    format_mempalace_workload_inventory,
-    load_benchmark_report,
-    report_to_markdown,
-    write_benchmark_report,
-)
-from zaxy.local_profile import check_local_profile, render_local_profile, write_local_profile
-from zaxy.mcp_server import main as mcp_main
-from zaxy.memory_persistence import append_memory_reminder_if_needed, record_memory_activity
-from zaxy.memory_status import (
-    format_memory_diff,
-    format_memory_log,
-    format_memory_status,
-    inspect_memory_diff,
-    inspect_memory_log,
-    inspect_memory_status,
-)
-from zaxy.observation import (
-    build_command_observation,
-    build_file_edit_observation,
-    build_tool_call_observation,
-    build_transcript_turn_observation,
-)
-from zaxy.onboarding import (
-    OnboardingResult,
-    apply_onboarding_preset,
-    format_onboarding_result,
-    run_onboarding,
-)
-from zaxy.packet_analyzer import PacketAnalyzerConfig, run_packet_analyzer
-from zaxy.packet_projection import (
-    PacketGraphProjectionResult,
-    PacketProjectionResult,
-    project_packet_events,
-    project_packet_events_to_graph,
-    watch_packet_events,
-)
-from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
-from zaxy.refs import MemoryRefStore
-from zaxy.release import package_version, run_beta_readiness, run_release_smoke
-from zaxy.runtime import LocalEmbeddedGraphRuntime, LocalPgGraphRuntime
-from zaxy.schema import (
-    fetch_schema_migration_records,
-    render_schema_plan,
-    render_schema_recovery_plan,
-    schema_migration_status,
-)
-from zaxy.viewer import write_viewer_html
+if TYPE_CHECKING:
+    from zaxy.config import Settings
+
+
+def _memory_fabric(*args: Any, **kwargs: Any) -> Any:
+    """Patchable lazy seam for CLI commands that construct MemoryFabric."""
+    from zaxy.core import MemoryFabric as _MemoryFabric
+
+    return _MemoryFabric(*args, **kwargs)
+
+
+MemoryFabric = _memory_fabric
+
+
+def _graph_store(*args: Any, **kwargs: Any) -> Any:
+    """Patchable lazy seam for CLI commands that construct GraphStore."""
+    from zaxy.graph import GraphStore as _GraphStore
+
+    return _GraphStore(*args, **kwargs)
+
+
+GraphStore = _graph_store
+
+
+def capture_codex_sessions(*args: Any, **kwargs: Any) -> Any:
+    """Patchable lazy seam for local Codex capture."""
+    from zaxy.codex_capture import capture_codex_sessions as _capture_codex_sessions
+
+    return _capture_codex_sessions(*args, **kwargs)
+
+
+def _local_embedded_graph_runtime(*args: Any, **kwargs: Any) -> Any:
+    """Patchable lazy seam for embedded runtime checks."""
+    from zaxy.runtime import LocalEmbeddedGraphRuntime as _LocalEmbeddedGraphRuntime
+
+    return _LocalEmbeddedGraphRuntime(*args, **kwargs)
+
+
+LocalEmbeddedGraphRuntime = _local_embedded_graph_runtime
+
+
+def _local_pggraph_runtime(*args: Any, **kwargs: Any) -> Any:
+    """Patchable lazy seam for pgGraph runtime checks."""
+    from zaxy.runtime import LocalPgGraphRuntime as _LocalPgGraphRuntime
+
+    return _LocalPgGraphRuntime(*args, **kwargs)
+
+
+LocalPgGraphRuntime = _local_pggraph_runtime
+
+
+def apply_onboarding_preset(*args: Any, **kwargs: Any) -> Any:
+    """Patchable lazy seam for onboarding preset expansion."""
+    from zaxy.onboarding import apply_onboarding_preset as _apply_onboarding_preset
+
+    return _apply_onboarding_preset(*args, **kwargs)
+
+
+async def run_onboarding(*args: Any, **kwargs: Any) -> Any:
+    """Patchable lazy seam for the async onboarding orchestrator."""
+    from zaxy.onboarding import run_onboarding as _run_onboarding
+
+    return await _run_onboarding(*args, **kwargs)
+
+
+def format_onboarding_result(*args: Any, **kwargs: Any) -> str:
+    """Patchable lazy seam for onboarding result rendering."""
+    from zaxy.onboarding import format_onboarding_result as _format_onboarding_result
+
+    return str(_format_onboarding_result(*args, **kwargs))
 
 app = typer.Typer(help="Zaxy: Event-sourced temporal knowledge graph fabric")
 memory_app = typer.Typer(help="Inspect Eventloom-backed agent memory")
 capture_app = typer.Typer(help="Manage deterministic capture watchers")
+coordinate_app = typer.Typer(help="Coordinate parent missions and worker sessions")
+coordinate_worker_app = typer.Typer(help="Manage worker sessions for a mission")
+coordinate_benchmark_adapter_app = typer.Typer(help="Validate and export CoordinationBench adapter contracts")
 app.add_typer(memory_app, name="memory")
 app.add_typer(capture_app, name="capture")
+app.add_typer(coordinate_app, name="coordinate")
+coordinate_app.add_typer(coordinate_worker_app, name="worker")
+coordinate_app.add_typer(coordinate_benchmark_adapter_app, name="benchmark-adapter")
 
 
 def _version_callback(value: bool) -> None:
     if value:
+        from zaxy.release import package_version
+
         typer.echo(f"zaxy {package_version()}")
         raise typer.Exit()
 
@@ -188,17 +142,654 @@ def _main_callback(
     """Zaxy command line interface."""
 
 
+@coordinate_app.command("start")
+def coordinate_start(
+    objective: str = typer.Argument(..., help="Mission objective"),
+    mission: str = typer.Option(..., "--mission", help="Parent mission session ID"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    actor: str = typer.Option("coordinator", help="Actor recording the event"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Start a parent coordination mission."""
+    from zaxy.coordination import CoordinationManager
+
+    result = CoordinationManager(eventloom_path=eventloom_path).start_mission(mission, objective=objective, actor=actor)
+    payload = {
+        "mission_id": result.mission_id,
+        "event_seq": result.event.seq,
+        "event_hash": result.event.hash,
+        "objective": objective,
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(f"Mission {result.mission_id} started")
+
+
+def _coordinate_evidence_item(reference: str) -> dict[str, str]:
+    command_markers = ("pytest", "unittest", "npm test", "pnpm test", "yarn test", "go test", "cargo test")
+    normalized = reference.strip().lower()
+    kind = "command" if any(marker in normalized for marker in command_markers) else "source"
+    return {"kind": kind, "reference": reference}
+
+
+@coordinate_worker_app.command("create")
+def coordinate_worker_create(
+    mission: str = typer.Option(..., "--mission", help="Parent mission session ID"),
+    worker: str = typer.Option(..., "--worker", help="Worker session ID"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    actor: str = typer.Option("coordinator", help="Actor recording the event"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Register a worker session under a mission."""
+    from zaxy.coordination import CoordinationManager
+
+    result = CoordinationManager(eventloom_path=eventloom_path).create_worker(mission, worker, actor=actor)
+    payload = {
+        "mission_id": result.mission_id,
+        "worker_id": result.worker_id,
+        "event_seq": result.event.seq,
+        "event_hash": result.event.hash,
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(f"Worker {result.worker_id} registered")
+
+
+@coordinate_app.command("assign")
+def coordinate_assign(
+    assignment: str = typer.Argument(..., help="Assignment text"),
+    mission: str = typer.Option(..., "--mission", help="Parent mission session ID"),
+    worker: str = typer.Option(..., "--worker", help="Worker session ID"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    actor: str = typer.Option("coordinator", help="Actor recording the event"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Assign scoped work to a worker."""
+    from zaxy.coordination import CoordinationManager
+
+    result = CoordinationManager(eventloom_path=eventloom_path).assign(
+        mission,
+        worker,
+        assignment,
+        actor=actor,
+    )
+    payload = {
+        "mission_id": result.mission_id,
+        "worker_id": result.worker_id,
+        "assignment": assignment,
+        "event_seq": result.event.seq,
+        "event_hash": result.event.hash,
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(f"Assignment recorded for {result.worker_id}")
+
+
+@coordinate_app.command("report")
+def coordinate_report(
+    mission: str = typer.Option(..., "--mission", help="Parent mission session ID"),
+    worker: str = typer.Option(..., "--worker", help="Worker session ID"),
+    summary: str = typer.Option(..., "--summary", help="Finding summary"),
+    evidence: list[str] | None = typer.Option(None, "--evidence", help="Evidence reference"),  # noqa: B008
+    capture_git: bool = typer.Option(False, "--capture-git", help="Attach read-only git branch/worktree metadata as evidence"),
+    git_workspace: Path = typer.Option(".", "--git-workspace", help="Workspace used for --capture-git"),  # noqa: B008
+    git_metadata: Path | None = typer.Option(None, "--git-metadata", help="Attach read-only git metadata from this workspace"),  # noqa: B008
+    test_command: str | None = typer.Option(None, "--test-command", help="Test command to attach as structured evidence"),
+    test_status: str | None = typer.Option(None, "--test-status", help="Test status to attach with --test-command"),
+    test_summary: str | None = typer.Option(None, "--test-summary", help="Optional test-result summary"),
+    test_result_json: str | None = typer.Option(None, "--test-result-json", help="Structured test result JSON to attach as evidence"),
+    claim_key: str | None = typer.Option(None, "--claim-key", help="Deterministic claim key for conflict checks"),
+    claim_value: str | None = typer.Option(None, "--claim-value", help="Claim value for conflict checks"),
+    confidence: float | None = typer.Option(None, "--confidence", help="Finding confidence from 0.0 to 1.0"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    actor: str = typer.Option("worker", help="Actor recording the event"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Report a worker-local finding."""
+    from zaxy.coordination import CoordinationManager
+    from zaxy.coordination_git import build_test_result_evidence, capture_git_metadata
+
+    evidence_items = [_coordinate_evidence_item(item) for item in evidence or []]
+    test_results = []
+    if test_result_json:
+        test_results.append(_coordinate_test_result_from_json(test_result_json))
+    if test_command:
+        if not test_status:
+            raise typer.BadParameter("--test-status is required with --test-command")
+        test_results.append(
+            build_test_result_evidence(test_command, status=test_status, summary=test_summary)
+        )
+    git_target = git_metadata or (git_workspace if capture_git else None)
+    if git_target is not None:
+        evidence_items.append(capture_git_metadata(git_target, test_results=test_results))
+    evidence_items.extend(test_results)
+    result = CoordinationManager(eventloom_path=eventloom_path).report_finding(
+        mission,
+        worker,
+        summary=summary,
+        actor=actor,
+        evidence=evidence_items,
+        confidence=confidence,
+        claim_key=claim_key,
+        claim_value=claim_value,
+    )
+    payload = {
+        "mission_id": result.mission_id,
+        "worker_id": result.worker_id,
+        "finding_id": result.finding_id,
+        "event_seq": result.event.seq,
+        "event_hash": result.event.hash,
+        "summary": summary,
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(f"Finding {result.finding_id} reported")
+
+
+@coordinate_app.command("decide")
+def coordinate_decide(
+    mission: str = typer.Option(..., "--mission", help="Parent mission session ID"),
+    finding: str = typer.Option(..., "--finding", help="Finding ID"),
+    status: str = typer.Option(..., "--status", help="accepted, rejected, deferred, or conflicted"),
+    rationale: str | None = typer.Option(None, "--rationale", help="Decision rationale"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    actor: str = typer.Option("coordinator", help="Actor recording the event"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Review a worker finding."""
+    from zaxy.coordination import CoordinationManager
+
+    result = CoordinationManager(eventloom_path=eventloom_path).review_finding(
+        mission,
+        finding,
+        status=status,
+        actor=actor,
+        rationale=rationale,
+    )
+    payload = {
+        "mission_id": result.mission_id,
+        "worker_id": result.worker_id,
+        "finding_id": result.finding_id,
+        "status": status,
+        "event_seq": result.event.seq,
+        "event_hash": result.event.hash,
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(f"Finding {result.finding_id} reviewed as {status}")
+
+
+@coordinate_app.command("promote")
+def coordinate_promote(
+    mission: str = typer.Option(..., "--mission", help="Parent mission session ID"),
+    finding: str = typer.Option(..., "--finding", help="Finding ID"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    actor: str = typer.Option("coordinator", help="Actor recording the event"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Promote a finding into accepted parent mission state."""
+    from zaxy.coordination import CoordinationManager
+
+    result = CoordinationManager(eventloom_path=eventloom_path).promote_finding(mission, finding, actor=actor)
+    payload = {
+        "mission_id": result.mission_id,
+        "worker_id": result.worker_id,
+        "finding_id": result.finding_id,
+        "summary": result.summary,
+        "event_seq": result.event.seq,
+        "event_hash": result.event.hash,
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(f"Finding {result.finding_id} promoted")
+
+
+@coordinate_app.command("brief")
+def coordinate_brief(
+    mission: str = typer.Option(..., "--mission", help="Parent mission session ID"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    semantic_conflicts: str = typer.Option(
+        "none",
+        "--semantic-conflicts",
+        help="Semantic conflict detector: none, lexical, or http",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Print a governed mission brief."""
+
+    brief = _coordinate_manager(
+        eventloom_path,
+        semantic_conflicts=semantic_conflicts,
+    ).brief(mission)
+    payload = brief.to_dict()
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    typer.echo(f"Mission {brief.mission_id}: {brief.objective or '-'}")
+    typer.echo(f"Workers: {len(brief.workers)}")
+    typer.echo(f"Accepted findings: {len(brief.accepted_findings)}")
+    typer.echo(f"Pending findings: {len(brief.pending_findings)}")
+    typer.echo(f"Conflicts: {len(brief.conflicts)}")
+
+
+@coordinate_app.command("checkout")
+def coordinate_checkout(
+    mission: str = typer.Option(..., "--mission", help="Parent mission session ID"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    include_diagnostics: bool = typer.Option(False, "--include-diagnostics", help="Include pending and conflict diagnostics"),
+    semantic_conflicts: str = typer.Option(
+        "none",
+        "--semantic-conflicts",
+        help="Semantic conflict detector for diagnostics: none, lexical, or http",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Print accepted mission state for prompt injection."""
+
+    checkout = _coordinate_manager(
+        eventloom_path,
+        semantic_conflicts=semantic_conflicts,
+    ).checkout(
+        mission,
+        include_diagnostics=include_diagnostics,
+    )
+    payload = checkout.to_dict()
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    typer.echo(checkout.prompt)
+
+
+@coordinate_app.command("ledger")
+def coordinate_ledger(
+    mission: str = typer.Option(..., "--mission", help="Parent mission session ID"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Print worker-level coordination outcome metrics."""
+    from zaxy.coordination import CoordinationManager
+
+    ledger = CoordinationManager(eventloom_path=eventloom_path).performance_ledger(mission)
+    payload = ledger.to_dict()
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    typer.echo(f"Mission {ledger.mission_id}: {ledger.objective or '-'}")
+    typer.echo(f"Workers: {ledger.worker_count}")
+    typer.echo(f"Findings: {ledger.total_findings}")
+    for worker in ledger.workers:
+        typer.echo(
+            f"{worker.worker_id}: accepted={worker.accepted_findings} "
+            f"rejected={worker.rejected_findings} missing_evidence={worker.missing_evidence_count}"
+        )
+
+
+@coordinate_app.command("handoff")
+def coordinate_handoff(
+    mission: str = typer.Option(..., "--mission", help="Parent mission session ID"),
+    summary: str = typer.Option(..., "--summary", help="Final handoff summary"),
+    next_step: list[str] | None = typer.Option(None, "--next-step", help="Next step to include in the handoff"),  # noqa: B008
+    risk: list[str] | None = typer.Option(None, "--risk", help="Risk to include in the handoff"),  # noqa: B008
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    actor: str = typer.Option("coordinator", help="Actor recording the event"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Create a final replayable coordination handoff."""
+    from zaxy.coordination import CoordinationManager
+
+    result = CoordinationManager(eventloom_path=eventloom_path).create_handoff(
+        mission,
+        summary=summary,
+        next_steps=next_step,
+        risks=risk,
+        actor=actor,
+    )
+    payload = {
+        "event_type": result.event.type,
+        "mission_id": result.mission_id,
+        "handoff_id": result.handoff_id,
+        "summary": result.summary,
+        "next_steps": result.event.payload.get("next_steps", []),
+        "risks": result.event.payload.get("risks", []),
+        "event_seq": result.event.seq,
+        "event_hash": result.event.hash,
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    typer.echo(f"Handoff {result.handoff_id} recorded")
+
+
+@coordinate_app.command("detect-conflicts")
+def coordinate_detect_conflicts(
+    mission: str = typer.Option(..., "--mission", help="Parent mission session ID"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    semantic_conflicts: str = typer.Option(
+        "none",
+        "--semantic-conflicts",
+        help="Semantic conflict detector to materialize: none, lexical, or http",
+    ),
+    actor: str = typer.Option("zaxy", help="Actor recording detected conflict events"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Materialize deterministic coordination conflicts as Eventloom facts."""
+
+    results = _coordinate_manager(
+        eventloom_path,
+        semantic_conflicts=semantic_conflicts,
+    ).record_detected_conflicts(
+        mission,
+        actor=actor,
+    )
+    payload = {
+        "mission_id": mission,
+        "recorded_count": len(results),
+        "events": [
+            {
+                "event_type": result.event.type,
+                "event_seq": result.event.seq,
+                "event_hash": result.event.hash,
+                "conflict_id": result.event.payload.get("conflict_id"),
+                "conflict_type": result.event.payload.get("conflict_type"),
+                "claim_key": result.event.payload.get("claim_key"),
+                "source_reference": result.event.payload.get("source_reference"),
+                "finding_ids": result.event.payload.get("finding_ids", []),
+            }
+            for result in results
+        ],
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    typer.echo(f"Recorded {len(results)} conflict event(s)")
+
+
+@coordinate_app.command("approval-packet")
+def coordinate_approval_packet(
+    mission: str = typer.Option(..., "--mission", help="Parent mission session ID"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Export a portable packet for remote finding approval."""
+    from zaxy.coordination import CoordinationManager
+
+    packet = CoordinationManager(eventloom_path=eventloom_path).approval_packet(mission)
+    payload = packet.to_dict()
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    typer.echo(f"Approval packet {packet.packet_id}")
+    typer.echo(f"Findings needing review: {len(packet.findings)}")
+
+
+@coordinate_app.command("review-export")
+def coordinate_review_export(
+    mission: str = typer.Option(..., "--mission", help="Parent mission session ID"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Export a static Markdown review artifact for humans."""
+    from zaxy.coordination import CoordinationManager
+
+    review_export = CoordinationManager(eventloom_path=eventloom_path).review_export(mission)
+    if json_output:
+        typer.echo(json.dumps(review_export.to_dict(), indent=2, sort_keys=True))
+        return
+    typer.echo(review_export.markdown)
+
+
+@coordinate_app.command("apply-approval")
+def coordinate_apply_approval(
+    mission: str = typer.Option(..., "--mission", help="Parent mission session ID"),
+    decisions_json: str = typer.Option(..., "--decisions-json", help="JSON array of approval decisions"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    actor: str = typer.Option("coordinator", help="Actor recording review events"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Apply remote approval decisions to the parent mission."""
+    from zaxy.coordination import CoordinationManager
+
+    decisions = _coordinate_decisions_from_json(decisions_json)
+    result = CoordinationManager(eventloom_path=eventloom_path).apply_approval_decisions(
+        mission,
+        decisions,
+        actor=actor,
+    )
+    payload = result.to_dict()
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    typer.echo(f"Applied {result.reviewed_count} approval decision(s); promoted {result.promoted_count}")
+
+
+def _coordinate_decisions_from_json(value: str) -> list[dict[str, Any]]:
+    parsed = json.loads(value)
+    if not isinstance(parsed, list):
+        raise typer.BadParameter("decisions JSON must be an array")
+    decisions: list[dict[str, Any]] = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            raise typer.BadParameter("each approval decision must be an object")
+        decisions.append(item)
+    return decisions
+
+
+def _coordinate_test_result_from_json(value: str) -> dict[str, Any]:
+    from zaxy.coordination_git import build_test_result_evidence
+
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        raise typer.BadParameter("test result JSON must be a valid object") from exc
+    if not isinstance(parsed, dict):
+        raise typer.BadParameter("test result JSON must be an object")
+    command = str(parsed.get("command") or "").strip()
+    status = str(parsed.get("status") or "").strip()
+    if not command or not status:
+        raise typer.BadParameter("test result JSON requires command and status")
+    exit_code = parsed.get("exit_code")
+    if exit_code is not None:
+        try:
+            exit_code = int(str(exit_code))
+        except ValueError as exc:
+            raise typer.BadParameter("test result JSON exit_code must be an integer") from exc
+    return build_test_result_evidence(
+        command,
+        status=status,
+        summary=str(parsed.get("summary") or "") or None,
+        exit_code=exit_code,
+    )
+
+
+@coordinate_app.command("benchmark")
+def coordinate_benchmark(
+    output_dir: Path = typer.Option(..., "--output-dir", help="Directory for CoordinationBench reports"),  # noqa: B008
+    missions: int = typer.Option(1, help="Number of missions to generate"),
+    workers: int = typer.Option(3, help="Workers per mission, between 3 and 10"),
+    competitor_result: list[str] | None = typer.Option(  # noqa: B008
+        None,
+        "--competitor-result",
+        help="Pinned competitor result as NAME=PATH; may be repeated",
+    ),
+    competitor_runner: list[str] | None = typer.Option(  # noqa: B008
+        None,
+        "--competitor-runner",
+        help="Pinned competitor runner manifest as NAME=PATH; may be repeated",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Run the deterministic CoordinationBench MVP."""
+    from zaxy.coordination_benchmark import run_coordination_benchmark
+
+    competitor_results = _coordinate_competitor_results_from_options(competitor_result or [])
+    competitor_runners = _coordinate_competitor_results_from_options(competitor_runner or [])
+    duplicate_adapters = sorted(set(competitor_results) & set(competitor_runners))
+    if duplicate_adapters:
+        raise typer.BadParameter(f"duplicate competitor adapter: {', '.join(duplicate_adapters)}")
+    report = run_coordination_benchmark(
+        output_dir,
+        missions=missions,
+        workers=workers,
+        competitor_results=competitor_results,
+        competitor_runners=competitor_runners,
+    )
+    payload = report.to_dict()
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    typer.echo(f"CoordinationBench report written to {output_dir}")
+    typer.echo(f"accepted_finding_precision={report.metrics.accepted_finding_precision}")
+    typer.echo(f"conflict_recall={report.metrics.conflict_recall}")
+
+
+@coordinate_app.command("adapter-template")
+def coordinate_adapter_template(
+    adapter: str = typer.Argument(..., help="Adapter target: codex, langgraph, crewai, or mcp"),
+    mission: str = typer.Option(..., "--mission", help="Parent mission session ID"),
+    worker: str = typer.Option(..., "--worker", help="Worker session ID"),
+    eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory for the template"),
+) -> None:
+    """Print a dependency-light Zaxy Coordinate adapter starter."""
+    from zaxy.integrations import render_coordination_adapter_template
+
+    try:
+        template = render_coordination_adapter_template(
+            adapter,
+            mission_id=mission,
+            worker_id=worker,
+            eventloom_path=eventloom_path,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(template, nl=False)
+
+
+@coordinate_benchmark_adapter_app.command("export-kit")
+def coordinate_benchmark_adapter_export_kit(
+    output_dir: Path = typer.Option(..., "--output-dir", help="Directory for the CoordinationBench adapter kit"),  # noqa: B008
+    missions: int = typer.Option(1, help="Number of missions to generate"),
+    workers: int = typer.Option(3, help="Workers per mission, between 3 and 10"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Export schemas, workload, and templates for external CoordinationBench adapters."""
+    from zaxy.coordination_benchmark import export_coordination_benchmark_adapter_kit
+
+    payload = export_coordination_benchmark_adapter_kit(
+        output_dir,
+        missions=missions,
+        workers=workers,
+    )
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    typer.echo(f"CoordinationBench adapter kit written to {output_dir}")
+    typer.echo(f"workload_fingerprint={payload['workload_fingerprint']}")
+
+
+@coordinate_benchmark_adapter_app.command("validate-manifest")
+def coordinate_benchmark_adapter_validate_manifest(
+    adapter: str = typer.Argument(..., help="Adapter manifest as NAME=PATH"),
+    workload: Path = typer.Option(..., "--workload", help="Frozen CoordinationBench workload JSON"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Validate a runner manifest without executing it."""
+    from zaxy.coordination_benchmark import (
+        load_coordination_workload,
+        validate_coordination_competitor_runner_manifest,
+    )
+
+    adapters = _coordinate_competitor_results_from_options([adapter])
+    name, path = next(iter(adapters.items()))
+    payload = validate_coordination_competitor_runner_manifest(
+        name,
+        load_coordination_workload(workload),
+        path,
+    )
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    typer.echo(f"{name} manifest valid for {payload['workload_fingerprint']}")
+
+
+@coordinate_benchmark_adapter_app.command("validate-result")
+def coordinate_benchmark_adapter_validate_result(
+    adapter: str = typer.Argument(..., help="Adapter result as NAME=PATH"),
+    workload: Path = typer.Option(..., "--workload", help="Frozen CoordinationBench workload JSON"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Validate and locally score a competitor result file."""
+    from zaxy.coordination_benchmark import (
+        load_coordination_workload,
+        validate_coordination_competitor_result,
+    )
+
+    adapters = _coordinate_competitor_results_from_options([adapter])
+    name, path = next(iter(adapters.items()))
+    payload = validate_coordination_competitor_result(
+        name,
+        load_coordination_workload(workload),
+        path,
+    )
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    typer.echo(f"{name} result valid for {payload['workload_fingerprint']}")
+    typer.echo(f"accepted_finding_precision={payload['metrics']['accepted_finding_precision']}")
+
+
+def _coordinate_competitor_results_from_options(values: list[str]) -> dict[str, Path]:
+    results: dict[str, Path] = {}
+    for value in values:
+        if "=" not in value:
+            raise typer.BadParameter("competitor result must use NAME=PATH")
+        name, path = value.split("=", 1)
+        name = name.strip()
+        path = path.strip()
+        if not name or not path:
+            raise typer.BadParameter("competitor result must use NAME=PATH")
+        if name in results:
+            raise typer.BadParameter(f"duplicate competitor result: {name}")
+        results[name] = Path(path)
+    return results
+
+
+def _coordinate_manager(eventloom_path: Path, *, semantic_conflicts: str = "none") -> Any:
+    from zaxy.config import Settings
+    from zaxy.coordination import CoordinationManager
+    from zaxy.coordination_semantic import build_semantic_conflict_detector
+
+    detector = build_semantic_conflict_detector(
+        Settings(
+            coordination_semantic_conflict_provider=semantic_conflicts,
+            coordination_semantic_min_shared_subject_tokens=2,
+        )
+    )
+    return CoordinationManager(
+        eventloom_path=eventloom_path,
+        semantic_conflict_detector=detector,
+    )
+
+
 async def _project_packet_result_to_graph(
-    result: PacketProjectionResult,
+    result: Any,
     *,
     session_id: str,
     neo4j_uri: str,
     neo4j_user: str,
     neo4j_password: str,
-) -> PacketGraphProjectionResult:
+) -> Any:
     """Best-effort graph projection for newly appended packet memory events."""
+    from zaxy.packet_projection import PacketGraphProjectionResult, project_packet_events_to_graph
+
     if not result.projected_events:
         return PacketGraphProjectionResult(projected=0, failed=0)
+
     graph = GraphStore(neo4j_uri, neo4j_user, neo4j_password)
     try:
         await graph.connect()
@@ -223,7 +814,7 @@ def memory_status(
     projection_backend: str | None = typer.Option(
         None,
         "--projection-backend",
-        help="Projection backend to inspect: neo4j, pggraph, embedded, or latticedb",
+        help="Projection backend to inspect: embedded, neo4j, pggraph, or latticedb",
     ),
     pggraph_dsn: str | None = typer.Option(  # noqa: B008
         None,
@@ -240,14 +831,26 @@ def memory_status(
     neo4j_password: str | None = typer.Option(None, help="Neo4j password"),
 ) -> None:
     """Show read-only Eventloom memory status."""
+    from zaxy.memory_status import format_memory_status, inspect_memory_status
+
     status = inspect_memory_status(eventloom_path)
     graph_status: dict[str, object] | None = None
     if graph:
         import asyncio
 
+        from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
+
         async def _inspect_graph() -> dict[str, object]:
             settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
-            backend = (projection_backend or settings.projection_backend).casefold().strip()
+            backend = _resolve_cli_projection_backend(
+                projection_backend,
+                settings,
+                neo4j_uri=neo4j_uri,
+                neo4j_user=neo4j_user,
+                neo4j_password=neo4j_password,
+                pggraph_dsn=pggraph_dsn,
+                embedded_graph_path=embedded_graph_path,
+            )
             store = build_projection_store(
                 ProjectionBackendConfig(
                     backend=backend,
@@ -319,7 +922,7 @@ def memory_inferred_status(
     projection_backend: str | None = typer.Option(
         None,
         "--projection-backend",
-        help="Projection backend to inspect: neo4j, pggraph, embedded, or latticedb",
+        help="Projection backend to inspect: embedded, neo4j, pggraph, or latticedb",
     ),
     pggraph_dsn: str | None = typer.Option(  # noqa: B008
         None,
@@ -338,9 +941,19 @@ def memory_inferred_status(
     """Show read-only graph audit status for inferred relationships."""
     import asyncio
 
+    from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
+
     async def _inspect_graph() -> dict[str, object]:
         settings = _status_settings()
-        backend = (projection_backend or settings.projection_backend).casefold().strip()
+        backend = _resolve_cli_projection_backend(
+            projection_backend,
+            settings,
+            neo4j_uri=neo4j_uri,
+            neo4j_user=neo4j_user,
+            neo4j_password=neo4j_password,
+            pggraph_dsn=pggraph_dsn,
+            embedded_graph_path=embedded_graph_path,
+        )
         store = build_projection_store(
             ProjectionBackendConfig(
                 backend=backend,
@@ -463,6 +1076,8 @@ def memory_capabilities(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """Show model-facing Zaxy memory capabilities and usage guidance."""
+    from zaxy.capabilities import build_memory_capabilities, format_memory_capabilities
+
     manifest = build_memory_capabilities(
         eventloom_path=eventloom_path,
         session_id=session_id,
@@ -487,12 +1102,16 @@ def memory_bootstrap(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """Show compact session-start Zaxy memory bootstrap guidance."""
+    from zaxy.capabilities import build_memory_bootstrap, format_memory_bootstrap
+
     bootstrap = build_memory_bootstrap(
         eventloom_path=eventloom_path,
         session_id=session_id,
         workspace_root=workspace_root,
         current_task=current_task,
     )
+    from zaxy.memory_persistence import record_memory_activity
+
     record_memory_activity(
         eventloom_path,
         session_id=session_id,
@@ -534,7 +1153,13 @@ def memory_checkout(
             neo4j_password=neo4j_password,
             neo4j_ca_cert=neo4j_ca_cert,
             neo4j_trust_all=neo4j_trust_all,
-            projection_backend=settings.projection_backend,
+            projection_backend=_resolve_cli_projection_backend(
+                None,
+                settings,
+                neo4j_uri=neo4j_uri,
+                neo4j_user=neo4j_user,
+                neo4j_password=neo4j_password,
+            ),
             pggraph_dsn=settings.pggraph_dsn,
             embedded_graph_path=Path(settings.embedded_graph_path),
             latticedb_path=Path(settings.latticedb_path),
@@ -549,11 +1174,13 @@ def memory_checkout(
                 limit=limit,
                 max_recent_events=max_recent_events,
             )
-            return checkout.to_dict()
+            return cast(dict[str, object], checkout.to_dict())
         finally:
             await fabric.close()
 
     payload = asyncio.run(_checkout())
+    from zaxy.memory_persistence import record_memory_activity
+
     record_memory_activity(
         eventloom_path,
         session_id=session_id,
@@ -576,6 +1203,8 @@ def memory_log(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """Show recent Eventloom memory events."""
+    from zaxy.memory_status import format_memory_log, inspect_memory_log
+
     try:
         memory = inspect_memory_log(eventloom_path, session_id=session_id, limit=limit)
     except ValueError as exc:
@@ -595,6 +1224,8 @@ def memory_diff(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """Show event-level Eventloom changes in an inclusive sequence range."""
+    from zaxy.memory_status import format_memory_diff, inspect_memory_diff
+
     try:
         diff = inspect_memory_diff(
             eventloom_path,
@@ -622,6 +1253,8 @@ def memory_ref_update(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """Create or update a durable memory ref."""
+    from zaxy.refs import MemoryRefStore
+
     store = MemoryRefStore(eventloom_path)
     try:
         event = store.update_ref(
@@ -648,6 +1281,8 @@ def memory_refs_list(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """List durable memory refs."""
+    from zaxy.refs import MemoryRefStore
+
     refs = MemoryRefStore(eventloom_path).list_refs()
     payload = {
         "eventloom_path": str(eventloom_path.resolve()),
@@ -682,12 +1317,16 @@ def activate(
     normalized_client = client.casefold().strip().replace("_", "-")
     if normalized_client != "codex":
         raise typer.BadParameter("activate currently supports: codex", param_hint="client")
+    from zaxy.capabilities import build_memory_bootstrap
+
     bootstrap = build_memory_bootstrap(
         eventloom_path=eventloom_path,
         session_id=session_id,
         workspace_root=workspace_root,
         current_task=current_task,
     )
+    from zaxy.memory_persistence import record_memory_activity
+
     record_memory_activity(
         eventloom_path,
         session_id=session_id,
@@ -737,6 +1376,14 @@ def ide_config(
     hermes_config: Path | None = typer.Option(None, help="Hermes config.yaml path for --install"),  # noqa: B008
 ) -> None:
     """Print or install a first-run MCP client configuration fragment."""
+    from zaxy.integrations import (
+        render_codex_mcp_add_command,
+        render_mcp_client_config,
+        write_codex_mcp_config,
+        write_hermes_mcp_config,
+        write_project_mcp_client_config,
+    )
+
     try:
         if install:
             if client.casefold().replace("_", "-") == "codex":
@@ -804,6 +1451,8 @@ def ide_config(
     except (FileExistsError, PermissionError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     if client.casefold().replace("_", "-") == "hermes":
+        import yaml
+
         typer.echo(yaml.safe_dump(config, sort_keys=False).rstrip())
         return
     typer.echo(json.dumps(config, indent=2, sort_keys=True))
@@ -824,6 +1473,11 @@ def integration_template(
     install_hint: bool = typer.Option(False, "--install-hint", help="Print the optional framework extra install command before the template"),  # noqa: B008
 ) -> None:
     """Print a direct Python framework integration starter."""
+    from zaxy.integrations import (
+        render_agent_integration_template,
+        render_framework_install_command,
+    )
+
     try:
         template = render_agent_integration_template(
             framework,
@@ -844,6 +1498,12 @@ def integrations(
     recommendation: bool = typer.Option(False, "--recommendation", help="Print the next maintained integration target"),
 ) -> None:
     """List direct framework integration support and install extras."""
+    from zaxy.integrations import (
+        list_framework_integration_specs,
+        recommend_framework_integration_target,
+        render_framework_install_command,
+    )
+
     if recommendation:
         decision = recommend_framework_integration_target()
         payload = asdict(decision)
@@ -893,6 +1553,12 @@ def hooks(
     force: bool = typer.Option(False, "--force", help="Overwrite an existing output file"),  # noqa: B008
 ) -> None:
     """Print or write observer hook configuration for supported clients."""
+    from zaxy.hooks import (
+        render_hook_config,
+        write_claude_code_hook_config,
+        write_hook_config,
+    )
+
     try:
         config = render_hook_config(
             client,
@@ -939,6 +1605,8 @@ def hook_status(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """Inspect observer hook installation and recent lifecycle activity."""
+    from zaxy.hooks import format_hook_status, inspect_hook_status
+
     if min_activation_rate is not None and not 0.0 <= min_activation_rate <= 1.0:
         raise typer.BadParameter("must be between 0.0 and 1.0", param_hint="--min-activation-rate")
     try:
@@ -1120,6 +1788,8 @@ def capture_soak(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """Report whether deterministic capture satisfies beta soak criteria."""
+    from zaxy.capture_soak import build_capture_soak_report, format_capture_soak_report
+
     report = build_capture_soak_report(
         eventloom_path=eventloom_path,
         workspace_root=workspace_root,
@@ -1163,6 +1833,13 @@ def hook_event(
     turn_index: int | None = typer.Option(None, help="Transcript turn index"),  # noqa: B008
 ) -> None:
     """Append a lightweight observer hook event without requiring Neo4j."""
+    from zaxy.hooks import build_hook_payload, hook_event_type
+    from zaxy.observation import (
+        build_command_observation,
+        build_file_edit_observation,
+        build_tool_call_observation,
+        build_transcript_turn_observation,
+    )
     from zaxy.session import SessionManager
 
     eventlog = SessionManager(base_path=eventloom_path).get(session_id).eventlog
@@ -1187,6 +1864,8 @@ def hook_event(
             thread=session_id,
         )
         if duration_ms is not None and duration_ms >= 30_000:
+            from zaxy.memory_persistence import append_memory_reminder_if_needed
+
             append_memory_reminder_if_needed(
                 eventloom_path,
                 session_id=session_id,
@@ -1271,6 +1950,8 @@ def hook_event(
         turn_count=turn_count,
     )
     event = eventlog.append(event_type, actor="zaxy-hook", payload=payload, thread=session_id)
+    from zaxy.memory_persistence import append_memory_reminder_if_needed
+
     reminder = append_memory_reminder_if_needed(
         eventloom_path,
         session_id=session_id,
@@ -1316,9 +1997,11 @@ def codex_capture(
 
     from zaxy.config import get_settings
 
-    async def project_events(events: tuple[Event, ...]) -> int:
+    async def project_events(events: tuple[Any, ...]) -> int:
         if not events:
             return 0
+        from zaxy.extract import extract
+
         settings = get_settings()
         store = GraphStore(
             neo4j_uri or settings.neo4j_uri,
@@ -1373,6 +2056,8 @@ def capture_status(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """Inspect managed deterministic capture runtime state."""
+    from zaxy.capture_manager import inspect_codex_capture
+
     report = inspect_codex_capture(workspace=workspace)
     if json_output:
         typer.echo(json.dumps(report, indent=2, sort_keys=True))
@@ -1406,6 +2091,8 @@ def capture_start(
     ),
 ) -> None:
     """Start a managed deterministic Codex capture watcher."""
+    from zaxy.capture_manager import start_codex_capture
+
     try:
         result = start_codex_capture(
             workspace=workspace,
@@ -1426,6 +2113,8 @@ def capture_stop(
     workspace: Path = typer.Option(Path("."), help="Workspace root with managed capture state"),  # noqa: B008
 ) -> None:
     """Stop the managed deterministic Codex capture watcher."""
+    from zaxy.capture_manager import stop_codex_capture
+
     result = stop_codex_capture(workspace=workspace)
     typer.echo(result["message"])
 
@@ -1440,14 +2129,38 @@ def _parse_json_object(value: str, *, option: str) -> dict[str, object]:
     return parsed
 
 
+def _resolve_cli_projection_backend(
+    projection_backend: str | None,
+    settings: Settings,
+    *,
+    neo4j_uri: str | None = None,
+    neo4j_user: str | None = None,
+    neo4j_password: str | None = None,
+    pggraph_dsn: str | None = None,
+    embedded_graph_path: Path | None = None,
+) -> str:
+    """Resolve CLI backend intent while keeping bare commands embedded-first."""
+    if projection_backend:
+        return projection_backend.casefold().strip()
+    if pggraph_dsn:
+        return "pggraph"
+    if embedded_graph_path:
+        return "embedded"
+    if neo4j_uri or neo4j_user or neo4j_password:
+        return "neo4j"
+    return settings.projection_backend.casefold().strip()
+
+
 @app.command("local-profile")
 def local_profile(
     output: Path | None = typer.Option(None, "--output", "-o", help="Write profile to this file"),  # noqa: B008
-    projection_backend: str = typer.Option("neo4j", "--projection-backend", help="Projection backend: neo4j, pggraph, embedded, or latticedb"),  # noqa: B008
+    projection_backend: str = typer.Option("embedded", "--projection-backend", help="Projection backend: embedded, neo4j, pggraph, or latticedb"),  # noqa: B008
     force: bool = typer.Option(False, "--force", help="Overwrite an existing output file"),  # noqa: B008
     check: bool = typer.Option(False, "--check", help="Validate deterministic local providers"),  # noqa: B008
 ) -> None:
     """Print, write, or check an offline local retrieval profile."""
+    from zaxy.local_profile import check_local_profile, render_local_profile, write_local_profile
+
     if check:
         typer.echo(json.dumps(check_local_profile(), indent=2, sort_keys=True))
         return
@@ -1483,11 +2196,14 @@ def doctor(
 ) -> None:
     """Run local setup and onboarding checks."""
     from zaxy.config import get_settings
+    from zaxy.doctor import format_doctor_report, run_doctor
 
     if release_smoke and beta_readiness:
         raise typer.BadParameter("--release-smoke and --beta-readiness are mutually exclusive")
 
     if release_smoke:
+        from zaxy.release import run_release_smoke
+
         report = run_release_smoke(project_root=project_root)
         if json_output:
             typer.echo(json.dumps(report, indent=2, sort_keys=True))
@@ -1498,6 +2214,8 @@ def doctor(
         return
 
     if beta_readiness:
+        from zaxy.release import run_beta_readiness
+
         report = run_beta_readiness(project_root=project_root)
         if json_output:
             typer.echo(json.dumps(report, indent=2, sort_keys=True))
@@ -1534,6 +2252,8 @@ def packet_status(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """Inspect the LLM packet-memory pipeline for one session."""
+    from zaxy.doctor import format_packet_memory_report, packet_memory_report
+
     report = packet_memory_report(
         eventloom_path=eventloom_path,
         session_id=session_id,
@@ -1558,7 +2278,7 @@ def index_codebase(
     async def _run() -> int:
         fabric = MemoryFabric()
         try:
-            return await fabric.ingest_codebase(path, session_id=session_id, max_bytes=max_bytes)
+            return int(await fabric.ingest_codebase(path, session_id=session_id, max_bytes=max_bytes))
         finally:
             await fabric.close()
 
@@ -1572,7 +2292,7 @@ def refresh_context(
     kind: str = typer.Option("documents", "--kind", help="Context kind: documents or codebase"),
     session_id: str = typer.Option("default", help="Session ID to append refresh events into"),  # noqa: B008
     eventloom_path: Path = typer.Option(Path(".eventloom"), help="Eventloom directory for refresh state"),  # noqa: B008
-    projection_backend: str | None = typer.Option(None, "--projection-backend", help="Projection backend: neo4j, pggraph, embedded, or latticedb"),  # noqa: B008
+    projection_backend: str | None = typer.Option(None, "--projection-backend", help="Projection backend: embedded, neo4j, pggraph, or latticedb"),  # noqa: B008
     pggraph_dsn: str | None = typer.Option(None, "--pggraph-dsn", help="pgGraph/PostgreSQL DSN"),  # noqa: B008
     max_lines: int = typer.Option(80, "--max-lines", min=1, help="Maximum document lines per chunk"),
     max_bytes: int = typer.Option(512 * 1024, "--max-bytes", min=1, help="Maximum source file size to refresh"),
@@ -1599,7 +2319,7 @@ def refresh_context(
                 max_lines=max_lines,
                 max_bytes=max_bytes,
             )
-            return report.to_dict()
+            return cast(dict[str, object], report.to_dict())
         finally:
             await fabric.close()
 
@@ -1628,7 +2348,7 @@ def init_session(
     async def _run() -> WorkspaceProfile:
         fabric = MemoryFabric()
         try:
-            return await fabric.initialize_session(path, session_id=session_id)
+            return cast(WorkspaceProfile, await fabric.initialize_session(path, session_id=session_id))
         finally:
             await fabric.close()
 
@@ -1652,7 +2372,7 @@ def init(
     hook_output: Path | None = typer.Option(None, help="Write hook config to this file"),  # noqa: B008
     local_profile_output: Path | None = typer.Option(None, help="Write local retrieval profile to this file"),  # noqa: B008
     infra: str = typer.Option("none", help="Local infra action: none, check, or start"),  # noqa: B008
-    projection_backend: str | None = typer.Option(None, "--projection-backend", help="Projection backend for infra bootstrap: neo4j, pggraph, embedded, or latticedb"),  # noqa: B008
+    projection_backend: str | None = typer.Option(None, "--projection-backend", help="Projection backend for infra bootstrap: embedded, neo4j, pggraph, or latticedb"),  # noqa: B008
     pggraph_dsn: str | None = typer.Option(None, "--pggraph-dsn", help="pgGraph/PostgreSQL DSN for --projection-backend pggraph"),  # noqa: B008
     pggraph_repo: Path | None = typer.Option(None, "--pggraph-repo", help="Local pgGraph checkout containing scripts/quickstart.sh"),  # noqa: B008
     capture_mode: str = typer.Option("deterministic", help="Capture mode: deterministic, packet, or hybrid"),  # noqa: B008
@@ -1667,7 +2387,7 @@ def init(
     """Bare zaxy init uses the local embedded Codex path for MCP config, infra, and hook status."""
     import asyncio
 
-    async def _run() -> OnboardingResult:
+    async def _run() -> Any:
         effective_preset = preset
         if (
             effective_preset is None
@@ -1701,7 +2421,7 @@ def init(
             hook_output=preset_options["hook_output"],
             local_profile_output=preset_options["local_profile_output"],
             infra=preset_options["infra"],
-            projection_backend=projection_backend or preset_options["projection_backend"] or "neo4j",
+            projection_backend=projection_backend or preset_options["projection_backend"] or "embedded",
             pggraph_dsn=pggraph_dsn,
             pggraph_repo=pggraph_repo,
             capture_mode=preset_options["capture_mode"],
@@ -1729,6 +2449,8 @@ def viewer(
     output: Path = typer.Option("eventloom-viewer.html", "--output", "-o", help="HTML output path"),  # noqa: B008
 ) -> None:
     """Write a standalone HTML viewer for Eventloom sessions."""
+    from zaxy.viewer import write_viewer_html
+
     written = write_viewer_html(path, output)
     typer.echo(f"Wrote Eventloom viewer: {written}")
 
@@ -1741,14 +2463,15 @@ def dashboard(
     domain: str | None = typer.Option(None, help="Domain scope to display"),  # noqa: B008
     host: str = typer.Option("127.0.0.1", help="Dashboard bind host"),
     port: int = typer.Option(8765, min=1, max=65535, help="Dashboard bind port"),
-    projection_backend: str | None = typer.Option(None, "--projection-backend", help="Projection backend for graph visualization: neo4j, pggraph, embedded, or latticedb"),  # noqa: B008
+    projection_backend: str | None = typer.Option(None, "--projection-backend", help="Projection backend for graph visualization: embedded, neo4j, pggraph, or latticedb"),  # noqa: B008
     neo4j_uri: str | None = typer.Option(None, help="Neo4j Bolt URI for graph visualization"),  # noqa: B008
     neo4j_user: str | None = typer.Option(None, help="Neo4j username for graph visualization"),  # noqa: B008
     neo4j_password: str | None = typer.Option(None, help="Neo4j password for graph visualization"),  # noqa: B008
     pggraph_dsn: str | None = typer.Option(None, "--pggraph-dsn", help="pgGraph/PostgreSQL DSN for graph visualization"),  # noqa: B008
     embedded_graph_path: Path | None = typer.Option(None, "--embedded-graph-path", help="Embedded graph projection path for graph visualization"),  # noqa: B008
+    enable_coordinate_review: bool = typer.Option(False, "--enable-coordinate-review", help="Enable local dashboard review and promotion controls"),
 ) -> None:
-    """Start the read-only local runtime dashboard."""
+    """Start the local runtime dashboard."""
     from zaxy.dashboard import DashboardConfig, resolve_dashboard_scope, run_dashboard
 
     settings = _status_settings(workspace or Path("."))
@@ -1760,24 +2483,35 @@ def dashboard(
             domain=domain,
             host=host,
             port=port,
-            projection_backend=projection_backend or settings.projection_backend,
+            projection_backend=_resolve_cli_projection_backend(
+                projection_backend,
+                settings,
+                neo4j_uri=neo4j_uri,
+                neo4j_user=neo4j_user,
+                neo4j_password=neo4j_password,
+                pggraph_dsn=pggraph_dsn,
+                embedded_graph_path=embedded_graph_path,
+            ),
             neo4j_uri=neo4j_uri or settings.neo4j_uri,
             neo4j_user=neo4j_user or settings.neo4j_user,
             neo4j_password=neo4j_password or settings.neo4j_password,
             pggraph_dsn=pggraph_dsn or settings.pggraph_dsn,
             embedded_graph_path=embedded_graph_path or Path(settings.embedded_graph_path),
+            coordinate_review_enabled=enable_coordinate_review,
         )
     )
     typer.echo(f"Zaxy dashboard listening on http://{scope.host}:{scope.port}")
     typer.echo(f"Workspace: {scope.workspace}")
     typer.echo(f"Eventloom: {scope.eventloom_path}")
-    typer.echo("Mode: read-only")
+    typer.echo(f"Coordinate review: {'enabled' if scope.coordinate_review_enabled else 'disabled'}")
     run_dashboard(scope)
 
 
 @app.command("schema-plan")
 def schema_plan() -> None:
     """Print the current Neo4j schema migration plan."""
+    from zaxy.schema import render_schema_plan
+
     typer.echo(render_schema_plan())
 
 
@@ -1786,10 +2520,18 @@ def schema_recovery_plan() -> None:
     """Inspect Neo4j migration records and print recovery guidance."""
     import asyncio
 
+    from zaxy.config import get_settings
+    from zaxy.graph import GraphStore as SchemaGraphStore
+    from zaxy.schema import (
+        fetch_schema_migration_records,
+        render_schema_recovery_plan,
+        schema_migration_status,
+    )
+
     settings = get_settings()
 
     async def _run() -> str:
-        graph = GraphStore(
+        graph = SchemaGraphStore(
             settings.neo4j_uri,
             settings.neo4j_user,
             settings.neo4j_password,
@@ -1821,6 +2563,8 @@ def extractor_template(
     ),
 ) -> None:
     """Print a validated rule-extractor starter for a new event type."""
+    from zaxy.extract_templates import ExtractorTemplateSpec, render_extractor_template
+
     try:
         spec = ExtractorTemplateSpec(
             event_type=event_type,
@@ -1848,6 +2592,7 @@ def serve(
     import asyncio
 
     from zaxy import mcp_server
+    from zaxy.domain import derive_domain, domain_default_session
 
     workspace_root = Path.cwd()
     resolved_eventloom_path = eventloom_path or os.getenv("EVENTLOOM_PATH") or str(workspace_root / ".eventloom")
@@ -1860,7 +2605,13 @@ def serve(
         neo4j_uri=neo4j_uri,
         neo4j_user=neo4j_user,
         neo4j_password=neo4j_password,
-        projection_backend=settings.projection_backend,
+        projection_backend=_resolve_cli_projection_backend(
+            None,
+            settings,
+            neo4j_uri=neo4j_uri,
+            neo4j_user=neo4j_user,
+            neo4j_password=neo4j_password,
+        ),
         pggraph_dsn=settings.pggraph_dsn,
         embedded_graph_path=Path(settings.embedded_graph_path),
         latticedb_path=Path(settings.latticedb_path),
@@ -1871,7 +2622,7 @@ def serve(
     if transport == "sse":
         asyncio.run(mcp_server.main_sse(port=port, host=host))
     else:
-        asyncio.run(mcp_main())
+        asyncio.run(mcp_server.main())
 
 
 @app.command()
@@ -1881,6 +2632,8 @@ def replay(
     json_output: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Replay an Eventloom log and print integrity report + events."""
+    from zaxy.event import EventLog
+
     log = EventLog(str(log_path))
     result = log.replay(from_seq=from_seq)
 
@@ -1916,7 +2669,7 @@ def reproject(
     projection_backend: str | None = typer.Option(
         None,
         "--projection-backend",
-        help="Projection backend to rebuild: neo4j, pggraph, embedded, or latticedb",
+        help="Projection backend to rebuild: embedded, neo4j, pggraph, or latticedb",
     ),
     pggraph_dsn: str | None = typer.Option(  # noqa: B008
         None,
@@ -1942,9 +2695,21 @@ def reproject(
 
     profile_root = _profile_root_for_eventloom_path(log_path)
     settings = _status_settings(profile_root)
-    backend = (projection_backend or settings.projection_backend).casefold().strip()
+    backend = _resolve_cli_projection_backend(
+        projection_backend,
+        settings,
+        neo4j_uri=neo4j_uri,
+        neo4j_user=neo4j_user,
+        neo4j_password=neo4j_password,
+        pggraph_dsn=pggraph_dsn,
+        embedded_graph_path=embedded_graph_path,
+    )
 
     async def _run() -> int:
+        from zaxy.event import EventLog
+        from zaxy.extract import extract
+        from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
+
         store = build_projection_store(
             ProjectionBackendConfig(
                 backend=backend,
@@ -2010,6 +2775,13 @@ def compact(
     max_records: int = typer.Option(5, min=1, help="Maximum exemplar records to store"),
 ) -> None:
     """Compact an Eventloom log and optionally create snapshots."""
+    from zaxy.compaction import (
+        audit_event_log,
+        build_compaction_projection,
+        write_compaction_projection,
+    )
+    from zaxy.event import EventLog
+
     log = EventLog(str(log_path))
     if audit:
         report = audit_event_log(log)
@@ -2077,6 +2849,8 @@ def compact(
             for ev in events[-snapshot_every:]:
                 fh.write(ev.model_dump_json() + "\n")
         typer.echo(f"Created snapshot: {snapshot_path}")
+    from zaxy.lifecycle import build_compaction_completed_event
+
     lifecycle = build_compaction_completed_event(
         session_id=log_path.stem,
         mode="rewrite",
@@ -2099,7 +2873,7 @@ def status(
     neo4j_uri: str | None = typer.Option(None, help="Neo4j Bolt URI"),
     neo4j_user: str | None = typer.Option(None, help="Neo4j username"),
     neo4j_password: str | None = typer.Option(None, help="Neo4j password"),
-    projection_backend: str | None = typer.Option(None, "--projection-backend", help="Projection backend to check: neo4j, pggraph, or embedded"),
+    projection_backend: str | None = typer.Option(None, "--projection-backend", help="Projection backend to check: embedded, neo4j, pggraph, or latticedb"),
     pggraph_dsn: str | None = typer.Option(None, "--pggraph-dsn", help="pgGraph/PostgreSQL DSN"),
     embedded_graph_path: Path | None = typer.Option(None, "--embedded-graph-path", help="Embedded graph projection path"),  # noqa: B008
     pathlight_url: str | None = typer.Option(None, help="Pathlight collector URL"),
@@ -2115,7 +2889,15 @@ def status(
         _user = neo4j_user or settings.neo4j_user
         _password = neo4j_password or settings.neo4j_password
         _pathlight = pathlight_url or settings.pathlight_url
-        backend = (projection_backend or settings.projection_backend).casefold().strip()
+        backend = _resolve_cli_projection_backend(
+            projection_backend,
+            settings,
+            neo4j_uri=neo4j_uri,
+            neo4j_user=neo4j_user,
+            neo4j_password=neo4j_password,
+            pggraph_dsn=pggraph_dsn,
+            embedded_graph_path=embedded_graph_path,
+        )
 
         if backend == "embedded":
             embedded_runtime = LocalEmbeddedGraphRuntime(path=embedded_graph_path or Path(settings.embedded_graph_path))
@@ -2172,6 +2954,8 @@ def status(
 
 def _status_settings(root: Path = Path(".")) -> Settings:
     """Load status settings, honoring repo-local .env.local written by zaxy init."""
+    from zaxy.config import Settings
+
     profile = root / ".env.local"
     if not profile.is_file():
         return Settings()
@@ -2242,6 +3026,8 @@ def packet_analyzer(
     ),
 ) -> None:
     """Run an observe-only OpenAI-compatible packet analyzer."""
+    from zaxy.packet_analyzer import PacketAnalyzerConfig, run_packet_analyzer
+
     config = PacketAnalyzerConfig(
         eventloom_path=eventloom_path,
         session_id=session_id,
@@ -2308,10 +3094,12 @@ def packet_project(
     """Project captured LLM packets into compact memory events."""
     import asyncio
 
+    from zaxy.packet_projection import project_packet_events, watch_packet_events
+
     graph_projected = 0
     graph_failed = 0
 
-    def project_watch_result_to_graph(result: PacketProjectionResult) -> None:
+    def project_watch_result_to_graph(result: Any) -> None:
         nonlocal graph_projected, graph_failed
         graph_result = asyncio.run(
             _project_packet_result_to_graph(
@@ -2398,6 +3186,14 @@ def _build_benchmark_baselines(
     selected: tuple[str, ...],
 ) -> dict[str, Any]:
     """Build only the requested non-Zaxy benchmark baselines."""
+    from zaxy.live_benchmark import (
+        BM25Retriever,
+        CentroidConsolidationRetriever,
+        MarkdownRetriever,
+        MarkdownVectorRetriever,
+        VectorRetriever,
+    )
+
     retrievers: dict[str, Any] = {}
     for backend in selected:
         if backend == "md":
@@ -2480,9 +3276,12 @@ def benchmark(
         help="Reuse an existing benchmark graph projection for the same workload and embedding provider",
     ),
     projection_backend: str = typer.Option(
-        "neo4j",
+        "embedded",
         "--projection-backend",
-        help="Projection backend for graph-backed Zaxy benchmarks: neo4j, pggraph, embedded, or latticedb",
+        help=(
+            "Projection backend for graph-backed Zaxy benchmarks; embedded default, "
+            "or neo4j, pggraph, or latticedb"
+        ),
     ),
     pggraph_dsn: str | None = typer.Option(  # noqa: B008
         None,
@@ -2503,11 +3302,41 @@ def benchmark(
     """Run live retrieval benchmarks against baseline memories and Zaxy."""
     import asyncio
 
+    from zaxy.benchmark import build_competitive_event_log, competitive_cases
     from zaxy.config import get_settings
+    from zaxy.embedding import (
+        HashEmbeddingProvider,
+        LocalHTTPEmbeddingProvider,
+        OpenAIEmbeddingProvider,
+        SentenceTransformersEmbeddingProvider,
+    )
+    from zaxy.live_benchmark import (
+        BenchmarkWorkload,
+        CachedEmbeddingProvider,
+        ZaxyCheckoutRetriever,
+        _build_source_lane_retriever,
+        benchmark_live_retrievers,
+        benchmark_projection_cache_key,
+        benchmark_query_scope_resolver,
+        build_benchmark_suite_workload,
+        build_consolidation_collapse_workload,
+        build_context_collapse_workload,
+        build_frozen_statistical_workload,
+        build_graph_traversal_workload,
+        build_live_zaxy_retriever,
+        build_longmemeval_workload,
+        build_source_recall_workload,
+        build_statistical_event_log,
+        build_temporal_recall_workload,
+        corpus_from_event_log,
+        report_to_markdown,
+        write_benchmark_report,
+    )
+    from zaxy.projection_backends import ProjectionBackendConfig
 
     settings = get_settings()
     provider_name = embedding_provider.casefold()
-    provider: EmbeddingProvider
+    provider: Any
     if provider_name == "openai":
         if not settings.openai_api_key:
             raise typer.BadParameter("OPENAI_API_KEY is required for OpenAI benchmarks")
@@ -2718,8 +3547,10 @@ def benchmark(
         provider.flush()
 
 
-def _load_external_results(path: Path | None) -> tuple[ExternalBenchmarkResult, ...]:
+def _load_external_results(path: Path | None) -> tuple[Any, ...]:
     """Load operator-supplied external benchmark rows from JSON."""
+    from zaxy.live_benchmark import ExternalBenchmarkResult
+
     if path is None:
         return ()
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -2748,6 +3579,11 @@ def benchmark_inventory(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """List MemPalace-comparable benchmark lanes, fingerprints, and required metrics."""
+    from zaxy.live_benchmark import (
+        build_mempalace_workload_inventory,
+        format_mempalace_workload_inventory,
+    )
+
     inventory = build_mempalace_workload_inventory(
         output_dir,
         subjects=subjects,
@@ -2791,6 +3627,12 @@ def benchmark_compare(
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
 ) -> None:
     """Compare benchmark reports against beta quality and latency guardrails."""
+    from zaxy.live_benchmark import (
+        compare_benchmark_reports,
+        format_benchmark_comparison,
+        load_benchmark_report,
+    )
+
     baseline_report = load_benchmark_report(baseline) if baseline is not None else None
     candidate_report = load_benchmark_report(candidate)
     comparison = compare_benchmark_reports(

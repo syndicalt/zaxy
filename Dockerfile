@@ -37,8 +37,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /build/dist/*.whl /tmp/
 RUN pip install --no-cache-dir /tmp/*.whl && rm /tmp/*.whl
 
-# Create directories
-RUN mkdir -p /app/.eventloom /app/.volumes && \
+# Create embedded Eventloom/projection directories
+RUN mkdir -p /app/.eventloom/projections && \
     chown -R zaxy:zaxy /app
 
 USER zaxy

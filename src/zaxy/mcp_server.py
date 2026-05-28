@@ -342,6 +342,171 @@ TOOLS = [
             "additionalProperties": False,
         },
     ),
+    Tool(
+        name="coordination_start",
+        description="Start a parent coordination mission session.",
+        inputSchema={
+            "type": "object",
+            "required": ["mission_id", "objective"],
+            "properties": {
+                "mission_id": {"type": "string"},
+                "objective": {"type": "string"},
+                "actor": {"type": "string", "default": "coordinator"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="coordination_worker_create",
+        description="Register a worker session under a parent mission.",
+        inputSchema={
+            "type": "object",
+            "required": ["mission_id", "worker_id"],
+            "properties": {
+                "mission_id": {"type": "string"},
+                "worker_id": {"type": "string"},
+                "actor": {"type": "string", "default": "coordinator"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="coordination_assign",
+        description="Assign scoped work to a coordination worker.",
+        inputSchema={
+            "type": "object",
+            "required": ["mission_id", "worker_id", "assignment"],
+            "properties": {
+                "mission_id": {"type": "string"},
+                "worker_id": {"type": "string"},
+                "assignment": {"type": "string"},
+                "actor": {"type": "string", "default": "coordinator"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="coordination_report_finding",
+        description="Record a worker-local finding with evidence.",
+        inputSchema={
+            "type": "object",
+            "required": ["mission_id", "worker_id", "summary"],
+            "properties": {
+                "mission_id": {"type": "string"},
+                "worker_id": {"type": "string"},
+                "summary": {"type": "string"},
+                "actor": {"type": "string", "default": "worker"},
+                "evidence": {"type": "array", "items": {"type": "object"}},
+                "confidence": {"type": "number"},
+                "claim_key": {"type": "string"},
+                "claim_value": {"type": "string"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="coordination_merge_brief",
+        description="Return a replay-backed coordination brief for a mission.",
+        inputSchema={
+            "type": "object",
+            "required": ["mission_id"],
+            "properties": {"mission_id": {"type": "string"}},
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="coordination_checkout",
+        description="Return accepted coordination state for prompt injection.",
+        inputSchema={
+            "type": "object",
+            "required": ["mission_id"],
+            "properties": {
+                "mission_id": {"type": "string"},
+                "include_diagnostics": {"type": "boolean", "default": False},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="coordination_performance_ledger",
+        description="Return worker-level coordination outcome metrics for a mission.",
+        inputSchema={
+            "type": "object",
+            "required": ["mission_id"],
+            "properties": {"mission_id": {"type": "string"}},
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="coordination_approval_packet",
+        description="Return a portable packet for remote finding approval.",
+        inputSchema={
+            "type": "object",
+            "required": ["mission_id"],
+            "properties": {"mission_id": {"type": "string"}},
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="coordination_apply_approval",
+        description="Apply remote approval decisions to a coordination mission.",
+        inputSchema={
+            "type": "object",
+            "required": ["mission_id", "decisions"],
+            "properties": {
+                "mission_id": {"type": "string"},
+                "decisions": {"type": "array", "items": {"type": "object"}},
+                "actor": {"type": "string", "default": "coordinator"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="coordination_review_finding",
+        description="Review a worker finding as accepted, rejected, deferred, or conflicted.",
+        inputSchema={
+            "type": "object",
+            "required": ["mission_id", "finding_id", "status"],
+            "properties": {
+                "mission_id": {"type": "string"},
+                "finding_id": {"type": "string"},
+                "status": {"type": "string", "enum": ["accepted", "rejected", "deferred", "conflicted"]},
+                "rationale": {"type": "string"},
+                "actor": {"type": "string", "default": "coordinator"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="coordination_promote",
+        description="Promote an accepted finding into the parent mission history.",
+        inputSchema={
+            "type": "object",
+            "required": ["mission_id", "finding_id"],
+            "properties": {
+                "mission_id": {"type": "string"},
+                "finding_id": {"type": "string"},
+                "actor": {"type": "string", "default": "coordinator"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="coordination_handoff",
+        description="Create a final coordination handoff event for a mission.",
+        inputSchema={
+            "type": "object",
+            "required": ["mission_id", "summary"],
+            "properties": {
+                "mission_id": {"type": "string"},
+                "summary": {"type": "string"},
+                "next_steps": {"type": "array", "items": {"type": "string"}},
+                "risks": {"type": "array", "items": {"type": "string"}},
+                "actor": {"type": "string", "default": "coordinator"},
+            },
+            "additionalProperties": False,
+        },
+    ),
 ]
 
 
@@ -373,6 +538,7 @@ class ZaxyMCPServer:
         default_session_id: str | None = None,
     ) -> None:
         settings = get_settings()
+        self._settings = settings
         backend = projection_backend or settings.projection_backend
         self._admin_token = settings.mcp_admin_token
         self._default_session_id = validate_session_id(default_session_id or settings.eventloom_thread)
@@ -630,6 +796,168 @@ class ZaxyMCPServer:
         await self.tracer.trace_append(event_type, actor, event.seq)
 
         return [TextContent(type="text", text=json.dumps({"seq": event.seq, "hash": event.hash}))]
+
+    async def handle_coordination_start(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle coordination_start tool calls."""
+        mission_id = validate_session_id(_required_text(arguments.get("mission_id"), "mission_id"))
+        self._enforce_coordination_mission_scope(mission_id)
+        actor = _optional_text(arguments.get("actor")) or "coordinator"
+        objective = _required_text(arguments.get("objective"), "objective")
+        result = self._coordination_manager().start_mission(mission_id, objective=objective, actor=actor)
+        await self._project_coordination_result(result.event, session_id=mission_id)
+        return [TextContent(type="text", text=json.dumps(_coordination_result_payload(result, "coordination.mission.created")))]
+
+    async def handle_coordination_worker_create(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle coordination_worker_create tool calls."""
+        mission_id = validate_session_id(_required_text(arguments.get("mission_id"), "mission_id"))
+        self._enforce_coordination_mission_scope(mission_id)
+        worker_id = validate_session_id(_required_text(arguments.get("worker_id"), "worker_id"))
+        actor = _optional_text(arguments.get("actor")) or "coordinator"
+        result = self._coordination_manager().create_worker(mission_id, worker_id, actor=actor)
+        await self._project_coordination_result(result.event, session_id=mission_id)
+        return [TextContent(type="text", text=json.dumps(_coordination_result_payload(result, "coordination.worker.created")))]
+
+    async def handle_coordination_assign(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle coordination_assign tool calls."""
+        mission_id = validate_session_id(_required_text(arguments.get("mission_id"), "mission_id"))
+        self._enforce_coordination_mission_scope(mission_id)
+        worker_id = validate_session_id(_required_text(arguments.get("worker_id"), "worker_id"))
+        assignment = _required_text(arguments.get("assignment"), "assignment")
+        actor = _optional_text(arguments.get("actor")) or "coordinator"
+        result = self._coordination_manager().assign(mission_id, worker_id, assignment, actor=actor)
+        await self._project_coordination_result(result.event, session_id=mission_id)
+        return [TextContent(type="text", text=json.dumps(_coordination_result_payload(result, "coordination.assignment.created")))]
+
+    async def handle_coordination_report_finding(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle coordination_report_finding tool calls."""
+        mission_id = validate_session_id(_required_text(arguments.get("mission_id"), "mission_id"))
+        self._enforce_coordination_mission_scope(mission_id)
+        worker_id = validate_session_id(_required_text(arguments.get("worker_id"), "worker_id"))
+        summary = _required_text(arguments.get("summary"), "summary")
+        actor = _optional_text(arguments.get("actor")) or "worker"
+        raw_evidence = arguments.get("evidence")
+        evidence_items = raw_evidence if isinstance(raw_evidence, list) else []
+        result = self._coordination_manager().report_finding(
+            mission_id,
+            worker_id,
+            summary=summary,
+            actor=actor,
+            evidence=[item for item in evidence_items if isinstance(item, dict)],
+            confidence=arguments.get("confidence") if arguments.get("confidence") is not None else None,
+            claim_key=_optional_text(arguments.get("claim_key")),
+            claim_value=_optional_text(arguments.get("claim_value")),
+        )
+        await self._project_coordination_result(result.event, session_id=worker_id)
+        return [TextContent(type="text", text=json.dumps(_coordination_result_payload(result, "coordination.finding.reported")))]
+
+    async def handle_coordination_merge_brief(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle coordination_merge_brief tool calls."""
+        mission_id = validate_session_id(_required_text(arguments.get("mission_id"), "mission_id"))
+        self._enforce_coordination_mission_scope(mission_id)
+        brief = self._coordination_manager().brief(mission_id)
+        return [TextContent(type="text", text=json.dumps(brief.to_dict(), indent=2, sort_keys=True))]
+
+    async def handle_coordination_checkout(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle coordination_checkout tool calls."""
+        mission_id = validate_session_id(_required_text(arguments.get("mission_id"), "mission_id"))
+        self._enforce_coordination_mission_scope(mission_id)
+        include_diagnostics = bool(arguments.get("include_diagnostics", False))
+        checkout = self._coordination_manager().checkout(mission_id, include_diagnostics=include_diagnostics)
+        return [TextContent(type="text", text=json.dumps(checkout.to_dict(), indent=2, sort_keys=True))]
+
+    async def handle_coordination_performance_ledger(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle coordination_performance_ledger tool calls."""
+        mission_id = validate_session_id(_required_text(arguments.get("mission_id"), "mission_id"))
+        self._enforce_coordination_mission_scope(mission_id)
+        ledger = self._coordination_manager().performance_ledger(mission_id)
+        return [TextContent(type="text", text=json.dumps(ledger.to_dict(), indent=2, sort_keys=True))]
+
+    async def handle_coordination_approval_packet(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle coordination_approval_packet tool calls."""
+        mission_id = validate_session_id(_required_text(arguments.get("mission_id"), "mission_id"))
+        self._enforce_coordination_mission_scope(mission_id)
+        packet = self._coordination_manager().approval_packet(mission_id)
+        return [TextContent(type="text", text=json.dumps(packet.to_dict(), indent=2, sort_keys=True))]
+
+    async def handle_coordination_apply_approval(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle coordination_apply_approval tool calls."""
+        mission_id = validate_session_id(_required_text(arguments.get("mission_id"), "mission_id"))
+        self._enforce_coordination_mission_scope(mission_id)
+        actor = _optional_text(arguments.get("actor")) or "coordinator"
+        decisions = _approval_decisions(arguments.get("decisions"))
+        result = self._coordination_manager().apply_approval_decisions(
+            mission_id,
+            decisions,
+            actor=actor,
+        )
+        for event in result.events:
+            await self._project_coordination_result(event, session_id=mission_id)
+        return [TextContent(type="text", text=json.dumps(result.to_dict(), indent=2, sort_keys=True))]
+
+    async def handle_coordination_review_finding(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle coordination_review_finding tool calls."""
+        mission_id = validate_session_id(_required_text(arguments.get("mission_id"), "mission_id"))
+        self._enforce_coordination_mission_scope(mission_id)
+        finding_id = _required_text(arguments.get("finding_id"), "finding_id")
+        status = _required_text(arguments.get("status"), "status")
+        actor = _optional_text(arguments.get("actor")) or "coordinator"
+        result = self._coordination_manager().review_finding(
+            mission_id,
+            finding_id,
+            status=status,
+            actor=actor,
+            rationale=_optional_text(arguments.get("rationale")),
+        )
+        await self._project_coordination_result(result.event, session_id=mission_id)
+        return [TextContent(type="text", text=json.dumps(_coordination_result_payload(result, "coordination.finding.reviewed")))]
+
+    async def handle_coordination_promote(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle coordination_promote tool calls."""
+        mission_id = validate_session_id(_required_text(arguments.get("mission_id"), "mission_id"))
+        self._enforce_coordination_mission_scope(mission_id)
+        finding_id = _required_text(arguments.get("finding_id"), "finding_id")
+        actor = _optional_text(arguments.get("actor")) or "coordinator"
+        result = self._coordination_manager().promote_finding(mission_id, finding_id, actor=actor)
+        await self._project_coordination_result(result.event, session_id=mission_id)
+        return [TextContent(type="text", text=json.dumps(_coordination_result_payload(result, "coordination.finding.promoted")))]
+
+    async def handle_coordination_handoff(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle coordination_handoff tool calls."""
+        mission_id = validate_session_id(_required_text(arguments.get("mission_id"), "mission_id"))
+        self._enforce_coordination_mission_scope(mission_id)
+        actor = _optional_text(arguments.get("actor")) or "coordinator"
+        result = self._coordination_manager().create_handoff(
+            mission_id,
+            summary=_required_text(arguments.get("summary"), "summary"),
+            next_steps=_optional_text_list(arguments.get("next_steps")),
+            risks=_optional_text_list(arguments.get("risks")),
+            actor=actor,
+        )
+        await self._project_coordination_result(result.event, session_id=mission_id)
+        return [TextContent(type="text", text=json.dumps(_coordination_result_payload(result, result.event.type)))]
+
+    def _coordination_manager(self) -> Any:
+        """Return a coordination manager bound to this server's session manager."""
+        from zaxy.coordination import CoordinationManager
+        from zaxy.coordination_semantic import build_semantic_conflict_detector
+
+        manager = CoordinationManager(
+            eventloom_path=self._eventloom_path,
+            semantic_conflict_detector=build_semantic_conflict_detector(self._settings),
+        )
+        manager.session_manager = self.session_manager
+        return manager
+
+    def _enforce_coordination_mission_scope(self, mission_id: str) -> None:
+        """Prevent remote clients from writing outside their authenticated mission."""
+        if remote_session_scope.get() is not None:
+            self._session_id_from_arguments({"session_id": mission_id})
+
+    async def _project_coordination_result(self, event: Any, *, session_id: str) -> None:
+        """Project a coordination event through the standard graph path."""
+        extraction = extract(event)
+        await self.graph.upsert_extraction(extraction, session_id=session_id)
+        await self.tracer.trace_append(event.type, event.actor, event.seq)
 
     async def handle_memory_query(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle memory_query tool call."""
@@ -1555,6 +1883,35 @@ def _optional_text_list(value: object) -> list[str]:
     return texts
 
 
+def _approval_decisions(value: object) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        raise ValueError("decisions must be an array")
+    decisions: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise ValueError("each approval decision must be an object")
+        decisions.append(item)
+    return decisions
+
+
+def _coordination_result_payload(result: Any, event_type: str) -> dict[str, Any]:
+    """Return stable JSON for coordination write results."""
+    payload = {
+        "event_type": event_type,
+        "seq": result.event.seq,
+        "hash": result.event.hash,
+        "mission_id": result.mission_id,
+        "worker_id": result.worker_id,
+        "finding_id": result.finding_id,
+        "handoff_id": result.handoff_id,
+        "summary": result.summary,
+        "evidence": result.evidence,
+        "next_steps": result.event.payload.get("next_steps"),
+        "risks": result.event.payload.get("risks"),
+    }
+    return {key: value for key, value in payload.items() if value is not None and value != []}
+
+
 # ------------------------------------------------------------------
 # Entrypoint
 # ------------------------------------------------------------------
@@ -1593,6 +1950,30 @@ async def _dispatch_tool_call(
         return await active_server.handle_context_after_turn(arguments)
     if name == "subagent_cleanup":
         return await active_server.handle_subagent_cleanup(arguments)
+    if name == "coordination_start":
+        return await active_server.handle_coordination_start(arguments)
+    if name == "coordination_worker_create":
+        return await active_server.handle_coordination_worker_create(arguments)
+    if name == "coordination_assign":
+        return await active_server.handle_coordination_assign(arguments)
+    if name == "coordination_report_finding":
+        return await active_server.handle_coordination_report_finding(arguments)
+    if name == "coordination_merge_brief":
+        return await active_server.handle_coordination_merge_brief(arguments)
+    if name == "coordination_checkout":
+        return await active_server.handle_coordination_checkout(arguments)
+    if name == "coordination_performance_ledger":
+        return await active_server.handle_coordination_performance_ledger(arguments)
+    if name == "coordination_approval_packet":
+        return await active_server.handle_coordination_approval_packet(arguments)
+    if name == "coordination_apply_approval":
+        return await active_server.handle_coordination_apply_approval(arguments)
+    if name == "coordination_review_finding":
+        return await active_server.handle_coordination_review_finding(arguments)
+    if name == "coordination_promote":
+        return await active_server.handle_coordination_promote(arguments)
+    if name == "coordination_handoff":
+        return await active_server.handle_coordination_handoff(arguments)
     raise ValueError(f"Unknown tool: {name}")
 
 

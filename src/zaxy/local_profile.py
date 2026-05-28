@@ -11,15 +11,17 @@ from zaxy.query import build_reranker
 
 _LOCAL_PROFILE_VALUES = {
     "ZAXY_ENV": "development",
-    "PROJECTION_BACKEND": "neo4j",
+    "PROJECTION_BACKEND": "embedded",
     "NEO4J_URI": "bolt://localhost:7687",
     "NEO4J_USER": "neo4j",
     "NEO4J_PASSWORD": "testpassword",
     "NEO4J_DATABASE": "neo4j",
-    "NEO4J_AUTO_START": "true",
+    "NEO4J_AUTO_START": "false",
     "NEO4J_CA_CERT": "",
     "NEO4J_PASSWORD_FILE": "",
     "NEO4J_TRUST_ALL": "false",
+    "PGGRAPH_AUTO_START": "false",
+    "EMBEDDED_GRAPH_PATH": ".eventloom/projections/embedded.kuzu",
     "EMBEDDING_ENABLED": "true",
     "EMBEDDING_PROVIDER": "hash",
     "EMBEDDING_DIMENSION": "1536",
@@ -27,11 +29,11 @@ _LOCAL_PROFILE_VALUES = {
 }
 
 
-def render_local_profile(*, projection_backend: str = "neo4j") -> str:
+def render_local_profile(*, projection_backend: str = "embedded") -> str:
     """Return an .env-style offline retrieval profile."""
     normalized_backend = projection_backend.casefold().strip()
     if normalized_backend not in {"neo4j", "pggraph", "embedded", "latticedb"}:
-        raise ValueError("projection_backend must be one of: neo4j, pggraph, embedded, latticedb")
+        raise ValueError("projection_backend must be one of: embedded, neo4j, pggraph, latticedb")
     values = dict(_LOCAL_PROFILE_VALUES)
     values["PROJECTION_BACKEND"] = normalized_backend
     if normalized_backend == "embedded":
@@ -41,6 +43,14 @@ def render_local_profile(*, projection_backend: str = "neo4j") -> str:
     elif normalized_backend == "pggraph":
         values["NEO4J_AUTO_START"] = "false"
         values["PGGRAPH_AUTO_START"] = "true"
+    elif normalized_backend == "neo4j":
+        values["NEO4J_AUTO_START"] = "true"
+        values["PGGRAPH_AUTO_START"] = "false"
+        values.pop("EMBEDDED_GRAPH_PATH", None)
+    elif normalized_backend == "latticedb":
+        values["NEO4J_AUTO_START"] = "false"
+        values["PGGRAPH_AUTO_START"] = "false"
+        values.pop("EMBEDDED_GRAPH_PATH", None)
     lines = [
         "# Zaxy offline local retrieval profile",
         "# Deterministic embeddings and lexical reranking require no hosted secrets.",
@@ -50,7 +60,7 @@ def render_local_profile(*, projection_backend: str = "neo4j") -> str:
     return "\n".join(lines)
 
 
-def write_local_profile(path: Path, *, projection_backend: str = "neo4j", force: bool = False) -> Path:
+def write_local_profile(path: Path, *, projection_backend: str = "embedded", force: bool = False) -> Path:
     """Write the offline retrieval profile to path."""
     if path.exists() and not force:
         raise FileExistsError(f"{path} already exists; pass --force to overwrite")

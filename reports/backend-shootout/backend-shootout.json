@@ -1,11 +1,555 @@
 {
   "event_count": 4,
   "eventloom_path": "reports/backend-shootout/sample.eventloom",
-  "generated_at_utc": "2026-05-20T09:45:17Z",
+  "generated_at_utc": "2026-05-21T14:31:25Z",
   "harness": "zaxy-backend-shootout",
   "limit": 5,
   "queries_file": "reports/backend-shootout/queries.json",
   "query_count": 4,
+  "query_results": {
+    "bm25:retrieve": [
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "zero-friction",
+          "embedded graph"
+        ],
+        "identity_terms": [],
+        "injected_tokens": 195,
+        "latency_ms": 0.143,
+        "missing_expected_terms": [],
+        "missing_retrieval_terms": [],
+        "quality": 1.0,
+        "query": "zero-friction embedded graph memory runtime",
+        "recall_hit": true,
+        "recall_quality": 1.0,
+        "retrieval_terms": [
+          "zero-friction",
+          "embedded graph"
+        ],
+        "returned_tokens": 195,
+        "source_terms": [],
+        "top_contexts": [
+          {
+            "citation": "eventloom://agent-1/events/1#324eb758025cb0bc69b812340b91e6ca274dc5622591fb190f043fdb99d32051",
+            "rank": 1,
+            "score": 6.472511,
+            "snippet": "{\"goal\": \"Build zero-friction embedded graph memory runtime.\"}",
+            "source": "bm25"
+          },
+          {
+            "citation": "eventloom://agent-1/events/4#22541f6c37d4b6b644becf76bd7262c1bec63ffda2389961bba1b7e179dbc1cc",
+            "rank": 2,
+            "score": 0.977124,
+            "snippet": "{\"summary\": \"Added zaxy activate codex launcher with Memory Bootstrap and first memory_checkout guidance.\"}",
+            "source": "bm25"
+          },
+          {
+            "citation": "eventloom://agent-1/events/2#d0b9636ff23e83a96ea4139bbec6ef98fcad71a3ababaff9a613431ab58955f4",
+            "rank": 3,
+            "score": 0.356675,
+            "snippet": "{\"task\": \"Compare embedded Kuzu, LatticeDB, Neo4j, pgGraph, and BM25 on the same harness.\"}",
+            "source": "bm25"
+          },
+          {
+            "citation": "eventloom://agent-1/events/3#056b4d5c6fc0fcd8d4902a08fc7d71fba35eb191f529001d57e347fd9ead2633",
+            "rank": 4,
+            "score": 0.331791,
+            "snippet": "{\"decision\": \"Keep Neo4j as default until embedded candidates preserve citations, temporal semantics, traversal, activation, and benchmark guardrails.\"}",
+            "source": "bm25"
+          }
+        ]
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "LatticeDB",
+          "same harness"
+        ],
+        "identity_terms": [],
+        "injected_tokens": 108,
+        "latency_ms": 0.108,
+        "missing_expected_terms": [],
+        "missing_retrieval_terms": [],
+        "quality": 1.0,
+        "query": "compare LatticeDB Neo4j pgGraph BM25 same harness",
+        "recall_hit": true,
+        "recall_quality": 1.0,
+        "retrieval_terms": [
+          "LatticeDB",
+          "same harness"
+        ],
+        "returned_tokens": 108,
+        "source_terms": [],
+        "top_contexts": [
+          {
+            "citation": "eventloom://agent-1/events/2#d0b9636ff23e83a96ea4139bbec6ef98fcad71a3ababaff9a613431ab58955f4",
+            "rank": 1,
+            "score": 7.916984,
+            "snippet": "{\"task\": \"Compare embedded Kuzu, LatticeDB, Neo4j, pgGraph, and BM25 on the same harness.\"}",
+            "source": "bm25"
+          },
+          {
+            "citation": "eventloom://agent-1/events/3#056b4d5c6fc0fcd8d4902a08fc7d71fba35eb191f529001d57e347fd9ead2633",
+            "rank": 2,
+            "score": 0.644788,
+            "snippet": "{\"decision\": \"Keep Neo4j as default until embedded candidates preserve citations, temporal semantics, traversal, activation, and benchmark guardrails.\"}",
+            "source": "bm25"
+          }
+        ]
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "activate codex",
+          "memory_checkout"
+        ],
+        "identity_terms": [],
+        "injected_tokens": 149,
+        "latency_ms": 0.107,
+        "missing_expected_terms": [],
+        "missing_retrieval_terms": [],
+        "quality": 1.0,
+        "query": "activation launcher memory checkout guidance",
+        "recall_hit": true,
+        "recall_quality": 1.0,
+        "retrieval_terms": [
+          "activate codex",
+          "memory_checkout"
+        ],
+        "returned_tokens": 149,
+        "source_terms": [],
+        "top_contexts": [
+          {
+            "citation": "eventloom://agent-1/events/4#22541f6c37d4b6b644becf76bd7262c1bec63ffda2389961bba1b7e179dbc1cc",
+            "rank": 1,
+            "score": 4.522565,
+            "snippet": "{\"summary\": \"Added zaxy activate codex launcher with Memory Bootstrap and first memory_checkout guidance.\"}",
+            "source": "bm25"
+          },
+          {
+            "citation": "eventloom://agent-1/events/3#056b4d5c6fc0fcd8d4902a08fc7d71fba35eb191f529001d57e347fd9ead2633",
+            "rank": 2,
+            "score": 1.119975,
+            "snippet": "{\"decision\": \"Keep Neo4j as default until embedded candidates preserve citations, temporal semantics, traversal, activation, and benchmark guardrails.\"}",
+            "source": "bm25"
+          },
+          {
+            "citation": "eventloom://agent-1/events/1#324eb758025cb0bc69b812340b91e6ca274dc5622591fb190f043fdb99d32051",
+            "rank": 3,
+            "score": 0.764852,
+            "snippet": "{\"goal\": \"Build zero-friction embedded graph memory runtime.\"}",
+            "source": "bm25"
+          }
+        ]
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "citations",
+          "benchmark guardrails"
+        ],
+        "identity_terms": [],
+        "injected_tokens": 62,
+        "latency_ms": 0.099,
+        "missing_expected_terms": [],
+        "missing_retrieval_terms": [],
+        "quality": 1.0,
+        "query": "default backend requires citations temporal semantics benchmark guardrails",
+        "recall_hit": true,
+        "recall_quality": 1.0,
+        "retrieval_terms": [
+          "citations",
+          "benchmark guardrails"
+        ],
+        "returned_tokens": 62,
+        "source_terms": [],
+        "top_contexts": [
+          {
+            "citation": "eventloom://agent-1/events/3#056b4d5c6fc0fcd8d4902a08fc7d71fba35eb191f529001d57e347fd9ead2633",
+            "rank": 1,
+            "score": 6.719848,
+            "snippet": "{\"decision\": \"Keep Neo4j as default until embedded candidates preserve citations, temporal semantics, traversal, activation, and benchmark guardrails.\"}",
+            "source": "bm25"
+          }
+        ]
+      }
+    ],
+    "embedded:answer_ready": [
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "zero-friction",
+          "embedded graph"
+        ],
+        "identity_terms": [],
+        "injected_tokens": 250,
+        "latency_ms": 2.296,
+        "missing_expected_terms": [],
+        "missing_retrieval_terms": [],
+        "quality": 1.0,
+        "query": "zero-friction embedded graph memory runtime",
+        "recall_hit": true,
+        "recall_quality": 1.0,
+        "retrieval_terms": [
+          "zero-friction",
+          "embedded graph"
+        ],
+        "returned_tokens": 185,
+        "source_terms": [],
+        "top_contexts": [
+          {
+            "citation": "eventloom://agent-1/events/2#d0b9636ff23e",
+            "rank": 1,
+            "score": 0.99,
+            "snippet": "assistant (actor) \u2014 source_event_seq=2, source_event_hash=d0b9636ff23e83a96ea4139bbec6ef98fcad71a3ababaff9a613431ab58955f4",
+            "source": "traversal"
+          },
+          {
+            "citation": "eventloom://agent-1/events/4#22541f6c37d4",
+            "rank": 2,
+            "score": 0.9573,
+            "snippet": "unknown (task) \u2014 summary=Added zaxy activate codex launcher with Memory Bootstrap and first memory_checkout guidance., source_event_seq=4, source_event_hash=22541f6c37d4b6b644becf76bd7262c1bec63ffda2389961bba1b7e179dbc1cc",
+            "source": "keyword"
+          },
+          {
+            "citation": "eventloom://agent-1/events/3#056b4d5c6fc0",
+            "rank": 3,
+            "score": 0.8235,
+            "snippet": "event:decision.recorded:3 (event) \u2014 summary=assistant emitted decision.recorded decision=Keep Neo4j as default until embedded candidates preserve citations, temporal semantics, traversal, activation, and benchmark guardrails., source_eve...",
+            "source": "keyword"
+          },
+          {
+            "citation": "eventloom://agent-1/events/1#324eb758025cb0bc69b812340b91e6ca274dc5622591fb190f043fdb99d32051",
+            "rank": 4,
+            "score": 5.7083,
+            "snippet": "{\"goal\": \"Build zero-friction embedded graph memory runtime.\"}",
+            "source": "verbatim"
+          }
+        ]
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "LatticeDB",
+          "same harness"
+        ],
+        "identity_terms": [],
+        "injected_tokens": 145,
+        "latency_ms": 0.455,
+        "missing_expected_terms": [],
+        "missing_retrieval_terms": [],
+        "quality": 1.0,
+        "query": "compare LatticeDB Neo4j pgGraph BM25 same harness",
+        "recall_hit": true,
+        "recall_quality": 1.0,
+        "retrieval_terms": [
+          "LatticeDB",
+          "same harness"
+        ],
+        "returned_tokens": 106,
+        "source_terms": [],
+        "top_contexts": [
+          {
+            "citation": "eventloom://agent-1/events/3#056b4d5c6fc0",
+            "rank": 1,
+            "score": 0.8044,
+            "snippet": "event:decision.recorded:3 (event) \u2014 summary=assistant emitted decision.recorded decision=Keep Neo4j as default until embedded candidates preserve citations, temporal semantics, traversal, activation, and benchmark guardrails., source_eve...",
+            "source": "keyword"
+          },
+          {
+            "citation": "eventloom://agent-1/events/2#d0b9636ff23e83a96ea4139bbec6ef98fcad71a3ababaff9a613431ab58955f4",
+            "rank": 2,
+            "score": 7.7872,
+            "snippet": "{\"task\": \"Compare embedded Kuzu, LatticeDB, Neo4j, pgGraph, and BM25 on the same harness.\"}",
+            "source": "verbatim"
+          }
+        ]
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "activate codex",
+          "memory_checkout"
+        ],
+        "identity_terms": [],
+        "injected_tokens": 262,
+        "latency_ms": 0.654,
+        "missing_expected_terms": [],
+        "missing_retrieval_terms": [],
+        "quality": 1.0,
+        "query": "activation launcher memory checkout guidance",
+        "recall_hit": true,
+        "recall_quality": 1.0,
+        "retrieval_terms": [
+          "activate codex",
+          "memory_checkout"
+        ],
+        "returned_tokens": 196,
+        "source_terms": [],
+        "top_contexts": [
+          {
+            "citation": "eventloom://agent-1/events/4#22541f6c37d4",
+            "rank": 1,
+            "score": 1.536,
+            "snippet": "unknown (task) \u2014 summary=Added zaxy activate codex launcher with Memory Bootstrap and first memory_checkout guidance., source_event_seq=4, source_event_hash=22541f6c37d4b6b644becf76bd7262c1bec63ffda2389961bba1b7e179dbc1cc",
+            "source": "keyword"
+          },
+          {
+            "citation": "eventloom://agent-1/events/2#d0b9636ff23e",
+            "rank": 2,
+            "score": 0.99,
+            "snippet": "assistant (actor) \u2014 source_event_seq=2, source_event_hash=d0b9636ff23e83a96ea4139bbec6ef98fcad71a3ababaff9a613431ab58955f4",
+            "source": "traversal"
+          },
+          {
+            "citation": "eventloom://agent-1/events/3#056b4d5c6fc0",
+            "rank": 3,
+            "score": 0.8501,
+            "snippet": "event:decision.recorded:3 (event) \u2014 summary=assistant emitted decision.recorded decision=Keep Neo4j as default until embedded candidates preserve citations, temporal semantics, traversal, activation, and benchmark guardrails., source_eve...",
+            "source": "keyword"
+          },
+          {
+            "citation": "eventloom://agent-1/events/4#22541f6c37d4b6b644becf76bd7262c1bec63ffda2389961bba1b7e179dbc1cc",
+            "rank": 4,
+            "score": 3.0503,
+            "snippet": "{\"summary\": \"Added zaxy activate codex launcher with Memory Bootstrap and first memory_checkout guidance.\"}",
+            "source": "verbatim"
+          }
+        ]
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "citations",
+          "benchmark guardrails"
+        ],
+        "identity_terms": [],
+        "injected_tokens": 160,
+        "latency_ms": 0.409,
+        "missing_expected_terms": [],
+        "missing_retrieval_terms": [],
+        "quality": 1.0,
+        "query": "default backend requires citations temporal semantics benchmark guardrails",
+        "recall_hit": true,
+        "recall_quality": 1.0,
+        "retrieval_terms": [
+          "citations",
+          "benchmark guardrails"
+        ],
+        "returned_tokens": 121,
+        "source_terms": [],
+        "top_contexts": [
+          {
+            "citation": "eventloom://agent-1/events/3#056b4d5c6fc0",
+            "rank": 1,
+            "score": 1.544,
+            "snippet": "event:decision.recorded:3 (event) \u2014 summary=assistant emitted decision.recorded decision=Keep Neo4j as default until embedded candidates preserve citations, temporal semantics, traversal, activation, and benchmark guardrails., source_eve...",
+            "source": "keyword"
+          },
+          {
+            "citation": "eventloom://agent-1/events/3#056b4d5c6fc0fcd8d4902a08fc7d71fba35eb191f529001d57e347fd9ead2633",
+            "rank": 2,
+            "score": 6.2816,
+            "snippet": "{\"decision\": \"Keep Neo4j as default until embedded candidates preserve citations, temporal semantics, traversal, activation, and benchmark guardrails.\"}",
+            "source": "verbatim"
+          }
+        ]
+      }
+    ],
+    "embedded:retrieve": [
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "zero-friction",
+          "embedded graph"
+        ],
+        "identity_terms": [],
+        "injected_tokens": 251,
+        "latency_ms": 0.716,
+        "missing_expected_terms": [
+          "zero-friction",
+          "embedded graph"
+        ],
+        "missing_retrieval_terms": [
+          "zero-friction",
+          "embedded graph"
+        ],
+        "quality": 0.0,
+        "query": "zero-friction embedded graph memory runtime",
+        "recall_hit": false,
+        "recall_quality": 0.0,
+        "retrieval_terms": [
+          "zero-friction",
+          "embedded graph"
+        ],
+        "returned_tokens": 199,
+        "source_terms": [],
+        "top_contexts": [
+          {
+            "citation": "eventloom://agent-1/events/2#d0b9636ff23e",
+            "rank": 1,
+            "score": 0.99,
+            "snippet": "assistant (actor) \u2014 source_event_seq=2, source_event_hash=d0b9636ff23e83a96ea4139bbec6ef98fcad71a3ababaff9a613431ab58955f4",
+            "source": "traversal"
+          },
+          {
+            "citation": "eventloom://agent-1/events/4#22541f6c37d4",
+            "rank": 2,
+            "score": 0.9573,
+            "snippet": "unknown (task) \u2014 summary=Added zaxy activate codex launcher with Memory Bootstrap and first memory_checkout guidance., source_event_seq=4, source_event_hash=22541f6c37d4b6b644becf76bd7262c1bec63ffda2389961bba1b7e179dbc1cc",
+            "source": "keyword"
+          },
+          {
+            "citation": "eventloom://agent-1/events/3#056b4d5c6fc0",
+            "rank": 3,
+            "score": 0.8235,
+            "snippet": "event:decision.recorded:3 (event) \u2014 summary=assistant emitted decision.recorded decision=Keep Neo4j as default until embedded candidates preserve citations, temporal semantics, traversal, activation, and benchmark guardrails., source_eve...",
+            "source": "keyword"
+          },
+          {
+            "citation": "eventloom://agent-1/events/2#d0b9636ff23e",
+            "rank": 4,
+            "score": 0.63,
+            "snippet": "task_2 (task) \u2014 source_event_seq=2, source_event_hash=d0b9636ff23e83a96ea4139bbec6ef98fcad71a3ababaff9a613431ab58955f4",
+            "source": "traversal"
+          }
+        ]
+      },
+      {
+        "answer_hit": false,
+        "citation_hit": true,
+        "expected_terms": [
+          "LatticeDB",
+          "same harness"
+        ],
+        "identity_terms": [],
+        "injected_tokens": 96,
+        "latency_ms": 0.214,
+        "missing_expected_terms": [
+          "LatticeDB",
+          "same harness"
+        ],
+        "missing_retrieval_terms": [
+          "LatticeDB",
+          "same harness"
+        ],
+        "quality": 0.0,
+        "query": "compare LatticeDB Neo4j pgGraph BM25 same harness",
+        "recall_hit": false,
+        "recall_quality": 0.0,
+        "retrieval_terms": [
+          "LatticeDB",
+          "same harness"
+        ],
+        "returned_tokens": 83,
+        "source_terms": [],
+        "top_contexts": [
+          {
+            "citation": "eventloom://agent-1/events/3#056b4d5c6fc0",
+            "rank": 1,
+            "score": 0.8044,
+            "snippet": "event:decision.recorded:3 (event) \u2014 summary=assistant emitted decision.recorded decision=Keep Neo4j as default until embedded candidates preserve citations, temporal semantics, traversal, activation, and benchmark guardrails., source_eve...",
+            "source": "keyword"
+          }
+        ]
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "activate codex",
+          "memory_checkout"
+        ],
+        "identity_terms": [],
+        "injected_tokens": 251,
+        "latency_ms": 0.323,
+        "missing_expected_terms": [],
+        "missing_retrieval_terms": [],
+        "quality": 1.0,
+        "query": "activation launcher memory checkout guidance",
+        "recall_hit": true,
+        "recall_quality": 1.0,
+        "retrieval_terms": [
+          "activate codex",
+          "memory_checkout"
+        ],
+        "returned_tokens": 199,
+        "source_terms": [],
+        "top_contexts": [
+          {
+            "citation": "eventloom://agent-1/events/4#22541f6c37d4",
+            "rank": 1,
+            "score": 1.536,
+            "snippet": "unknown (task) \u2014 summary=Added zaxy activate codex launcher with Memory Bootstrap and first memory_checkout guidance., source_event_seq=4, source_event_hash=22541f6c37d4b6b644becf76bd7262c1bec63ffda2389961bba1b7e179dbc1cc",
+            "source": "keyword"
+          },
+          {
+            "citation": "eventloom://agent-1/events/2#d0b9636ff23e",
+            "rank": 2,
+            "score": 0.99,
+            "snippet": "assistant (actor) \u2014 source_event_seq=2, source_event_hash=d0b9636ff23e83a96ea4139bbec6ef98fcad71a3ababaff9a613431ab58955f4",
+            "source": "traversal"
+          },
+          {
+            "citation": "eventloom://agent-1/events/3#056b4d5c6fc0",
+            "rank": 3,
+            "score": 0.8501,
+            "snippet": "event:decision.recorded:3 (event) \u2014 summary=assistant emitted decision.recorded decision=Keep Neo4j as default until embedded candidates preserve citations, temporal semantics, traversal, activation, and benchmark guardrails., source_eve...",
+            "source": "keyword"
+          },
+          {
+            "citation": "eventloom://agent-1/events/2#d0b9636ff23e",
+            "rank": 4,
+            "score": 0.63,
+            "snippet": "task_2 (task) \u2014 source_event_seq=2, source_event_hash=d0b9636ff23e83a96ea4139bbec6ef98fcad71a3ababaff9a613431ab58955f4",
+            "source": "traversal"
+          }
+        ]
+      },
+      {
+        "answer_hit": true,
+        "citation_hit": true,
+        "expected_terms": [
+          "citations",
+          "benchmark guardrails"
+        ],
+        "identity_terms": [],
+        "injected_tokens": 96,
+        "latency_ms": 0.224,
+        "missing_expected_terms": [],
+        "missing_retrieval_terms": [],
+        "quality": 1.0,
+        "query": "default backend requires citations temporal semantics benchmark guardrails",
+        "recall_hit": true,
+        "recall_quality": 1.0,
+        "retrieval_terms": [
+          "citations",
+          "benchmark guardrails"
+        ],
+        "returned_tokens": 83,
+        "source_terms": [],
+        "top_contexts": [
+          {
+            "citation": "eventloom://agent-1/events/3#056b4d5c6fc0",
+            "rank": 1,
+            "score": 1.544,
+            "snippet": "event:decision.recorded:3 (event) \u2014 summary=assistant emitted decision.recorded decision=Keep Neo4j as default until embedded candidates preserve citations, temporal semantics, traversal, activation, and benchmark guardrails., source_eve...",
+            "source": "keyword"
+          }
+        ]
+      }
+    ]
+  },
   "report_schema_version": 1,
   "session_id": "agent-1",
   "source_fingerprints": {
@@ -15,46 +559,91 @@
   "summaries": [
     {
       "answer_at_5": 0.5,
-      "answer_at_5_per_1k_injected_tokens": 1.6502,
-      "answer_at_5_per_1k_returned_tokens": 2.1097,
-      "append_to_projection_p95_ms": 28.772,
+      "answer_at_5_per_1k_injected_tokens": 2.8818,
+      "answer_at_5_per_1k_returned_tokens": 3.5461,
+      "append_to_projection_p95_ms": 17.391,
       "backend": "embedded",
-      "checkout_p95_ms": 9.014,
-      "checkout_p99_ms": 9.014,
+      "checkout_p95_ms": 0.716,
+      "checkout_p99_ms": 0.716,
       "citation_coverage": 1.0,
-      "cold_bootstrap_ms": 83.998,
+      "cold_bootstrap_ms": 106.506,
+      "contract": "retrieve",
       "dashboard_graph_edges": 3,
-      "dashboard_graph_load_ms": 65.037,
+      "dashboard_graph_load_ms": 79.161,
       "dashboard_graph_nodes": 6,
       "dashboard_graph_source": "embedded",
       "error": null,
-      "exact_p50_ms": 2.642,
-      "exact_p95_ms": 4.413,
-      "exact_p99_ms": 4.413,
-      "first_checkout_ms": 9.014,
-      "first_useful_init_ms": 200.721,
-      "keyword_p50_ms": 0.092,
-      "keyword_p95_ms": 0.169,
-      "keyword_p99_ms": 0.169,
-      "mean_injected_tokens": 303.0,
+      "exact_p50_ms": 0.002,
+      "exact_p95_ms": 0.008,
+      "exact_p99_ms": 0.008,
+      "first_checkout_ms": 0.716,
+      "first_useful_init_ms": 188.072,
+      "keyword_p50_ms": 0.023,
+      "keyword_p95_ms": 0.055,
+      "keyword_p99_ms": 0.055,
+      "mean_injected_tokens": 173.5,
       "mean_quality": 0.5,
-      "mean_returned_tokens": 237.0,
+      "mean_returned_tokens": 141.0,
       "memory_footprint_bytes": 13205504,
       "on_disk_footprint_bytes": 13205504,
-      "projection_events_per_second": 34.302,
-      "quality_per_1k_injected_tokens": 1.6502,
-      "quality_per_1k_returned_tokens": 2.1097,
+      "projection_events_per_second": 49.097,
+      "quality_per_1k_injected_tokens": 2.8818,
+      "quality_per_1k_returned_tokens": 3.5461,
       "query_count": 4,
-      "rebuild_recovery_ms": 215.742,
+      "rebuild_recovery_ms": 212.976,
       "recall_at_5": 0.5,
-      "resident_memory_delta_bytes": 161452032,
+      "resident_memory_delta_bytes": 165064704,
       "status": "ok",
-      "traversal_p50_ms": 0.003,
+      "traversal_p50_ms": 0.002,
       "traversal_p95_ms": 0.003,
       "traversal_p99_ms": 0.003,
-      "vector_p50_ms": 0.104,
-      "vector_p95_ms": 0.137,
-      "vector_p99_ms": 0.137
+      "vector_p50_ms": 0.075,
+      "vector_p95_ms": 0.083,
+      "vector_p99_ms": 0.083
+    },
+    {
+      "answer_at_5": 1.0,
+      "answer_at_5_per_1k_injected_tokens": 4.896,
+      "answer_at_5_per_1k_returned_tokens": 6.5789,
+      "append_to_projection_p95_ms": 17.391,
+      "backend": "embedded",
+      "checkout_p95_ms": 2.296,
+      "checkout_p99_ms": 2.296,
+      "citation_coverage": 1.0,
+      "cold_bootstrap_ms": 106.506,
+      "contract": "answer_ready",
+      "dashboard_graph_edges": 3,
+      "dashboard_graph_load_ms": 79.161,
+      "dashboard_graph_nodes": 6,
+      "dashboard_graph_source": "embedded",
+      "error": null,
+      "exact_p50_ms": 0.002,
+      "exact_p95_ms": 0.008,
+      "exact_p99_ms": 0.008,
+      "first_checkout_ms": 2.296,
+      "first_useful_init_ms": 188.072,
+      "keyword_p50_ms": 0.023,
+      "keyword_p95_ms": 0.055,
+      "keyword_p99_ms": 0.055,
+      "mean_injected_tokens": 204.25,
+      "mean_quality": 1.0,
+      "mean_returned_tokens": 152.0,
+      "memory_footprint_bytes": 13205504,
+      "on_disk_footprint_bytes": 13205504,
+      "projection_events_per_second": 49.097,
+      "quality_per_1k_injected_tokens": 4.896,
+      "quality_per_1k_returned_tokens": 6.5789,
+      "query_count": 4,
+      "rebuild_recovery_ms": 212.976,
+      "recall_at_5": 1.0,
+      "resident_memory_delta_bytes": 165064704,
+      "status": "ok",
+      "traversal_p50_ms": 0.002,
+      "traversal_p95_ms": 0.003,
+      "traversal_p99_ms": 0.003,
+      "vector_p50_ms": 0.075,
+      "vector_p95_ms": 0.083,
+      "vector_p99_ms": 0.083
     },
     {
       "answer_at_5": 1.0,
@@ -62,10 +651,11 @@
       "answer_at_5_per_1k_returned_tokens": 7.7821,
       "append_to_projection_p95_ms": null,
       "backend": "bm25",
-      "checkout_p95_ms": 0.115,
-      "checkout_p99_ms": 0.115,
+      "checkout_p95_ms": 0.143,
+      "checkout_p99_ms": 0.143,
       "citation_coverage": 1.0,
-      "cold_bootstrap_ms": 0.03,
+      "cold_bootstrap_ms": 0.044,
+      "contract": "retrieve",
       "dashboard_graph_edges": null,
       "dashboard_graph_load_ms": null,
       "dashboard_graph_nodes": null,
@@ -74,8 +664,8 @@
       "exact_p50_ms": null,
       "exact_p95_ms": null,
       "exact_p99_ms": null,
-      "first_checkout_ms": 0.115,
-      "first_useful_init_ms": 0.03,
+      "first_checkout_ms": 0.143,
+      "first_useful_init_ms": 0.044,
       "keyword_p50_ms": null,
       "keyword_p95_ms": null,
       "keyword_p99_ms": null,
