@@ -18,8 +18,9 @@
   <main class="doc-layout">
     <article class="doc-content">
       <h1 id="zaxy">Zaxy</h1>
-      <p><strong>Event-sourced temporal knowledge graph fabric for AI agent memory.</strong></p>
-      <p>Zaxy replaces markdown files + vector DBs with a structured, replayable, bi-temporal memory system built on Eventloom and an embedded Kuzu graph projection, with optional Neo4j, pgGraph, and Pathlight integrations. The plain install uses embedded Kuzu. Install <code>zaxy-memory[neo4j]</code> only for the optional Neo4j sidecar, and <code>zaxy-memory[pathlight]</code> only for Pathlight tracing.</p>
+      <p><strong>Coordinator memory for multi-agent projects.</strong></p>
+      <p>Zaxy gives agent teams a parent mission, isolated worker sessions, cited findings, conflict review, and accepted merge-back into one replayable project history. Under the hood, it replaces markdown files + vector DBs with an Eventloom append-only source of truth and an embedded Kuzu graph projection.</p>
+      <p>The plain install uses embedded Kuzu. Install <code>zaxy-memory[neo4j]</code> only for the optional Neo4j sidecar, and <code>zaxy-memory[pathlight]</code> only for Pathlight tracing.</p>
       <h2 id="quick-start">Quick Start</h2>
       <h3 id="five-minute-local-smoke-test">Five-minute local smoke test</h3>
       <pre><code class="language-bash"># Install the Zaxy CLI before generating MCP config. The distribution is
@@ -58,6 +59,9 @@ Eventloom (immutable JSONL log)  →  Hybrid Extraction  →  Embedded Kuzu grap
       <h2 id="public-site-and-documentation">Public Site and Documentation</h2>
       <ul>
         <li>Public static site: <code>site/index.html</code></li>
+        <li>Zaxy 0.4.0 release: <code>docs/announcements/zaxy-0.4.0.md</code></li>
+        <li>Zaxy Coordinate announcement: <code>docs/announcements/zaxy-coordinate.md</code></li>
+        <li>Coordinate roadmap: <code>docs/coordinate-roadmap.md</code></li>
         <li>Why Zaxy: <code>docs/why-zaxy.md</code></li>
         <li>Getting started: <code>docs/getting-started.md</code></li>
         <li>Architecture: <code>docs/architecture.md</code></li>

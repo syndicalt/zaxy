@@ -1,10 +1,12 @@
 # Zaxy
 
-**Event-sourced temporal knowledge graph fabric for AI agent memory.**
+**Coordinator memory for multi-agent projects.**
 
-Zaxy replaces markdown files + vector DBs with a structured, replayable,
-bi-temporal memory system built on Eventloom and an embedded Kuzu graph
-projection, with optional Neo4j, pgGraph, and Pathlight integrations.
+Zaxy gives agent teams a parent mission, isolated worker sessions, cited
+findings, conflict review, and accepted merge-back into one replayable project
+history. Under the hood, it replaces markdown files + vector DBs with an
+Eventloom append-only source of truth and an embedded Kuzu graph projection.
+
 The plain install uses embedded Kuzu. Install `zaxy-memory[neo4j]` only for the
 optional Neo4j sidecar, and `zaxy-memory[pathlight]` only for Pathlight tracing.
 
@@ -77,6 +79,9 @@ See [LLM Packet Analyzer](docs/packet-analyzer.md).
 ## Public Site and Documentation
 
 - Public static site: `site/index.html`
+- Zaxy 0.4.0 release: `docs/announcements/zaxy-0.4.0.md`
+- Zaxy Coordinate announcement: `docs/announcements/zaxy-coordinate.md`
+- Coordinate roadmap: `docs/coordinate-roadmap.md`
 - Why Zaxy: `docs/why-zaxy.md`
 - Getting started: `docs/getting-started.md`
 - Architecture: `docs/architecture.md`
