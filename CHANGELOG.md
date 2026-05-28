@@ -2,6 +2,28 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 0.4.0 - 2026-05-28
+
+- Added Zaxy Coordinate, a replay-backed parent/worker coordination layer for
+  multi-agent projects with mission briefs, worker assignments, structured
+  findings, approvals, promoted parent state, handoffs, stale/conflict
+  diagnostics, and performance ledgers.
+- Exposed Coordinate through CLI, MCP, dashboard review controls, framework
+  adapter templates, and a dependency-light `CoordinationAdapter` with
+  LangGraph and CrewAI helpers.
+- Added the CoordinationBench standard with frozen schemas, runner manifest
+  templates for Mem0, Agent Memory, and ActiveGraph comparisons, local
+  baselines, competitor disclosure validation, and report generation.
+- Published the Coordinate roadmap, announcement article, header image,
+  generated site pages, and a three-worker project example.
+- Hardened source-lane synthesis and context assembly so absence bundles are
+  labeled correctly, graph summaries do not crowd out verbatim source evidence
+  for the same provenance group, and redundant source expansions are avoided
+  when salient source hits are already present.
+- Updated development extras and coverage tests so optional Neo4j and LatticeDB
+  integration paths are exercised in CI while remaining optional runtime
+  installs.
+
 ## 0.3.1 - 2026-05-19
 
 - Exposed `--projection-backend pggraph` and `--pggraph-dsn` on the read-only

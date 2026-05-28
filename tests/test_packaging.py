@@ -206,7 +206,7 @@ def test_cli_version_exits_before_loading_command_graph() -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.splitlines() == ["zaxy 0.3.1", "exit=0", "False", "False", "False"]
+    assert result.stdout.splitlines() == ["zaxy 0.4.0", "exit=0", "False", "False", "False"]
 
 
 def test_cli_help_avoids_mcp_server_stack_until_serve_runs() -> None:
@@ -272,7 +272,7 @@ def test_package_version_source_fallback_is_independent_of_cwd(
     monkeypatch.setattr(release.metadata, "version", missing_distribution)
     monkeypatch.chdir(tmp_path)
 
-    assert package_version() == "0.3.1"
+    assert package_version() == "0.4.0"
 
 
 def test_package_version_prefers_source_tree_version_in_editable_checkout(monkeypatch) -> None:
@@ -281,7 +281,7 @@ def test_package_version_prefers_source_tree_version_in_editable_checkout(monkey
 
     monkeypatch.setattr(release.metadata, "version", lambda _name: "0.1.0")
 
-    assert package_version() == "0.3.1"
+    assert package_version() == "0.4.0"
 
 
 def test_changelog_records_initial_pypi_release() -> None:
@@ -289,6 +289,9 @@ def test_changelog_records_initial_pypi_release() -> None:
     changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
 
     assert "# Changelog" in changelog
+    assert "## 0.4.0 - 2026-05-28" in changelog
+    assert "Zaxy Coordinate" in changelog
+    assert "CoordinationBench" in changelog
     assert "## 0.3.1 - 2026-05-19" in changelog
     assert "## 0.3.0 - 2026-05-19" in changelog
     assert "## 0.2.3 - 2026-05-18" in changelog

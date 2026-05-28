@@ -72,7 +72,7 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     assert "memory_append" in html
     assert "memory_query" in html
     assert "scripts/release-check.sh --root ." in html
-    assert "PyPI 0.3.1" in html
+    assert "PyPI 0.4.0" in html
     assert "1167 tests" in html
     assert "92.13% coverage" in html
 
