@@ -181,13 +181,60 @@ Use LongMemEval-compatible runs to compare with public memory-product claims.
 
 CoordinationBench is the benchmark lane for Zaxy Coordinate. It measures whether
 a memory system can turn multiple isolated worker sessions into one governed
-parent mission history. The first deterministic workload includes three workers,
-overlapping auth-failure findings, duplicate evidence, stale claims, conflicting
-claims, and a missing-evidence finding. The scorer reports accepted-finding
-precision and recall, conflict precision and recall, stale-claim rejection,
-duplicate consolidation, evidence coverage, parent-checkout answerability,
-citation coverage, Eventloom replayability, token estimates, and brief/promotion
-latency.
+parent mission history. The scorer reports accepted-finding precision and
+recall, conflict precision and recall, stale-claim rejection, duplicate
+consolidation, evidence coverage, parent-checkout answerability, citation
+coverage, Eventloom replayability, token estimates, and brief/promotion latency.
+
+The current official CoordinationBench adapter result is a first-party,
+same-harness run through the external CoordinationBench scorer. The adapter was
+frozen before holdout evaluation and is recorded in CoordinationBench at
+`submissions/participants/zaxy-coordinate.adapter.json` with these source
+hashes:
+
+| Source | SHA-256 |
+|--------|--------|
+| `src/zaxy/coordinationbench_adapter.py` | `d2ff5d6124e7a1f0849cac8a6afbba328bd4fa8ef0fd806203575801dc5c6e7c` |
+| `examples/adapters/coordinationbench_zaxy_adapter.py` | `3923b754fe31c81c572bc0c8bbfeb595e5fd69f6eb833746112b01c85982da00` |
+
+The public v1 and v1-scale lanes scored perfectly, but those lanes should be
+described as first-party public-label reproducibility runs, not a representative
+leaderboard claim:
+
+| Lane | Cases | Overall | Accepted precision | Accepted recall | Conflict recall | Stale rejection | Answerability | Evidence grounding |
+|------|-------|---------|--------------------|-----------------|-----------------|-----------------|---------------|--------------------|
+| `v1-audited` | 10 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| `v1-scale` | 72 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+
+After freezing the adapter, the same executable was run unchanged against
+existing public-derived holdout workload packs. That is the more honest
+generalization signal:
+
+| Holdout pack | Overall | Accepted precision | Accepted recall | Conflict recall | Stale rejection | Answerability | Evidence grounding |
+|--------------|---------|--------------------|-----------------|-----------------|-----------------|---------------|--------------------|
+| `public-derived-mini` | 0.593 | 0.667 | 0.667 | 1.000 | 0.000 | 0.000 | 0.333 |
+| `public-derived-wave1` | 0.644 | 0.792 | 0.875 | 0.750 | 0.000 | 0.000 | 0.375 |
+| `public-derived-wave2` | 0.593 | 0.833 | 0.938 | 0.125 | 0.000 | 0.000 | 0.438 |
+| `public-derived-wave3` | 0.598 | 0.962 | 0.962 | 0.000 | 0.000 | 0.000 | 0.462 |
+| `public-derived-wave4` | 0.604 | 0.977 | 0.977 | 0.000 | 0.000 | 0.000 | 0.477 |
+
+The public-derived holdout mean is `0.606`. That result is the right product
+signal: the replay-backed coordination layer gets strong accepted-state
+precision and duplicate consolidation, but the current frozen adapter still
+needs better source-aware final answering, stale-source interpretation, and
+conflict detection across public-derived cases. Until independent review and
+unseen workload promotion are complete, Zaxy should not market a perfect
+CoordinationBench score as representative performance.
+
+The internal `coordination-real-v1` report remains useful as a Zaxy development
+smoke test over real project history. It should not be used as the headline
+benchmark claim because it was produced inside the Zaxy repo and is easier to
+tune against than an external holdout pack.
+
+The smaller `coordination-v1` workload remains as the contract seed. It includes
+three workers, overlapping auth-failure findings, duplicate evidence, stale
+claims, conflicting claims, and a missing-evidence finding. Use it for adapter
+authors and fast protocol checks, not as the representative headline.
 
 Run the MVP harness:
 

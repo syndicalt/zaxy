@@ -115,26 +115,27 @@
     <section id="benchmarks" class="section band">
       <div class="section-heading">
         <p class="eyebrow">Benchmark evidence</p>
-        <h2>CoordinationBench is the flagship proof.</h2>
+        <h2>CoordinationBench is the coordination benchmark.</h2>
         <p>
-          The current deterministic CoordinationBench v1 run uses a three-worker
-          mission with duplicate evidence, conflicting findings, one stale claim,
-          and one missing-evidence claim. Zaxy reports perfect accepted-finding
-          precision/recall, stale-claim rejection, duplicate consolidation,
-          evidence coverage, parent-checkout answerability, citation coverage,
-          and Eventloom replayability on this MVP workload.
+          Zaxy Coordinate now has a frozen first-party adapter for the external
+          CoordinationBench scorer. CoordinationBench v1 and v1-scale score
+          accepted-finding precision and recall, stale rejection, duplicate
+          consolidation, evidence grounding, and answerability. Zaxy scores
+          1.000 on those public reproducibility lanes, then lands at a 0.606
+          mean on public-derived holdout packs. Treat the holdout number as
+          the real current baseline.
         </p>
       </div>
       <div class="benchmark-metrics">
         <article class="benchmark-card benchmark-card-primary">
-          <span class="benchmark-card-label">CoordinationBench v1</span>
-          <h3>1.000 accepted precision</h3>
-          <p>Accepted recall, stale rejection, duplicate consolidation, evidence coverage, parent answerability, and citation coverage also scored 1.000.</p>
+          <span class="benchmark-card-label">Holdout mean</span>
+          <h3>0.606 overall</h3>
+          <p>Frozen-adapter public-derived packs expose the next work: final answering, stale interpretation, and broader conflict detection.</p>
         </article>
         <article class="benchmark-card">
-          <span class="benchmark-card-label">Baseline gap</span>
-          <h3>0.200 flat precision</h3>
-          <p>Flat transcript concatenation accepts worker-local noise and scores 0.000 on conflict recall, stale rejection, checkout answerability, and citations.</p>
+          <span class="benchmark-card-label">Public lanes</span>
+          <h3>1.000 overall</h3>
+          <p>The v1 and v1-scale scores are first-party public-label reproducibility results, not representative leaderboard claims.</p>
         </article>
         <article class="benchmark-card">
           <span class="benchmark-card-label">Competitors</span>
@@ -145,27 +146,51 @@
       <div class="benchmark-comparison" role="region" aria-label="CoordinationBench comparison table">
         <div class="benchmark-comparison-heading">
           <h3>CoordinationBench Results</h3>
-          <p>All public metrics are recomputed by Zaxy from the frozen workload fingerprint <code>4b6f01f5...</code>.</p>
+          <p>Frozen adapter result: CoordinationBench v1 shows 1.000 accepted precision versus 0.200 flat precision, while public-derived holdouts show the current generalization gap.</p>
         </div>
         <table>
           <thead>
             <tr>
-              <th>System</th>
+              <th>Lane</th>
+              <th>overall</th>
               <th>accepted precision</th>
               <th>conflict recall</th>
               <th>stale rejection</th>
-              <th>parent answerability</th>
-              <th>citation coverage</th>
+              <th>answerability</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td><strong>Zaxy Coordinate</strong></td>
+              <td><strong>v1-audited</strong></td>
               <td><span class="benchmark-result">1.000</span></td>
               <td><span class="benchmark-result">1.000</span></td>
               <td><span class="benchmark-result">1.000</span></td>
               <td><span class="benchmark-result">1.000</span></td>
               <td><span class="benchmark-result">1.000</span></td>
+            </tr>
+            <tr>
+              <td><strong>v1-scale</strong></td>
+              <td><span class="benchmark-result">1.000</span></td>
+              <td><span class="benchmark-result">1.000</span></td>
+              <td><span class="benchmark-result">1.000</span></td>
+              <td><span class="benchmark-result">1.000</span></td>
+              <td><span class="benchmark-result">1.000</span></td>
+            </tr>
+            <tr>
+              <td><strong>public-derived holdout mean</strong></td>
+              <td><span class="benchmark-result">0.606</span></td>
+              <td><span class="benchmark-result">0.846</span></td>
+              <td><span class="benchmark-result">0.375</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
+            </tr>
+            <tr>
+              <td><strong>source-weight baseline v1</strong></td>
+              <td><span class="benchmark-result">0.411</span></td>
+              <td><span class="benchmark-result">0.683</span></td>
+              <td><span class="benchmark-result">0.800</span></td>
+              <td><span class="benchmark-result">0.333</span></td>
+              <td><span class="benchmark-result">0.600</span></td>
             </tr>
             <tr>
               <td><strong>Markdown notes</strong></td>
@@ -195,7 +220,7 @@
         </table>
       </div>
       <div class="benchmark-links" aria-label="Benchmark reports">
-        <a href="reports/benchmarks/coordination-v1/coordination-benchmark.md"><span>CoordinationBench report</span><small>Fresh v1 run and baselines</small></a>
+        <a href="docs/benchmarks.html#coordinationbench"><span>CoordinationBench report</span><small>Frozen adapter and holdout results</small></a>
         <a href="docs/benchmarks.html"><span>Benchmark hub</span><small>LongMemEval, backend shootout, disclosures</small></a>
         <a href="docs/coordinate-roadmap.html"><span>Coordinate roadmap</span><small>Product direction and adapter contract</small></a>
         <a href="reports/benchmarks/longmemeval-500-hash/live-benchmark.md"><span>LongMemEval guardrail</span><small>Supporting memory retrieval evidence</small></a>
