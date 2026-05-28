@@ -118,9 +118,12 @@
         <h2>CoordinationBench is the coordination benchmark.</h2>
         <p>
           Zaxy Coordinate now has a frozen first-party adapter for the external
-          CoordinationBench scorer. It scores 1.000 on the public v1 and v1-scale
-          reproducibility lanes, then lands at a 0.606 mean on public-derived
-          holdout packs. Treat the holdout number as the real current baseline.
+          CoordinationBench scorer. CoordinationBench v1 and v1-scale score
+          accepted-finding precision and recall, stale rejection, duplicate
+          consolidation, evidence grounding, and answerability. Zaxy scores
+          1.000 on those public reproducibility lanes, then lands at a 0.606
+          mean on public-derived holdout packs. Treat the holdout number as
+          the real current baseline.
         </p>
       </div>
       <div class="benchmark-metrics">
@@ -143,7 +146,7 @@
       <div class="benchmark-comparison" role="region" aria-label="CoordinationBench comparison table">
         <div class="benchmark-comparison-heading">
           <h3>CoordinationBench Results</h3>
-          <p>Frozen adapter result: public lanes are perfect, public-derived holdouts show the current generalization gap.</p>
+          <p>Frozen adapter result: CoordinationBench v1 shows 1.000 accepted precision versus 0.200 flat precision, while public-derived holdouts show the current generalization gap.</p>
         </div>
         <table>
           <thead>
@@ -188,6 +191,30 @@
               <td><span class="benchmark-result">0.800</span></td>
               <td><span class="benchmark-result">0.333</span></td>
               <td><span class="benchmark-result">0.600</span></td>
+            </tr>
+            <tr>
+              <td><strong>Markdown notes</strong></td>
+              <td><span class="benchmark-result">0.400</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
+            </tr>
+            <tr>
+              <td><strong>BM25 worker logs</strong></td>
+              <td><span class="benchmark-result">0.333</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
+            </tr>
+            <tr>
+              <td><strong>Flat transcript</strong></td>
+              <td><span class="benchmark-result">0.200</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
             </tr>
           </tbody>
         </table>

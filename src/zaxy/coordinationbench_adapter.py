@@ -246,7 +246,7 @@ def _worker_ids(case: dict[str, Any]) -> list[str]:
 def _zaxy_evidence(finding: dict[str, Any], *, stale: bool) -> list[dict[str, Any]]:
     evidence = []
     for reference in finding.get("evidence", []):
-        item = {"kind": _evidence_kind(str(reference)), "reference": str(reference)}
+        item: dict[str, Any] = {"kind": _evidence_kind(str(reference)), "reference": str(reference)}
         if stale:
             item["stale"] = True
         evidence.append(item)
