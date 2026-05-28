@@ -32,6 +32,32 @@ def test_render_local_profile_can_target_embedded_projection_without_sidecar_aut
     assert "OPENAI_API_KEY" not in text
 
 
+@pytest.mark.parametrize(
+    ("backend", "expected", "unexpected"),
+    [
+        ("neo4j", ("PROJECTION_BACKEND=neo4j", "NEO4J_AUTO_START=true"), ("EMBEDDED_GRAPH_PATH=",)),
+        ("pggraph", ("PROJECTION_BACKEND=pggraph", "PGGRAPH_AUTO_START=true"), ()),
+        ("latticedb", ("PROJECTION_BACKEND=latticedb", "NEO4J_AUTO_START=false"), ("EMBEDDED_GRAPH_PATH=",)),
+    ],
+)
+def test_render_local_profile_can_target_optional_projection_backends(
+    backend: str,
+    expected: tuple[str, ...],
+    unexpected: tuple[str, ...],
+) -> None:
+    text = render_local_profile(projection_backend=backend)
+
+    for value in expected:
+        assert value in text
+    for value in unexpected:
+        assert value not in text
+
+
+def test_render_local_profile_rejects_unknown_projection_backend() -> None:
+    with pytest.raises(ValueError, match="projection_backend"):
+        render_local_profile(projection_backend="unknown")
+
+
 def test_write_local_profile_refuses_to_overwrite_existing_file(tmp_path: Path) -> None:
     target = tmp_path / ".env.local"
     target.write_text("existing=true\n", encoding="utf-8")
