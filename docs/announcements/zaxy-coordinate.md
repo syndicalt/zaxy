@@ -157,3 +157,5 @@ The long-term goal is not just better recall. It is better project control:
 memory that can tell what happened, what was accepted, what was rejected, what
 still conflicts, and why the final answer should be trusted.
 
+Related references: [coordinate-roadmap.md](../coordinate-roadmap.md),
+[benchmarks.md](../benchmarks.md), and [site/index.html](../../site/index.html).

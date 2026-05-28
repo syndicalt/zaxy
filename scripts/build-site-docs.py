@@ -294,6 +294,11 @@ def render_inline(text: str, *, source: Path) -> str:
     protected = re.sub(r"`([^`]+)`", stash_code, text)
     escaped = html.escape(protected)
     escaped = re.sub(
+        r"!\[([^\]]*)\]\(([^)]+)\)",
+        lambda match: render_image(match, source=source),
+        escaped,
+    )
+    escaped = re.sub(
         r"\[([^\]]+)\]\(([^)]+)\)",
         lambda match: render_link(match, source=source),
         escaped,
@@ -303,6 +308,13 @@ def render_inline(text: str, *, source: Path) -> str:
     for index, code in enumerate(code_spans):
         escaped = escaped.replace(html.escape(f"\u0000CODE{index}\u0000"), code)
     return escaped
+
+
+def render_image(match: re.Match[str], *, source: Path) -> str:
+    alt = match.group(1)
+    href = html.unescape(match.group(2))
+    rewritten = rewrite_link(href, source=source)
+    return f'<img src="{html.escape(rewritten, quote=True)}" alt="{alt}" />'
 
 
 def render_link(match: re.Match[str], *, source: Path) -> str:
@@ -331,6 +343,11 @@ def rewrite_link(href: str, *, source: Path) -> str:
         repo_target.suffix == ".md" and is_relative_to(repo_target, DOCS_ROOT)
     ):
         rendered = rendered_target(repo_target)
+    elif repo_target.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif"} and is_relative_to(
+        repo_target,
+        DOCS_ROOT / "assets",
+    ):
+        rendered = SITE_ROOT / "assets" / repo_target.name
     elif repo_target.suffix == ".md" and is_relative_to(repo_target, ROOT / "reports"):
         return href
     else:

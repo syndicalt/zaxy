@@ -200,6 +200,23 @@ and the frozen workload JSON. The included flat-eventlog baseline intentionally
 accepts all worker findings, so it exposes the contamination problem that
 governed promotion is meant to solve.
 
+The current `coordination-v1` report is published at
+[`reports/benchmarks/coordination-v1/coordination-benchmark.md`](../reports/benchmarks/coordination-v1/coordination-benchmark.md).
+It uses workload fingerprint
+`4b6f01f5a0e9275bd6cd0238d439ee326d471483d5da3cc1dcc9a258d21bfafc` and reports:
+
+| System | Accepted precision | Conflict recall | Stale rejection | Parent answerability | Citation coverage |
+|--------|--------------------|-----------------|-----------------|----------------------|-------------------|
+| Zaxy Coordinate | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| Markdown notes | 0.400 | 0.000 | 0.000 | 0.000 | 0.000 |
+| BM25 worker logs | 0.333 | 0.000 | 0.000 | 0.000 | 0.000 |
+| Flat transcript | 0.200 | 0.000 | 0.000 | 0.000 | 0.000 |
+
+The same report lists Mem0, Agent Memory, and ActiveGraph as `not_run` with
+`disclosure_only` claim status until a pinned runner manifest or strict result
+file is available. That is deliberate: CoordinationBench should make the
+adapter gap visible without turning placeholder templates into public claims.
+
 ## External Disclosures
 
 These rows summarize public claims from other projects. They are external

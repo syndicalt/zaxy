@@ -162,6 +162,12 @@ h3 {
   box-shadow: 0 24px 80px rgba(24, 49, 31, 0.24);
 }
 
+.graph-visual {
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+}
+
 .visual-title {
   color: #9de5ba;
   font-weight: 800;
@@ -194,6 +200,13 @@ h3 {
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 7px;
   background: #0b1510;
+}
+
+.graph-preview-primary {
+  margin-top: 0;
+  border-color: var(--line);
+  background: white;
+  box-shadow: 0 24px 80px rgba(24, 49, 31, 0.14);
 }
 
 .proof-strip {
@@ -306,6 +319,26 @@ pre {
 .docs-grid a {
   text-decoration: none;
   font-weight: 750;
+}
+
+.docs-grid-featured {
+  margin-bottom: 16px;
+}
+
+.docs-more {
+  border: 1px solid var(--line);
+  background: white;
+  border-radius: 8px;
+  padding: 18px;
+}
+
+.docs-more summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.docs-more .docs-grid {
+  margin-top: 16px;
 }
 
 .benchmark-metrics {
@@ -594,6 +627,15 @@ footer a {
   padding: 12px 18px;
   border-left: 4px solid var(--accent);
   background: var(--paper);
+}
+
+.doc-content img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 18px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
 }
 
 @media (max-width: 900px) {

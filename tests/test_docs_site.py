@@ -10,8 +10,11 @@ from pathlib import Path
 
 REQUIRED_DOCS = [
     "docs/why-zaxy.md",
+    "docs/announcements/zaxy-coordinate.md",
+    "docs/coordinate-roadmap.md",
     "docs/getting-started.md",
     "docs/architecture.md",
+    "docs/integrations.md",
     "docs/configuration.md",
     "docs/mcp.md",
     "docs/mcp-install-targets.md",
@@ -52,38 +55,31 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     """The public site should explain the product, architecture, docs, and install path."""
     html = Path("site/index.html").read_text(encoding="utf-8")
 
-    assert "<title>Zaxy - temporal memory for AI agents</title>" in html
+    assert "<title>Zaxy Coordinate - coordinator memory for agent teams</title>" in html
     assert 'name="description"' in html
     assert 'property="og:image"' in html
-    assert "Git for LLM memory" in html
-    assert "Temporal memory for AI agents" in html
-    assert "Eventloom log" in html
-    assert "Neo4j temporal graph" in html
+    assert "Coordinator memory for agent teams" in html
+    assert "Run many agents without losing the plot" in html
+    assert "Worker sessions" in html
+    assert "Parent mission" in html
+    assert "Approval packets" in html
     assert "Memory Checkout" in html
-    assert "Checkout diagnostics" in html
-    assert "answerability" in html
-    assert "required_action" in html
-    assert "current_citation_count" in html
-    assert "memory_capabilities" in html
-    assert "deterministic capture" in html
-    assert "local-codex" in html
-    assert "NEXT_EVENT" in html
+    assert "coordination_checkout" in html
+    assert "coordination_approval_packet" in html
+    assert "CoordinationAdapter" in html
+    assert "CoordinationBench" in html
+    assert "Eventloom source of truth" in html
     assert "Pathlight" in html
-    assert "memory_append" in html
-    assert "memory_query" in html
-    assert "scripts/release-check.sh --root ." in html
+    assert "embedded Kuzu" in html
     assert "PyPI 0.4.0" in html
-    assert "1167 tests" in html
-    assert "92.13% coverage" in html
+    assert "1797 tests" in html
+    assert "91.96% coverage" in html
 
     for section_id in (
-        "why",
+        "coordinate",
         "architecture",
         "mcp",
-        "retrieval",
-        "backend",
-        "dashboard",
-        "security",
+        "benchmarks",
         "install",
         "docs",
     ):
@@ -410,37 +406,28 @@ def test_public_site_reflects_current_onboarding_and_runtime_surfaces() -> None:
     assert "writes `.env.local`" in html
     assert "records session genesis and heartbeat" in html
     assert "prints the MCP command or config path" in html
-    assert "Embedded Kuzu is the default production graph projection" in html
-    assert "pgGraph is experimental" in html
-    assert "Bare zaxy init" in html
-    assert "selects the embedded projection" in html
+    assert "embedded Kuzu" in html
+    assert "advanced integration tracks" in html
+    assert "zaxy init" in html
     assert "local-embedded-codex" not in html
-    assert "PROJECTION_BACKEND=pggraph" in html
-    assert "zaxy reproject --projection-backend pggraph --reset-projection" in html
-    assert "Read-only local dashboard" in html
-    assert "zaxy dashboard --host 127.0.0.1 --port 8765" in html
-    assert "--projection-backend pggraph --pggraph-dsn" in html
-    assert "Eventloom sessions" in html
-    assert "graph projection" in html
-    assert "Checkout diagnostics" in html
+    assert "dashboard --enable-coordinate-review" in html
+    assert "read-only remains the default" in html
+    assert "graph posture" in html
+    assert "Last checkout" in html
 
 
 def test_public_site_benchmark_claims_use_current_full_set_guardrails() -> None:
     """The public site should lead with current reproducible floors, not stale headline-only claims."""
     html = Path("site/index.html").read_text(encoding="utf-8")
 
-    assert "Full 500-question LongMemEval-compatible guardrail" in html
-    assert "0.724" in html
-    assert "0.628" in html
-    assert "0.972" in html
-    assert "p95" in html
-    assert "1472.11 ms" in html
-    assert "100-question headline remains archived evidence" in html
-    assert "0.970" in html
-    assert "0.950" in html
-    assert "pgGraph remains experimental" in html
-    assert "0.958" in html
-    assert "0.714" in html
+    assert "CoordinationBench v1" in html
+    assert "1.000 accepted precision" in html
+    assert "0.200 flat precision" in html
+    assert "Mem0, Agent Memory, and ActiveGraph" in html
+    assert "disclosure only" in html
+    assert "Flat transcript" in html
+    assert "Markdown notes" in html
+    assert "BM25 worker logs" in html
     assert "PyPI 0.2.1" not in html
     assert "1005 tests" not in html
     assert "92.04% coverage" not in html
@@ -541,7 +528,10 @@ def test_memory_checkout_docs_and_site_match_golden_contract_fixture() -> None:
     )
     for expected in shared_contract_fields:
         assert expected in docs
-        assert expected in site
+    assert "Memory Checkout" in site
+    assert "answerability" in site
+    assert "current_citation_count" in site
+    assert "memory_feedback" in site
     for expected in docs_only_contract_fields:
         assert expected in docs
 
@@ -551,31 +541,25 @@ def test_public_site_benchmark_claim_is_scoped_to_fixture() -> None:
     html = Path("site/index.html").read_text(encoding="utf-8")
 
     assert "Benchmark evidence" in html
-    assert "LongMemEval-compatible" in html
-    assert "BM25 baseline" in html
-    assert "MemPalace" in html
+    assert "CoordinationBench" in html
+    assert "accepted-finding" in html
     assert "Mem0" in html
     assert "Agent Memory" in html
-    assert "text-embedding-3-small" in html
+    assert "ActiveGraph" in html
     assert "1.000" in html
-    assert "+0.480" in html
-    assert "0.950" in html
-    assert "0.972" in html
-    assert "0.840" in html
-    assert "0.770" in html
-    assert "650 paired queries" in html
-    assert "external disclosures" in html
-    assert "not same-harness results" in html
+    assert "0.400" in html
+    assert "0.333" in html
+    assert "0.200" in html
+    assert "disclosure only" in html
+    assert "not_run" in html
     assert 'class="benchmark-metrics"' in html
     assert 'class="benchmark-card benchmark-card-primary"' in html
     assert 'class="benchmark-comparison"' in html
-    assert 'class="evidence-badge evidence-badge-local"' in html
-    assert 'class="evidence-badge evidence-badge-external"' in html
     assert 'class="benchmark-links"' in html
-    assert "reports/benchmarks/live-benchmark.md" in html
-    assert "reports/benchmarks/longmemeval-100-comparison/live-benchmark.md" in html
+    assert "reports/benchmarks/coordination-v1/coordination-benchmark.md" in html
+    assert "reports/benchmarks/longmemeval-500-hash/live-benchmark.md" in html
     assert "docs/benchmarks.html" in html
-    assert "docs/benchmark-review.html" in html
+    assert "docs/coordinate-roadmap.html" in html
     assert "production-grade vector RAG" not in html
     assert "destroyed" not in html.casefold()
 
@@ -1068,6 +1052,7 @@ def test_github_pages_workflow_publishes_site_directory() -> None:
     workflow = Path(".github/workflows/pages.yml").read_text(encoding="utf-8")
 
     assert "branches: [master]" in workflow
+    assert '"reports/**"' in workflow
     assert "pages: write" in workflow
     assert "id-token: write" in workflow
     assert "cp -R site/. _site/" in workflow

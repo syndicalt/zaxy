@@ -564,3 +564,7 @@ Zaxy Coordinate is ready to headline the product when:
 - Vector, non-coordinate Zaxy, and external competitor comparisons appear only
   when their pinned adapters have run through the same harness; otherwise they
   remain disclosure-only and are not used for public superiority claims.
+
+Related references: [announcements/zaxy-coordinate.md](announcements/zaxy-coordinate.md),
+[benchmarks.md](benchmarks.md), [integrations.md](integrations.md), and
+[site/index.html](../site/index.html).

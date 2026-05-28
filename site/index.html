@@ -3,17 +3,17 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Zaxy - temporal memory for AI agents</title>
-  <meta name="description" content="Zaxy is Git for LLM memory: an Eventloom-backed, hash-linked, replayable memory substrate with graph projection, Memory Checkout, deterministic capture, and MCP-native model awareness." />
-  <meta property="og:title" content="Zaxy - temporal memory for AI agents" />
-  <meta property="og:description" content="Replayable, auditable, graph-native memory for agent systems." />
+  <title>Zaxy Coordinate - coordinator memory for agent teams</title>
+  <meta name="description" content="Zaxy Coordinate is the coordinator memory layer for multi-agent projects: isolated worker sessions, cited findings, conflict review, and accepted merge-back into one replayable parent mission history." />
+  <meta property="og:title" content="Zaxy Coordinate - coordinator memory for agent teams" />
+  <meta property="og:description" content="Isolated workers. Cited findings. Conflict review. Accepted merge-back into one replayable project history." />
   <meta property="og:type" content="website" />
-  <meta property="og:image" content="https://syndicalt.github.io/zaxy/assets/graph.png" />
+  <meta property="og:image" content="https://docs.zaxy.io/assets/graph.png" />
   <meta property="og:image:width" content="1991" />
   <meta property="og:image:height" content="930" />
   <meta name="twitter:card" content="summary_large_image" />
-  <meta name="twitter:image" content="https://syndicalt.github.io/zaxy/assets/graph.png" />
-  <link rel="canonical" href="https://syndicalt.github.io/zaxy/" />
+  <meta name="twitter:image" content="https://docs.zaxy.io/assets/graph.png" />
+  <link rel="canonical" href="https://docs.zaxy.io/" />
   <link rel="preload" as="image" href="assets/graph.png" />
   <link rel="stylesheet" href="style.css" />
 </head>
@@ -21,11 +21,9 @@
   <nav class="nav" aria-label="Primary">
     <a class="brand" href="#top"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
     <div class="nav-links">
-      <a href="#why">Why</a>
-      <a href="#architecture">Architecture</a>
-      <a href="#mcp">MCP</a>
-      <a href="#dashboard">Dashboard</a>
+      <a href="#coordinate">Coordinate</a>
       <a href="#benchmarks">Benchmarks</a>
+      <a href="#install">Install</a>
       <a href="#docs">Docs</a>
       <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
     </div>
@@ -34,319 +32,180 @@
   <main>
     <section class="hero" id="top">
       <div class="hero-copy">
-        <p class="eyebrow">Git for LLM memory</p>
-        <h1>Temporal memory for AI agents.</h1>
+        <p class="eyebrow">Coordinator memory for agent teams</p>
+        <h1>Run many agents without losing the plot.</h1>
         <p class="tagline">
-          Zaxy turns agent work into inspectable memory: local Eventloom logs for
-          audit, hash-linked provenance for replay, graph projections for connected
-          reasoning, Memory Checkout for compact context, and MCP tools for
-          retrieval, capture, and feedback.
+          Zaxy Coordinate gives multi-agent projects a parent mission, isolated
+          worker sessions, cited findings, conflict diagnostics, approval packets,
+          and accepted merge-back into one replayable project history.
         </p>
         <div class="cta-row">
           <a href="#install" class="btn btn-primary">Install locally</a>
-          <a href="#docs" class="btn btn-secondary">Read the docs</a>
-          <a href="https://syndicalt.github.io/pathlight" class="btn btn-secondary">Pathlight integration</a>
+          <a href="docs/coordinate-roadmap.html" class="btn btn-secondary">Read Coordinate docs</a>
+          <a href="reports/benchmarks/coordination-v1/coordination-benchmark.md" class="btn btn-secondary">View CoordinationBench</a>
         </div>
       </div>
-      <div class="system-visual" aria-label="Zaxy architecture preview">
-        <div class="visual-title">agent-memory-run</div>
-        <div class="visual-row"><span>01</span><strong>Eventloom log</strong><em>append-only JSONL + hash chain</em></div>
-        <div class="visual-row"><span>02</span><strong>Hybrid extraction</strong><em>typed rules + fallback extractors</em></div>
-        <div class="visual-row"><span>03</span><strong>Neo4j temporal graph</strong><em>NEXT_EVENT / PREVIOUS_EVENT provenance</em></div>
-        <div class="visual-row"><span>04</span><strong>Memory Checkout</strong><em>active working set + cited context</em></div>
-        <div class="visual-row"><span>05</span><strong>MCP response</strong><em>capabilities, checkout, capture, feedback</em></div>
-        <img class="graph-preview" src="assets/graph.png" alt="Zaxy temporal knowledge graph showing connected agent memory entities and relationships" />
+      <div class="system-visual graph-visual" aria-label="Zaxy Coordinate architecture preview">
+        <img class="graph-preview graph-preview-primary" src="assets/graph.png" alt="Zaxy Coordinate graph showing worker sessions, findings, coordinator review, parent mission, and Eventloom source of truth" />
       </div>
     </section>
 
     <section class="proof-strip" aria-label="Project status">
-      <span>1167 tests</span>
-      <span>92.13% coverage</span>
+      <span>1797 tests</span>
+      <span>91.96% coverage</span>
       <span>ruff clean</span>
       <span>mypy clean</span>
       <span>PyPI 0.4.0</span>
     </section>
 
-    <section id="why" class="section">
+    <section id="coordinate" class="section">
       <div class="section-heading">
-        <p class="eyebrow">Why Zaxy</p>
-        <h2>Vector memory is useful, but it is not a source of truth.</h2>
+        <p class="eyebrow">The wedge</p>
+        <h2>Worker-local claims are not project truth.</h2>
         <p>
-          Markdown files and chunk RAG flatten history. They can retrieve similar text,
-          but they do not preserve causal chains, fact lifetimes, invalidations, or the
-          evidence that led an agent to a decision. Zaxy keeps the raw event stream,
-          seals it with hashes, and projects it into a graph built for multi-hop,
-          temporal, and provenance-aware reasoning.
+          Spawning agents is easy. The hard part is turning ten isolated
+          investigations into one trustworthy state of work. Zaxy keeps worker
+          sessions separate, records findings with evidence, marks stale and
+          conflicting claims, and promotes only accepted findings into the parent
+          mission session.
         </p>
       </div>
       <div class="value-grid">
-        <article><h3>Relational</h3><p>Entities and edges preserve actor, task, dependency, and provenance relationships.</p></article>
-        <article><h3>Temporal</h3><p>Facts are versioned, so retrieval can ask what was true now or at a previous point.</p></article>
-        <article><h3>Replayable</h3><p>The Eventloom log remains the immutable record behind every graph projection and checkout.</p></article>
+        <article><h3>Parent mission</h3><p>The coordinator owns the accepted project history, decisions, handoff, and Memory Checkout state.</p></article>
+        <article><h3>Worker sessions</h3><p>Agents investigate in isolated Eventloom logs, so exploration does not contaminate authoritative memory.</p></article>
+        <article><h3>Approval packets</h3><p>Human or coordinator-agent review accepts, rejects, defers, or promotes findings with cited provenance.</p></article>
       </div>
     </section>
 
     <section id="architecture" class="section band">
       <div class="section-heading">
         <p class="eyebrow">Architecture</p>
-        <h2>One memory fabric, five layers.</h2>
+        <h2>Event-sourced coordination, not a shared scratchpad.</h2>
       </div>
       <div class="flow">
-        <div><strong>Eventloom</strong><span>append, verify, replay</span></div>
-        <div><strong>Extract</strong><span>entities, edges, embeddings</span></div>
-        <div><strong>Neo4j</strong><span>temporal graph + provenance path</span></div>
-        <div><strong>Checkout</strong><span>bounded cited context</span></div>
-        <div><strong>MCP</strong><span>agent-native tools</span></div>
+        <div><strong>Mission</strong><span>objective and parent state</span></div>
+        <div><strong>Workers</strong><span>isolated sessions</span></div>
+        <div><strong>Findings</strong><span>evidence and confidence</span></div>
+        <div><strong>Review</strong><span>conflicts, stale claims, approvals</span></div>
+        <div><strong>Checkout</strong><span>accepted cited context</span></div>
       </div>
       <p>
-        Pathlight traces memory operations without becoming the storage layer. Neo4j
-        answers graph questions. Eventloom remains the audit trail. The graph projects
-        sealed Eventloom paths through NEXT_EVENT and PREVIOUS_EVENT edges. MCP gives
-        agent frameworks a stable interface over stdio or SSE.
+        Eventloom remains the append-only source of truth. The embedded Kuzu
+        projection is the default local graph runtime; Neo4j, pgGraph, LatticeDB,
+        and Pathlight are advanced integration tracks. MCP exposes both memory
+        primitives and first-class coordination tools.
       </p>
     </section>
 
     <section id="mcp" class="section">
       <div class="section-heading">
-        <p class="eyebrow">MCP tools</p>
-        <h2>Memory operations agents can call directly.</h2>
+        <p class="eyebrow">Interfaces</p>
+        <h2>CLI, MCP, dashboard, and adapters all speak the same coordination model.</h2>
       </div>
       <div class="tool-grid">
-        <article><code>memory_capabilities</code><p>Tell the model what Zaxy can do, what capture paths are healthy, and when to checkout memory.</p></article>
-        <article><code>memory_checkout</code><p>Return the current cited prompt state, active working set, provenance, Checkout diagnostics, and warnings.</p></article>
-        <article><code>memory_append</code><p>Append typed events, extract graph facts, and trace the operation.</p></article>
-        <article><code>memory_query</code><p>Fuse exact lookup, keyword search, vector similarity, and traversal.</p></article>
-        <article><code>memory_replay</code><p>Rebuild session history from Eventloom, optionally from a sequence number.</p></article>
-        <article><code>memory_invalidate</code><p>Close graph fact validity windows without deleting historical evidence.</p></article>
-      </div>
-      <div class="checkout-example" aria-label="Memory Checkout response example">
-        <div>
-          <h3>Model-facing checkout contract</h3>
-          <p>
-            Models consume <code>answerability</code>, <code>required_action</code>,
-            <code>current_citation_count</code>, and feedback payloads directly.
-            A checkout without current citations or with warnings tells the model
-            to refresh memory or ask the user instead of guessing from stale context.
-            The canonical fixture lives at
-            <code>docs/examples/memory-checkout-contract.json</code>.
-          </p>
-        </div>
-        <pre><code>{
-  "quality": {
-    "answerability": "answer_from_memory",
-    "confidence": 0.75,
-    "required_action": null
-  },
-  "diagnostics": {
-    "current_citation_count": 1,
-    "warning_count": 0
-  },
-  "guidance": {
-    "feedback": {
-      "tool": "memory_feedback",
-      "payloads": [{"feedback": "used"}]
-    }
-  }
-}</code></pre>
+        <article><code>zaxy coordinate brief</code><p>Replay mission state, accepted findings, conflicts, stale claims, missing evidence, and next decisions.</p></article>
+        <article><code>coordination_checkout</code><p>Return accepted parent state plus diagnostic worker-local findings without treating them as truth.</p></article>
+        <article><code>coordination_approval_packet</code><p>Generate a reviewable payload for accept/reject/defer/promote decisions.</p></article>
+        <article><code>memory_checkout</code><p>Keep the lower-level model-facing contract with answerability, required_action, current_citation_count, and memory_feedback guidance.</p></article>
+        <article><code>CoordinationAdapter</code><p>Dependency-light Python wrapper with LangGraph and CrewAI helper paths.</p></article>
+        <article><code>dashboard --enable-coordinate-review</code><p>Opt-in human review controls on top of replay-backed mission state; read-only remains the default.</p></article>
       </div>
     </section>
 
-    <section id="retrieval" class="section band">
-      <div class="section-heading">
-        <p class="eyebrow">Retrieval</p>
-        <h2>Hybrid search for agent context.</h2>
-      </div>
-      <p>
-        Zaxy routes queries through exact entity lookup, embedded graph keyword search,
-        vector similarity, graph traversal, and verbatim Eventloom retrieval. Memory
-        Checkout turns those lanes into compact cited context so agents receive
-        connected facts instead of raw transcript piles. Checkout diagnostics show
-        source lane mix, citation coverage, excluded superseded context, and feedback
-        guidance. Temporal filters let callers retrieve only facts valid at a point
-        in time.
-      </p>
-    </section>
-
-    <section id="backend" class="section">
-      <div class="section-heading">
-        <p class="eyebrow">Projection backends</p>
-        <h2>Eventloom stays canonical. Graph backends are projections.</h2>
-        <p>
-          Embedded Kuzu is the default production graph projection. Neo4j remains
-          the sidecar control backend, and pgGraph is experimental behind
-          <code>PROJECTION_BACKEND=pggraph</code> for teams evaluating
-          Postgres-local graph traversal, pgvector ranking, and temporal retrieval
-          without moving the source of truth out of Eventloom. Bare zaxy init
-          selects the embedded projection for no-sidecar local onboarding without
-          requiring an external graph service.
-        </p>
-      </div>
-      <div class="value-grid">
-        <article><h3>Default: embedded</h3><p>Repo-local Kuzu projection for temporal entities, source citations, inferred edges, and traversal-backed retrieval.</p></article>
-        <article><h3>Control: Neo4j</h3><p>Explicit sidecar backend for same-harness quality comparisons and teams that already operate Neo4j. Install with <code>zaxy-memory[neo4j]</code>.</p></article>
-        <article><h3>Experimental: pgGraph</h3><p>Available behind an explicit backend selector and guarded by same-harness quality, citation, latency, and operations comparisons.</p></article>
-        <article><h3>Recoverable projection</h3><p>Rebuild a selected backend from Eventloom with <code>zaxy reproject --projection-backend pggraph --reset-projection</code>.</p></article>
-      </div>
-    </section>
-
-    <section id="capture" class="section">
-      <div class="section-heading">
-        <p class="eyebrow">Deterministic capture</p>
-        <h2>Useful by default, explicit when packet capture costs money.</h2>
-      </div>
-      <div class="value-grid">
-        <article><h3>local-codex</h3><p>The Codex preset renders the official MCP install command, writes local session JSONL capture config, and supports a managed <code>zaxy capture start</code> watcher.</p></article>
-        <article><h3>Observer hooks</h3><p>Stable hook sinks record lifecycle, command, file-edit, tool-call, and transcript observations when the client supports them.</p></article>
-        <article><h3>Packet analyzer</h3><p>Provider packet capture remains opt-in for diagnostics and high-fidelity audit because it can consume API quota.</p></article>
-      </div>
-    </section>
-
-    <section id="dashboard" class="section band">
-      <div class="section-heading">
-        <p class="eyebrow">Runtime debugging</p>
-        <h2>Read-only local dashboard for memory inspection.</h2>
-        <p>
-          Run <code>zaxy dashboard --host 127.0.0.1 --port 8765</code> to inspect
-          the active workspace without giving the browser a mutation path. The
-          dashboard resolves one workspace by default and shows Eventloom sessions,
-          graph projection status, recent events, graph neighborhoods, Checkout
-          diagnostics, Last bootstrap, Last checkout, Last feedback, and
-          stale-memory warnings. Embedded is the default graph provider; pass
-          <code>--projection-backend pggraph --pggraph-dsn ...</code> to inspect
-          the experimental pgGraph projection or <code>--projection-backend neo4j</code>
-          to inspect a Neo4j projection.
-        </p>
-      </div>
-      <div class="value-grid">
-        <article><h3>Read-only by design</h3><p>API routes reject writes; the dashboard is for runtime memory/debugging, not editing facts or invalidating history.</p></article>
-        <article><h3>Local scope</h3><p>The header shows workspace, Eventloom path, domain, session, read-only mode, and graph connection status.</p></article>
-        <article><h3>Useful when degraded</h3><p>If a selected sidecar is unreachable, Eventloom still renders a fallback provenance graph so sessions are not blank.</p></article>
-      </div>
-    </section>
-
-    <section id="security" class="section">
-      <div class="section-heading">
-        <p class="eyebrow">Production posture</p>
-        <h2>Built for auditable local-first deployments.</h2>
-      </div>
-      <div class="value-grid">
-        <article><h3>Secret files</h3><p>Docker/Kubernetes-style <code>*_FILE</code> config keeps production secrets out of plaintext env files.</p></article>
-        <article><h3>Remote MCP auth</h3><p>SSE requests require bearer auth and are scoped by per-client session headers.</p></article>
-        <article><h3>TLS-ready Neo4j</h3><p>Production compose and certificate scripts support encrypted Bolt connections.</p></article>
-      </div>
-    </section>
-
-    <section id="benchmarks" class="section">
+    <section id="benchmarks" class="section band">
       <div class="section-heading">
         <p class="eyebrow">Benchmark evidence</p>
-        <h2>Reproducible guardrails, not just a headline score.</h2>
+        <h2>CoordinationBench is the flagship proof.</h2>
         <p>
-          Full 500-question LongMemEval-compatible guardrail: the current run reports
-          Zaxy checkout mean <strong>0.724</strong>, Answer@5
-          <strong>0.628</strong>, R@5 <strong>0.972</strong>, citation coverage
-          <strong>1.000</strong>, p95 <strong>1472.11 ms</strong>, and p99
-          <strong>2652.55 ms</strong>. The 100-question headline remains archived
-          evidence, not the only release gate. Competitor numbers below are public
-          external disclosures with different harnesses or metrics; they are
-          not same-harness results.
-        </p>
-        <p>
-          The older 650 paired queries context suite still matters as fixture
-          evidence: with OpenAI <code>text-embedding-3-small</code>, Zaxy reached
-          1.000 mean score, a +0.480 mean delta versus vector and markdown+vector
-          baselines. The archived 100-question LongMemEval-compatible report also
-          keeps the same-harness BM25 baseline visible at 0.840 R@5.
+          The current deterministic CoordinationBench v1 run uses a three-worker
+          mission with duplicate evidence, conflicting findings, one stale claim,
+          and one missing-evidence claim. Zaxy reports perfect accepted-finding
+          precision/recall, stale-claim rejection, duplicate consolidation,
+          evidence coverage, parent-checkout answerability, citation coverage,
+          and Eventloom replayability on this MVP workload.
         </p>
       </div>
       <div class="benchmark-metrics">
         <article class="benchmark-card benchmark-card-primary">
-          <span class="benchmark-card-label">Full 500-question guardrail</span>
-          <h3>0.972 R@5</h3>
-          <p>Current hash-backed checkout run with 1.000 citation coverage and archived latency.</p>
+          <span class="benchmark-card-label">CoordinationBench v1</span>
+          <h3>1.000 accepted precision</h3>
+          <p>Accepted recall, stale rejection, duplicate consolidation, evidence coverage, parent answerability, and citation coverage also scored 1.000.</p>
         </article>
         <article class="benchmark-card">
-          <span class="benchmark-card-label">Archived headline</span>
-          <h3>0.970 mean</h3>
-          <p>100-question LongMemEval-compatible run with 0.950 Answer@5 and same-harness BM25 baseline.</p>
+          <span class="benchmark-card-label">Baseline gap</span>
+          <h3>0.200 flat precision</h3>
+          <p>Flat transcript concatenation accepts worker-local noise and scores 0.000 on conflict recall, stale rejection, checkout answerability, and citations.</p>
         </article>
         <article class="benchmark-card">
-          <span class="benchmark-card-label">pgGraph evaluation</span>
-          <h3>0.958 R@5</h3>
-          <p>pgGraph remains experimental; same-harness checkout control currently reports 0.714 mean and 1.000 citation coverage.</p>
+          <span class="benchmark-card-label">Competitors</span>
+          <h3>disclosure only</h3>
+          <p>Mem0, Agent Memory, and ActiveGraph adapters are listed as not_run until pinned same-harness runner manifests exist.</p>
         </article>
       </div>
-      <div class="benchmark-comparison" role="region" aria-label="Benchmark comparison table">
+      <div class="benchmark-comparison" role="region" aria-label="CoordinationBench comparison table">
         <div class="benchmark-comparison-heading">
-          <h3>Comparison Evidence</h3>
-          <p>Local rows are archived Zaxy harness results. Competitor rows are public disclosures with different harnesses or metrics.</p>
+          <h3>CoordinationBench Results</h3>
+          <p>All public metrics are recomputed by Zaxy from the frozen workload fingerprint <code>4b6f01f5...</code>.</p>
         </div>
         <table>
           <thead>
             <tr>
               <th>System</th>
-              <th>Metric</th>
-              <th>Reported result</th>
-              <th>Evidence type</th>
+              <th>accepted precision</th>
+              <th>conflict recall</th>
+              <th>stale rejection</th>
+              <th>parent answerability</th>
+              <th>citation coverage</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td><strong>Zaxy</strong></td>
-              <td>Full 500-question LongMemEval-compatible R@5</td>
-              <td><span class="benchmark-result">0.972</span><span class="result-note">Mean 0.724; Answer@5 0.628; citation coverage 1.000</span></td>
-              <td><span class="evidence-badge evidence-badge-local">Same harness</span><span class="evidence-note">Archived report</span></td>
+              <td><strong>Zaxy Coordinate</strong></td>
+              <td><span class="benchmark-result">1.000</span></td>
+              <td><span class="benchmark-result">1.000</span></td>
+              <td><span class="benchmark-result">1.000</span></td>
+              <td><span class="benchmark-result">1.000</span></td>
+              <td><span class="benchmark-result">1.000</span></td>
             </tr>
             <tr>
-              <td><strong>Zaxy</strong></td>
-              <td>100-question headline remains archived evidence</td>
-              <td><span class="benchmark-result">0.970</span><span class="result-note">Answer@5 0.950; R@5 1.000</span></td>
-              <td><span class="evidence-badge evidence-badge-local">Same harness</span><span class="evidence-note">Archived reports</span></td>
+              <td><strong>Markdown notes</strong></td>
+              <td><span class="benchmark-result">0.400</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
             </tr>
             <tr>
-              <td><strong>BM25 baseline</strong></td>
-              <td>Legacy full-set LongMemEval-compatible R@5</td>
-              <td><span class="benchmark-result">0.770</span><span class="result-note">Same 500-question hash workload baseline</span></td>
-              <td><span class="evidence-badge evidence-badge-local">Same harness</span><span class="evidence-note">Archived report</span></td>
+              <td><strong>BM25 worker logs</strong></td>
+              <td><span class="benchmark-result">0.333</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
             </tr>
             <tr>
-              <td><strong>pgGraph checkout</strong></td>
-              <td>Backend-evaluation R@5</td>
-              <td><span class="benchmark-result">0.958</span><span class="result-note">Mean 0.714; Answer@5 0.632; experimental backend</span></td>
-              <td><span class="evidence-badge evidence-badge-local">Same harness</span><span class="evidence-note">Archived report</span></td>
-            </tr>
-            <tr>
-              <td><strong>MemPalace</strong></td>
-              <td>LongMemEval R@5</td>
-              <td>96.6% raw; 98.4% held-out hybrid</td>
-              <td><span class="evidence-badge evidence-badge-external">External</span><span class="evidence-note">Public disclosure</span></td>
-            </tr>
-            <tr>
-              <td><strong>Agent Memory</strong></td>
-              <td>LongMemEval-S R@5</td>
-              <td>95.2%</td>
-              <td><span class="evidence-badge evidence-badge-external">External</span><span class="evidence-note">Public disclosure</span></td>
-            </tr>
-            <tr>
-              <td><strong>Mem0</strong></td>
-              <td>LOCOMO accuracy</td>
-              <td>+26% Accuracy over OpenAI Memory</td>
-              <td><span class="evidence-badge evidence-badge-external">External</span><span class="evidence-note">Different metric</span></td>
+              <td><strong>Flat transcript</strong></td>
+              <td><span class="benchmark-result">0.200</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
+              <td><span class="benchmark-result">0.000</span></td>
             </tr>
           </tbody>
         </table>
       </div>
       <div class="benchmark-links" aria-label="Benchmark reports">
-        <a href="docs/benchmarks.html"><span>Benchmark hub</span><small>Methodology and disclosure policy</small></a>
-        <a href="reports/benchmarks/live-benchmark.md"><span>Zaxy report</span><small>LongMemEval-compatible run</small></a>
-        <a href="reports/benchmarks/longmemeval-100-comparison/live-benchmark.md"><span>BM25 comparison</span><small>Same-harness baseline</small></a>
-        <a href="docs/benchmark-review.html"><span>Suite-v1 review</span><small>650-query context suite</small></a>
+        <a href="reports/benchmarks/coordination-v1/coordination-benchmark.md"><span>CoordinationBench report</span><small>Fresh v1 run and baselines</small></a>
+        <a href="docs/benchmarks.html"><span>Benchmark hub</span><small>LongMemEval, backend shootout, disclosures</small></a>
+        <a href="docs/coordinate-roadmap.html"><span>Coordinate roadmap</span><small>Product direction and adapter contract</small></a>
+        <a href="reports/benchmarks/longmemeval-500-hash/live-benchmark.md"><span>LongMemEval guardrail</span><small>Supporting memory retrieval evidence</small></a>
       </div>
     </section>
 
     <section id="install" class="section install">
       <div class="section-heading">
         <p class="eyebrow">Install</p>
-        <h2>Five-minute local smoke test, then expose memory through MCP.</h2>
+        <h2>Five-minute local smoke test, then expose coordination through MCP.</h2>
       </div>
       <div class="install-grid">
         <pre><code>pipx install zaxy-memory
@@ -354,48 +213,59 @@ zaxy init
 zaxy memory log --eventloom-path .eventloom --limit 5
 zaxy memory bootstrap --eventloom-path .eventloom
 zaxy doctor --eventloom-path .eventloom</code></pre>
-        <pre><code>Data lives in .eventloom/
-MCP config is generated or printed by zaxy init
-Bare zaxy init writes the embedded local profile
-No graph service is required for default local use
-Production uses Docker secrets and deployment preflight
-scripts/release-check.sh --root .</code></pre>
+        <pre><code>zaxy coordinate start "ship auth refactor" --mission auth-main
+zaxy coordinate worker create --mission auth-main --worker auth-api
+zaxy coordinate assign --mission auth-main --worker auth-api "trace failures"
+zaxy coordinate brief --mission auth-main
+zaxy coordinate checkout --mission auth-main</code></pre>
       </div>
       <div class="value-grid install-notes">
-        <article><h3>What happens when you run init</h3><p>Zaxy writes `.env.local`, records session genesis and heartbeat, checks graph posture, and prints the MCP command or config path for the selected client.</p></article>
-        <article><h3>What stays local</h3><p>Session history lives in `.eventloom/` as append-only JSONL. Neo4j or pgGraph can be rebuilt from that log because the graph is a projection.</p></article>
-        <article><h3>How you prove it worked</h3><p><code>memory log</code> shows recent events, <code>memory bootstrap</code> shows model-facing startup guidance, and <code>doctor</code> reports missing capture or backend posture.</p></article>
+        <article><h3>What happens when you run init</h3><p>Zaxy writes `.env.local`, records session genesis and heartbeat, checks graph posture, and prints the MCP command or config path.</p></article>
+        <article><h3>What stays local</h3><p>Session history lives in `.eventloom/` as append-only JSONL. The graph is a rebuildable projection.</p></article>
+        <article><h3>How you prove it worked</h3><p><code>memory log</code>, <code>memory bootstrap</code>, <code>doctor</code>, and <code>hook-status</code> expose Last checkout, capture readiness, and stale-memory warnings.</p></article>
       </div>
     </section>
 
     <section id="docs" class="section docs">
       <div class="section-heading">
         <p class="eyebrow">Documentation</p>
-        <h2>Full operator and integrator documentation.</h2>
+        <h2>Start with Coordinate. Keep the rest as operator reference.</h2>
       </div>
-      <div class="docs-grid">
-        <a href="docs/why-zaxy.html">Why Zaxy</a>
-        <a href="docs/getting-started.html">Getting started</a>
-        <a href="docs/architecture.html">Architecture</a>
-        <a href="docs/configuration.html">Configuration</a>
-        <a href="docs/mcp.html">MCP interface</a>
-        <a href="docs/mcp-install-targets.html">MCP install targets</a>
-        <a href="docs/eventloom.html">Eventloom contract</a>
-        <a href="docs/agent-events.html">Agent events</a>
-        <a href="docs/hooks.html">Hook protocol</a>
-        <a href="docs/codebase.html">Codebase mapping</a>
-        <a href="docs/graph-schema.html">Graph schema</a>
-        <a href="docs/retrieval.html">Retrieval</a>
-        <a href="docs/embeddings.html">Embeddings</a>
-        <a href="docs/security.html">Security</a>
-        <a href="docs/operations.html">Operations</a>
-        <a href="docs/deployment.html">Deployment</a>
-        <a href="docs/testing.html">Testing</a>
+      <div class="docs-grid docs-grid-featured">
+        <a href="docs/announcements/zaxy-coordinate.html">Zaxy Coordinate announcement</a>
+        <a href="docs/coordinate-roadmap.html">Coordinate roadmap</a>
         <a href="docs/benchmarks.html">Benchmarks</a>
-        <a href="docs/benchmark-review.html">Benchmark review</a>
-        <a href="docs/consolidation.html">Consolidation</a>
-        <a href="docs/api.html">Python API</a>
+        <a href="docs/integrations.html">Framework integrations</a>
+        <a href="docs/getting-started.html">Getting started</a>
+        <a href="docs/mcp.html">MCP interface</a>
+        <a href="docs/architecture.html">Architecture</a>
+        <a href="docs/why-zaxy.html">Why Zaxy</a>
       </div>
+      <details class="docs-more">
+        <summary>Operator and internals reference</summary>
+        <div class="docs-grid">
+          <a href="docs/configuration.html">Configuration</a>
+          <a href="docs/mcp-install-targets.html">MCP install targets</a>
+          <a href="docs/eventloom.html">Eventloom contract</a>
+          <a href="docs/agent-events.html">Agent events</a>
+          <a href="docs/hooks.html">Hook protocol</a>
+          <a href="docs/codebase.html">Codebase mapping</a>
+          <a href="docs/graph-schema.html">Graph schema</a>
+          <a href="docs/retrieval.html">Retrieval</a>
+          <a href="docs/embeddings.html">Embeddings</a>
+          <a href="docs/security.html">Security</a>
+          <a href="docs/operations.html">Operations</a>
+          <a href="docs/deployment.html">Deployment</a>
+          <a href="docs/testing.html">Testing</a>
+          <a href="docs/benchmark-review.html">Benchmark review</a>
+          <a href="docs/consolidation.html">Consolidation</a>
+          <a href="docs/api.html">Python API</a>
+          <a href="docs/competitive-positioning.html">Competitive positioning</a>
+          <a href="docs/zero-friction-runtime-roadmap.html">Runtime roadmap</a>
+          <a href="docs/packet-analyzer.html">Packet analyzer</a>
+          <a href="docs/workspace-genesis.html">Workspace genesis</a>
+        </div>
+      </details>
     </section>
   </main>
 

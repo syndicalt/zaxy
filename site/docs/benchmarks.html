@@ -319,6 +319,54 @@
       <p>Run the MVP harness:</p>
       <pre><code class="language-bash">zaxy coordinate benchmark --output-dir reports/benchmarks/coordination-v1 --json</code></pre>
       <p>The command writes <code>coordination-benchmark.json</code>, <code>coordination-benchmark.md</code>, and the frozen workload JSON. The included flat-eventlog baseline intentionally accepts all worker findings, so it exposes the contamination problem that governed promotion is meant to solve.</p>
+      <p>The current <code>coordination-v1</code> report is published at <a href="../reports/benchmarks/coordination-v1/coordination-benchmark.md"><code>reports/benchmarks/coordination-v1/coordination-benchmark.md</code></a>. It uses workload fingerprint <code>4b6f01f5a0e9275bd6cd0238d439ee326d471483d5da3cc1dcc9a258d21bfafc</code> and reports:</p>
+      <table>
+        <thead>
+          <tr>
+            <th>System</th>
+            <th>Accepted precision</th>
+            <th>Conflict recall</th>
+            <th>Stale rejection</th>
+            <th>Parent answerability</th>
+            <th>Citation coverage</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Zaxy Coordinate</td>
+            <td>1.000</td>
+            <td>1.000</td>
+            <td>1.000</td>
+            <td>1.000</td>
+            <td>1.000</td>
+          </tr>
+          <tr>
+            <td>Markdown notes</td>
+            <td>0.400</td>
+            <td>0.000</td>
+            <td>0.000</td>
+            <td>0.000</td>
+            <td>0.000</td>
+          </tr>
+          <tr>
+            <td>BM25 worker logs</td>
+            <td>0.333</td>
+            <td>0.000</td>
+            <td>0.000</td>
+            <td>0.000</td>
+            <td>0.000</td>
+          </tr>
+          <tr>
+            <td>Flat transcript</td>
+            <td>0.200</td>
+            <td>0.000</td>
+            <td>0.000</td>
+            <td>0.000</td>
+            <td>0.000</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>The same report lists Mem0, Agent Memory, and ActiveGraph as <code>not_run</code> with <code>disclosure_only</code> claim status until a pinned runner manifest or strict result file is available. That is deliberate: CoordinationBench should make the adapter gap visible without turning placeholder templates into public claims.</p>
       <h2 id="external-disclosures">External Disclosures</h2>
       <p>These rows summarize public claims from other projects. They are external disclosures, not same-harness results, because Zaxy did not execute those systems inside its benchmark harness.</p>
       <table>

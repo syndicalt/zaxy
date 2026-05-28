@@ -225,4 +225,5 @@ application keeps control of its graph, crew, or agent runtime. For hosted or
 multi-language clients, prefer MCP. For Python services that already own their
 agent loop, direct templates are the shortest path to durable lifecycle memory.
 
-Related pages: [api.md](api.md), [mcp.md](mcp.md), and [configuration.md](configuration.md).
+Related pages: [api.md](api.md), [mcp.md](mcp.md),
+[configuration.md](configuration.md), and [site/index.html](../site/index.html).
