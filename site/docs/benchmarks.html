@@ -315,7 +315,136 @@
       <p>Zaxy also has a synthetic suite-v1 benchmark review in <a href="benchmark-review.html">benchmark-review.md</a>. That review covers 650 paired queries across current memory, historical memory, graph traversal, indexed documents, sanitized transcripts, and mixed cross-lane context. On that representative agent-context workload, Zaxy scored 1.000 with OpenAI <code>text-embedding-3-small</code>, compared with 0.520 for vector and markdown+vector baselines and 0.005 for direct markdown scanning.</p>
       <p>Use suite-v1 to evaluate Zaxy&#x27;s architectural thesis: temporal, relational, replayable agent context should beat flat chunk retrieval on tasks that require current-vs-historical truth, graph relationships, citations, and mixed context. Use LongMemEval-compatible runs to compare with public memory-product claims.</p>
       <h2 id="coordinationbench">CoordinationBench</h2>
-      <p>CoordinationBench is the benchmark lane for Zaxy Coordinate. It measures whether a memory system can turn multiple isolated worker sessions into one governed parent mission history. The first deterministic workload includes three workers, overlapping auth-failure findings, duplicate evidence, stale claims, conflicting claims, and a missing-evidence finding. The scorer reports accepted-finding precision and recall, conflict precision and recall, stale-claim rejection, duplicate consolidation, evidence coverage, parent-checkout answerability, citation coverage, Eventloom replayability, token estimates, and brief/promotion latency.</p>
+      <p>CoordinationBench is the benchmark lane for Zaxy Coordinate. It measures whether a memory system can turn multiple isolated worker sessions into one governed parent mission history. The scorer reports accepted-finding precision and recall, conflict precision and recall, stale-claim rejection, duplicate consolidation, evidence coverage, parent-checkout answerability, citation coverage, Eventloom replayability, token estimates, and brief/promotion latency.</p>
+      <p>The current official CoordinationBench adapter result is a first-party, same-harness run through the external CoordinationBench scorer. The adapter was frozen before holdout evaluation and is recorded in CoordinationBench at <code>submissions/participants/zaxy-coordinate.adapter.json</code> with these source hashes:</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Source</th>
+            <th>SHA-256</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>src/zaxy/coordinationbench_adapter.py</code></td>
+            <td><code>d2ff5d6124e7a1f0849cac8a6afbba328bd4fa8ef0fd806203575801dc5c6e7c</code></td>
+          </tr>
+          <tr>
+            <td><code>examples/adapters/coordinationbench_zaxy_adapter.py</code></td>
+            <td><code>3923b754fe31c81c572bc0c8bbfeb595e5fd69f6eb833746112b01c85982da00</code></td>
+          </tr>
+        </tbody>
+      </table>
+      <p>The public v1 and v1-scale lanes scored perfectly, but those lanes should be described as first-party public-label reproducibility runs, not a representative leaderboard claim:</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Lane</th>
+            <th>Cases</th>
+            <th>Overall</th>
+            <th>Accepted precision</th>
+            <th>Accepted recall</th>
+            <th>Conflict recall</th>
+            <th>Stale rejection</th>
+            <th>Answerability</th>
+            <th>Evidence grounding</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>v1-audited</code></td>
+            <td>10</td>
+            <td>1.000</td>
+            <td>1.000</td>
+            <td>1.000</td>
+            <td>1.000</td>
+            <td>1.000</td>
+            <td>1.000</td>
+            <td>1.000</td>
+          </tr>
+          <tr>
+            <td><code>v1-scale</code></td>
+            <td>72</td>
+            <td>1.000</td>
+            <td>1.000</td>
+            <td>1.000</td>
+            <td>1.000</td>
+            <td>1.000</td>
+            <td>1.000</td>
+            <td>1.000</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>After freezing the adapter, the same executable was run unchanged against existing public-derived holdout workload packs. That is the more honest generalization signal:</p>
+      <table>
+        <thead>
+          <tr>
+            <th>Holdout pack</th>
+            <th>Overall</th>
+            <th>Accepted precision</th>
+            <th>Accepted recall</th>
+            <th>Conflict recall</th>
+            <th>Stale rejection</th>
+            <th>Answerability</th>
+            <th>Evidence grounding</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><code>public-derived-mini</code></td>
+            <td>0.593</td>
+            <td>0.667</td>
+            <td>0.667</td>
+            <td>1.000</td>
+            <td>0.000</td>
+            <td>0.000</td>
+            <td>0.333</td>
+          </tr>
+          <tr>
+            <td><code>public-derived-wave1</code></td>
+            <td>0.644</td>
+            <td>0.792</td>
+            <td>0.875</td>
+            <td>0.750</td>
+            <td>0.000</td>
+            <td>0.000</td>
+            <td>0.375</td>
+          </tr>
+          <tr>
+            <td><code>public-derived-wave2</code></td>
+            <td>0.593</td>
+            <td>0.833</td>
+            <td>0.938</td>
+            <td>0.125</td>
+            <td>0.000</td>
+            <td>0.000</td>
+            <td>0.438</td>
+          </tr>
+          <tr>
+            <td><code>public-derived-wave3</code></td>
+            <td>0.598</td>
+            <td>0.962</td>
+            <td>0.962</td>
+            <td>0.000</td>
+            <td>0.000</td>
+            <td>0.000</td>
+            <td>0.462</td>
+          </tr>
+          <tr>
+            <td><code>public-derived-wave4</code></td>
+            <td>0.604</td>
+            <td>0.977</td>
+            <td>0.977</td>
+            <td>0.000</td>
+            <td>0.000</td>
+            <td>0.000</td>
+            <td>0.477</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>The public-derived holdout mean is <code>0.606</code>. That result is the right product signal: the replay-backed coordination layer gets strong accepted-state precision and duplicate consolidation, but the current frozen adapter still needs better source-aware final answering, stale-source interpretation, and conflict detection across public-derived cases. Until independent review and unseen workload promotion are complete, Zaxy should not market a perfect CoordinationBench score as representative performance.</p>
+      <p>The internal <code>coordination-real-v1</code> report remains useful as a Zaxy development smoke test over real project history. It should not be used as the headline benchmark claim because it was produced inside the Zaxy repo and is easier to tune against than an external holdout pack.</p>
+      <p>The smaller <code>coordination-v1</code> workload remains as the contract seed. It includes three workers, overlapping auth-failure findings, duplicate evidence, stale claims, conflicting claims, and a missing-evidence finding. Use it for adapter authors and fast protocol checks, not as the representative headline.</p>
       <p>Run the MVP harness:</p>
       <pre><code class="language-bash">zaxy coordinate benchmark --output-dir reports/benchmarks/coordination-v1 --json</code></pre>
       <p>The command writes <code>coordination-benchmark.json</code>, <code>coordination-benchmark.md</code>, and the frozen workload JSON. The included flat-eventlog baseline intentionally accepts all worker findings, so it exposes the contamination problem that governed promotion is meant to solve.</p>
