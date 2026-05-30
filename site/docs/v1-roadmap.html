@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zaxy v0.5 to v1.0 Release-Gate Roadmap - Zaxy Docs</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../index.html">Overview</a>
+      <a href="getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="zaxy-v05-to-v10-release-gate-roadmap">Zaxy v0.5 to v1.0 Release-Gate Roadmap</h1>
+      <p>Zaxy is moving from a technically strong memory substrate into a stable product: <strong>coordinator memory for multi-agent projects</strong>.</p>
+      <p>The v1.0 goal is not to add every possible memory feature. It is to make the existing thesis reliable, legible, and useful enough that external users can adopt Zaxy with confidence:</p>
+      <blockquote>Zaxy is the leading open-source system for auditable, replayable, and coordinated memory in multi-agent projects.</blockquote>
+      <h2 id="current-baseline">Current Baseline</h2>
+      <p>This roadmap starts from the current 0.4.x codebase, not from an empty plan. Several capabilities that normally belong in later phases are already present:</p>
+      <ul>
+        <li>README positioning already leads with &quot;Coordinator memory for multi-agent projects&quot;.</li>
+        <li><code>zaxy init</code> defaults to the local embedded Codex path with no Neo4j sidecar.</li>
+        <li>Embedded Kuzu is the default projection backend; Neo4j, pgGraph, and LatticeDB remain optional or experimental paths.</li>
+        <li>Memory Bootstrap and Memory Checkout are the model-facing context contracts.</li>
+        <li>MCP exposes memory, context, lifecycle, and coordination tools.</li>
+        <li>Zaxy Coordinate includes mission, worker, assignment, finding, review, promotion, approval packet, handoff, conflict, and benchmark flows.</li>
+        <li>LangGraph and CrewAI have dependency-light native-preview adapters.</li>
+        <li>CoordinationBench, LongMemEval-compatible reports, backend shootout tooling, release smoke checks, beta UAT, and docs validation already exist.</li>
+        <li>Test coverage is already near the v1.0 bar, so 92% is a ratchet target rather than a future aspiration.</li>
+      </ul>
+      <p>The work from v0.5 to v1.0 should therefore be release-gate driven: each release must make a narrower public promise, prove it with docs, examples, tests, and benchmarks, and avoid broad speculative expansion.</p>
+      <h2 id="v10-success-criteria">v1.0 Success Criteria</h2>
+      <p>Zaxy v1.0 is ready when these statements are true:</p>
+      <ul>
+        <li>Positioning is clear: <strong>Coordinator Memory for Agent Teams</strong>.</li>
+        <li>A new user can install, initialize, inspect, and run a meaningful example in less than five minutes on a normal local development machine.</li>
+        <li>MCP is polished enough that clients can discover tools, understand errors, and use structured outputs without reading source code.</li>
+        <li>LangGraph is first-class and documented as the primary native framework path.</li>
+        <li>At least one direct model-call integration path works outside MCP.</li>
+        <li>Coordinate supports real mission workflows: isolated workers, cited findings, conflict review, approval, promotion, checkout, audit, and handoff.</li>
+        <li>Public benchmarks are transparent about methodology, baselines, limitations, latency, citation coverage, and token tradeoffs.</li>
+        <li>Public APIs, MCP schemas, CLI commands, and event payloads have a documented v1.0 stability contract.</li>
+        <li>Coverage stays at or above 92%, with release gates preventing regressions in core memory, coordination, and onboarding flows.</li>
+        <li>At least one external user, project, or case study has validated the workflow.</li>
+      </ul>
+      <h2 id="release-principles">Release Principles</h2>
+      <ul>
+        <li>Minor releases before v1.0 may introduce breaking changes, but every breaking change must be documented in the changelog and migration guide.</li>
+        <li>v1.0 freezes the public API, MCP schemas, stable CLI surfaces, and durable event payload contracts.</li>
+        <li>Every release includes a changelog entry, updated docs, release smoke output, and at least one polished example or benchmark artifact.</li>
+        <li>Eventloom remains the source of truth. Projection backends remain derived views.</li>
+        <li>MCP remains the primary framework-neutral interface, but native integrations must share the same Memory Bootstrap, Memory Checkout, capture, and feedback contracts.</li>
+        <li>Backend experiments do not become defaults unless they preserve temporal semantics, citations, inferred-edge metadata, session isolation, dashboard rendering, rebuild behavior, and published benchmark guardrails.</li>
+      </ul>
+      <h2 id="v05-public-positioning-and-first-run-trust">v0.5: Public Positioning and First-Run Trust</h2>
+      <p><strong>Theme:</strong> Make the product legible and trustworthy from the first command.</p>
+      <p><strong>Target:</strong> 4 weeks.</p>
+      <h3 id="ship">Ship</h3>
+      <ul>
+        <li>Align package metadata, README, docs homepage, site copy, and examples around &quot;Coordinator Memory for Agent Teams&quot;.</li>
+        <li>Keep architectural language available, but stop making &quot;temporal knowledge graph fabric&quot; the first public explanation.</li>
+        <li>Turn the current quick start into a measured first-run path: install, <code>zaxy init</code>, memory bootstrap, memory checkout, doctor, and one example.</li>
+        <li>Polish three examples:</li>
+        <li>single-agent durable memory;</li>
+        <li>LangGraph memory checkout before model work;</li>
+        <li>three-worker Coordinate mission with conflict review and handoff.</li>
+        <li>Improve MCP tool descriptions for model-facing clarity and client discovery.</li>
+        <li>Publish public docs for &quot;Why Zaxy&quot;, &quot;Getting Started&quot;, &quot;MCP Quickstart&quot;, &quot;Coordinate Quickstart&quot;, and &quot;Architecture&quot;.</li>
+        <li>Create a lightweight external validation script for one person outside the project to run and report time-to-first-success.</li>
+      </ul>
+      <h3 id="gates">Gates</h3>
+      <ul>
+        <li>Clean install to successful <code>zaxy doctor</code> completes in less than five minutes on a normal local development machine.</li>
+        <li><code>zaxy init</code> leaves a user with clear next steps and no required sidecar.</li>
+        <li>All polished examples run from a clean checkout.</li>
+        <li>Documentation links validate.</li>
+        <li>Coverage remains at or above 92%.</li>
+        <li>Release artifact and release smoke checks pass.</li>
+      </ul>
+      <h3 id="explicit-non-goals">Explicit Non-Goals</h3>
+      <ul>
+        <li>Do not expand backend scope.</li>
+        <li>Do not make hosted or multi-tenant memory a v0.5 deliverable.</li>
+        <li>Do not add another framework adapter before the first-run story is clean.</li>
+      </ul>
+      <h2 id="v06-mcp-and-native-runtime-dx">v0.6: MCP and Native Runtime DX</h2>
+      <p><strong>Theme:</strong> Become the best MCP-native memory backend while preparing native runtime integrations.</p>
+      <p><strong>Target:</strong> 4 to 5 weeks after v0.5.</p>
+      <h3 id="ship">Ship</h3>
+      <ul>
+        <li>Harden MCP structured outputs for memory, checkout, context assembly, feedback, and coordination tools.</li>
+        <li>Standardize MCP error payloads with stable error codes, human messages, and remediation hints.</li>
+        <li>Add MCP contract tests that snapshot tool names, schemas, required fields, and representative responses.</li>
+        <li>Improve <code>memory_checkout</code> output for client use: stable summary fields, diagnostics, citation coverage, stale-state warnings, required actions, and feedback templates.</li>
+        <li>Improve <code>zaxy status</code>, <code>zaxy doctor</code>, and <code>zaxy hook-status</code> around last checkout, last capture, stale memory, missing hooks, and degraded projection states.</li>
+        <li>Promote LangGraph from native-preview toward beta by stabilizing payload keys, examples, and failure behavior.</li>
+        <li>Define the shared native integration contract for non-MCP runtimes:</li>
+        <li>before model/task call: bootstrap or checkout;</li>
+        <li>after model/task call: capture assistant or task output;</li>
+        <li>after tool call: capture redacted observation;</li>
+        <li>after context use: record feedback.</li>
+        <li>Document Claude Desktop, Claude Code, Cursor, Codex, and generic MCP setup paths with one recommended local route each.</li>
+      </ul>
+      <h3 id="gates">Gates</h3>
+      <ul>
+        <li>MCP schema snapshot tests protect the public tool surface.</li>
+        <li>LangGraph example runs as part of release validation.</li>
+        <li>Status and doctor commands return actionable remediation for common local failures.</li>
+        <li>Clean first-run time improves or remains below the v0.5 threshold.</li>
+        <li>Coverage remains at or above 92%.</li>
+      </ul>
+      <h3 id="explicit-non-goals">Explicit Non-Goals</h3>
+      <ul>
+        <li>Do not promise full API stability yet.</li>
+        <li>Do not promote CrewAI or AutoGen beyond current maturity until LangGraph and the shared contract are stable.</li>
+      </ul>
+      <h2 id="v07-coordination-workflows">v0.7: Coordination Workflows</h2>
+      <p><strong>Theme:</strong> Make Coordinate production-useful, not only demonstrable.</p>
+      <p><strong>Target:</strong> 5 to 6 weeks after v0.6.</p>
+      <h3 id="ship">Ship</h3>
+      <ul>
+        <li>Add mission templates for common workflows such as software delivery, research review, benchmark investigation, and release validation.</li>
+        <li>Improve approval flows so pending, conflicted, stale, and evidence-poor findings have obvious next actions.</li>
+        <li>Improve conflict review:</li>
+        <li>deterministic source-state conflicts remain default;</li>
+        <li>lexical semantic conflicts remain opt-in;</li>
+        <li>hosted semantic conflict adapters remain bounded and auditable.</li>
+        <li>Improve the dashboard or CLI mission viewer so users can inspect mission state, worker ledgers, findings, evidence, decisions, and promoted state without reading Eventloom JSONL.</li>
+        <li>Add audit report generation for a mission from Eventloom replay.</li>
+        <li>Publish a CoordinationBench report with clear baselines, adapter status, limitations, and reproduction commands.</li>
+        <li>Add a polished multi-agent example that includes review and approval steps, not just worker reporting.</li>
+      </ul>
+      <h3 id="gates">Gates</h3>
+      <ul>
+        <li>A user can complete a full mission workflow from CLI and MCP: start mission, create workers, assign work, report findings, detect conflicts, review findings, promote accepted state, checkout accepted memory, and create handoff.</li>
+        <li>The same workflow is demonstrated through LangGraph or a direct native helper.</li>
+        <li>CoordinationBench report generation is reproducible from tracked inputs.</li>
+        <li>Audit report output cites Eventloom sequence and hash metadata.</li>
+        <li>Coverage remains at or above 92%.</li>
+      </ul>
+      <h3 id="explicit-non-goals">Explicit Non-Goals</h3>
+      <ul>
+        <li>Zaxy does not spawn or manage workers itself unless a separate orchestrator design is approved.</li>
+        <li>Zaxy does not infer accepted findings from raw transcripts without explicit evidence and review.</li>
+      </ul>
+      <h2 id="v08-model-native-integrations-and-observability">v0.8: Model-Native Integrations and Observability</h2>
+      <p><strong>Theme:</strong> Make memory activation work where model calls actually happen, not only through MCP.</p>
+      <p><strong>Target:</strong> 5 to 6 weeks after v0.7.</p>
+      <h3 id="ship">Ship</h3>
+      <ul>
+        <li>Add direct model-call integration modules outside MCP, sharing the same native contract defined in v0.6.</li>
+        <li>Prioritize two paths:</li>
+        <li>OpenAI-compatible model-call wrapper for request/response capture, checkout injection, tool observation, and feedback;</li>
+        <li>Anthropic or Claude-style wrapper if the local usage path and API boundary can be kept stable.</li>
+        <li>Keep direct integrations dependency-light and optional. Core install remains small.</li>
+        <li>Add examples showing model-call memory activation without MCP.</li>
+        <li>Add trace correlation from mission, checkout, context assembly, model call, tool call, finding, review, and handoff.</li>
+        <li>Improve Pathlight integration or add neutral trace hooks that can feed LangSmith, Phoenix, or local JSONL traces without making any one provider a hard dependency.</li>
+        <li>Improve replay tools for long-running missions, including branch/fork design if it can be implemented without destabilizing Eventloom semantics.</li>
+        <li>Continue performance work on compaction, context assembly, projection rebuild, and query latency based on benchmark evidence.</li>
+      </ul>
+      <h3 id="gates">Gates</h3>
+      <ul>
+        <li>At least one outside-MCP direct model integration runs in a documented example.</li>
+        <li>Model-call capture is redacted, bounded, and opt-in where provider cost or privacy could surprise users.</li>
+        <li>Trace output can follow a useful path from mission to model call to promoted finding.</li>
+        <li>Benchmarks show no regression in checkout quality, citation coverage, and latency budgets.</li>
+        <li>Coverage remains at or above 92%.</li>
+      </ul>
+      <h3 id="explicit-non-goals">Explicit Non-Goals</h3>
+      <ul>
+        <li>Do not turn the packet analyzer into a required router.</li>
+        <li>Do not make direct provider integrations the only recommended path; MCP remains the primary framework-neutral route.</li>
+      </ul>
+      <h2 id="v09-hardening-and-api-freeze-candidate">v0.9: Hardening and API Freeze Candidate</h2>
+      <p><strong>Theme:</strong> Prepare for a stable 1.0 contract.</p>
+      <p><strong>Target:</strong> 4 to 5 weeks after v0.8.</p>
+      <h3 id="ship">Ship</h3>
+      <ul>
+        <li>Publish an API inventory covering:</li>
+        <li>MCP tool names, schemas, and response contracts;</li>
+        <li>Python SDK public classes and functions;</li>
+        <li>stable CLI commands and options;</li>
+        <li>durable Eventloom event types and payload fields;</li>
+        <li>projection backend contract;</li>
+        <li>benchmark artifact schemas.</li>
+        <li>Mark each surface as stable, beta, experimental, or internal.</li>
+        <li>Add migration tests and docs for upgrades from 0.4 through 0.9.</li>
+        <li>Add fuzz tests for Eventloom payload validation, hash-chain replay, and bounded MCP inputs.</li>
+        <li>Add failure-injection or chaos tests for projection rebuild, corrupted projection artifacts, missing hooks, stale checkout, and degraded backends.</li>
+        <li>Expand release gates so the public examples, MCP smoke, LangGraph smoke, Coordinate mission smoke, benchmark comparison, docs validation, and beta UAT all run or fail with explicit skip reasons.</li>
+        <li>Add contributor guide, issue templates, and benchmark contribution guidance.</li>
+        <li>Freeze v1.0 candidate schemas and begin treating changes as migration events.</li>
+      </ul>
+      <h3 id="gates">Gates</h3>
+      <ul>
+        <li>Full release gate passes on Python 3.11, 3.12, and 3.13.</li>
+        <li>Coverage remains at or above 92%.</li>
+        <li>No public benchmark claim depends on untracked or local-only inputs.</li>
+        <li>API inventory has no undocumented stable surfaces.</li>
+        <li>Migration guide covers 0.4 to 0.9.</li>
+        <li>At least one external user has run the first-run path or a Coordinate example and provided feedback.</li>
+      </ul>
+      <h3 id="explicit-non-goals">Explicit Non-Goals</h3>
+      <ul>
+        <li>Do not add major new feature families after v0.9 unless they are required to fix a release blocker.</li>
+        <li>Do not change event schemas casually after the freeze candidate.</li>
+      </ul>
+      <h2 id="v10-stable-coordinator-memory-release">v1.0: Stable Coordinator Memory Release</h2>
+      <p><strong>Theme:</strong> Stable, documented, benchmarked, and positioned release.</p>
+      <p><strong>Target:</strong> 2 to 3 weeks after v0.9.</p>
+      <h3 id="ship">Ship</h3>
+      <ul>
+        <li>Final API and data model stability commitment.</li>
+        <li>Comprehensive changelog from 0.4 to 1.0.</li>
+        <li>Migration guide from 0.4.</li>
+        <li>Public v1.0 announcement with positioning, examples, benchmark evidence, limitations, and roadmap beyond 1.0.</li>
+        <li>Updated website and docs.</li>
+        <li>Final release smoke command and release validation checklist.</li>
+        <li>External validation note, case study, or public user feedback if available.</li>
+      </ul>
+      <h3 id="gates">Gates</h3>
+      <ul>
+        <li>Clean-repo UAT passes.</li>
+        <li>MCP smoke passes.</li>
+        <li>LangGraph smoke passes.</li>
+        <li>At least one direct model integration smoke passes.</li>
+        <li>Coordinate mission smoke passes.</li>
+        <li>Benchmark guardrails pass.</li>
+        <li>Docs validation passes.</li>
+        <li>Release smoke passes.</li>
+        <li>Coverage remains at or above 92%.</li>
+        <li>Public surfaces are tagged with their stability level.</li>
+      </ul>
+      <h2 id="cross-cutting-workstreams">Cross-Cutting Workstreams</h2>
+      <h3 id="benchmarks">Benchmarks</h3>
+      <p>Run and publish benchmark evidence regularly. Zaxy benchmark claims should show the workload, input fingerprint, baseline, metrics, latency, citation coverage, token tradeoffs, and limitations.</p>
+      <p>Priority benchmark lanes:</p>
+      <ul>
+        <li>LongMemEval-compatible memory retrieval;</li>
+        <li>CoordinationBench;</li>
+        <li>backend shootout for embedded, Neo4j, pgGraph, LatticeDB, and BM25;</li>
+        <li>first-run onboarding time;</li>
+        <li>activation efficiency for high-context sessions;</li>
+        <li>audit and replay completeness.</li>
+      </ul>
+      <h3 id="documentation-and-content">Documentation and Content</h3>
+      <p>Every release needs docs and public communication. Content should focus on auditable coordination, replayable memory, MCP-native adoption, LangGraph, and real examples.</p>
+      <p>Recommended content sequence:</p>
+      <ul>
+        <li>v0.5: &quot;Why coordinator memory is different from vector memory&quot;;</li>
+        <li>v0.6: &quot;Using Zaxy as an MCP memory backend&quot;;</li>
+        <li>v0.7: &quot;Coordinating agent teams with accepted state and audit trails&quot;;</li>
+        <li>v0.8: &quot;Native model-call memory outside MCP&quot;;</li>
+        <li>v1.0: launch announcement with benchmark and case-study evidence.</li>
+      </ul>
+      <h3 id="testing-and-ci">Testing and CI</h3>
+      <p>The v1.0 quality bar is coverage at or above 92%, with stable tests for public contracts. The release process should continue to include ruff, mypy, pytest, coverage ratchet, docs validation, release smoke, and benchmark guardrails.</p>
+      <h3 id="community-and-external-validation">Community and External Validation</h3>
+      <p>External validation is a release requirement, not a marketing extra. Start with one or two users who can run the first-run path and one example. Capture where they get stuck, and turn that into docs, doctor checks, or CLI improvements.</p>
+      <h3 id="competitive-awareness">Competitive Awareness</h3>
+      <p>Track Mem0, Zep, Letta, MemPalace, Agent Memory, ActiveGraph, and the MCP ecosystem. Avoid fake apples-to-apples claims. Keep competitor comparisons tied to reproducible adapter contracts, public disclosures, or clearly labeled limitations.</p>
+      <h2 id="primary-risks">Primary Risks</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Risk</th>
+            <th>Mitigation</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Scope creep</td>
+            <td>Treat auditable coordination, MCP, LangGraph, native model-call activation, and DX as the only v1.0 pillars.</td>
+          </tr>
+          <tr>
+            <td>Low external feedback</td>
+            <td>Make v0.5 first-run validation and v0.7 Coordinate example feedback explicit release gates.</td>
+          </tr>
+          <tr>
+            <td>Benchmark credibility</td>
+            <td>Require tracked inputs, fingerprints, baselines, methodology, and limitation notes.</td>
+          </tr>
+          <tr>
+            <td>Breaking changes</td>
+            <td>Inventory public surfaces in v0.9 and document every migration.</td>
+          </tr>
+          <tr>
+            <td>Backend distraction</td>
+            <td>Keep embedded Kuzu as default unless another backend beats the same gates without sidecar friction or quality loss.</td>
+          </tr>
+          <tr>
+            <td>Native integration fragmentation</td>
+            <td>Force MCP and direct integrations through the same Memory Bootstrap, Memory Checkout, capture, and feedback contracts.</td>
+          </tr>
+        </tbody>
+      </table>
+      <h2 id="minimum-viable-v10">Minimum Viable v1.0</h2>
+      <p>If timeline or feedback pressure requires a narrower release, preserve only these pillars:</p>
+      <ol>
+        <li>Polished positioning and docs.</li>
+        <li>Excellent MCP experience.</li>
+        <li>First-class LangGraph path.</li>
+        <li>Production-useful Coordinate workflow.</li>
+        <li>One outside-MCP model integration.</li>
+        <li>Transparent benchmark evidence.</li>
+        <li>Stable public API and data model contracts.</li>
+      </ol>
+      <p>Everything else can move past v1.0.</p>
+    </article>
+  </main>
+</body>
+</html>
