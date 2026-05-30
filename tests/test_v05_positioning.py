@@ -13,7 +13,8 @@ def test_readme_leads_with_coordinator_memory_positioning() -> None:
     assert "auditable, replayable, and coordinated memory" in text
     assert "Eventloom append-only source of truth" in text
     assert "embedded Kuzu graph projection" in text
-    assert "temporal knowledge graph fabric" not in text.splitlines()[3]
+    intro = "\n".join(text.splitlines()[:10])
+    assert "temporal knowledge graph fabric" not in intro
 
 
 def test_why_zaxy_states_coordinator_memory_thesis() -> None:

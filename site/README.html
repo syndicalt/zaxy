@@ -18,8 +18,9 @@
   <main class="doc-layout">
     <article class="doc-content">
       <h1 id="zaxy">Zaxy</h1>
-      <p><strong>Coordinator memory for multi-agent projects.</strong></p>
-      <p>Zaxy gives agent teams a parent mission, isolated worker sessions, cited findings, conflict review, and accepted merge-back into one replayable project history. Under the hood, it replaces markdown files + vector DBs with an Eventloom append-only source of truth and an embedded Kuzu graph projection.</p>
+      <p><strong>Coordinator Memory for Agent Teams.</strong></p>
+      <p>Zaxy gives agent teams auditable, replayable, and coordinated memory: parent missions, isolated worker sessions, cited findings, conflict review, approval packets, and accepted merge-back into one durable project history. Under the hood, it uses an Eventloom append-only source of truth and an embedded Kuzu graph projection instead of flattening project memory into markdown files and vector chunks.</p>
+      <p>The embedded Kuzu graph projection is the default local runtime.</p>
       <p>The plain install uses embedded Kuzu. Install <code>zaxy-memory[neo4j]</code> only for the optional Neo4j sidecar, and <code>zaxy-memory[pathlight]</code> only for Pathlight tracing.</p>
       <h2 id="quick-start">Quick Start</h2>
       <h3 id="five-minute-local-smoke-test">Five-minute local smoke test</h3>
