@@ -88,6 +88,7 @@ See [LLM Packet Analyzer](docs/packet-analyzer.md).
 - Coordinate roadmap: `docs/coordinate-roadmap.md`
 - Why Zaxy: `docs/why-zaxy.md`
 - Getting started: `docs/getting-started.md`
+- First-run validation: `docs/first-run-validation.md`
 - Architecture: `docs/architecture.md`
 - Configuration: `docs/configuration.md`
 - MCP interface: `docs/mcp.md`

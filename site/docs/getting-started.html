@@ -19,6 +19,20 @@
     <article class="doc-content">
       <h1 id="getting-started">Getting Started</h1>
       <p>Zaxy is a local-first memory fabric for AI agents. It keeps the immutable work history in Eventloom JSONL files and projects structured facts into an embedded Kuzu graph so agents can retrieve connected, temporal context through MCP tools. The fastest path is to install the CLI, run one local onboarding command, and verify that Eventloom plus the model-facing bootstrap are readable. For the architecture tradeoffs behind this shape, see <a href="why-zaxy.html">why-zaxy.md</a>.</p>
+      <h2 id="five-minute-first-run">Five-minute first run</h2>
+      <p>The default local path is embedded and repo-local. No Neo4j, Postgres, Docker, or graph password is required for the first run.</p>
+      <pre><code class="language-bash">pipx install zaxy-memory
+zaxy init
+zaxy memory bootstrap --eventloom-path .eventloom
+zaxy memory checkout &quot;current project memory and next useful action&quot; --eventloom-path .eventloom
+zaxy doctor --eventloom-path .eventloom</code></pre>
+      <p>Success means:</p>
+      <ul>
+        <li><code>.eventloom/</code> exists;</li>
+        <li><code>zaxy memory bootstrap</code> returns model-facing guidance;</li>
+        <li><code>zaxy memory checkout</code> returns a prompt-ready checkout with diagnostics;</li>
+        <li><code>zaxy doctor</code> reports no blocking local setup errors.</li>
+      </ul>
       <p>Start from the repository root:</p>
       <pre><code class="language-bash">pipx install zaxy-memory
 # or: pip install zaxy-memory

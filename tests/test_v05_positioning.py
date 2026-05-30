@@ -25,3 +25,27 @@ def test_why_zaxy_states_coordinator_memory_thesis() -> None:
     assert "worker-local findings" in text
     assert "accepted parent mission state" in text
     assert "vector search alone cannot audit" in text
+
+
+def test_getting_started_documents_five_minute_first_run() -> None:
+    """Getting started should provide the measured v0.5 first-run path."""
+    text = Path("docs/getting-started.md").read_text(encoding="utf-8")
+
+    assert "Five-minute first run" in text
+    assert "pipx install zaxy-memory" in text
+    assert "zaxy init" in text
+    assert "zaxy memory bootstrap --eventloom-path .eventloom" in text
+    assert "zaxy memory checkout" in text
+    assert "zaxy doctor --eventloom-path .eventloom" in text
+    assert "No Neo4j, Postgres, Docker, or graph password is required" in text
+
+
+def test_first_run_validation_template_exists() -> None:
+    """External validation should have a concrete reporting template."""
+    text = Path("docs/first-run-validation.md").read_text(encoding="utf-8")
+
+    assert "# First-Run Validation" in text
+    assert "Time to successful `zaxy doctor`" in text
+    assert "Where did you get stuck?" in text
+    assert "Operating system" in text
+    assert "Python version" in text

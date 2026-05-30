@@ -7,6 +7,25 @@ fastest path is to install the CLI, run one local onboarding command, and
 verify that Eventloom plus the model-facing bootstrap are readable. For the
 architecture tradeoffs behind this shape, see [why-zaxy.md](why-zaxy.md).
 
+## Five-minute first run
+
+The default local path is embedded and repo-local. No Neo4j, Postgres, Docker, or graph password is required for the first run.
+
+```bash
+pipx install zaxy-memory
+zaxy init
+zaxy memory bootstrap --eventloom-path .eventloom
+zaxy memory checkout "current project memory and next useful action" --eventloom-path .eventloom
+zaxy doctor --eventloom-path .eventloom
+```
+
+Success means:
+
+- `.eventloom/` exists;
+- `zaxy memory bootstrap` returns model-facing guidance;
+- `zaxy memory checkout` returns a prompt-ready checkout with diagnostics;
+- `zaxy doctor` reports no blocking local setup errors.
+
 Start from the repository root:
 
 ```bash

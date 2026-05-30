@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>First-Run Validation - Zaxy Docs</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../index.html">Overview</a>
+      <a href="getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="first-run-validation">First-Run Validation</h1>
+      <p>Use this checklist with someone who has not worked on Zaxy before. The goal is to verify that a normal local developer can install, initialize, inspect memory, and run one example in less than five minutes.</p>
+      <h2 id="commands">Commands</h2>
+      <pre><code class="language-bash">pipx install zaxy-memory
+zaxy init
+zaxy memory bootstrap --eventloom-path .eventloom
+zaxy memory checkout &quot;current project memory and next useful action&quot; --eventloom-path .eventloom
+zaxy doctor --eventloom-path .eventloom
+python examples/single_agent_memory.py</code></pre>
+      <h2 id="report">Report</h2>
+      <ul>
+        <li>Operating system:</li>
+        <li>Shell:</li>
+        <li>Python version:</li>
+        <li>Install method:</li>
+        <li>Time to successful <code>zaxy doctor</code>:</li>
+        <li>Time to first successful example:</li>
+        <li>Did any command require Docker, Neo4j, Postgres, or a graph password?</li>
+        <li>Where did you get stuck?</li>
+        <li>Which error message was least useful?</li>
+        <li>What should the quick start say differently?</li>
+      </ul>
+    </article>
+  </main>
+</body>
+</html>
