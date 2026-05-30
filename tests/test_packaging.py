@@ -57,6 +57,19 @@ def test_package_keywords_center_embedded_local_memory() -> None:
     assert "neo4j" not in keywords
 
 
+def test_package_metadata_centers_coordinator_memory() -> None:
+    """Package discovery metadata should match the v0.5 public positioning."""
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+
+    assert pyproject["project"]["description"] == (
+        "Coordinator memory for auditable multi-agent projects"
+    )
+    keywords = pyproject["project"]["keywords"]
+    assert "coordinator-memory" in keywords
+    assert "multi-agent" in keywords
+    assert "auditable-memory" in keywords
+
+
 def test_core_install_excludes_unused_graphiti_abstraction() -> None:
     """Plain installs should not ship the unused Graphiti abstraction dependency."""
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))

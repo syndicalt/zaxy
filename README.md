@@ -1,11 +1,15 @@
 # Zaxy
 
-**Coordinator memory for multi-agent projects.**
+**Coordinator Memory for Agent Teams.**
 
-Zaxy gives agent teams a parent mission, isolated worker sessions, cited
-findings, conflict review, and accepted merge-back into one replayable project
-history. Under the hood, it replaces markdown files + vector DBs with an
-Eventloom append-only source of truth and an embedded Kuzu graph projection.
+Zaxy gives agent teams auditable, replayable, and coordinated memory: parent
+missions, isolated worker sessions, cited findings, conflict review, approval
+packets, and accepted merge-back into one durable project history. Under the
+hood, it uses an Eventloom append-only source of truth and an embedded Kuzu graph
+projection instead of flattening project memory into markdown files and vector
+chunks.
+
+The embedded Kuzu graph projection is the default local runtime.
 
 The plain install uses embedded Kuzu. Install `zaxy-memory[neo4j]` only for the
 optional Neo4j sidecar, and `zaxy-memory[pathlight]` only for Pathlight tracing.

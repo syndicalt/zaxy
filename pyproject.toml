@@ -1,7 +1,7 @@
 [project]
 name = "zaxy-memory"
 version = "0.4.0"
-description = "Event-sourced temporal knowledge graph fabric for AI agent memory"
+description = "Coordinator memory for auditable multi-agent projects"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -18,12 +18,15 @@ classifiers = [
 ]
 keywords = [
     "agent-memory",
+    "auditable-memory",
+    "coordinator-memory",
     "embedded-memory",
     "event-sourcing",
     "knowledge-graph",
     "kuzu",
     "local-first",
     "mcp",
+    "multi-agent",
     "temporal-graph",
 ]
 dependencies = [
