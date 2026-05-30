@@ -34,6 +34,12 @@ zaxy memory bootstrap --eventloom-path .eventloom
 zaxy doctor --eventloom-path .eventloom
 ```
 
+Run the single-agent memory example:
+
+```bash
+python examples/single_agent_memory.py
+```
+
 Your local data lives under `.eventloom/` as one append-only JSONL file per
 session. Bare `zaxy init` now expands to the local embedded Codex path: it
 prints the Codex MCP install command, writes `.codex/zaxy-capture.json`, writes
