@@ -2,6 +2,16 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 1.0.1 - 2026-05-31
+
+- Fixed embedded MCP worker startup for long-running multi-agent sessions by
+  adding a workspace owner/proxy runtime so duplicate `zaxy serve` processes
+  proxy to the single Kuzu graph owner instead of opening the embedded graph
+  concurrently.
+- Added `zaxy doctor` and `zaxy init` cleanup for stale embedded MCP owner
+  metadata, including an `embedded_mcp_runtime` doctor check for actionable
+  runtime repair.
+
 ## 1.0.0 - 2026-05-31
 
 - Added the v1.0 stability commitment covering public API surfaces, Eventloom

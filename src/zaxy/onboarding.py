@@ -25,6 +25,7 @@ from zaxy.hooks import (
 from zaxy.install import resolve_zaxy_executable
 from zaxy.integrations import render_codex_mcp_add_command, render_mcp_client_config
 from zaxy.local_profile import write_local_profile
+from zaxy.mcp_runtime import EmbeddedMcpRuntimeCoordinator
 from zaxy.packet_guidance import build_packet_capture_guidance
 from zaxy.runtime import LocalEmbeddedGraphRuntime, LocalNeo4jRuntime, LocalPgGraphRuntime
 from zaxy.session import SessionManager
@@ -170,6 +171,19 @@ async def run_onboarding(
     eventloom.mkdir(parents=True, exist_ok=True)
     steps.append(OnboardingStep("eventloom", "ok", "Eventloom directory is ready", str(eventloom)))
     selected_projection_backend = projection_backend or Settings().projection_backend
+    if selected_projection_backend.casefold().strip() == "embedded":
+        embedded_runtime_report = EmbeddedMcpRuntimeCoordinator.from_eventloom_path(
+            eventloom
+        ).repair_stale_runtime()
+        if embedded_runtime_report["repaired"] or embedded_runtime_report["status"] != "ok":
+            steps.append(
+                OnboardingStep(
+                    "embedded_mcp_runtime",
+                    str(embedded_runtime_report["status"]),
+                    str(embedded_runtime_report["message"]),
+                    str(embedded_runtime_report["owner_path"]),
+                )
+            )
 
     if local_profile_output is not None:
         written = write_local_profile(

@@ -2845,6 +2845,7 @@ def serve(
 
     from zaxy import mcp_server
     from zaxy.domain import derive_domain, domain_default_session
+    from zaxy.mcp_runtime import EmbeddedMcpRuntimeCoordinator
 
     workspace_root = Path.cwd()
     resolved_eventloom_path = eventloom_path or os.getenv("EVENTLOOM_PATH") or str(workspace_root / ".eventloom")
@@ -2854,19 +2855,30 @@ def serve(
     if eventloom_path is not None and embedded_graph_path == Path(".eventloom/projections/embedded.kuzu"):
         embedded_graph_path = Path(resolved_eventloom_path) / "projections" / "embedded.kuzu"
 
+    projection_backend = _resolve_cli_projection_backend(
+        None,
+        settings,
+        neo4j_uri=neo4j_uri,
+        neo4j_user=neo4j_user,
+        neo4j_password=neo4j_password,
+    )
+
+    owner_claim = None
+    embedded_stdio_coordinator = None
+    if transport == "stdio" and projection_backend.casefold().strip() == "embedded":
+        embedded_stdio_coordinator = EmbeddedMcpRuntimeCoordinator.from_eventloom_path(resolved_eventloom_path)
+        owner_claim = embedded_stdio_coordinator.try_claim_owner()
+        if owner_claim is None:
+            asyncio.run(mcp_server.proxy_main(embedded_stdio_coordinator))
+            return
+
     # Configure the module-level server instance from CLI overrides
     mcp_server.server = mcp_server.ZaxyMCPServer(
         eventloom_path=resolved_eventloom_path,
         neo4j_uri=neo4j_uri,
         neo4j_user=neo4j_user,
         neo4j_password=neo4j_password,
-        projection_backend=_resolve_cli_projection_backend(
-            None,
-            settings,
-            neo4j_uri=neo4j_uri,
-            neo4j_user=neo4j_user,
-            neo4j_password=neo4j_password,
-        ),
+        projection_backend=projection_backend,
         pggraph_dsn=settings.pggraph_dsn,
         embedded_graph_path=embedded_graph_path,
         latticedb_path=Path(settings.latticedb_path),
@@ -2877,7 +2889,7 @@ def serve(
     if transport == "sse":
         asyncio.run(mcp_server.main_sse(port=port, host=host))
     else:
-        asyncio.run(mcp_server.main())
+        asyncio.run(mcp_server.main(owner_claim=owner_claim))
 
 
 @app.command()

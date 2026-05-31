@@ -347,11 +347,17 @@ graph-backend variables or repo-specific `EVENTLOOM_PATH`, `EVENTLOOM_THREAD`,
 or `ZAXY_DOMAIN`; `zaxy serve` derives those from the current workspace at
 startup.
 
-Codex troubleshooting: prefer launching restored work with terminal-level
-`codex resume ...` rather than calling `/resume` from inside an already running
-Codex session. In-session resume can leave the old MCP child alive and start a
-second identical `zaxy serve` process. If that happens, fully exit Codex and
-start a fresh resume from the terminal, then verify with:
+Embedded runtime ownership: when `PROJECTION_BACKEND=embedded`, one workspace
+`zaxy serve` process owns the repo-local Kuzu graph in read-write mode. Additional
+stdio `zaxy serve` processes, including worker/subagent MCP launches, proxy to
+that owner through `.eventloom/runtime/zaxy-embedded-owner.sock` instead of
+opening Kuzu themselves. This preserves full graph-backed checkout without
+starting in degraded mode.
+
+`zaxy init` and `zaxy doctor` clean stale embedded owner records when no live
+owner lock is held. If the owner lock is held but no healthy proxy socket exists,
+`doctor` reports `embedded_mcp_runtime` with an action to fully exit stale
+Codex/Zaxy processes before retrying. Verify the local process set with:
 
 ```bash
 ps -ef | awk '/[z]axy serve/ {print}'

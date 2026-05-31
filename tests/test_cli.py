@@ -35,7 +35,7 @@ def test_version_option_reports_project_version() -> None:
     result = runner.invoke(app, ["--version"])
 
     assert result.exit_code == 0
-    assert result.output.strip() == "zaxy 1.0.0"
+    assert result.output.strip() == "zaxy 1.0.1"
 
 
 def test_memory_status_prints_eventloom_sessions(tmp_path: Path) -> None:
@@ -2718,6 +2718,59 @@ def test_serve_derives_workspace_defaults_when_not_overridden(
 
 
 @patch("zaxy.mcp_server.main", new_callable=AsyncMock)
+@patch("zaxy.mcp_runtime.EmbeddedMcpRuntimeCoordinator")
+@patch("zaxy.mcp_server.ZaxyMCPServer")
+def test_serve_embedded_stdio_claims_runtime_owner(
+    mock_server_cls: MagicMock,
+    mock_coordinator_cls: MagicMock,
+    mock_mcp_main: AsyncMock,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Embedded stdio serve should claim one repo-local runtime owner before Kuzu opens."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("zaxy.mcp_server.server", None)
+    owner = MagicMock()
+    coordinator = MagicMock()
+    coordinator.try_claim_owner.return_value = owner
+    mock_coordinator_cls.from_eventloom_path.return_value = coordinator
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["serve"], catch_exceptions=False, env={}, color=False, prog_name="zaxy")
+
+    assert result.exit_code == 0
+    mock_coordinator_cls.from_eventloom_path.assert_called_once_with(str(tmp_path / ".eventloom"))
+    coordinator.try_claim_owner.assert_called_once_with()
+    mock_server_cls.assert_called_once()
+    mock_mcp_main.assert_awaited_once_with(owner_claim=owner)
+
+
+@patch("zaxy.mcp_server.proxy_main", new_callable=AsyncMock)
+@patch("zaxy.mcp_runtime.EmbeddedMcpRuntimeCoordinator")
+@patch("zaxy.mcp_server.ZaxyMCPServer")
+def test_serve_embedded_stdio_proxies_when_owner_exists(
+    mock_server_cls: MagicMock,
+    mock_coordinator_cls: MagicMock,
+    mock_proxy_main: AsyncMock,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Duplicate embedded stdio serve processes should proxy instead of opening Kuzu."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("zaxy.mcp_server.server", None)
+    coordinator = MagicMock()
+    coordinator.try_claim_owner.return_value = None
+    mock_coordinator_cls.from_eventloom_path.return_value = coordinator
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["serve"], catch_exceptions=False, env={}, color=False, prog_name="zaxy")
+
+    assert result.exit_code == 0
+    mock_server_cls.assert_not_called()
+    mock_proxy_main.assert_awaited_once_with(coordinator)
+
+
+@patch("zaxy.mcp_server.main", new_callable=AsyncMock)
 @patch("zaxy.mcp_server.ZaxyMCPServer")
 def test_serve_uses_repo_local_embedded_profile(
     mock_server_cls: MagicMock,
@@ -4443,6 +4496,32 @@ def test_doctor_command_reports_json(tmp_path: Path) -> None:
     assert result.exit_code == 0
     assert '"status": "ok"' in result.output
     assert '"name": "eventloom"' in result.output
+
+
+def test_doctor_repairs_stale_embedded_mcp_runtime(tmp_path: Path) -> None:
+    """Doctor should clean stale embedded owner metadata before the next MCP startup."""
+    runner = CliRunner()
+    eventloom = tmp_path / ".eventloom"
+    runtime = eventloom / "runtime"
+    runtime.mkdir(parents=True)
+    (runtime / "zaxy-embedded-owner.json").write_text(
+        '{"pid": 999999999, "socket_path": "/tmp/missing-zaxy.sock"}',
+        encoding="utf-8",
+    )
+    (runtime / "zaxy-embedded-owner.sock").write_text("", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["doctor", "--eventloom-path", str(eventloom), "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    checks = {check["name"]: check for check in payload["checks"]}
+    assert checks["embedded_mcp_runtime"]["status"] == "ok"
+    assert checks["embedded_mcp_runtime"]["details"]["repaired"] is True
+    assert not (runtime / "zaxy-embedded-owner.json").exists()
+    assert not (runtime / "zaxy-embedded-owner.sock").exists()
 
 
 def test_doctor_release_smoke_reports_packaging_readiness() -> None:

@@ -15,6 +15,7 @@ from zaxy.event import EventLog
 from zaxy.hooks import HOOK_CLIENTS, inspect_hook_status, render_hook_config
 from zaxy.install import resolve_zaxy_executable
 from zaxy.local_profile import check_local_profile
+from zaxy.mcp_runtime import EmbeddedMcpRuntimeCoordinator
 from zaxy.packet_guidance import build_packet_capture_guidance
 from zaxy.runtime import LocalEmbeddedGraphRuntime, LocalPgGraphRuntime
 from zaxy.security import eventlog_path
@@ -45,6 +46,7 @@ def run_doctor(
         _check_capture_health(hook_status),
         _check_memory_activation(hook_status),
         _check_packet_memory(active),
+        _check_embedded_mcp_runtime(active),
         _check_projection_backend(active),
         _check_production(active),
     ]
@@ -535,6 +537,31 @@ def _check_projection_backend(settings: Settings) -> dict[str, str]:
             "action": "Run zaxy status --projection-backend pggraph for live runtime posture.",
         }
     return _check_neo4j(settings)
+
+
+def _check_embedded_mcp_runtime(settings: Settings) -> dict[str, Any]:
+    backend = settings.projection_backend.casefold().strip()
+    if backend != "embedded":
+        return {
+            "name": "embedded_mcp_runtime",
+            "status": "ok",
+            "message": f"not applicable for projection backend {backend}",
+        }
+    report = EmbeddedMcpRuntimeCoordinator.from_eventloom_path(settings.eventloom_path).repair_stale_runtime()
+    check = {
+        "name": "embedded_mcp_runtime",
+        "status": report["status"],
+        "message": report["message"],
+        "details": {
+            "repaired": report["repaired"],
+            "owner_active": report["owner_active"],
+            "owner_path": report["owner_path"],
+            "socket_path": report["socket_path"],
+        },
+    }
+    if "action" in report:
+        check["action"] = report["action"]
+    return check
 
 
 def _check_neo4j(settings: Settings) -> dict[str, str]:

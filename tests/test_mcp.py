@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -2031,6 +2032,139 @@ class TestEntrypoint:
         mock_run.assert_awaited_once()
         mock_graph.close.assert_awaited_once()
         mock_tracer.close.assert_awaited_once()
+
+    @patch("zaxy.mcp_server.ZaxyMCPServer")
+    async def test_main_releases_owner_claim_when_setup_fails(
+        self,
+        mock_server_cls: MagicMock,
+    ) -> None:
+        """Embedded owner locks should not leak when MCP setup fails before serving."""
+        mock_server = AsyncMock()
+        mock_server.setup.side_effect = RuntimeError("kuzu failed")
+        mock_server_cls.return_value = mock_server
+        owner_claim = MagicMock()
+
+        with pytest.raises(RuntimeError, match="kuzu failed"):
+            await main(owner_claim=owner_claim)
+
+        owner_claim.close.assert_called_once_with()
+
+    @patch("zaxy.mcp_server.ZaxyMCPServer")
+    @patch("zaxy.mcp_server.stdio_server")
+    async def test_main_publishes_and_releases_embedded_owner_claim(
+        self,
+        mock_stdio: MagicMock,
+        mock_server_cls: MagicMock,
+    ) -> None:
+        """Embedded owners should publish socket metadata and clean up on shutdown."""
+        mock_server = AsyncMock()
+        mock_server._workspace_root = Path("/tmp/workspace")
+        mock_server._embedded_graph_path = Path("/tmp/workspace/.eventloom/projections/embedded.kuzu")
+        mock_server_cls.return_value = mock_server
+
+        mock_read = AsyncMock()
+        mock_write = AsyncMock()
+        mock_stdio.return_value.__aenter__ = AsyncMock(return_value=(mock_read, mock_write))
+        mock_stdio.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        owner_claim = MagicMock()
+        socket_server = MagicMock()
+        socket_server.wait_closed = AsyncMock()
+
+        with (
+            patch("zaxy.mcp_server._start_owner_socket_server", new_callable=AsyncMock) as start_socket,
+            patch("zaxy.mcp_server.app.run", new_callable=AsyncMock),
+        ):
+            start_socket.return_value = socket_server
+            await main(owner_claim=owner_claim)
+
+        start_socket.assert_awaited_once_with(owner_claim)
+        owner_claim.write_ready_record.assert_called_once_with(
+            workspace_root=mock_server._workspace_root,
+            projection_backend="embedded",
+            graph_path=mock_server._embedded_graph_path,
+        )
+        socket_server.close.assert_called_once_with()
+        socket_server.wait_closed.assert_awaited_once_with()
+        mock_server.teardown.assert_awaited_once_with()
+        owner_claim.close.assert_called_once_with()
+
+    async def test_proxy_main_forwards_stdio_to_owner_socket(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Duplicate embedded workers should proxy JSON-RPC lines to the owner socket."""
+        coordinator = MagicMock()
+        coordinator.wait_for_owner_record.return_value = {"socket_path": "/tmp/zaxy-owner.sock"}
+        socket_reader = AsyncMock()
+        socket_reader.readline = AsyncMock(side_effect=[b'{"jsonrpc":"2.0","id":1,"result":{}}\n', b""])
+        socket_writer = MagicMock()
+        socket_writer.drain = AsyncMock()
+        socket_writer.wait_closed = AsyncMock()
+
+        stdin_buffer = MagicMock()
+        stdin_buffer.readline = MagicMock(side_effect=[b'{"jsonrpc":"2.0","id":1,"method":"ping"}\n', b""])
+        stdout_buffer = MagicMock()
+        stdout_buffer.write = MagicMock()
+        stdout_buffer.flush = MagicMock()
+        monkeypatch.setattr(zaxy.mcp_server.sys, "stdin", SimpleNamespace(buffer=stdin_buffer))
+        monkeypatch.setattr(zaxy.mcp_server.sys, "stdout", SimpleNamespace(buffer=stdout_buffer))
+
+        with patch(
+            "zaxy.mcp_server.asyncio.open_unix_connection",
+            new_callable=AsyncMock,
+            return_value=(socket_reader, socket_writer),
+        ) as open_socket:
+            await zaxy.mcp_server.proxy_main(coordinator)
+
+        coordinator.wait_for_owner_record.assert_called_once_with()
+        open_socket.assert_awaited_once_with("/tmp/zaxy-owner.sock")
+        socket_writer.write.assert_any_call(b'{"jsonrpc":"2.0","id":1,"method":"ping"}\n')
+        socket_writer.write_eof.assert_called_once_with()
+        socket_writer.close.assert_called_once_with()
+        socket_writer.wait_closed.assert_awaited_once_with()
+
+    async def test_socket_mcp_transport_bridges_socket_lines_and_mcp_messages(self) -> None:
+        """The owner socket transport should decode and encode JSON-RPC line messages."""
+        input_lines = iter([b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n', b""])
+
+        class FakeSocketReader:
+            async def readline(self) -> bytes:
+                return next(input_lines, b"")
+
+        class FakeSocketWriter:
+            def __init__(self) -> None:
+                self.lines: list[bytes] = []
+                self.closed = False
+                self.waited = False
+
+            def write(self, line: bytes) -> None:
+                self.lines.append(line)
+
+            async def drain(self) -> None:
+                return None
+
+            def close(self) -> None:
+                self.closed = True
+
+            async def wait_closed(self) -> None:
+                self.waited = True
+
+        writer = FakeSocketWriter()
+
+        async with zaxy.mcp_server._socket_mcp_transport(
+            FakeSocketReader(),
+            writer,
+        ) as (read_stream, write_stream):
+            inbound = await read_stream.receive()
+            assert inbound.message.root.method == "notifications/initialized"
+
+            outbound = zaxy.mcp_server.types.JSONRPCMessage.model_validate_json(
+                '{"jsonrpc":"2.0","id":1,"result":{}}'
+            )
+            await write_stream.send(zaxy.mcp_server.SessionMessage(outbound))
+            await write_stream.aclose()
+
+        assert writer.lines == [b'{"jsonrpc":"2.0","id":1,"result":{}}\n']
+        assert writer.closed is True
+        assert writer.waited is True
 
     @patch("zaxy.mcp_server.ZaxyMCPServer")
     @patch("zaxy.mcp_server.stdio_server")

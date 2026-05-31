@@ -201,6 +201,41 @@ async def test_run_onboarding_writes_requested_configs_and_registers_session(tmp
 
 
 @pytest.mark.asyncio
+async def test_run_onboarding_repairs_stale_embedded_mcp_runtime(tmp_path: Path) -> None:
+    """Init should clean stale embedded MCP owner metadata before workers start."""
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    runtime = eventloom_path / "runtime"
+    runtime.mkdir(parents=True)
+    (runtime / "zaxy-embedded-owner.json").write_text(
+        '{"pid": 999999999, "socket_path": "/tmp/missing-zaxy.sock"}',
+        encoding="utf-8",
+    )
+    (runtime / "zaxy-embedded-owner.sock").write_text("", encoding="utf-8")
+    fabric = MagicMock()
+    fabric.ensure_session_initialized = AsyncMock()
+    fabric.ensure_session_initialized.return_value.workspace_type = "codebase"
+    fabric.ensure_session_initialized.return_value.confidence = 0.7
+    fabric.ensure_session_initialized.return_value.signals = []
+    fabric.ensure_session_initialized.return_value.instructions_profile = "codebase"
+    fabric.close = AsyncMock()
+
+    result = await run_onboarding(
+        workspace,
+        eventloom_path=eventloom_path,
+        projection_backend="embedded",
+        fabric_factory=lambda eventloom_path: fabric,
+    )
+
+    runtime_step = next(step for step in result.steps if step.name == "embedded_mcp_runtime")
+    assert runtime_step.status == "ok"
+    assert "stale embedded MCP runtime metadata was removed" in runtime_step.message
+    assert not (runtime / "zaxy-embedded-owner.json").exists()
+    assert not (runtime / "zaxy-embedded-owner.sock").exists()
+
+
+@pytest.mark.asyncio
 async def test_run_onboarding_can_add_packet_capture_activation_steps(tmp_path: Path) -> None:
     """Packet capture onboarding should print concrete analyzer and projector commands."""
     workspace = tmp_path / "repo"
