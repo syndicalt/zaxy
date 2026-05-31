@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 import tomllib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import zaxy.external_validation as external_validation
 from zaxy.event import EventLog
+from zaxy.external_validation import validate_external_validation_report
 from zaxy.release import package_version, run_beta_readiness
 
 
@@ -55,6 +58,19 @@ def test_package_keywords_center_embedded_local_memory() -> None:
     assert "kuzu" in keywords
     assert "local-first" in keywords
     assert "neo4j" not in keywords
+
+
+def test_package_metadata_centers_coordinator_memory() -> None:
+    """Package discovery metadata should match the v0.5 public positioning."""
+    pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+
+    assert pyproject["project"]["description"] == (
+        "Coordinator memory for auditable multi-agent projects"
+    )
+    keywords = pyproject["project"]["keywords"]
+    assert "coordinator-memory" in keywords
+    assert "multi-agent" in keywords
+    assert "auditable-memory" in keywords
 
 
 def test_core_install_excludes_unused_graphiti_abstraction() -> None:
@@ -206,7 +222,7 @@ def test_cli_version_exits_before_loading_command_graph() -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.splitlines() == ["zaxy 0.4.0", "exit=0", "False", "False", "False"]
+    assert result.stdout.splitlines() == ["zaxy 1.0.0", "exit=0", "False", "False", "False"]
 
 
 def test_cli_help_avoids_mcp_server_stack_until_serve_runs() -> None:
@@ -272,7 +288,7 @@ def test_package_version_source_fallback_is_independent_of_cwd(
     monkeypatch.setattr(release.metadata, "version", missing_distribution)
     monkeypatch.chdir(tmp_path)
 
-    assert package_version() == "0.4.0"
+    assert package_version() == "1.0.0"
 
 
 def test_package_version_prefers_source_tree_version_in_editable_checkout(monkeypatch) -> None:
@@ -281,7 +297,7 @@ def test_package_version_prefers_source_tree_version_in_editable_checkout(monkey
 
     monkeypatch.setattr(release.metadata, "version", lambda _name: "0.1.0")
 
-    assert package_version() == "0.4.0"
+    assert package_version() == "1.0.0"
 
 
 def test_changelog_records_initial_pypi_release() -> None:
@@ -303,6 +319,33 @@ def test_changelog_records_initial_pypi_release() -> None:
     assert "## 0.1.0 - 2026-05-11" in changelog
     assert "PyPI" in changelog
     assert "Trusted Publishing" in changelog
+
+
+def test_changelog_covers_release_candidate_path_from_04_to_10() -> None:
+    """The v1.0 roadmap should have a comprehensive changelog path from 0.4 to 1.0."""
+    changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+
+    for heading in (
+        "## 1.0.0 - 2026-05-31",
+        "## 0.9.0 - Release Candidate",
+        "## 0.8.0 - Unreleased",
+        "## 0.7.0 - Unreleased",
+        "## 0.6.0 - Unreleased",
+        "## 0.5.0 - Unreleased",
+        "## 0.4.0 - 2026-05-28",
+    ):
+        assert heading in changelog
+    for required in (
+        "stability commitment",
+        "schema-freeze",
+        "release validation checklist",
+        "external validation",
+        "API inventory",
+        "Migration guide",
+        "OpenAI-compatible",
+        "Coordinate mission",
+    ):
+        assert required in changelog
 
 
 def test_pyproject_declares_optional_framework_extras() -> None:
@@ -391,7 +434,7 @@ def test_beta_uat_script_exercises_clean_repo_happy_path() -> None:
     assert "python -m pip install" in script
     assert "zaxy init" in script
     assert 'run_workspace "codex" "local-codex" "start"' in script
-    assert 'run_workspace "claude-code" "local-claude" "status"' in script
+    assert 'run_workspace "claude-code" "local-claude" "none"' in script
     assert "zaxy memory bootstrap" in script
     assert "zaxy memory checkout" in script
     assert "zaxy doctor" in script
@@ -405,7 +448,7 @@ def test_beta_uat_script_exercises_bare_embedded_init_path() -> None:
     """UAT should protect bare init as the no-sidecar embedded default."""
     script = Path("scripts/beta-uat.sh").read_text(encoding="utf-8")
 
-    assert 'run_workspace "embedded" "" "status"' in script
+    assert 'run_workspace "embedded" "" "start"' in script
     assert '"${preset}"' in script
     assert "if [[ -n \"${preset}\" ]]" in script
     assert "grep -q \"PROJECTION_BACKEND=embedded\" .env.local" in script
@@ -525,6 +568,7 @@ def test_beta_roadmap_tracks_post_uat_product_work() -> None:
 def test_beta_readiness_reports_missing_clean_repo_uat(tmp_path: Path) -> None:
     """Beta readiness should fail clearly when the clean-repo UAT harness is absent."""
     (tmp_path / "scripts").mkdir()
+    (tmp_path / "examples").mkdir()
     (tmp_path / ".github" / "workflows").mkdir(parents=True)
     (tmp_path / "pyproject.toml").write_text(
         '[project]\nname = "zaxy-memory"\nversion = "0.2.0"\n',
@@ -532,6 +576,19 @@ def test_beta_readiness_reports_missing_clean_repo_uat(tmp_path: Path) -> None:
     )
     (tmp_path / "CHANGELOG.md").write_text(
         "# Changelog\n\n## 0.2.0 - 2026-05-11\n\n- Stable release.\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "examples").mkdir()
+    (tmp_path / "docs" / "examples" / "first-run-timing-report.json").write_text(
+        json.dumps(
+            {
+                "threshold_seconds": 300,
+                "time_to_successful_doctor_seconds": 240,
+                "time_to_first_successful_example_seconds": 270,
+                "requires_sidecar": False,
+            }
+        ),
         encoding="utf-8",
     )
     (tmp_path / ".github" / "workflows" / "publish.yml").write_text(
@@ -547,14 +604,38 @@ def test_beta_readiness_reports_missing_clean_repo_uat(tmp_path: Path) -> None:
         "  - uses: pypa/gh-action-pypi-publish@release/v1\n",
         encoding="utf-8",
     )
+    (tmp_path / "examples" / "langgraph_memory.py").write_text(
+        "import json\n"
+        "print(json.dumps({'session_id': 'langgraph-demo', 'has_zaxy_context': True, 'kind': 'memory_checkout'}))\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "examples" / "openai_compatible_memory.py").write_text(
+        "import json\n"
+        "print(json.dumps({'session_id': 'openai-compatible-demo', 'has_zaxy_context': True, 'kind': 'memory_checkout'}))\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "examples" / "claude_compatible_memory.py").write_text(
+        "import json\n"
+        "print(json.dumps({'session_id': 'claude-compatible-demo', 'has_zaxy_context': True, 'kind': 'memory_checkout'}))\n",
+        encoding="utf-8",
+    )
     (tmp_path / "scripts" / "release-check.sh").write_text(
         'RUFF_CMD="ruff"\n'
         'MYPY_CMD="mypy"\n'
+        'EXAMPLES_SMOKE_CMD="pytest tests/test_examples_v05.py --no-cov -q"\n'
+        'MCP_SMOKE_CMD="python scripts/mcp_smoke_test.py"\n'
+        'LANGGRAPH_SMOKE_CMD="pytest tests/test_examples_v05.py::test_langgraph_example_runs_without_langgraph_dependency --no-cov -q"\n'
+        'COORDINATE_SMOKE_CMD="pytest tests/test_examples_v05.py::test_coordinate_three_worker_example_runs --no-cov -q"\n'
+        'DOCS_CMD="python scripts/build-site-docs.py --check && scripts/validate-docs.sh"\n'
+        'BETA_UAT_CMD="scripts/beta-uat.sh"\n'
+        'EXTERNAL_VALIDATION_CMD="SKIP:external validation is optional for v1.0 release"\n'
+        "run_gate() { [[ \"$2\" == SKIP:* ]] && echo \"Skipping $1: ${2#SKIP:}\" || bash -c \"$2\"; }\n"
         "pytest\n"
         "scripts/check-coverage.py\n"
         "tests/test_packet_memory_e2e.py\n"
         "scripts/build-dist.sh\n"
         "scripts/validate-docs.sh\n"
+        "python scripts/build-site-docs.py --check\n"
         "scripts/validate-deployment.sh\n"
         "PYTHONPATH=src python -m zaxy hook-status\n"
         "--eventloom-path reports/activation-release\n"
@@ -566,17 +647,33 @@ def test_beta_readiness_reports_missing_clean_repo_uat(tmp_path: Path) -> None:
         "--require-report-metadata --require-markdown-report --require-query-results --require-git-tracked-inputs "
         "--verify-report-fingerprints --require-backends embedded,bm25 "
         '--require-labeled-metrics --require-dashboard-source embedded=embedded '
+        "--min-answer-at-5 0.5 --min-recall-at-5 0.5 --min-citation-coverage 1.0 "
+        "--min-quality-per-1k-injected-tokens embedded=1.0 "
+        "--min-answer-at-5-per-1k-injected-tokens embedded=1.0 "
+        "--max-checkout-p99-ms embedded=25 "
         '--forbid-backends neo4j,pggraph,latticedb"\n'
         'BACKEND_PERFORMANCE_CMD="python scripts/check-backend-shootout.py '
         "reports/backend-shootout/longmemeval-40-backend-shootout.json --require-report-metadata "
         "--require-markdown-report --require-query-results --require-git-tracked-inputs --verify-report-fingerprints "
         "--require-backends embedded,bm25 --require-labeled-metrics "
-        '--require-dashboard-source embedded=embedded --forbid-backends neo4j,pggraph,latticedb"\n'
+        "--require-dashboard-source embedded=embedded --min-citation-coverage 1.0 "
+        "--min-quality-per-1k-returned-tokens embedded=0.10 "
+        "--min-answer-at-5-per-1k-returned-tokens embedded=0.10 "
+        "--min-quality-per-1k-injected-tokens embedded=0.10 "
+        "--min-answer-at-5-per-1k-injected-tokens embedded=0.10 "
+        "--max-checkout-p95-ms embedded=100 --max-checkout-p99-ms embedded=85 "
+        '--forbid-backends neo4j,pggraph,latticedb"\n'
         'BACKEND_SCALE_CMD="python scripts/check-backend-shootout.py '
         "reports/backend-shootout/longmemeval-100-backend-shootout.json --require-report-metadata "
         "--require-markdown-report --require-query-results --require-git-tracked-inputs --verify-report-fingerprints "
         "--require-backends embedded,bm25 --require-labeled-metrics "
         '--require-dashboard-source embedded=embedded --forbid-backends neo4j,pggraph,latticedb '
+        "--min-recall-at-5 0.90 --min-citation-coverage 1.0 "
+        "--min-quality-per-1k-returned-tokens embedded=0.15 "
+        "--min-answer-at-5-per-1k-returned-tokens embedded=0.15 "
+        "--min-quality-per-1k-injected-tokens embedded=0.15 "
+        "--min-answer-at-5-per-1k-injected-tokens embedded=0.15 "
+        "--max-checkout-p99-ms embedded=250 "
         '--max-checkout-p95-ms embedded=200"\n'
         "--require-report-metadata\n"
         "--require-markdown-report\n"
@@ -587,6 +684,7 @@ def test_beta_readiness_reports_missing_clean_repo_uat(tmp_path: Path) -> None:
         "longmemeval-40-backend-shootout.json\n"
         "longmemeval-100-backend-shootout.json\n"
         "--min-quality-per-1k-injected-tokens embedded=1.0\n"
+        "--min-citation-coverage 1.0\n"
         "--min-quality-per-1k-returned-tokens\n"
         "--min-answer-at-5-per-1k-returned-tokens\n"
         "--min-quality-per-1k-injected-tokens\n"
@@ -612,6 +710,7 @@ def test_beta_readiness_reports_missing_clean_repo_uat(tmp_path: Path) -> None:
     checks = {check["name"]: check for check in report["checks"]}
     assert report["status"] == "error"
     assert checks["release_smoke"]["status"] == "ok"
+    assert checks["first_run_timing"]["status"] == "ok"
     assert checks["release_gate"]["status"] == "ok"
     assert "backend shootout" in checks["release_gate"]["message"]
     assert "100-query scale" in checks["release_gate"]["message"]
@@ -643,6 +742,23 @@ def test_beta_readiness_requires_activation_efficiency_guardrail(tmp_path: Path)
     assert "--min-activation-rate 1.0" in checks["clean_repo_uat"]["message"]
     assert checks["clean_repo_uat"]["action"] == (
         "Update scripts/beta-uat.sh to exercise the complete first-run beta path."
+    )
+
+
+def test_beta_readiness_rejects_slow_first_run_timing_report(tmp_path: Path) -> None:
+    """Beta readiness should enforce the five-minute first-run budget."""
+    _write_minimal_beta_ready_project(tmp_path)
+    report = tmp_path / "docs" / "examples" / "first-run-timing-report.json"
+    payload = json.loads(report.read_text(encoding="utf-8"))
+    payload["time_to_successful_doctor_seconds"] = 360
+    report.write_text(json.dumps(payload), encoding="utf-8")
+
+    checks = {check["name"]: check for check in run_beta_readiness(project_root=tmp_path)["checks"]}
+
+    assert checks["first_run_timing"]["status"] == "error"
+    assert "time_to_successful_doctor_seconds=360" in checks["first_run_timing"]["message"]
+    assert checks["first_run_timing"]["action"] == (
+        "Update docs/examples/first-run-timing-report.json with a passing clean first-run timing report."
     )
 
 
@@ -679,7 +795,7 @@ def test_beta_readiness_requires_bare_embedded_uat_path(tmp_path: Path) -> None:
     script_path = tmp_path / "scripts" / "beta-uat.sh"
     script = script_path.read_text(encoding="utf-8")
     script_path.write_text(
-        script.replace('run_workspace "embedded" "" "status"\n', "")
+        script.replace('run_workspace "embedded" "" "start"\n', "")
         .replace('grep -q "PROJECTION_BACKEND=embedded" .env.local\n', ""),
         encoding="utf-8",
     )
@@ -727,6 +843,12 @@ def test_beta_readiness_requires_backend_shootout_release_gates(tmp_path: Path) 
         .replace("longmemeval-100-backend-shootout.json", "")
         .replace("--forbid-backends neo4j,pggraph,latticedb", "")
         .replace("--require-query-results", "")
+        .replace("--min-answer-at-5-per-1k-returned-tokens embedded=0.10", "")
+        .replace("--min-answer-at-5-per-1k-returned-tokens embedded=0.15", "")
+        .replace("--min-quality-per-1k-injected-tokens embedded=1.0", "")
+        .replace("--min-answer-at-5-per-1k-injected-tokens embedded=1.0", "")
+        .replace("--min-answer-at-5-per-1k-injected-tokens embedded=0.10", "")
+        .replace("--min-answer-at-5-per-1k-injected-tokens embedded=0.15", "")
         .replace("--min-answer-at-5-per-1k-returned-tokens\n", "")
         .replace("--min-quality-per-1k-injected-tokens embedded=1.0\n", "")
         .replace("--max-cold-bootstrap-ms\n", "")
@@ -756,6 +878,3430 @@ def test_beta_readiness_requires_backend_shootout_release_gates(tmp_path: Path) 
     assert "--max-append-to-projection-p95-ms" in checks["release_gate"]["message"]
     assert "--max-checkout-p95-ms embedded=200" in checks["release_gate"]["message"]
     assert "--min-answer-at-5-per-1k-injected-tokens" in checks["release_gate"]["message"]
+
+
+def test_beta_readiness_reports_release_gate_surface_coverage(tmp_path: Path) -> None:
+    """Beta readiness should expose v0.9 run-or-skip coverage for every public release smoke."""
+    _write_minimal_beta_ready_project(tmp_path)
+    _write_backend_report_inputs(tmp_path)
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert checks["release_gate_surface_coverage"]["status"] == "ok"
+    message = checks["release_gate_surface_coverage"]["message"]
+    for surface in (
+        "public examples",
+        "MCP smoke",
+        "LangGraph smoke",
+        "Coordinate mission smoke",
+        "benchmark comparison",
+        "docs validation",
+        "beta UAT",
+        "external validation",
+    ):
+        assert surface in message
+
+
+def test_beta_readiness_allows_release_without_external_validation_evidence(tmp_path: Path) -> None:
+    """Beta readiness should not block v1.0 when outside validation is unavailable."""
+    _write_minimal_beta_ready_project(tmp_path)
+    _write_backend_report_inputs(tmp_path)
+    (tmp_path / "BETA.md").write_text(
+        "# Beta Roadmap\n\n"
+        "Git for LLM memory, MemPalace-comparable temporal recall, source recall, "
+        "graph traversal, context-collapse, CrewAI, capture soak, and release criteria.\n",
+        encoding="utf-8",
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "ok"
+    assert checks["external_validation_evidence"]["status"] == "ok"
+    assert "external validation is optional for v1.0 release" in checks["external_validation_evidence"]["message"]
+    assert "post-release" in checks["external_validation_evidence"]["action"]
+
+
+def test_beta_readiness_accepts_validated_external_validation_report(tmp_path: Path) -> None:
+    """Beta readiness should turn the external-validation warning green for a validated report."""
+    _write_minimal_beta_ready_project(tmp_path)
+    _write_backend_report_inputs(tmp_path)
+    report_path = tmp_path / "reports" / "external-validation" / "external-validation-report.json"
+    report_path.parent.mkdir(parents=True)
+    report_path.write_text(
+        json.dumps(
+            {
+                "contract": "zaxy.v1.external-validation-report",
+                "status": "validated",
+                "validator": {
+                    "name": "Independent Validation Project",
+                    "external_to_implementation_session": True,
+                },
+                "date": "2026-05-31",
+                "zaxy_version_or_commit": "v1.0.0-rc",
+                "environment": {
+                    "operating_system": "Linux",
+                    "shell": "bash",
+                    "python_version": "3.13",
+                    "install_source": "pipx install zaxy-memory",
+                },
+                "validation_path": "first_run_local",
+                "commands": [
+                    "zaxy init",
+                    "zaxy memory bootstrap --eventloom-path .eventloom",
+                    "zaxy memory checkout current project memory --eventloom-path .eventloom",
+                    "zaxy doctor --beta-readiness",
+                ],
+                "time_to_first_useful_checkout_seconds": 180,
+                "unexpected_sidecar_or_credential_required": False,
+                "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+                "friction_or_failure": "No blocking friction.",
+                "release_decision": "pass",
+                "supports_positioning": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert checks["external_validation_evidence"]["status"] == "ok"
+    assert "reports/external-validation/external-validation-report.json" in checks[
+        "external_validation_evidence"
+    ]["message"]
+
+
+def test_beta_readiness_accepts_explicit_external_validation_report_path(tmp_path: Path) -> None:
+    """Beta readiness should accept release evidence from an explicit report path."""
+    _write_minimal_beta_ready_project(tmp_path)
+    _write_backend_report_inputs(tmp_path)
+    report_path = tmp_path / "external-validation-report.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "contract": "zaxy.v1.external-validation-report",
+                "status": "validated",
+                "validator": {
+                    "name": "Independent Validation Project",
+                    "external_to_implementation_session": True,
+                },
+                "date": "2026-05-31",
+                "zaxy_version_or_commit": "v1.0.0-rc",
+                "environment": {
+                    "operating_system": "Linux",
+                    "shell": "bash",
+                    "python_version": "3.13",
+                    "install_source": "pipx install zaxy-memory",
+                },
+                "validation_path": "coordinate_workflow",
+                "commands": ["python examples/coordinate_three_worker_project.py"],
+                "time_to_first_useful_checkout_seconds": 90,
+                "unexpected_sidecar_or_credential_required": False,
+                "evidence_links": ["https://github.com/syndicalt/zaxy/discussions/1"],
+                "friction_or_failure": "No blocking friction.",
+                "release_decision": "pass",
+                "supports_positioning": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_beta_readiness(project_root=tmp_path, external_validation_report=report_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert checks["external_validation_evidence"]["status"] == "ok"
+    assert str(report_path) in checks["external_validation_evidence"]["message"]
+
+
+def test_beta_readiness_rejects_missing_explicit_external_validation_report(tmp_path: Path) -> None:
+    """A requested external-validation report path should still be enforced."""
+    _write_minimal_beta_ready_project(tmp_path)
+    _write_backend_report_inputs(tmp_path)
+    report_path = tmp_path / "missing-external-validation-report.json"
+
+    report = run_beta_readiness(project_root=tmp_path, external_validation_report=report_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["external_validation_evidence"]["status"] == "error"
+    assert "external validation report was requested" in checks["external_validation_evidence"]["message"]
+    assert str(report_path) in checks["external_validation_evidence"]["message"]
+
+
+def test_beta_readiness_requires_external_validation_when_strict_mode_is_enabled(tmp_path: Path) -> None:
+    """Strict release mode should preserve the external-validation evidence gate."""
+    _write_minimal_beta_ready_project(tmp_path)
+    _write_backend_report_inputs(tmp_path)
+
+    report = run_beta_readiness(project_root=tmp_path, require_external_validation=True)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["external_validation_evidence"]["status"] == "error"
+    assert "external validation is required" in checks["external_validation_evidence"]["message"]
+    assert "reports/external-validation/external-validation-report.json" in checks[
+        "external_validation_evidence"
+    ]["message"]
+
+
+def test_beta_readiness_rejects_unreadable_external_validation_report(tmp_path: Path) -> None:
+    """External-validation reports should remain machine-checkable when present."""
+    _write_minimal_beta_ready_project(tmp_path)
+    _write_backend_report_inputs(tmp_path)
+    report_path = tmp_path / "reports" / "external-validation" / "external-validation-report.json"
+    report_path.parent.mkdir(parents=True)
+    report_path.write_text("{not-json", encoding="utf-8")
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert report["status"] == "error"
+    assert checks["external_validation_evidence"]["status"] == "error"
+    assert "unreadable or invalid JSON" in checks["external_validation_evidence"]["message"]
+
+
+def test_beta_readiness_requires_explicit_release_gate_skip_reasons(tmp_path: Path) -> None:
+    """Release gates may skip expensive public smokes only with an explicit reason."""
+    _write_minimal_beta_ready_project(tmp_path)
+    _write_backend_report_inputs(tmp_path)
+    script_path = tmp_path / "scripts" / "release-check.sh"
+    script = script_path.read_text(encoding="utf-8")
+    script_path.write_text(
+        script.replace(
+            'MCP_SMOKE_CMD="python scripts/mcp_smoke_test.py"',
+            'MCP_SMOKE_CMD=""',
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert checks["release_gate_surface_coverage"]["status"] == "error"
+    assert "MCP_SMOKE_CMD must run or use SKIP:<reason>" in checks[
+        "release_gate_surface_coverage"
+    ]["message"]
+
+
+def test_release_check_renders_external_validation_report_path_option() -> None:
+    """The release gate should let operators pass an external-validation report path directly."""
+    script = Path("scripts/release-check.sh").read_text(encoding="utf-8")
+
+    assert "--external-validation-report" in script
+    assert "EXTERNAL_VALIDATION_REPORT" in script
+    assert 'EXTERNAL_VALIDATION_CMD="python scripts/check-external-validation.py ${EXTERNAL_VALIDATION_REPORT}"' in script
+
+    help_result = subprocess.run(
+        ["bash", "scripts/release-check.sh", "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert help_result.returncode == 0
+    assert "--external-validation-report PATH" in help_result.stdout
+
+
+def test_release_check_can_require_external_validation_without_running_full_gate() -> None:
+    """Strict release mode should fail when external validation is still the default skip."""
+    command = [
+        "bash",
+        "scripts/release-check.sh",
+        "--require-external-validation",
+        "--ruff-cmd",
+        "true",
+        "--mypy-cmd",
+        "true",
+        "--pytest-cmd",
+        "true",
+        "--coverage-cmd",
+        "true",
+        "--packet-smoke-cmd",
+        "true",
+        "--examples-smoke-cmd",
+        "true",
+        "--mcp-smoke-cmd",
+        "true",
+        "--langgraph-smoke-cmd",
+        "true",
+        "--coordinate-smoke-cmd",
+        "true",
+        "--package-cmd",
+        "true",
+        "--docs-cmd",
+        "true",
+        "--validate-cmd",
+        "true",
+        "--hook-status-cmd",
+        "true",
+        "--backend-shootout-cmd",
+        "true",
+        "--backend-performance-cmd",
+        "true",
+        "--backend-scale-cmd",
+        "true",
+        "--beta-uat-cmd",
+        "true",
+    ]
+
+    result = subprocess.run(command, check=False, capture_output=True, text=True)
+
+    assert result.returncode == 2
+    assert "External validation is required" in result.stderr
+
+
+def test_release_check_requires_machine_checkable_external_validation_command() -> None:
+    """Strict release mode should reject no-op external validation commands."""
+    command = [
+        "bash",
+        "scripts/release-check.sh",
+        "--require-external-validation",
+        "--ruff-cmd",
+        "true",
+        "--mypy-cmd",
+        "true",
+        "--pytest-cmd",
+        "true",
+        "--coverage-cmd",
+        "true",
+        "--packet-smoke-cmd",
+        "true",
+        "--examples-smoke-cmd",
+        "true",
+        "--mcp-smoke-cmd",
+        "true",
+        "--langgraph-smoke-cmd",
+        "true",
+        "--coordinate-smoke-cmd",
+        "true",
+        "--package-cmd",
+        "true",
+        "--docs-cmd",
+        "true",
+        "--validate-cmd",
+        "true",
+        "--hook-status-cmd",
+        "true",
+        "--backend-shootout-cmd",
+        "true",
+        "--backend-performance-cmd",
+        "true",
+        "--backend-scale-cmd",
+        "true",
+        "--beta-uat-cmd",
+        "true",
+        "--external-validation-cmd",
+        "true",
+    ]
+
+    result = subprocess.run(command, check=False, capture_output=True, text=True)
+
+    assert result.returncode == 2
+    assert "External validation must run scripts/check-external-validation.py" in result.stderr
+
+
+def test_release_check_rejects_spoofed_external_validation_checker_command() -> None:
+    """Strict release mode should run the checker instead of matching its name in output."""
+    command = [
+        "bash",
+        "scripts/release-check.sh",
+        "--require-external-validation",
+        "--ruff-cmd",
+        "true",
+        "--mypy-cmd",
+        "true",
+        "--pytest-cmd",
+        "true",
+        "--coverage-cmd",
+        "true",
+        "--packet-smoke-cmd",
+        "true",
+        "--examples-smoke-cmd",
+        "true",
+        "--mcp-smoke-cmd",
+        "true",
+        "--langgraph-smoke-cmd",
+        "true",
+        "--coordinate-smoke-cmd",
+        "true",
+        "--package-cmd",
+        "true",
+        "--docs-cmd",
+        "true",
+        "--validate-cmd",
+        "true",
+        "--hook-status-cmd",
+        "true",
+        "--backend-shootout-cmd",
+        "true",
+        "--backend-performance-cmd",
+        "true",
+        "--backend-scale-cmd",
+        "true",
+        "--beta-uat-cmd",
+        "true",
+        "--external-validation-cmd",
+        "echo scripts/check-external-validation.py",
+    ]
+
+    result = subprocess.run(command, check=False, capture_output=True, text=True)
+
+    assert result.returncode == 2
+    assert "External validation must run scripts/check-external-validation.py" in result.stderr
+
+
+def test_release_check_rejects_shell_suffixed_external_validation_command() -> None:
+    """Strict release mode should not allow shell suffixes that can mask checker failure."""
+    command = [
+        "bash",
+        "scripts/release-check.sh",
+        "--require-external-validation",
+        "--ruff-cmd",
+        "true",
+        "--mypy-cmd",
+        "true",
+        "--pytest-cmd",
+        "true",
+        "--coverage-cmd",
+        "true",
+        "--packet-smoke-cmd",
+        "true",
+        "--examples-smoke-cmd",
+        "true",
+        "--mcp-smoke-cmd",
+        "true",
+        "--langgraph-smoke-cmd",
+        "true",
+        "--coordinate-smoke-cmd",
+        "true",
+        "--package-cmd",
+        "true",
+        "--docs-cmd",
+        "true",
+        "--validate-cmd",
+        "true",
+        "--hook-status-cmd",
+        "true",
+        "--backend-shootout-cmd",
+        "true",
+        "--backend-performance-cmd",
+        "true",
+        "--backend-scale-cmd",
+        "true",
+        "--beta-uat-cmd",
+        "true",
+        "--external-validation-cmd",
+        "python scripts/check-external-validation.py missing-report.json; true",
+    ]
+
+    result = subprocess.run(command, check=False, capture_output=True, text=True)
+
+    assert result.returncode == 2
+    assert "External validation must run scripts/check-external-validation.py" in result.stderr
+
+
+def test_beta_readiness_exposes_benchmark_no_regression_gate(tmp_path: Path) -> None:
+    """Beta readiness should report the v0.8 benchmark no-regression evidence explicitly."""
+    _write_minimal_beta_ready_project(tmp_path)
+    _write_backend_report_inputs(tmp_path)
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert checks["benchmark_no_regression"]["status"] == "ok"
+    assert "checkout quality" in checks["benchmark_no_regression"]["message"]
+    assert "citation coverage" in checks["benchmark_no_regression"]["message"]
+    assert "p95/p99 latency" in checks["benchmark_no_regression"]["message"]
+
+
+def test_beta_readiness_requires_benchmark_no_regression_guardrails(tmp_path: Path) -> None:
+    """Beta readiness should fail when release checks stop gating quality, citation, or latency budgets."""
+    _write_minimal_beta_ready_project(tmp_path)
+    _write_backend_report_inputs(tmp_path)
+    script_path = tmp_path / "scripts" / "release-check.sh"
+    script = script_path.read_text(encoding="utf-8")
+    script_path.write_text(
+        script.replace("--min-citation-coverage 1.0", "")
+        .replace("--min-quality-per-1k-returned-tokens", "")
+        .replace("--max-checkout-p99-ms", ""),
+        encoding="utf-8",
+    )
+
+    report = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in report["checks"]}
+    assert checks["benchmark_no_regression"]["status"] == "error"
+    assert "--min-citation-coverage 1.0" in checks["benchmark_no_regression"]["message"]
+    assert "--min-quality-per-1k-returned-tokens" in checks["benchmark_no_regression"]["message"]
+    assert "--max-checkout-p99-ms" in checks["benchmark_no_regression"]["message"]
+
+
+def test_api_inventory_documents_v09_freeze_surfaces() -> None:
+    """The v0.9 API inventory should classify every roadmap surface."""
+    inventory = Path("docs/api-inventory.md").read_text(encoding="utf-8")
+
+    for heading in (
+        "## Stability Labels",
+        "## MCP Tool Contracts",
+        "## Python SDK Public Exports",
+        "## Stable CLI Commands",
+        "## Durable Eventloom Events",
+        "## Projection Backend Contract",
+        "## Benchmark Artifact Schemas",
+        "## Migration and Freeze Policy",
+    ):
+        assert heading in inventory
+    for label in ("Stable", "Beta", "Experimental", "Internal"):
+        assert f"`{label}`" in inventory
+    for tool in ("memory_bootstrap", "memory_checkout", "context_assemble", "coordination_start"):
+        assert f"`{tool}`" in inventory
+    for public_export in ("MemoryFabric", "MemoryCheckout", "CoordinationManager", "ProjectionStore"):
+        assert f"`{public_export}`" in inventory
+    for event_type in ("memory.checkout.completed", "coordination.finding.reported", "transcript.turn"):
+        assert f"`{event_type}`" in inventory
+
+
+def test_migration_guide_covers_04_through_09() -> None:
+    """The v0.9 migration guide should cover every public release band."""
+    guide = Path("docs/migration.md").read_text(encoding="utf-8")
+
+    for heading in (
+        "## Upgrade Checklist",
+        "## From 0.4 to 0.5",
+        "## From 0.5 to 0.6",
+        "## From 0.6 to 0.7",
+        "## From 0.7 to 0.8",
+        "## From 0.8 to 0.9",
+        "## Compatibility Tests",
+        "## Rollback Policy",
+    ):
+        assert heading in guide
+    for command in (
+        "zaxy doctor --beta-readiness",
+        "zaxy memory status --graph",
+        "zaxy coordinate inspect",
+        "zaxy trace export",
+    ):
+        assert f"`{command}`" in guide
+    for contract in ("`zaxy.native.v0.6`", "`docs/api-inventory.md`", "`memory_checkout`"):
+        assert contract in guide
+
+
+def test_v1_schema_freeze_manifest_tracks_candidate_contracts() -> None:
+    """The v0.9 freeze candidate should bind public schema contracts to migration policy."""
+    manifest = json.loads(Path("docs/examples/v1-schema-freeze.json").read_text(encoding="utf-8"))
+
+    assert manifest["contract"] == "zaxy.v1.schema-freeze"
+    assert manifest["status"] == "freeze-candidate"
+    assert manifest["change_policy"]["stable_or_beta"] == "migration_event_required"
+    assert manifest["migration_event_type"] == "schema.migration.proposed"
+    surfaces = {surface["name"]: surface for surface in manifest["surfaces"]}
+    for name in (
+        "mcp_tool_contract",
+        "mcp_response_snapshots",
+        "native_integration_contract",
+        "memory_checkout_contract",
+        "api_inventory",
+        "eventloom_event_taxonomy",
+        "benchmark_artifact_schemas",
+    ):
+        assert surfaces[name]["status"] in {"Stable", "Beta"}
+        assert Path(surfaces[name]["path"]).exists()
+
+    agent_events = Path("docs/agent-events.md").read_text(encoding="utf-8")
+    assert "schema.migration.proposed" in agent_events
+    assert "schema.migration.applied" in agent_events
+
+
+def test_v09_gate_audit_records_current_gate_evidence() -> None:
+    """The v0.9 gate audit should separate proven gates from optional external feedback."""
+    audit = Path("docs/v09-gate-audit.md").read_text(encoding="utf-8")
+
+    for required in (
+        "## Proven Gates",
+        "## Optional Evidence",
+        "Python 3.11, 3.12, and 3.13",
+        "pytest -m \"not integration\" --benchmark-disable --cov --cov-report=xml",
+        "scripts/check-coverage.py --root . --coverage-xml coverage.xml",
+        "zaxy doctor --beta-readiness",
+        "release_gate_surface_coverage",
+        "backend_report_inputs",
+        "docs/api-inventory.md",
+        "docs/migration.md",
+        "External User Feedback",
+        "optional for v1.0 release",
+    ):
+        assert required in audit
+    assert "Status: pending" not in audit
+
+
+def test_v10_announcement_and_release_checklist_cover_launch_requirements() -> None:
+    """v1.0 release artifacts should cover positioning, evidence, limitations, and gates."""
+    announcement = Path("docs/announcements/zaxy-v1.0.md").read_text(encoding="utf-8")
+    checklist = Path("docs/release-validation-checklist.md").read_text(encoding="utf-8")
+
+    for required in (
+        "Coordinator Memory for Agent Teams",
+        "Memory Bootstrap",
+        "Memory Checkout",
+        "Zaxy Coordinate",
+        "LongMemEval",
+        "CoordinationBench",
+        "backend shootout",
+        "Limitations",
+        "Roadmap beyond 1.0",
+        "External validation",
+    ):
+        assert required in announcement
+    for required in (
+        "Clean-repo UAT",
+        "MCP smoke",
+        "LangGraph smoke",
+        "direct model integration smoke",
+        "Coordinate mission smoke",
+        "Benchmark guardrails",
+        "Docs validation",
+        "Release smoke",
+        "Coverage remains at or above 92%",
+        "Public surfaces are tagged",
+        "External validation",
+    ):
+        assert required in checklist
+    assert "scripts/release-check.sh --root ." in checklist
+    assert "zaxy doctor --beta-readiness" in checklist
+
+
+def test_v10_gate_audit_records_release_gate_evidence() -> None:
+    """The v1.0 gate audit should map release gates to proof and optional evidence."""
+    audit = Path("docs/v10-gate-audit.md").read_text(encoding="utf-8")
+
+    for required in (
+        "## Proven Local Gates",
+        "## Optional Post-Release Evidence",
+        "Clean-repo UAT",
+        "scripts/beta-uat.sh",
+        "MCP smoke",
+        "python scripts/mcp_smoke_test.py",
+        "LangGraph smoke",
+        "test_langgraph_example_runs_without_langgraph_dependency",
+        "direct model integration smoke",
+        "tests/test_openai_compatible_adapter.py",
+        "Coordinate mission smoke",
+        "test_coordinate_three_worker_example_runs",
+        "Benchmark guardrails",
+        "scripts/benchmark-guardrails.sh",
+        "Docs validation",
+        "scripts/build-site-docs.py --check",
+        "Release smoke",
+        "zaxy doctor --release-smoke",
+        "Coverage remains at or above 92%",
+        "scripts/check-coverage.py --root . --coverage-xml coverage.xml",
+        "Public surfaces are tagged",
+        "docs/api-inventory.md",
+        "docs/examples/v1-schema-freeze.json",
+        "External validation",
+        "Status: optional for v1.0 release",
+    ):
+        assert required in audit
+
+
+def test_v10_external_validation_packet_captures_optional_evidence() -> None:
+    """External validation should have a concrete packet and issue template for v1.0 evidence."""
+    packet = Path("docs/external-validation.md").read_text(encoding="utf-8")
+    issue = Path(".github/ISSUE_TEMPLATE/external_validation.md").read_text(encoding="utf-8")
+
+    for required in (
+        "## Who Should Run This",
+        "## Validation Paths",
+        "## Required Evidence",
+        "## Report Template",
+        "## Acceptance Criteria",
+        "zaxy init",
+        "zaxy memory bootstrap",
+        "zaxy memory checkout",
+        "zaxy doctor --beta-readiness",
+        "python examples/coordinate_three_worker_project.py",
+        "scripts/beta-uat.sh",
+        "docs/v10-gate-audit.md",
+        "docs/release-validation-checklist.md",
+        "Status: optional for the v1.0 release",
+    ):
+        assert required in packet
+    for required in (
+        "External validation",
+        "Zaxy version",
+        "Validation path",
+        "Time to first useful checkout",
+        "Evidence link",
+        "absolute `http` or `https` URL",
+        "docs/examples/external-validation-report.example.json",
+        "Friction or failure",
+        "Release decision",
+    ):
+        assert required in issue
+
+
+def test_external_validation_checker_accepts_complete_report_and_rejects_pending(tmp_path: Path) -> None:
+    """The release gate should validate external evidence instead of accepting prose."""
+    complete_report = tmp_path / "external-validation-pass.json"
+    complete_report.write_text(
+        json.dumps(
+            {
+                "contract": "zaxy.v1.external-validation-report",
+                "status": "validated",
+                "validator": {
+                    "name": "Independent Validation Project",
+                    "external_to_implementation_session": True,
+                },
+                "date": "2026-05-31",
+                "zaxy_version_or_commit": "v1.0.0-rc",
+                "environment": {
+                    "operating_system": "Linux",
+                    "shell": "bash",
+                    "python_version": "3.13",
+                    "install_source": "pipx install zaxy-memory",
+                },
+                "validation_path": "first_run_local",
+                "commands": [
+                    "zaxy init",
+                    "zaxy memory bootstrap --eventloom-path .eventloom",
+                    "zaxy memory checkout current project memory --eventloom-path .eventloom",
+                    "zaxy doctor --beta-readiness",
+                ],
+                "time_to_first_useful_checkout_seconds": 180,
+                "unexpected_sidecar_or_credential_required": False,
+                "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+                "friction_or_failure": "No blocking friction.",
+                "release_decision": "pass_with_follow_up",
+                "supports_positioning": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+    pending_report = tmp_path / "external-validation-pending.json"
+    pending_report.write_text(
+        json.dumps(
+            {
+                "contract": "zaxy.v1.external-validation-report",
+                "status": "pending",
+                "validator": {
+                    "name": "Implementation Session",
+                    "external_to_implementation_session": False,
+                },
+                "release_decision": "fail",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    passed = subprocess.run(
+        [sys.executable, "scripts/check-external-validation.py", str(complete_report)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    failed = subprocess.run(
+        [sys.executable, "scripts/check-external-validation.py", str(pending_report)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert passed.returncode == 0, passed.stderr
+    assert "External validation passed" in passed.stdout
+    assert failed.returncode == 1
+    assert "status must be validated" in failed.stderr
+    assert "validator.external_to_implementation_session must be true" in failed.stderr
+
+
+def test_external_validation_uses_shared_validator() -> None:
+    """The CLI checker and beta readiness should share one report validator."""
+    script = Path("scripts/check-external-validation.py").read_text(encoding="utf-8")
+    release = Path("src/zaxy/release.py").read_text(encoding="utf-8")
+    payload = json.loads(Path("docs/examples/external-validation-report.example.json").read_text(encoding="utf-8"))
+
+    payload["status"] = "validated"
+    errors = validate_external_validation_report(payload)
+
+    assert "validator.name must not be a placeholder" in errors
+    assert "evidence_links must not contain placeholder values" in errors
+    assert "friction_or_failure must not be a placeholder" in errors
+    assert "from zaxy.external_validation import" in script
+    assert "from zaxy.external_validation import" in release
+
+
+def test_external_validation_rejects_non_object_report() -> None:
+    """External validation reports must be structured JSON objects."""
+    assert validate_external_validation_report(["not", "an", "object"]) == ["report must be a JSON object"]
+
+
+def test_external_validation_reports_all_structural_field_errors() -> None:
+    """Invalid report field shapes should produce actionable errors in one pass."""
+    payload = {
+        "contract": "wrong",
+        "status": "pending",
+        "validator": {},
+        "environment": {},
+        "date": 20260531,
+        "zaxy_version_or_commit": "",
+        "validation_path": "unknown",
+        "commands": [],
+        "time_to_first_useful_checkout_seconds": 0,
+        "unexpected_sidecar_or_credential_required": True,
+        "evidence_links": [],
+        "friction_or_failure": "",
+        "release_decision": "fail",
+        "supports_positioning": False,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    for expected in (
+        "contract must be zaxy.v1.external-validation-report",
+        "status must be validated",
+        "validator.name must be a non-empty string",
+        "validator.external_to_implementation_session must be true",
+        "environment.operating_system must be a non-empty string",
+        "environment.shell must be a non-empty string",
+        "environment.python_version must be a non-empty string",
+        "environment.install_source must be a non-empty string",
+        "date must be an ISO date string",
+        "zaxy_version_or_commit must be a non-empty string",
+        "validation_path must be one of:",
+        "commands must be a non-empty list of command strings",
+        "time_to_first_useful_checkout_seconds must be a positive number",
+        "unexpected_sidecar_or_credential_required must be false",
+        "evidence_links must include at least one report, issue, discussion, or case-study link",
+        "friction_or_failure must be a non-empty string",
+        "release_decision must be pass or pass_with_follow_up",
+        "supports_positioning must be true",
+    ):
+        assert any(expected in error for error in errors)
+
+
+def test_external_validation_accepts_wrapped_validation_commands() -> None:
+    """The validator should accept common command wrappers for supported validation paths."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "Python 3.13.1",
+            "install_source": "pipx install zaxy-memory==1.0.0",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "uv run zaxy init --preset local-codex",
+            "python -m zaxy memory bootstrap --eventloom-path .eventloom",
+            "poetry run zaxy memory checkout current project memory",
+            "pipx run zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass",
+        "supports_positioning": True,
+    }
+
+    assert validate_external_validation_report(payload) == []
+
+
+def test_external_validation_accepts_script_wrappers_for_script_paths() -> None:
+    """Script-based validation paths should accept Python and shell wrapper commands."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "zsh",
+            "python_version": "3.13.1",
+            "install_source": "uv tool install zaxy-memory==1.0.0",
+        },
+        "validation_path": "coordinate_workflow",
+        "commands": ["python examples/coordinate_three_worker_project.py"],
+        "time_to_first_useful_checkout_seconds": 90,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/discussions/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass",
+        "supports_positioning": True,
+    }
+    clean_repo_payload = dict(payload)
+    clean_repo_payload["validation_path"] = "clean_repo_uat"
+    clean_repo_payload["commands"] = ["bash scripts/beta-uat.sh"]
+
+    assert validate_external_validation_report(payload) == []
+    assert validate_external_validation_report(clean_repo_payload) == []
+
+
+def test_external_validation_helper_predicates_ignore_non_string_inputs() -> None:
+    """Validator helpers should be defensive when report fields have invalid types."""
+    value = object()
+
+    assert external_validation._is_placeholder(value) is False
+    assert external_validation._is_implementation_session_name(value) is False
+    assert external_validation._is_absolute_web_url(value) is False
+    assert external_validation._has_url_credentials(value) is False
+    assert external_validation._has_bare_origin_url(value) is False
+    assert external_validation._has_single_label_hostname(value) is False
+    assert external_validation._is_local_only_url(value) is False
+    assert external_validation._is_private_network_url(value) is False
+    assert external_validation._is_internal_only_domain_url(value) is False
+    assert external_validation._is_example_domain_url(value) is False
+    assert external_validation._is_invalid_github_artifact_url(value) is False
+    assert external_validation._is_vague_version_reference(value) is False
+    assert external_validation._is_vague_install_source(value) is False
+    assert external_validation._is_vague_shell(value) is False
+    assert external_validation._has_shell_control_operator(value) is False
+    assert external_validation._command_starts_with_marker(value, "zaxy init") is False
+    assert external_validation._is_substantive_validation_command(value) is False
+    assert external_validation._parse_date(value) is None
+    assert external_validation._parse_date("not-a-date") is None
+
+
+def test_external_validation_requires_reviewable_evidence_links() -> None:
+    """Validated reports should link to independently reviewable external evidence."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["notes/external-validation.md"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must contain absolute http or https URLs" in errors
+
+
+def test_external_validation_rejects_example_validator_name() -> None:
+    """Validated reports should not use sample validator names."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Example External User",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "validator.name must not be a placeholder" in errors
+
+
+def test_external_validation_rejects_sample_validator_name() -> None:
+    """Validated reports should not use sample validator names from instructions or templates."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Sample External User",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "validator.name must not be a placeholder" in errors
+
+
+def test_external_validation_rejects_implementation_session_validator_name() -> None:
+    """Validated reports should not name the current implementation session as validator."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Implementation Session",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "validator.name must identify an external validator" in errors
+
+
+def test_external_validation_rejects_agent_validator_name() -> None:
+    """Validated reports should not name the implementing agent as validator."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Codex Agent",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "validator.name must identify an external validator" in errors
+
+
+def test_external_validation_rejects_local_only_evidence_links() -> None:
+    """Validated reports should not use local-only URLs as external evidence."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["http://localhost:8000/external-validation"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must not use local-only URLs" in errors
+
+
+def test_external_validation_rejects_private_network_evidence_links() -> None:
+    """Validated reports should not rely on private-network evidence URLs."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["http://192.168.1.20/external-validation"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must not use private-network URLs" in errors
+
+
+def test_external_validation_rejects_internal_only_evidence_domains() -> None:
+    """Validated reports should not rely on internal-only DNS names as evidence."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://validation.internal/external-validation"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must not use internal-only domains" in errors
+
+
+def test_external_validation_rejects_evidence_links_with_credentials() -> None:
+    """Validated reports should not embed credentials in evidence URLs."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://token:secret@github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must not include credentials" in errors
+
+
+def test_external_validation_rejects_bare_origin_evidence_links() -> None:
+    """Validated reports should link to a concrete reviewable evidence artifact."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must include a concrete artifact path" in errors
+
+
+def test_external_validation_rejects_single_label_evidence_hosts() -> None:
+    """Validated reports should not rely on single-label internal hostnames."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://validation/external-report"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must use fully qualified public hostnames" in errors
+
+
+def test_external_validation_rejects_repository_home_evidence_links() -> None:
+    """Validated reports should link to evidence artifacts, not repository home pages."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_github_collection_evidence_links() -> None:
+    """Validated reports should link to concrete GitHub artifacts, not collection pages."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_invalid_github_artifact_ids() -> None:
+    """Validated reports should link to numbered GitHub issue, discussion, or pull artifacts."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/not-a-number"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_query_decorated_github_artifact_links() -> None:
+    """Validated reports should use canonical GitHub artifact URLs without query strings."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1?plain=1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_fragment_decorated_github_artifact_links() -> None:
+    """Validated reports should use canonical GitHub artifact URLs without fragments."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1#issuecomment-1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_trailing_slash_github_artifact_links() -> None:
+    """Validated reports should use exact GitHub artifact paths without trailing slashes."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1/"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_mixed_case_github_artifact_paths() -> None:
+    """Validated reports should use canonical lowercase GitHub artifact path segments."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/Issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_duplicate_slash_github_artifact_paths() -> None:
+    """Validated reports should not accept empty path segments in GitHub artifact URLs."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues//1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_numbered_github_artifact_links_with_extra_paths() -> None:
+    """Validated reports should link to exact numbered GitHub issue artifacts."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1/extra"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_zero_github_artifact_ids() -> None:
+    """Validated reports should link to positive-numbered GitHub artifacts."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/0"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_leading_zero_github_artifact_ids() -> None:
+    """Validated reports should link to canonical positive-numbered GitHub artifacts."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/01"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_github_plural_pulls_artifact_links() -> None:
+    """Validated reports should use GitHub's concrete pull-request artifact path."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/pulls/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_invalid_github_actions_run_ids() -> None:
+    """Validated reports should link to concrete GitHub Actions run evidence artifacts."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/actions/runs/not-a-number"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_github_actions_run_collection_links() -> None:
+    """Validated reports should link to a specific GitHub Actions run, not the runs collection."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/actions/runs"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_github_actions_run_links_with_extra_paths() -> None:
+    """Validated reports should link to the exact GitHub Actions run artifact."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/actions/runs/123/extra"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_github_release_tag_collection_links() -> None:
+    """Validated reports should link to a specific GitHub release tag, not the tag collection."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/releases/tag"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_unsupported_github_repo_paths() -> None:
+    """Validated reports should not accept arbitrary GitHub repo pages as evidence artifacts."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/pulse"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_github_latest_release_links() -> None:
+    """Validated reports should link to a specific GitHub release tag, not latest-release redirects."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/releases/latest"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_vague_github_release_tags() -> None:
+    """Validated reports should not accept vague tag-shaped GitHub release links."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/releases/tag/latest"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_github_release_tag_links_with_extra_paths() -> None:
+    """Validated reports should link to the exact GitHub release tag artifact."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/releases/tag/v1.0.0/extra"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_branch_like_github_commit_links() -> None:
+    """Validated reports should link to concrete GitHub commit SHAs, not moving branch names."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/commit/main"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_github_commit_links_with_extra_paths() -> None:
+    """Validated reports should link to the exact GitHub commit artifact."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/commit/abcdef1/extra"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_short_github_commit_sha_links() -> None:
+    """Validated reports should link to full GitHub commit SHAs, not abbreviations."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/commit/abcdef1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_github_blob_links_with_moving_refs() -> None:
+    """Validated reports should link to GitHub file evidence at commit SHA refs."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/blob/main/reports/external-validation.md"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_github_blob_links_without_file_paths() -> None:
+    """Validated reports should link to a concrete GitHub file, not only a blob ref."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/blob/abcdef1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_github_raw_links_with_moving_refs() -> None:
+    """Validated reports should not use moving refs in GitHub raw file evidence."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/raw/main/reports/external-validation.json"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_raw_githubusercontent_links_with_moving_refs() -> None:
+    """Validated reports should not use moving refs in raw.githubusercontent.com evidence."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://raw.githubusercontent.com/syndicalt/zaxy/main/reports/external-validation.json"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_raw_githubusercontent_links_without_refs() -> None:
+    """Validated reports should not use raw.githubusercontent.com URLs without file refs."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://raw.githubusercontent.com/syndicalt/zaxy"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must point to a reviewable evidence artifact" in errors
+
+
+def test_external_validation_rejects_example_domain_evidence_links() -> None:
+    """Validated reports should not use documentation example domains as evidence."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://example.com/external-validation"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "evidence_links must not use example domains" in errors
+
+
+def test_external_validation_rejects_future_dated_reports() -> None:
+    """Validated reports should not be dated after the release gate run."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2999-01-01",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "date must not be in the future" in errors
+
+
+def test_external_validation_rejects_zero_checkout_timing() -> None:
+    """Validated reports should record a measured, positive time to useful checkout."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 0,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "time_to_first_useful_checkout_seconds must be a positive number" in errors
+
+
+def test_external_validation_rejects_placeholder_commands() -> None:
+    """Validated reports should include actual commands, not template text."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": ["Replace with exact commands used"],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "commands must not contain placeholder values" in errors
+
+
+def test_external_validation_rejects_na_friction_narrative() -> None:
+    """Validated reports should include a real friction narrative, not N/A."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "N/A",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "friction_or_failure must not be a placeholder" in errors
+
+
+def test_external_validation_requires_commands_for_selected_path() -> None:
+    """Validated reports should prove the documented validation path they claim."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": ["python examples/coordinate_three_worker_project.py"],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "commands must include zaxy init for first_run_local validation" in errors
+
+
+def test_external_validation_requires_complete_first_run_command_path() -> None:
+    """First-run validation should prove init, bootstrap, checkout, and readiness."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": ["zaxy init"],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "commands must include zaxy memory bootstrap for first_run_local validation" in errors
+    assert "commands must include zaxy memory checkout for first_run_local validation" in errors
+    assert "commands must include zaxy doctor --beta-readiness for first_run_local validation" in errors
+
+
+def test_external_validation_rejects_echoed_commands_for_selected_path() -> None:
+    """Validated reports should prove commands were run, not echoed as text."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "echo zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "commands must record executed commands, not echoed command text" in errors
+
+
+def test_external_validation_rejects_echo_command_entries() -> None:
+    """Validated reports should reject command text that only prints a command."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "echo 'zaxy init'",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "commands must record executed commands, not echoed command text" in errors
+
+
+def test_external_validation_rejects_help_commands_for_selected_path() -> None:
+    """Validated reports should prove workflow commands ran, not help probes."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init --help",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "commands must include zaxy init for first_run_local validation" in errors
+
+
+def test_external_validation_rejects_compound_shell_commands() -> None:
+    """Validated reports should record direct workflow commands, not shell compounds."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init && echo done",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "commands must not contain shell control operators" in errors
+
+
+def test_external_validation_rejects_background_shell_commands() -> None:
+    """Validated reports should not hide backgrounded shell compounds behind a command marker."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init & echo done",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "commands must not contain shell control operators" in errors
+
+
+def test_external_validation_rejects_shell_comment_commands() -> None:
+    """Validated reports should record executed commands without shell comments."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init # then review generated config",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "commands must not contain shell control operators" in errors
+
+
+def test_external_validation_rejects_parenthesized_shell_commands() -> None:
+    """Validated reports should not accept parenthesized shell group evidence."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init (echo done)",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "commands must not contain shell control operators" in errors
+
+
+def test_external_validation_rejects_multiline_command_entries() -> None:
+    """Validated reports should keep each command entry to one executed command line."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init\nzaxy doctor --beta-readiness",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "commands must be single-line strings" in errors
+
+
+def test_external_validation_rejects_non_substantive_other_documented_commands() -> None:
+    """Other documented validation still needs substantive Zaxy command evidence."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "other_documented",
+        "commands": ["pwd"],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "commands must include at least one substantive Zaxy validation command" in errors
+
+
+def test_external_validation_rejects_unknown_zaxy_other_documented_commands() -> None:
+    """Other documented validation should not accept arbitrary zaxy command text."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "other_documented",
+        "commands": ["zaxy frobnicate"],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "commands must include at least one substantive Zaxy validation command" in errors
+
+
+def test_external_validation_rejects_placeholder_version_and_environment() -> None:
+    """Validated reports should replace version and environment template text."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "REPLACE with version or commit",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "TBD install source",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "zaxy_version_or_commit must not be a placeholder" in errors
+    assert "environment.install_source must not be a placeholder" in errors
+
+
+def test_external_validation_rejects_vague_python_version() -> None:
+    """Validated reports should record a concrete Python major/minor version."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.x",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "environment.python_version must be a concrete Python version" in errors
+
+
+def test_external_validation_rejects_vague_install_source() -> None:
+    """Validated reports should record the concrete Zaxy install source used."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "package manager",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "environment.install_source must be concrete" in errors
+
+
+def test_external_validation_rejects_vague_install_source_phrases() -> None:
+    """Validated reports should reject moving install-source descriptions."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "latest from PyPI",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "environment.install_source must be concrete" in errors
+
+
+def test_external_validation_rejects_branch_like_install_source_phrases() -> None:
+    """Validated reports should not use moving branch names as install-source evidence."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "from GitHub main",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "environment.install_source must be concrete" in errors
+
+
+def test_external_validation_rejects_vague_shell() -> None:
+    """Validated reports should record a concrete shell name."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "v1.0.0-rc",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "terminal",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "environment.shell must be concrete" in errors
+
+
+def test_external_validation_rejects_vague_version_reference() -> None:
+    """Validated reports should identify a concrete Zaxy version or commit."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "latest",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "zaxy_version_or_commit must be a concrete version or commit" in errors
+
+
+def test_external_validation_rejects_vague_version_reference_phrases() -> None:
+    """Validated reports should reject phrase-form moving refs for the tested Zaxy version."""
+    payload = {
+        "contract": "zaxy.v1.external-validation-report",
+        "status": "validated",
+        "validator": {
+            "name": "Independent Validation Project",
+            "external_to_implementation_session": True,
+        },
+        "date": "2026-05-31",
+        "zaxy_version_or_commit": "latest release",
+        "environment": {
+            "operating_system": "Linux",
+            "shell": "bash",
+            "python_version": "3.13",
+            "install_source": "pipx install zaxy-memory",
+        },
+        "validation_path": "first_run_local",
+        "commands": [
+            "zaxy init",
+            "zaxy memory bootstrap --eventloom-path .eventloom",
+            "zaxy memory checkout current project memory --eventloom-path .eventloom",
+            "zaxy doctor --beta-readiness",
+        ],
+        "time_to_first_useful_checkout_seconds": 180,
+        "unexpected_sidecar_or_credential_required": False,
+        "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+        "friction_or_failure": "No blocking friction.",
+        "release_decision": "pass_with_follow_up",
+        "supports_positioning": True,
+    }
+
+    errors = validate_external_validation_report(payload)
+
+    assert "zaxy_version_or_commit must be a concrete version or commit" in errors
+
+
+def test_external_validation_docs_reference_machine_checkable_report() -> None:
+    """The v1.0 release docs should point validators at the machine-checkable report contract."""
+    packet = Path("docs/external-validation.md").read_text(encoding="utf-8")
+    checklist = Path("docs/release-validation-checklist.md").read_text(encoding="utf-8")
+    audit = Path("docs/v10-gate-audit.md").read_text(encoding="utf-8")
+    issue = Path(".github/ISSUE_TEMPLATE/external_validation.md").read_text(encoding="utf-8")
+    example = Path("docs/examples/external-validation-report.example.json").read_text(encoding="utf-8")
+
+    for required in (
+        "scripts/check-external-validation.py",
+        "docs/examples/external-validation-report.example.json",
+        "zaxy.v1.external-validation-report",
+        "Zaxy version or commit must be concrete, not `latest`, `current`, `main`, `master`, `head`, or `stable`",
+        "validator name must not be a placeholder, sample name, or implementation-session name",
+        "validator name must not identify the implementing agent",
+        "friction or failure narrative must not be `none`, `n/a`, or placeholder text",
+        "shell must be concrete enough to identify the shell used",
+        "Python version must be concrete major/minor evidence",
+        "install source must be concrete enough to reproduce the install path",
+        "absolute `http` or `https` URL",
+        "includes a concrete artifact path",
+        "points to a reviewable evidence artifact instead of a repository homepage or collection page",
+        "GitHub evidence links must use a supported artifact path",
+        "GitHub evidence links must not include query strings",
+        "GitHub evidence links must not include URL fragments",
+        "GitHub evidence links must not include trailing slashes",
+        "GitHub evidence links must not include empty path segments",
+        "GitHub artifact path keywords must be lowercase",
+        "GitHub issue, discussion, and pull-request links must use exact canonical positive-numbered artifact paths",
+        "GitHub pull-request links must use `/pull/<number>`",
+        "GitHub Actions run links must use exact `/actions/runs/<id>` paths with a concrete canonical positive numeric run ID",
+        "GitHub release links must use exact `/releases/tag/<tag>` paths with a concrete non-vague release tag",
+        "GitHub commit links must use `/commit/<sha>` with a full 40-character commit SHA",
+        "GitHub file links (`blob`, `raw`, or `tree`) must use a full 40-character commit SHA ref and file path instead of a branch or tag",
+        "raw.githubusercontent.com links must use a full 40-character commit SHA ref and file path instead of a branch or tag",
+        "uses a fully qualified public hostname",
+        "does not include credentials",
+        "not `localhost`, loopback, link-local, unspecified, or private-network URL",
+        "not an internal-only domain such as `.internal`, `.local`, `.lan`, `.test`, or `.invalid`",
+        "not a reserved example domain",
+        "`commands` match the selected `validation_path`",
+        "command entries must be single-line strings",
+        "command entries must record executed commands, not echoed command text",
+        "not `echo` or `printf` command text",
+        "not compound shell commands",
+        "not backgrounded shell commands",
+        "not parenthesized shell groups",
+        "not shell comments",
+        "not help or version probes",
+        "`first_run_local` reports must include `zaxy init`, `zaxy memory bootstrap`, `zaxy memory checkout`, and `zaxy doctor --beta-readiness`",
+        "`other_documented` reports must include at least one substantive Zaxy validation command",
+        "arbitrary or unknown `zaxy` command text does not count as validation evidence",
+    ):
+        assert required in packet
+        assert required in checklist
+        assert required in audit
+    assert "not `localhost`, loopback, link-local, unspecified, or private-network URL" in issue
+    assert "include a concrete artifact path" in issue
+    assert "point to a reviewable evidence artifact instead of a repository homepage or collection page" in issue
+    assert "GitHub evidence links must use a supported artifact path" in issue
+    assert "GitHub evidence links must not include query strings" in issue
+    assert "GitHub evidence links must not include URL fragments" in issue
+    assert "GitHub evidence links must not include trailing slashes" in issue
+    assert "GitHub evidence links must not include empty path segments" in issue
+    assert "GitHub artifact path keywords must be lowercase" in issue
+    assert "GitHub issue, discussion, and pull-request links must use exact canonical positive-numbered artifact paths" in issue
+    assert "GitHub pull-request links must use `/pull/<number>`" in issue
+    assert "GitHub Actions run links must use exact `/actions/runs/<id>` paths with a concrete canonical positive numeric run ID" in issue
+    assert "GitHub release links must use exact `/releases/tag/<tag>` paths with a concrete non-vague release tag" in issue
+    assert "GitHub commit links must use `/commit/<sha>` with a full 40-character commit SHA" in issue
+    assert (
+        "GitHub file links (`blob`, `raw`, or `tree`) must use a full 40-character commit SHA ref and file path instead of a branch or tag"
+        in issue
+    )
+    assert (
+        "raw.githubusercontent.com links must use a full 40-character commit SHA ref and file path instead of a branch or tag"
+        in issue
+    )
+    assert "use a fully qualified public hostname" in issue
+    assert "does not include credentials" in issue
+    assert "not an internal-only domain such as `.internal`, `.local`, `.lan`, `.test`, or `.invalid`" in issue
+    assert "not a reserved example domain" in issue
+    assert "validator name must not be a placeholder, sample name," in issue
+    assert "or implementation-session name" in issue
+    assert "validator name must not identify the implementing agent" in issue
+    assert "Friction or failure narrative must not be `none`, `n/a`, or placeholder text" in issue
+    assert "Shell must be concrete enough to identify the shell used" in issue
+    assert "concrete Python major/minor version" in issue
+    assert "Install source must be concrete enough to reproduce the install path" in issue
+    assert "command entries must be single-line strings" in issue
+    assert "command entries must record executed commands, not echoed command text" in issue
+    assert "not `echo` or `printf` command text" in issue
+    assert "not compound shell commands" in issue
+    assert "not backgrounded shell commands" in issue
+    assert "not parenthesized shell groups" in issue
+    assert "not shell comments" in issue
+    assert "not help or version probes" in issue
+    assert (
+        "`first_run_local` reports must include `zaxy init`, `zaxy memory bootstrap`, `zaxy memory checkout`, and `zaxy doctor --beta-readiness`"
+        in issue
+    )
+    assert "`other_documented` reports must include at least one substantive Zaxy validation command" in issue
+    assert "Arbitrary or unknown `zaxy` command text does not count as validation evidence" in issue
+    assert (
+        "Zaxy version or commit must be concrete, not `latest`, `current`, `main`, `master`, `head`, or `stable`"
+        in issue
+    )
+    payload = json.loads(example)
+    assert payload["contract"] == "zaxy.v1.external-validation-report"
+    assert payload["status"] == "example"
+    assert payload["validator"]["external_to_implementation_session"] is True
+
+
+def test_v10_stability_commitment_covers_public_surfaces_and_data_model() -> None:
+    """v1.0 should have an explicit API and data model stability commitment."""
+    commitment = Path("docs/stability-commitment.md").read_text(encoding="utf-8")
+
+    for required in (
+        "## Stability Commitment",
+        "## Public API Surfaces",
+        "## Data Model Commitment",
+        "## Compatibility Policy",
+        "## Migration Events",
+        "## Non-Commitments",
+        "docs/api-inventory.md",
+        "docs/examples/v1-schema-freeze.json",
+        "Eventloom",
+        "MCP",
+        "CLI",
+        "ProjectionStore",
+        "schema.migration.proposed",
+        "schema.migration.applied",
+    ):
+        assert required in commitment
+
+
+def test_contributor_docs_and_issue_templates_cover_v09_release_inputs() -> None:
+    """Contributor docs should cover code, issue, and benchmark contribution paths."""
+    guide = Path("CONTRIBUTING.md").read_text(encoding="utf-8")
+    benchmark = Path("docs/benchmark-contributions.md").read_text(encoding="utf-8")
+    bug = Path(".github/ISSUE_TEMPLATE/bug_report.md").read_text(encoding="utf-8")
+    feature = Path(".github/ISSUE_TEMPLATE/feature_request.md").read_text(encoding="utf-8")
+    benchmark_issue = Path(".github/ISSUE_TEMPLATE/benchmark_contribution.md").read_text(encoding="utf-8")
+
+    for required in (
+        "NO HACKS, ONLY DEVELOP PRODUCTION CODE",
+        "test-first",
+        "zaxy doctor --beta-readiness",
+        "scripts/release-check.sh --root .",
+        "docs/api-inventory.md",
+        "docs/migration.md",
+    ):
+        assert required in guide
+    for required in (
+        "tracked Eventloom",
+        "query_results",
+        "citation coverage",
+        "scripts/check-backend-shootout.py",
+        "reports/backend-shootout/",
+    ):
+        assert required in benchmark
+    for template in (bug, feature, benchmark_issue):
+        assert "Zaxy version" in template
+        assert "Reproduction" in template
+    assert "Benchmark artifact path" in benchmark_issue
+    assert "API stability surface" in feature
+
+
+def test_v09_roadmap_records_failure_injection_evidence() -> None:
+    """The v0.9 roadmap should cite the failure-injection coverage that gates hardening."""
+    roadmap = Path("docs/v1-roadmap.md").read_text(encoding="utf-8")
+
+    assert "failure-injection" in roadmap
+    assert "projection rebuild" in roadmap
+    assert "corrupted projection artifacts" in roadmap
+    assert "missing hooks" in roadmap
+    assert "stale checkout" in roadmap
+    assert "degraded backends" in roadmap
+    assert "test_reproject_command_closes_pggraph_backend_after_projection_failure" in roadmap
+    assert "hook-status" in roadmap
+    assert "zaxy_degraded_operations_total" in roadmap
 
 
 def test_beta_readiness_rejects_backend_reports_with_untracked_inputs(tmp_path: Path) -> None:
@@ -1352,6 +4898,8 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
     (root / "scripts").mkdir()
     (root / ".github" / "workflows").mkdir(parents=True)
     (root / "docs").mkdir()
+    (root / "docs" / "examples").mkdir()
+    (root / "examples").mkdir()
     activation_log = EventLog(root / "reports" / "activation-release" / "agent-1.jsonl")
     now = datetime(2026, 5, 20, 12, 0, tzinfo=UTC)
     activation_log.append(
@@ -1384,6 +4932,17 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
         "# Changelog\n\n## 0.2.0 - 2026-05-11\n\n- Stable release.\n",
         encoding="utf-8",
     )
+    (root / "docs" / "examples" / "first-run-timing-report.json").write_text(
+        json.dumps(
+            {
+                "threshold_seconds": 300,
+                "time_to_successful_doctor_seconds": 240,
+                "time_to_first_successful_example_seconds": 270,
+                "requires_sidecar": False,
+            }
+        ),
+        encoding="utf-8",
+    )
     (root / ".github" / "workflows" / "publish.yml").write_text(
         "on:\n"
         "  release:\n"
@@ -1397,14 +4956,38 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
         "  - uses: pypa/gh-action-pypi-publish@release/v1\n",
         encoding="utf-8",
     )
+    (root / "examples" / "langgraph_memory.py").write_text(
+        "import json\n"
+        "print(json.dumps({'session_id': 'langgraph-demo', 'has_zaxy_context': True, 'kind': 'memory_checkout'}))\n",
+        encoding="utf-8",
+    )
+    (root / "examples" / "openai_compatible_memory.py").write_text(
+        "import json\n"
+        "print(json.dumps({'session_id': 'openai-compatible-demo', 'has_zaxy_context': True, 'kind': 'memory_checkout'}))\n",
+        encoding="utf-8",
+    )
+    (root / "examples" / "claude_compatible_memory.py").write_text(
+        "import json\n"
+        "print(json.dumps({'session_id': 'claude-compatible-demo', 'has_zaxy_context': True, 'kind': 'memory_checkout'}))\n",
+        encoding="utf-8",
+    )
     (root / "scripts" / "release-check.sh").write_text(
         'RUFF_CMD="ruff"\n'
         'MYPY_CMD="mypy"\n'
+        'EXAMPLES_SMOKE_CMD="pytest tests/test_examples_v05.py --no-cov -q"\n'
+        'MCP_SMOKE_CMD="python scripts/mcp_smoke_test.py"\n'
+        'LANGGRAPH_SMOKE_CMD="pytest tests/test_examples_v05.py::test_langgraph_example_runs_without_langgraph_dependency --no-cov -q"\n'
+        'COORDINATE_SMOKE_CMD="pytest tests/test_examples_v05.py::test_coordinate_three_worker_example_runs --no-cov -q"\n'
+        'DOCS_CMD="python scripts/build-site-docs.py --check && scripts/validate-docs.sh"\n'
+        'BETA_UAT_CMD="scripts/beta-uat.sh"\n'
+        'EXTERNAL_VALIDATION_CMD="SKIP:external validation is optional for v1.0 release"\n'
+        "run_gate() { [[ \"$2\" == SKIP:* ]] && echo \"Skipping $1: ${2#SKIP:}\" || bash -c \"$2\"; }\n"
         "pytest\n"
         "scripts/check-coverage.py\n"
         "tests/test_packet_memory_e2e.py\n"
         "scripts/build-dist.sh\n"
         "scripts/validate-docs.sh\n"
+        "python scripts/build-site-docs.py --check\n"
         "scripts/validate-deployment.sh\n"
         "PYTHONPATH=src python -m zaxy hook-status\n"
         "--eventloom-path reports/activation-release\n"
@@ -1416,17 +4999,33 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
         "--require-report-metadata --require-markdown-report --require-query-results --require-git-tracked-inputs "
         "--verify-report-fingerprints --require-backends embedded,bm25 "
         '--require-labeled-metrics --require-dashboard-source embedded=embedded '
+        "--min-answer-at-5 0.5 --min-recall-at-5 0.5 --min-citation-coverage 1.0 "
+        "--min-quality-per-1k-injected-tokens embedded=1.0 "
+        "--min-answer-at-5-per-1k-injected-tokens embedded=1.0 "
+        "--max-checkout-p99-ms embedded=25 "
         '--forbid-backends neo4j,pggraph,latticedb"\n'
         'BACKEND_PERFORMANCE_CMD="python scripts/check-backend-shootout.py '
         "reports/backend-shootout/longmemeval-40-backend-shootout.json --require-report-metadata "
         "--require-markdown-report --require-query-results --require-git-tracked-inputs --verify-report-fingerprints "
         "--require-backends embedded,bm25 --require-labeled-metrics "
-        '--require-dashboard-source embedded=embedded --forbid-backends neo4j,pggraph,latticedb"\n'
+        "--require-dashboard-source embedded=embedded --min-citation-coverage 1.0 "
+        "--min-quality-per-1k-returned-tokens embedded=0.10 "
+        "--min-answer-at-5-per-1k-returned-tokens embedded=0.10 "
+        "--min-quality-per-1k-injected-tokens embedded=0.10 "
+        "--min-answer-at-5-per-1k-injected-tokens embedded=0.10 "
+        "--max-checkout-p95-ms embedded=100 --max-checkout-p99-ms embedded=85 "
+        '--forbid-backends neo4j,pggraph,latticedb"\n'
         'BACKEND_SCALE_CMD="python scripts/check-backend-shootout.py '
         "reports/backend-shootout/longmemeval-100-backend-shootout.json --require-report-metadata "
         "--require-markdown-report --require-query-results --require-git-tracked-inputs --verify-report-fingerprints "
         "--require-backends embedded,bm25 --require-labeled-metrics "
         '--require-dashboard-source embedded=embedded --forbid-backends neo4j,pggraph,latticedb '
+        "--min-recall-at-5 0.90 --min-citation-coverage 1.0 "
+        "--min-quality-per-1k-returned-tokens embedded=0.15 "
+        "--min-answer-at-5-per-1k-returned-tokens embedded=0.15 "
+        "--min-quality-per-1k-injected-tokens embedded=0.15 "
+        "--min-answer-at-5-per-1k-injected-tokens embedded=0.15 "
+        "--max-checkout-p99-ms embedded=250 "
         '--max-checkout-p95-ms embedded=200"\n'
         "--require-report-metadata\n"
         "--require-markdown-report\n"
@@ -1437,6 +5036,7 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
         "longmemeval-40-backend-shootout.json\n"
         "longmemeval-100-backend-shootout.json\n"
         "--min-quality-per-1k-injected-tokens embedded=1.0\n"
+        "--min-citation-coverage 1.0\n"
         "--max-checkout-p95-ms embedded=200\n"
         "--min-quality-per-1k-returned-tokens\n"
         "--min-answer-at-5-per-1k-returned-tokens\n"
@@ -1460,7 +5060,7 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
         "mktemp -d\n"
         "python -m pip install\n"
         "zaxy init local-codex local-claude\n"
-        'run_workspace "embedded" "" "status"\n'
+        'run_workspace "embedded" "" "start"\n'
         "if [[ -n \"${preset}\" ]]\n"
         '"${preset}"\n'
         'grep -q "PROJECTION_BACKEND=embedded" .env.local\n'
@@ -1501,6 +5101,38 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
     (root / "docs" / "testing.md").write_text(docs, encoding="utf-8")
     (root / "docs" / "hooks.md").write_text(docs, encoding="utf-8")
     (root / "docs" / "mcp.md").write_text(docs, encoding="utf-8")
+
+
+def _write_backend_report_inputs(root: Path) -> None:
+    reports = root / "reports" / "backend-shootout"
+    reports.mkdir(parents=True, exist_ok=True)
+    eventloom = reports / "sample.eventloom"
+    eventloom.mkdir()
+    (eventloom / "agent-1.jsonl").write_text(
+        '{"seq":1,"type":"decision.recorded","payload":{},"thread":"agent-1"}\n',
+        encoding="utf-8",
+    )
+    queries = reports / "queries.json"
+    queries.write_text('[{"query":"embedded benchmark evidence"}]\n', encoding="utf-8")
+    payload = {
+        "eventloom_path": "reports/backend-shootout/sample.eventloom",
+        "queries_file": "reports/backend-shootout/queries.json",
+        "query_results": {
+            "embedded:retrieve": [
+                {
+                    "query": "embedded benchmark evidence",
+                    "citation_coverage": 1.0,
+                    "checkout_latency_ms": 18.0,
+                }
+            ]
+        },
+    }
+    for filename in (
+        "backend-shootout.json",
+        "longmemeval-40-backend-shootout.json",
+        "longmemeval-100-backend-shootout.json",
+    ):
+        (reports / filename).write_text(json.dumps(payload), encoding="utf-8")
 
 
 def test_build_dist_fails_fast_when_build_fails(tmp_path: Path) -> None:
@@ -1597,4 +5229,5 @@ def test_readme_documents_trusted_publishing_release_path() -> None:
 
     assert "PyPI Trusted Publishing" in readme
     assert "zaxy doctor --release-smoke" in readme
+    assert "dependency-light LangGraph example" in readme
     assert "PYPI_API_TOKEN" not in readme

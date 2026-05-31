@@ -113,11 +113,15 @@ memory_app = typer.Typer(help="Inspect Eventloom-backed agent memory")
 capture_app = typer.Typer(help="Manage deterministic capture watchers")
 coordinate_app = typer.Typer(help="Coordinate parent missions and worker sessions")
 coordinate_worker_app = typer.Typer(help="Manage worker sessions for a mission")
+coordinate_template_app = typer.Typer(help="Inspect and apply Coordinate mission templates")
 coordinate_benchmark_adapter_app = typer.Typer(help="Validate and export CoordinationBench adapter contracts")
+trace_app = typer.Typer(help="Export neutral trace correlations from Eventloom")
 app.add_typer(memory_app, name="memory")
 app.add_typer(capture_app, name="capture")
 app.add_typer(coordinate_app, name="coordinate")
+app.add_typer(trace_app, name="trace")
 coordinate_app.add_typer(coordinate_worker_app, name="worker")
+coordinate_app.add_typer(coordinate_template_app, name="template")
 coordinate_app.add_typer(coordinate_benchmark_adapter_app, name="benchmark-adapter")
 
 
@@ -140,6 +144,81 @@ def _main_callback(
     ),
 ) -> None:
     """Zaxy command line interface."""
+
+
+@trace_app.command("export")
+def trace_export(
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    session: list[str] | None = typer.Option(None, "--session", help="Session ID to include"),  # noqa: B008
+    output_format: str = typer.Option("json", "--format", help="Output format: json or jsonl"),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Write trace export to this file"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Export provider-neutral trace correlation from replayed Eventloom events."""
+    from zaxy.event import EventLog
+    from zaxy.trace import build_trace_correlation
+
+    session_filter = set(session or [])
+    events = []
+    sessions = []
+    for path in sorted(eventloom_path.glob("*.jsonl")):
+        if session_filter and path.stem not in session_filter:
+            continue
+        replay = EventLog(path).replay()
+        sessions.append(
+            {
+                "session_id": path.stem,
+                "event_count": len(replay.events),
+                "integrity_ok": replay.integrity.ok,
+                "latest_seq": replay.events[-1].seq if replay.events else None,
+                "latest_hash": replay.events[-1].hash if replay.events else None,
+            }
+        )
+        if not replay.integrity.ok:
+            raise typer.BadParameter(
+                f"Eventloom integrity failed for {path.name}: {replay.integrity.broken_reason}",
+                param_hint="--eventloom-path",
+            )
+        events.extend(replay.events)
+    payload = build_trace_correlation(events).to_dict()
+    payload["sessions"] = sessions
+    normalized_format = "json" if json_output else output_format.strip().lower()
+    if normalized_format not in {"json", "jsonl"}:
+        raise typer.BadParameter("--format must be json or jsonl", param_hint="--format")
+    rendered = (
+        json.dumps(payload, indent=2, sort_keys=True)
+        if normalized_format == "json"
+        else _trace_payload_jsonl(payload)
+    )
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(rendered + "\n", encoding="utf-8")
+        typer.echo(f"Wrote trace export: {output}")
+        return
+    if json_output or normalized_format == "jsonl":
+        typer.echo(rendered)
+        return
+    summary = payload["summary"]
+    typer.echo(
+        "Trace correlation: "
+        f"spans={summary['span_count']} edges={summary['edge_count']} "
+        f"missions={summary['mission_count']} model_calls={summary['model_call_count']} "
+        f"tool_calls={summary['tool_call_count']}"
+    )
+
+
+def _trace_payload_jsonl(payload: dict[str, Any]) -> str:
+    records: list[dict[str, Any]] = [
+        {
+            "record_type": "summary",
+            "format": "zaxy.trace.v0.8.jsonl",
+            **cast(dict[str, Any], payload.get("summary", {})),
+        }
+    ]
+    records.extend({"record_type": "session", **session} for session in cast(list[dict[str, Any]], payload.get("sessions", [])))
+    records.extend({"record_type": "span", **span} for span in cast(list[dict[str, Any]], payload.get("spans", [])))
+    records.extend({"record_type": "edge", **edge} for edge in cast(list[dict[str, Any]], payload.get("edges", [])))
+    return "\n".join(json.dumps(record, sort_keys=True) for record in records)
 
 
 @coordinate_app.command("start")
@@ -226,6 +305,68 @@ def coordinate_assign(
         typer.echo(json.dumps(payload, indent=2, sort_keys=True))
     else:
         typer.echo(f"Assignment recorded for {result.worker_id}")
+
+
+@coordinate_template_app.command("list")
+def coordinate_template_list(
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """List built-in Coordinate mission templates."""
+    from zaxy.coordination_templates import list_mission_templates
+
+    templates = [template.to_dict() for template in list_mission_templates()]
+    if json_output:
+        typer.echo(json.dumps({"templates": templates}, indent=2, sort_keys=True))
+        return
+    for template in templates:
+        typer.echo(f"{template['name']}: {template['title']}")
+
+
+@coordinate_template_app.command("show")
+def coordinate_template_show(
+    name: str = typer.Argument(..., help="Template name"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Show a built-in Coordinate mission template."""
+    from zaxy.coordination_templates import get_mission_template
+
+    try:
+        template = get_mission_template(name).to_dict()
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc), param_hint="name") from exc
+    if json_output:
+        typer.echo(json.dumps(template, indent=2, sort_keys=True))
+        return
+    typer.echo(f"{template['title']} ({template['name']})")
+    typer.echo(f"Objective: {template['objective']}")
+    for worker in template["workers"]:
+        typer.echo(f"- {worker['worker_id']}: {worker['assignment']}")
+
+
+@coordinate_template_app.command("apply")
+def coordinate_template_apply(
+    name: str = typer.Argument(..., help="Template name"),
+    mission: str = typer.Option(..., "--mission", help="Parent mission session ID"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    actor: str = typer.Option("coordinator", help="Actor recording the events"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Create a mission from a built-in template."""
+    from zaxy.coordination import CoordinationManager
+    from zaxy.coordination_templates import apply_mission_template
+
+    manager = CoordinationManager(eventloom_path=eventloom_path)
+    try:
+        payload = apply_mission_template(manager, name, mission_id=mission, actor=actor)
+    except KeyError as exc:
+        raise typer.BadParameter(str(exc), param_hint="name") from exc
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(
+            f"Mission {payload['mission_id']} created from {payload['template']} "
+            f"with {payload['worker_count']} workers"
+        )
 
 
 @coordinate_app.command("report")
@@ -378,6 +519,30 @@ def coordinate_brief(
     typer.echo(f"Conflicts: {len(brief.conflicts)}")
 
 
+@coordinate_app.command("inspect")
+def coordinate_inspect(
+    mission: str = typer.Option(..., "--mission", help="Parent mission session ID"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    semantic_conflicts: str = typer.Option(
+        "none",
+        "--semantic-conflicts",
+        help="Semantic conflict detector: none, lexical, or http",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Inspect the full replayed mission state for operators."""
+
+    inspection = _coordinate_manager(
+        eventloom_path,
+        semantic_conflicts=semantic_conflicts,
+    ).inspect_mission(mission)
+    payload = inspection.to_dict()
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    typer.echo(_format_coordinate_inspection(payload))
+
+
 @coordinate_app.command("checkout")
 def coordinate_checkout(
     mission: str = typer.Option(..., "--mission", help="Parent mission session ID"),
@@ -428,6 +593,55 @@ def coordinate_ledger(
             f"{worker.worker_id}: accepted={worker.accepted_findings} "
             f"rejected={worker.rejected_findings} missing_evidence={worker.missing_evidence_count}"
         )
+
+
+def _format_coordinate_inspection(payload: dict[str, Any]) -> str:
+    findings = cast(dict[str, list[Any]], payload.get("findings")) if isinstance(payload.get("findings"), dict) else {}
+    worker_ledgers = cast(list[Any], payload.get("worker_ledgers")) if isinstance(payload.get("worker_ledgers"), list) else []
+    promoted_state = (
+        cast(list[Any], payload.get("promoted_state")) if isinstance(payload.get("promoted_state"), list) else []
+    )
+    handoffs = cast(list[Any], payload.get("handoffs")) if isinstance(payload.get("handoffs"), list) else []
+    conflicts = cast(list[Any], payload.get("conflicts")) if isinstance(payload.get("conflicts"), list) else []
+    decisions = cast(list[Any], payload.get("decisions")) if isinstance(payload.get("decisions"), list) else []
+    lines = [
+        f"Mission {payload.get('mission_id')}: {payload.get('objective') or '-'}",
+        f"Workers: {len(worker_ledgers)}",
+        "Worker ledgers:",
+    ]
+    for worker in worker_ledgers:
+        if not isinstance(worker, dict):
+            continue
+        lines.append(
+            f"- {worker.get('worker_id')}: accepted={worker.get('accepted_findings', 0)} "
+            f"pending={worker.get('pending_findings', 0)} "
+            f"rejected={worker.get('rejected_findings', 0)} "
+            f"missing_evidence={worker.get('missing_evidence_count', 0)}"
+        )
+    lines.extend(
+        [
+            "Findings: "
+            f"accepted={len(findings.get('accepted', []))} "
+            f"pending={len(findings.get('pending', []))} "
+            f"rejected={len(findings.get('rejected', []))} "
+            f"deferred={len(findings.get('deferred', []))} "
+            f"conflicted={len(findings.get('conflicted', []))} "
+            f"stale={len(findings.get('stale', []))}",
+            f"Conflicts: {len(conflicts)}",
+            f"Decisions: {len(decisions)}",
+            f"Promoted state: {_finding_ids(promoted_state) or '-'}",
+            f"Handoffs: {len(handoffs)}",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _finding_ids(findings: list[Any]) -> str:
+    return ", ".join(
+        str(finding.get("finding_id"))
+        for finding in findings
+        if isinstance(finding, dict) and finding.get("finding_id")
+    )
 
 
 @coordinate_app.command("handoff")
@@ -544,6 +758,22 @@ def coordinate_review_export(
     typer.echo(review_export.markdown)
 
 
+@coordinate_app.command("audit-report")
+def coordinate_audit_report(
+    mission: str = typer.Option(..., "--mission", help="Parent mission session ID"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Generate a replay-only mission audit report with Eventloom citations."""
+    from zaxy.coordination import CoordinationManager
+
+    report = CoordinationManager(eventloom_path=eventloom_path).audit_report(mission)
+    if json_output:
+        typer.echo(json.dumps(report.to_dict(), indent=2, sort_keys=True))
+        return
+    typer.echo(report.markdown)
+
+
 @coordinate_app.command("apply-approval")
 def coordinate_apply_approval(
     mission: str = typer.Option(..., "--mission", help="Parent mission session ID"),
@@ -612,6 +842,11 @@ def coordinate_benchmark(
     output_dir: Path = typer.Option(..., "--output-dir", help="Directory for CoordinationBench reports"),  # noqa: B008
     missions: int = typer.Option(1, help="Number of missions to generate"),
     workers: int = typer.Option(3, help="Workers per mission, between 3 and 10"),
+    workload: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--workload",
+        help="Frozen CoordinationBench workload JSON to run instead of generating the seed workload",
+    ),
     competitor_result: list[str] | None = typer.Option(  # noqa: B008
         None,
         "--competitor-result",
@@ -624,7 +859,7 @@ def coordinate_benchmark(
     ),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
-    """Run the deterministic CoordinationBench MVP."""
+    """Run CoordinationBench against a generated or frozen workload."""
     from zaxy.coordination_benchmark import run_coordination_benchmark
 
     competitor_results = _coordinate_competitor_results_from_options(competitor_result or [])
@@ -636,6 +871,7 @@ def coordinate_benchmark(
         output_dir,
         missions=missions,
         workers=workers,
+        workload_path=workload,
         competitor_results=competitor_results,
         competitor_runners=competitor_runners,
     )
@@ -2192,6 +2428,16 @@ def doctor(
         "--beta-readiness",
         help="Run beta release readiness checks instead of onboarding checks",
     ),
+    external_validation_report: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--external-validation-report",
+        help="External-validation report JSON for beta readiness checks",
+    ),
+    require_external_validation: bool = typer.Option(
+        False,
+        "--require-external-validation",
+        help="Fail beta readiness when external validation evidence is missing",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """Run local setup and onboarding checks."""
@@ -2200,6 +2446,8 @@ def doctor(
 
     if release_smoke and beta_readiness:
         raise typer.BadParameter("--release-smoke and --beta-readiness are mutually exclusive")
+    if not beta_readiness and (external_validation_report is not None or require_external_validation):
+        raise typer.BadParameter("external validation options require --beta-readiness")
 
     if release_smoke:
         from zaxy.release import run_release_smoke
@@ -2216,7 +2464,11 @@ def doctor(
     if beta_readiness:
         from zaxy.release import run_beta_readiness
 
-        report = run_beta_readiness(project_root=project_root)
+        report = run_beta_readiness(
+            project_root=project_root,
+            external_validation_report=external_validation_report,
+            require_external_validation=require_external_validation,
+        )
         if json_output:
             typer.echo(json.dumps(report, indent=2, sort_keys=True))
         else:
@@ -2598,6 +2850,9 @@ def serve(
     resolved_eventloom_path = eventloom_path or os.getenv("EVENTLOOM_PATH") or str(workspace_root / ".eventloom")
     resolved_session_id = os.getenv("EVENTLOOM_THREAD") or domain_default_session(derive_domain(workspace_root))
     settings = _status_settings(workspace_root)
+    embedded_graph_path = Path(settings.embedded_graph_path)
+    if eventloom_path is not None and embedded_graph_path == Path(".eventloom/projections/embedded.kuzu"):
+        embedded_graph_path = Path(resolved_eventloom_path) / "projections" / "embedded.kuzu"
 
     # Configure the module-level server instance from CLI overrides
     mcp_server.server = mcp_server.ZaxyMCPServer(
@@ -2613,7 +2868,7 @@ def serve(
             neo4j_password=neo4j_password,
         ),
         pggraph_dsn=settings.pggraph_dsn,
-        embedded_graph_path=Path(settings.embedded_graph_path),
+        embedded_graph_path=embedded_graph_path,
         latticedb_path=Path(settings.latticedb_path),
         workspace_root=workspace_root,
         default_session_id=resolved_session_id,
@@ -2629,16 +2884,22 @@ def serve(
 def replay(
     log_path: Path = typer.Argument(..., help="Path to Eventloom JSONL file"),  # noqa: B008
     from_seq: int = typer.Option(1, help="Start sequence number"),
+    to_seq: int | None = typer.Option(None, help="Inclusive end sequence number"),  # noqa: B008
     json_output: bool = typer.Option(False, "--json", help="Output raw JSON"),
 ) -> None:
     """Replay an Eventloom log and print integrity report + events."""
     from zaxy.event import EventLog
 
     log = EventLog(str(log_path))
-    result = log.replay(from_seq=from_seq)
+    try:
+        result = log.replay(from_seq=from_seq, to_seq=to_seq)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
     if json_output:
         output = {
+            "from_seq": from_seq,
+            "to_seq": to_seq,
             "integrity": result.integrity.model_dump(),
             "events": [e.model_dump() for e in result.events],
         }
@@ -2647,6 +2908,8 @@ def replay(
 
     typer.echo(f"Integrity: {'OK' if result.integrity.ok else 'FAILED'}")
     typer.echo(f"Total events: {result.integrity.total_events}")
+    window = f"{from_seq}.." + (str(to_seq) if to_seq is not None else "HEAD")
+    typer.echo(f"Replay window: {window}")
     if result.integrity.broken_at_seq:
         typer.echo(f"Broken at seq: {result.integrity.broken_at_seq}")
         typer.echo(f"Reason: {result.integrity.broken_reason}")
@@ -2876,12 +3139,21 @@ def status(
     projection_backend: str | None = typer.Option(None, "--projection-backend", help="Projection backend to check: embedded, neo4j, pggraph, or latticedb"),
     pggraph_dsn: str | None = typer.Option(None, "--pggraph-dsn", help="pgGraph/PostgreSQL DSN"),
     embedded_graph_path: Path | None = typer.Option(None, "--embedded-graph-path", help="Embedded graph projection path"),  # noqa: B008
+    eventloom_path: Path | None = typer.Option(None, "--eventloom-path", help="Eventloom directory for memory activation status"),  # noqa: B008
+    max_checkout_stale_minutes: int = typer.Option(120, "--max-checkout-stale-minutes", help="Warn when latest memory checkout is older than this many minutes"),
+    now: str | None = typer.Option(None, "--now", help="Override current time for deterministic status checks"),
     pathlight_url: str | None = typer.Option(None, help="Pathlight collector URL"),
 ) -> None:
     """Check connectivity to external services and local projection posture."""
     import asyncio
 
+    from zaxy.hooks import inspect_memory_activation
+
     settings = _status_settings()
+    try:
+        parsed_now = _parse_cli_datetime(now) if now else None
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc), param_hint="--now") from exc
 
     async def _check() -> None:
         ok = True
@@ -2889,6 +3161,7 @@ def status(
         _user = neo4j_user or settings.neo4j_user
         _password = neo4j_password or settings.neo4j_password
         _pathlight = pathlight_url or settings.pathlight_url
+        _eventloom_path = eventloom_path or Path(settings.eventloom_path)
         backend = _resolve_cli_projection_backend(
             projection_backend,
             settings,
@@ -2947,9 +3220,64 @@ def status(
         else:
             typer.echo("Pathlight: SKIP (disabled)")
 
+        activation = inspect_memory_activation(
+            eventloom_path=_eventloom_path,
+            max_checkout_stale_minutes=max_checkout_stale_minutes,
+            now=parsed_now,
+        )
+        typer.echo(_format_status_memory_activation(activation))
+
         raise typer.Exit(0 if ok else 1)
 
     asyncio.run(_check())
+
+
+def _format_status_memory_activation(activation: dict[str, Any]) -> str:
+    """Format memory activation posture for top-level status output."""
+    lines = [
+        f"Memory activation: {str(activation['status']).upper()} ({activation['message']})",
+        f"  stale after: {activation['stale_after_minutes']} minutes",
+    ]
+    latest_checkout = activation.get("latest_checkout")
+    if isinstance(latest_checkout, dict):
+        lines.append(
+            f"  latest checkout: seq={latest_checkout['seq']} "
+            f"session={latest_checkout['thread']} at {latest_checkout['timestamp']}"
+        )
+        token_efficiency = latest_checkout.get("token_efficiency")
+        if isinstance(token_efficiency, dict):
+            prompt_tokens = token_efficiency.get("prompt_tokens")
+            facts_per_1k = token_efficiency.get("facts_per_1k_prompt_tokens")
+            if isinstance(prompt_tokens, int | float) and isinstance(facts_per_1k, int | float):
+                lines.append(
+                    f"  checkout tokens: {int(prompt_tokens)} prompt, "
+                    f"{float(facts_per_1k):.1f} facts/1k prompt tokens"
+                )
+    latest_capture = activation.get("latest_capture")
+    if isinstance(latest_capture, dict):
+        lines.append(
+            f"  latest capture: {latest_capture['type']} seq={latest_capture['seq']} "
+            f"session={latest_capture['thread']} source={latest_capture['source']}"
+        )
+    latest_reminder = activation.get("latest_reminder")
+    if isinstance(latest_reminder, dict):
+        lines.append(
+            f"  latest reminder: seq={latest_reminder['seq']} "
+            f"session={latest_reminder['thread']} at {latest_reminder['timestamp']}"
+        )
+    remediations = activation.get("remediations", [])
+    if remediations:
+        lines.append("Memory next steps:")
+        for index, remediation in enumerate(remediations, start=1):
+            if not isinstance(remediation, dict):
+                continue
+            message = remediation.get("message")
+            command = remediation.get("command")
+            if message:
+                lines.append(f"  {index}. {message}")
+            if command:
+                lines.append(f"     {command}")
+    return "\n".join(lines)
 
 
 def _status_settings(root: Path = Path(".")) -> Settings:

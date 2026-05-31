@@ -36,7 +36,7 @@ def run_demo(eventloom_path: str | Path) -> dict[str, Any]:
         claim_key="auth.failure.cause",
         claim_value="expired-jwks-cache",
     )
-    manager.report_finding(
+    ui_finding = manager.report_finding(
         "auth-main",
         "auth-ui",
         summary="API failures trace to missing browser refresh state.",
@@ -45,7 +45,7 @@ def run_demo(eventloom_path: str | Path) -> dict[str, Any]:
         claim_key="auth.failure.cause",
         claim_value="missing-browser-refresh",
     )
-    manager.report_finding(
+    stale_finding = manager.report_finding(
         "auth-main",
         "auth-tests",
         summary="Legacy feature flag explanation is stale.",
@@ -62,14 +62,31 @@ def run_demo(eventloom_path: str | Path) -> dict[str, Any]:
         claim_value="legacy-feature-flag",
     )
     assert api_finding.finding_id is not None
-    manager.review_finding(
+    assert ui_finding.finding_id is not None
+    assert stale_finding.finding_id is not None
+    approval_packet = manager.approval_packet("auth-main")
+    approval_result = manager.apply_approval_decisions(
         "auth-main",
-        api_finding.finding_id,
-        status="accepted",
+        [
+            {
+                "finding_id": api_finding.finding_id,
+                "status": "accepted",
+                "rationale": "Command-backed and matches observed API behavior.",
+                "promote": True,
+            },
+            {
+                "finding_id": ui_finding.finding_id,
+                "status": "conflicted",
+                "rationale": "Conflicts with the accepted API evidence; needs browser trace follow-up.",
+            },
+            {
+                "finding_id": stale_finding.finding_id,
+                "status": "deferred",
+                "rationale": "Superseded source should be refreshed before any promotion.",
+            },
+        ],
         actor="lead",
-        rationale="Command-backed and matches observed API behavior.",
     )
-    manager.promote_finding("auth-main", api_finding.finding_id, actor="lead")
 
     brief = manager.brief("auth-main")
     checkout = manager.checkout("auth-main")
@@ -80,6 +97,15 @@ def run_demo(eventloom_path: str | Path) -> dict[str, Any]:
         risks=["UI refresh path still needs review"],
         actor="lead",
     )
+    inspection = manager.inspect_mission("auth-main").to_dict()
+    audit_report = manager.audit_report("auth-main")
+    approval_next_actions = sorted(
+        {
+            action["code"]
+            for finding in approval_packet.findings
+            for action in finding.next_actions
+        }
+    )
     return {
         "mission_id": brief.mission_id,
         "worker_count": len(brief.workers),
@@ -89,6 +115,28 @@ def run_demo(eventloom_path: str | Path) -> dict[str, Any]:
         "excluded_pending_count": checkout.excluded_pending_count,
         "handoff_id": handoff.handoff_id,
         "checkout_prompt": checkout.prompt,
+        "approval_packet_id": approval_packet.packet_id,
+        "approval_findings_count": len(approval_packet.findings),
+        "approval_next_actions": approval_next_actions,
+        "approval_reviewed_count": approval_result.reviewed_count,
+        "approval_promoted_count": approval_result.promoted_count,
+        "inspection_sections": [
+            key
+            for key in [
+                "brief",
+                "worker_ledgers",
+                "findings",
+                "evidence",
+                "decisions",
+                "promoted_state",
+                "handoffs",
+                "conflicts",
+                "approval_packet",
+            ]
+            if key in inspection
+        ],
+        "audit_event_count": audit_report.summary["event_count"],
+        "audit_has_event_hashes": all(len(event["event_hash"]) == 64 for event in audit_report.events),
     }
 
 

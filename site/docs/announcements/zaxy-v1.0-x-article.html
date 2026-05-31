@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>X Article Draft: Zaxy 1.0.0 - Zaxy Docs</title>
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../../index.html">Overview</a>
+      <a href="../getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="x-article-draft-zaxy-100">X Article Draft: Zaxy 1.0.0</h1>
+      <p>Zaxy 1.0.0 is out: Coordinator Memory for Agent Teams.</p>
+      <p>The short version: Zaxy is memory infrastructure for agent work that needs provenance, replay, and coordination. It is built around Eventloom append-only logs, graph-backed retrieval, Memory Bootstrap, Memory Checkout, and Zaxy Coordinate workflows.</p>
+      <p>Most agent memory systems flatten context into notes or chunks. That is useful until multiple agents are exploring in parallel and nobody can tell which worker-local claim became project truth.</p>
+      <p>Zaxy 1.0.0 focuses on that gap.</p>
+      <p>What ships:</p>
+      <ul>
+        <li>local-first Eventloom memory logs with hash-chain provenance;</li>
+        <li>embedded Kuzu graph projection as the default no-sidecar runtime;</li>
+        <li>MCP tools for memory append, query, replay, feedback, bootstrap, checkout, and coordination;</li>
+        <li>Memory Checkout with cited current state, diagnostics, answerability, and feedback guidance;</li>
+        <li>Zaxy Coordinate missions with isolated workers, cited findings, review, approval packets, promoted state, and handoff;</li>
+        <li>docs, release gates, benchmark guardrails, package artifacts, and clean-repo UAT wired into the release check.</li>
+      </ul>
+      <p>The release gate passed end to end locally:</p>
+      <ul>
+        <li>1972 tests passed, 1 skipped, 11 deselected;</li>
+        <li>92.04% coverage against a 92.00% ratchet;</li>
+        <li>package build and twine check passed;</li>
+        <li>docs validation passed;</li>
+        <li>MCP smoke, public examples, LangGraph smoke, Coordinate mission smoke, and benchmark guardrails passed;</li>
+        <li>clean-repo beta UAT passed across the local onboarding paths.</li>
+      </ul>
+      <p>External verification request:</p>
+      <p>If you did not work on this implementation session, please try the first-run path or the Coordinate example and report what happens. Successes are useful, but friction is more useful.</p>
+      <p>First-run path:</p>
+      <pre><code class="language-bash">zaxy init
+zaxy memory bootstrap --eventloom-path .eventloom
+zaxy memory checkout &quot;current project memory and next useful action&quot; --eventloom-path .eventloom
+zaxy doctor --beta-readiness</code></pre>
+      <p>Coordinate path:</p>
+      <pre><code class="language-bash">python examples/coordinate_three_worker_project.py</code></pre>
+      <p>Please file an &quot;External validation&quot; issue with OS, shell, Python version, install source, exact commands, time to first useful checkout or handoff, what worked, what failed, and whether the release should pass, pass with follow-up, or fail until fixed.</p>
+      <p>External validation is optional post-release evidence for 1.0.0. We are not pretending it already happened. We are asking for it publicly.</p>
+      <p>Links:</p>
+      <ul>
+        <li>Release announcement: <code>docs/announcements/zaxy-v1.0.md</code></li>
+        <li>External validation guide: <code>docs/external-validation.md</code></li>
+        <li>Getting started: <code>docs/getting-started.md</code></li>
+        <li>Coordinate quickstart: <code>docs/coordinate-quickstart.md</code></li>
+        <li>GitHub issue template: <code>.github/ISSUE_TEMPLATE/external_validation.md</code></li>
+      </ul>
+    </article>
+  </main>
+</body>
+</html>

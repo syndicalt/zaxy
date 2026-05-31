@@ -1,11 +1,15 @@
 # Zaxy
 
-**Coordinator memory for multi-agent projects.**
+**Coordinator Memory for Agent Teams.**
 
-Zaxy gives agent teams a parent mission, isolated worker sessions, cited
-findings, conflict review, and accepted merge-back into one replayable project
-history. Under the hood, it replaces markdown files + vector DBs with an
-Eventloom append-only source of truth and an embedded Kuzu graph projection.
+Zaxy gives agent teams auditable, replayable, and coordinated memory: parent
+missions, isolated worker sessions, cited findings, conflict review, approval
+packets, and accepted merge-back into one durable project history. Under the
+hood, it uses an Eventloom append-only source of truth and an embedded Kuzu graph
+projection instead of flattening project memory into markdown files and vector
+chunks.
+
+The embedded Kuzu graph projection is the default local runtime.
 
 The plain install uses embedded Kuzu. Install `zaxy-memory[neo4j]` only for the
 optional Neo4j sidecar, and `zaxy-memory[pathlight]` only for Pathlight tracing.
@@ -28,6 +32,12 @@ zaxy init
 zaxy memory log --eventloom-path .eventloom --limit 5
 zaxy memory bootstrap --eventloom-path .eventloom
 zaxy doctor --eventloom-path .eventloom
+```
+
+Run the single-agent memory example:
+
+```bash
+python examples/single_agent_memory.py
 ```
 
 Your local data lives under `.eventloom/` as one append-only JSONL file per
@@ -79,11 +89,18 @@ See [LLM Packet Analyzer](docs/packet-analyzer.md).
 ## Public Site and Documentation
 
 - Public static site: `site/index.html`
-- Zaxy 0.4.0 release: `docs/announcements/zaxy-0.4.0.md`
+- Zaxy 1.0.0 release: `docs/announcements/zaxy-v1.0.md`
+- Zaxy 1.0.0 X article draft: `docs/announcements/zaxy-v1.0-x-article.md`
+- Zaxy Coordinate/Collaborate demo media: `docs/media/zaxy-collaborate-demo.md`
 - Zaxy Coordinate announcement: `docs/announcements/zaxy-coordinate.md`
+- Zaxy 0.4.0 archive: `docs/announcements/zaxy-0.4.0.md`
 - Coordinate roadmap: `docs/coordinate-roadmap.md`
 - Why Zaxy: `docs/why-zaxy.md`
 - Getting started: `docs/getting-started.md`
+- First-run validation: `docs/first-run-validation.md`
+- Public external verification request: `docs/external-validation.md`
+- MCP quickstart: `docs/mcp-quickstart.md`
+- Coordinate quickstart: `docs/coordinate-quickstart.md`
 - Architecture: `docs/architecture.md`
 - Configuration: `docs/configuration.md`
 - MCP interface: `docs/mcp.md`
@@ -91,11 +108,19 @@ See [LLM Packet Analyzer](docs/packet-analyzer.md).
 - Graph schema: `docs/graph-schema.md`
 - Retrieval: `docs/retrieval.md`
 - Benchmarks: `docs/benchmarks.md`
+- Benchmark contributions: `docs/benchmark-contributions.md`
 - LLM packet analyzer: `docs/packet-analyzer.md`
 - Embeddings: `docs/embeddings.md`
 - Security: `docs/security.md`
 - Operations and deployment: `docs/operations.md`, `docs/deployment.md`, `docs/runbook.md`
 - Python API: `docs/api.md`
+- API inventory: `docs/api-inventory.md`
+- Stability commitment: `docs/stability-commitment.md`
+- Migration guide: `docs/migration.md`
+- v0.9 gate audit: `docs/v09-gate-audit.md`
+- v1.0 gate audit: `docs/v10-gate-audit.md`
+- Release validation checklist: `docs/release-validation-checklist.md`
+- Contributing: `CONTRIBUTING.md`
 
 ## Key Features
 
@@ -141,7 +166,7 @@ Use `docker-compose.prod.yml` as the production compose baseline.
 
 - **Tests first** (Karpathy rule). Every public function has a test.
 - **Unit tests** mock external services. **Integration tests** use Docker for optional sidecar backends.
-- **Coverage gate: ≥90%** enforced by CI.
+- **Coverage gate: ≥92%** enforced by CI.
 - **Lint/format**: `ruff`. **Types**: `mypy`.
 
 ```bash
@@ -186,7 +211,7 @@ scripts/validate-deployment.sh --root .
 # Build and validate Python release artifacts
 scripts/build-dist.sh --root .
 
-# Verify local release metadata and PyPI Trusted Publishing configuration
+# Verify local release metadata, PyPI Trusted Publishing, and LangGraph smoke
 zaxy doctor --release-smoke
 
 # Validate public site and documentation links
@@ -203,7 +228,7 @@ zaxy doctor --beta-readiness
 scripts/release-check.sh --root .
 ```
 
-The full suite must stay at or above 90% coverage before a sprint is complete.
+The full suite must stay at or above 92% coverage before a sprint is complete.
 
 ## Release Publishing
 
@@ -213,7 +238,8 @@ on PyPI. Published releases build from GitHub Actions and upload to
 GitHub OIDC. The import package and console command remain `zaxy`.
 
 Before publishing, run `zaxy doctor --release-smoke` to verify the package
-version, changelog entry, release workflow, and tokenless publishing posture.
+version, changelog entry, release workflow, tokenless publishing posture, and
+dependency-light LangGraph example.
 
 ## License
 

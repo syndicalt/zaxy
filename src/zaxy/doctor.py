@@ -43,6 +43,7 @@ def run_doctor(
         _check_hook_activity(active, hook_status),
         _check_observation_coverage(hook_status),
         _check_capture_health(hook_status),
+        _check_memory_activation(hook_status),
         _check_packet_memory(active),
         _check_projection_backend(active),
         _check_production(active),
@@ -344,6 +345,31 @@ def _check_capture_health(hook_status: dict[str, Any]) -> dict[str, Any]:
         check["action"] = " ".join(actions)
     else:
         check["action"] = "Run zaxy hook-status --eventloom-path .eventloom to inspect automatic capture coverage."
+    return check
+
+
+def _check_memory_activation(hook_status: dict[str, Any]) -> dict[str, Any]:
+    activation = hook_status.get("memory_activation", {})
+    status = str(activation.get("status", "warning"))
+    message = str(activation.get("message", "Memory activation status is unavailable"))
+    check: dict[str, Any] = {
+        "name": "memory_activation",
+        "status": status,
+        "message": message,
+        "details": activation,
+    }
+    if status != "ok":
+        remediations = activation.get("remediations", [])
+        if isinstance(remediations, list) and remediations:
+            first = remediations[0]
+            if isinstance(first, dict) and first.get("command"):
+                check["action"] = str(first["command"])
+                return check
+        actions = activation.get("actions", [])
+        if isinstance(actions, list) and actions:
+            check["action"] = " ".join(str(action) for action in actions)
+        else:
+            check["action"] = "Run zaxy hook-status --eventloom-path .eventloom to inspect memory activation."
     return check
 
 

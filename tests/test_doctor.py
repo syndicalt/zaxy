@@ -39,6 +39,7 @@ def test_run_doctor_reports_local_setup_ok(tmp_path: Path, monkeypatch) -> None:
         "hook_activity": "warning",
         "observation_coverage": "warning",
         "capture_health": "warning",
+        "memory_activation": "warning",
         "packet_memory": "warning",
             "embedded_graph": "ok",
             "production": "ok",
@@ -316,6 +317,33 @@ def test_run_doctor_reports_capture_health_when_all_lanes_are_active(tmp_path: P
         "transcript.turn",
     ]
     assert check["details"]["missing_observation_types"] == []
+
+
+def test_run_doctor_reports_memory_activation_remediation(tmp_path: Path) -> None:
+    """Doctor should make missing checkout use actionable, not only hook capture."""
+    settings = Settings(
+        _env_file=None,
+        eventloom_path=str(tmp_path / ".eventloom"),
+        eventloom_thread="agent-1",
+        zaxy_env="development",
+    )
+    EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").append(
+        "command.completed",
+        actor="zaxy-observer",
+        payload={"source": "codex", "command": "pytest"},
+        thread="agent-1",
+    )
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    check = next(check for check in report["checks"] if check["name"] == "memory_activation")
+    assert check["status"] == "warning"
+    assert check["message"] == "No memory checkout events found"
+    assert check["details"]["latest_capture"]["type"] == "command.completed"
+    assert check["action"] == (
+        "zaxy memory checkout 'current project memory and next useful action' "
+        f"--eventloom-path {tmp_path / '.eventloom'} --session-id agent-1"
+    )
 
 
 def test_run_doctor_reports_capture_health_with_managed_codex_action(tmp_path: Path) -> None:

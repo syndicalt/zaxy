@@ -226,10 +226,13 @@ conflict detection across public-derived cases. Until independent review and
 unseen workload promotion are complete, Zaxy should not market a perfect
 CoordinationBench score as representative performance.
 
-The internal `coordination-real-v1` report remains useful as a Zaxy development
-smoke test over real project history. It should not be used as the headline
-benchmark claim because it was produced inside the Zaxy repo and is easier to
-tune against than an external holdout pack.
+The internal `coordination-real-v1` report is archived at
+[`reports/benchmarks/coordination-real-v1/coordination-benchmark.md`](../reports/benchmarks/coordination-real-v1/coordination-benchmark.md).
+It remains useful as a Zaxy development smoke test over real project history.
+It should not be used as the headline benchmark claim because it was produced
+inside the Zaxy repo and is easier to tune against than an external holdout
+pack. The report includes local baselines, disclosure-only adapter templates
+for Mem0, Agent Memory, and ActiveGraph, limitations, and reproduction commands.
 
 The smaller `coordination-v1` workload remains as the contract seed. It includes
 three workers, overlapping auth-failure findings, duplicate evidence, stale
@@ -659,6 +662,11 @@ present, run all archived public LongMemEval guardrails with:
 ```bash
 scripts/benchmark-guardrails.sh
 ```
+
+`zaxy doctor --beta-readiness` also exposes the release benchmark posture as a
+named `benchmark_no_regression` check. It requires the release script to keep
+checkout quality floors, citation coverage at `1.0`, and p95/p99 checkout
+latency budgets across smoke, performance, and scale backend reports.
 
 Related references: [testing.md](testing.md), [retrieval.md](retrieval.md),
 [competitive-positioning.md](competitive-positioning.md),

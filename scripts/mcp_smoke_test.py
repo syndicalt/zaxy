@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import tempfile
 
 
 def send(stdin, stdout, method: str, params: dict | None = None, msg_id: int = 1) -> dict:
@@ -32,86 +33,91 @@ def main() -> int:
     """Run MCP smoke test against Zaxy server."""
     print("🚀 Starting zaxy serve...")
 
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "zaxy", "serve"],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-
-    try:
-        # 1. Initialize
-        print("📡 Sending initialize...")
-        resp = send(
-            proc.stdin, proc.stdout,
-            "initialize",
-            {
-                "protocolVersion": "2024-11-05",
-                "capabilities": {},
-                "clientInfo": {"name": "zaxy-smoke-test", "version": "0.1.0"},
-            },
+    with tempfile.TemporaryDirectory(prefix="zaxy-mcp-smoke-") as temp_eventloom:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "zaxy", "serve", "--eventloom-path", temp_eventloom],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
         )
-        if "error" in resp:
-            print(f"❌ Initialize failed: {resp['error']}")
-            return 1
-        print(f"✅ Server: {resp['result']['serverInfo']['name']} {resp['result']['serverInfo']['version']}")
 
-        # 2. List tools
-        print("📋 Listing tools...")
-        resp = send(proc.stdin, proc.stdout, "tools/list", {}, msg_id=2)
-        if "error" in resp:
-            print(f"❌ tools/list failed: {resp['error']}")
-            return 1
-
-        tools = resp["result"]["tools"]
-        print(f"✅ Exposed {len(tools)} tools:")
-        for t in tools:
-            print(f"   • {t['name']}: {t.get('description', 'no description')}")
-
-        # 3. Call memory_append
-        print("📝 Calling memory_append...")
-        resp = send(
-            proc.stdin, proc.stdout,
-            "tools/call",
-            {
-                "name": "memory_append",
-                "arguments": {
-                    "event_type": "goal.created",
-                    "actor": "smoke_test",
-                    "payload": {"title": "Verify MCP works"},
+        try:
+            # 1. Initialize
+            print("📡 Sending initialize...")
+            resp = send(
+                proc.stdin, proc.stdout,
+                "initialize",
+                {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {},
+                    "clientInfo": {"name": "zaxy-smoke-test", "version": "0.1.0"},
                 },
-            },
-            msg_id=3,
-        )
-        if "error" in resp:
-            print(f"❌ memory_append failed: {resp['error']}")
-            return 1
-        content = resp["result"]["content"][0]["text"]
-        print(f"✅ memory_append result: {content}")
+            )
+            if "error" in resp:
+                print(f"❌ Initialize failed: {resp['error']}")
+                return 1
+            print(f"✅ Server: {resp['result']['serverInfo']['name']} {resp['result']['serverInfo']['version']}")
 
-        # 4. Call memory_query
-        print("🔍 Calling memory_query...")
-        resp = send(
-            proc.stdin, proc.stdout,
-            "tools/call",
-            {
-                "name": "memory_query",
-                "arguments": {"query": "Verify MCP works"},
-            },
-            msg_id=4,
-        )
-        if "error" in resp:
-            print(f"❌ memory_query failed: {resp['error']}")
-            return 1
-        content = resp["result"]["content"][0]["text"]
-        print(f"✅ memory_query result: {content[:200]}...")
+            # 2. List tools
+            print("📋 Listing tools...")
+            resp = send(proc.stdin, proc.stdout, "tools/list", {}, msg_id=2)
+            if "error" in resp:
+                print(f"❌ tools/list failed: {resp['error']}")
+                return 1
 
-        print("\n🎉 All MCP smoke tests passed!")
-        return 0
+            tools = resp["result"]["tools"]
+            print(f"✅ Exposed {len(tools)} tools:")
+            for t in tools:
+                print(f"   • {t['name']}: {t.get('description', 'no description')}")
 
-    finally:
-        proc.terminate()
-        proc.wait(timeout=5)
+            # 3. Call memory_append
+            print("📝 Calling memory_append...")
+            resp = send(
+                proc.stdin, proc.stdout,
+                "tools/call",
+                {
+                    "name": "memory_append",
+                    "arguments": {
+                        "event_type": "goal.created",
+                        "actor": "smoke_test",
+                        "payload": {"title": "Verify MCP works"},
+                    },
+                },
+                msg_id=3,
+            )
+            if "error" in resp:
+                print(f"❌ memory_append failed: {resp['error']}")
+                return 1
+            content = resp["result"]["content"][0]["text"]
+            print(f"✅ memory_append result: {content}")
+
+            # 4. Call memory_query
+            print("🔍 Calling memory_query...")
+            resp = send(
+                proc.stdin, proc.stdout,
+                "tools/call",
+                {
+                    "name": "memory_query",
+                    "arguments": {"query": "Verify MCP works"},
+                },
+                msg_id=4,
+            )
+            if "error" in resp:
+                print(f"❌ memory_query failed: {resp['error']}")
+                return 1
+            content = resp["result"]["content"][0]["text"]
+            print(f"✅ memory_query result: {content[:200]}...")
+
+            print("\n🎉 All MCP smoke tests passed!")
+            return 0
+
+        finally:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
 
 
 if __name__ == "__main__":

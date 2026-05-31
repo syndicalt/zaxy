@@ -11,8 +11,14 @@ from pathlib import Path
 REQUIRED_DOCS = [
     "docs/why-zaxy.md",
     "docs/announcements/zaxy-coordinate.md",
+    "docs/announcements/zaxy-v1.0.md",
     "docs/coordinate-roadmap.md",
+    "docs/v1-roadmap.md",
     "docs/getting-started.md",
+    "docs/mcp-quickstart.md",
+    "docs/coordinate-quickstart.md",
+    "docs/first-run-validation.md",
+    "docs/external-validation.md",
     "docs/architecture.md",
     "docs/integrations.md",
     "docs/configuration.md",
@@ -30,9 +36,16 @@ REQUIRED_DOCS = [
     "docs/deployment.md",
     "docs/testing.md",
     "docs/benchmarks.md",
+    "docs/benchmark-contributions.md",
     "docs/benchmark-review.md",
     "docs/consolidation.md",
     "docs/api.md",
+    "docs/api-inventory.md",
+    "docs/migration.md",
+    "docs/v09-gate-audit.md",
+    "docs/v10-gate-audit.md",
+    "docs/release-validation-checklist.md",
+    "docs/stability-commitment.md",
 ]
 
 
@@ -55,7 +68,7 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     """The public site should explain the product, architecture, docs, and install path."""
     html = Path("site/index.html").read_text(encoding="utf-8")
 
-    assert "<title>Zaxy Coordinate - coordinator memory for agent teams</title>" in html
+    assert "<title>Zaxy 1.0.0 - coordinator memory for agent teams</title>" in html
     assert 'name="description"' in html
     assert 'property="og:image"' in html
     assert "Coordinator memory for agent teams" in html
@@ -71,9 +84,10 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     assert "Eventloom source of truth" in html
     assert "Pathlight" in html
     assert "embedded Kuzu" in html
-    assert "PyPI 0.4.0" in html
-    assert "1797 tests" in html
-    assert "91.96% coverage" in html
+    assert "PyPI 1.0.0" in html
+    assert "1972 tests passed" in html
+    assert "92.04% coverage" in html
+    assert "external verification requested" in html
 
     for section_id in (
         "coordinate",
@@ -84,6 +98,39 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
         "docs",
     ):
         assert f'id="{section_id}"' in html
+
+
+def test_v05_docs_render_to_static_site() -> None:
+    """v0.5 roadmap and quickstarts should be published to the static site."""
+    for path in (
+        "site/docs/v1-roadmap.html",
+        "site/docs/announcements/zaxy-v1.0-x-article.html",
+        "site/docs/media/zaxy-collaborate-demo.html",
+        "site/docs/mcp-quickstart.html",
+        "site/docs/coordinate-quickstart.html",
+        "site/docs/first-run-validation.html",
+    ):
+        assert Path(path).exists()
+
+
+def test_v10_release_media_assets_are_published() -> None:
+    """The v1.0 release should publish the header and scripted demo artifacts."""
+    announcement = Path("docs/announcements/zaxy-v1.0.md").read_text(encoding="utf-8")
+    x_article = Path("docs/announcements/zaxy-v1.0-x-article.md").read_text(encoding="utf-8")
+    demo = Path("docs/media/zaxy-collaborate-demo.md").read_text(encoding="utf-8")
+
+    for path in (
+        "docs/assets/zaxy-v1-header.png",
+        "site/assets/zaxy-v1-header.png",
+        "docs/media/zaxy-collaborate-demo.mp4",
+        "docs/media/zaxy-collaborate-demo.gif",
+    ):
+        assert Path(path).exists(), path
+        assert Path(path).stat().st_size > 0, path
+    assert "Zaxy 1.0 release header" in announcement
+    assert "External verification request" in x_article
+    assert "zaxy doctor --beta-readiness" in x_article
+    assert "zaxy-collaborate-demo.mp4" in demo
 
 
 def test_mcp_docs_show_memory_checkout_consumption_contract() -> None:
@@ -430,7 +477,7 @@ def test_public_site_benchmark_claims_use_current_full_set_guardrails() -> None:
     assert "BM25 worker logs" in html
     assert "PyPI 0.2.1" not in html
     assert "1005 tests" not in html
-    assert "92.04% coverage" not in html
+    assert "91.96% coverage" not in html
 
 
 def test_why_zaxy_doc_explains_markdown_vector_tradeoffs() -> None:
@@ -462,7 +509,7 @@ def test_framework_integration_docs_record_next_hardening_target() -> None:
     assert "common-native-preview-contract" in integrations
     assert "model-facing UX hardening" in integrations
     assert "AutoGen remains template-only" in integrations
-    assert "common native-preview payload contract" in competitive
+    assert "shared native payload contract" in competitive
 
 
 def test_docs_describe_memory_persistence_hardening() -> None:
@@ -479,6 +526,71 @@ def test_docs_describe_memory_persistence_hardening() -> None:
     assert "zaxy_autogen_context" in integrations
     assert "Memory Checkout before replying" in integrations
     assert "Last checkout" in site
+
+
+def test_docs_publish_langgraph_v06_native_contract() -> None:
+    """Integration docs and rendered site should publish the LangGraph beta metadata contract."""
+    integrations = Path("docs/integrations.md").read_text(encoding="utf-8")
+    rendered = Path("site/docs/integrations.html").read_text(encoding="utf-8")
+    roadmap = Path("docs/v1-roadmap.md").read_text(encoding="utf-8")
+
+    for text in (integrations, rendered):
+        assert "zaxy.native.v0.6" in text
+        assert "checkout_failed" in text
+        assert "It does not inject stale context after a checkout failure" in text
+    assert "langgraph_example" in roadmap
+    assert "zaxy doctor --release-smoke" in roadmap
+
+
+def test_docs_publish_v06_native_integration_contract_snapshot() -> None:
+    """v0.6 should publish the shared native lifecycle contract outside MCP."""
+    fixture = json.loads(Path("docs/examples/native-integration-contract.json").read_text(encoding="utf-8"))
+    integrations = Path("docs/integrations.md").read_text(encoding="utf-8")
+    rendered = Path("site/docs/integrations.html").read_text(encoding="utf-8")
+
+    assert fixture["contract"] == "zaxy.native.v0.6"
+    assert fixture["metadata_location"] == "payload['zaxy']"
+    assert fixture["lifecycle"] == {
+        "before_model_or_task": "memory_checkout",
+        "after_model_or_task": "capture_assistant_or_task_output",
+        "after_tool_call": "capture_redacted_observation",
+        "after_context_use": "record_feedback",
+    }
+    assert fixture["required_payload_keys"] == [
+        "contract",
+        "framework",
+        "operation",
+        "source",
+        "kind",
+        "status",
+        "session_id",
+        "query",
+        "current_fact_count",
+        "warning_count",
+        "diagnostics",
+        "quality",
+        "feedback",
+        "error",
+    ]
+    assert fixture["failure"]["status"] == "error"
+    assert fixture["failure"]["error_code"] == "checkout_failed"
+    assert "docs/examples/native-integration-contract.json" in integrations
+    assert "before model/task call" in integrations
+    assert "after context use" in integrations
+    assert "native-integration-contract.json" in rendered
+
+
+def test_docs_publish_crewai_v06_native_contract() -> None:
+    """Integration docs should say CrewAI uses the shared native checkout contract."""
+    integrations = Path("docs/integrations.md").read_text(encoding="utf-8")
+    rendered = Path("site/docs/integrations.html").read_text(encoding="utf-8")
+
+    assert "CrewAI checkout uses the same `zaxy.native.v0.6` metadata contract" in integrations
+    assert "`crew`, `agent`, and `task_id`" in integrations
+    assert "empty `memory` and `contexts`" in integrations
+    assert "CrewAI checkout uses the same" in rendered
+    assert "zaxy.native.v0.6" in rendered
+    assert "checkout_failed" in rendered
 
 
 def test_full_set_guardrail_docs_distinguish_legacy_and_same_harness_floors() -> None:
@@ -536,6 +648,85 @@ def test_memory_checkout_docs_and_site_match_golden_contract_fixture() -> None:
         assert expected in docs
 
 
+def test_mcp_docs_publish_tool_contract_snapshot() -> None:
+    """v0.6 MCP docs should expose the canonical public tool surface snapshot."""
+    fixture = json.loads(Path("docs/examples/mcp-tool-contract.json").read_text(encoding="utf-8"))
+    docs = Path("docs/mcp.md").read_text(encoding="utf-8")
+
+    assert fixture["tool_count"] == 25
+    assert "docs/examples/mcp-tool-contract.json" in docs
+    assert "MCP tool contract snapshot" in docs
+    assert {tool["name"] for tool in fixture["tools"]} >= {
+        "memory_bootstrap",
+        "memory_checkout",
+        "memory_feedback",
+        "coordination_report_finding",
+        "coordination_checkout",
+    }
+
+
+def test_mcp_docs_publish_structured_error_contract() -> None:
+    """v0.6 MCP docs should explain stable client-facing error payloads."""
+    docs = Path("docs/mcp.md").read_text(encoding="utf-8")
+
+    assert "Structured Error Payloads" in docs
+    assert '"code": "unknown_tool"' in docs
+    assert '"message": "Unknown tool: unknown_tool"' in docs
+    assert '"remediation": "Call list_tools and retry with one of the advertised tool names."' in docs
+    assert "invalid_request" in docs
+    assert "internal_error" in docs
+
+
+def test_mcp_quickstart_documents_v06_recommended_client_routes() -> None:
+    """v0.6 MCP quickstart should give one local route for each named client class."""
+    quickstart = Path("docs/mcp-quickstart.md").read_text(encoding="utf-8")
+    rendered = Path("site/docs/mcp-quickstart.html").read_text(encoding="utf-8")
+
+    expected = {
+        "Codex": "codex mcp add zaxy -- zaxy serve",
+        "Claude Code": "zaxy ide-config claude-code --install --workspace . --eventloom-path .eventloom",
+        "Claude Desktop": "zaxy ide-config claude-desktop --eventloom-path .eventloom",
+        "Cursor": "zaxy ide-config cursor --install --workspace . --eventloom-path .eventloom",
+        "Generic MCP": "zaxy serve --transport stdio",
+    }
+    for label, command in expected.items():
+        assert label in quickstart
+        assert command in quickstart
+        assert label in rendered
+        assert command in rendered
+
+
+def test_mcp_docs_publish_representative_response_snapshots() -> None:
+    """v0.6 MCP docs should expose representative response snapshots."""
+    snapshots = json.loads(Path("docs/examples/mcp-response-snapshots.json").read_text(encoding="utf-8"))
+    docs = Path("docs/mcp.md").read_text(encoding="utf-8")
+
+    assert "docs/examples/mcp-response-snapshots.json" in docs
+    assert "Representative Response Snapshots" in docs
+    assert set(snapshots) == {
+        "memory_bootstrap",
+        "memory_checkout",
+        "memory_query",
+        "memory_verbatim",
+        "context_assemble",
+        "memory_feedback",
+        "coordination_checkout",
+    }
+    assert snapshots["memory_bootstrap"]["recommended_next_tool"] == "memory_checkout"
+    assert snapshots["memory_checkout"]["quality"]["answerability"] == "answer_from_memory"
+    assert snapshots["memory_query"]["first_result"]["source"] == "exact"
+    assert snapshots["memory_verbatim"]["first_result"]["source"] == "verbatim"
+    assert snapshots["context_assemble"]["context_count"] == 1
+    assert snapshots["memory_feedback"]["event_type"] == "memory.reinforced"
+    assert snapshots["coordination_checkout"]["accepted_count"] == 1
+    assert "prompt context assembly" in docs
+    assert "graph retrieval" in docs
+    assert "verbatim source recall" in docs
+    assert "feedback reinforcement" in docs
+    assert "accepted coordination checkout counts" in docs
+    assert snapshots["memory_checkout"]["diagnostics"]["feedback_tool"] == "memory_feedback"
+
+
 def test_public_site_benchmark_claim_is_scoped_to_fixture() -> None:
     """Benchmark copy should not overclaim against broad markdown/vector systems."""
     html = Path("site/index.html").read_text(encoding="utf-8")
@@ -590,6 +781,9 @@ def test_benchmark_docs_disclose_harness_external_claims_and_sources() -> None:
     assert "../reports/benchmarks/live-benchmark.md" in text
     assert "../reports/benchmarks/longmemeval-100-comparison/live-benchmark.md" in text
     assert "not same-harness results" in text
+    assert "coordination-real-v1" in text
+    assert "../reports/benchmarks/coordination-real-v1/coordination-benchmark.md" in text
+    assert "disclosure-only adapter templates" in text
 
 
 def test_benchmark_docs_record_competitor_adapter_feasibility() -> None:
@@ -775,6 +969,15 @@ def test_hooks_docs_explain_capture_readiness() -> None:
     assert "zaxy hook-status --json" in text
 
 
+def test_getting_started_documents_status_memory_activation() -> None:
+    """Getting Started should show that top-level status reports memory activation."""
+    text = Path("docs/getting-started.md").read_text(encoding="utf-8")
+
+    assert "zaxy status --eventloom-path .eventloom" in text
+    assert "memory_activation.remediations" in text
+    assert "stale or missing checkout is actionable" in text
+
+
 def test_docs_validation_script_checks_site_and_markdown_links(tmp_path: Path) -> None:
     """The docs validation gate should fail fast when a local doc link is broken."""
     root = tmp_path / "project"
@@ -805,8 +1008,8 @@ def test_release_gate_runs_docs_validation() -> None:
     script = Path("scripts/release-check.sh").read_text(encoding="utf-8")
     testing = Path("docs/testing.md").read_text(encoding="utf-8")
 
-    assert 'DOCS_CMD="scripts/validate-docs.sh"' in script
-    assert '"${DOCS_CMD}" --root "${ROOT}"' in script
+    assert 'DOCS_CMD="python scripts/build-site-docs.py --check && scripts/validate-docs.sh"' in script
+    assert 'run_gate "docs validation" "${DOCS_CMD} --root \\"${ROOT}\\""' in script
     assert "BACKEND_SHOOTOUT_CMD" in script
     assert "BACKEND_PERFORMANCE_CMD" in script
     assert "BACKEND_SCALE_CMD" in script

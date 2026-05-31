@@ -99,8 +99,9 @@ export are available.
   Memory Checkout, retrieval feedback, and doctor status.
 - Keep public benchmark scripts reproducible from a clean checkout with cached
   datasets, archived reports, guardrail commands, and no hidden manual steps.
-- Keep LangGraph and CrewAI native-preview adapters dependency-light and use
-  them to harden the common native-preview payload contract.
+- Keep LangGraph native-beta, CrewAI native-preview, and OpenAI-compatible
+  model-call adapters dependency-light on the shared native payload contract,
+  `zaxy.native.v0.6`.
 - Keep AutoGen template-only until the right runtime hooks are clear.
 - Add public comparison workloads that evaluate temporal, source-recall,
   graph-traversal, and context-collapse behavior against MemPalace-style memory.

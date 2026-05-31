@@ -21,6 +21,7 @@ from zaxy.coordination_benchmark import (
     coordination_competitor_runner_manifest_templates,
     export_coordination_benchmark_adapter_kit,
     flat_eventlog_baseline_metrics,
+    load_coordination_workload,
     run_coordination_benchmark,
     run_coordination_competitor_adapter,
     run_coordination_competitor_runner,
@@ -81,6 +82,27 @@ def test_coordination_scorer_measures_accepted_conflict_stale_duplicate_and_evid
     assert metrics.parent_checkout_answerability == 1.0
     assert metrics.citation_coverage == 1.0
     assert metrics.eventloom_replayable is True
+
+
+def test_coordination_benchmark_runs_frozen_workload_file(tmp_path: Path) -> None:
+    """A report run can replay an externally frozen workload without regenerating it."""
+    source_path = tmp_path / "source-workload.json"
+    workload = build_coordination_workload(source_path, missions=1, workers=3)
+    payload = workload.to_dict()
+    payload["version"] = "coordination-real-test"
+    body = {"version": payload["version"], "cases": payload["cases"]}
+    payload["fingerprint"] = hashlib.sha256(
+        json.dumps(body, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    source_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    report = run_coordination_benchmark(tmp_path / "out", workload_path=source_path, missions=1, workers=10)
+
+    copied = load_coordination_workload(tmp_path / "out" / "coordination-workload.json")
+    assert report.version == "coordination-real-test"
+    assert report.workload_fingerprint == payload["fingerprint"]
+    assert copied.fingerprint == payload["fingerprint"]
+    assert report.metrics.accepted_finding_recall == 1.0
 
 
 def test_flat_eventlog_baseline_gets_contaminated_by_worker_findings(tmp_path: Path) -> None:
@@ -525,6 +547,31 @@ def test_coordinate_benchmark_cli_rejects_duplicate_competitor_result_names(tmp_
     assert "duplicate competitor result" in result.output
 
 
+def test_coordinate_benchmark_cli_accepts_frozen_workload(tmp_path: Path) -> None:
+    source_path = tmp_path / "source-workload.json"
+    build_coordination_workload(source_path, missions=1, workers=3)
+    output_dir = tmp_path / "out"
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "benchmark",
+            "--output-dir",
+            str(output_dir),
+            "--workload",
+            str(source_path),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["workload_fingerprint"] == json.loads(source_path.read_text(encoding="utf-8"))["fingerprint"]
+    assert (output_dir / "coordination-benchmark.json").exists()
+
+
 def _competitor_runner_script(tmp_path: Path) -> Path:
     script = tmp_path / "mem0_runner.py"
     script.write_text(
@@ -727,6 +774,12 @@ def test_coordinate_benchmark_cli_writes_json_and_markdown(tmp_path: Path) -> No
     assert "bm25_worker_logs" in markdown
     assert "## Competitor Adapter Disclosures" in markdown
     assert "ActiveGraph" in markdown
+    assert "## Limitations" in markdown
+    assert "not a universal memory benchmark" in markdown
+    assert "## Reproduction" in markdown
+    assert "zaxy coordinate benchmark" in markdown
+    assert "--output-dir" in markdown
+    assert "--workload" in markdown
 
 
 def test_coordinate_benchmark_cli_ingests_competitor_result(tmp_path: Path) -> None:

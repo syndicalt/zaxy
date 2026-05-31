@@ -15,6 +15,20 @@ interop. Install Neo4j support with `zaxy-memory[neo4j]`.
 Install Pathlight tracing support with `zaxy-memory[pathlight]` before setting
 `PATHLIGHT_ENABLED=true`.
 
+For provider-neutral trace inspection, export replay-derived spans and edges
+from Eventloom without enabling Pathlight:
+
+```bash
+zaxy trace export --eventloom-path .eventloom --json
+zaxy trace export --eventloom-path .eventloom --format jsonl --output trace.jsonl
+```
+
+The `zaxy.trace.v0.8` payload includes per-session integrity metadata plus
+spans and edges that correlate missions, memory checkout, model calls, tool
+calls, findings, reviews, promotions, and handoffs. Use `--format jsonl` when a
+local pipeline or external tracing adapter expects append-only ingestion
+records.
+
 ## Quick Start
 
 ```bash
@@ -70,6 +84,9 @@ python -m zaxy replay .eventloom/work.jsonl
 
 # Replay from a specific point
 python -m zaxy replay .eventloom/work.jsonl --from-seq 42
+
+# Replay a bounded window in a long-running session
+python -m zaxy replay .eventloom/work.jsonl --from-seq 42 --to-seq 80
 
 # Export as JSON
 python -m zaxy replay .eventloom/work.jsonl --json
@@ -425,14 +442,23 @@ scripts/release-check.sh --root .
 ```
 
 The release smoke check verifies the package version, changelog entry, publish
-workflow, and PyPI Trusted Publishing posture. The release gate runs `ruff`,
+workflow, PyPI Trusted Publishing posture, dependency-light LangGraph example,
+and outside-MCP OpenAI-compatible and Claude-compatible model-call examples.
+The release gate runs `ruff`,
 `mypy`, the full coverage-gated pytest suite, Python artifact build/metadata
-validation, public site/documentation validation, deployment validation, backend
-shootout evidence, injected-token efficiency floors, and 100-query embedded
-scale validation. A release is not ready until all gates pass, the production
-`.env` selects the intended projection backend, optional Neo4j deployments use
-TLS-enabled Bolt with `zaxy-memory[neo4j]` installed, remote MCP/SSE bearer auth
-is configured, and secret files are not world-readable.
+validation, public examples, MCP smoke, LangGraph smoke, Coordinate mission
+smoke, public site/documentation validation, deployment validation, backend
+shootout evidence, injected-token efficiency floors, explicit benchmark
+no-regression guardrails for checkout quality, citation coverage, p95/p99
+latency budgets, 100-query embedded scale validation, and beta UAT. A release is not ready
+until all gates pass, the production `.env` selects the intended projection
+backend, optional Neo4j deployments use TLS-enabled Bolt with
+`zaxy-memory[neo4j]` installed, remote MCP/SSE bearer auth is configured, and
+secret files are not world-readable.
+
+If a release smoke must be intentionally skipped in an environment-specific
+dry run, set its command to `SKIP:<reason>` so the log records the reason. Do
+not remove the command variable or leave it blank.
 
 ## Prometheus Alerts
 

@@ -1,0 +1,15 @@
+{
+  "threshold_seconds": 300,
+  "time_to_successful_doctor_seconds": 240,
+  "time_to_first_successful_example_seconds": 270,
+  "requires_sidecar": false,
+  "commands": [
+    "pipx install zaxy-memory",
+    "zaxy init",
+    "zaxy memory bootstrap --eventloom-path .eventloom",
+    "zaxy memory checkout \"current project memory and next useful action\" --eventloom-path .eventloom",
+    "zaxy doctor --eventloom-path .eventloom",
+    "python examples/single_agent_memory.py"
+  ],
+  "notes": "Representative clean local first-run timing evidence for the v0.6 beta readiness gate. Attach fresh external validation data after release when available."
+}

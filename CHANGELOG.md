@@ -2,6 +2,133 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 1.0.0 - 2026-05-31
+
+- Added the v1.0 stability commitment covering public API surfaces, Eventloom
+  data model compatibility, migration events, and non-commitments.
+- Added the v1.0 release announcement and release validation checklist
+  artifacts, with external validation kept as an optional post-release evidence path.
+- Added the v1.0 public release article, launch header image, and scripted
+  Zaxy Coordinate/Collaborate demo media package for the public docs site.
+- Added the v0.9 gate audit recording local release gates and the now-optional
+  external-user feedback evidence path so v1.0 readiness does not overclaim.
+- Added the v1.0 gate audit mapping every final release gate to command-level
+  local evidence and optional external validation evidence.
+- Added the external validation packet and GitHub issue template for collecting
+  outside-user evidence when it becomes available without blocking the release.
+
+## 0.9.0 - Release Candidate
+
+- Added the v0.9 API inventory documenting MCP tools, Python exports, CLI
+  commands, Eventloom events, projection backend contracts, and benchmark
+  artifact schemas with stability labels.
+- Added the v0.9 Migration guide for upgrades from 0.4 through 0.9, including
+  compatibility test expectations and non-destructive rollback guidance.
+- Added contributor guidance, GitHub issue templates, and benchmark
+  contribution rules for tracked inputs, query diagnostics, citation coverage,
+  and release guardrails.
+- Hardened Eventloom and MCP validation with fuzz-style tests for non-object or
+  oversized payloads, hash-chain sequence tampering, and bounded
+  `memory_append` inputs.
+- Expanded the release gate surface inventory with named public examples, MCP,
+  LangGraph, Coordinate mission, docs, benchmark, and beta UAT commands plus
+  explicit `SKIP:<reason>` handling.
+- Added the v1 schema-freeze manifest and schema migration event taxonomy for
+  stable or beta contract changes after the v0.9 freeze candidate.
+
+## 0.8.0 - Unreleased
+
+- Added a dependency-light OpenAI-compatible model-call adapter that injects
+  Memory Checkout into `chat.completions.create` requests outside MCP, captures
+  bounded request metadata, records sanitized assistant turns, and returns the
+  shared `zaxy.native.v0.6` metadata contract.
+- Added a dependency-light Claude-compatible model-call adapter that injects
+  Memory Checkout through Claude-style `messages.create` system text, captures
+  bounded request metadata, records sanitized assistant turns, and shares the
+  same native checkout contract.
+- Added OpenAI-compatible adapter helpers for redacted tool-call observations
+  and direct memory feedback events, with matching Claude-compatible helpers.
+- Added no-network OpenAI-compatible and Claude-compatible examples using fake
+  provider clients to demonstrate model-call memory activation without MCP or
+  provider SDK dependencies.
+- Added the OpenAI-compatible and Claude-compatible examples to
+  `zaxy doctor --release-smoke` so direct model-call activation is release-gated.
+- Added provider-neutral `zaxy.trace.v0.8` trace correlation from replayed
+  Eventloom events plus `zaxy trace export --json` and
+  `--format jsonl --output ...` for local JSONL or external tracing-provider
+  ingestion.
+- Added inclusive `zaxy replay --from-seq/--to-seq` windows for bounded
+  inspection of long-running Eventloom logs.
+- Added an explicit beta-readiness benchmark no-regression gate for checkout
+  quality, citation coverage, and p95/p99 latency budgets across smoke,
+  performance, and scale backend reports.
+
+## 0.7.0 - Unreleased
+
+- Added built-in Coordinate mission templates for software delivery, research
+  review, benchmark investigation, and release validation, with CLI support for
+  `zaxy coordinate template list`, `show`, and `apply`.
+- Added explicit approval next-action metadata for pending, conflicted, stale,
+  and evidence-poor findings in Coordinate approval packets and review exports.
+- Added `zaxy coordinate inspect` as a replay-only mission viewer combining
+  brief state, worker ledgers, findings, evidence, decisions, promoted state,
+  conflicts, approval packets, and handoffs.
+- Added `zaxy coordinate audit-report` for read-only mission audit reports with
+  Eventloom session, sequence, and hash citations across mission and worker
+  replay.
+- Expanded the three-worker Coordinate example to include approval packet
+  export, approval decision application, accepted promotion, conflict/defer
+  decisions, mission inspection, audit reporting, checkout, and handoff.
+- Published the `coordination-real-v1` CoordinationBench report with local
+  baselines, disclosure-only adapter status, limitations, and reproduction
+  commands from a tracked workload.
+- Added conflict materialization to the dependency-light `CoordinationAdapter`
+  so direct native helpers cover the full v0.7 mission workflow.
+
+## 0.6.0 - Unreleased
+
+- Added a canonical MCP tool contract snapshot for tool names, descriptions,
+  required fields, and full input schemas.
+- Added representative MCP response snapshots for `memory_bootstrap`,
+  `memory_checkout`, `memory_query`, and `memory_verbatim`.
+- Standardized MCP tool-dispatch error payloads with stable `unknown_tool`,
+  `invalid_request`, and `internal_error` codes plus remediation hints.
+- Added structured memory activation remediations to `zaxy hook-status` and a
+  matching `memory_activation` doctor check with runnable checkout commands.
+- Added top-level `zaxy status` memory activation output so local runtime checks
+  also show stale checkout, latest capture, token efficiency, and checkout
+  remediation commands.
+- Added the dependency-light LangGraph example to `zaxy doctor --release-smoke`
+  so release validation runs the native-beta checkout path.
+- Published `docs/examples/native-integration-contract.json` for the shared
+  `zaxy.native.v0.6` non-MCP adapter lifecycle and payload keys.
+- Added a beta-readiness first-run timing check backed by
+  `docs/examples/first-run-timing-report.json` to keep the clean local path
+  under the five-minute budget.
+- Raised the configured coverage ratchet and pytest coverage gate to the v0.6
+  roadmap floor of 92%.
+- Stabilized LangGraph checkout metadata around the `zaxy.native.v0.6` native
+  adapter contract, including diagnostics, quality, feedback guidance, and
+  fail-closed checkout error payloads.
+- Applied the same `zaxy.native.v0.6` checkout contract and fail-closed error
+  behavior to the CrewAI native-preview task middleware.
+- Expanded the MCP Quickstart with one recommended local route each for Codex,
+  Claude Code, Claude Desktop, Cursor, and generic MCP clients.
+- Extended representative MCP response snapshots to cover `context_assemble`,
+  `memory_feedback`, and `coordination_checkout` alongside bootstrap,
+  checkout, graph retrieval, and verbatim retrieval.
+
+## 0.5.0 - Unreleased
+
+- Repositioned Zaxy around **Coordinator Memory for Agent Teams** across package
+  metadata, README, docs, and the static site.
+- Added first-run validation docs so new users can report install, init,
+  bootstrap, checkout, doctor, and example timing.
+- Added MCP Quickstart and Coordinate Quickstart docs for the v0.5 public path.
+- Added single-agent, LangGraph, and Coordinate example smoke coverage.
+- Improved MCP tool descriptions so model-facing clients know when to call
+  bootstrap, checkout, feedback, and coordination tools.
+
 ## 0.4.0 - 2026-05-28
 
 - Added Zaxy Coordinate, a replay-backed parent/worker coordination layer for

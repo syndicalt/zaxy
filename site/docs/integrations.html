@@ -18,7 +18,7 @@
   <main class="doc-layout">
     <article class="doc-content">
       <h1 id="integrations">Integrations</h1>
-      <p>MCP remains Zaxy&#x27;s primary integration surface for agent memory, but Python applications can also use direct framework helpers. LangGraph now has a dependency-light native-preview adapter in <code>zaxy.adapters.langgraph</code>. CrewAI also has a dependency-light native-preview adapter in <code>zaxy.adapters.crewai</code>. AutoGen remains a template starter until real usage identifies the right runtime hooks to maintain.</p>
+      <p>MCP remains Zaxy&#x27;s primary integration surface for agent memory, but Python applications can also use direct framework helpers. LangGraph now has a dependency-light native-beta adapter in <code>zaxy.adapters.langgraph</code>. CrewAI has a dependency-light native-preview adapter in <code>zaxy.adapters.crewai</code>. Zaxy also includes a dependency-light OpenAI-compatible model-call adapter in <code>zaxy.adapters.openai_compatible</code> for applications that own their provider client directly. AutoGen remains a template starter until real usage identifies the right runtime hooks to maintain.</p>
       <p>Generate a starter:</p>
       <pre><code class="language-bash">zaxy integration-template langgraph --session-id zaxy-default
 zaxy integration-template crewai --session-id zaxy-default
@@ -34,8 +34,63 @@ python -m pip install &#x27;zaxy-memory[frameworks]&#x27;</code></pre>
       <pre><code class="language-bash">zaxy integrations
 zaxy integrations --json
 zaxy integrations --recommendation --json</code></pre>
-      <p>Each entry reports the framework package, optional extra, starter function, current maturity, and whether a framework-native adapter package exists. LangGraph reports <code>native-preview</code> with <code>native_adapter=zaxy.adapters.langgraph</code>. CrewAI reports <code>native-preview</code> with <code>native_adapter=zaxy.adapters.crewai</code>. AutoGen remains template-only with <code>native_adapter=not-yet-packaged</code>.</p>
-      <p>The current maintained integration recommendation is <code>common-native-preview-contract</code> on the model-facing UX hardening track. The reasoning is deliberately conservative: LangGraph and CrewAI already exercise the shared Memory Checkout, observation, and feedback flow, while AutoGen remains template-only until runtime hooks are validated in real usage. The next adapter work should stabilize shared payload keys and feedback behavior across native-preview adapters before promoting another framework-native package.</p>
+      <p>Each entry reports the framework package, optional extra, starter function, current maturity, and whether a framework-native adapter package exists. LangGraph reports <code>native-beta</code> with <code>native_adapter=zaxy.adapters.langgraph</code>. CrewAI reports <code>native-preview</code> with <code>native_adapter=zaxy.adapters.crewai</code>. AutoGen remains template-only with <code>native_adapter=not-yet-packaged</code>.</p>
+      <p>The current maintained integration recommendation is <code>common-native-preview-contract</code> on the model-facing UX hardening track. The reasoning is deliberately conservative: LangGraph and CrewAI already exercise the shared Memory Checkout, observation, and feedback flow, while AutoGen remains template-only until runtime hooks are validated in real usage. The next adapter work should stabilize shared payload keys and feedback behavior across native adapters before promoting another framework-native package.</p>
+      <h2 id="native-integration-contract">Native Integration Contract</h2>
+      <p>The v0.6 native-runtime guardrail is <code>docs/examples/native-integration-contract.json</code>. It defines the shared <code>zaxy.native.v0.6</code> payload contract used by dependency-light framework adapters outside MCP.</p>
+      <p>All native adapters use this lifecycle:</p>
+      <ol>
+        <li>before model/task call: run Memory Checkout and inject cited context;</li>
+        <li>after model/task call: capture assistant or task output;</li>
+        <li>after tool call: capture a redacted observation;</li>
+        <li>after context use: record feedback for the contexts actually used.</li>
+      </ol>
+      <p>The stable metadata object lives under the adapter payload&#x27;s <code>zaxy</code> key. For LangGraph that is <code>state[&quot;zaxy&quot;]</code>; for CrewAI that is <code>payload[&quot;zaxy&quot;]</code>; for OpenAI-compatible model calls that is <code>result[&quot;zaxy&quot;]</code>. Required keys are <code>contract</code>, <code>framework</code>, <code>operation</code>, <code>source</code>, <code>kind</code>, <code>status</code>, <code>session_id</code>, <code>query</code>, <code>current_fact_count</code>, <code>warning_count</code>, <code>diagnostics</code>, <code>quality</code>, <code>feedback</code>, and <code>error</code>.</p>
+      <p>Successful checkout payloads set <code>kind = &quot;memory_checkout&quot;</code>, <code>status = &quot;ok&quot;</code>, and <code>error = None</code>. Failed checkout payloads fail closed: adapters inject empty context fields, set <code>status = &quot;error&quot;</code>, set <code>error.code = &quot;checkout_failed&quot;</code>, and include a required action to retry Memory Checkout before the next model or task call.</p>
+      <h2 id="openai-compatible-model-calls">OpenAI-Compatible Model Calls</h2>
+      <p>Smoke the outside-MCP model-call path without installing a provider SDK:</p>
+      <pre><code class="language-bash">python examples/openai_compatible_memory.py</code></pre>
+      <p>Use the adapter when an application already owns an OpenAI-style client and wants Zaxy to activate memory at the model-call boundary without MCP:</p>
+      <pre><code class="language-python">from zaxy.adapters.openai_compatible import OpenAICompatibleMemoryAdapter
+
+adapter = OpenAICompatibleMemoryAdapter(session_id=&quot;my-agent&quot;)
+result = await adapter.chat_completion(
+    client,
+    model=&quot;gpt-compatible-model&quot;,
+    messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What should I remember?&quot;}],
+)</code></pre>
+      <p>The adapter does not import OpenAI or any other provider package. It accepts any client with <code>client.chat.completions.create(**request)</code>, including synchronous and asynchronous clients.</p>
+      <p><code>OpenAICompatibleMemoryAdapter.chat_completion()</code> runs Memory Checkout, prepends the checkout prompt as a system message, records a bounded <code>model.call.requested</code> event without raw message content, calls the provider, and persists assistant output as a sanitized <code>transcript.turn</code> event. The returned payload includes:</p>
+      <ul>
+        <li><code>request</code>: the provider request with injected memory;</li>
+        <li><code>response</code>: the raw provider response;</li>
+        <li><code>assistant_content</code>: extracted assistant text when present;</li>
+        <li><code>checkout</code>: the full Memory Checkout dictionary;</li>
+        <li><code>zaxy</code>: the shared <code>zaxy.native.v0.6</code> checkout metadata.</li>
+      </ul>
+      <p><code>record_tool_call()</code> records redacted <code>tool.call.completed</code> observations for provider tool calls. <code>record_feedback()</code> appends <code>memory.reinforced</code> or <code>memory.feedback</code> events for checkout facts used by the model call.</p>
+      <p>See <a href="https://github.com/syndicalt/zaxy/blob/master/examples/openai_compatible_memory.py">../examples/openai_compatible_memory.py</a> for a no-network smoke example.</p>
+      <h2 id="claude-compatible-model-calls">Claude-Compatible Model Calls</h2>
+      <p>Smoke the Claude-style outside-MCP model-call path without installing a provider SDK:</p>
+      <pre><code class="language-bash">python examples/claude_compatible_memory.py</code></pre>
+      <p>Use the adapter when an application already owns a Claude-style client and wants Zaxy to activate memory at the messages-call boundary without MCP:</p>
+      <pre><code class="language-python">from zaxy.adapters.claude_compatible import ClaudeCompatibleMemoryAdapter
+
+adapter = ClaudeCompatibleMemoryAdapter(session_id=&quot;my-agent&quot;)
+result = await adapter.messages_create(
+    client,
+    model=&quot;claude-compatible-model&quot;,
+    messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;What should I remember?&quot;}],
+    max_tokens=1024,
+)</code></pre>
+      <p>The adapter does not import Anthropic, Claude, or any provider package. It accepts any client with <code>client.messages.create(**request)</code>, including synchronous and asynchronous clients.</p>
+      <p><code>ClaudeCompatibleMemoryAdapter.messages_create()</code> runs Memory Checkout, prepends the checkout prompt through the provider-shaped <code>system</code> field, records a bounded <code>model.call.requested</code> event without raw message content, calls the provider, and persists assistant text blocks as a sanitized <code>transcript.turn</code> event. It returns the same <code>zaxy.native.v0.6</code> checkout metadata under <code>result[&quot;zaxy&quot;]</code> and exposes the same <code>record_tool_call()</code> and <code>record_feedback()</code> helpers as the OpenAI-compatible adapter.</p>
+      <p>See <a href="https://github.com/syndicalt/zaxy/blob/master/examples/claude_compatible_memory.py">../examples/claude_compatible_memory.py</a> for a no-network smoke example.</p>
+      <h2 id="neutral-trace-export">Neutral Trace Export</h2>
+      <p>Native adapters and lifecycle hooks append durable Eventloom observations. To feed a tracing provider or local JSONL pipeline without making that provider a runtime dependency, export the correlated trace graph:</p>
+      <pre><code class="language-bash">zaxy trace export --eventloom-path .eventloom --json
+zaxy trace export --eventloom-path .eventloom --format jsonl --output trace.jsonl</code></pre>
+      <p>The export uses the provider-neutral <code>zaxy.trace.v0.8</code> format. Each span cites the source Eventloom session, sequence, hash, timestamp, actor, event type, and bounded attributes. Edges link missions to checkout, model calls, tool calls, findings, reviews, promotions, and handoffs, and link reviews or promotions back to the finding they decided. The output is designed for adapters that translate into Pathlight, LangSmith, Phoenix, or local JSONL traces. The JSONL format writes one record per summary, session, span, and edge for simple append-only ingestion.</p>
       <h2 id="coordinate-adapter-contract">Coordinate Adapter Contract</h2>
       <p>Zaxy Coordinate has a dependency-light adapter contract for orchestrators that already own worker spawning, worktrees, containers, or task scheduling:</p>
       <pre><code class="language-python">from zaxy.adapters.coordination import CoordinationAdapter
@@ -58,8 +113,10 @@ finding = adapter.report_finding(
 zaxy coordinate adapter-template langgraph --mission auth-main --worker auth-api
 zaxy coordinate adapter-template crewai --mission auth-main --worker auth-api
 zaxy coordinate adapter-template mcp --mission auth-main --worker auth-api</code></pre>
-      <h2 id="langgraph-native-preview">LangGraph Native Preview</h2>
-      <p>Use the native-preview adapter when you want Zaxy to behave like a LangGraph node without requiring Zaxy to own your graph schema:</p>
+      <h2 id="langgraph-native-beta">LangGraph Native Beta</h2>
+      <p>Smoke the dependency-light LangGraph path without installing LangGraph:</p>
+      <pre><code class="language-bash">python examples/langgraph_memory.py</code></pre>
+      <p>Use the native-beta adapter when you want Zaxy to behave like a LangGraph node without requiring Zaxy to own your graph schema:</p>
       <pre><code class="language-python">from zaxy.adapters.langgraph import (
     create_langgraph_coordination_node,
     LangGraphMemoryAdapter,
@@ -78,6 +135,14 @@ adapter = LangGraphMemoryAdapter(session_id=&quot;my-agent&quot;)</code></pre>
         <li><code>zaxy</code>: metadata including session, replay count, warnings, and citations.</li>
       </ul>
       <p>For production agents, put <code>create_langgraph_memory_checkout_node()</code> or <code>LangGraphMemoryAdapter.checkout_before_model()</code> at model boundaries. That middleware calls <code>memory_checkout</code> automatically so long sessions, resumes, compactions, and roadmap questions reintroduce cited current memory instead of depending on the model to remember Zaxy.</p>
+      <p>The checkout node uses the beta native adapter metadata contract <code>zaxy.native.v0.6</code> under <code>state[&quot;zaxy&quot;]</code>. Stable keys are:</p>
+      <ul>
+        <li><code>contract</code>, <code>framework</code>, <code>operation</code>, <code>source</code>, <code>kind</code>, and <code>status</code>;</li>
+        <li><code>session_id</code>, <code>query</code>, <code>current_fact_count</code>, and <code>warning_count</code>;</li>
+        <li><code>diagnostics</code>, <code>quality</code>, and <code>feedback</code> from Memory Checkout;</li>
+        <li><code>error</code>, which is <code>None</code> on success.</li>
+      </ul>
+      <p>If checkout fails, the adapter fails closed: it returns empty <code>zaxy_context</code> and <code>zaxy_contexts</code>, sets <code>status</code> to <code>error</code>, includes <code>error.code = &quot;checkout_failed&quot;</code>, and asks the caller to retry Memory Checkout or run <code>zaxy doctor</code>. It does not inject stale context after a checkout failure.</p>
       <p><code>LangGraphMemoryAdapter.record_tool_call()</code> records redacted <code>tool.call.completed</code> observations for tool nodes. <code>record_assistant_turn()</code> persists assistant output as a transcript turn. <code>record_context_feedback()</code> reinforces contexts that were actually projected into state.</p>
       <p>See <a href="https://github.com/syndicalt/zaxy/blob/master/examples/langgraph_memory.py">../examples/langgraph_memory.py</a> for a smoke example.</p>
       <h2 id="crewai-native-preview">CrewAI Native Preview</h2>
@@ -100,6 +165,7 @@ adapter = CrewAIMemoryAdapter(session_id=&quot;my-crew&quot;)</code></pre>
         <li><code>zaxy</code>: metadata including session, replay count, warnings, crew, agent, and task identifiers when supplied.</li>
       </ul>
       <p>For production task wrappers, use <code>create_crewai_memory_checkout_step()</code> or <code>CrewAIMemoryAdapter.checkout_before_task()</code> at task boundaries. That path calls <code>memory_checkout</code> before task execution and returns the checkout prompt as <code>memory</code>.</p>
+      <p>CrewAI checkout uses the same <code>zaxy.native.v0.6</code> metadata contract under <code>payload[&quot;zaxy&quot;]</code> as the LangGraph checkout node. It adds CrewAI-specific <code>crew</code>, <code>agent</code>, and <code>task_id</code> fields when supplied. If checkout fails, the adapter fails closed with empty <code>memory</code> and <code>contexts</code>, <code>status = &quot;error&quot;</code>, <code>error.code = &quot;checkout_failed&quot;</code>, and remediation guidance to retry Memory Checkout or run <code>zaxy doctor</code>.</p>
       <p><code>CrewAIMemoryAdapter.after_task()</code> persists task output as an assistant turn. <code>record_tool_use()</code> records redacted <code>tool.call.completed</code> observations. <code>record_context_feedback()</code> reinforces contexts that were actually used by the crew task.</p>
       <pre><code class="language-python">payload = await adapter.before_task(
     &quot;Draft beta release notes&quot;,

@@ -25,6 +25,110 @@ from zaxy.mcp_server import (
 def json_loads(value: str) -> Any:
     return json.loads(value)
 
+
+def _mcp_response_snapshot(name: str, payload: Any) -> dict[str, Any]:
+    """Return stable representative response fields for v0.6 MCP snapshots."""
+    if name == "memory_bootstrap":
+        return {
+            "mode": payload["mode"],
+            "session_id": payload["session_id"],
+            "startup_sequence": [
+                {"tool": step["tool"], "argument_keys": sorted(step.get("arguments", {}).keys())}
+                for step in payload["startup_sequence"]
+            ],
+            "recommended_next_tool": payload["capabilities"]["recommended_next_call"]["tool"],
+            "eventloom_latest_seq": payload["capabilities"]["status"]["eventloom"]["latest_seq"],
+            "prompt_contains_checkout_rule": "memory_checkout" in payload["prompt"],
+        }
+    if name == "memory_checkout":
+        return {
+            "session_id": payload["session_id"],
+            "current_fact_count": len(payload["current_facts"]),
+            "first_current_fact": {
+                "content": payload["current_facts"][0]["content"],
+                "citation": payload["current_facts"][0]["citation"],
+                "source_lane": payload["current_facts"][0]["source_lane"],
+            },
+            "diagnostics": {
+                "current_citation_count": payload["diagnostics"]["current_citation_count"],
+                "feedback_tool": payload["diagnostics"]["feedback_tool"],
+                "warning_count": payload["diagnostics"]["warning_count"],
+            },
+            "quality": payload["quality"],
+            "feedback_template_keys": sorted(payload["guidance"]["feedback"]["payloads"][0].keys()),
+            "token_efficiency_keys": sorted(payload["token_efficiency"].keys()),
+            "prompt_sections": [
+                section
+                for section in (
+                    "# Memory Checkout",
+                    "## Checkout Quality",
+                    "## Checkout Guidance",
+                    "## Checkout Diagnostics",
+                )
+                if section in payload["prompt"]
+            ],
+        }
+    if name == "context_assemble":
+        return {
+            "session_id": payload["session_id"],
+            "replay_event_count": payload["replay_event_count"],
+            "context_count": len(payload["contexts"]),
+            "first_context": {
+                "content": payload["contexts"][0]["content"],
+                "source": payload["contexts"][0]["source"],
+                "score": payload["contexts"][0]["score"],
+            },
+            "warning_count": len(payload.get("warnings", [])),
+            "prompt_contains_context": payload["contexts"][0]["content"] in payload["prompt"],
+        }
+    if name == "memory_query":
+        return {
+            "result_count": len(payload),
+            "first_result": {
+                "content": payload[0]["content"],
+                "source": payload[0]["source"],
+                "score": payload[0]["score"],
+                "citation": payload[0]["citation"],
+                "score_explanation_keys": sorted((payload[0].get("score_explanation") or {}).keys()),
+            },
+        }
+    if name == "memory_verbatim":
+        citation_prefix, _, citation_hash = payload[0]["citation"].partition("#")
+        return {
+            "result_count": len(payload),
+            "first_result": {
+                "content": payload[0]["content"],
+                "source": payload[0]["source"],
+                "source_kind": payload[0]["source_kind"],
+                "citation_prefix": citation_prefix,
+                "citation_hash_length": len(citation_hash),
+                "metadata_keys": sorted(payload[0].get("metadata", {}).keys()),
+            },
+        }
+    if name == "memory_feedback":
+        return {
+            "seq": payload["seq"],
+            "hash_length": len(payload["hash"]),
+            "event_type": payload["event_type"],
+        }
+    if name == "coordination_checkout":
+        return {
+            "mission_id": payload["mission_id"],
+            "accepted_count": len(payload["accepted_findings"]),
+            "pending_count": len(payload["pending_findings"]),
+            "conflict_count": len(payload["conflicts"]),
+            "first_accepted": {
+                "worker_id": payload["accepted_findings"][0]["worker_id"],
+                "status": payload["accepted_findings"][0]["status"],
+                "summary": payload["accepted_findings"][0]["summary"],
+                "evidence_kinds": [
+                    item["kind"] for item in payload["accepted_findings"][0]["evidence"]
+                ],
+            },
+            "prompt_contains_accepted_state": "Accepted findings" in payload["prompt"],
+        }
+    raise ValueError(f"unknown MCP response snapshot: {name}")
+
 # ------------------------------------------------------------------
 # Fixtures
 # ------------------------------------------------------------------
@@ -98,6 +202,24 @@ class TestToolSchema:
             "coordination_handoff",
         }
 
+    def test_v06_mcp_tool_contract_matches_snapshot(self) -> None:
+        """The public MCP tool surface should stay protected by a canonical snapshot."""
+        snapshot_path = Path("docs/examples/mcp-tool-contract.json")
+        expected = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        actual = {
+            "tool_count": len(TOOLS),
+            "tools": [
+                {
+                    "name": tool.name,
+                    "description": tool.description,
+                    "input_schema": tool.inputSchema,
+                }
+                for tool in TOOLS
+            ],
+        }
+
+        assert actual == expected
+
     def test_memory_verbatim_has_query_and_limit(self) -> None:
         """memory_verbatim should expose source-recall retrieval."""
         tool = next(t for t in TOOLS if t.name == "memory_verbatim")
@@ -168,6 +290,17 @@ class TestToolSchema:
         assert "session_id" in tool.inputSchema["properties"]
         assert "current_task" in tool.inputSchema["properties"]
 
+    def test_v05_tool_descriptions_are_model_actionable(self) -> None:
+        """Core MCP tools should describe when a model should call them."""
+        descriptions = {tool.name: tool.description for tool in TOOLS}
+
+        assert "session start" in descriptions["memory_bootstrap"].lower()
+        assert "before substantial work" in descriptions["memory_checkout"].lower()
+        assert "after using retrieved context" in descriptions["memory_feedback"].lower()
+        assert "worker-local" in descriptions["coordination_report_finding"].lower()
+        assert "accepted coordination state" in descriptions["coordination_checkout"].lower()
+        assert "remote reviewer" in descriptions["coordination_approval_packet"].lower()
+
     def test_coordination_report_finding_schema_requires_mission_worker_and_summary(self) -> None:
         """coordination_report_finding should expose structured worker-local finding capture."""
         tool = next(t for t in TOOLS if t.name == "coordination_report_finding")
@@ -233,6 +366,25 @@ class TestMemoryAppend:
         assert len(result) == 1
         assert "1" in result[0].text
 
+    @pytest.mark.parametrize(
+        "arguments",
+        [
+            {"event_type": "", "actor": "user", "payload": {}},
+            {"event_type": "x" * 257, "actor": "user", "payload": {}},
+            {"event_type": "goal.created", "actor": "", "payload": {}},
+            {"event_type": "goal.created", "actor": "x" * 257, "payload": {}},
+            {"event_type": "goal.created", "actor": "user", "payload": ["not", "object"]},
+        ],
+    )
+    async def test_rejects_unbounded_append_inputs(
+        self,
+        server: ZaxyMCPServer,
+        arguments: dict[str, object],
+    ) -> None:
+        """memory_append should bound direct handler inputs as tightly as advertised schemas."""
+        with pytest.raises(ValueError):
+            await server.handle_memory_append(arguments)
+
 
 class TestCoordinationTools:
     """Tests for high-level coordination MCP tools."""
@@ -294,6 +446,9 @@ class TestCoordinationTools:
         assert checkout["accepted_findings"][0]["finding_id"] == finding_id
         assert checkout["pending_findings"] == []
         assert "API failures trace to expired JWKS cache handling." in checkout["prompt"]
+
+        snapshots = json.loads(Path("docs/examples/mcp-response-snapshots.json").read_text(encoding="utf-8"))
+        assert _mcp_response_snapshot("coordination_checkout", checkout) == snapshots["coordination_checkout"]
 
         result = await server.handle_coordination_performance_ledger({"mission_id": "auth-main"})
         ledger = json_loads(result[0].text)
@@ -457,6 +612,30 @@ class TestMemoryBootstrap:
         assert events[-1].type == "memory.bootstrap.shown"
         assert events[-1].payload["source"] == "mcp"
 
+    async def test_bootstrap_response_matches_v06_snapshot(
+        self,
+        server: ZaxyMCPServer,
+        tmp_path: Path,
+    ) -> None:
+        """memory_bootstrap should keep a representative response snapshot stable."""
+        eventloom = tmp_path / ".eventloom"
+        EventLog(eventloom / "agent-1.jsonl").append(
+            "task.completed",
+            actor="codex",
+            payload={"summary": "Bootstrap source."},
+            thread="agent-1",
+        )
+        server._eventloom_path = str(eventloom)
+        server._workspace_root = tmp_path
+
+        result = await server.handle_memory_bootstrap(
+            {"session_id": "agent-1", "current_task": "resume roadmap"}
+        )
+
+        snapshots = json.loads(Path("docs/examples/mcp-response-snapshots.json").read_text(encoding="utf-8"))
+        payload = json_loads(result[0].text)
+        assert _mcp_response_snapshot("memory_bootstrap", payload) == snapshots["memory_bootstrap"]
+
 
 def test_mcp_server_constructs_projection_store_through_factory(tmp_path: Path) -> None:
     """ZaxyMCPServer should use the backend-neutral projection factory."""
@@ -472,6 +651,7 @@ def test_mcp_server_constructs_projection_store_through_factory(tmp_path: Path) 
 
     assert srv.graph is mock_build.return_value
     assert mock_build.call_args.args[0].backend == "embedded"
+    assert mock_build.call_args.args[0].embedded_graph_path == tmp_path / ".eventloom" / "projections" / "embedded.kuzu"
 
 
 def test_mcp_server_accepts_embedded_projection_overrides(tmp_path: Path) -> None:
@@ -600,6 +780,9 @@ class TestMemoryQuery:
             assert "eventloom://default/events/1#aaaaaaaaaaaa" in data
             assert "score_explanation" in data
             assert "weighted_score" in data
+            payload = json.loads(data)
+            snapshots = json.loads(Path("docs/examples/mcp-response-snapshots.json").read_text(encoding="utf-8"))
+            assert _mcp_response_snapshot("memory_query", payload) == snapshots["memory_query"]
 
     async def test_memory_verbatim_returns_eventloom_citations(
         self,
@@ -629,6 +812,8 @@ class TestMemoryQuery:
         assert payload[0]["source"] == "verbatim"
         assert payload[0]["citation"] == f"eventloom://agent/events/{event.seq}#{event.hash}"
         assert payload[0]["metadata"]["source_path"] == "docs/design.md"
+        snapshots = json.loads(Path("docs/examples/mcp-response-snapshots.json").read_text(encoding="utf-8"))
+        assert _mcp_response_snapshot("memory_verbatim", payload) == snapshots["memory_verbatim"]
 
     async def test_passes_temporal_filter(self, server: ZaxyMCPServer) -> None:
         """temporal_filter should be forwarded to the router."""
@@ -876,6 +1061,24 @@ class TestMemoryFeedback:
         server.tracer.trace_append.assert_awaited_once_with("memory.reinforced", "assistant", 1)
         assert json_loads(result[0].text)["event_type"] == "memory.reinforced"
 
+    async def test_memory_feedback_response_matches_v06_snapshot(self, server: ZaxyMCPServer) -> None:
+        """memory_feedback should keep its client-facing reinforcement response stable."""
+        result = await server.handle_memory_feedback({
+            "entity_name": "Use retention metadata",
+            "entity_type": "decision",
+            "feedback": "used",
+            "actor": "assistant",
+            "session_id": "agent-1",
+            "importance": 0.8,
+            "query": "retention decisions",
+            "citation": "eventloom://agent-1/events/1#abc",
+            "score": 0.91,
+        })
+
+        snapshots = json.loads(Path("docs/examples/mcp-response-snapshots.json").read_text(encoding="utf-8"))
+        payload = json_loads(result[0].text)
+        assert _mcp_response_snapshot("memory_feedback", payload) == snapshots["memory_feedback"]
+
     async def test_negative_feedback_appends_audit_event(self, server: ZaxyMCPServer) -> None:
         """Irrelevant context should be recorded without reinforcement metadata."""
         result = await server.handle_memory_feedback({
@@ -1028,7 +1231,7 @@ class TestServerSetup:
 
         mock_neo4j_runtime_cls.assert_not_called()
         mock_embedded_runtime.ensure_available.assert_called_once()
-        assert mock_embedded_runtime_cls.call_args.kwargs["path"] == ".eventloom/projections/embedded.kuzu"
+        assert mock_embedded_runtime_cls.call_args.kwargs["path"] == Path(".eventloom/projections/embedded.kuzu")
         mock_graph.connect.assert_awaited_once()
         mock_graph.init_schema.assert_awaited_once()
 
@@ -1105,6 +1308,9 @@ class TestContextLifecycleTools:
         assert output["session_id"] == "agent-1"
         assert output["replay_event_count"] == 1
         assert "MMR diversity" in output["prompt"]
+
+        snapshots = json.loads(Path("docs/examples/mcp-response-snapshots.json").read_text(encoding="utf-8"))
+        assert _mcp_response_snapshot("context_assemble", output) == snapshots["context_assemble"]
 
     async def test_memory_checkout_returns_current_facts_and_evidence(
         self,
@@ -1283,6 +1489,46 @@ class TestContextLifecycleTools:
         output = json_loads(result[0].text)
         assert output["current_facts"][0]["content"] == "Memory checkout is the context contract."
         builder.assert_called_once()
+
+    async def test_memory_checkout_response_matches_v06_snapshot(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_checkout should keep a representative response snapshot stable."""
+        event = MagicMock(
+            seq=2,
+            type="decision.recorded",
+            actor="assistant",
+            payload={"decision": "Use memory checkout."},
+            hash="c" * 64,
+        )
+        server.session_manager.replay.return_value = MagicMock(events=[event])
+        with patch("zaxy.mcp_server.QueryRouter") as mock_router_cls:
+            router = AsyncMock()
+            router.query.return_value = [
+                MagicMock(
+                    content="Memory checkout is the context contract.",
+                    source="keyword",
+                    score=0.8,
+                    valid_from="2026-05-10T20:55:40Z",
+                    valid_to=None,
+                    citation="eventloom://agent-1/events/1882#checkout",
+                    score_explanation=None,
+                    entity_name="memory checkout",
+                    entity_type="task",
+                ),
+            ]
+            mock_router_cls.return_value = router
+
+            result = await server.handle_memory_checkout({
+                "query": "What context contract should the model use?",
+                "session_id": "agent-1",
+                "limit": 3,
+            })
+
+        snapshots = json.loads(Path("docs/examples/mcp-response-snapshots.json").read_text(encoding="utf-8"))
+        payload = json_loads(result[0].text)
+        assert _mcp_response_snapshot("memory_checkout", payload) == snapshots["memory_checkout"]
 
     async def test_memory_checkout_asks_user_when_only_superseded_context_is_retrieved(
         self,
@@ -1788,12 +2034,12 @@ class TestEntrypoint:
 
     @patch("zaxy.mcp_server.ZaxyMCPServer")
     @patch("zaxy.mcp_server.stdio_server")
-    async def test_unknown_tool_raises_value_error(
+    async def test_unknown_tool_returns_structured_error(
         self,
         mock_stdio: MagicMock,
         mock_server_cls: MagicMock,
     ) -> None:
-        """Calling an unknown tool should raise ValueError."""
+        """Calling an unknown tool should return a stable client-facing error."""
         mock_server = AsyncMock()
         mock_server_cls.return_value = mock_server
 
@@ -1826,8 +2072,10 @@ class TestEntrypoint:
             await main()
 
         assert "call_tool" in captured_handlers
-        with pytest.raises(ValueError, match="Unknown tool"):
-            await captured_handlers["call_tool"]("unknown_tool", {})
+        result = await captured_handlers["call_tool"]("unknown_tool", {})
+        payload = json.loads(result[0].text)
+        assert payload["error"]["code"] == "unknown_tool"
+        assert payload["error"]["message"] == "Unknown tool: unknown_tool"
 
     @patch("zaxy.mcp_server.ZaxyMCPServer")
     @patch("zaxy.mcp_server.stdio_server")
@@ -1900,7 +2148,7 @@ class TestEntrypoint:
         mock_stdio: MagicMock,
         mock_server_cls: MagicMock,
     ) -> None:
-        """Failed MCP dispatch should record a failed lifecycle event and re-raise."""
+        """Failed MCP dispatch should record a failed lifecycle event and return an error."""
         mock_server = AsyncMock()
         mock_server.capture_tool_call_completed = AsyncMock()
         mock_server._default_session_id = "default"
@@ -1935,18 +2183,80 @@ class TestEntrypoint:
         ):
             await main()
 
-        with pytest.raises(ValueError, match="Unknown tool"):
-            await captured_handlers["call_tool"](
-                "unknown_tool",
-                {"session_id": "agent-1", "api_key": "secret"},
-            )
+        result = await captured_handlers["call_tool"](
+            "unknown_tool",
+            {"session_id": "agent-1", "api_key": "secret"},
+        )
+        payload = json.loads(result[0].text)
+        assert payload["error"]["code"] == "unknown_tool"
 
         mock_server.capture_tool_call_completed.assert_awaited_once()
         call = mock_server.capture_tool_call_completed.await_args
         assert call.kwargs["tool_name"] == "unknown_tool"
         assert call.kwargs["status"] == "failed"
         assert call.kwargs["session_id"] == "agent-1"
-        assert call.kwargs["result_summary"] is None
+        assert call.kwargs["result_summary"] == "unknown_tool: Unknown tool: unknown_tool"
+
+    @patch("zaxy.mcp_server.ZaxyMCPServer")
+    @patch("zaxy.mcp_server.stdio_server")
+    async def test_call_tool_returns_structured_error_payload(
+        self,
+        mock_stdio: MagicMock,
+        mock_server_cls: MagicMock,
+    ) -> None:
+        """MCP clients should receive stable error codes and remediation hints."""
+        mock_server = AsyncMock()
+        mock_server.capture_tool_call_completed = AsyncMock()
+        mock_server._default_session_id = "default"
+        mock_server._session_id_from_arguments = MagicMock(return_value="agent-1")
+        mock_server_cls.return_value = mock_server
+
+        mock_read = AsyncMock()
+        mock_write = AsyncMock()
+        mock_stdio.return_value.__aenter__ = AsyncMock(return_value=(mock_read, mock_write))
+        mock_stdio.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        captured_handlers: dict[str, Any] = {}
+
+        def make_capture_decorator(name: str) -> Any:
+            def decorator(fn: Any) -> Any:
+                captured_handlers[name] = fn
+                return fn
+            return decorator
+
+        with (
+            patch("zaxy.mcp_server.app.run", new_callable=AsyncMock),
+            patch.object(
+                zaxy.mcp_server.app,
+                "list_tools",
+                return_value=make_capture_decorator("list_tools"),
+            ),
+            patch.object(
+                zaxy.mcp_server.app,
+                "call_tool",
+                return_value=make_capture_decorator("call_tool"),
+            ),
+        ):
+            await main()
+
+        result = await captured_handlers["call_tool"](
+            "unknown_tool",
+            {"session_id": "agent-1", "api_key": "secret"},
+        )
+
+        payload = json.loads(result[0].text)
+        assert payload == {
+            "error": {
+                "code": "unknown_tool",
+                "message": "Unknown tool: unknown_tool",
+                "remediation": "Call list_tools and retry with one of the advertised tool names.",
+            }
+        }
+        mock_server.capture_tool_call_completed.assert_awaited_once()
+        call = mock_server.capture_tool_call_completed.await_args
+        assert call.kwargs["tool_name"] == "unknown_tool"
+        assert call.kwargs["status"] == "failed"
+        assert call.kwargs["result_summary"] == "unknown_tool: Unknown tool: unknown_tool"
 
     @patch("zaxy.mcp_server.ZaxyMCPServer")
     @patch("zaxy.mcp_server.stdio_server")

@@ -78,6 +78,32 @@
             "summary": "JWKS cache expiry is the accepted auth failure cause.",
             "superseded_by": null,
             "worker_id": "worker-api"
+          },
+          {
+            "claim_key": "auth.failure.cause",
+            "claim_value": "expired-jwks-cache",
+            "confidence": 0.95,
+            "evidence": [
+              {
+                "kind": "command",
+                "reference": "pytest tests/test_auth.py -q",
+                "source_sha256": null,
+                "stale": false,
+                "status": null,
+                "summary": null,
+                "superseded_by": null
+              }
+            ],
+            "finding_id": "finding-api-jwks",
+            "mission_id": "coordination-case-1",
+            "rationale": null,
+            "source_event_hash": "35b8bd74c1b4222c035000fe9a4f27e375a76ae9be9e8efa8c2f4cae8cd90af0",
+            "source_event_seq": 3,
+            "stale": false,
+            "status": "accepted",
+            "summary": "JWKS cache expiry is the accepted auth failure cause.",
+            "superseded_by": null,
+            "worker_id": "worker-api"
           }
         ],
         "conflicted_findings": [
@@ -135,6 +161,58 @@
           },
           {
             "claim_key": "auth.failure.cause",
+            "claim_value": "expired-jwks-cache",
+            "confidence": 0.95,
+            "evidence": [
+              {
+                "kind": "command",
+                "reference": "pytest tests/test_auth.py -q",
+                "source_sha256": null,
+                "stale": false,
+                "status": null,
+                "summary": null,
+                "superseded_by": null
+              }
+            ],
+            "finding_id": "finding-api-jwks",
+            "mission_id": "coordination-case-1",
+            "rationale": null,
+            "source_event_hash": "35b8bd74c1b4222c035000fe9a4f27e375a76ae9be9e8efa8c2f4cae8cd90af0",
+            "source_event_seq": 3,
+            "stale": false,
+            "status": "accepted",
+            "summary": "JWKS cache expiry is the accepted auth failure cause.",
+            "superseded_by": null,
+            "worker_id": "worker-api"
+          },
+          {
+            "claim_key": "auth.failure.cause",
+            "claim_value": "flag-missing",
+            "confidence": 0.31,
+            "evidence": [
+              {
+                "kind": "transcript",
+                "reference": "eventloom://old/events/3#abc",
+                "source_sha256": null,
+                "stale": true,
+                "status": null,
+                "summary": null,
+                "superseded_by": "decision:jwks-cache"
+              }
+            ],
+            "finding_id": "finding-api-stale-flag",
+            "mission_id": "coordination-case-1",
+            "rationale": null,
+            "source_event_hash": "3f2187b7d88d382ab507a0f4aa1a5b45fbc8b3b018af32db7ecdbad45d2f26d8",
+            "source_event_seq": 4,
+            "stale": true,
+            "status": "pending",
+            "summary": "Stale flag-missing theory from old branch.",
+            "superseded_by": "decision:jwks-cache",
+            "worker_id": "worker-api"
+          },
+          {
+            "claim_key": "auth.failure.cause",
             "claim_value": "missing-browser-refresh",
             "confidence": 0.64,
             "evidence": [
@@ -161,6 +239,32 @@
           },
           {
             "claim_key": "auth.failure.cause",
+            "claim_value": "missing-browser-refresh",
+            "confidence": 0.64,
+            "evidence": [
+              {
+                "kind": "file",
+                "reference": "src/ui/session.ts:42",
+                "source_sha256": null,
+                "stale": false,
+                "status": null,
+                "summary": null,
+                "superseded_by": null
+              }
+            ],
+            "finding_id": "finding-ui-refresh",
+            "mission_id": "coordination-case-1",
+            "rationale": null,
+            "source_event_hash": "f6c8c28060374988459d95d8c9e3d761db3fd1d933e5197e7821b66dfc2f52ef",
+            "source_event_seq": 2,
+            "stale": false,
+            "status": "pending",
+            "summary": "Browser refresh is the auth failure cause.",
+            "superseded_by": null,
+            "worker_id": "worker-ui"
+          },
+          {
+            "claim_key": "auth.failure.cause",
             "claim_value": "expired-jwks-cache",
             "confidence": 0.88,
             "evidence": [
@@ -179,6 +283,32 @@
             "rationale": null,
             "source_event_hash": "63c7dea730f8d5631f38d683545df6e48e2b7c34a4bd1c6da71a9ae5f7aae724",
             "source_event_seq": 1,
+            "stale": false,
+            "status": "pending",
+            "summary": "Docs independently confirm expired JWKS cache.",
+            "superseded_by": null,
+            "worker_id": "worker-docs"
+          },
+          {
+            "claim_key": "auth.failure.cause",
+            "claim_value": "expired-jwks-cache",
+            "confidence": 0.88,
+            "evidence": [
+              {
+                "kind": "document",
+                "reference": "docs/auth.md:12",
+                "source_sha256": null,
+                "stale": false,
+                "status": null,
+                "summary": null,
+                "superseded_by": null
+              }
+            ],
+            "finding_id": "finding-docs-jwks",
+            "mission_id": "coordination-case-1",
+            "rationale": null,
+            "source_event_hash": "b5e4d4a764d2363aa342171f1f480b2aeb618e6d4e22d3c3d8168ffb0c417d47",
+            "source_event_seq": 3,
             "stale": false,
             "status": "pending",
             "summary": "Docs independently confirm expired JWKS cache.",
@@ -245,6 +375,58 @@
               },
               {
                 "claim_key": "auth.failure.cause",
+                "claim_value": "expired-jwks-cache",
+                "confidence": 0.95,
+                "evidence": [
+                  {
+                    "kind": "command",
+                    "reference": "pytest tests/test_auth.py -q",
+                    "source_sha256": null,
+                    "stale": false,
+                    "status": null,
+                    "summary": null,
+                    "superseded_by": null
+                  }
+                ],
+                "finding_id": "finding-api-jwks",
+                "mission_id": "coordination-case-1",
+                "rationale": null,
+                "source_event_hash": "35b8bd74c1b4222c035000fe9a4f27e375a76ae9be9e8efa8c2f4cae8cd90af0",
+                "source_event_seq": 3,
+                "stale": false,
+                "status": "accepted",
+                "summary": "JWKS cache expiry is the accepted auth failure cause.",
+                "superseded_by": null,
+                "worker_id": "worker-api"
+              },
+              {
+                "claim_key": "auth.failure.cause",
+                "claim_value": "flag-missing",
+                "confidence": 0.31,
+                "evidence": [
+                  {
+                    "kind": "transcript",
+                    "reference": "eventloom://old/events/3#abc",
+                    "source_sha256": null,
+                    "stale": true,
+                    "status": null,
+                    "summary": null,
+                    "superseded_by": "decision:jwks-cache"
+                  }
+                ],
+                "finding_id": "finding-api-stale-flag",
+                "mission_id": "coordination-case-1",
+                "rationale": null,
+                "source_event_hash": "3f2187b7d88d382ab507a0f4aa1a5b45fbc8b3b018af32db7ecdbad45d2f26d8",
+                "source_event_seq": 4,
+                "stale": true,
+                "status": "pending",
+                "summary": "Stale flag-missing theory from old branch.",
+                "superseded_by": "decision:jwks-cache",
+                "worker_id": "worker-api"
+              },
+              {
+                "claim_key": "auth.failure.cause",
                 "claim_value": "missing-browser-refresh",
                 "confidence": 0.64,
                 "evidence": [
@@ -271,6 +453,32 @@
               },
               {
                 "claim_key": "auth.failure.cause",
+                "claim_value": "missing-browser-refresh",
+                "confidence": 0.64,
+                "evidence": [
+                  {
+                    "kind": "file",
+                    "reference": "src/ui/session.ts:42",
+                    "source_sha256": null,
+                    "stale": false,
+                    "status": null,
+                    "summary": null,
+                    "superseded_by": null
+                  }
+                ],
+                "finding_id": "finding-ui-refresh",
+                "mission_id": "coordination-case-1",
+                "rationale": null,
+                "source_event_hash": "f6c8c28060374988459d95d8c9e3d761db3fd1d933e5197e7821b66dfc2f52ef",
+                "source_event_seq": 2,
+                "stale": false,
+                "status": "pending",
+                "summary": "Browser refresh is the auth failure cause.",
+                "superseded_by": null,
+                "worker_id": "worker-ui"
+              },
+              {
+                "claim_key": "auth.failure.cause",
                 "claim_value": "expired-jwks-cache",
                 "confidence": 0.88,
                 "evidence": [
@@ -289,6 +497,32 @@
                 "rationale": null,
                 "source_event_hash": "63c7dea730f8d5631f38d683545df6e48e2b7c34a4bd1c6da71a9ae5f7aae724",
                 "source_event_seq": 1,
+                "stale": false,
+                "status": "pending",
+                "summary": "Docs independently confirm expired JWKS cache.",
+                "superseded_by": null,
+                "worker_id": "worker-docs"
+              },
+              {
+                "claim_key": "auth.failure.cause",
+                "claim_value": "expired-jwks-cache",
+                "confidence": 0.88,
+                "evidence": [
+                  {
+                    "kind": "document",
+                    "reference": "docs/auth.md:12",
+                    "source_sha256": null,
+                    "stale": false,
+                    "status": null,
+                    "summary": null,
+                    "superseded_by": null
+                  }
+                ],
+                "finding_id": "finding-docs-jwks",
+                "mission_id": "coordination-case-1",
+                "rationale": null,
+                "source_event_hash": "b5e4d4a764d2363aa342171f1f480b2aeb618e6d4e22d3c3d8168ffb0c417d47",
+                "source_event_seq": 3,
                 "stale": false,
                 "status": "pending",
                 "summary": "Docs independently confirm expired JWKS cache.",
@@ -332,6 +566,32 @@
           },
           {
             "claim_key": "auth.failure.cause",
+            "claim_value": "flag-missing",
+            "confidence": 0.31,
+            "evidence": [
+              {
+                "kind": "transcript",
+                "reference": "eventloom://old/events/3#abc",
+                "source_sha256": null,
+                "stale": true,
+                "status": null,
+                "summary": null,
+                "superseded_by": "decision:jwks-cache"
+              }
+            ],
+            "finding_id": "finding-api-stale-flag",
+            "mission_id": "coordination-case-1",
+            "rationale": null,
+            "source_event_hash": "3f2187b7d88d382ab507a0f4aa1a5b45fbc8b3b018af32db7ecdbad45d2f26d8",
+            "source_event_seq": 4,
+            "stale": true,
+            "status": "pending",
+            "summary": "Stale flag-missing theory from old branch.",
+            "superseded_by": "decision:jwks-cache",
+            "worker_id": "worker-api"
+          },
+          {
+            "claim_key": "auth.failure.cause",
             "claim_value": "missing-browser-refresh",
             "confidence": 0.64,
             "evidence": [
@@ -350,6 +610,32 @@
             "rationale": null,
             "source_event_hash": "e9241516523827412d7f2a5120eab729317fdae367d513d31b6be8fcc6cd511f",
             "source_event_seq": 1,
+            "stale": false,
+            "status": "pending",
+            "summary": "Browser refresh is the auth failure cause.",
+            "superseded_by": null,
+            "worker_id": "worker-ui"
+          },
+          {
+            "claim_key": "auth.failure.cause",
+            "claim_value": "missing-browser-refresh",
+            "confidence": 0.64,
+            "evidence": [
+              {
+                "kind": "file",
+                "reference": "src/ui/session.ts:42",
+                "source_sha256": null,
+                "stale": false,
+                "status": null,
+                "summary": null,
+                "superseded_by": null
+              }
+            ],
+            "finding_id": "finding-ui-refresh",
+            "mission_id": "coordination-case-1",
+            "rationale": null,
+            "source_event_hash": "f6c8c28060374988459d95d8c9e3d761db3fd1d933e5197e7821b66dfc2f52ef",
+            "source_event_seq": 2,
             "stale": false,
             "status": "pending",
             "summary": "Browser refresh is the auth failure cause.",
@@ -397,6 +683,48 @@
             "summary": "Unbacked claim that OAuth scope drift caused failures.",
             "superseded_by": null,
             "worker_id": "worker-docs"
+          },
+          {
+            "claim_key": "auth.failure.cause",
+            "claim_value": "expired-jwks-cache",
+            "confidence": 0.88,
+            "evidence": [
+              {
+                "kind": "document",
+                "reference": "docs/auth.md:12",
+                "source_sha256": null,
+                "stale": false,
+                "status": null,
+                "summary": null,
+                "superseded_by": null
+              }
+            ],
+            "finding_id": "finding-docs-jwks",
+            "mission_id": "coordination-case-1",
+            "rationale": null,
+            "source_event_hash": "b5e4d4a764d2363aa342171f1f480b2aeb618e6d4e22d3c3d8168ffb0c417d47",
+            "source_event_seq": 3,
+            "stale": false,
+            "status": "pending",
+            "summary": "Docs independently confirm expired JWKS cache.",
+            "superseded_by": null,
+            "worker_id": "worker-docs"
+          },
+          {
+            "claim_key": "auth.failure.secondary",
+            "claim_value": "oauth-scope-drift",
+            "confidence": 0.2,
+            "evidence": [],
+            "finding_id": "finding-no-evidence",
+            "mission_id": "coordination-case-1",
+            "rationale": null,
+            "source_event_hash": "fcf1ab765b73d798ec951efd54f24f55946a18e1c77b2a4d4da4fe9487fef19e",
+            "source_event_seq": 4,
+            "stale": false,
+            "status": "pending",
+            "summary": "Unbacked claim that OAuth scope drift caused failures.",
+            "superseded_by": null,
+            "worker_id": "worker-docs"
           }
         ],
         "rejected_findings": [],
@@ -421,6 +749,32 @@
             "rationale": null,
             "source_event_hash": "37de3b6a071a999b22b2729e0684b8ab2eb900677bfbf2ac764687480e78e470",
             "source_event_seq": 2,
+            "stale": true,
+            "status": "pending",
+            "summary": "Stale flag-missing theory from old branch.",
+            "superseded_by": "decision:jwks-cache",
+            "worker_id": "worker-api"
+          },
+          {
+            "claim_key": "auth.failure.cause",
+            "claim_value": "flag-missing",
+            "confidence": 0.31,
+            "evidence": [
+              {
+                "kind": "transcript",
+                "reference": "eventloom://old/events/3#abc",
+                "source_sha256": null,
+                "stale": true,
+                "status": null,
+                "summary": null,
+                "superseded_by": "decision:jwks-cache"
+              }
+            ],
+            "finding_id": "finding-api-stale-flag",
+            "mission_id": "coordination-case-1",
+            "rationale": null,
+            "source_event_hash": "3f2187b7d88d382ab507a0f4aa1a5b45fbc8b3b018af32db7ecdbad45d2f26d8",
+            "source_event_seq": 4,
             "stale": true,
             "status": "pending",
             "summary": "Stale flag-missing theory from old branch.",
@@ -574,17 +928,17 @@
       "metrics": {
         "accepted_finding_precision": 1.0,
         "accepted_finding_recall": 1.0,
-        "brief_latency_ms": 0.488,
+        "brief_latency_ms": 0.789,
         "citation_coverage": 1.0,
         "conflict_precision": 0.166667,
         "conflict_recall": 1.0,
         "duplicate_consolidation": 1.0,
         "eventloom_replayable": true,
         "evidence_coverage": 1.0,
-        "injected_tokens": 2354,
+        "injected_tokens": 4507,
         "parent_checkout_answerability": 1.0,
-        "promotion_latency_ms": 19.382,
-        "returned_tokens": 2354,
+        "promotion_latency_ms": 19.437,
+        "returned_tokens": 4507,
         "stale_claim_rejection": 1.0
       }
     }
@@ -630,17 +984,17 @@
   "metrics": {
     "accepted_finding_precision": 1.0,
     "accepted_finding_recall": 1.0,
-    "brief_latency_ms": 0.488,
+    "brief_latency_ms": 0.789,
     "citation_coverage": 1.0,
     "conflict_precision": 0.166667,
     "conflict_recall": 1.0,
     "duplicate_consolidation": 1.0,
     "eventloom_replayable": true,
     "evidence_coverage": 1.0,
-    "injected_tokens": 2354,
+    "injected_tokens": 4507,
     "parent_checkout_answerability": 1.0,
-    "promotion_latency_ms": 19.382,
-    "returned_tokens": 2354,
+    "promotion_latency_ms": 19.437,
+    "returned_tokens": 4507,
     "stale_claim_rejection": 1.0
   },
   "version": "coordination-v1",

@@ -1,5 +1,11 @@
 # Why Zaxy
 
+Zaxy is **Coordinator Memory for Agent Teams**. It keeps worker-local findings
+separate from accepted parent mission state, preserves citations and replayable
+history, and makes conflicts reviewable before they contaminate shared project
+memory. That matters because vector search alone cannot audit who claimed what,
+when it was accepted, or which evidence supported the decision.
+
 Zaxy is heavier than a markdown file and heavier than a standalone vector
 database on purpose. It is for agents that need memory to be replayable,
 auditable, temporal, and connected across sessions. If the only requirement is

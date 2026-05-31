@@ -52,6 +52,7 @@ from zaxy.runtime import LocalEmbeddedGraphRuntime, LocalNeo4jRuntime, LocalPgGr
 from zaxy.security import (
     MAX_QUERY_LIMIT,
     MAX_REPLAY_EVENTS,
+    validate_event_text,
     validate_from_seq,
     validate_limit,
     validate_payload,
@@ -138,7 +139,7 @@ TOOLS = [
     ),
     Tool(
         name="memory_feedback",
-        description="Record feedback for retrieved context and reinforce useful memories.",
+        description="After using retrieved context, record whether a memory item was useful, stale, corrected, or reinforced.",
         inputSchema={
             "type": "object",
             "required": ["entity_name", "entity_type", "feedback"],
@@ -264,7 +265,7 @@ TOOLS = [
     ),
     Tool(
         name="memory_bootstrap",
-        description="Return compact session-start Zaxy memory guidance for model bootstrap.",
+        description="At session start, return compact Zaxy memory guidance and the recommended first checkout call.",
         inputSchema={
             "type": "object",
             "required": [],
@@ -277,7 +278,7 @@ TOOLS = [
     ),
     Tool(
         name="memory_checkout",
-        description="Checkout current, cited, prompt-ready memory state for a session.",
+        description="Before substantial work, checkout current, cited, prompt-ready memory state for a session.",
         inputSchema={
             "type": "object",
             "required": ["query"],
@@ -387,7 +388,7 @@ TOOLS = [
     ),
     Tool(
         name="coordination_report_finding",
-        description="Record a worker-local finding with evidence.",
+        description="Record a worker-local coordination finding with evidence; it is not trusted parent state until reviewed and promoted.",
         inputSchema={
             "type": "object",
             "required": ["mission_id", "worker_id", "summary"],
@@ -416,7 +417,7 @@ TOOLS = [
     ),
     Tool(
         name="coordination_checkout",
-        description="Return accepted coordination state for prompt injection.",
+        description="Return accepted coordination state for prompt injection, with optional diagnostics for pending or conflicted findings.",
         inputSchema={
             "type": "object",
             "required": ["mission_id"],
@@ -439,7 +440,7 @@ TOOLS = [
     ),
     Tool(
         name="coordination_approval_packet",
-        description="Return a portable packet for remote finding approval.",
+        description="Return a portable pending/conflicted finding packet for a remote reviewer.",
         inputSchema={
             "type": "object",
             "required": ["mission_id"],
@@ -552,11 +553,18 @@ class ZaxyMCPServer:
         self._neo4j_uri = neo4j_uri or settings.neo4j_uri
         self._neo4j_user = neo4j_user or settings.neo4j_user
         self._neo4j_password = neo4j_password or settings.neo4j_password
+        resolved_embedded_graph_path = (
+            Path(embedded_graph_path)
+            if embedded_graph_path is not None
+            else Path(self._eventloom_path) / "projections" / "embedded.kuzu"
+            if eventloom_path is not None
+            else Path(settings.embedded_graph_path)
+        )
         self.local_projection_runtime = self._build_local_projection_runtime(
             settings,
             projection_backend=backend,
             pggraph_dsn=pggraph_dsn,
-            embedded_graph_path=embedded_graph_path,
+            embedded_graph_path=resolved_embedded_graph_path,
         )
         self.local_neo4j = (
             self.local_projection_runtime
@@ -572,7 +580,7 @@ class ZaxyMCPServer:
                 neo4j_ca_cert=settings.neo4j_ca_cert,
                 neo4j_trust_all=settings.neo4j_trust_all,
                 pggraph_dsn=pggraph_dsn or settings.pggraph_dsn,
-                embedded_graph_path=Path(embedded_graph_path or settings.embedded_graph_path),
+                embedded_graph_path=resolved_embedded_graph_path,
                 latticedb_path=Path(latticedb_path or settings.latticedb_path),
                 embedding_dimension=settings.embedding_dimension,
             )
@@ -779,8 +787,8 @@ class ZaxyMCPServer:
 
     async def handle_memory_append(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle memory_append tool call."""
-        event_type = arguments["event_type"]
-        actor = arguments["actor"]
+        event_type = validate_event_text(arguments.get("event_type"), "event_type")
+        actor = validate_event_text(arguments.get("actor"), "actor")
         payload = validate_payload(arguments.get("payload", {}))
         session_id = self._session_id_from_arguments(
             arguments,
@@ -2031,6 +2039,36 @@ def _tool_result_summary(result: list[TextContent]) -> str:
     return f"{len(result)} content item{'s' if len(result) != 1 else ''}"
 
 
+def _mcp_error_payload(exc: Exception) -> dict[str, dict[str, str]]:
+    """Return the stable v0.6 MCP error payload."""
+    message = str(exc)
+    if isinstance(exc, ValueError) and message.startswith("Unknown tool:"):
+        code = "unknown_tool"
+        remediation = "Call list_tools and retry with one of the advertised tool names."
+    elif isinstance(exc, ValueError):
+        code = "invalid_request"
+        remediation = "Check the tool input schema, fix the request payload, and retry."
+    else:
+        code = "internal_error"
+        remediation = "Retry later or inspect Zaxy logs and doctor output for service health."
+    return {
+        "error": {
+            "code": code,
+            "message": message,
+            "remediation": remediation,
+        }
+    }
+
+
+def _mcp_error_result(exc: Exception) -> list[TextContent]:
+    return [TextContent(type="text", text=json.dumps(_mcp_error_payload(exc), indent=2, sort_keys=True))]
+
+
+def _mcp_error_summary(exc: Exception) -> str:
+    error = _mcp_error_payload(exc)["error"]
+    return f"{error['code']}: {error['message']}"
+
+
 async def main() -> None:
     """Run the MCP stdio server with graceful shutdown."""
     setup_logging()
@@ -2064,16 +2102,16 @@ async def main() -> None:
         session_id = _capture_session_id(active_server, arguments)
         try:
             result = await _dispatch_tool_call(active_server, name, arguments)
-        except Exception:
+        except Exception as exc:
             await _capture_tool_call_best_effort(
                 active_server,
                 name=name,
                 arguments=arguments,
                 session_id=session_id,
                 status="failed",
-                result_summary=None,
+                result_summary=_mcp_error_summary(exc),
             )
-            raise
+            return _mcp_error_result(exc)
         await _capture_tool_call_best_effort(
             active_server,
             name=name,

@@ -351,6 +351,49 @@ class CoordinationPerformanceLedger:
 
 
 @dataclass(frozen=True)
+class CoordinationMissionInspection:
+    """Replay-backed operator view for a full coordination mission."""
+
+    mission_id: str
+    objective: str | None
+    brief: CoordinationBrief
+    ledger: CoordinationPerformanceLedger
+    approval_packet: CoordinationApprovalPacket
+    decisions: list[dict[str, Any]]
+    handoffs: list[dict[str, Any]]
+
+    @property
+    def findings(self) -> dict[str, list[dict[str, Any]]]:
+        return {
+            "accepted": [finding.to_dict() for finding in self.brief.accepted_findings],
+            "pending": [finding.to_dict() for finding in self.brief.pending_findings],
+            "rejected": [finding.to_dict() for finding in self.brief.rejected_findings],
+            "deferred": [finding.to_dict() for finding in self.brief.deferred_findings],
+            "conflicted": [finding.to_dict() for finding in self.brief.conflicted_findings],
+            "stale": [finding.to_dict() for finding in self.brief.stale_findings],
+        }
+
+    @property
+    def evidence(self) -> dict[str, list[dict[str, Any]]]:
+        return {finding.finding_id: finding.evidence for finding in _inspection_findings(self.brief)}
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "mission_id": self.mission_id,
+            "objective": self.objective,
+            "brief": self.brief.to_dict(),
+            "worker_ledgers": [worker.to_dict() for worker in self.ledger.workers],
+            "findings": self.findings,
+            "evidence": self.evidence,
+            "decisions": self.decisions,
+            "promoted_state": [finding.to_dict() for finding in self.brief.accepted_findings],
+            "handoffs": self.handoffs,
+            "conflicts": [conflict.to_dict() for conflict in self.brief.conflicts],
+            "approval_packet": self.approval_packet.to_dict(),
+        }
+
+
+@dataclass(frozen=True)
 class CoordinationApprovalFinding:
     """Finding entry exported for remote approval."""
 
@@ -369,6 +412,45 @@ class CoordinationApprovalFinding:
     def stale(self) -> bool:
         return self.finding.stale
 
+    @property
+    def next_actions(self) -> list[dict[str, Any]]:
+        actions: list[dict[str, Any]] = []
+        if self.conflict_keys:
+            actions.append(
+                {
+                    "code": "resolve_conflict",
+                    "label": "Resolve conflicting claim keys before accepting or promoting this finding.",
+                    "recommended_status": "conflicted",
+                    "conflict_keys": self.conflict_keys,
+                }
+            )
+        if self.stale:
+            action = {
+                "code": "refresh_stale_evidence",
+                "label": "Refresh superseded or stale evidence before promotion.",
+                "recommended_status": "deferred",
+            }
+            if self.finding.superseded_by:
+                action["superseded_by"] = self.finding.superseded_by
+            actions.append(action)
+        if self.requires_evidence:
+            actions.append(
+                {
+                    "code": "add_evidence",
+                    "label": "Attach evidence before accepting or promoting this finding.",
+                    "recommended_status": "deferred",
+                }
+            )
+        if not actions:
+            actions.append(
+                {
+                    "code": "review_finding",
+                    "label": "Review and decide whether to accept, reject, defer, or mark conflicted.",
+                    "recommended_status": "accepted",
+                }
+            )
+        return actions
+
     def to_dict(self) -> dict[str, Any]:
         payload = self.finding.to_dict()
         payload.update(
@@ -376,6 +458,7 @@ class CoordinationApprovalFinding:
                 "allowed_statuses": sorted(REVIEW_STATUSES),
                 "requires_evidence": self.requires_evidence,
                 "conflict_keys": self.conflict_keys,
+                "next_actions": self.next_actions,
             }
         )
         return payload
@@ -429,6 +512,28 @@ class CoordinationReviewExport:
         return {
             "mission_id": self.mission_id,
             "packet": self.packet.to_dict(),
+            "markdown": self.markdown,
+            "read_only": self.read_only,
+        }
+
+
+@dataclass(frozen=True)
+class CoordinationAuditReport:
+    """Replay-only mission audit report with Eventloom citations."""
+
+    mission_id: str
+    objective: str | None
+    summary: dict[str, Any]
+    events: list[dict[str, Any]]
+    markdown: str
+    read_only: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "mission_id": self.mission_id,
+            "objective": self.objective,
+            "summary": self.summary,
+            "events": self.events,
             "markdown": self.markdown,
             "read_only": self.read_only,
         }
@@ -718,6 +823,21 @@ class CoordinationManager:
             prompt=_checkout_prompt(brief, include_diagnostics=include_diagnostics),
         )
 
+    def inspect_mission(self, mission_id: str) -> CoordinationMissionInspection:
+        """Return a replay-only operator view of a full coordination mission."""
+        mission_sid = validate_session_id(mission_id)
+        parent_events = self.session_manager.replay(mission_sid).events
+        brief = self.brief(mission_sid)
+        return CoordinationMissionInspection(
+            mission_id=brief.mission_id,
+            objective=brief.objective,
+            brief=brief,
+            ledger=self.performance_ledger(mission_sid),
+            approval_packet=self.approval_packet(mission_sid),
+            decisions=_review_decisions(parent_events),
+            handoffs=_handoff_records(parent_events),
+        )
+
     def performance_ledger(self, mission_id: str) -> CoordinationPerformanceLedger:
         """Return replay-backed worker outcome metrics for a mission."""
         brief = self.brief(mission_id)
@@ -846,6 +966,39 @@ class CoordinationManager:
             mission_id=packet.mission_id,
             packet=packet,
             markdown=_review_export_markdown(packet),
+        )
+
+    def audit_report(self, mission_id: str) -> CoordinationAuditReport:
+        """Return a replay-only mission audit report with Eventloom citations."""
+        mission_sid = validate_session_id(mission_id)
+        parent_events = self.session_manager.replay(mission_sid).events
+        brief = self.brief(mission_sid)
+        audit_events = _audit_event_records(
+            parent_events,
+            [
+                event
+                for worker in brief.workers
+                for event in self.session_manager.replay(worker.worker_id).events
+                if event.payload.get("mission_id") == mission_sid
+            ],
+        )
+        summary = {
+            "event_count": len(audit_events),
+            "worker_count": len(brief.workers),
+            "accepted_findings": len(brief.accepted_findings),
+            "pending_findings": len(brief.pending_findings),
+            "rejected_findings": len(brief.rejected_findings),
+            "deferred_findings": len(brief.deferred_findings),
+            "conflicted_findings": len(brief.conflicted_findings),
+            "stale_findings": len(brief.stale_findings),
+            "conflict_count": len(brief.conflicts),
+        }
+        return CoordinationAuditReport(
+            mission_id=brief.mission_id,
+            objective=brief.objective,
+            summary=summary,
+            events=audit_events,
+            markdown=_audit_report_markdown(brief, summary, audit_events),
         )
 
     def record_detected_conflicts(
@@ -1035,6 +1188,140 @@ def _reviews(events: list[Event]) -> dict[str, dict[str, str | None]]:
                 "rationale": _optional_str(event.payload.get("rationale")),
             }
     return reviews
+
+
+def _review_decisions(events: list[Event]) -> list[dict[str, Any]]:
+    decisions: list[dict[str, Any]] = []
+    for event in events:
+        if event.type != "coordination.finding.reviewed":
+            continue
+        decisions.append(
+            {
+                "finding_id": str(event.payload.get("finding_id") or ""),
+                "worker_id": _optional_str(event.payload.get("worker_id")),
+                "status": _optional_str(event.payload.get("status")),
+                "rationale": _optional_str(event.payload.get("rationale")),
+                "actor": event.actor,
+                "event_seq": event.seq,
+                "event_hash": event.hash,
+                "timestamp": event.timestamp,
+            }
+        )
+    return decisions
+
+
+def _handoff_records(events: list[Event]) -> list[dict[str, Any]]:
+    handoffs: list[dict[str, Any]] = []
+    for event in events:
+        if event.type != "coordination.handoff.created":
+            continue
+        handoffs.append(
+            {
+                "handoff_id": str(event.payload.get("handoff_id") or ""),
+                "summary": str(event.payload.get("summary") or ""),
+                "next_steps": _string_list(event.payload.get("next_steps")),
+                "risks": _string_list(event.payload.get("risks")),
+                "actor": event.actor,
+                "event_seq": event.seq,
+                "event_hash": event.hash,
+                "timestamp": event.timestamp,
+            }
+        )
+    return handoffs
+
+
+def _audit_event_records(parent_events: list[Event], worker_events: list[Event]) -> list[dict[str, Any]]:
+    records = [_audit_event_record(event) for event in [*parent_events, *worker_events]]
+    records.sort(key=lambda event: (str(event["timestamp"]), str(event["session_id"]), int(event["event_seq"])))
+    return records
+
+
+def _audit_event_record(event: Event) -> dict[str, Any]:
+    record: dict[str, Any] = {
+        "session_id": event.thread,
+        "event_seq": event.seq,
+        "event_hash": event.hash,
+        "prev_hash": event.prev_hash,
+        "event_type": event.type,
+        "actor": event.actor,
+        "timestamp": event.timestamp,
+    }
+    for key in [
+        "mission_id",
+        "worker_id",
+        "finding_id",
+        "handoff_id",
+        "status",
+        "summary",
+        "objective",
+        "assignment",
+    ]:
+        if key in event.payload:
+            record[key] = event.payload.get(key)
+    return record
+
+
+def _inspection_findings(brief: CoordinationBrief) -> list[FindingState]:
+    return _unique_findings(
+        [
+            *brief.accepted_findings,
+            *brief.pending_findings,
+            *brief.rejected_findings,
+            *brief.deferred_findings,
+            *brief.conflicted_findings,
+            *brief.stale_findings,
+        ]
+    )
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if str(item)]
+
+
+def _audit_report_markdown(
+    brief: CoordinationBrief,
+    summary: dict[str, Any],
+    events: list[dict[str, Any]],
+) -> str:
+    lines = [
+        f"# Zaxy Coordinate Audit: {brief.mission_id}",
+        "",
+        f"Objective: {brief.objective or '-'}",
+        f"Events: {summary['event_count']}",
+        f"Workers: {summary['worker_count']}",
+        f"Accepted findings: {summary['accepted_findings']}",
+        f"Pending findings: {summary['pending_findings']}",
+        f"Conflicts: {summary['conflict_count']}",
+        "",
+        "## Eventloom Audit Trail",
+        "",
+    ]
+    if not events:
+        lines.append("No coordination events found.")
+    for event in events:
+        details = _audit_event_details(event)
+        suffix = f" {details}" if details else ""
+        lines.append(
+            f"- {event['event_type']} session={event['session_id']} "
+            f"seq={event['event_seq']} hash={event['event_hash']}{suffix}"
+        )
+    return "\n".join(lines)
+
+
+def _audit_event_details(event: dict[str, Any]) -> str:
+    details = []
+    for label, key in [
+        ("worker", "worker_id"),
+        ("finding", "finding_id"),
+        ("handoff", "handoff_id"),
+        ("status", "status"),
+    ]:
+        value = event.get(key)
+        if value:
+            details.append(f"{label}={value}")
+    return " ".join(details)
 
 
 def _recorded_conflict_signatures(events: list[Event]) -> set[str]:
@@ -1340,6 +1627,8 @@ def _review_export_markdown(packet: CoordinationApprovalPacket) -> str:
             lines.append(f"- Superseded by: `{_markdown_text(finding.superseded_by)}`")
         if approval_finding.conflict_keys:
             lines.append(f"- Conflict keys: {', '.join(approval_finding.conflict_keys)}")
+        for action in approval_finding.next_actions:
+            lines.append(f"- Next action: {action['code']} - {_markdown_text(str(action['label']))}")
         if finding.evidence:
             for item in finding.evidence:
                 kind = _markdown_text(str(item.get("kind") or "source"))

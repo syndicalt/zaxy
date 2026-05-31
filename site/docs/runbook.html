@@ -26,6 +26,10 @@
         <li><strong>Pathlight</strong> (optional top layer): Observability, tracing, and debugging dashboard.</li>
       </ol>
       <p>Neo4j and pgGraph are optional sidecar projection backends. Use them only when you explicitly need same-harness control runs or existing infrastructure interop. Install Neo4j support with <code>zaxy-memory[neo4j]</code>. Install Pathlight tracing support with <code>zaxy-memory[pathlight]</code> before setting <code>PATHLIGHT_ENABLED=true</code>.</p>
+      <p>For provider-neutral trace inspection, export replay-derived spans and edges from Eventloom without enabling Pathlight:</p>
+      <pre><code class="language-bash">zaxy trace export --eventloom-path .eventloom --json
+zaxy trace export --eventloom-path .eventloom --format jsonl --output trace.jsonl</code></pre>
+      <p>The <code>zaxy.trace.v0.8</code> payload includes per-session integrity metadata plus spans and edges that correlate missions, memory checkout, model calls, tool calls, findings, reviews, promotions, and handoffs. Use <code>--format jsonl</code> when a local pipeline or external tracing adapter expects append-only ingestion records.</p>
       <h2 id="quick-start">Quick Start</h2>
       <pre><code class="language-bash"># Install Zaxy
 pip install -e &quot;.[dev]&quot;
@@ -70,6 +74,9 @@ python -m zaxy replay .eventloom/work.jsonl
 
 # Replay from a specific point
 python -m zaxy replay .eventloom/work.jsonl --from-seq 42
+
+# Replay a bounded window in a long-running session
+python -m zaxy replay .eventloom/work.jsonl --from-seq 42 --to-seq 80
 
 # Export as JSON
 python -m zaxy replay .eventloom/work.jsonl --json
@@ -378,7 +385,8 @@ PATHLIGHT_ACCESS_TOKEN_FILE=/run/secrets/pathlight_access_token</code></pre>
       <p>Before promoting a build, run:</p>
       <pre><code class="language-bash">zaxy doctor --release-smoke
 scripts/release-check.sh --root .</code></pre>
-      <p>The release smoke check verifies the package version, changelog entry, publish workflow, and PyPI Trusted Publishing posture. The release gate runs <code>ruff</code>, <code>mypy</code>, the full coverage-gated pytest suite, Python artifact build/metadata validation, public site/documentation validation, deployment validation, backend shootout evidence, injected-token efficiency floors, and 100-query embedded scale validation. A release is not ready until all gates pass, the production <code>.env</code> selects the intended projection backend, optional Neo4j deployments use TLS-enabled Bolt with <code>zaxy-memory[neo4j]</code> installed, remote MCP/SSE bearer auth is configured, and secret files are not world-readable.</p>
+      <p>The release smoke check verifies the package version, changelog entry, publish workflow, PyPI Trusted Publishing posture, dependency-light LangGraph example, and outside-MCP OpenAI-compatible and Claude-compatible model-call examples. The release gate runs <code>ruff</code>, <code>mypy</code>, the full coverage-gated pytest suite, Python artifact build/metadata validation, public examples, MCP smoke, LangGraph smoke, Coordinate mission smoke, public site/documentation validation, deployment validation, backend shootout evidence, injected-token efficiency floors, explicit benchmark no-regression guardrails for checkout quality, citation coverage, p95/p99 latency budgets, 100-query embedded scale validation, and beta UAT. A release is not ready until all gates pass, the production <code>.env</code> selects the intended projection backend, optional Neo4j deployments use TLS-enabled Bolt with <code>zaxy-memory[neo4j]</code> installed, remote MCP/SSE bearer auth is configured, and secret files are not world-readable.</p>
+      <p>If a release smoke must be intentionally skipped in an environment-specific dry run, set its command to <code>SKIP:&lt;reason&gt;</code> so the log records the reason. Do not remove the command variable or leave it blank.</p>
       <h2 id="prometheus-alerts">Prometheus Alerts</h2>
       <pre><code class="language-yaml">groups:
   - name: zaxy-degraded-mode rules:

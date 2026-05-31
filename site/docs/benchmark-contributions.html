@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Benchmark Contributions - Zaxy Docs</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../index.html">Overview</a>
+      <a href="getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="benchmark-contributions">Benchmark Contributions</h1>
+      <p>Benchmark contributions are welcome when they improve reproducibility, coverage, or release confidence. Zaxy benchmark evidence must be replayable from tracked inputs and must not rely on private local state.</p>
+      <h2 id="accepted-contribution-types">Accepted Contribution Types</h2>
+      <ul>
+        <li>New workload files that exercise memory checkout, temporal retrieval, Eventloom source recall, coordination, codebase mapping, or projection backend behavior.</li>
+        <li>New benchmark report artifacts generated from tracked Eventloom and query inputs.</li>
+        <li>Guardrail updates that make release checks more representative without hiding regressions.</li>
+        <li>External comparison disclosures that clearly separate same-harness results from adapter feasibility notes.</li>
+      </ul>
+      <h2 id="required-evidence">Required Evidence</h2>
+      <p>Every benchmark report proposed for release use needs:</p>
+      <ul>
+        <li>tracked Eventloom inputs under the report or benchmark directory;</li>
+        <li>tracked query files or workload files;</li>
+        <li><code>query_results</code> diagnostics for per-query audit;</li>
+        <li>citation coverage metrics;</li>
+        <li>latency metrics for checkout and retrieval lanes when relevant;</li>
+        <li>report metadata and workload fingerprints;</li>
+        <li>a Markdown sidecar that summarizes the same numbers humans will cite.</li>
+      </ul>
+      <p>Reports under <code>reports/backend-shootout/</code> are checked by <code>scripts/check-backend-shootout.py</code>. Release reports must keep query diagnostics, fingerprint validation, git-tracked inputs, citation coverage, and latency budgets enabled. Do not promote <code>reports/benchmarks/*-diagnostics.*</code> files as public claims unless the corresponding workload and report contract are also tracked and documented.</p>
+      <h2 id="running-checks">Running Checks</h2>
+      <p>Use the narrow command for the artifact you changed, then run the broader release checks when the result supports a public claim:</p>
+      <pre><code class="language-bash">python scripts/check-backend-shootout.py reports/backend-shootout/backend-shootout.json \
+  --require-report-metadata \
+  --require-markdown-report \
+  --require-query-results \
+  --require-git-tracked-inputs \
+  --verify-report-fingerprints
+
+zaxy doctor --beta-readiness
+scripts/release-check.sh --root .</code></pre>
+      <p>For Coordinate benchmarks, regenerate from a tracked workload and keep the report limitations visible. For LongMemEval-compatible reports, preserve the same-harness BM25 comparison and cite whether hosted embeddings or caches were used.</p>
+      <h2 id="review-criteria">Review Criteria</h2>
+      <p>Reviewers should reject benchmark contributions when:</p>
+      <ul>
+        <li>the Eventloom or query inputs are absent, generated locally, or untracked;</li>
+        <li><code>query_results</code> are missing or replaced with placeholders;</li>
+        <li>citation coverage is not reported;</li>
+        <li>the report makes a public claim from a candidate backend marked experimental in <a href="api-inventory.html">api-inventory.md</a>;</li>
+        <li>latency budgets are relaxed without explanation and changelog coverage;</li>
+        <li>the Markdown sidecar disagrees with the JSON report.</li>
+      </ul>
+      <p>Accepted benchmark changes should update <a href="benchmarks.html">benchmarks.md</a>, <a href="testing.html">testing.md</a>, the changelog, and <a href="../README.html">README.md</a> when the public benchmark story changes. Operational release steps live in <a href="runbook.html">runbook.md</a>.</p>
+    </article>
+  </main>
+</body>
+</html>

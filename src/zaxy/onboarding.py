@@ -592,7 +592,7 @@ def _append_heartbeat(eventloom_path: Path, *, session_id: str, source: str, wor
 
 
 def _onboarding_doctor_status(doctor: dict[str, Any], *, hook_installation_required: bool = True) -> str:
-    ignored = {"observation_coverage", "capture_health", "packet_memory"}
+    ignored = {"observation_coverage", "capture_health", "memory_activation", "packet_memory"}
     if not hook_installation_required:
         ignored.add("hook_installation")
     actionable_statuses = [check["status"] for check in doctor["checks"] if check["name"] not in ignored]

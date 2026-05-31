@@ -52,7 +52,7 @@
         <li>Evaluate pgGraph as an experimental Postgres-backed projection backend behind a backend-neutral contract, with embedded Kuzu remaining the default until a candidate backend proves same-harness benchmark and operations parity or better.</li>
         <li>Expand clean-repo onboarding and model-facing UAT across fresh Codex and Claude Code workspaces: <code>zaxy init</code>, Memory Bootstrap, deterministic capture, Memory Checkout, retrieval feedback, and doctor status.</li>
         <li>Keep public benchmark scripts reproducible from a clean checkout with cached datasets, archived reports, guardrail commands, and no hidden manual steps.</li>
-        <li>Keep LangGraph and CrewAI native-preview adapters dependency-light and use them to harden the common native-preview payload contract.</li>
+        <li>Keep LangGraph native-beta, CrewAI native-preview, and OpenAI-compatible model-call adapters dependency-light on the shared native payload contract, <code>zaxy.native.v0.6</code>.</li>
         <li>Keep AutoGen template-only until the right runtime hooks are clear.</li>
         <li>Add public comparison workloads that evaluate temporal, source-recall, graph-traversal, and context-collapse behavior against MemPalace-style memory.</li>
         <li>Keep claims reproducible: every comparison should publish workload hashes, retrieval settings, and exact scoring rules.</li>

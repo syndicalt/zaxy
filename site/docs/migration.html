@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Migration Guide - Zaxy Docs</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../index.html">Overview</a>
+      <a href="getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="migration-guide">Migration Guide</h1>
+      <p>This guide covers the public upgrade path from Zaxy 0.4 through the v0.9 freeze candidate. Eventloom logs are append-only; migrations should add events, projection metadata, indexes, docs, or compatibility shims instead of rewriting historical records.</p>
+      <h2 id="upgrade-checklist">Upgrade Checklist</h2>
+      <p>Before and after each upgrade:</p>
+      <ol>
+        <li>Back up <code>.eventloom/</code>, projection directories, and any sidecar database.</li>
+        <li>Run <code>zaxy memory status --graph</code> to verify Eventloom integrity and graph projection lag before changing code.</li>
+        <li>Run <code>zaxy doctor --beta-readiness</code> from the target checkout.</li>
+        <li>Rebuild or refresh projections with <code>zaxy refresh-context</code> or <code>zaxy reproject</code> when the release notes mention projection changes.</li>
+        <li>Re-run the documented examples or mission smoke that your integration uses.</li>
+        <li>Capture the final command evidence in Eventloom with <code>verification.recorded</code> or your normal lifecycle capture path.</li>
+      </ol>
+      <h2 id="from-04-to-05">From 0.4 to 0.5</h2>
+      <p>0.5 reframed the public path around Coordinator Memory for Agent Teams. The memory substrate remains compatible with 0.4 Eventloom logs, but docs and examples now expect the first-run flow to prove install, init, bootstrap, checkout, doctor, and example timing.</p>
+      <p>Required actions:</p>
+      <ul>
+        <li>Read the updated getting-started and MCP quickstart docs before changing client configuration.</li>
+        <li>Keep existing Eventloom files in place; do not flatten them into markdown or vector-only stores.</li>
+        <li>Run <code>zaxy init</code> or the appropriate preset only after confirming it will not overwrite local MCP config unexpectedly.</li>
+        <li>Validate public examples with the release smoke path if you package Zaxy for other users.</li>
+      </ul>
+      <h2 id="from-05-to-06">From 0.5 to 0.6</h2>
+      <p>0.6 introduced the shared native integration contract and stronger MCP response shape checks. Existing MCP clients should keep working, but code that parses checkout metadata should expect the <code>zaxy.native.v0.6</code> contract in native adapter responses.</p>
+      <p>Required actions:</p>
+      <ul>
+        <li>Update LangGraph or CrewAI adapters to read the <code>zaxy.native.v0.6</code> metadata envelope instead of relying on ad hoc keys.</li>
+        <li>Prefer <code>memory_bootstrap</code>, <code>memory_checkout</code>, and <code>context_assemble</code> for model-facing state instead of assembling prompt memory manually.</li>
+        <li>Check <code>docs/examples/mcp-tool-contract.json</code> and <code>docs/examples/mcp-response-snapshots.json</code> when updating client tests.</li>
+        <li>Run the MCP and native example smoke tests after changing integration code.</li>
+      </ul>
+      <h2 id="from-06-to-07">From 0.6 to 0.7</h2>
+      <p>0.7 added Zaxy Coordinate mission workflows. This is additive for single-agent memory users, but multi-agent clients should move from informal transcript-only coordination to explicit mission, worker, assignment, finding, review, promotion, approval, checkout, and handoff events.</p>
+      <p>Required actions:</p>
+      <ul>
+        <li>Use Coordinate APIs or MCP tools for team state instead of storing accepted findings as unstructured transcript text.</li>
+        <li>Inspect migrated mission state with <code>zaxy coordinate inspect</code>.</li>
+        <li>Preserve finding evidence and review decisions so promoted memory remains auditable.</li>
+        <li>If you use benchmark claims, regenerate CoordinationBench reports from tracked workloads instead of local scratch files.</li>
+      </ul>
+      <h2 id="from-07-to-08">From 0.7 to 0.8</h2>
+      <p>0.8 added outside-MCP model-call wrappers and provider-neutral trace export. These paths are optional; MCP remains the framework-neutral integration route.</p>
+      <p>Required actions:</p>
+      <ul>
+        <li>Use the OpenAI-compatible or Claude-compatible adapters only when model calls happen directly in application code and you want checkout injection there.</li>
+        <li>Keep model-call capture opt-in and bounded. Do not record raw provider secrets or full private request bodies in Eventloom.</li>
+        <li>Use <code>zaxy trace export</code> when a run needs replay-derived mission, checkout, model-call, tool-call, review, promotion, or handoff correlation without a tracing vendor.</li>
+        <li>Use <code>zaxy replay --from-seq</code> and <code>--to-seq</code> for bounded inspection of long sessions rather than splitting or rewriting logs.</li>
+      </ul>
+      <h2 id="from-08-to-09">From 0.8 to 0.9</h2>
+      <p>0.9 is the API freeze candidate. The main migration task is to compare your client usage with <code>docs/api-inventory.md</code> and remove dependencies on surfaces marked <code>Internal</code>. Surfaces marked <code>Experimental</code> can remain in prototypes, but they should not be required for a production 1.0 rollout.</p>
+      <p>Required actions:</p>
+      <ul>
+        <li>Compare MCP tools, Python imports, CLI commands, Eventloom event types, projection backend usage, and benchmark artifacts against <code>docs/api-inventory.md</code>.</li>
+        <li>For <code>Stable</code> or <code>Beta</code> surfaces, add compatibility tests before changing payload keys, command options, event names, or report schemas.</li>
+        <li>Treat pgGraph and LatticeDB backend use as experimental unless the current release gate explicitly promotes them.</li>
+        <li>Do not make public benchmark claims from untracked Eventloom, query, or diagnostics files.</li>
+      </ul>
+      <h2 id="compatibility-tests">Compatibility Tests</h2>
+      <p>The compatibility suite should prove that old public behavior still works or that a migration path is documented:</p>
+      <ul>
+        <li>MCP schema tests compare advertised tool names and input schemas.</li>
+        <li>Response snapshot tests cover <code>memory_bootstrap</code>, <code>memory_checkout</code>, <code>memory_query</code>, <code>memory_verbatim</code>, <code>context_assemble</code>, <code>memory_feedback</code>, and coordination checkout outputs.</li>
+        <li>Event and graph tests cover hash-chain replay, projection provenance, invalidation, temporal versions, inferred-edge metadata, and source citations.</li>
+        <li>CLI tests cover release smoke, beta readiness, replay windows, trace export, Coordinate inspection, and schema migration planning.</li>
+        <li>Benchmark guardrail tests reject reports without tracked inputs, query diagnostics, citation coverage, latency budgets, and fingerprint validation.</li>
+      </ul>
+      <p>When a compatibility break is intentional, update this guide, the changelog, the API inventory, and the narrow test that proves the old behavior is rejected or migrated. For stable or beta surfaces listed in <code>docs/examples/v1-schema-freeze.json</code>, record the change with <code>schema.migration.proposed</code> before implementation and <code>schema.migration.applied</code> after verification.</p>
+      <h2 id="rollback-policy">Rollback Policy</h2>
+      <p>Rollback should restore code and projections without rewriting Eventloom:</p>
+      <ul>
+        <li>Revert the application code or package version.</li>
+        <li>Restore projection directories or sidecar database snapshots if projection schema changed.</li>
+        <li>Keep new Eventloom records as audit history. If a fact is no longer valid, append <code>memory_invalidate</code> or a superseding typed event.</li>
+        <li>Run <code>zaxy memory status --graph</code> after rollback to confirm the log and graph agree.</li>
+        <li>Record rollback verification with <code>verification.recorded</code> so future checkout can cite the operational decision.</li>
+      </ul>
+      <p>Related references: <a href="api-inventory.html">api-inventory.md</a>, <a href="testing.html">testing.md</a>, <a href="runbook.html">runbook.md</a>, and <a href="../README.html">README.md</a>.</p>
+    </article>
+  </main>
+</body>
+</html>

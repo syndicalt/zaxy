@@ -194,6 +194,41 @@ style edges, plus lifecycle and outcome entities for application metrics.
 Graph properties preserve procedure, applicability, status, citations, outcome
 evidence, rollback guidance, contradiction reasons, and version identifiers.
 
+## Schema Migrations
+
+Use `schema.migration.proposed` when a stable or beta contract needs a
+non-additive change after the v0.9 freeze candidate. The event records the
+surface, affected versions, compatibility plan, and tests that prove old data
+is rejected, accepted, or migrated intentionally.
+
+```json
+{
+  "surface": "mcp_tool_contract",
+  "from_version": "0.9",
+  "to_version": "1.0",
+  "change": "Rename a response field with a compatibility alias.",
+  "compatibility": "Add alias through 1.x and remove only in a future major release.",
+  "tests": ["tests/test_mcp.py::TestToolSchema"],
+  "docs": ["docs/migration.md", "docs/api-inventory.md"]
+}
+```
+
+Use `schema.migration.applied` after the migration ships and verification has
+passed. It should cite the proposal, command evidence, and release notes.
+
+```json
+{
+  "proposal_event_seq": 42,
+  "surface": "mcp_tool_contract",
+  "verification": ["pytest tests/test_mcp.py -q"],
+  "release_note": "CHANGELOG.md#090---unreleased"
+}
+```
+
+Projection: `schema_migration` entity linked to the affected contract surface
+and release version. These events are audit records; they do not rewrite older
+Eventloom records.
+
 ## Hook Checkpoints
 
 Use `hook.checkpoint` for observer-hook milestones that should remain

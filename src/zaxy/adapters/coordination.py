@@ -82,6 +82,12 @@ class CoordinationAdapter:
             actor=self.actor,
         ).to_dict()
 
+    def detect_conflicts(self, mission_id: str) -> list[dict[str, Any]]:
+        return [
+            _event_result_payload(result)
+            for result in self._manager().record_detected_conflicts(mission_id, actor=self.actor)
+        ]
+
     def handoff(
         self,
         mission_id: str,

@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import json
+import os
 import re
 import subprocess
+import sys
 import tomllib
 from datetime import UTC, datetime
 from importlib import import_module
 from pathlib import Path
 from typing import Any, cast
+
+from zaxy.external_validation import validate_external_validation_report
 
 PACKAGE_NAME = "zaxy-memory"
 ACTIVATION_FIXTURE_NOW = datetime(2026, 5, 20, 12, 0, tzinfo=UTC)
@@ -82,6 +87,9 @@ def run_release_smoke(*, project_root: str | Path | None = None) -> dict[str, An
         _check_changelog(root),
         _check_trusted_publishing(root),
         _check_release_workflow(root),
+        _check_langgraph_example(root),
+        _check_openai_compatible_example(root),
+        _check_claude_compatible_example(root),
     ]
     return {
         "status": _overall_status(checks),
@@ -89,15 +97,28 @@ def run_release_smoke(*, project_root: str | Path | None = None) -> dict[str, An
     }
 
 
-def run_beta_readiness(*, project_root: str | Path | None = None) -> dict[str, Any]:
+def run_beta_readiness(
+    *,
+    project_root: str | Path | None = None,
+    external_validation_report: str | Path | None = None,
+    require_external_validation: bool = False,
+) -> dict[str, Any]:
     """Check whether the repository exposes the beta release hardening gates."""
     root = Path(project_root or Path.cwd())
     checks = [
         _check_release_smoke_gate(root),
         _check_release_gate_script(root),
         _check_backend_report_inputs(root),
+        _check_benchmark_no_regression(root),
+        _check_release_gate_surface_coverage(root),
+        _check_external_validation_evidence(
+            root,
+            external_validation_report=external_validation_report,
+            required=require_external_validation,
+        ),
         _check_activation_release_fixture(root),
         _check_clean_repo_uat(root),
+        _check_first_run_timing(root),
         _check_docs_happy_path(root),
         _check_capture_happy_path(root),
         _check_beta_roadmap(root),
@@ -216,6 +237,115 @@ def _check_release_workflow(root: Path) -> dict[str, str]:
     }
 
 
+def _check_langgraph_example(root: Path) -> dict[str, str]:
+    """Run the dependency-light LangGraph example as a release smoke check."""
+    return _check_json_example(
+        root,
+        name="langgraph_example",
+        relative_path="examples/langgraph_memory.py",
+        expected_session_id="langgraph-demo",
+        expected_kind={"memory_checkout", "context_assembly"},
+        success_message="examples/langgraph_memory.py runs the dependency-light LangGraph checkout path",
+    )
+
+
+def _check_openai_compatible_example(root: Path) -> dict[str, str]:
+    """Run the OpenAI-compatible direct model-call example."""
+    return _check_json_example(
+        root,
+        name="openai_compatible_example",
+        relative_path="examples/openai_compatible_memory.py",
+        expected_session_id="openai-compatible-demo",
+        expected_kind={"memory_checkout"},
+        success_message="examples/openai_compatible_memory.py runs the outside-MCP OpenAI-compatible model-call path",
+    )
+
+
+def _check_claude_compatible_example(root: Path) -> dict[str, str]:
+    """Run the Claude-compatible direct model-call example."""
+    return _check_json_example(
+        root,
+        name="claude_compatible_example",
+        relative_path="examples/claude_compatible_memory.py",
+        expected_session_id="claude-compatible-demo",
+        expected_kind={"memory_checkout"},
+        success_message="examples/claude_compatible_memory.py runs the outside-MCP Claude-compatible model-call path",
+    )
+
+
+def _check_json_example(
+    root: Path,
+    *,
+    name: str,
+    relative_path: str,
+    expected_session_id: str,
+    expected_kind: set[str],
+    success_message: str,
+) -> dict[str, str]:
+    """Run an example that prints stable smoke-test JSON."""
+    example = root / relative_path
+    if not example.is_file():
+        return {
+            "name": name,
+            "status": "error",
+            "message": f"{relative_path} is missing",
+            "action": f"Restore {relative_path} before release validation.",
+        }
+    env = dict(os.environ)
+    source_path = str(root / "src")
+    env["PYTHONPATH"] = source_path if not env.get("PYTHONPATH") else f"{source_path}{os.pathsep}{env['PYTHONPATH']}"
+    try:
+        result = subprocess.run(
+            [sys.executable, str(example)],
+            cwd=root,
+            env=env,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except Exception as exc:
+        return {
+            "name": name,
+            "status": "error",
+            "message": f"{relative_path} could not run: {exc}",
+            "action": f"Run python {relative_path} and fix the example.",
+        }
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip()
+        return {
+            "name": name,
+            "status": "error",
+            "message": f"{relative_path} failed with exit {result.returncode}: {detail}",
+            "action": f"Run python {relative_path} and fix the example.",
+        }
+    try:
+        payload = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        return {
+            "name": name,
+            "status": "error",
+            "message": f"{relative_path} did not print JSON: {exc}",
+            "action": f"Make {relative_path} print the stable smoke-test JSON payload.",
+        }
+    if (
+        payload.get("session_id") != expected_session_id
+        or payload.get("has_zaxy_context") is not True
+        or payload.get("kind") not in expected_kind
+    ):
+        return {
+            "name": name,
+            "status": "error",
+            "message": f"{relative_path} printed an unexpected smoke payload",
+            "action": "Restore session_id, has_zaxy_context, and kind in the example payload.",
+        }
+    return {
+        "name": name,
+        "status": "ok",
+        "message": success_message,
+    }
+
+
 def _check_release_smoke_gate(root: Path) -> dict[str, str]:
     report = run_release_smoke(project_root=root)
     if report["status"] != "ok":
@@ -251,6 +381,7 @@ def _check_release_gate_script(root: Path) -> dict[str, str]:
         "scripts/check-coverage.py",
         "tests/test_packet_memory_e2e.py",
         "scripts/build-dist.sh",
+        "python scripts/build-site-docs.py --check",
         "scripts/validate-docs.sh",
         "scripts/validate-deployment.sh",
         "PYTHONPATH=src python -m zaxy hook-status",
@@ -417,6 +548,179 @@ def _check_backend_report_inputs(root: Path) -> dict[str, str]:
         "name": "backend_report_inputs",
         "status": "ok",
         "message": "Existing backend report inputs are present and tracked when git metadata is available.",
+    }
+
+
+def _check_benchmark_no_regression(root: Path) -> dict[str, str]:
+    path = root / "scripts" / "release-check.sh"
+    try:
+        script = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return {
+            "name": "benchmark_no_regression",
+            "status": "error",
+            "message": f"scripts/release-check.sh is missing or unreadable: {exc}",
+            "action": "Restore scripts/release-check.sh benchmark guardrails before beta.",
+        }
+    assignments = _shell_string_assignments(script)
+    required_by_command = {
+        "BACKEND_SHOOTOUT_CMD": [
+            "--min-answer-at-5",
+            "--min-recall-at-5",
+            "--min-citation-coverage 1.0",
+            "--min-quality-per-1k-injected-tokens",
+            "--min-answer-at-5-per-1k-injected-tokens",
+            "--max-checkout-p99-ms",
+        ],
+        "BACKEND_PERFORMANCE_CMD": [
+            "--min-citation-coverage 1.0",
+            "--min-quality-per-1k-returned-tokens",
+            "--min-answer-at-5-per-1k-returned-tokens",
+            "--min-quality-per-1k-injected-tokens",
+            "--min-answer-at-5-per-1k-injected-tokens",
+            "--max-checkout-p95-ms",
+            "--max-checkout-p99-ms",
+        ],
+        "BACKEND_SCALE_CMD": [
+            "--min-recall-at-5",
+            "--min-citation-coverage 1.0",
+            "--min-quality-per-1k-returned-tokens",
+            "--min-answer-at-5-per-1k-returned-tokens",
+            "--min-quality-per-1k-injected-tokens",
+            "--min-answer-at-5-per-1k-injected-tokens",
+            "--max-checkout-p95-ms",
+            "--max-checkout-p99-ms",
+        ],
+    }
+    missing = [
+        f"{name} must include {flag}"
+        for name, flags in required_by_command.items()
+        for flag in flags
+        if flag not in assignments.get(name, "")
+    ]
+    if missing:
+        return {
+            "name": "benchmark_no_regression",
+            "status": "error",
+            "message": "benchmark no-regression gate is missing checks: " + ", ".join(missing),
+            "action": "Restore checkout quality, citation coverage, and p95/p99 latency guardrails.",
+        }
+    return {
+        "name": "benchmark_no_regression",
+        "status": "ok",
+        "message": (
+            "Release benchmark checks gate checkout quality, citation coverage, "
+            "and p95/p99 latency budgets across smoke, performance, and scale reports."
+        ),
+    }
+
+
+def _check_release_gate_surface_coverage(root: Path) -> dict[str, str]:
+    path = root / "scripts" / "release-check.sh"
+    try:
+        script = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        return {
+            "name": "release_gate_surface_coverage",
+            "status": "error",
+            "message": f"scripts/release-check.sh is missing or unreadable: {exc}",
+            "action": "Restore scripts/release-check.sh before beta.",
+        }
+    assignments = _shell_string_assignments(script)
+    required_surfaces = {
+        "EXAMPLES_SMOKE_CMD": ("public examples", "tests/test_examples_v05.py"),
+        "MCP_SMOKE_CMD": ("MCP smoke", "scripts/mcp_smoke_test.py"),
+        "LANGGRAPH_SMOKE_CMD": ("LangGraph smoke", "test_langgraph_example_runs_without_langgraph_dependency"),
+        "COORDINATE_SMOKE_CMD": ("Coordinate mission smoke", "test_coordinate_three_worker_example_runs"),
+        "BACKEND_SHOOTOUT_CMD": ("benchmark comparison", "scripts/check-backend-shootout.py"),
+        "DOCS_CMD": ("docs validation", "python scripts/build-site-docs.py --check"),
+        "BETA_UAT_CMD": ("beta UAT", "scripts/beta-uat.sh"),
+        "EXTERNAL_VALIDATION_CMD": ("external validation", "scripts/check-external-validation.py"),
+    }
+    missing: list[str] = []
+    labels: list[str] = []
+    for name, (label, required_fragment) in required_surfaces.items():
+        command = assignments.get(name, "").strip()
+        labels.append(label)
+        if not command:
+            missing.append(f"{name} must run or use SKIP:<reason>")
+            continue
+        if command.startswith("SKIP:"):
+            if not command.removeprefix("SKIP:").strip():
+                missing.append(f"{name} SKIP must include a reason")
+            continue
+        if required_fragment not in command:
+            missing.append(f"{name} must include {required_fragment}")
+    if "run_gate" not in script or "SKIP:" not in script:
+        missing.append("scripts/release-check.sh must print explicit SKIP:<reason> messages")
+    if missing:
+        return {
+            "name": "release_gate_surface_coverage",
+            "status": "error",
+            "message": "release gate surface coverage is incomplete: " + ", ".join(missing),
+            "action": "Update scripts/release-check.sh so every public smoke runs or prints SKIP:<reason>.",
+        }
+    return {
+        "name": "release_gate_surface_coverage",
+        "status": "ok",
+        "message": "Release gate runs or explicitly skips with reasons: " + ", ".join(labels) + ".",
+    }
+
+
+def _check_external_validation_evidence(
+    root: Path,
+    *,
+    external_validation_report: str | Path | None = None,
+    required: bool = False,
+) -> dict[str, str]:
+    default_report = Path("reports") / "external-validation" / "external-validation-report.json"
+    report_path = Path(external_validation_report) if external_validation_report is not None else root / default_report
+    if not report_path.is_absolute():
+        report_path = root / report_path
+    display_report = str(Path(external_validation_report)) if external_validation_report is not None else str(default_report)
+    if not report_path.exists():
+        if not required and external_validation_report is None:
+            return {
+                "name": "external_validation_evidence",
+                "status": "ok",
+                "message": f"external validation is optional for v1.0 release; {display_report} is not present",
+                "action": (
+                    "Collect post-release outside-user evidence with docs/external-validation.md when available, "
+                    f"write {display_report}, then run scripts/check-external-validation.py."
+                ),
+            }
+        prefix = "external validation is required" if required else "external validation report was requested"
+        return {
+            "name": "external_validation_evidence",
+            "status": "error",
+            "message": f"{prefix}; {display_report} is not present",
+            "action": (
+                "Collect outside-user evidence with docs/external-validation.md, write "
+                f"{display_report}, then run scripts/check-external-validation.py."
+            ),
+        }
+    try:
+        payload = json.loads(report_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {
+            "name": "external_validation_evidence",
+            "status": "error",
+            "message": f"{display_report} is unreadable or invalid JSON: {exc}",
+            "action": "Fix the external validation report JSON before release.",
+        }
+
+    errors = validate_external_validation_report(payload)
+    if errors:
+        return {
+            "name": "external_validation_evidence",
+            "status": "error",
+            "message": "external validation report is invalid: " + ", ".join(errors),
+            "action": f"Run scripts/check-external-validation.py {display_report} and fix the report.",
+        }
+    return {
+        "name": "external_validation_evidence",
+        "status": "ok",
+        "message": f"{display_report} contains validated outside-user release evidence",
     }
 
 
@@ -600,7 +904,7 @@ def _check_clean_repo_uat(root: Path) -> dict[str, str]:
         "zaxy init",
         "local-codex",
         "local-claude",
-        'run_workspace "embedded" "" "status"',
+        'run_workspace "embedded" "" "start"',
         'if [[ -n "${preset}" ]]',
         "PROJECTION_BACKEND=embedded",
         "NEO4J_AUTO_START=false",
@@ -636,6 +940,73 @@ def _check_clean_repo_uat(root: Path) -> dict[str, str]:
         "status": "ok",
         "message": "scripts/beta-uat.sh covers clean install, init, bootstrap, capture, doctor, and checkout",
     }
+
+
+def _check_first_run_timing(root: Path) -> dict[str, str]:
+    path = root / "docs" / "examples" / "first-run-timing-report.json"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        return {
+            "name": "first_run_timing",
+            "status": "error",
+            "message": f"docs/examples/first-run-timing-report.json is missing or unreadable: {exc}",
+            "action": "Add a clean first-run timing report with doctor and example timings.",
+        }
+    except json.JSONDecodeError as exc:
+        return {
+            "name": "first_run_timing",
+            "status": "error",
+            "message": f"first-run timing report is invalid JSON: {exc}",
+            "action": "Update docs/examples/first-run-timing-report.json with valid JSON.",
+        }
+    threshold = _number_field(payload, "threshold_seconds")
+    doctor_seconds = _number_field(payload, "time_to_successful_doctor_seconds")
+    example_seconds = _number_field(payload, "time_to_first_successful_example_seconds")
+    requires_sidecar = payload.get("requires_sidecar")
+    errors: list[str] = []
+    if threshold != 300:
+        errors.append(f"threshold_seconds={_format_number(threshold)} must be 300")
+    if doctor_seconds is None:
+        errors.append("time_to_successful_doctor_seconds is missing")
+    elif doctor_seconds > 300:
+        errors.append(f"time_to_successful_doctor_seconds={_format_number(doctor_seconds)} exceeds 300")
+    if example_seconds is None:
+        errors.append("time_to_first_successful_example_seconds is missing")
+    elif example_seconds > 300:
+        errors.append(f"time_to_first_successful_example_seconds={_format_number(example_seconds)} exceeds 300")
+    if requires_sidecar is not False:
+        errors.append("requires_sidecar must be false")
+    if errors:
+        return {
+            "name": "first_run_timing",
+            "status": "error",
+            "message": "first-run timing report does not satisfy the v0.6 budget: " + "; ".join(errors),
+            "action": "Update docs/examples/first-run-timing-report.json with a passing clean first-run timing report.",
+        }
+    return {
+        "name": "first_run_timing",
+        "status": "ok",
+        "message": (
+            "clean first-run timing stays under 300 seconds "
+            f"(doctor={_format_number(doctor_seconds)}s, example={_format_number(example_seconds)}s)"
+        ),
+    }
+
+
+def _number_field(payload: dict[str, Any], field: str) -> float | None:
+    value = payload.get(field)
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        return None
+    return float(value)
+
+
+def _format_number(value: float | None) -> str:
+    if value is None:
+        return "missing"
+    if value.is_integer():
+        return str(int(value))
+    return f"{value:.3f}".rstrip("0").rstrip(".")
 
 
 def _check_docs_happy_path(root: Path) -> dict[str, str]:

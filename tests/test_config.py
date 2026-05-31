@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from pydantic import ValidationError
 
 from zaxy.config import Settings
-from zaxy.log import setup_logging
+from zaxy.log import get_logger, setup_logging
 
 
 def test_remote_rate_limit_and_audit_defaults() -> None:
@@ -97,6 +99,28 @@ def test_retrieval_profile_default_is_local_fast() -> None:
     settings = Settings(_env_file=None)
 
     assert settings.retrieval_profile == "local_fast"
+
+
+def test_setup_logging_json_serializes_exception(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "zaxy.log.get_settings",
+        lambda: SimpleNamespace(log_level="warning", log_format="json"),
+    )
+
+    setup_logging()
+    logger = get_logger("config-test")
+    try:
+        raise RuntimeError("boom")
+    except RuntimeError:
+        logger.warning("structured failure", exc_info=True)
+
+    payload = json.loads(capsys.readouterr().err)
+    assert payload["level"] == "WARNING"
+    assert payload["logger"] == "zaxy.config-test"
+    assert payload["message"] == "structured failure"
+    assert "RuntimeError: boom" in payload["exception"]
 
 
 class TestSecretFiles:

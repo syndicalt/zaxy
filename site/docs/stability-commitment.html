@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Stability Commitment - Zaxy Docs</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../index.html">Overview</a>
+      <a href="getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="stability-commitment">Stability Commitment</h1>
+      <p>This page defines the v1.0 API and data model stability commitment. It is scoped to surfaces marked <code>Stable</code> or <code>Beta</code> in <a href="api-inventory.html">docs/api-inventory.md</a> and bound by <a href="https://github.com/syndicalt/zaxy/blob/master/docs/examples/v1-schema-freeze.json">docs/examples/v1-schema-freeze.json</a>.</p>
+      <h2 id="stability-commitment">Stability Commitment</h2>
+      <p>After v1.0, Zaxy will preserve documented public behavior for stable and beta surfaces within the 1.x line. Breaking changes require a documented migration path, test coverage, and release notes. Additive fields, new optional commands, new event types, and new experimental adapters may ship in minor releases when they do not invalidate existing Eventloom replay or public clients.</p>
+      <h2 id="public-api-surfaces">Public API Surfaces</h2>
+      <p>The commitment covers these public surfaces:</p>
+      <ul>
+        <li>MCP tool names, input schemas, and response contracts.</li>
+        <li>Python package exports listed in <code>zaxy.__all__</code>.</li>
+        <li>CLI command families documented in <code>docs/api-inventory.md</code>.</li>
+        <li>Eventloom event families documented in <code>docs/agent-events.md</code>.</li>
+        <li>Memory Bootstrap and Memory Checkout model-facing contracts.</li>
+        <li>Zaxy Coordinate mission, finding, approval, checkout, and handoff payloads.</li>
+        <li>ProjectionStore behavior required for exact, keyword, vector, traversal, invalidation, projection status, and inferred-edge diagnostics.</li>
+        <li>Benchmark artifact schemas used by release gates.</li>
+      </ul>
+      <h2 id="data-model-commitment">Data Model Commitment</h2>
+      <p>Eventloom is the durable source of truth. Zaxy will not require users to rewrite historical Eventloom records for a 1.x upgrade. Durable records remain append-only, hash-linked, replayable, and audit-oriented.</p>
+      <p>The graph projection remains rebuildable. Projection nodes, edges, indexes, and backend-specific storage can change internally, but the public data semantics remain stable: entities carry temporal validity, source citations, Eventloom provenance, session isolation, and deterministic replay from Eventloom where the source log is available.</p>
+      <p>MCP, CLI, and Python clients should treat Eventloom citations as the strongest provenance contract. Graph IDs, backend row IDs, and private helper names are not durable identifiers.</p>
+      <h2 id="compatibility-policy">Compatibility Policy</h2>
+      <p>Stable and beta changes should follow this order:</p>
+      <ol>
+        <li>Prefer additive fields or optional behavior.</li>
+        <li>Preserve old names as aliases when a rename is unavoidable.</li>
+        <li>Add compatibility tests that exercise old and new behavior.</li>
+        <li>Update <code>docs/migration.md</code>, <code>CHANGELOG.md</code>, and the affected contract snapshot.</li>
+        <li>Use release notes to explain user action, if any.</li>
+      </ol>
+      <h2 id="migration-events">Migration Events</h2>
+      <p>Non-additive stable or beta changes require Eventloom migration events:</p>
+      <ul>
+        <li><code>schema.migration.proposed</code> before implementation, naming the surface, affected versions, compatibility plan, tests, and docs.</li>
+        <li><code>schema.migration.applied</code> after verification, citing the proposal, command evidence, and release note.</li>
+      </ul>
+      <p>These migration events are audit records. They do not mutate older Eventloom history.</p>
+      <h2 id="non-commitments">Non-Commitments</h2>
+      <p>The v1.0 stability commitment does not cover:</p>
+      <ul>
+        <li>surfaces marked <code>Experimental</code> or <code>Internal</code> in <code>docs/api-inventory.md</code>;</li>
+        <li>direct imports from modules that are not exported by <code>zaxy.__all__</code>;</li>
+        <li>candidate backends such as pgGraph or LatticeDB until promoted by release gates;</li>
+        <li>private graph storage details, Cypher/Kuzu SQL details, or row IDs;</li>
+        <li>local diagnostic files ignored by benchmark contribution policy;</li>
+        <li>provider-specific SDK behavior outside Zaxy&#x27;s dependency-light wrappers.</li>
+      </ul>
+      <p>Related references: <a href="api-inventory.html">api-inventory.md</a>, <a href="migration.html">migration.md</a>, <a href="agent-events.html">agent-events.md</a>, <a href="release-validation-checklist.html">release-validation-checklist.md</a>, and <a href="../README.html">README.md</a>.</p>
+    </article>
+  </main>
+</body>
+</html>

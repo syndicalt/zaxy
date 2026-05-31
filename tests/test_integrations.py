@@ -498,7 +498,7 @@ def test_lists_framework_integration_specs() -> None:
     assert specs["langgraph"].extra == "langgraph"
     assert specs["langgraph"].package == "langgraph"
     assert specs["langgraph"].template_function == "create_langgraph_memory_node"
-    assert specs["langgraph"].maturity == "native-preview"
+    assert specs["langgraph"].maturity == "native-beta"
     assert specs["langgraph"].native_adapter == "zaxy.adapters.langgraph"
     assert specs["crewai"].template_function == "create_crewai_memory_step"
     assert specs["crewai"].maturity == "native-preview"
@@ -519,7 +519,7 @@ def test_recommends_framework_integration_hardening_target() -> None:
     assert "CrewAI" in decision.rationale
     assert "AutoGen" in decision.rationale
     assert decision.next_actions == (
-        "stabilize shared payload keys across native-preview adapters",
+        "stabilize shared payload keys across native adapters",
         "keep AutoGen template-only until runtime hooks are validated",
         "use adapter feedback events to decide the next native package",
     )

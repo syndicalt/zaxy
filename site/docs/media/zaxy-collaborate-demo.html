@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zaxy Coordinate/Collaborate Demo Media - Zaxy Docs</title>
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../../index.html">Overview</a>
+      <a href="../getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="zaxy-coordinatecollaborate-demo-media">Zaxy Coordinate/Collaborate Demo Media</h1>
+      <p>This directory contains the scripted launch demo for Zaxy 1.0.0.</p>
+      <p>Generated assets:</p>
+      <ul>
+        <li><a href="https://github.com/syndicalt/zaxy/blob/master/docs/media/zaxy-collaborate-demo.mp4">zaxy-collaborate-demo.mp4</a></li>
+        <li><a href="https://github.com/syndicalt/zaxy/blob/master/docs/media/zaxy-collaborate-demo.gif">zaxy-collaborate-demo.gif</a></li>
+      </ul>
+      <p>The demo is a product-level walkthrough, not a live account recording. It shows the flow Zaxy Coordinate is built for:</p>
+      <ol>
+        <li>initialize local memory;</li>
+        <li>start a parent mission;</li>
+        <li>collect cited worker findings from isolated sessions;</li>
+        <li>review conflicts and promote accepted state;</li>
+        <li>assemble Memory Checkout for the next agent turn.</li>
+      </ol>
+      <p>Regenerate the assets with:</p>
+      <pre><code class="language-bash">python scripts/generate-release-media.py</code></pre>
+      <p>The script writes deterministic frames under <code>docs/media/zaxy-collaborate-demo-frames/</code> and encodes the MP4/GIF with <code>ffmpeg</code>.</p>
+    </article>
+  </main>
+</body>
+</html>

@@ -5,6 +5,10 @@ log, session manager, graph store, query router, embedding provider, metrics,
 and tracer. The MCP server uses the same underlying orchestration, so Python
 and MCP callers share behavior.
 
+For the v0.9 freeze-candidate classification of MCP tools, Python exports, CLI
+commands, Eventloom events, projection backend contracts, and benchmark artifact
+schemas, see [API Inventory](api-inventory.md).
+
 Create a fabric:
 
 ```python

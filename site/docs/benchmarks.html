@@ -443,7 +443,7 @@
         </tbody>
       </table>
       <p>The public-derived holdout mean is <code>0.606</code>. That result is the right product signal: the replay-backed coordination layer gets strong accepted-state precision and duplicate consolidation, but the current frozen adapter still needs better source-aware final answering, stale-source interpretation, and conflict detection across public-derived cases. Until independent review and unseen workload promotion are complete, Zaxy should not market a perfect CoordinationBench score as representative performance.</p>
-      <p>The internal <code>coordination-real-v1</code> report remains useful as a Zaxy development smoke test over real project history. It should not be used as the headline benchmark claim because it was produced inside the Zaxy repo and is easier to tune against than an external holdout pack.</p>
+      <p>The internal <code>coordination-real-v1</code> report is archived at <a href="../reports/benchmarks/coordination-real-v1/coordination-benchmark.md"><code>reports/benchmarks/coordination-real-v1/coordination-benchmark.md</code></a>. It remains useful as a Zaxy development smoke test over real project history. It should not be used as the headline benchmark claim because it was produced inside the Zaxy repo and is easier to tune against than an external holdout pack. The report includes local baselines, disclosure-only adapter templates for Mem0, Agent Memory, and ActiveGraph, limitations, and reproduction commands.</p>
       <p>The smaller <code>coordination-v1</code> workload remains as the contract seed. It includes three workers, overlapping auth-failure findings, duplicate evidence, stale claims, conflicting claims, and a missing-evidence finding. Use it for adapter authors and fast protocol checks, not as the representative headline.</p>
       <p>Run the MVP harness:</p>
       <pre><code class="language-bash">zaxy coordinate benchmark --output-dir reports/benchmarks/coordination-v1 --json</code></pre>
@@ -740,6 +740,7 @@
       <p>For release gates, compare reports with <code>zaxy benchmark-compare</code> and keep the thresholds explicit. For market comparisons, keep external products in disclosure rows until they can run against the same dataset, query order, retrieval limit, scoring code, and citation requirements.</p>
       <p>From a clean checkout with the cached LongMemEval dataset and embedding cache present, run all archived public LongMemEval guardrails with:</p>
       <pre><code class="language-bash">scripts/benchmark-guardrails.sh</code></pre>
+      <p><code>zaxy doctor --beta-readiness</code> also exposes the release benchmark posture as a named <code>benchmark_no_regression</code> check. It requires the release script to keep checkout quality floors, citation coverage at <code>1.0</code>, and p95/p99 checkout latency budgets across smoke, performance, and scale backend reports.</p>
       <p>Related references: <a href="testing.html">testing.md</a>, <a href="retrieval.html">retrieval.md</a>, <a href="competitive-positioning.html">competitive-positioning.md</a>, <a href="benchmark-review.html">benchmark-review.md</a>, and <a href="../README.html">README.md</a>. The public explanation is <a href="../index.html">site/index.html</a>.</p>
     </article>
   </main>

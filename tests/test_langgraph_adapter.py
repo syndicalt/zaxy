@@ -1,4 +1,4 @@
-"""Tests for the native-preview LangGraph adapter."""
+"""Tests for the native-beta LangGraph adapter."""
 
 from __future__ import annotations
 
@@ -55,11 +55,25 @@ class FakeFabric:
         self.calls.append(("close", {}))
 
 
+@dataclass
+class FailingCheckoutFabric:
+    """MemoryFabric test double that fails checkout but still needs closing."""
+
+    calls: list[tuple[str, dict[str, Any]]]
+
+    async def checkout_memory(self, query: str, **kwargs: Any) -> Any:
+        self.calls.append(("checkout_memory", {"query": query, **kwargs}))
+        raise RuntimeError("projection unavailable")
+
+    async def close(self) -> None:
+        self.calls.append(("close", {}))
+
+
 def test_langgraph_registry_marks_native_preview() -> None:
-    """LangGraph should advertise the maintained native-preview adapter."""
+    """LangGraph should advertise the maintained native-beta adapter."""
     specs = {spec.framework: spec for spec in list_framework_integration_specs()}
 
-    assert specs["langgraph"].maturity == "native-preview"
+    assert specs["langgraph"].maturity == "native-beta"
     assert specs["langgraph"].native_adapter == "zaxy.adapters.langgraph"
     assert specs["crewai"].native_adapter == "zaxy.adapters.crewai"
 
@@ -158,6 +172,95 @@ async def test_langgraph_adapter_checkout_before_model_uses_memory_checkout() ->
 
 
 @pytest.mark.asyncio
+async def test_langgraph_checkout_payload_exposes_v06_native_contract() -> None:
+    """LangGraph checkout metadata should be stable enough for beta middleware."""
+    calls: list[tuple[str, dict[str, Any]]] = []
+    adapter = LangGraphMemoryAdapter(
+        session_id="agent-1",
+        fabric_factory=lambda eventloom_path: FakeFabric(calls),
+    )
+
+    state = await adapter.checkout_before_model({"latest_message": "Where are we?"})
+
+    assert state["zaxy"] == {
+        "contract": "zaxy.native.v0.6",
+        "framework": "langgraph",
+        "operation": "before_model",
+        "source": "langgraph",
+        "kind": "memory_checkout",
+        "status": "ok",
+        "session_id": "agent-1",
+        "query": "Where are we?",
+        "current_fact_count": 1,
+        "warning_count": 0,
+        "diagnostics": {
+            "current_fact_count": 1,
+            "current_citation_count": 1,
+            "feedback_tool": "memory_feedback",
+        },
+        "quality": {
+            "answerability": "answer_from_memory",
+            "confidence": 0.91,
+            "required_action": None,
+        },
+        "feedback": {
+            "tool": "memory_feedback",
+            "payloads": [
+                {
+                    "entity_name": "memory checkout",
+                    "entity_type": "workflow",
+                    "feedback": "used",
+                }
+            ],
+        },
+        "error": None,
+    }
+
+
+@pytest.mark.asyncio
+async def test_langgraph_checkout_failure_returns_stable_error_payload() -> None:
+    """LangGraph checkout should fail closed with no context and actionable metadata."""
+    calls: list[tuple[str, dict[str, Any]]] = []
+    adapter = LangGraphMemoryAdapter(
+        session_id="agent-1",
+        fabric_factory=lambda eventloom_path: FailingCheckoutFabric(calls),
+    )
+
+    state = await adapter.checkout_before_model({"latest_message": "Where are we?"})
+
+    assert state["zaxy_context"] == ""
+    assert state["zaxy_contexts"] == []
+    assert state["zaxy"] == {
+        "contract": "zaxy.native.v0.6",
+        "framework": "langgraph",
+        "operation": "before_model",
+        "source": "langgraph",
+        "kind": "memory_checkout",
+        "status": "error",
+        "session_id": "agent-1",
+        "query": "Where are we?",
+        "current_fact_count": 0,
+        "warning_count": 1,
+        "diagnostics": {},
+        "quality": {
+            "answerability": "refresh_recommended",
+            "confidence": 0.0,
+            "required_action": {
+                "tool": "memory_checkout",
+                "reason": "Projection unavailable during LangGraph checkout.",
+            },
+        },
+        "feedback": None,
+        "error": {
+            "code": "checkout_failed",
+            "message": "projection unavailable",
+            "remediation": "Retry Memory Checkout before the next model call or run zaxy doctor.",
+        },
+    }
+    assert calls[-1] == ("close", {})
+
+
+@pytest.mark.asyncio
 async def test_langgraph_adapter_records_tool_calls_without_argument_values() -> None:
     """record_tool_call should append redacted tool-call observations."""
     calls: list[tuple[str, dict[str, Any]]] = []
@@ -220,6 +323,28 @@ def _checkout() -> Any:
                 "prompt": "# Memory Checkout\nUse cited memory.",
                 "current_facts": [{"content": "Use cited memory.", "citation": "eventloom://agent-1/events/1#abc"}],
                 "evidence": [],
+                "diagnostics": {
+                    "current_fact_count": 1,
+                    "current_citation_count": 1,
+                    "feedback_tool": "memory_feedback",
+                },
+                "quality": {
+                    "answerability": "answer_from_memory",
+                    "confidence": 0.91,
+                    "required_action": None,
+                },
+                "guidance": {
+                    "feedback": {
+                        "tool": "memory_feedback",
+                        "payloads": [
+                            {
+                                "entity_name": "memory checkout",
+                                "entity_type": "workflow",
+                                "feedback": "used",
+                            }
+                        ],
+                    }
+                },
                 "warnings": [],
             }
 

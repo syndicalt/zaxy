@@ -1,5 +1,8 @@
 # Zaxy Coordinate Roadmap
 
+For the shortest working workflow, see
+[Coordinate Quickstart](coordinate-quickstart.md).
+
 Zaxy's next product direction is high-level coordination memory for multi-agent
 projects. The core claim is simple: isolated worker agents should be able to
 investigate, report, and hand off work without contaminating the authoritative
@@ -21,8 +24,13 @@ The first production slice is implemented:
 - `MemoryFabric` exposes thin async coordination methods so Python callers can
   use the workflow without going through the CLI.
 - `zaxy coordinate start`, `worker create`, `assign`, `report`, `decide`,
-  `promote`, `brief`, `checkout`, `ledger`, `approval-packet`,
+  `promote`, `brief`, `inspect`, `checkout`, `ledger`, `approval-packet`,
   `apply-approval`, `handoff`, and `benchmark` are available as CLI commands.
+- Built-in mission templates for software delivery, research review, benchmark
+  investigation, and release validation are available through
+  `zaxy coordinate template list`, `show`, and `apply`. Applying a template
+  creates the mission, workers, and assignments as normal Eventloom-backed
+  Coordinate events.
 - MCP exposes coordination tools for start, worker create, assignment, finding
   report, merge brief, accepted checkout, performance ledger, approval packet,
   approval application, review, promote, and handoff.
@@ -37,12 +45,29 @@ The first production slice is implemented:
   worker ledger, and approval packet payloads.
 - Static review export is available as replay-only Markdown with a JSON wrapper
   through `zaxy coordinate review-export` and the dashboard review-export API.
+- `zaxy coordinate inspect` provides a replay-only operator view that combines
+  the mission brief, worker ledgers, findings by status, evidence, review
+  decisions, promoted state, conflicts, approval packet, and handoff records
+  without requiring users to read raw Eventloom JSONL.
+- `zaxy coordinate audit-report` generates a read-only mission audit report in
+  Markdown or JSON from Eventloom replay, citing session, sequence, and hash
+  metadata for mission, worker, assignment, finding, review, promotion,
+  conflict, and handoff events.
+- Approval packets and review exports include explicit next-action guidance for
+  pending, conflicted, stale, and evidence-poor findings so reviewers do not
+  have to infer whether to add evidence, resolve conflicts, refresh stale
+  sources, or proceed with a normal review decision.
 - Dashboard human review controls are available behind explicit opt-in. The
   dashboard remains read-only by default, but `--enable-coordinate-review`
   enables single-finding review/promote actions and JSON approval packet
   application through the same Eventloom-backed coordination review path.
 - CoordinationBench now reports same-harness local baselines for flat transcript
   concatenation, markdown notes, and BM25 over worker logs.
+- The `coordination-real-v1` report is published at
+  `reports/benchmarks/coordination-real-v1/coordination-benchmark.md` with
+  Zaxy metrics, local baselines, disclosure-only adapter status, limitations,
+  and reproduction commands from the tracked workload in
+  `benchmarks/coordination-real-v1/coordination-workload.json`.
 - CoordinationBench includes a competitor adapter disclosure contract for Mem0,
   Agent Memory, and ActiveGraph. Until a pinned adapter and workload replay
   contract is configured, these entries are reported as `not_run` with
@@ -96,14 +121,16 @@ The first production slice is implemented:
   test-result evidence without running tests inside Zaxy.
 - A dependency-light Coordinate adapter contract is available through
   `zaxy.adapters.coordination.CoordinationAdapter`. It wraps mission, worker,
-  assignment, finding, brief, checkout, approval, and handoff operations as
-  JSON-friendly payloads without spawning workers or inferring findings from
-  transcripts. LangGraph and CrewAI now expose thin Coordinate helper
+  assignment, finding, conflict detection, brief, checkout, approval, and
+  handoff operations as JSON-friendly payloads without spawning workers or
+  inferring findings from transcripts. LangGraph and CrewAI now expose thin Coordinate helper
   nodes/steps, and `zaxy coordinate adapter-template` prints starters for
   Codex-style local agents, LangGraph, CrewAI, and generic MCP clients.
 - `examples/coordinate_three_worker_project.py` demonstrates a complete
-  three-worker mission with conflicting worker claims, accepted promotion,
-  clean accepted-state checkout, and final handoff.
+  three-worker mission with conflicting worker claims, approval packet export,
+  approval decision application, accepted promotion, conflict/defer decisions,
+  mission inspection, audit reporting, clean accepted-state checkout, and final
+  handoff.
 
 Still pending:
 
@@ -202,10 +229,14 @@ The first package should be usable from a shell without a custom orchestrator:
 
 ```bash
 zaxy coordinate start "ship auth refactor" --mission auth-main
+zaxy coordinate template list
+zaxy coordinate template show software-delivery
+zaxy coordinate template apply release-validation --mission release-rc1
 zaxy coordinate worker create --mission auth-main --worker auth-api
 zaxy coordinate assign --mission auth-main --worker auth-api "trace API auth failures"
 zaxy coordinate report --mission auth-main --worker auth-api --summary "API failures trace to expired JWKS cache handling"
 zaxy coordinate brief --mission auth-main
+zaxy coordinate inspect --mission auth-main
 zaxy coordinate decide --mission auth-main --finding finding-id --status accepted
 zaxy coordinate promote --mission auth-main --finding finding-id
 zaxy coordinate checkout --mission auth-main
@@ -213,6 +244,7 @@ zaxy coordinate ledger --mission auth-main
 zaxy coordinate approval-packet --mission auth-main
 zaxy coordinate apply-approval --mission auth-main --decisions-json '[{"finding_id":"finding-id","status":"accepted","promote":true}]'
 zaxy coordinate handoff --mission auth-main
+zaxy coordinate audit-report --mission auth-main
 ```
 
 The CLI should emit JSON with `--json` and concise operator text by default.

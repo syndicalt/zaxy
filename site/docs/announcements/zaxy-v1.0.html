@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zaxy 1.0.0: Coordinator Memory for Agent Teams - Zaxy Docs</title>
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../../index.html">Overview</a>
+      <a href="../getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="zaxy-100-coordinator-memory-for-agent-teams">Zaxy 1.0.0: Coordinator Memory for Agent Teams</h1>
+      <p><img src="../../assets/zaxy-v1-header.png" alt="Zaxy 1.0 release header" /></p>
+      <p>Zaxy 1.0.0 is the first stable release of Coordinator Memory for Agent Teams: an event-sourced, temporal memory fabric for agents that need to coordinate work, cite what they know, and replay how decisions happened.</p>
+      <p>The release centers on a narrow promise. Zaxy does not replace every agent framework and does not hide context behind a vector-only store. It gives agents Memory Bootstrap instructions, Memory Checkout state, Eventloom provenance, graph-backed retrieval, and Zaxy Coordinate workflows that make multi-agent work auditable.</p>
+      <h2 id="what-is-stable">What Is Stable</h2>
+      <ul>
+        <li>Eventloom remains the append-only source of truth.</li>
+        <li>Memory Bootstrap tells models how to use checkout, feedback, and capture.</li>
+        <li>Memory Checkout provides current, cited prompt state with diagnostics.</li>
+        <li>MCP remains the primary framework-neutral interface.</li>
+        <li>Native LangGraph, CrewAI, OpenAI-compatible, and Claude-compatible helpers use the shared memory contract where direct integration is useful.</li>
+        <li>Zaxy Coordinate records mission, worker, assignment, finding, review, promotion, approval packet, checkout, and handoff state.</li>
+        <li>Public surfaces are classified in <code>docs/api-inventory.md</code> and frozen through <code>docs/examples/v1-schema-freeze.json</code>.</li>
+      </ul>
+      <h2 id="examples">Examples</h2>
+      <p>Start with the clean local path:</p>
+      <pre><code class="language-bash">zaxy init --preset local-claude
+zaxy memory bootstrap
+zaxy memory checkout &quot;current project state&quot;
+zaxy doctor --beta-readiness</code></pre>
+      <p>For a multi-agent workflow, run:</p>
+      <pre><code class="language-bash">python examples/coordinate_three_worker_project.py</code></pre>
+      <p>For a short product-level walkthrough, see <a href="../media/zaxy-collaborate-demo.html"><code>../media/zaxy-collaborate-demo.md</code></a>.</p>
+      <p>For direct model-call memory outside MCP, see <code>examples/openai_compatible_memory.py</code> and <code>examples/claude_compatible_memory.py</code>.</p>
+      <h2 id="benchmark-evidence">Benchmark Evidence</h2>
+      <p>The v1.0 story is based on reproducible, tracked benchmark artifacts rather than ad hoc local runs:</p>
+      <ul>
+        <li>LongMemEval-compatible reports show Zaxy checkout quality, Answer@5, Recall@5, citation coverage, and latency alongside BM25 baselines.</li>
+        <li>CoordinationBench reports exercise Zaxy Coordinate mission reconstruction, accepted precision, conflict detection, and handoff quality.</li>
+        <li>The backend shootout reports compare embedded graph behavior, BM25 baselines, optional sidecars, query diagnostics, fingerprint checks, and dashboard graph-load behavior.</li>
+        <li>Release gates check backend shootout evidence with tracked Eventloom inputs, query files, <code>query_results</code>, citation coverage, p95/p99 latency budgets, and fingerprint validation.</li>
+      </ul>
+      <h2 id="limitations">Limitations</h2>
+      <ul>
+        <li>External validation is optional post-release evidence. The current repo has first-run timing evidence and UAT scripts; outside-user validation can be attached after release when a user, project, or case study is available.</li>
+        <li>Candidate backends such as pgGraph and LatticeDB remain experimental until they pass the same contract, benchmark, and operations gates as the default embedded path.</li>
+        <li>Hosted embedding and reranker providers are optional and must be configured through secret-managed settings.</li>
+        <li>Benchmark claims only apply to the published workload, inputs, retrieval limit, scoring code, and citation requirements.</li>
+      </ul>
+      <h2 id="roadmap-beyond-10">Roadmap beyond 1.0</h2>
+      <p>After v1.0, the next work should focus on external validation, independent benchmark review, richer framework-native adapters, sidecar-free runtime hardening, dashboard polish, and more public examples from real projects.</p>
+      <h2 id="external-validation">External validation</h2>
+      <p>We are asking publicly for external verification after the 1.0.0 release. If you have not worked on this implementation session, please run one documented path and report both successes and friction:</p>
+      <pre><code class="language-bash">zaxy init
+zaxy memory bootstrap --eventloom-path .eventloom
+zaxy memory checkout &quot;current project memory and next useful action&quot; --eventloom-path .eventloom
+zaxy doctor --beta-readiness</code></pre>
+      <p>or:</p>
+      <pre><code class="language-bash">python examples/coordinate_three_worker_project.py</code></pre>
+      <p>Open a GitHub issue with the &quot;External validation&quot; template, or follow <a href="../external-validation.html"><code>../external-validation.md</code></a> to create a machine-checkable report. Useful reports include exact commands, operating system, shell, Python version, install source, time to first useful checkout or Coordinate handoff, confusing docs, unexpected sidecar requirements, and a release decision of pass, pass with follow-up, or fail until fixed.</p>
+      <p>External verification is optional post-release evidence for 1.0.0, not a hidden release blocker. Failed validations are welcome because they make the next release better.</p>
+      <p>Related references: <a href="../v1-roadmap.html">../v1-roadmap.md</a>, <a href="../v09-gate-audit.html">../v09-gate-audit.md</a>, <a href="../benchmarks.html">../benchmarks.md</a>, <a href="../getting-started.html">../getting-started.md</a>, and <a href="../../README.html">../../README.md</a>.</p>
+    </article>
+  </main>
+</body>
+</html>

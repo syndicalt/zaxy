@@ -28,7 +28,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from zaxy.security import secure_payload
+from zaxy.security import secure_payload, validate_event_text, validate_payload
 
 
 class EventSecurity(BaseModel):
@@ -199,13 +199,14 @@ class EventLog:
 
                 batch: list[Event] = []
                 for item in items:
+                    raw_payload = item.get("payload")
                     event = self._build_event(
                         seq=seq,
                         prev_hash=prev_hash,
-                        event_type=str(item["event_type"]),
-                        actor=str(item["actor"]),
-                        payload=item.get("payload") if isinstance(item.get("payload"), dict) else None,
-                        thread=str(item.get("thread", "default")),
+                        event_type=validate_event_text(item["event_type"], "event_type"),
+                        actor=validate_event_text(item["actor"], "actor"),
+                        payload=validate_payload(raw_payload) if raw_payload is not None else None,
+                        thread=validate_event_text(item.get("thread", "default"), "thread"),
                         timestamp=item.get("timestamp") if isinstance(item.get("timestamp"), datetime) else None,
                     )
                     batch.append(event)
@@ -266,6 +267,13 @@ class EventLog:
 
         prev_hash: str | None = None
         for i, ev in enumerate(events, start=1):
+            if ev.seq != i:
+                return IntegrityReport(
+                    ok=False,
+                    total_events=total,
+                    broken_at_seq=ev.seq,
+                    broken_reason=f"Event sequence expected {i} but found {ev.seq}",
+                )
             if not ev.verify():
                 return IntegrityReport(
                     ok=False,
@@ -293,10 +301,20 @@ class EventLog:
 
         return IntegrityReport(ok=True, total_events=total)
 
-    def replay(self, from_seq: int = 1) -> ReplayResult:
-        """Replay events from a given sequence number."""
+    def replay(self, from_seq: int = 1, to_seq: int | None = None) -> ReplayResult:
+        """Replay events from an inclusive sequence window."""
+        if from_seq < 1:
+            raise ValueError("from_seq must be >= 1")
+        if to_seq is not None and to_seq < 1:
+            raise ValueError("to_seq must be >= 1")
+        if to_seq is not None and from_seq > to_seq:
+            raise ValueError("from_seq must be <= to_seq")
         events = self.read_all()
-        filtered = [e for e in events if e.seq >= from_seq]
+        filtered = [
+            event
+            for event in events
+            if event.seq >= from_seq and (to_seq is None or event.seq <= to_seq)
+        ]
         integrity = self.verify()
         return ReplayResult(events=filtered, integrity=integrity)
 
