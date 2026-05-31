@@ -49,3 +49,47 @@ def test_first_run_validation_template_exists() -> None:
     assert "Where did you get stuck?" in text
     assert "Operating system" in text
     assert "Python version" in text
+    assert "docs/examples/first-run-timing-report.json" in text
+    assert "300 seconds" in text
+
+
+def test_mcp_quickstart_names_recommended_local_clients() -> None:
+    """MCP quickstart should route users through one clear local path per client."""
+    text = Path("docs/mcp-quickstart.md").read_text(encoding="utf-8")
+
+    assert "# MCP Quickstart" in text
+    assert "zaxy init" in text
+    assert "codex mcp add" in text
+    assert "Claude Desktop" in text
+    assert "Cursor" in text
+    assert "memory_bootstrap" in text
+    assert "memory_checkout" in text
+
+
+def test_coordinate_quickstart_has_full_review_workflow() -> None:
+    """Coordinate quickstart should show the whole accepted-state workflow."""
+    text = Path("docs/coordinate-quickstart.md").read_text(encoding="utf-8")
+
+    for command in (
+        "zaxy coordinate start",
+        "zaxy coordinate worker create",
+        "zaxy coordinate assign",
+        "zaxy coordinate report",
+        "zaxy coordinate brief",
+        "zaxy coordinate decide",
+        "zaxy coordinate promote",
+        "zaxy coordinate checkout",
+        "zaxy coordinate handoff",
+    ):
+        assert command in text
+    assert "worker-local findings are not trusted parent state" in text
+
+
+def test_changelog_has_unreleased_v05_section() -> None:
+    """v0.5 planning work should have a changelog section before release."""
+    text = Path("CHANGELOG.md").read_text(encoding="utf-8")
+
+    assert "## 0.5.0 - Unreleased" in text
+    assert "Coordinator Memory for Agent Teams" in text
+    assert "first-run validation" in text
+    assert "MCP Quickstart" in text

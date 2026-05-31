@@ -286,6 +286,13 @@ class MemoryFabric:
         self.eventloom_path = Path(eventloom_path or resolved_settings.eventloom_path)
         self.session_manager = SessionManager(base_path=str(self.eventloom_path))
         self.eventloom = self.session_manager.get("default").eventlog
+        resolved_embedded_graph_path = (
+            Path(embedded_graph_path)
+            if embedded_graph_path is not None
+            else self.eventloom_path / "projections" / "embedded.kuzu"
+            if eventloom_path is not None
+            else Path(resolved_settings.embedded_graph_path)
+        )
         self.graph = build_projection_store(
             ProjectionBackendConfig(
                 backend=projection_backend or resolved_settings.projection_backend,
@@ -295,7 +302,7 @@ class MemoryFabric:
                 neo4j_ca_cert=neo4j_ca_cert if neo4j_ca_cert is not None else resolved_settings.neo4j_ca_cert,
                 neo4j_trust_all=neo4j_trust_all if neo4j_trust_all is not None else resolved_settings.neo4j_trust_all,
                 pggraph_dsn=pggraph_dsn or resolved_settings.pggraph_dsn,
-                embedded_graph_path=Path(embedded_graph_path or resolved_settings.embedded_graph_path),
+                embedded_graph_path=resolved_embedded_graph_path,
                 latticedb_path=Path(latticedb_path or resolved_settings.latticedb_path),
                 embedding_dimension=resolved_settings.embedding_dimension,
             )

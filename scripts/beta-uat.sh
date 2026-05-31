@@ -153,5 +153,5 @@ MARKDOWN
 }
 
 run_workspace "codex" "local-codex" "start"
-run_workspace "claude-code" "local-claude" "status"
-run_workspace "embedded" "" "status"
+run_workspace "claude-code" "local-claude" "none"
+run_workspace "embedded" "" "start"

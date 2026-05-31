@@ -51,6 +51,20 @@ class FakeFabric:
         self.calls.append(("close", {}))
 
 
+@dataclass
+class FailingCheckoutFabric:
+    """MemoryFabric test double that fails checkout but still needs closing."""
+
+    calls: list[tuple[str, dict[str, Any]]]
+
+    async def checkout_memory(self, query: str, **kwargs: Any) -> Any:
+        self.calls.append(("checkout_memory", {"query": query, **kwargs}))
+        raise RuntimeError("projection unavailable")
+
+    async def close(self) -> None:
+        self.calls.append(("close", {}))
+
+
 def test_crewai_registry_marks_native_preview_adapter() -> None:
     """CrewAI should advertise the maintained native-preview adapter."""
     specs = {spec.framework: spec for spec in list_framework_integration_specs()}
@@ -157,6 +171,104 @@ async def test_crewai_adapter_checkout_before_task_uses_memory_checkout() -> Non
 
 
 @pytest.mark.asyncio
+async def test_crewai_checkout_payload_exposes_v06_native_contract() -> None:
+    """CrewAI checkout metadata should share the v0.6 native adapter contract."""
+    calls: list[tuple[str, dict[str, Any]]] = []
+    adapter = CrewAIMemoryAdapter(
+        session_id="crew-1",
+        fabric_factory=lambda eventloom_path: FakeFabric(calls),
+    )
+
+    payload = await adapter.checkout_before_task(
+        "What is left?",
+        crew="release",
+        agent="planner",
+        task_id="task-7",
+    )
+
+    assert payload["zaxy"] == {
+        "contract": "zaxy.native.v0.6",
+        "framework": "crewai",
+        "operation": "before_task",
+        "source": "crewai",
+        "kind": "memory_checkout",
+        "status": "ok",
+        "session_id": "crew-1",
+        "query": "What is left?",
+        "current_fact_count": 1,
+        "warning_count": 0,
+        "diagnostics": {
+            "current_fact_count": 1,
+            "current_citation_count": 1,
+            "feedback_tool": "memory_feedback",
+        },
+        "quality": {
+            "answerability": "answer_from_memory",
+            "confidence": 0.91,
+            "required_action": None,
+        },
+        "feedback": {
+            "tool": "memory_feedback",
+            "payloads": [
+                {
+                    "entity_name": "memory checkout",
+                    "entity_type": "workflow",
+                    "feedback": "used",
+                }
+            ],
+        },
+        "error": None,
+        "crew": "release",
+        "agent": "planner",
+        "task_id": "task-7",
+    }
+
+
+@pytest.mark.asyncio
+async def test_crewai_checkout_failure_returns_stable_error_payload() -> None:
+    """CrewAI checkout should fail closed with no task memory and actionable metadata."""
+    calls: list[tuple[str, dict[str, Any]]] = []
+    adapter = CrewAIMemoryAdapter(
+        session_id="crew-1",
+        fabric_factory=lambda eventloom_path: FailingCheckoutFabric(calls),
+    )
+
+    payload = await adapter.checkout_before_task("What is left?", crew="release")
+
+    assert payload["memory"] == ""
+    assert payload["contexts"] == []
+    assert payload["zaxy"] == {
+        "contract": "zaxy.native.v0.6",
+        "framework": "crewai",
+        "operation": "before_task",
+        "source": "crewai",
+        "kind": "memory_checkout",
+        "status": "error",
+        "session_id": "crew-1",
+        "query": "What is left?",
+        "current_fact_count": 0,
+        "warning_count": 1,
+        "diagnostics": {},
+        "quality": {
+            "answerability": "refresh_recommended",
+            "confidence": 0.0,
+            "required_action": {
+                "tool": "memory_checkout",
+                "reason": "Projection unavailable during CrewAI checkout.",
+            },
+        },
+        "feedback": None,
+        "error": {
+            "code": "checkout_failed",
+            "message": "projection unavailable",
+            "remediation": "Retry Memory Checkout before the next model call or run zaxy doctor.",
+        },
+        "crew": "release",
+    }
+    assert calls[-1] == ("close", {})
+
+
+@pytest.mark.asyncio
 async def test_crewai_adapter_records_task_result_as_assistant_turn() -> None:
     """after_task should persist task output as an assistant observation."""
     calls: list[tuple[str, dict[str, Any]]] = []
@@ -245,6 +357,28 @@ def _checkout() -> Any:
                 "prompt": "# Memory Checkout\nUse CrewAI checkout.",
                 "current_facts": [{"content": "Use CrewAI checkout.", "citation": "eventloom://crew-1/events/1#abc"}],
                 "evidence": [],
+                "diagnostics": {
+                    "current_fact_count": 1,
+                    "current_citation_count": 1,
+                    "feedback_tool": "memory_feedback",
+                },
+                "quality": {
+                    "answerability": "answer_from_memory",
+                    "confidence": 0.91,
+                    "required_action": None,
+                },
+                "guidance": {
+                    "feedback": {
+                        "tool": "memory_feedback",
+                        "payloads": [
+                            {
+                                "entity_name": "memory checkout",
+                                "entity_type": "workflow",
+                                "feedback": "used",
+                            }
+                        ],
+                    }
+                },
                 "warnings": [],
             }
 

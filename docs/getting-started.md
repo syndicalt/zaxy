@@ -219,6 +219,9 @@ managed watcher that imports local Codex session JSONL into Eventloom. To start
 that watcher during onboarding, pass `--capture start`. It does not enable
 packet capture. After startup, `zaxy doctor` should show `capture_health: ok`
 once command, file-edit, tool-call, and transcript observations have appeared.
+It also reports `memory_activation`; if checkout is missing or stale, the
+doctor action is a runnable `zaxy memory checkout ...` command for the affected
+session.
 `zaxy init` also prints a capture summary showing whether local capture is
 configured, whether the watcher is running, the latest imported observation when
 available, and the doctor capture-health result. The same block is available in
@@ -331,6 +334,12 @@ zaxy hook-event heartbeat --eventloom-path .eventloom --session-id my-project-de
 zaxy hook-status --eventloom-path .eventloom
 ```
 
+`zaxy status --eventloom-path .eventloom` and `zaxy hook-status --json` expose
+the latest checkout, latest capture, activation efficiency, and structured
+`memory_activation.remediations`. Text output prints the same remediation
+command under "Memory next steps" so a stale or missing checkout is actionable
+without reading Eventloom JSONL.
+
 The MCP tool names are stable: `memory_append`, `memory_query`,
 `memory_feedback`, `memory_replay`, and `memory_invalidate`. A simple client can
 append a typed `goal.created` or `task.proposed` event, query for the goal
@@ -351,13 +360,14 @@ scripts/release-check.sh --root .
 scripts/beta-uat.sh
 ```
 
-The full pytest command enforces the 90 percent coverage gate configured in
+The full pytest command enforces the 92 percent coverage gate configured in
 `pyproject.toml`. Integration tests require Docker Neo4j services. The release
 smoke check verifies the package version, changelog entry, release workflow,
-and PyPI Trusted Publishing posture without contacting external services. The
+PyPI Trusted Publishing posture, and dependency-light LangGraph example without
+contacting external services. The
 beta readiness check verifies that the release smoke gate, release gate script,
-clean-repo UAT script, docs happy path, and deterministic capture happy path are
-present. The release gate adds package artifact checks, documentation link
+clean-repo UAT script, first-run timing evidence, docs happy path, and
+deterministic capture happy path are present. The release gate adds package artifact checks, documentation link
 validation, deployment preflight checks, backend shootout evidence, injected-token
 efficiency floors, and 100-query embedded scale validation. `scripts/beta-uat.sh`
 creates a throwaway workspace, installs Zaxy into a fresh virtual environment,

@@ -1,6 +1,6 @@
 [project]
 name = "zaxy-memory"
-version = "0.4.0"
+version = "1.0.0"
 description = "Coordinator memory for auditable multi-agent projects"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -9,7 +9,7 @@ authors = [
     { name = "Zaxy Contributors" }
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.11",
@@ -145,10 +145,10 @@ exclude_lines = [
     "raise NotImplementedError",
     "pass",
 ]
-fail_under = 90
+fail_under = 92
 
 [tool.zaxy.coverage]
-min_total_percent = "91.89"
+min_total_percent = "92.00"
 
 [tool.ruff]
 target-version = "py311"

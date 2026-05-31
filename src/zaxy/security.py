@@ -15,6 +15,7 @@ MAX_QUERY_LENGTH = 4096
 MAX_QUERY_LIMIT = 100
 MAX_REPLAY_EVENTS = 1000
 MAX_TRAVERSAL_DEPTH = 5
+MAX_EVENT_TEXT_LENGTH = 256
 REDACTED_VALUE = "[REDACTED]"
 SECRET_KEY_PATTERN = re.compile(
     r"(api[_-]?key|authorization|bearer|cookie|credential|password|private[_-]?key|"
@@ -81,6 +82,18 @@ def validate_payload(payload: dict[str, Any]) -> dict[str, Any]:
     if len(encoded) > MAX_PAYLOAD_BYTES:
         raise ValueError(f"payload exceeds {MAX_PAYLOAD_BYTES} bytes")
     return payload
+
+
+def validate_event_text(value: object, field: str) -> str:
+    """Validate bounded event metadata text such as event type and actor."""
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be a string")
+    text = value.strip()
+    if not text:
+        raise ValueError(f"{field} must be a non-empty string")
+    if len(text) > MAX_EVENT_TEXT_LENGTH:
+        raise ValueError(f"{field} exceeds {MAX_EVENT_TEXT_LENGTH} characters")
+    return text
 
 
 def secure_payload(payload: dict[str, Any]) -> SecuredPayload:

@@ -21,7 +21,7 @@ def _coverage_xml(path: Path, line_rate: float) -> None:
 def test_coverage_ratchet_fails_below_configured_floor(tmp_path: Path) -> None:
     """The ratchet should fail when XML coverage drops below the configured floor."""
     coverage_xml = tmp_path / "coverage.xml"
-    _coverage_xml(coverage_xml, 0.9188)
+    _coverage_xml(coverage_xml, 0.9199)
 
     result = subprocess.run(
         [
@@ -39,14 +39,14 @@ def test_coverage_ratchet_fails_below_configured_floor(tmp_path: Path) -> None:
     )
 
     assert result.returncode == 1
-    assert "91.88%" in result.stderr
-    assert "91.89%" in result.stderr
+    assert "91.99%" in result.stderr
+    assert "92.00%" in result.stderr
 
 
 def test_coverage_ratchet_passes_at_configured_floor(tmp_path: Path) -> None:
     """Coverage equal to the floor should pass so the ratchet is deterministic."""
     coverage_xml = tmp_path / "coverage.xml"
-    _coverage_xml(coverage_xml, 0.9189)
+    _coverage_xml(coverage_xml, 0.92)
 
     result = subprocess.run(
         [
@@ -71,7 +71,8 @@ def test_coverage_ratchet_floor_is_declared_in_pyproject() -> None:
     """The ratchet floor should be visible as project configuration."""
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
 
-    assert pyproject["tool"]["zaxy"]["coverage"]["min_total_percent"] == "91.89"
+    assert pyproject["tool"]["coverage"]["report"]["fail_under"] == 92
+    assert pyproject["tool"]["zaxy"]["coverage"]["min_total_percent"] == "92.00"
 
 
 def test_ci_and_release_gate_run_coverage_ratchet() -> None:
@@ -86,7 +87,10 @@ def test_ci_and_release_gate_run_coverage_ratchet() -> None:
 def test_testing_docs_explain_coverage_ratchet() -> None:
     """Testing docs should explain both the broad gate and the ratchet floor."""
     docs = Path("docs/testing.md").read_text(encoding="utf-8")
+    readme = Path("README.md").read_text(encoding="utf-8")
 
     assert "coverage ratchet" in docs
-    assert "91.89%" in docs
+    assert "92.00%" in docs
+    assert "--cov-fail-under=92" in docs
+    assert "Coverage gate: \u226592%" in readme
     assert "scripts/check-coverage.py" in docs

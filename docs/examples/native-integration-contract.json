@@ -1,0 +1,57 @@
+{
+  "contract": "zaxy.native.v0.6",
+  "metadata_location": "payload['zaxy']",
+  "lifecycle": {
+    "before_model_or_task": "memory_checkout",
+    "after_model_or_task": "capture_assistant_or_task_output",
+    "after_tool_call": "capture_redacted_observation",
+    "after_context_use": "record_feedback"
+  },
+  "required_payload_keys": [
+    "contract",
+    "framework",
+    "operation",
+    "source",
+    "kind",
+    "status",
+    "session_id",
+    "query",
+    "current_fact_count",
+    "warning_count",
+    "diagnostics",
+    "quality",
+    "feedback",
+    "error"
+  ],
+  "success": {
+    "kind": "memory_checkout",
+    "status": "ok",
+    "error": null,
+    "feedback_source": "memory_checkout.guidance.feedback"
+  },
+  "failure": {
+    "kind": "memory_checkout",
+    "status": "error",
+    "error_code": "checkout_failed",
+    "context_injection": "empty",
+    "required_action_tool": "memory_checkout"
+  },
+  "frameworks": {
+    "langgraph": {
+      "maturity": "native-beta",
+      "metadata_location": "state['zaxy']",
+      "context_fields": [
+        "zaxy_context",
+        "zaxy_contexts"
+      ]
+    },
+    "crewai": {
+      "maturity": "native-preview",
+      "metadata_location": "payload['zaxy']",
+      "context_fields": [
+        "memory",
+        "contexts"
+      ]
+    }
+  }
+}

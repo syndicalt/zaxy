@@ -41,6 +41,38 @@ def test_coordination_adapter_reports_and_promotes_worker_finding(tmp_path) -> N
     assert handoff["event_type"] == "coordination.handoff.created"
 
 
+def test_coordination_adapter_materializes_conflicts_for_native_workflow(tmp_path) -> None:
+    """Direct native helpers should cover conflict detection in the v0.7 mission workflow."""
+    adapter = CoordinationAdapter(eventloom_path=tmp_path / ".eventloom", actor="lead")
+    adapter.start_mission("auth-main", objective="Ship auth refactor")
+    adapter.create_worker("auth-main", "auth-api")
+    adapter.create_worker("auth-main", "auth-ui")
+    api = adapter.report_finding(
+        "auth-main",
+        "auth-api",
+        summary="API worker saw one auth config snapshot.",
+        evidence=[{"kind": "file", "reference": "src/auth/config.py", "source_sha256": "a" * 64}],
+    )
+    ui = adapter.report_finding(
+        "auth-main",
+        "auth-ui",
+        summary="UI worker saw another auth config snapshot.",
+        evidence=[{"kind": "file", "reference": "src/auth/config.py", "source_sha256": "b" * 64}],
+    )
+
+    conflicts = adapter.detect_conflicts("auth-main")
+
+    assert len(conflicts) == 1
+    assert conflicts[0]["event_type"] == "coordination.conflict.detected"
+    assert conflicts[0]["mission_id"] == "auth-main"
+    assert conflicts[0]["summary"] == "Findings cite incompatible source snapshots for src/auth/config.py."
+    assert {item["reference"] for item in conflicts[0]["evidence"]} == {
+        api["finding_id"],
+        ui["finding_id"],
+    }
+    assert adapter.detect_conflicts("auth-main") == []
+
+
 def test_coordination_adapter_rejects_empty_evidence_items(tmp_path) -> None:
     """Adapter inputs should stay structured and not silently coerce bad evidence."""
     adapter = CoordinationAdapter(eventloom_path=tmp_path / ".eventloom")

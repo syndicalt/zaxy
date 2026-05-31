@@ -1,8 +1,8 @@
 # Testing
 
 Zaxy follows test-first development. Public behavior should have a test before
-implementation. The full suite has a broad 90 percent pytest coverage gate plus
-a coverage ratchet that currently requires at least 91.89% total line coverage
+implementation. The full suite has a broad 92 percent pytest coverage gate plus
+a coverage ratchet that currently requires at least 92.00% total line coverage
 from `coverage.xml`. Unit tests mock external dependencies such as Neo4j and
 Pathlight. Integration tests use Docker services and are marked with
 `integration`.
@@ -21,7 +21,7 @@ scripts/beta-uat.sh
 scripts/release-check.sh --root .
 ```
 
-The default pytest command includes coverage reporting and `--cov-fail-under=90`
+The default pytest command includes coverage reporting and `--cov-fail-under=92`
 from `pyproject.toml`. CI and `scripts/release-check.sh` also run
 `scripts/check-coverage.py` against the generated XML report. The ratchet floor
 lives in `[tool.zaxy.coverage]`, is based on the canonical CI Python 3.13
@@ -55,6 +55,13 @@ Tests are organized by module: event log integrity, extraction, graph behavior,
 query routing, MCP tools, tracing, configuration, embeddings, operations
 scripts, packaging, and site/docs validation. New modules should get focused
 tests rather than relying only on high-level workflows.
+
+The v0.9 freeze-candidate path includes fuzz-style parametrized checks for
+Eventloom payload validation, hash-chain replay, and bounded MCP inputs. These
+tests intentionally exercise malformed payload shapes, oversized JSON objects,
+sequence-tampered but hash-valid Eventloom records, and invalid direct
+`memory_append` handler inputs so contract validation does not depend only on
+MCP client schema enforcement.
 
 The packet-memory product path has an explicit smoke check:
 
@@ -154,6 +161,11 @@ did not all start substantive work after fresh checkout. `zaxy capture-soak` is
 the beta evidence command for
 deterministic capture: it checks transcript, tool-call, command, and file-edit
 observation coverage, freshness, latest seq/hash, and remediation steps.
+`zaxy doctor --beta-readiness` also reads
+`docs/examples/first-run-timing-report.json`; keep
+`time_to_successful_doctor_seconds` and
+`time_to_first_successful_example_seconds` at or below 300 seconds, and keep
+`requires_sidecar` false for the default local path.
 
 For activation hardening, `zaxy hook-status --json` reports activation
 efficiency under `memory_activation.activation_efficiency`. The metric counts
@@ -178,6 +190,18 @@ zaxy hook-status --eventloom-path .eventloom --json --min-activation-rate 0.8 \
   --max-checkout-prompt-tokens 5000 \
   --min-checkout-facts-per-1k-tokens 0.1
 ```
+
+The v0.9 release gate also names every public smoke path it expects:
+`EXAMPLES_SMOKE_CMD`, `MCP_SMOKE_CMD`, `LANGGRAPH_SMOKE_CMD`,
+`COORDINATE_SMOKE_CMD`, docs validation, backend benchmark comparison, and
+`BETA_UAT_CMD`. A command may be set to `SKIP:<reason>` only when the skip is
+intentional and auditable; otherwise `zaxy doctor --beta-readiness` reports the
+missing surface through `release_gate_surface_coverage`.
+
+The current v0.9 gate evidence is summarized in
+[v09-gate-audit.md](v09-gate-audit.md). That audit intentionally leaves the
+external-user feedback gate pending until feedback from outside the current
+implementation session exists.
 
 The command exits non-zero when fewer than 80% of high-context sessions had
 fresh checkout before substantive captured work, when the latest checkout

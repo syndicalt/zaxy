@@ -14,7 +14,6 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 if SRC.exists():
@@ -22,7 +21,6 @@ if SRC.exists():
 
 from zaxy.capabilities import build_memory_bootstrap  # noqa: E402
 from zaxy.core import MemoryFabric  # noqa: E402
-
 
 SESSION_ID = "single-agent-demo"
 QUESTION = "What should the agent do before major project work?"

@@ -19,6 +19,7 @@
     <article class="doc-content">
       <h1 id="python-api">Python API</h1>
       <p>The primary Python entry point is <code>zaxy.core.MemoryFabric</code>. It wires the event log, session manager, graph store, query router, embedding provider, metrics, and tracer. The MCP server uses the same underlying orchestration, so Python and MCP callers share behavior.</p>
+      <p>For the v0.9 freeze-candidate classification of MCP tools, Python exports, CLI commands, Eventloom events, projection backend contracts, and benchmark artifact schemas, see <a href="api-inventory.html">API Inventory</a>.</p>
       <p>Create a fabric:</p>
       <pre><code class="language-python">from zaxy import MemoryFabric
 

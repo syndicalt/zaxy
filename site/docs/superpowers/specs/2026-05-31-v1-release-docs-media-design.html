@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zaxy v1 Release Docs and Media Design - Zaxy Docs</title>
+  <link rel="stylesheet" href="../../../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../../../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../../../index.html">Overview</a>
+      <a href="../../getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="zaxy-v1-release-docs-and-media-design">Zaxy v1 Release Docs and Media Design</h1>
+      <h2 id="goal">Goal</h2>
+      <p>Make the public documentation, static site, release article, and launch media consistent with a Zaxy 1.0.0 stable release while publicly asking for external verification after release.</p>
+      <h2 id="scope">Scope</h2>
+      <ul>
+        <li>Refresh release-facing docs and site copy from release-candidate/beta posture to stable 1.0.0 posture.</li>
+        <li>Preserve the truth that external validation is optional for this release, but make the public request for outside verification visible and actionable.</li>
+        <li>Add a polished header image for the 1.0.0 announcement.</li>
+        <li>Add a short scripted demo asset for Zaxy Coordinate/Collaborate that can be generated locally from static frames and <code>ffmpeg</code>.</li>
+        <li>Add an X-ready release article/thread draft with exact copy and links to the verification request.</li>
+      </ul>
+      <h2 id="non-goals">Non-Goals</h2>
+      <ul>
+        <li>No live account screenshare or hosted social posting.</li>
+        <li>No new product behavior.</li>
+        <li>No benchmark claim changes unless correcting stale public proof text.</li>
+        <li>No external validation report fabrication.</li>
+      </ul>
+      <h2 id="design">Design</h2>
+      <p>The release docs will use &quot;Zaxy 1.0.0&quot; as the stable launch label. Historical 0.4.0 docs remain available as archive material, but the README, homepage, and v1.0 announcement should lead with the stable release.</p>
+      <p>The demo media will be a scripted product walkthrough, not a terminal recording. It will show the coordination flow in five frames: launch, mission creation, worker findings, coordinator review, and Memory Checkout. This keeps the asset credible and reproducible without depending on a browser recorder or external accounts.</p>
+      <p>The X article will be saved as documentation so it is reviewable and versioned. It will include a public call for external verification: run the first-run or Coordinate path, file the external validation issue, and share both successes and friction.</p>
+      <h2 id="validation">Validation</h2>
+      <ul>
+        <li>Regenerate rendered docs with <code>python scripts/build-site-docs.py</code>.</li>
+        <li>Run <code>python scripts/build-site-docs.py --check</code>.</li>
+        <li>Run <code>scripts/validate-docs.sh --root .</code>.</li>
+        <li>Run focused documentation/package tests affected by version and site text.</li>
+      </ul>
+    </article>
+  </main>
+</body>
+</html>

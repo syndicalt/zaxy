@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>v0.9 Gate Audit - Zaxy Docs</title>
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../index.html">Overview</a>
+      <a href="getting-started.html">Getting started</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="v09-gate-audit">v0.9 Gate Audit</h1>
+      <p>This audit records the current v0.9 hardening gates and the repo evidence that proves or blocks each one. It is intentionally separate from the roadmap so release work can distinguish completed engineering gates from optional external validation that can arrive after release.</p>
+      <h2 id="proven-gates">Proven Gates</h2>
+      <h3 id="full-release-gate-on-python-311-312-and-313">Full Release Gate on Python 3.11, 3.12, and 3.13</h3>
+      <p>Status: proven by CI configuration.</p>
+      <p>Evidence:</p>
+      <ul>
+        <li><code>.github/workflows/ci.yml</code> runs the unit test matrix on Python 3.11, 3.12, and 3.13.</li>
+        <li>The matrix command is <code>pytest -m &quot;not integration&quot; --benchmark-disable --cov --cov-report=xml</code>.</li>
+        <li>Python 3.13 runs <code>scripts/check-coverage.py --root . --coverage-xml coverage.xml</code> as the canonical coverage ratchet check.</li>
+      </ul>
+      <h3 id="coverage-remains-at-or-above-92-percent">Coverage Remains At Or Above 92 Percent</h3>
+      <p>Status: proven by project configuration and release checks.</p>
+      <p>Evidence:</p>
+      <ul>
+        <li><code>pyproject.toml</code> sets <code>[tool.coverage.report] fail_under = 92</code>.</li>
+        <li><code>pyproject.toml</code> sets <code>[tool.zaxy.coverage] min_total_percent = &quot;92.00&quot;</code>.</li>
+        <li><code>scripts/release-check.sh</code> runs coverage XML generation and <code>scripts/check-coverage.py</code>.</li>
+      </ul>
+      <h3 id="no-public-benchmark-claim-depends-on-untracked-or-local-only-inputs">No Public Benchmark Claim Depends On Untracked Or Local-Only Inputs</h3>
+      <p>Status: proven by beta readiness and release benchmark checks.</p>
+      <p>Evidence:</p>
+      <ul>
+        <li><code>zaxy doctor --beta-readiness</code> reports <code>backend_report_inputs</code> and <code>benchmark_no_regression</code>.</li>
+        <li>Release benchmark commands require <code>--require-git-tracked-inputs</code>, <code>--require-query-results</code>, <code>--verify-report-fingerprints</code>, Markdown sidecars, citation coverage, and p95/p99 latency budgets.</li>
+        <li><code>docs/benchmark-contributions.md</code> documents tracked Eventloom inputs, query files, <code>query_results</code>, citation coverage, and report sidecars as contribution requirements.</li>
+      </ul>
+      <h3 id="api-inventory-has-no-undocumented-stable-surfaces">API Inventory Has No Undocumented Stable Surfaces</h3>
+      <p>Status: proven for the current freeze candidate.</p>
+      <p>Evidence:</p>
+      <ul>
+        <li><code>docs/api-inventory.md</code> classifies MCP tools, Python exports, CLI commands, Eventloom event families, projection backend contracts, and benchmark artifact schemas.</li>
+        <li><code>docs/examples/v1-schema-freeze.json</code> binds the candidate contract files.</li>
+        <li>Stable or beta non-additive changes require <code>schema.migration.proposed</code> and <code>schema.migration.applied</code>.</li>
+      </ul>
+      <h3 id="migration-guide-covers-04-to-09">Migration Guide Covers 0.4 To 0.9</h3>
+      <p>Status: proven by documentation and tests.</p>
+      <p>Evidence:</p>
+      <ul>
+        <li><code>docs/migration.md</code> covers upgrade bands from 0.4 to 0.5, 0.5 to 0.6, 0.6 to 0.7, 0.7 to 0.8, and 0.8 to 0.9.</li>
+        <li>The guide covers compatibility tests and non-destructive rollback.</li>
+        <li>Packaging tests assert the required release-band headings and core commands.</li>
+      </ul>
+      <h3 id="release-gate-surface-coverage">Release Gate Surface Coverage</h3>
+      <p>Status: proven by beta readiness.</p>
+      <p>Evidence:</p>
+      <ul>
+        <li><code>zaxy doctor --beta-readiness</code> reports <code>release_gate_surface_coverage</code>.</li>
+        <li><code>scripts/release-check.sh</code> names public examples, MCP smoke, LangGraph smoke, Coordinate mission smoke, benchmark comparison, docs validation, and beta UAT.</li>
+        <li>Intentional omissions must be written as <code>SKIP:&lt;reason&gt;</code>.</li>
+      </ul>
+      <h2 id="optional-evidence">Optional Evidence</h2>
+      <h3 id="external-user-feedback">External User Feedback</h3>
+      <p>Status: optional for v1.0 release.</p>
+      <p>External user feedback remains useful evidence, but it is not a v1.0 release blocker. Current repo evidence proves the first-run and Coordinate paths are documented and gated; outside-user evidence can be attached after release.</p>
+      <p>Required evidence:</p>
+      <ul>
+        <li>a dated note, issue, discussion, or case study from a user outside the current implementation session;</li>
+        <li>the path they ran, such as <code>zaxy init</code>, <code>zaxy memory bootstrap</code>, <code>zaxy memory checkout</code>, <code>zaxy doctor --beta-readiness</code>, or <code>python examples/coordinate_three_worker_project.py</code>;</li>
+        <li>result, friction, and whether docs or code changed in response.</li>
+      </ul>
+      <p>Related references: <a href="v1-roadmap.html">v1-roadmap.md</a>, <a href="testing.html">testing.md</a>, <a href="first-run-validation.html">first-run-validation.md</a>, <a href="coordinate-quickstart.html">coordinate-quickstart.md</a>, and <a href="../README.html">README.md</a>.</p>
+    </article>
+  </main>
+</body>
+</html>

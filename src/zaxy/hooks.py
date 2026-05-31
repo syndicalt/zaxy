@@ -344,6 +344,20 @@ def format_hook_status(report: dict[str, Any]) -> str:
             lines.extend(["", "Memory next steps"])
             for index, action in enumerate(actions, start=1):
                 lines.append(f"  {index}. {action}")
+        remediations = activation.get("remediations", [])
+        if remediations:
+            if not actions:
+                lines.extend(["", "Memory next steps"])
+            start_index = len(actions) + 1
+            for index, remediation in enumerate(remediations, start=start_index):
+                if not isinstance(remediation, dict):
+                    continue
+                message = remediation.get("message")
+                command = remediation.get("command")
+                if message:
+                    lines.append(f"  {index}. {message}")
+                if command:
+                    lines.append(f"     {command}")
     coverage = report.get("observation_coverage", {})
     if coverage:
         lines.extend(["", "Observation coverage"])
@@ -641,6 +655,13 @@ def _memory_activation(
     actions: list[str] = []
     if latest_checkout is None:
         actions.append("Run memory checkout before relying on Zaxy context.")
+        remediations = [
+            _checkout_remediation(
+                code="missing_checkout",
+                eventloom_path=eventloom_path,
+                session_id=_activation_session_id(latest_capture, latest_reminder),
+            )
+        ]
         return {
             "status": "warning",
             "message": "No memory checkout events found",
@@ -650,6 +671,7 @@ def _memory_activation(
             "latest_reminder": latest_reminder,
             "activation_efficiency": activation_efficiency,
             "actions": actions,
+            "remediations": remediations,
         }
 
     reference_time = now or datetime.now(UTC)
@@ -657,6 +679,13 @@ def _memory_activation(
     age_seconds = (reference_time - checkout_time).total_seconds()
     if age_seconds > stale_after_minutes * 60:
         actions.append("Run memory checkout before relying on Zaxy context.")
+        remediations = [
+            _checkout_remediation(
+                code="stale_checkout",
+                eventloom_path=eventloom_path,
+                session_id=str(latest_checkout["thread"]),
+            )
+        ]
         return {
             "status": "warning",
             "message": "Latest memory checkout is stale",
@@ -666,11 +695,19 @@ def _memory_activation(
             "latest_reminder": latest_reminder,
             "activation_efficiency": activation_efficiency,
             "actions": actions,
+            "remediations": remediations,
         }
     stale_sessions = int(activation_efficiency.get("stale_checkout_session_count", 0))
     missing_sessions = int(activation_efficiency.get("missing_checkout_session_count", 0))
     if stale_sessions or missing_sessions:
         actions.append("Run memory checkout before continuing sessions without fresh Zaxy context.")
+        remediations = [
+            _checkout_remediation(
+                code="sessions_without_fresh_checkout",
+                eventloom_path=eventloom_path,
+                session_id=str(latest_checkout["thread"]),
+            )
+        ]
         return {
             "status": "warning",
             "message": "Some high-context sessions lack fresh memory checkout",
@@ -680,6 +717,7 @@ def _memory_activation(
             "latest_reminder": latest_reminder,
             "activation_efficiency": activation_efficiency,
             "actions": actions,
+            "remediations": remediations,
         }
     return {
         "status": "ok",
@@ -690,6 +728,32 @@ def _memory_activation(
         "latest_reminder": latest_reminder,
         "activation_efficiency": activation_efficiency,
         "actions": [],
+        "remediations": [],
+    }
+
+
+def _activation_session_id(*events: dict[str, Any] | None) -> str:
+    for event in events:
+        if event and event.get("thread"):
+            return str(event["thread"])
+    return "default"
+
+
+def _checkout_remediation(
+    *,
+    code: str,
+    eventloom_path: Path,
+    session_id: str,
+) -> dict[str, str]:
+    query = "current project memory and next useful action"
+    return {
+        "code": code,
+        "message": "Run Memory Checkout before the next model or task call.",
+        "command": (
+            f"zaxy memory checkout {shlex.quote(query)} "
+            f"--eventloom-path {shlex.quote(str(eventloom_path))} "
+            f"--session-id {shlex.quote(session_id)}"
+        ),
     }
 
 

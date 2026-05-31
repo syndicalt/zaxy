@@ -327,12 +327,21 @@ def run_coordination_benchmark(
     *,
     missions: int = 1,
     workers: int = 3,
+    workload_path: Path | None = None,
     competitor_results: dict[str, Path] | None = None,
     competitor_runners: dict[str, Path] | None = None,
 ) -> CoordinationBenchReport:
-    """Run Zaxy Coordinate against the deterministic workload."""
+    """Run Zaxy Coordinate against a generated or frozen workload."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    workload = build_coordination_workload(output_dir / "coordination-workload.json", missions=missions, workers=workers)
+    workload_output = output_dir / "coordination-workload.json"
+    if workload_path is None:
+        workload = build_coordination_workload(workload_output, missions=missions, workers=workers)
+    else:
+        workload = load_coordination_workload(workload_path)
+        workload_output.write_text(
+            json.dumps(workload.to_dict(), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
     case_results = [_run_case(output_dir, case) for case in workload.cases]
     metrics = _mean_metrics([case.metrics for case in case_results])
     competitor_adapters = coordination_competitor_adapter_disclosures()
@@ -350,7 +359,7 @@ def run_coordination_benchmark(
             output_dir=output_dir / "competitor-runners",
         )
     report = CoordinationBenchReport(
-        version=COORDINATION_WORKLOAD_VERSION,
+        version=workload.version,
         workload_fingerprint=workload.fingerprint,
         metrics=metrics,
         cases=case_results,
@@ -958,7 +967,31 @@ def write_coordination_benchmark_report(report: CoordinationBenchReport, output_
             f"| {disclosure.display_name} | {disclosure.adapter_contract} | "
             f"{disclosure.status} | {disclosure.claim_status} | {blockers} |"
         )
-    lines.append("")
+    lines.extend(
+        [
+            "",
+            "## Limitations",
+            "",
+            "CoordinationBench is a coordination-specific benchmark, not a universal memory benchmark.",
+            "It measures accepted-state precision, conflict handling, stale-claim rejection, evidence grounding, "
+            "parent checkout answerability, and replayability for multi-agent coordination workflows.",
+            "The report should not be used as a claim about generic document RAG, open-domain QA, or all memory systems.",
+            "Competitor rows marked `disclosure_only` or `not_run` are adapter-status disclosures, not scores.",
+            "",
+            "## Reproduction",
+            "",
+            "Regenerate this report with the CoordinationBench CLI:",
+            "",
+            "```bash",
+            f"zaxy coordinate benchmark --output-dir {output_dir.as_posix()} --workload "
+            f"{(output_dir / 'coordination-workload.json').as_posix()} --json",
+            "```",
+            "",
+            "For generated seed workloads, omit `--workload` and pass `--missions 1 --workers 3`.",
+            "For external systems, replace disclosure-only templates with pinned runner manifests or pinned result files.",
+            "",
+        ]
+    )
     (output_dir / "coordination-benchmark.md").write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -1312,12 +1345,14 @@ def _finding(
 
 def _accepted_finding_ids(case: CoordinationBenchCase) -> list[str]:
     accepted_values = set(case.gold.expected_accepted_claims.items())
+    accepted_seen: set[tuple[Any, Any]] = set()
     ids: list[str] = []
     for worker in case.workers:
         for finding in worker["findings"]:
             claim = (finding.get("claim_key"), finding.get("claim_value"))
-            if claim in accepted_values and not ids:
+            if claim in accepted_values and claim not in accepted_seen:
                 ids.append(str(finding["finding_id"]))
+                accepted_seen.add(claim)
     return ids
 
 

@@ -1,0 +1,31 @@
+{
+  "contract": "zaxy.v1.external-validation-report",
+  "status": "example",
+  "validator": {
+    "name": "External validator name or project",
+    "external_to_implementation_session": true
+  },
+  "date": "2026-05-31",
+  "zaxy_version_or_commit": "v1.0.0-rc",
+  "environment": {
+    "operating_system": "Linux",
+    "shell": "bash",
+    "python_version": "3.13",
+    "install_source": "pipx install zaxy-memory"
+  },
+  "validation_path": "first_run_local",
+  "commands": [
+    "zaxy init",
+    "zaxy memory bootstrap --eventloom-path .eventloom",
+    "zaxy memory checkout \"current project memory and next useful action\" --eventloom-path .eventloom",
+    "zaxy doctor --beta-readiness"
+  ],
+  "time_to_first_useful_checkout_seconds": 180,
+  "unexpected_sidecar_or_credential_required": false,
+  "evidence_links": [
+    "https://github.com/syndicalt/zaxy/issues/REPLACE"
+  ],
+  "friction_or_failure": "Replace with observed friction, failure, or no blocking friction.",
+  "release_decision": "pass_with_follow_up",
+  "supports_positioning": true
+}

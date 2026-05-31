@@ -6,7 +6,13 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from zaxy.adapters._common import FabricFactory, assembly_payload, default_fabric_factory
+from zaxy.adapters._common import (
+    FabricFactory,
+    assembly_payload,
+    default_fabric_factory,
+    native_checkout_error_payload,
+    native_checkout_payload,
+)
 from zaxy.adapters.coordination import CoordinationAdapter
 from zaxy.context import Context
 from zaxy.core import ContextAssembly
@@ -86,6 +92,15 @@ class CrewAIMemoryAdapter:
                 max_recent_events=self.max_recent_events,
             )
             payload = self._checkout_payload(checkout.to_dict())
+            if crew is not None:
+                payload["zaxy"]["crew"] = crew
+            if agent is not None:
+                payload["zaxy"]["agent"] = agent
+            if task_id is not None:
+                payload["zaxy"]["task_id"] = task_id
+            return payload
+        except Exception as exc:
+            payload = self._checkout_error_payload(resolved_query, exc)
             if crew is not None:
                 payload["zaxy"]["crew"] = crew
             if agent is not None:
@@ -201,13 +216,27 @@ class CrewAIMemoryAdapter:
         return {
             "memory": str(checkout.get("prompt") or ""),
             "contexts": [],
-            "zaxy": {
-                "kind": "memory_checkout",
-                "session_id": checkout.get("session_id", self.session_id),
-                "query": checkout.get("query"),
-                "current_fact_count": len(checkout.get("current_facts", []) or []),
-                "warning_count": len(checkout.get("warnings", []) or []),
-            },
+            "zaxy": native_checkout_payload(
+                checkout,
+                framework="crewai",
+                operation="before_task",
+                source=self.source,
+                session_id=self.session_id,
+            ),
+        }
+
+    def _checkout_error_payload(self, query: str, exc: Exception) -> dict[str, Any]:
+        return {
+            "memory": "",
+            "contexts": [],
+            "zaxy": native_checkout_error_payload(
+                exc,
+                framework="crewai",
+                operation="before_task",
+                source=self.source,
+                session_id=self.session_id,
+                query=query,
+            ),
         }
 
 

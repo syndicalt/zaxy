@@ -18,6 +18,7 @@
   <main class="doc-layout">
     <article class="doc-content">
       <h1 id="zaxy-coordinate-roadmap">Zaxy Coordinate Roadmap</h1>
+      <p>For the shortest working workflow, see <a href="coordinate-quickstart.html">Coordinate Quickstart</a>.</p>
       <p>Zaxy&#x27;s next product direction is high-level coordination memory for multi-agent projects. The core claim is simple: isolated worker agents should be able to investigate, report, and hand off work without contaminating the authoritative project history. The coordinator promotes only accepted, cited findings into the parent mission session.</p>
       <p>This extends the existing Zaxy architecture instead of replacing it. Eventloom remains the append-only source of truth, projection backends remain queryable views, Memory Checkout remains the model-facing context contract, and MCP remains the primary integration surface. The new package gives those primitives a product-level workflow for agent teams.</p>
       <h2 id="current-implementation-status">Current Implementation Status</h2>
@@ -25,14 +26,19 @@
       <ul>
         <li><code>src/zaxy/coordination.py</code> provides replay-backed mission, worker, assignment, finding, review, promotion, and brief state over session-sharded Eventloom logs.</li>
         <li><code>MemoryFabric</code> exposes thin async coordination methods so Python callers can use the workflow without going through the CLI.</li>
-        <li><code>zaxy coordinate start</code>, <code>worker create</code>, <code>assign</code>, <code>report</code>, <code>decide</code>, <code>promote</code>, <code>brief</code>, <code>checkout</code>, <code>ledger</code>, <code>approval-packet</code>, <code>apply-approval</code>, <code>handoff</code>, and <code>benchmark</code> are available as CLI commands.</li>
+        <li><code>zaxy coordinate start</code>, <code>worker create</code>, <code>assign</code>, <code>report</code>, <code>decide</code>, <code>promote</code>, <code>brief</code>, <code>inspect</code>, <code>checkout</code>, <code>ledger</code>, <code>approval-packet</code>, <code>apply-approval</code>, <code>handoff</code>, and <code>benchmark</code> are available as CLI commands.</li>
+        <li>Built-in mission templates for software delivery, research review, benchmark investigation, and release validation are available through <code>zaxy coordinate template list</code>, <code>show</code>, and <code>apply</code>. Applying a template creates the mission, workers, and assignments as normal Eventloom-backed Coordinate events.</li>
         <li>MCP exposes coordination tools for start, worker create, assignment, finding report, merge brief, accepted checkout, performance ledger, approval packet, approval application, review, promote, and handoff.</li>
         <li>Deterministic extractors project the coordination event taxonomy into missions, workers, assignments, findings, reviews, promotions, conflicts, decisions, and handoffs.</li>
         <li><code>src/zaxy/coordination_benchmark.py</code> implements the first deterministic CoordinationBench workload, exact scoring, explicit stale-claim detection, a flat-eventlog contamination baseline, and JSON/markdown report writing.</li>
         <li>The local dashboard exposes a read-only Coordinate mission view backed by Eventloom replay, including mission brief, accepted checkout diagnostics, worker ledger, and approval packet payloads.</li>
         <li>Static review export is available as replay-only Markdown with a JSON wrapper through <code>zaxy coordinate review-export</code> and the dashboard review-export API.</li>
+        <li><code>zaxy coordinate inspect</code> provides a replay-only operator view that combines the mission brief, worker ledgers, findings by status, evidence, review decisions, promoted state, conflicts, approval packet, and handoff records without requiring users to read raw Eventloom JSONL.</li>
+        <li><code>zaxy coordinate audit-report</code> generates a read-only mission audit report in Markdown or JSON from Eventloom replay, citing session, sequence, and hash metadata for mission, worker, assignment, finding, review, promotion, conflict, and handoff events.</li>
+        <li>Approval packets and review exports include explicit next-action guidance for pending, conflicted, stale, and evidence-poor findings so reviewers do not have to infer whether to add evidence, resolve conflicts, refresh stale sources, or proceed with a normal review decision.</li>
         <li>Dashboard human review controls are available behind explicit opt-in. The dashboard remains read-only by default, but <code>--enable-coordinate-review</code> enables single-finding review/promote actions and JSON approval packet application through the same Eventloom-backed coordination review path.</li>
         <li>CoordinationBench now reports same-harness local baselines for flat transcript concatenation, markdown notes, and BM25 over worker logs.</li>
+        <li>The <code>coordination-real-v1</code> report is published at <code>reports/benchmarks/coordination-real-v1/coordination-benchmark.md</code> with Zaxy metrics, local baselines, disclosure-only adapter status, limitations, and reproduction commands from the tracked workload in <code>benchmarks/coordination-real-v1/coordination-workload.json</code>.</li>
         <li>CoordinationBench includes a competitor adapter disclosure contract for Mem0, Agent Memory, and ActiveGraph. Until a pinned adapter and workload replay contract is configured, these entries are reported as <code>not_run</code> with <code>disclosure_only</code> claim status rather than fake scores. Pinned external result files can be ingested with <code>--competitor-result NAME=PATH</code>, but Zaxy recomputes public metrics locally from case outputs and rejects fingerprint mismatches, duplicate case outputs, and adapter manifest mismatches. Completed same-harness result ingests now carry a result fingerprint, generated time, case count, and adapter manifest in JSON, with the key provenance surfaced in the Markdown report.</li>
         <li>CoordinationBench can execute pinned same-harness competitor runner manifests with <code>--competitor-runner NAME=PATH</code>. The runner contract writes the frozen workload, executes a manifest <code>run_command</code> argv list without a shell, requires the adapter to write the standard result file, and still recomputes all public metrics locally through the same strict scorer. Duplicate adapter names across result ingestion and runner execution are rejected.</li>
         <li>Each benchmark run now writes a <code>competitor-runner-manifests/</code> manifest pack for Mem0, Agent Memory, and ActiveGraph. These JSON templates are bound to the frozen workload fingerprint and include the exact result path each adapter must write, but they are marked <code>template: true</code> and contain a placeholder <code>run_command</code>; Zaxy refuses to execute unfinalized templates, preventing placeholder manifests from turning into public same-harness claims.</li>
@@ -40,8 +46,8 @@
         <li>Deterministic source-state conflict detection is implemented. Findings that cite the same source/file reference with different <code>source_sha256</code> values are surfaced as <code>source_state</code> conflicts in briefs, diagnostic checkout, approval packets, and prompt diagnostics. <code>zaxy coordinate detect-conflicts</code> can materialize those conflicts as idempotent <code>coordination.conflict.detected</code> events for graph projection.</li>
         <li>Semantic conflict detection now has an explicit opt-in adapter hook in the coordination manager. Adapter output is labeled <code>semantic</code>, validated against current mission finding IDs, and remains disabled unless configured by the caller. A deterministic local lexical polarity adapter is available via <code>LocalSemanticConflictDetector</code>, <code>build_semantic_conflict_detector</code>, and <code>zaxy coordinate brief --semantic-conflicts lexical</code>. An optional hosted HTTP adapter is available through the same factory with a strict <code>zaxy-coordination-semantic-v1</code> response contract, bounded evidence payloads, bearer-token secret support, timeout control, min-confidence filtering, and local validation of duplicate or unknown finding IDs before adapter output can affect mission state.</li>
         <li>Optional git and test-result metadata capture is available for worker findings. <code>zaxy coordinate report --git-metadata &lt;path&gt;</code> records read-only branch, head, worktree, changed-file, worktree-list, dirty-state, and bounded diff-stat evidence using non-locking git commands, while <code>--test-result-json</code> or <code>--test-command</code>/<code>--test-status</code> attach structured test-result evidence without running tests inside Zaxy.</li>
-        <li>A dependency-light Coordinate adapter contract is available through <code>zaxy.adapters.coordination.CoordinationAdapter</code>. It wraps mission, worker, assignment, finding, brief, checkout, approval, and handoff operations as JSON-friendly payloads without spawning workers or inferring findings from transcripts. LangGraph and CrewAI now expose thin Coordinate helper nodes/steps, and <code>zaxy coordinate adapter-template</code> prints starters for Codex-style local agents, LangGraph, CrewAI, and generic MCP clients.</li>
-        <li><code>examples/coordinate_three_worker_project.py</code> demonstrates a complete three-worker mission with conflicting worker claims, accepted promotion, clean accepted-state checkout, and final handoff.</li>
+        <li>A dependency-light Coordinate adapter contract is available through <code>zaxy.adapters.coordination.CoordinationAdapter</code>. It wraps mission, worker, assignment, finding, conflict detection, brief, checkout, approval, and handoff operations as JSON-friendly payloads without spawning workers or inferring findings from transcripts. LangGraph and CrewAI now expose thin Coordinate helper nodes/steps, and <code>zaxy coordinate adapter-template</code> prints starters for Codex-style local agents, LangGraph, CrewAI, and generic MCP clients.</li>
+        <li><code>examples/coordinate_three_worker_project.py</code> demonstrates a complete three-worker mission with conflicting worker claims, approval packet export, approval decision application, accepted promotion, conflict/defer decisions, mission inspection, audit reporting, clean accepted-state checkout, and final handoff.</li>
       </ul>
       <p>Still pending:</p>
       <ul>
@@ -147,17 +153,22 @@
       <h2 id="cli-surface">CLI Surface</h2>
       <p>The first package should be usable from a shell without a custom orchestrator:</p>
       <pre><code class="language-bash">zaxy coordinate start &quot;ship auth refactor&quot; --mission auth-main
+zaxy coordinate template list
+zaxy coordinate template show software-delivery
+zaxy coordinate template apply release-validation --mission release-rc1
 zaxy coordinate worker create --mission auth-main --worker auth-api
 zaxy coordinate assign --mission auth-main --worker auth-api &quot;trace API auth failures&quot;
 zaxy coordinate report --mission auth-main --worker auth-api --summary &quot;API failures trace to expired JWKS cache handling&quot;
 zaxy coordinate brief --mission auth-main
+zaxy coordinate inspect --mission auth-main
 zaxy coordinate decide --mission auth-main --finding finding-id --status accepted
 zaxy coordinate promote --mission auth-main --finding finding-id
 zaxy coordinate checkout --mission auth-main
 zaxy coordinate ledger --mission auth-main
 zaxy coordinate approval-packet --mission auth-main
 zaxy coordinate apply-approval --mission auth-main --decisions-json &#x27;[{&quot;finding_id&quot;:&quot;finding-id&quot;,&quot;status&quot;:&quot;accepted&quot;,&quot;promote&quot;:true}]&#x27;
-zaxy coordinate handoff --mission auth-main</code></pre>
+zaxy coordinate handoff --mission auth-main
+zaxy coordinate audit-report --mission auth-main</code></pre>
       <p>The CLI should emit JSON with <code>--json</code> and concise operator text by default. No command should require a graph service when Eventloom replay can answer the basic request. Graph-backed conflict detection and ranking can degrade with explicit warnings.</p>
       <h2 id="mcp-surface">MCP Surface</h2>
       <p>Add model-facing MCP tools that mirror the CLI:</p>

@@ -1,0 +1,134 @@
+{
+  "memory_bootstrap": {
+    "eventloom_latest_seq": 1,
+    "mode": "session_start",
+    "prompt_contains_checkout_rule": true,
+    "recommended_next_tool": "memory_checkout",
+    "session_id": "agent-1",
+    "startup_sequence": [
+      {
+        "argument_keys": [
+          "current_task",
+          "session_id"
+        ],
+        "tool": "memory_capabilities"
+      },
+      {
+        "argument_keys": [
+          "query",
+          "session_id"
+        ],
+        "tool": "memory_checkout"
+      }
+    ]
+  },
+  "memory_checkout": {
+    "current_fact_count": 1,
+    "diagnostics": {
+      "current_citation_count": 1,
+      "feedback_tool": "memory_feedback",
+      "warning_count": 0
+    },
+    "feedback_template_keys": [
+      "actor",
+      "citation",
+      "entity_name",
+      "entity_type",
+      "feedback",
+      "importance",
+      "query",
+      "score",
+      "source"
+    ],
+    "first_current_fact": {
+      "citation": "eventloom://agent-1/events/1882#checkout",
+      "content": "Memory checkout is the context contract.",
+      "source_lane": "graph"
+    },
+    "prompt_sections": [
+      "# Memory Checkout",
+      "## Checkout Quality",
+      "## Checkout Guidance",
+      "## Checkout Diagnostics"
+    ],
+    "quality": {
+      "answerability": "answer_from_memory",
+      "confidence": 0.75,
+      "reasons": [
+        "Retrieved current facts with Eventloom citations."
+      ],
+      "required_action": null
+    },
+    "session_id": "agent-1",
+    "token_efficiency_keys": [
+      "current_fact_count",
+      "evidence_count",
+      "facts_per_1k_prompt_tokens",
+      "prompt_tokens"
+    ]
+  },
+  "memory_query": {
+    "first_result": {
+      "citation": "eventloom://default/events/1#aaaaaaaaaaaa",
+      "content": "Alice (user)",
+      "score": 1.0,
+      "score_explanation_keys": [
+        "source",
+        "weighted_score"
+      ],
+      "source": "exact"
+    },
+    "result_count": 1
+  },
+  "memory_verbatim": {
+    "first_result": {
+      "citation_hash_length": 64,
+      "citation_prefix": "eventloom://agent/events/1",
+      "content": "Git for agent memory needs verbatim source recall.",
+      "metadata_keys": [
+        "event_seq",
+        "event_thread",
+        "event_timestamp",
+        "event_type",
+        "source_end_line",
+        "source_path",
+        "source_start_line"
+      ],
+      "source": "verbatim",
+      "source_kind": "document"
+    },
+    "result_count": 1
+  },
+  "context_assemble": {
+    "context_count": 1,
+    "first_context": {
+      "content": "MMR diversity (decision)",
+      "score": 0.9,
+      "source": "keyword"
+    },
+    "prompt_contains_context": true,
+    "replay_event_count": 1,
+    "session_id": "agent-1",
+    "warning_count": 0
+  },
+  "memory_feedback": {
+    "event_type": "memory.reinforced",
+    "hash_length": 64,
+    "seq": 1
+  },
+  "coordination_checkout": {
+    "accepted_count": 1,
+    "conflict_count": 0,
+    "first_accepted": {
+      "evidence_kinds": [
+        "command"
+      ],
+      "status": "accepted",
+      "summary": "API failures trace to expired JWKS cache handling.",
+      "worker_id": "auth-api"
+    },
+    "mission_id": "auth-main",
+    "pending_count": 0,
+    "prompt_contains_accepted_state": true
+  }
+}

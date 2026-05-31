@@ -62,12 +62,18 @@ Eventloom (immutable JSONL log)  →  Hybrid Extraction  →  Embedded Kuzu grap
       <h2 id="public-site-and-documentation">Public Site and Documentation</h2>
       <ul>
         <li>Public static site: <code>site/index.html</code></li>
-        <li>Zaxy 0.4.0 release: <code>docs/announcements/zaxy-0.4.0.md</code></li>
+        <li>Zaxy 1.0.0 release: <code>docs/announcements/zaxy-v1.0.md</code></li>
+        <li>Zaxy 1.0.0 X article draft: <code>docs/announcements/zaxy-v1.0-x-article.md</code></li>
+        <li>Zaxy Coordinate/Collaborate demo media: <code>docs/media/zaxy-collaborate-demo.md</code></li>
         <li>Zaxy Coordinate announcement: <code>docs/announcements/zaxy-coordinate.md</code></li>
+        <li>Zaxy 0.4.0 archive: <code>docs/announcements/zaxy-0.4.0.md</code></li>
         <li>Coordinate roadmap: <code>docs/coordinate-roadmap.md</code></li>
         <li>Why Zaxy: <code>docs/why-zaxy.md</code></li>
         <li>Getting started: <code>docs/getting-started.md</code></li>
         <li>First-run validation: <code>docs/first-run-validation.md</code></li>
+        <li>Public external verification request: <code>docs/external-validation.md</code></li>
+        <li>MCP quickstart: <code>docs/mcp-quickstart.md</code></li>
+        <li>Coordinate quickstart: <code>docs/coordinate-quickstart.md</code></li>
         <li>Architecture: <code>docs/architecture.md</code></li>
         <li>Configuration: <code>docs/configuration.md</code></li>
         <li>MCP interface: <code>docs/mcp.md</code></li>
@@ -75,11 +81,19 @@ Eventloom (immutable JSONL log)  →  Hybrid Extraction  →  Embedded Kuzu grap
         <li>Graph schema: <code>docs/graph-schema.md</code></li>
         <li>Retrieval: <code>docs/retrieval.md</code></li>
         <li>Benchmarks: <code>docs/benchmarks.md</code></li>
+        <li>Benchmark contributions: <code>docs/benchmark-contributions.md</code></li>
         <li>LLM packet analyzer: <code>docs/packet-analyzer.md</code></li>
         <li>Embeddings: <code>docs/embeddings.md</code></li>
         <li>Security: <code>docs/security.md</code></li>
         <li>Operations and deployment: <code>docs/operations.md</code>, <code>docs/deployment.md</code>, <code>docs/runbook.md</code></li>
         <li>Python API: <code>docs/api.md</code></li>
+        <li>API inventory: <code>docs/api-inventory.md</code></li>
+        <li>Stability commitment: <code>docs/stability-commitment.md</code></li>
+        <li>Migration guide: <code>docs/migration.md</code></li>
+        <li>v0.9 gate audit: <code>docs/v09-gate-audit.md</code></li>
+        <li>v1.0 gate audit: <code>docs/v10-gate-audit.md</code></li>
+        <li>Release validation checklist: <code>docs/release-validation-checklist.md</code></li>
+        <li>Contributing: <code>CONTRIBUTING.md</code></li>
       </ul>
       <h2 id="key-features">Key Features</h2>
       <ul>
@@ -176,7 +190,7 @@ Eventloom (immutable JSONL log)  →  Hybrid Extraction  →  Embedded Kuzu grap
       <ul>
         <li><strong>Tests first</strong> (Karpathy rule). Every public function has a test.</li>
         <li><strong>Unit tests</strong> mock external services. <strong>Integration tests</strong> use Docker for optional sidecar backends.</li>
-        <li><strong>Coverage gate: ≥90%</strong> enforced by CI.</li>
+        <li><strong>Coverage gate: ≥92%</strong> enforced by CI.</li>
         <li><strong>Lint/format</strong>: <code>ruff</code>. <strong>Types</strong>: <code>mypy</code>.</li>
       </ul>
       <pre><code class="language-bash"># Run full suite with coverage gate
@@ -220,7 +234,7 @@ scripts/validate-deployment.sh --root .
 # Build and validate Python release artifacts
 scripts/build-dist.sh --root .
 
-# Verify local release metadata and PyPI Trusted Publishing configuration
+# Verify local release metadata, PyPI Trusted Publishing, and LangGraph smoke
 zaxy doctor --release-smoke
 
 # Validate public site and documentation links
@@ -235,10 +249,10 @@ zaxy doctor --beta-readiness
 
 # Go-live release gate
 scripts/release-check.sh --root .</code></pre>
-      <p>The full suite must stay at or above 90% coverage before a sprint is complete.</p>
+      <p>The full suite must stay at or above 92% coverage before a sprint is complete.</p>
       <h2 id="release-publishing">Release Publishing</h2>
       <p>The PyPI distribution name is <code>zaxy-memory</code> because <code>zaxy</code> is already occupied on PyPI. Published releases build from GitHub Actions and upload to &lt;https://pypi.org/project/zaxy-memory/&gt; using PyPI Trusted Publishing with GitHub OIDC. The import package and console command remain <code>zaxy</code>.</p>
-      <p>Before publishing, run <code>zaxy doctor --release-smoke</code> to verify the package version, changelog entry, release workflow, and tokenless publishing posture.</p>
+      <p>Before publishing, run <code>zaxy doctor --release-smoke</code> to verify the package version, changelog entry, release workflow, tokenless publishing posture, and dependency-light LangGraph example.</p>
       <h2 id="license">License</h2>
       <p>MIT</p>
     </article>

@@ -1,9 +1,21 @@
 # MCP Interface
 
+For a concise local setup path, see [MCP Quickstart](mcp-quickstart.md).
+
 MCP is Zaxy's primary integration surface. The server exposes memory operations
 as typed tools so LangGraph, Claude Desktop, custom agents, or any MCP-capable
 client can use the same memory system without linking directly against Python
 application code.
+
+## Model Call Rhythm
+
+Use Zaxy tools in this order:
+
+1. At session start, call `memory_bootstrap`.
+2. Before substantial work, call `memory_checkout`.
+3. For multi-agent missions, use Coordinate tools to record worker-local
+   findings and promote only accepted state.
+4. After using retrieved context, call `memory_feedback`.
 
 `memory_append(event_type, actor, payload, thread?)` appends a typed event to
 the Eventloom log for the selected session, extracts graph entities and edges,
@@ -50,7 +62,8 @@ action. Skill updates are never implicit checkout side effects.
 `memory_replay(session_id, from_seq?)` rebuilds session history from the
 Eventloom log. This is useful for handoffs, audits, and debugging. In remote SSE
 mode, the authenticated session scope is enforced so a client cannot replay a
-different session.
+different session. For long sessions, the CLI replay tool can inspect bounded
+Eventloom ranges with `zaxy replay .eventloom/work.jsonl --from-seq N --to-seq M`.
 
 `memory_invalidate(entity_name, entity_type, invalid_at)` closes the validity
 window for a graph fact without deleting history. This lets agents correct
@@ -435,3 +448,64 @@ See [api.md](api.md) for Python-level calls, [configuration.md](configuration.md
 for environment variables, and [security.md](security.md) for remote transport
 hardening. The public overview is [site/index.html](../site/index.html), while
 [README.md](../README.md) keeps the short command list.
+
+## MCP Tool Contract Snapshot
+
+The v0.6 public-surface guardrail is
+`docs/examples/mcp-tool-contract.json`. That MCP tool contract snapshot records
+the tool count, tool names, descriptions, required fields, and full input schema
+for every public MCP tool exposed by `src/zaxy/mcp_server.py`.
+
+Treat changes to that fixture as public contract changes. A schema change should
+be paired with docs, tests, and a changelog note explaining whether the affected
+tool is stable, beta, experimental, or internal. The snapshot is intentionally
+plain JSON so MCP clients and external adapter authors can inspect it without
+importing Python.
+
+## Representative Response Snapshots
+
+The v0.6 response-shape guardrail is
+`docs/examples/mcp-response-snapshots.json`. It stores representative,
+normalized responses for `memory_bootstrap`, `memory_checkout`,
+`memory_query`, `memory_verbatim`, `context_assemble`, `memory_feedback`, and
+`coordination_checkout`, covering startup, checkout, graph retrieval,
+verbatim source recall, prompt context assembly, feedback reinforcement, and
+accepted coordination state.
+
+The snapshot deliberately preserves stable client fields rather than full prompt
+text. It covers startup sequence shape, recommended next tool, Eventloom status,
+checkout fact/citation diagnostics, quality status, feedback template keys,
+token-efficiency keys, required prompt sections, graph retrieval score
+explanation keys, verbatim source metadata keys, assembled context counts,
+feedback event identity, and accepted coordination checkout counts. Update it
+only when the client-facing response contract intentionally changes.
+
+## Structured Error Payloads
+
+MCP tool dispatch returns structured JSON error content instead of exposing raw
+Python exceptions to clients. The stable shape is:
+
+```json
+{
+  "error": {
+    "code": "unknown_tool",
+    "message": "Unknown tool: unknown_tool",
+    "remediation": "Call list_tools and retry with one of the advertised tool names."
+  }
+}
+```
+
+The current error codes are:
+
+- `unknown_tool`: the requested tool name is not in the advertised MCP tool
+  list.
+- `invalid_request`: the tool name exists, but the request payload fails
+  validation or does not match the input schema.
+- `internal_error`: the request reached server execution and failed for an
+  unexpected service, projection, or runtime reason.
+
+Every error payload includes a human-readable `message` and `remediation` so
+MCP clients can surface actionable recovery text without parsing logs. Failed
+tool calls are still captured as lifecycle observations with the stable error
+summary, but secrets from arguments remain subject to the existing redaction
+path.

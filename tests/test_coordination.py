@@ -167,9 +167,9 @@ def test_three_worker_coordinate_example_proves_accepted_checkout_is_clean(tmp_p
     assert result["mission_id"] == "auth-main"
     assert result["worker_count"] == 3
     assert result["accepted_count"] == 1
-    assert result["pending_count"] == 2
+    assert result["pending_count"] == 0
     assert result["conflict_count"] >= 1
-    assert result["excluded_pending_count"] == 2
+    assert result["excluded_pending_count"] == 0
     assert "expired JWKS cache" in result["checkout_prompt"]
     assert "missing browser refresh" not in result["checkout_prompt"]
 
@@ -441,6 +441,86 @@ def test_coordination_approval_packet_exports_pending_and_conflicted_findings(tm
     ]
 
 
+def test_coordination_approval_packet_recommends_next_actions(tmp_path: Path) -> None:
+    """Approval packets should make pending, conflicted, stale, and evidence-poor actions explicit."""
+    manager = CoordinationManager(eventloom_path=tmp_path / ".eventloom")
+    manager.start_mission("auth-main", objective="Ship auth refactor", actor="lead")
+    manager.create_worker("auth-main", "auth-api", actor="lead")
+    manager.create_worker("auth-main", "auth-ui", actor="lead")
+    pending = manager.report_finding(
+        "auth-main",
+        "auth-api",
+        summary="Command-backed API finding is ready for review.",
+        actor="auth-api-agent",
+        evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
+    )
+    needs_evidence = manager.report_finding(
+        "auth-main",
+        "auth-ui",
+        summary="Browser refresh claim still needs a trace.",
+        actor="auth-ui-agent",
+        evidence=[],
+    )
+    stale = manager.report_finding(
+        "auth-main",
+        "auth-ui",
+        summary="Stale config snapshot should not be promoted.",
+        actor="auth-ui-agent",
+        evidence=[
+            {
+                "kind": "file",
+                "reference": "src/auth/config.py",
+                "status": "superseded",
+                "superseded_by": "decision:jwks-cache",
+            }
+        ],
+    )
+    accepted_counterclaim = manager.report_finding(
+        "auth-main",
+        "auth-api",
+        summary="Accepted API finding reports the cache failure cause.",
+        actor="auth-api-agent",
+        evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
+        claim_key="auth.failure.cause",
+        claim_value="expired-jwks-cache",
+    )
+    conflict = manager.report_finding(
+        "auth-main",
+        "auth-ui",
+        summary="UI worker reports a different failure cause.",
+        actor="auth-ui-agent",
+        evidence=[{"kind": "file", "reference": "src/ui/session.ts:42"}],
+        claim_key="auth.failure.cause",
+        claim_value="missing-browser-refresh",
+    )
+    manager.review_finding("auth-main", accepted_counterclaim.finding_id, status="accepted", actor="lead")
+    manager.promote_finding("auth-main", accepted_counterclaim.finding_id, actor="lead")
+
+    packet = manager.approval_packet("auth-main").to_dict()
+    findings = {finding["finding_id"]: finding for finding in packet["findings"]}
+
+    assert [action["code"] for action in findings[pending.finding_id]["next_actions"]] == [
+        "review_finding"
+    ]
+    assert findings[needs_evidence.finding_id]["next_actions"][0] == {
+        "code": "add_evidence",
+        "label": "Attach evidence before accepting or promoting this finding.",
+        "recommended_status": "deferred",
+    }
+    assert findings[stale.finding_id]["next_actions"][0] == {
+        "code": "refresh_stale_evidence",
+        "label": "Refresh superseded or stale evidence before promotion.",
+        "recommended_status": "deferred",
+        "superseded_by": "decision:jwks-cache",
+    }
+    assert findings[conflict.finding_id]["next_actions"][0] == {
+        "code": "resolve_conflict",
+        "label": "Resolve conflicting claim keys before accepting or promoting this finding.",
+        "recommended_status": "conflicted",
+        "conflict_keys": ["auth.failure.cause"],
+    }
+
+
 def test_coordination_review_export_renders_static_markdown_without_writes(tmp_path: Path) -> None:
     """Review export should be portable, readable, and replay-only."""
     eventloom_path = tmp_path / ".eventloom"
@@ -468,12 +548,79 @@ def test_coordination_review_export_renders_static_markdown_without_writes(tmp_p
     assert review_export.markdown.startswith("# Zaxy Coordinate Review: auth-main\n")
     assert "Objective: Ship auth refactor" in review_export.markdown
     assert "Findings needing review: 1" in review_export.markdown
+    assert "- Next action: review_finding - Review and decide whether to accept, reject, defer, or mark conflicted." in review_export.markdown
     assert f"## {pending.finding_id}" in review_export.markdown
     assert "Status options: accepted, conflicted, deferred, rejected" in review_export.markdown
     assert "- Evidence: command `pytest tests/test_auth.py -q`" in review_export.markdown
     assert "```json" in review_export.markdown
     assert '"promote": false' in review_export.markdown
     assert review_export.to_dict()["read_only"] is True
+    after_events = {
+        path.name: len(manager.session_manager.replay(path.stem).events)
+        for path in sorted(eventloom_path.glob("*.jsonl"))
+    }
+    assert after_events == before_events
+
+
+def test_coordination_audit_report_cites_eventloom_sequence_and_hash(tmp_path: Path) -> None:
+    """Mission audit reports should be replay-only and cite Eventloom provenance for every step."""
+    eventloom_path = tmp_path / ".eventloom"
+    manager = CoordinationManager(eventloom_path=eventloom_path)
+    mission = manager.start_mission("auth-main", objective="Ship auth refactor", actor="lead")
+    worker = manager.create_worker("auth-main", "auth-api", actor="lead")
+    assignment = manager.assign("auth-main", "auth-api", "trace API auth failures", actor="lead")
+    finding = manager.report_finding(
+        "auth-main",
+        "auth-api",
+        summary="Expired JWKS cache causes API failures.",
+        actor="auth-api-agent",
+        evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
+    )
+    review = manager.review_finding(
+        "auth-main",
+        finding.finding_id,
+        status="accepted",
+        rationale="Command-backed.",
+        actor="lead",
+    )
+    promotion = manager.promote_finding("auth-main", finding.finding_id, actor="lead")
+    handoff = manager.create_handoff(
+        "auth-main",
+        summary="Auth mission ready for release.",
+        next_steps=["Release branch"],
+        actor="lead",
+    )
+    before_events = {
+        path.name: len(manager.session_manager.replay(path.stem).events)
+        for path in sorted(eventloom_path.glob("*.jsonl"))
+    }
+
+    report = manager.audit_report("auth-main")
+
+    assert report.mission_id == "auth-main"
+    assert report.read_only is True
+    assert report.summary["event_count"] == 7
+    assert report.summary["worker_count"] == 1
+    assert report.summary["accepted_findings"] == 1
+    assert [event["event_type"] for event in report.events] == [
+        "coordination.mission.created",
+        "coordination.worker.created",
+        "coordination.assignment.created",
+        "coordination.finding.reported",
+        "coordination.finding.reviewed",
+        "coordination.finding.promoted",
+        "coordination.handoff.created",
+    ]
+    for result in [mission, worker, assignment, finding, review, promotion, handoff]:
+        assert {
+            "session_id": result.event.thread,
+            "event_seq": result.event.seq,
+            "event_hash": result.event.hash,
+        }.items() <= report.events[[event["event_hash"] for event in report.events].index(result.event.hash)].items()
+        assert f"seq={result.event.seq}" in report.markdown
+        assert result.event.hash in report.markdown
+    assert "## Eventloom Audit Trail" in report.markdown
+    assert "coordination.finding.promoted" in report.markdown
     after_events = {
         path.name: len(manager.session_manager.replay(path.stem).events)
         for path in sorted(eventloom_path.glob("*.jsonl"))

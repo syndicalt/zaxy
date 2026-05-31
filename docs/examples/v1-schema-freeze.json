@@ -1,0 +1,48 @@
+{
+  "contract": "zaxy.v1.schema-freeze",
+  "status": "freeze-candidate",
+  "version": "0.9",
+  "change_policy": {
+    "stable_or_beta": "migration_event_required",
+    "experimental": "release_note_required",
+    "internal": "no_public_compatibility_promise"
+  },
+  "migration_event_type": "schema.migration.proposed",
+  "surfaces": [
+    {
+      "name": "mcp_tool_contract",
+      "status": "Beta",
+      "path": "docs/examples/mcp-tool-contract.json"
+    },
+    {
+      "name": "mcp_response_snapshots",
+      "status": "Beta",
+      "path": "docs/examples/mcp-response-snapshots.json"
+    },
+    {
+      "name": "native_integration_contract",
+      "status": "Beta",
+      "path": "docs/examples/native-integration-contract.json"
+    },
+    {
+      "name": "memory_checkout_contract",
+      "status": "Beta",
+      "path": "docs/examples/memory-checkout-contract.json"
+    },
+    {
+      "name": "api_inventory",
+      "status": "Beta",
+      "path": "docs/api-inventory.md"
+    },
+    {
+      "name": "eventloom_event_taxonomy",
+      "status": "Beta",
+      "path": "docs/agent-events.md"
+    },
+    {
+      "name": "benchmark_artifact_schemas",
+      "status": "Beta",
+      "path": "docs/benchmark-contributions.md"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-"""Dependency-light LangGraph adapter preview for Zaxy memory."""
+"""Dependency-light LangGraph native-beta adapter for Zaxy memory."""
 
 from __future__ import annotations
 
@@ -6,7 +6,13 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from zaxy.adapters._common import FabricFactory, assembly_payload, default_fabric_factory
+from zaxy.adapters._common import (
+    FabricFactory,
+    assembly_payload,
+    default_fabric_factory,
+    native_checkout_error_payload,
+    native_checkout_payload,
+)
 from zaxy.adapters.coordination import CoordinationAdapter
 from zaxy.context import Context
 from zaxy.core import ContextAssembly
@@ -83,6 +89,8 @@ class LangGraphMemoryAdapter:
                 max_recent_events=self.max_recent_events,
             )
             return self._with_checkout(state, checkout.to_dict())
+        except Exception as exc:
+            return self._with_checkout_error(state, resolved_query, exc)
         finally:
             await fabric.close()
 
@@ -182,13 +190,32 @@ class LangGraphMemoryAdapter:
         updated = dict(state)
         updated[self.context_key] = str(checkout.get("prompt") or "")
         updated[self.context_list_key] = []
-        updated[self.metadata_key] = {
-            "kind": "memory_checkout",
-            "session_id": checkout.get("session_id", self.session_id),
-            "query": checkout.get("query"),
-            "current_fact_count": len(checkout.get("current_facts", []) or []),
-            "warning_count": len(checkout.get("warnings", []) or []),
-        }
+        updated[self.metadata_key] = native_checkout_payload(
+            checkout,
+            framework="langgraph",
+            operation="before_model",
+            source=self.source,
+            session_id=self.session_id,
+        )
+        return updated
+
+    def _with_checkout_error(
+        self,
+        state: Mapping[str, Any],
+        query: str,
+        exc: Exception,
+    ) -> dict[str, Any]:
+        updated = dict(state)
+        updated[self.context_key] = ""
+        updated[self.context_list_key] = []
+        updated[self.metadata_key] = native_checkout_error_payload(
+            exc,
+            framework="langgraph",
+            operation="before_model",
+            source=self.source,
+            session_id=self.session_id,
+            query=query,
+        )
         return updated
 
 

@@ -1,79 +1,71 @@
-"""LangGraph integration example using Zaxy's native-preview adapter.
+"""Dependency-light LangGraph adapter example.
 
-Prerequisites::
-
-    pip install 'zaxy-memory[langgraph]'
-    docker compose up -d neo4j
-
-Run::
+Run:
 
     python examples/langgraph_memory.py
+
+The script uses Zaxy's LangGraph-shaped async node without importing LangGraph.
+Applications can plug the same node into a real LangGraph workflow when the
+optional `zaxy-memory[langgraph]` extra is installed.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
+import tempfile
+from pathlib import Path
 from typing import Any
 
-from langgraph.graph import END, StateGraph
-from typing_extensions import TypedDict
-
-from zaxy.adapters.langgraph import LangGraphMemoryAdapter, create_langgraph_memory_node
+from zaxy.adapters.langgraph import create_langgraph_memory_checkout_node
+from zaxy.core import MemoryFabric
 
 
-class AgentState(TypedDict, total=False):
-    """LangGraph state with messages and Zaxy-projected memory."""
+async def run_demo(eventloom_path: str | Path) -> dict[str, Any]:
+    """Run the dependency-light checkout node and return a stable smoke payload."""
+    session_id = "langgraph-demo"
+    fabric = MemoryFabric(eventloom_path=eventloom_path)
+    try:
+        await fabric.append(
+            "task.proposed",
+            actor="planner",
+            payload={
+                "task_id": "demo-task",
+                "summary": "LangGraph should call Memory Checkout before model work.",
+                "status": "pending",
+            },
+            session_id=session_id,
+        )
+    finally:
+        await fabric.close()
 
-    messages: list[dict[str, Any]]
-    zaxy_context: str
-    zaxy_contexts: list[Any]
-    zaxy: dict[str, Any]
-
-
-adapter = LangGraphMemoryAdapter(session_id="langgraph-demo", eventloom_path=".eventloom")
-
-
-async def llm_node(state: AgentState) -> AgentState:
-    """Placeholder LLM node that consumes Zaxy's projected context."""
-    user_msg = state["messages"][-1]["content"] if state.get("messages") else ""
-    context = state.get("zaxy_context", "")
-    response = f"Context:\n{context}\n\nUser said: {user_msg}\n\n[LLM response would go here]"
-    messages = [*state.get("messages", []), {"role": "assistant", "content": response}]
-    await adapter.record_assistant_turn(response)
-    await adapter.record_context_feedback(state, feedback="used", importance=0.7)
-    return {**state, "messages": messages}
-
-
-async def tool_node(state: AgentState) -> AgentState:
-    """Example tool node that records redacted execution metadata."""
-    await adapter.record_tool_call(
-        tool_name="demo_search",
-        status="ok",
-        arguments={"query": state["messages"][-1]["content"]},
-        result_summary="demo result",
+    node = create_langgraph_memory_checkout_node(
+        session_id=session_id,
+        eventloom_path=str(eventloom_path),
+        limit=5,
     )
-    return state
-
-
-def build_graph() -> Any:
-    """Build a LangGraph with Zaxy memory projection before model work."""
-    workflow = StateGraph(AgentState)
-    workflow.add_node("zaxy_memory", create_langgraph_memory_node(session_id="langgraph-demo"))
-    workflow.add_node("tool", tool_node)
-    workflow.add_node("llm", llm_node)
-    workflow.set_entry_point("zaxy_memory")
-    workflow.add_edge("zaxy_memory", "tool")
-    workflow.add_edge("tool", "llm")
-    workflow.add_edge("llm", END)
-    return workflow.compile()
+    state = await node(
+        {
+            "messages": [
+                {
+                    "role": "user",
+                    "content": "What should this LangGraph worker remember before acting?",
+                }
+            ]
+        }
+    )
+    return {
+        "session_id": session_id,
+        "has_zaxy_context": bool(state.get("zaxy_context")),
+        "kind": state.get("zaxy", {}).get("kind", "context_assembly"),
+    }
 
 
 async def main() -> None:
-    graph = build_graph()
-    result = await graph.ainvoke(
-        {"messages": [{"role": "user", "content": "What do we know about Zaxy memory?"}]}
-    )
-    print(result["messages"][-1]["content"])
+    """Run the example in a temporary Eventloom directory and print JSON."""
+    with tempfile.TemporaryDirectory(prefix="zaxy-langgraph-example-") as tmp:
+        payload = await run_demo(Path(tmp) / ".eventloom")
+    print(json.dumps(payload, indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":

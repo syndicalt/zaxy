@@ -35,7 +35,7 @@ def test_version_option_reports_project_version() -> None:
     result = runner.invoke(app, ["--version"])
 
     assert result.exit_code == 0
-    assert result.output.strip() == "zaxy 0.4.0"
+    assert result.output.strip() == "zaxy 1.0.0"
 
 
 def test_memory_status_prints_eventloom_sessions(tmp_path: Path) -> None:
@@ -90,7 +90,154 @@ def test_memory_status_json_output(tmp_path: Path) -> None:
     assert payload["sessions"][0]["session_id"] == "agent"
     assert payload["sessions"][0]["latest_seq"] == event.seq
     assert payload["sessions"][0]["latest_hash"] == event.hash
+
+
+def test_trace_export_json_correlates_eventloom_sessions(tmp_path: Path) -> None:
+    """trace export should expose neutral spans and edges from replayed Eventloom logs."""
+    eventloom_path = tmp_path / ".eventloom"
+    parent = EventLog(eventloom_path / "auth-main.jsonl")
+    worker = EventLog(eventloom_path / "auth-api.jsonl")
+    mission = parent.append(
+        "coordination.mission.created",
+        actor="lead",
+        payload={"mission_id": "auth-main", "objective": "Ship auth refactor"},
+        thread="auth-main",
+    )
+    model_call = parent.append(
+        "model.call.requested",
+        actor="openai-compatible",
+        payload={"provider": "openai-compatible", "model": "gpt-test", "mission_id": "auth-main"},
+        thread="auth-main",
+    )
+    finding = worker.append(
+        "coordination.finding.reported",
+        actor="auth-api-agent",
+        payload={"mission_id": "auth-main", "worker_id": "auth-api", "finding_id": "finding-auth-api-1"},
+        thread="auth-api",
+    )
+    parent.append(
+        "coordination.finding.promoted",
+        actor="lead",
+        payload={"mission_id": "auth-main", "finding_id": "finding-auth-api-1"},
+        thread="auth-main",
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["trace", "export", "--eventloom-path", str(eventloom_path), "--json"],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["format"] == "zaxy.trace.v0.8"
+    assert payload["summary"]["span_count"] == 4
+    assert payload["summary"]["model_call_count"] == 1
+    assert any(span["event_hash"] == mission.hash for span in payload["spans"])
+    edges = {(edge["source"], edge["target"], edge["relation"]) for edge in payload["edges"]}
+    assert (
+        f"event:{mission.thread}:{mission.seq}",
+        f"event:{model_call.thread}:{model_call.seq}",
+        "contains",
+    ) in edges
+    assert (
+        "event:auth-main:3",
+        f"event:{finding.thread}:{finding.seq}",
+        "promotes",
+    ) in edges
     assert payload["sessions"][0]["integrity_ok"] is True
+
+
+def test_trace_export_jsonl_writes_ingestion_records(tmp_path: Path) -> None:
+    """trace export --format jsonl should emit one ingestion record per trace object."""
+    eventloom_path = tmp_path / ".eventloom"
+    parent = EventLog(eventloom_path / "auth-main.jsonl")
+    mission = parent.append(
+        "coordination.mission.created",
+        actor="lead",
+        payload={"mission_id": "auth-main", "objective": "Ship auth refactor"},
+        thread="auth-main",
+    )
+    model_call = parent.append(
+        "model.call.requested",
+        actor="openai-compatible",
+        payload={"provider": "openai-compatible", "model": "gpt-test", "mission_id": "auth-main"},
+        thread="auth-main",
+    )
+    output = tmp_path / "trace.jsonl"
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "trace",
+            "export",
+            "--eventloom-path",
+            str(eventloom_path),
+            "--format",
+            "jsonl",
+            "--output",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert f"Wrote trace export: {output}" in result.output
+    records = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
+    assert [record["record_type"] for record in records] == [
+        "summary",
+        "session",
+        "span",
+        "span",
+        "edge",
+    ]
+    assert records[0]["format"] == "zaxy.trace.v0.8.jsonl"
+    assert records[1]["session_id"] == "auth-main"
+    assert records[2]["event_hash"] == mission.hash
+    assert records[3]["event_hash"] == model_call.hash
+    assert records[4] == {
+        "record_type": "edge",
+        "source": "event:auth-main:1",
+        "target": "event:auth-main:2",
+        "relation": "contains",
+    }
+
+
+def test_replay_cli_supports_inclusive_sequence_window(tmp_path: Path) -> None:
+    """replay --to-seq should avoid dumping the tail of long Eventloom logs."""
+    log = EventLog(tmp_path / "agent.jsonl")
+    log.append("goal.created", actor="user", payload={"title": "Goal"}, thread="agent")
+    middle = log.append("task.proposed", actor="assistant", payload={"summary": "Middle"}, thread="agent")
+    log.append("task.completed", actor="assistant", payload={"summary": "Done"}, thread="agent")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["replay", str(log.path), "--from-seq", "2", "--to-seq", "2", "--json"],
+    )
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["from_seq"] == 2
+    assert payload["to_seq"] == 2
+    assert payload["integrity"]["total_events"] == 3
+    assert [event["type"] for event in payload["events"]] == ["task.proposed"]
+    assert payload["events"][0]["hash"] == middle.hash
+
+
+def test_replay_cli_rejects_invalid_sequence_window(tmp_path: Path) -> None:
+    """replay should reject inverted windows before presenting partial output."""
+    log = EventLog(tmp_path / "agent.jsonl")
+    log.append("goal.created", actor="user", payload={"title": "Goal"}, thread="agent")
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        ["replay", str(log.path), "--from-seq", "3", "--to-seq", "2", "--json"],
+    )
+
+    assert result.exit_code == 2
+    assert "from_seq must be <= to_seq" in result.output
 
 
 def test_status_command_reports_embedded_projection_without_neo4j(tmp_path: Path) -> None:
@@ -162,6 +309,59 @@ def test_status_command_uses_repo_local_profile_for_bare_init(monkeypatch, tmp_p
     assert "embedded graph: OK" in result.output
     assert "will be created lazily" in result.output
     assert "Neo4j:" not in result.output
+
+
+def test_status_command_reports_memory_activation_remediation(tmp_path: Path) -> None:
+    """Top-level status should surface stale checkout posture with a runnable fix."""
+    now = datetime(2026, 5, 20, 12, 0, tzinfo=UTC)
+    log = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl")
+    checkout = log.append(
+        "memory.checkout.completed",
+        actor="assistant",
+        payload={
+            "token_efficiency": {
+                "prompt_tokens": 180,
+                "current_fact_count": 2,
+                "evidence_count": 2,
+                "facts_per_1k_prompt_tokens": 11.1,
+            }
+        },
+        thread="agent-1",
+        timestamp=now - timedelta(hours=3),
+    )
+    capture = log.append(
+        "transcript.turn",
+        actor="assistant",
+        payload={"source": "codex", "role": "assistant"},
+        thread="agent-1",
+        timestamp=now - timedelta(minutes=10),
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "status",
+            "--projection-backend",
+            "embedded",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--max-checkout-stale-minutes",
+            "60",
+            "--now",
+            now.isoformat(),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "embedded graph: OK" in result.output
+    assert "Memory activation: WARNING (Latest memory checkout is stale)" in result.output
+    assert f"latest checkout: seq={checkout.seq} session=agent-1" in result.output
+    assert f"latest capture: transcript.turn seq={capture.seq} session=agent-1 source=codex" in result.output
+    assert "checkout tokens: 180 prompt, 11.1 facts/1k prompt tokens" in result.output
+    assert "Memory next steps:" in result.output
+    assert "zaxy memory checkout" in result.output
+    assert "--eventloom-path" in result.output
 
 
 def test_coordinate_cli_brief_reports_mission_worker_and_findings(tmp_path: Path) -> None:
@@ -276,6 +476,92 @@ def test_coordinate_cli_brief_reports_mission_worker_and_findings(tmp_path: Path
     assert payload["workers"][0]["worker_id"] == "auth-api"
     assert payload["accepted_findings"][0]["summary"] == "API failures trace to expired JWKS cache handling."
     assert payload["accepted_findings"][0]["evidence"][0]["reference"] == "pytest tests/test_auth.py -q"
+
+
+def test_coordinate_template_list_and_show_common_workflows() -> None:
+    """Coordinate should expose built-in mission templates for common workflows."""
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["coordinate", "template", "list", "--json"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert [template["name"] for template in payload["templates"]] == [
+        "software-delivery",
+        "research-review",
+        "benchmark-investigation",
+        "release-validation",
+    ]
+
+    result = runner.invoke(app, ["coordinate", "template", "show", "software-delivery", "--json"])
+
+    assert result.exit_code == 0
+    template = json.loads(result.output)
+    assert template["name"] == "software-delivery"
+    assert "Ship a production change" in template["objective"]
+    assert [worker["worker_id"] for worker in template["workers"]] == [
+        "implementation",
+        "verification",
+        "review",
+    ]
+    assert all(worker["assignment"] for worker in template["workers"])
+
+
+def test_coordinate_template_apply_creates_mission_workers_and_assignments(tmp_path: Path) -> None:
+    """Applying a template should create a replayable mission with assigned workers."""
+    runner = CliRunner()
+    eventloom = tmp_path / ".eventloom"
+
+    result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "template",
+            "apply",
+            "release-validation",
+            "--mission",
+            "release-1",
+            "--eventloom-path",
+            str(eventloom),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["template"] == "release-validation"
+    assert payload["mission_id"] == "release-1"
+    assert payload["worker_count"] == 4
+    assert payload["assignment_count"] == 4
+    assert [worker["worker_id"] for worker in payload["workers"]] == [
+        "release-gates",
+        "docs-packaging",
+        "runtime-smoke",
+        "risk-audit",
+    ]
+    assert all(event["event_hash"] for event in payload["events"])
+
+    result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "brief",
+            "--mission",
+            "release-1",
+            "--eventloom-path",
+            str(eventloom),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    brief = json.loads(result.output)
+    assert brief["objective"].startswith("Validate a release candidate")
+    workers = {worker["worker_id"]: worker for worker in brief["workers"]}
+    assert workers["release-gates"]["assignment"].startswith("Run and record")
+    assert workers["docs-packaging"]["assignment"].startswith("Validate")
+    assert workers["runtime-smoke"]["assignment"].startswith("Exercise")
+    assert workers["risk-audit"]["assignment"].startswith("Review")
 
 
 def test_coordinate_report_cli_can_attach_git_and_test_metadata(tmp_path: Path) -> None:
@@ -631,6 +917,182 @@ def test_coordinate_cli_handoff_records_replayable_final_event(tmp_path: Path) -
     assert payload["risks"] == ["Token cache metrics are sparse"]
 
 
+def test_coordinate_cli_inspect_combines_mission_state_without_eventloom_jsonl(tmp_path: Path) -> None:
+    """coordinate inspect should show the full replayed mission state in one operator view."""
+    runner = CliRunner()
+    eventloom = tmp_path / ".eventloom"
+    runner.invoke(
+        app,
+        [
+            "coordinate",
+            "start",
+            "Ship auth refactor",
+            "--mission",
+            "auth-main",
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+    runner.invoke(
+        app,
+        [
+            "coordinate",
+            "worker",
+            "create",
+            "--mission",
+            "auth-main",
+            "--worker",
+            "auth-api",
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+    runner.invoke(
+        app,
+        [
+            "coordinate",
+            "assign",
+            "--mission",
+            "auth-main",
+            "--worker",
+            "auth-api",
+            "trace API auth failures",
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+    accepted_result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "report",
+            "--mission",
+            "auth-main",
+            "--worker",
+            "auth-api",
+            "--summary",
+            "API failures trace to expired JWKS cache handling.",
+            "--evidence",
+            "pytest tests/test_auth.py -q",
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+    rejected_result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "report",
+            "--mission",
+            "auth-main",
+            "--worker",
+            "auth-api",
+            "--summary",
+            "Legacy token theory is unsupported.",
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+    accepted_id = accepted_result.output.strip().split()[1]
+    rejected_id = rejected_result.output.strip().split()[1]
+    runner.invoke(
+        app,
+        [
+            "coordinate",
+            "decide",
+            "--mission",
+            "auth-main",
+            "--finding",
+            accepted_id,
+            "--status",
+            "accepted",
+            "--rationale",
+            "Command-backed.",
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+    runner.invoke(
+        app,
+        [
+            "coordinate",
+            "promote",
+            "--mission",
+            "auth-main",
+            "--finding",
+            accepted_id,
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+    runner.invoke(
+        app,
+        [
+            "coordinate",
+            "decide",
+            "--mission",
+            "auth-main",
+            "--finding",
+            rejected_id,
+            "--status",
+            "rejected",
+            "--rationale",
+            "No evidence.",
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+    runner.invoke(
+        app,
+        [
+            "coordinate",
+            "handoff",
+            "--mission",
+            "auth-main",
+            "--summary",
+            "Auth mission ready for release.",
+            "--next-step",
+            "Release branch",
+            "--risk",
+            "Metrics are sparse",
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        ["coordinate", "inspect", "--mission", "auth-main", "--eventloom-path", str(eventloom), "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["mission_id"] == "auth-main"
+    assert payload["brief"]["workers"][0]["assignment"] == "trace API auth failures"
+    assert payload["worker_ledgers"][0]["accepted_findings"] == 1
+    assert payload["worker_ledgers"][0]["rejected_findings"] == 1
+    assert payload["findings"]["accepted"][0]["finding_id"] == accepted_id
+    assert payload["findings"]["rejected"][0]["finding_id"] == rejected_id
+    assert payload["evidence"][accepted_id][0]["reference"] == "pytest tests/test_auth.py -q"
+    assert payload["decisions"][0]["finding_id"] == accepted_id
+    assert payload["decisions"][0]["rationale"] == "Command-backed."
+    assert payload["promoted_state"][0]["finding_id"] == accepted_id
+    assert payload["handoffs"][0]["summary"] == "Auth mission ready for release."
+    assert payload["handoffs"][0]["next_steps"] == ["Release branch"]
+
+    text_result = runner.invoke(
+        app,
+        ["coordinate", "inspect", "--mission", "auth-main", "--eventloom-path", str(eventloom)],
+    )
+
+    assert text_result.exit_code == 0
+    assert "Mission auth-main: Ship auth refactor" in text_result.output
+    assert "Worker ledgers:" in text_result.output
+    assert "Findings: accepted=1 pending=0 rejected=1 deferred=0 conflicted=0 stale=0" in text_result.output
+    assert f"Promoted state: {accepted_id}" in text_result.output
+    assert "Handoffs: 1" in text_result.output
+
+
 def test_coordinate_cli_approval_packet_and_apply_decisions(tmp_path: Path) -> None:
     """coordinate approval commands should export and apply human review decisions."""
     runner = CliRunner()
@@ -661,6 +1123,11 @@ def test_coordinate_cli_approval_packet_and_apply_decisions(tmp_path: Path) -> N
     assert packet_result.exit_code == 0
     packet = json.loads(packet_result.output)
     assert packet["findings"][0]["finding_id"] == finding_id
+    assert packet["findings"][0]["next_actions"][0] == {
+        "code": "add_evidence",
+        "label": "Attach evidence before accepting or promoting this finding.",
+        "recommended_status": "deferred",
+    }
 
     decisions = json.dumps([{"finding_id": finding_id, "status": "accepted", "rationale": "Reviewed remotely.", "promote": True}])
     apply_result = runner.invoke(
@@ -727,6 +1194,61 @@ def test_coordinate_cli_review_export_outputs_markdown_and_json(tmp_path: Path) 
     assert payload["read_only"] is True
     assert payload["packet"]["findings"][0]["finding_id"] == finding_id
     assert payload["markdown"] == markdown_result.output.rstrip()
+
+
+def test_coordinate_cli_audit_report_outputs_eventloom_citations(tmp_path: Path) -> None:
+    """coordinate audit-report should expose replayed Eventloom seq/hash citations."""
+    runner = CliRunner()
+    eventloom = tmp_path / ".eventloom"
+    runner.invoke(app, ["coordinate", "start", "Ship auth refactor", "--mission", "auth-main", "--eventloom-path", str(eventloom)])
+    runner.invoke(app, ["coordinate", "worker", "create", "--mission", "auth-main", "--worker", "auth-api", "--eventloom-path", str(eventloom)])
+    finding_result = runner.invoke(
+        app,
+        [
+            "coordinate",
+            "report",
+            "--mission",
+            "auth-main",
+            "--worker",
+            "auth-api",
+            "--summary",
+            "Expired JWKS cache causes API failures.",
+            "--evidence",
+            "pytest tests/test_auth.py -q",
+            "--eventloom-path",
+            str(eventloom),
+        ],
+    )
+    finding_id = finding_result.output.strip().split()[1]
+    runner.invoke(app, ["coordinate", "decide", "--mission", "auth-main", "--finding", finding_id, "--status", "accepted", "--eventloom-path", str(eventloom)])
+    runner.invoke(app, ["coordinate", "promote", "--mission", "auth-main", "--finding", finding_id, "--eventloom-path", str(eventloom)])
+
+    result = runner.invoke(
+        app,
+        ["coordinate", "audit-report", "--mission", "auth-main", "--eventloom-path", str(eventloom), "--json"],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["mission_id"] == "auth-main"
+    assert payload["read_only"] is True
+    assert payload["summary"]["event_count"] == 5
+    assert payload["events"][0]["event_type"] == "coordination.mission.created"
+    assert payload["events"][0]["event_seq"] == 1
+    assert len(payload["events"][0]["event_hash"]) == 64
+    assert payload["events"][-1]["event_type"] == "coordination.finding.promoted"
+    assert "## Eventloom Audit Trail" in payload["markdown"]
+    assert f"finding={finding_id}" in payload["markdown"]
+
+    text_result = runner.invoke(
+        app,
+        ["coordinate", "audit-report", "--mission", "auth-main", "--eventloom-path", str(eventloom)],
+    )
+
+    assert text_result.exit_code == 0
+    assert "# Zaxy Coordinate Audit: auth-main" in text_result.output
+    assert "seq=1" in text_result.output
+    assert "hash=" in text_result.output
 
 
 @patch("zaxy.projection_backends.build_projection_store")
@@ -2223,6 +2745,35 @@ def test_serve_uses_repo_local_embedded_profile(
     assert kwargs["embedded_graph_path"] == embedded_path
 
 
+@patch("zaxy.mcp_server.main", new_callable=AsyncMock)
+@patch("zaxy.mcp_server.ZaxyMCPServer")
+def test_serve_eventloom_override_uses_matching_embedded_projection(
+    mock_server_cls: MagicMock,
+    mock_mcp_main: AsyncMock,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """An explicit Eventloom path should not share the workspace default Kuzu lock."""
+    eventloom_path = tmp_path / "isolated.eventloom"
+    monkeypatch.setattr("zaxy.mcp_server.server", None)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["serve", "--eventloom-path", str(eventloom_path)],
+        catch_exceptions=False,
+        env={},
+        color=False,
+        prog_name="zaxy",
+    )
+
+    assert result.exit_code == 0
+    mock_mcp_main.assert_awaited_once()
+    kwargs = mock_server_cls.call_args.kwargs
+    assert kwargs["eventloom_path"] == str(eventloom_path)
+    assert kwargs["embedded_graph_path"] == eventloom_path / "projections" / "embedded.kuzu"
+
+
 def test_integration_template_command_prints_framework_starter() -> None:
     runner = CliRunner()
 
@@ -2295,7 +2846,7 @@ def test_integrations_command_can_emit_json() -> None:
     payload = json.loads(result.output)
     assert payload[0]["framework"] == "langgraph"
     assert payload[0]["install"] == "python -m pip install 'zaxy-memory[langgraph]'"
-    assert payload[0]["maturity"] == "native-preview"
+    assert payload[0]["maturity"] == "native-beta"
     assert payload[0]["native_adapter"] == "zaxy.adapters.langgraph"
 
 
@@ -3036,6 +3587,7 @@ def test_hook_status_reports_memory_activation_posture(tmp_path: Path) -> None:
         "latest_reminder": None,
         "activation_efficiency": None,
         "actions": [],
+        "remediations": [],
     }
 
     stale = runner.invoke(
@@ -3060,6 +3612,10 @@ def test_hook_status_reports_memory_activation_posture(tmp_path: Path) -> None:
     assert "activation efficiency: 0.0% (0/1 high-context sessions)" in stale.output
     assert "checkout tokens: 200 prompt, 15.0 facts/1k prompt tokens" in stale.output
     assert "Run memory checkout before relying on Zaxy context." in stale.output
+    assert (
+        "zaxy memory checkout 'current project memory and next useful action' "
+        f"--eventloom-path {tmp_path / '.eventloom'} --session-id agent-1"
+    ) in stale.output
 
 
 def test_hook_status_warns_when_memory_checkout_has_never_run(tmp_path: Path) -> None:
@@ -3105,6 +3661,46 @@ def test_hook_status_warns_when_memory_checkout_has_never_run(tmp_path: Path) ->
     assert payload["memory_activation"]["latest_reminder"]["type"] == "memory.reminder.suggested"
     assert payload["memory_activation"]["actions"] == [
         "Run memory checkout before relying on Zaxy context.",
+    ]
+
+
+def test_hook_status_memory_activation_remediation_includes_checkout_command(tmp_path: Path) -> None:
+    """hook-status JSON should give clients a directly runnable checkout remediation."""
+    now = datetime(2026, 5, 20, 12, 0, tzinfo=UTC)
+    EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").append(
+        "command.completed",
+        actor="zaxy-observer",
+        payload={"source": "codex", "command": "pytest"},
+        thread="agent-1",
+        timestamp=now,
+    )
+
+    runner = CliRunner()
+    result = runner.invoke(
+        app,
+        [
+            "hook-status",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--workspace-root",
+            str(tmp_path),
+            "--now",
+            now.isoformat(),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["memory_activation"]["remediations"] == [
+        {
+            "code": "missing_checkout",
+            "message": "Run Memory Checkout before the next model or task call.",
+            "command": (
+                "zaxy memory checkout 'current project memory and next useful action' "
+                f"--eventloom-path {tmp_path / '.eventloom'} --session-id agent-1"
+            ),
+        }
     ]
 
 
@@ -3863,6 +4459,12 @@ def test_doctor_release_smoke_reports_packaging_readiness() -> None:
     assert checks["changelog"]["status"] == "ok"
     assert checks["trusted_publishing"]["status"] == "ok"
     assert checks["release_workflow"]["status"] == "ok"
+    assert checks["langgraph_example"]["status"] == "ok"
+    assert "examples/langgraph_memory.py" in checks["langgraph_example"]["message"]
+    assert checks["openai_compatible_example"]["status"] == "ok"
+    assert "examples/openai_compatible_memory.py" in checks["openai_compatible_example"]["message"]
+    assert checks["claude_compatible_example"]["status"] == "ok"
+    assert "examples/claude_compatible_memory.py" in checks["claude_compatible_example"]["message"]
 
 
 def test_doctor_beta_readiness_reports_release_and_uat_gates() -> None:
@@ -3878,10 +4480,106 @@ def test_doctor_beta_readiness_reports_release_and_uat_gates() -> None:
     assert checks["release_smoke"]["status"] == "ok"
     assert checks["release_gate"]["status"] == "ok"
     assert "optional backend exclusion" in checks["release_gate"]["message"]
+    assert checks["external_validation_evidence"]["status"] == "ok"
+    assert "external validation is optional for v1.0 release" in checks["external_validation_evidence"]["message"]
     assert checks["clean_repo_uat"]["status"] == "ok"
     assert checks["docs_happy_path"]["status"] == "ok"
     assert checks["capture_happy_path"]["status"] == "ok"
+    assert checks["first_run_timing"]["status"] == "ok"
+    assert "300 seconds" in checks["first_run_timing"]["message"]
     assert "scripts/beta-uat.sh" in checks["clean_repo_uat"]["message"]
+
+
+def test_doctor_beta_readiness_accepts_external_validation_report_path(tmp_path: Path) -> None:
+    """Beta readiness CLI should accept explicit external-validation evidence."""
+    runner = CliRunner()
+    report_path = tmp_path / "external-validation-report.json"
+    report_path.write_text(
+        json.dumps(
+            {
+                "contract": "zaxy.v1.external-validation-report",
+                "status": "validated",
+                "validator": {
+                    "name": "Independent Validation Project",
+                    "external_to_implementation_session": True,
+                },
+                "date": "2026-05-31",
+                "zaxy_version_or_commit": "v1.0.0-rc",
+                "environment": {
+                    "operating_system": "Linux",
+                    "shell": "bash",
+                    "python_version": "3.13",
+                    "install_source": "pipx install zaxy-memory",
+                },
+                "validation_path": "first_run_local",
+                "commands": [
+                    "zaxy init",
+                    "zaxy memory bootstrap --eventloom-path .eventloom",
+                    "zaxy memory checkout current project memory --eventloom-path .eventloom",
+                    "zaxy doctor --beta-readiness",
+                ],
+                "time_to_first_useful_checkout_seconds": 120,
+                "unexpected_sidecar_or_credential_required": False,
+                "evidence_links": ["https://github.com/syndicalt/zaxy/issues/1"],
+                "friction_or_failure": "No blocking friction.",
+                "release_decision": "pass",
+                "supports_positioning": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "doctor",
+            "--beta-readiness",
+            "--external-validation-report",
+            str(report_path),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    checks = {check["name"]: check for check in payload["checks"]}
+    assert checks["external_validation_evidence"]["status"] == "ok"
+    assert str(report_path) in checks["external_validation_evidence"]["message"]
+
+
+def test_doctor_beta_readiness_can_require_external_validation() -> None:
+    """Strict beta readiness should fail when external validation is still pending."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["doctor", "--beta-readiness", "--require-external-validation", "--json"],
+    )
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["status"] == "error"
+    checks = {check["name"]: check for check in payload["checks"]}
+    assert checks["external_validation_evidence"]["status"] == "error"
+    assert "external validation is required" in checks["external_validation_evidence"]["message"]
+
+
+def test_doctor_rejects_external_validation_options_without_beta_readiness(tmp_path: Path) -> None:
+    """External-validation options only apply to beta readiness checks."""
+    runner = CliRunner()
+    report_path = tmp_path / "external-validation-report.json"
+    report_path.write_text("{}", encoding="utf-8")
+
+    normal = runner.invoke(app, ["doctor", "--external-validation-report", str(report_path)])
+    strict = runner.invoke(app, ["doctor", "--require-external-validation"])
+    release = runner.invoke(
+        app,
+        ["doctor", "--release-smoke", "--external-validation-report", str(report_path)],
+    )
+
+    for result in (normal, strict, release):
+        assert result.exit_code == 2
+        assert "external validation options require --beta-readiness" in result.output
 
 
 def test_doctor_beta_readiness_fails_nonzero_for_unready_project(tmp_path: Path) -> None:
@@ -3916,6 +4614,7 @@ def test_doctor_release_smoke_uses_explicit_project_root(tmp_path: Path) -> None
         encoding="utf-8",
     )
     (tmp_path / ".github" / "workflows").mkdir(parents=True)
+    (tmp_path / "examples").mkdir()
     (tmp_path / ".github" / "workflows" / "publish.yml").write_text(
         "on:\n"
         "  release:\n"
@@ -3927,6 +4626,21 @@ def test_doctor_release_smoke_uses_explicit_project_root(tmp_path: Path) -> None
         "  - run: python -m build --sdist --wheel\n"
         "  - run: python -m twine check dist/*\n"
         "  - uses: pypa/gh-action-pypi-publish@release/v1\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "examples" / "langgraph_memory.py").write_text(
+        "import json\n"
+        "print(json.dumps({'session_id': 'langgraph-demo', 'has_zaxy_context': True, 'kind': 'memory_checkout'}))\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "examples" / "openai_compatible_memory.py").write_text(
+        "import json\n"
+        "print(json.dumps({'session_id': 'openai-compatible-demo', 'has_zaxy_context': True, 'kind': 'memory_checkout'}))\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "examples" / "claude_compatible_memory.py").write_text(
+        "import json\n"
+        "print(json.dumps({'session_id': 'claude-compatible-demo', 'has_zaxy_context': True, 'kind': 'memory_checkout'}))\n",
         encoding="utf-8",
     )
 

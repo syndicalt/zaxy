@@ -44,7 +44,7 @@ class FrameworkIntegrationSpec:
     package: str
     extra: FrameworkExtra
     template_function: str
-    maturity: Literal["template", "native-preview", "native"]
+    maturity: Literal["template", "native-preview", "native-beta", "native"]
     native_adapter: str
 
 
@@ -68,7 +68,7 @@ _FRAMEWORK_SPECS: tuple[FrameworkIntegrationSpec, ...] = (
         package="langgraph",
         extra="langgraph",
         template_function="create_langgraph_memory_node",
-        maturity="native-preview",
+        maturity="native-beta",
         native_adapter="zaxy.adapters.langgraph",
     ),
     FrameworkIntegrationSpec(
@@ -100,8 +100,8 @@ def list_framework_integration_specs() -> tuple[FrameworkIntegrationSpec, ...]:
 def recommend_framework_integration_target() -> FrameworkIntegrationDecision:
     """Return the next framework integration target from maintained preview usage.
 
-    LangGraph and CrewAI already exercise the same lifecycle surface without
-    requiring framework imports. AutoGen is still template-only because its
+    LangGraph now has a beta metadata contract over the same lifecycle surface
+    CrewAI exercises in preview form. AutoGen is still template-only because its
     stable runtime hook shape is not yet proven by local usage.
     """
     return FrameworkIntegrationDecision(
@@ -111,15 +111,15 @@ def recommend_framework_integration_target() -> FrameworkIntegrationDecision:
         evidence_frameworks=("langgraph", "crewai"),
         hold_frameworks=("autogen",),
         rationale=(
-            "LangGraph and CrewAI native-preview adapters already prove the "
-            "shared Memory Checkout, observation, and feedback flow. AutoGen "
-            "should stay template-only until its runtime hooks are validated, "
-            "so the next maintained target is hardening the common "
-            "native-preview payload contract rather than adding another "
+            "LangGraph has a beta native adapter contract and CrewAI still "
+            "proves the same Memory Checkout, observation, and feedback flow "
+            "in preview form. AutoGen should stay template-only until its "
+            "runtime hooks are validated, so the next maintained target is "
+            "hardening shared native payloads rather than adding another "
             "speculative adapter."
         ),
         next_actions=(
-            "stabilize shared payload keys across native-preview adapters",
+            "stabilize shared payload keys across native adapters",
             "keep AutoGen template-only until runtime hooks are validated",
             "use adapter feedback events to decide the next native package",
         ),

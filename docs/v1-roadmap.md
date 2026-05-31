@@ -24,7 +24,8 @@ Several capabilities that normally belong in later phases are already present:
 - MCP exposes memory, context, lifecycle, and coordination tools.
 - Zaxy Coordinate includes mission, worker, assignment, finding, review,
   promotion, approval packet, handoff, conflict, and benchmark flows.
-- LangGraph and CrewAI have dependency-light native-preview adapters.
+- LangGraph has a dependency-light native-beta adapter; CrewAI remains a
+  dependency-light native-preview adapter.
 - CoordinationBench, LongMemEval-compatible reports, backend shootout tooling,
   release smoke checks, beta UAT, and docs validation already exist.
 - Test coverage is already near the v1.0 bar, so 92% is a ratchet target rather
@@ -53,7 +54,8 @@ Zaxy v1.0 is ready when these statements are true:
   v1.0 stability contract.
 - Coverage stays at or above 92%, with release gates preventing regressions in
   core memory, coordination, and onboarding flows.
-- At least one external user, project, or case study has validated the workflow.
+- External validation collection remains available as optional post-release
+  evidence when an outside user, project, or case study is available.
 
 ## Release Principles
 
@@ -77,6 +79,11 @@ Zaxy v1.0 is ready when these statements are true:
 **Theme:** Make the product legible and trustworthy from the first command.
 
 **Target:** 4 weeks.
+
+**Implementation status:** completed against
+`docs/superpowers/plans/2026-05-30-v0-5-public-positioning-first-run-trust.md`;
+the public positioning, first-run docs, quickstarts, examples, changelog, and
+static site coverage are in place.
 
 ### Ship
 
@@ -120,6 +127,30 @@ runtime integrations.
 
 **Target:** 4 to 5 weeks after v0.5.
 
+**Implementation status:** completed with the canonical MCP tool contract
+snapshot at `docs/examples/mcp-tool-contract.json`, a matching schema test in
+`tests/test_mcp.py`, representative response snapshots at
+`docs/examples/mcp-response-snapshots.json` for bootstrap, checkout, graph
+retrieval, verbatim retrieval, context assembly, feedback, and coordination
+checkout, and structured MCP error payloads with stable error codes and
+remediation hints. `zaxy hook-status` now reports
+structured memory activation remediations with runnable checkout commands,
+`zaxy doctor` surfaces the same missing or stale checkout state as a
+`memory_activation` check, and top-level `zaxy status` now reports memory
+activation freshness, latest checkout/capture details, token efficiency, and
+checkout remediation commands. LangGraph checkout middleware now emits the
+`zaxy.native.v0.6` metadata contract with diagnostics, quality, feedback
+guidance, and fail-closed error payloads, and `zaxy doctor --release-smoke` now
+runs `examples/langgraph_memory.py` as the LangGraph release-validation smoke.
+The shared non-MCP adapter lifecycle and payload keys are published at
+`docs/examples/native-integration-contract.json`. CrewAI checkout middleware
+shares that same non-MCP native contract while remaining native-preview. The MCP
+Quickstart now documents one recommended local setup route each for Codex,
+Claude Code, Claude Desktop, Cursor, and generic MCP clients. Beta readiness now
+checks `docs/examples/first-run-timing-report.json` so clean first-run doctor
+and example timings remain under the five-minute budget. The configured
+coverage ratchet and pytest coverage gate now enforce the 92% floor.
+
 ### Ship
 
 - Harden MCP structured outputs for memory, checkout, context assembly,
@@ -135,23 +166,30 @@ runtime integrations.
   checkout, last capture, stale memory, missing hooks, and degraded projection
   states.
 - Promote LangGraph from native-preview toward beta by stabilizing payload keys,
-  examples, and failure behavior.
+  examples, and failure behavior. **Status:** LangGraph now reports
+  `native-beta` and emits the `zaxy.native.v0.6` checkout contract.
 - Define the shared native integration contract for non-MCP runtimes:
   - before model/task call: bootstrap or checkout;
   - after model/task call: capture assistant or task output;
   - after tool call: capture redacted observation;
   - after context use: record feedback.
+  **Status:** published in `docs/examples/native-integration-contract.json`.
 - Document Claude Desktop, Claude Code, Cursor, Codex, and generic MCP setup
-  paths with one recommended local route each.
+  paths with one recommended local route each. **Status:** covered in
+  `docs/mcp-quickstart.md` and rendered to the static docs.
 
 ### Gates
 
 - MCP schema snapshot tests protect the public tool surface.
-- LangGraph example runs as part of release validation.
+- LangGraph example runs as part of release validation. **Status:** covered by
+  the `langgraph_example` check in `zaxy doctor --release-smoke`.
 - Status and doctor commands return actionable remediation for common local
   failures.
 - Clean first-run time improves or remains below the v0.5 threshold.
+  **Status:** covered by the `first_run_timing` check in
+  `zaxy doctor --beta-readiness`.
 - Coverage remains at or above 92%.
+  **Status:** enforced by `pyproject.toml` and `scripts/check-coverage.py`.
 
 ### Explicit Non-Goals
 
@@ -169,31 +207,65 @@ runtime integrations.
 
 - Add mission templates for common workflows such as software delivery,
   research review, benchmark investigation, and release validation.
+  **Status:** built-in templates are available through
+  `zaxy coordinate template list`, `show`, and `apply`; applying a template
+  creates replayable mission, worker, and assignment events.
 - Improve approval flows so pending, conflicted, stale, and evidence-poor
-  findings have obvious next actions.
+  findings have obvious next actions. **Status:** approval packets and static
+  review exports now include explicit next-action guidance for normal review,
+  conflict resolution, stale evidence refresh, and missing evidence.
 - Improve conflict review:
   - deterministic source-state conflicts remain default;
   - lexical semantic conflicts remain opt-in;
   - hosted semantic conflict adapters remain bounded and auditable.
+  **Status:** deterministic source-state conflicts are the default, local
+  lexical semantic conflicts are opt-in through `--semantic-conflicts lexical`,
+  and hosted HTTP semantic conflict adapters remain opt-in with bounded request
+  payloads and locally validated response IDs.
 - Improve the dashboard or CLI mission viewer so users can inspect mission
   state, worker ledgers, findings, evidence, decisions, and promoted state
-  without reading Eventloom JSONL.
+  without reading Eventloom JSONL. **Status:** `zaxy coordinate inspect`
+  provides a replay-only CLI viewer with mission brief, worker ledgers,
+  findings by status, evidence, review decisions, promoted state, conflicts,
+  approval packet, and handoff records.
 - Add audit report generation for a mission from Eventloom replay.
+  **Status:** `zaxy coordinate audit-report` generates a read-only Markdown or
+  JSON report from mission and worker Eventloom replay with sequence/hash
+  citations for every audited event.
 - Publish a CoordinationBench report with clear baselines, adapter status,
-  limitations, and reproduction commands.
+  limitations, and reproduction commands. **Status:** the
+  `coordination-real-v1` report is archived at
+  `reports/benchmarks/coordination-real-v1/coordination-benchmark.md` with
+  Zaxy metrics, local baselines, disclosure-only adapter status, limitations,
+  and reproduction commands.
 - Add a polished multi-agent example that includes review and approval steps,
-  not just worker reporting.
+  not just worker reporting. **Status:**
+  `examples/coordinate_three_worker_project.py` now demonstrates a
+  three-worker mission with approval packet export, approval application,
+  accepted promotion, conflict/defer decisions, mission inspection, audit
+  reporting, checkout, and handoff.
 
 ### Gates
 
 - A user can complete a full mission workflow from CLI and MCP:
   start mission, create workers, assign work, report findings, detect conflicts,
   review findings, promote accepted state, checkout accepted memory, and create
-  handoff.
+  handoff. **Status:** covered across Coordinate CLI tests and MCP coordination
+  tool tests, including conflict materialization, approval application,
+  checkout, and handoff.
 - The same workflow is demonstrated through LangGraph or a direct native helper.
+  **Status:** `CoordinationAdapter` now covers start, worker creation,
+  assignment, finding report, conflict detection, approval application,
+  checkout, and handoff as JSON-friendly native helper calls.
 - CoordinationBench report generation is reproducible from tracked inputs.
+  **Status:** `coordination-real-v1` regenerates from
+  `benchmarks/coordination-real-v1/coordination-workload.json` through
+  `zaxy coordinate benchmark --workload ...`.
 - Audit report output cites Eventloom sequence and hash metadata.
-- Coverage remains at or above 92%.
+  **Status:** covered by `CoordinationManager.audit_report` and
+  `zaxy coordinate audit-report --json` tests.
+- Coverage remains at or above 92%. **Status:** enforced by the configured
+  pytest coverage gate and coverage ratchet.
 
 ### Explicit Non-Goals
 
@@ -212,35 +284,72 @@ only through MCP.
 ### Ship
 
 - Add direct model-call integration modules outside MCP, sharing the same native
-  contract defined in v0.6.
+  contract defined in v0.6. **Status:** dependency-light OpenAI-compatible and
+  Claude-compatible adapters now run Memory Checkout before provider-shaped
+  model calls, inject checkout context, record bounded model-call metadata,
+  capture sanitized assistant turns, and return the shared `zaxy.native.v0.6`
+  metadata.
 - Prioritize two paths:
   - OpenAI-compatible model-call wrapper for request/response capture,
-    checkout injection, tool observation, and feedback;
+    checkout injection, tool observation, and feedback; **Status:** available
+    in `zaxy.adapters.openai_compatible` with redacted tool-call observation
+    and direct memory feedback helpers.
   - Anthropic or Claude-style wrapper if the local usage path and API boundary
-    can be kept stable.
+    can be kept stable. **Status:** available in
+    `zaxy.adapters.claude_compatible` as a duck-typed
+    `client.messages.create(**request)` helper with the same capture,
+    observation, feedback, and fail-closed checkout contract.
 - Keep direct integrations dependency-light and optional. Core install remains
-  small.
-- Add examples showing model-call memory activation without MCP.
+  small. **Status:** both direct model-call adapters are duck-typed and import
+  no provider SDK.
+- Add examples showing model-call memory activation without MCP. **Status:**
+  `examples/openai_compatible_memory.py` and
+  `examples/claude_compatible_memory.py` run with fake provider-shaped clients
+  and no network or provider dependency.
 - Add trace correlation from mission, checkout, context assembly, model call,
-  tool call, finding, review, and handoff.
+  tool call, finding, review, and handoff. **Status:** `zaxy.trace` now builds
+  provider-neutral `zaxy.trace.v0.8` spans and edges from replayed Eventloom
+  events with sequence/hash citations, and `zaxy trace export --json` exposes
+  correlated mission, checkout, model-call, tool-call, finding, review,
+  promotion, and handoff paths without requiring a tracing provider.
 - Improve Pathlight integration or add neutral trace hooks that can feed
   LangSmith, Phoenix, or local JSONL traces without making any one provider a
-  hard dependency.
+  hard dependency. **Status:** the neutral trace export is JSON-friendly and
+  provider-independent; `zaxy trace export --format jsonl --output trace.jsonl`
+  writes ingestion records for local JSONL pipelines while Pathlight remains
+  optional.
 - Improve replay tools for long-running missions, including branch/fork design
-  if it can be implemented without destabilizing Eventloom semantics.
+  if it can be implemented without destabilizing Eventloom semantics. **Status:**
+  `zaxy replay` now supports inclusive `--from-seq/--to-seq` windows so
+  operators can inspect bounded ranges in long Eventloom logs without rewriting
+  history.
 - Continue performance work on compaction, context assembly, projection rebuild,
-  and query latency based on benchmark evidence.
+  and query latency based on benchmark evidence. **Status:** beta readiness now
+  includes a named `benchmark_no_regression` check over the release benchmark
+  commands so performance work stays tied to reproducible smoke, 40-query
+  performance, and 100-query scale reports.
 
 ### Gates
 
-- At least one outside-MCP direct model integration runs in a documented example.
+- At least one outside-MCP direct model integration runs in a documented
+  example. **Status:** `zaxy doctor --release-smoke` now runs both
+  `examples/openai_compatible_memory.py` and
+  `examples/claude_compatible_memory.py`.
 - Model-call capture is redacted, bounded, and opt-in where provider cost or
-  privacy could surprise users.
+  privacy could surprise users. **Status:** direct model adapters capture
+  bounded request metadata and sanitized assistant turns only when applications
+  explicitly call the adapter helpers.
 - Trace output can follow a useful path from mission to model call to promoted
-  finding.
+  finding. **Status:** covered by trace correlation and CLI tests that link
+  mission spans to model calls, tool observations, reviewed findings, promoted
+  findings, and handoffs.
 - Benchmarks show no regression in checkout quality, citation coverage, and
-  latency budgets.
-- Coverage remains at or above 92%.
+  latency budgets. **Status:** `zaxy doctor --beta-readiness` reports
+  `benchmark_no_regression` and requires checkout quality floors, citation
+  coverage at `1.0`, and p95/p99 checkout latency budgets in
+  `scripts/release-check.sh`.
+- Coverage remains at or above 92%. **Status:** enforced by the configured
+  pytest coverage gate and coverage ratchet.
 
 ### Explicit Non-Goals
 
@@ -262,18 +371,46 @@ only through MCP.
   - stable CLI commands and options;
   - durable Eventloom event types and payload fields;
   - projection backend contract;
-  - benchmark artifact schemas.
-- Mark each surface as stable, beta, experimental, or internal.
-- Add migration tests and docs for upgrades from 0.4 through 0.9.
+  - benchmark artifact schemas. **Status:** `docs/api-inventory.md` now
+    inventories these surfaces and links each category to its current contract
+    authority.
+- Mark each surface as stable, beta, experimental, or internal. **Status:**
+  the API inventory uses explicit `Stable`, `Beta`, `Experimental`, and
+  `Internal` labels and keeps candidate backends and Skill Memory out of the
+  stable release surface.
+- Add migration tests and docs for upgrades from 0.4 through 0.9. **Status:**
+  `docs/migration.md` now covers each release band from 0.4 to 0.9, the
+  compatibility test expectations, and the non-destructive rollback policy.
 - Add fuzz tests for Eventloom payload validation, hash-chain replay, and
-  bounded MCP inputs.
+  bounded MCP inputs. **Status:** parametrized validation tests now reject
+  non-object and oversized Eventloom payloads, sequence-tampered hash chains,
+  and unbounded direct `memory_append` MCP inputs.
 - Add failure-injection or chaos tests for projection rebuild, corrupted
   projection artifacts, missing hooks, stale checkout, and degraded backends.
+  **Status:** projection rebuild failure recovery is covered by
+  `test_reproject_command_closes_pggraph_backend_after_projection_failure`;
+  corrupted projection artifacts are handled through integrity-first replay,
+  reset/rebuild, and rollback paths; missing hooks and stale checkout are
+  covered by `hook-status` activation and capture tests; degraded backends are
+  surfaced through fallback metrics including `zaxy_degraded_operations_total`
+  and documented alerting guidance.
 - Expand release gates so the public examples, MCP smoke, LangGraph smoke,
   Coordinate mission smoke, benchmark comparison, docs validation, and beta UAT
-  all run or fail with explicit skip reasons.
+  all run or fail with explicit skip reasons. **Status:** `scripts/release-check.sh`
+  now has named commands for public examples, MCP smoke, LangGraph smoke,
+  Coordinate mission smoke, docs validation, benchmark comparison, and beta UAT;
+  `zaxy doctor --beta-readiness` reports `release_gate_surface_coverage` and
+  accepts intentional omissions only as `SKIP:<reason>`.
 - Add contributor guide, issue templates, and benchmark contribution guidance.
+  **Status:** `CONTRIBUTING.md`, GitHub issue templates, and
+  `docs/benchmark-contributions.md` now document the production-code bar,
+  release checks, issue evidence, and reproducible benchmark contribution
+  requirements.
 - Freeze v1.0 candidate schemas and begin treating changes as migration events.
+  **Status:** `docs/examples/v1-schema-freeze.json` now binds the v1 freeze
+  candidate surfaces, and `docs/agent-events.md` defines
+  `schema.migration.proposed` and `schema.migration.applied` for non-additive
+  stable or beta contract changes.
 
 ### Gates
 
@@ -282,8 +419,11 @@ only through MCP.
 - No public benchmark claim depends on untracked or local-only inputs.
 - API inventory has no undocumented stable surfaces.
 - Migration guide covers 0.4 to 0.9.
-- At least one external user has run the first-run path or a Coordinate example
-  and provided feedback.
+  **Status:** current evidence for these v0.9 gates is recorded in
+  `docs/v09-gate-audit.md`.
+- External-user feedback is tracked as optional post-release evidence. **Status:**
+  collection packet and evidence shape are documented in
+  `docs/v09-gate-audit.md`.
 
 ### Explicit Non-Goals
 
@@ -299,27 +439,61 @@ only through MCP.
 
 ### Ship
 
-- Final API and data model stability commitment.
-- Comprehensive changelog from 0.4 to 1.0.
-- Migration guide from 0.4.
+- Final API and data model stability commitment. **Status:**
+  `docs/stability-commitment.md` defines the v1.0 public API and data model
+  compatibility promise, migration-event requirement, and non-commitments for
+  experimental/internal surfaces.
+- Comprehensive changelog from 0.4 to 1.0. **Status:** `CHANGELOG.md` now has
+  explicit `0.9.0 - Release Candidate` and `1.0.0 - 2026-05-31`
+  sections above the existing 0.4+ release history.
+- Migration guide from 0.4. **Status:** `docs/migration.md` covers upgrades
+  from 0.4 through the v0.9 freeze candidate and links migration events for
+  post-freeze stable or beta schema changes.
 - Public v1.0 announcement with positioning, examples, benchmark evidence,
-  limitations, and roadmap beyond 1.0.
-- Updated website and docs.
-- Final release smoke command and release validation checklist.
+  limitations, and roadmap beyond 1.0. **Status:** the stable 1.0.0
+  announcement is in `docs/announcements/zaxy-v1.0.md`; it keeps external
+  validation as optional post-release evidence and links the public
+  verification request.
+- Updated website and docs. **Status:** generated static site pages include the
+  v1.0 announcement, stability commitment, release validation checklist, gate
+  audit, API inventory, and migration guide.
+- Final release smoke command and release validation checklist. **Status:**
+  `docs/release-validation-checklist.md` records the v1.0 gates, aggregate
+  commands, artifact review steps, and optional external validation path.
+- Final release gate evidence audit. **Status:** `docs/v10-gate-audit.md`
+  maps clean-repo UAT, MCP smoke, LangGraph smoke, direct model integration
+  smoke, Coordinate mission smoke, benchmark guardrails, docs validation,
+  release smoke, coverage, public stability tags, and optional external
+  validation to proof or evidence guidance.
 - External validation note, case study, or public user feedback if available.
+  **Status:** collection packet and report template are published in
+  `docs/external-validation.md`; outside-user evidence is optional for v1.0.
 
 ### Gates
 
-- Clean-repo UAT passes.
-- MCP smoke passes.
-- LangGraph smoke passes.
-- At least one direct model integration smoke passes.
-- Coordinate mission smoke passes.
-- Benchmark guardrails pass.
-- Docs validation passes.
-- Release smoke passes.
-- Coverage remains at or above 92%.
-- Public surfaces are tagged with their stability level.
+- Clean-repo UAT passes. **Status:** command-level evidence is recorded in
+  `docs/v10-gate-audit.md`; final release execution is tracked by
+  `docs/release-validation-checklist.md`.
+- MCP smoke passes. **Status:** command-level evidence is recorded in
+  `docs/v10-gate-audit.md`.
+- LangGraph smoke passes. **Status:** command-level evidence is recorded in
+  `docs/v10-gate-audit.md`.
+- At least one direct model integration smoke passes. **Status:** command-level
+  evidence is recorded in `docs/v10-gate-audit.md`.
+- Coordinate mission smoke passes. **Status:** command-level evidence is
+  recorded in `docs/v10-gate-audit.md`.
+- Benchmark guardrails pass. **Status:** command-level evidence is recorded in
+  `docs/v10-gate-audit.md`.
+- Docs validation passes. **Status:** command-level evidence is recorded in
+  `docs/v10-gate-audit.md`.
+- Release smoke passes. **Status:** command-level evidence is recorded in
+  `docs/v10-gate-audit.md`.
+- Coverage remains at or above 92%. **Status:** command-level evidence is
+  recorded in `docs/v10-gate-audit.md`.
+- Public surfaces are tagged with their stability level. **Status:** command-level
+  evidence is recorded in `docs/v10-gate-audit.md`.
+- External validation is optional post-release evidence. **Status:** the
+  evidence shape is documented in `docs/v10-gate-audit.md`.
 
 ## Cross-Cutting Workstreams
 
@@ -360,9 +534,10 @@ coverage ratchet, docs validation, release smoke, and benchmark guardrails.
 
 ### Community and External Validation
 
-External validation is a release requirement, not a marketing extra. Start with
-one or two users who can run the first-run path and one example. Capture where
-they get stuck, and turn that into docs, doctor checks, or CLI improvements.
+External validation is optional post-release evidence, not a v1.0 release
+blocker. Start with one or two users who can run the first-run path and one
+example when available. Capture where they get stuck, and turn that into docs,
+doctor checks, or CLI improvements.
 
 ### Competitive Awareness
 
@@ -376,7 +551,7 @@ limitations.
 | Risk | Mitigation |
 |------|------------|
 | Scope creep | Treat auditable coordination, MCP, LangGraph, native model-call activation, and DX as the only v1.0 pillars. |
-| Low external feedback | Make v0.5 first-run validation and v0.7 Coordinate example feedback explicit release gates. |
+| Low external feedback | Keep v0.5 first-run validation and v0.7 Coordinate example feedback as optional post-release evidence, while local release gates prove the documented paths. |
 | Benchmark credibility | Require tracked inputs, fingerprints, baselines, methodology, and limitation notes. |
 | Breaking changes | Inventory public surfaces in v0.9 and document every migration. |
 | Backend distraction | Keep embedded Kuzu as default unless another backend beats the same gates without sidecar friction or quality loss. |
@@ -396,3 +571,6 @@ these pillars:
 7. Stable public API and data model contracts.
 
 Everything else can move past v1.0.
+
+Related references: [README.md](../README.md), [site/index.html](../site/index.html),
+[Coordinate roadmap](coordinate-roadmap.md), and [benchmarks](benchmarks.md).

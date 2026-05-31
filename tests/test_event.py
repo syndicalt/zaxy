@@ -270,6 +270,17 @@ class TestEventLogIO:
         ev = tmp_eventlog.append("x", actor="y")
         assert ev.payload == {}
 
+    @pytest.mark.parametrize("payload", [["not", "object"], "not-object", 42, object()])
+    def test_rejects_non_object_payloads(self, tmp_eventlog: EventLog, payload: object) -> None:
+        """Eventloom append should reject non-object payloads instead of silently dropping them."""
+        with pytest.raises(ValueError, match="payload"):
+            tmp_eventlog.append("x", actor="y", payload=payload)  # type: ignore[arg-type]
+
+    def test_rejects_oversized_payloads(self, tmp_eventlog: EventLog) -> None:
+        """Eventloom append should enforce the shared payload size budget."""
+        with pytest.raises(ValueError, match="payload exceeds"):
+            tmp_eventlog.append("x", actor="y", payload={"blob": "x" * (1024 * 1024 + 1)})
+
 
 # ------------------------------------------------------------------
 # Integrity tests
@@ -368,6 +379,33 @@ class TestIntegrity:
         assert report.ok is False
         assert "First event has prev_hash" in (report.broken_reason or "")
 
+    @pytest.mark.parametrize("tampered_seq", [1, 99])
+    def test_hash_chain_rejects_non_monotonic_sequences(
+        self,
+        tmp_eventlog: EventLog,
+        tampered_seq: int,
+    ) -> None:
+        """A valid hash and prev_hash cannot hide duplicate or skipped sequence numbers."""
+        import hashlib
+
+        from zaxy.event import Event
+
+        tmp_eventlog.append("first", actor="a")
+        tmp_eventlog.append("second", actor="b")
+        lines = tmp_eventlog.path.read_text(encoding="utf-8").strip().split("\n")
+        second = json.loads(lines[1])
+        second["seq"] = tampered_seq
+        tmp = Event.model_validate({**second, "hash": "0" * 64})
+        second["hash"] = hashlib.sha256(tmp.canonical()).hexdigest()
+        lines[1] = json.dumps(second)
+        tmp_eventlog.path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        report = tmp_eventlog.verify()
+
+        assert report.ok is False
+        assert report.broken_at_seq == tampered_seq
+        assert "sequence" in (report.broken_reason or "")
+
 
 # ------------------------------------------------------------------
 # Replay tests
@@ -394,6 +432,18 @@ class TestReplay:
         assert len(result.events) == 2
         assert result.events[0].type == "b"
         assert result.events[1].type == "c"
+
+    def test_replay_to_seq_bounds_long_logs(self, tmp_eventlog: EventLog) -> None:
+        """Replay should support inclusive sequence windows for long logs."""
+        tmp_eventlog.append("a", actor="x")
+        tmp_eventlog.append("b", actor="y")
+        tmp_eventlog.append("c", actor="z")
+        tmp_eventlog.append("d", actor="w")
+
+        result = tmp_eventlog.replay(from_seq=2, to_seq=3)
+
+        assert [event.type for event in result.events] == ["b", "c"]
+        assert result.integrity.ok is True
 
     def test_replay_from_seq_greater_than_total(self, tmp_eventlog: EventLog) -> None:
         """from_seq > total should return empty list but valid integrity."""
