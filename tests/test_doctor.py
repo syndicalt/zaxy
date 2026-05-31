@@ -41,9 +41,10 @@ def test_run_doctor_reports_local_setup_ok(tmp_path: Path, monkeypatch) -> None:
         "capture_health": "warning",
         "memory_activation": "warning",
         "packet_memory": "warning",
-            "embedded_graph": "ok",
-            "production": "ok",
-        }
+        "embedded_mcp_runtime": "ok",
+        "embedded_graph": "ok",
+        "production": "ok",
+    }
     assert (tmp_path / ".eventloom").is_dir()
 
 

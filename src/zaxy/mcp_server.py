@@ -18,16 +18,20 @@ import contextvars
 import hmac
 import inspect
 import json
-from collections.abc import Mapping
-from contextlib import suppress
+import sys
+from collections.abc import AsyncIterator, Mapping
+from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Protocol
 
+import anyio
 import jwt
+from mcp import types
 from mcp.server import Server
 from mcp.server.sse import SseServerTransport
 from mcp.server.stdio import stdio_server
+from mcp.shared.message import SessionMessage
 from mcp.types import TextContent, Tool
 
 from zaxy.capabilities import build_memory_bootstrap, build_memory_capabilities
@@ -41,6 +45,7 @@ from zaxy.lifecycle import (
     build_tool_call_completed_event,
 )
 from zaxy.log import get_logger, setup_logging
+from zaxy.mcp_runtime import EmbeddedMcpOwnerClaim, EmbeddedMcpRuntimeCoordinator
 from zaxy.memory_persistence import record_memory_activity
 from zaxy.metrics import get_metrics
 from zaxy.pagination import encode_query_cursor, validate_query_cursor
@@ -560,6 +565,7 @@ class ZaxyMCPServer:
             if eventloom_path is not None
             else Path(settings.embedded_graph_path)
         )
+        self._embedded_graph_path = resolved_embedded_graph_path
         self.local_projection_runtime = self._build_local_projection_runtime(
             settings,
             projection_backend=backend,
@@ -2069,7 +2075,103 @@ def _mcp_error_summary(exc: Exception) -> str:
     return f"{error['code']}: {error['message']}"
 
 
-async def main() -> None:
+@asynccontextmanager
+async def _socket_mcp_transport(
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+) -> AsyncIterator[tuple[Any, Any]]:
+    """Adapt a Unix socket line stream to MCP's in-memory transport."""
+    read_stream_writer, read_stream = anyio.create_memory_object_stream(0)
+    write_stream, write_stream_reader = anyio.create_memory_object_stream(0)
+
+    async def socket_reader() -> None:
+        try:
+            async with read_stream_writer:
+                while line := await reader.readline():
+                    try:
+                        message = types.JSONRPCMessage.model_validate_json(line.decode("utf-8"))
+                    except Exception as exc:
+                        await read_stream_writer.send(exc)
+                        continue
+                    await read_stream_writer.send(SessionMessage(message))
+        except anyio.ClosedResourceError:  # pragma: no cover
+            await anyio.lowlevel.checkpoint()
+
+    async def socket_writer() -> None:
+        try:
+            async with write_stream_reader:
+                async for session_message in write_stream_reader:
+                    payload = session_message.message.model_dump_json(by_alias=True, exclude_none=True)
+                    writer.write(payload.encode("utf-8") + b"\n")
+                    await writer.drain()
+        except anyio.ClosedResourceError:  # pragma: no cover
+            await anyio.lowlevel.checkpoint()
+        finally:
+            writer.close()
+            with suppress(Exception):
+                await writer.wait_closed()
+
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(socket_reader)
+        tg.start_soon(socket_writer)
+        yield read_stream, write_stream
+
+
+async def _run_socket_mcp_client(
+    reader: asyncio.StreamReader,
+    writer: asyncio.StreamWriter,
+) -> None:
+    async with _socket_mcp_transport(reader, writer) as (read_stream, write_stream):
+        await app.run(read_stream, write_stream, app.create_initialization_options())
+
+
+async def _start_owner_socket_server(owner_claim: EmbeddedMcpOwnerClaim) -> asyncio.AbstractServer:
+    with suppress(FileNotFoundError):
+        owner_claim.paths.socket_path.unlink()
+    return await asyncio.start_unix_server(
+        _run_socket_mcp_client,
+        path=str(owner_claim.paths.socket_path),
+    )
+
+
+async def proxy_main(coordinator: EmbeddedMcpRuntimeCoordinator) -> None:
+    """Proxy this stdio MCP process to the workspace embedded owner."""
+    setup_logging()
+    logger = get_logger("mcp_server")
+    record = coordinator.wait_for_owner_record()
+    socket_path = str(record["socket_path"])
+    reader, writer = await asyncio.open_unix_connection(socket_path)
+    logger.info("zaxy_mcp_proxy_connected socket=%s", socket_path)
+
+    async def stdin_to_socket() -> None:
+        while True:
+            line = await asyncio.to_thread(sys.stdin.buffer.readline)
+            if not line:
+                writer.write_eof()
+                await writer.drain()
+                break
+            writer.write(line)
+            await writer.drain()
+
+    async def socket_to_stdout() -> None:
+        while line := await reader.readline():
+            await asyncio.to_thread(sys.stdout.buffer.write, line)
+            await asyncio.to_thread(sys.stdout.buffer.flush)
+
+    tasks = [asyncio.create_task(stdin_to_socket()), asyncio.create_task(socket_to_stdout())]
+    try:
+        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        for task in done:
+            task.result()
+        for task in pending:
+            task.cancel()
+    finally:
+        writer.close()
+        with suppress(Exception):
+            await writer.wait_closed()
+
+
+async def main(owner_claim: EmbeddedMcpOwnerClaim | None = None) -> None:
     """Run the MCP stdio server with graceful shutdown."""
     setup_logging()
     logger = get_logger("mcp_server")
@@ -2077,7 +2179,20 @@ async def main() -> None:
     # Allow external configuration (e.g. from CLI) via module-level override
     active_server = server or ZaxyMCPServer()
 
-    await active_server.setup()
+    try:
+        await active_server.setup()
+    except Exception:
+        if owner_claim is not None:
+            owner_claim.close()
+        raise
+    owner_socket_server: asyncio.AbstractServer | None = None
+    if owner_claim is not None:
+        owner_socket_server = await _start_owner_socket_server(owner_claim)
+        owner_claim.write_ready_record(
+            workspace_root=active_server._workspace_root,
+            projection_backend="embedded",
+            graph_path=active_server._embedded_graph_path,
+        )
     logger.info("zaxy_mcp_server_ready server=%s", get_settings().server_name)
 
     # Graceful shutdown on SIGTERM/SIGINT
@@ -2135,7 +2250,12 @@ async def main() -> None:
                 task.cancel()
     finally:
         logger.info("zaxy_mcp_server_shutting_down")
+        if owner_socket_server is not None:
+            owner_socket_server.close()
+            await owner_socket_server.wait_closed()
         await active_server.teardown()
+        if owner_claim is not None:
+            owner_claim.close()
         logger.info("zaxy_mcp_server_stopped")
 
 
