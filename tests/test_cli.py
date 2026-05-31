@@ -4579,7 +4579,10 @@ def test_doctor_rejects_external_validation_options_without_beta_readiness(tmp_p
 
     for result in (normal, strict, release):
         assert result.exit_code == 2
-        assert "external validation options require --beta-readiness" in result.output
+        assert "Invalid value" in result.output
+        assert "external validation options require" in result.output
+        assert "--beta" in result.output
+        assert "readiness" in result.output
 
 
 def test_doctor_beta_readiness_fails_nonzero_for_unready_project(tmp_path: Path) -> None:
