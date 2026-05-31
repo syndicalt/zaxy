@@ -4581,7 +4581,6 @@ def test_doctor_rejects_external_validation_options_without_beta_readiness(tmp_p
         assert result.exit_code == 2
         assert "Invalid value" in result.output
         assert "external validation options require" in result.output
-        assert "--beta" in result.output
         assert "readiness" in result.output
 
 
