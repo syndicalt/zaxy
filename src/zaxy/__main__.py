@@ -110,6 +110,7 @@ def format_onboarding_result(*args: Any, **kwargs: Any) -> str:
 
 app = typer.Typer(help="Zaxy: Event-sourced temporal knowledge graph fabric")
 memory_app = typer.Typer(help="Inspect Eventloom-backed agent memory")
+memory_purpose_app = typer.Typer(help="Inspect replay-backed purpose control-plane diagnostics")
 capture_app = typer.Typer(help="Manage deterministic capture watchers")
 coordinate_app = typer.Typer(help="Coordinate parent missions and worker sessions")
 coordinate_worker_app = typer.Typer(help="Manage worker sessions for a mission")
@@ -117,6 +118,7 @@ coordinate_template_app = typer.Typer(help="Inspect and apply Coordinate mission
 coordinate_benchmark_adapter_app = typer.Typer(help="Validate and export CoordinationBench adapter contracts")
 trace_app = typer.Typer(help="Export neutral trace correlations from Eventloom")
 app.add_typer(memory_app, name="memory")
+memory_app.add_typer(memory_purpose_app, name="purpose")
 app.add_typer(capture_app, name="capture")
 app.add_typer(coordinate_app, name="coordinate")
 app.add_typer(trace_app, name="trace")
@@ -1164,6 +1166,66 @@ def _format_memory_graph_status(graph_status: dict[str, object]) -> str:
             f"missing_chain_links={missing} integrity={integrity}"
         )
     return "\n".join(lines)
+
+
+@memory_purpose_app.command("status")
+def memory_purpose_status(
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory or JSONL log"),  # noqa: B008
+    session_id: str | None = typer.Option(None, help="Session ID to inspect"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Show replay-only purpose checkout, evidence, feedback, and Coordinate diagnostics."""
+    from zaxy.purpose_control import build_purpose_status, format_purpose_status
+
+    payload = build_purpose_status(eventloom_path, session_id=session_id)
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(format_purpose_status(payload))
+
+
+@memory_purpose_app.command("lanes")
+def memory_purpose_lanes(
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory or JSONL log"),  # noqa: B008
+    session_id: str | None = typer.Option(None, help="Session ID to inspect"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Show per-profile purpose lanes from Eventloom replay only."""
+    from zaxy.purpose_control import build_purpose_lanes, format_purpose_lanes
+
+    payload = build_purpose_lanes(eventloom_path, session_id=session_id)
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(format_purpose_lanes(payload))
+
+
+@memory_purpose_app.command("feedback")
+def memory_purpose_feedback(
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory or JSONL log"),  # noqa: B008
+    session_id: str | None = typer.Option(None, help="Session ID to inspect"),  # noqa: B008
+    profile: str | None = typer.Option(None, help="Purpose profile to filter by"),  # noqa: B008
+    outcome: str = typer.Option("all", help="Outcome filter: all, positive, or negative"),
+    limit: int = typer.Option(20, min=1, max=250, help="Maximum feedback targets to show"),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Show retained purpose feedback and consequence history."""
+    from zaxy.purpose_control import build_purpose_feedback, format_purpose_feedback
+
+    normalized_outcome = outcome.strip().casefold()
+    if normalized_outcome not in {"all", "positive", "negative"}:
+        raise typer.BadParameter("--outcome must be all, positive, or negative")
+    payload = build_purpose_feedback(
+        eventloom_path,
+        session_id=session_id,
+        profile=profile,
+        outcome=normalized_outcome,
+        limit=limit,
+    )
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(format_purpose_feedback(payload))
 
 
 @memory_app.command("inferred-status")
@@ -3964,12 +4026,26 @@ def purpose_benchmark(
         Path("reports/benchmarks/purpose-v1"),
         help="Directory for JSON and Markdown purpose benchmark reports",
     ),
+    holdout_pack: list[Path] | None = typer.Option(None, "--holdout-pack", help="Purpose holdout pack JSON to include"),  # noqa: B008
+    include_holdouts: bool = typer.Option(False, "--include-holdouts", help="Include the packaged public-derived purpose holdout pack"),
+    require_holdout_fingerprint: str | None = typer.Option(None, "--require-holdout-fingerprint", help="Require an included holdout pack fingerprint"),
     json_output: bool = typer.Option(False, "--json", help="Print report JSON instead of text summary"),
 ) -> None:
     """Run deterministic purpose-conditioned memory benchmark gates."""
     from zaxy.purpose_benchmark import run_purpose_benchmark, write_purpose_benchmark_report
 
-    report = run_purpose_benchmark()
+    packs = list(holdout_pack or [])
+    if include_holdouts:
+        packs.append(Path("reports/benchmarks/purpose-v1/holdouts/public-derived-purpose-v1/holdout-pack.json"))
+    report = run_purpose_benchmark(holdout_packs=tuple(packs))
+    if require_holdout_fingerprint:
+        fingerprints = {
+            str(holdout.get("pack_fingerprint") or "")
+            for holdout in report.holdout_reports.values()
+        }
+        if require_holdout_fingerprint not in fingerprints:
+            typer.echo("Error: --require-holdout-fingerprint did not match an included holdout pack", err=True)
+            raise typer.Exit(2)
     written = write_purpose_benchmark_report(report, output_dir)
     if json_output:
         typer.echo(json.dumps(report.to_dict(), indent=2, sort_keys=True))

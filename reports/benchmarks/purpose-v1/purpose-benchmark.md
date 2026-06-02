@@ -1,10 +1,10 @@
 # Purpose Benchmark
 
 - Version: `purpose-v1`
-- Generated: `2026-06-02T22:02:58.689711+00:00`
+- Generated: `2026-06-02T22:29:25.972755+00:00`
 - Status: `passed`
 - Lanes: `10/10` passed
-- Elapsed: `10.166 ms`
+- Elapsed: `9.297 ms`
 
 | Lane | Status | Score | Threshold | Measurement |
 | --- | --- | ---: | ---: | --- |
@@ -18,6 +18,15 @@
 | Neutral Substrate Projection | passed | 1.000 | 1.000 | one neutral customer artifact can rebuild distinct cited purpose projections |
 | Cross-Role Citation | passed | 1.000 | 1.000 | same cited evidence can create distinct role-specific useful memory |
 | Accepted-State Discipline | passed | 1.000 | 1.000 | Coordinate projection keeps accepted parent state and suppresses pending worker rows |
+
+## Public-Derived Holdouts
+
+- Packs: `1`
+- These packs are reported separately from the fast deterministic lanes and must not be tuned on answers.
+
+| Pack | Status | Cases | Citation coverage | Fingerprint |
+| --- | --- | ---: | ---: | --- |
+| public-derived-purpose-v1 | diagnostic | 5 | 1.000 | `0d8217bb4e905164` |
 
 ## Competitor Claim Status
 

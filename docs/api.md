@@ -227,6 +227,22 @@ projection keeps compact purpose and authority fields so future retrieval can
 distinguish accepted Coordinate state that supported a handoff from the same
 fact used for a code review or implementation step.
 
+Operators can inspect that purpose layer without starting a graph backend:
+
+```bash
+zaxy memory purpose status --eventloom-path .eventloom
+zaxy memory purpose lanes --eventloom-path .eventloom --json
+zaxy memory purpose feedback --eventloom-path .eventloom --profile coordinate
+```
+
+These commands replay Eventloom only. They report the active purpose profile,
+checkout evidence-policy status, suppressed row counts and reasons, stale or
+missing evidence refresh suggestions, retained positive/negative consequence
+history, and Coordinate accepted parent state versus worker-local diagnostics.
+The same replay-only summary powers the local dashboard `/api/purpose/status`,
+`/api/purpose/lanes`, `/api/purpose/feedback` routes and the static Eventloom
+viewer Purpose panel.
+
 `record_synthesis_artifact` appends `memory.synthesis.artifact.created` with a
 deterministic `synthesis_artifact_v1` payload: query, checkout quality, purpose
 profile, slot plan, answer candidates, auditable ledger rows, support citations,

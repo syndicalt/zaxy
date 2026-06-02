@@ -1,0 +1,31 @@
+{
+  "schema_version": "purpose-holdout-source-disclosures-v1",
+  "pack_id": "public-derived-purpose-v1",
+  "disclosures": [
+    {
+      "source_id": "repo-roadmap",
+      "kind": "first_party_repo_history",
+      "reference": "docs/memory-is-purpose-zaxy-analysis.md"
+    },
+    {
+      "source_id": "release-changelog",
+      "kind": "first_party_repo_history",
+      "reference": "CHANGELOG.md"
+    },
+    {
+      "source_id": "security-redacted",
+      "kind": "redacted_synthetic_security_history",
+      "reference": "synthetic/redacted/auth-secret-rotation.md"
+    },
+    {
+      "source_id": "customer-docs",
+      "kind": "synthetic_realistic_documents",
+      "reference": "synthetic/customers/acme-escalation.txt"
+    },
+    {
+      "source_id": "coordinate-conflicts",
+      "kind": "synthetic_multi_agent_missions",
+      "reference": "synthetic/missions/worker-conflicts.jsonl"
+    }
+  ]
+}

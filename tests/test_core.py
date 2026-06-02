@@ -963,7 +963,11 @@ class TestPurposeOutcomeLearning:
             },
             "support_source_ids": ["answer-1", "answer-2", "answer-3"],
             "excluded_source_ids": ["answer-4"],
-            "citations": ["eventloom://agent-1/events/1#aaaaaaaaaaaa"],
+            "citations": [
+                "eventloom://agent-1/events/1#aaaaaaaaaaaa",
+                "eventloom://agent-1/events/2#bbbbbbbbbbbb",
+                "eventloom://agent-1/events/3#cccccccccccc",
+            ],
         }
         assert event.seq == 1
 

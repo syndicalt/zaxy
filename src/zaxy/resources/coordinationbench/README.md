@@ -7,7 +7,8 @@ Adapter authors should:
 1. Use `coordination-workload.json` as the frozen workload.
 2. Copy the relevant runner manifest template.
 3. Replace every placeholder with a real pinned adapter version, source ref,
-   install command, and argv-only runner command.
+   install command, dataset contract, result schema, and argv-only runner
+   command.
 4. Produce a result file that matches `schemas/result.schema.json`.
 5. Validate locally before publishing:
 
@@ -20,6 +21,11 @@ zaxy coordinate benchmark --output-dir report --competitor-runner mem0=templates
 Packaged disclosure templates currently cover `mem0`, `agent_memory`,
 `activegraph`, `quarq`, and `hybi`. Each adapter name is valid only when the
 manifest and result file match the frozen workload fingerprint.
+
+The packaged `quarq` and `hybi` templates include pinned public metadata and an
+explicit unsupported runner command. They are not same-harness results. Remove
+`template: true` only after replacing the unsupported runner with a real adapter
+that replays the workload and writes `schemas/result.schema.json`.
 
 Template manifests are not executable claims. Zaxy refuses to execute manifests
 with `template: true` or placeholder `run_command` values.

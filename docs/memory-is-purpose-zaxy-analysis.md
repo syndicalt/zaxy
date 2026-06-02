@@ -829,19 +829,29 @@ Implementation:
   - retained consequence history
   - stale or missing evidence refresh suggestions
   - Coordinate accepted-state versus worker-local diagnostics
+  **Implemented through the local dashboard Purpose tab/API and the static
+  Eventloom viewer Purpose panel, both backed by replay-only
+  `purpose_control` summaries.**
 - Add CLI inspection:
   - `zaxy memory purpose status`
   - `zaxy memory purpose lanes`
   - `zaxy memory purpose feedback`
+  **Implemented as replay-only `memory purpose` subcommands.**
 - Keep Coordinate first in the UI, because it is the strongest flagship proof.
+  **Implemented by surfacing Coordinate accepted parent rows, pending/stale
+  worker diagnostics, approval counts, and proof packet counts in the purpose
+  status surface.**
 
 Exit criteria:
 
 - A maintainer can inspect why a checkout changed future work without reading
-  raw JSON.
+  raw JSON. **Implemented with human-readable CLI summaries and dashboard
+  metrics.**
 - Coordinate users can see accepted parent memory, pending worker diagnostics,
-  and proof packets in one surface.
-- Purpose diagnostics are available without requiring Neo4j.
+  and proof packets in one surface. **Implemented in `zaxy memory purpose
+  status` and the dashboard Purpose tab.**
+- Purpose diagnostics are available without requiring Neo4j. **Implemented by
+  direct Eventloom replay; no projection backend is constructed.**
 
 ### Priority 7: Same-Harness Semantic Reach and Quarq Evaluation
 
@@ -852,7 +862,10 @@ Implementation:
 
 - Fill the packaged Quarq and Hybi runner manifests with pinned source refs,
   install commands, runtime commands, dataset contracts, and result export
-  schemas.
+  schemas. **Implemented as pinned unsupported runner manifests: Quarq pins
+  `quarqlabs/agent-oss` at
+  `b68386048795765d46c87bef5bd88ecfb1301337`; Hybi pins `hybi==0.1.1`
+  by PyPI wheel hash.**
 - Add strict result audits:
   - exact source ref
   - command argv
@@ -860,16 +873,23 @@ Implementation:
   - result fingerprint
   - locally scored metrics
   - failure logs when unsupported
+  **Implemented for runner manifests/results; nonzero runner failures now
+  archive stdout/stderr paths before raising.**
 - Run them against CoordinationBench and the purpose benchmark where adapter
-  capabilities allow.
+  capabilities allow. **Not claimable yet: packaged Quarq/Hybi commands are
+  explicit unsupported runners until real workload replay adapters exist.**
 - Keep disclosure-only status until results are locally reproducible.
+  **Implemented; the competitor claim gate still requires completed locally
+  scored Quarq and Hybi rows.**
 
 Exit criteria:
 
 - `competitor_claim_gate` can pass only with completed Quarq and Hybi rows.
+  **Implemented.**
 - Public benchmark docs distinguish unsupported adapter gaps from scored
-  performance gaps.
+  performance gaps. **Implemented in `docs/benchmarks.md`.**
 - No public copy uses SOTA or superiority language without same-harness results.
+  **Maintained by disclosure-only docs and release checks.**
 
 ### Priority 8: Representative Purpose Holdouts
 
@@ -883,16 +903,28 @@ Implementation:
   - security over redacted vulnerability/fix histories
   - support/product/legal over synthetic but realistic document transcripts
   - Coordinate over multi-agent missions with unseen worker conflicts
+  **Implemented as
+  `reports/benchmarks/purpose-v1/holdouts/public-derived-purpose-v1/`, a
+  diagnostic public-derived pack with source disclosures and five frozen
+  representative cases.**
 - Add metrics for answerability, citation coverage, ontology shift, consequence
   retention, governed forgetting, and action outcome effect.
+  **Implemented in `holdout_reports.public-derived-purpose-v1.metrics`, kept
+  separate from `passed_lanes`.**
 - Archive hash fingerprints and forbid tuning on holdout answers.
+  **Implemented with canonical pack fingerprint
+  `0d8217bb4e905164305970050ef34c987d7e9b287ce648a1730685f3dd0e61f6` and
+  no-tuning limitations in the pack README/report.**
 
 Exit criteria:
 
-- Internal deterministic gates remain fast.
+- Internal deterministic gates remain fast. **Implemented; holdouts are
+  optional/diagnostic and do not affect deterministic lane count.**
 - Public-derived holdouts are reported separately from first-party smoke lanes.
+  **Implemented as `holdout_reports` and a separate Markdown section.**
 - Zaxy can state where it is strong and where it still fails without
-  overstating the result.
+  overstating the result. **Implemented through forbidden-overclaim fields,
+  source disclosures, and diagnostic holdout status.**
 
 ### Recommended Order
 

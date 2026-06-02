@@ -760,9 +760,10 @@ def _check_purpose_benchmark_gate(root: Path) -> dict[str, str]:
     report_path = root / "reports" / "benchmarks" / "purpose-v1" / "purpose-benchmark.json"
     markdown_path = root / "reports" / "benchmarks" / "purpose-v1" / "purpose-benchmark.md"
     docs_path = root / "docs" / "benchmarks.md"
+    holdout_pack_path = root / "reports" / "benchmarks" / "purpose-v1" / "holdouts" / "public-derived-purpose-v1" / "holdout-pack.json"
     missing_files = [
         str(path.relative_to(root))
-        for path in (report_path, markdown_path, docs_path)
+        for path in (report_path, markdown_path, docs_path, holdout_pack_path)
         if not path.is_file()
     ]
     if missing_files:
@@ -813,6 +814,18 @@ def _check_purpose_benchmark_gate(root: Path) -> dict[str, str]:
         blockers.append("version must be purpose-v1")
     if str(report.get("status") or "") != "passed":
         blockers.append("report status must be passed")
+    holdout_reports = report.get("holdout_reports")
+    if not isinstance(holdout_reports, dict) or "public-derived-purpose-v1" not in holdout_reports:
+        blockers.append("purpose benchmark report must include public-derived-purpose-v1 holdout diagnostics")
+    else:
+        holdout = holdout_reports["public-derived-purpose-v1"]
+        if not isinstance(holdout, dict) or holdout.get("gate_status") != "diagnostic":
+            blockers.append("public-derived-purpose-v1 holdout must be diagnostic, not a release lane")
+        if holdout.get("claim_status") != "public_derived_holdout":
+            blockers.append("public-derived-purpose-v1 holdout claim_status must be public_derived_holdout")
+        metrics = holdout.get("metrics") if isinstance(holdout, dict) else None
+        if not isinstance(metrics, dict) or metrics.get("case_count") != 5:
+            blockers.append("public-derived-purpose-v1 holdout must report five representative cases")
     if missing_lanes:
         blockers.append("missing lanes: " + ", ".join(missing_lanes))
     if failing_lanes:
@@ -907,6 +920,8 @@ def _check_purpose_benchmark_gate(root: Path) -> dict[str, str]:
             blockers.append(f"docs/benchmarks.md missing {fragment}")
     if "Purpose Recall" not in markdown or "Accepted-State Discipline" not in markdown:
         blockers.append("purpose benchmark markdown is missing required lane names")
+    if "Public-Derived Holdouts" not in markdown:
+        blockers.append("purpose benchmark markdown is missing public-derived holdout section")
     if blockers:
         return {
             "name": "purpose_benchmark_gate",

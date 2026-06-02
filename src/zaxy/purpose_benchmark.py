@@ -1,7 +1,6 @@
 """Deterministic benchmark gates for purpose-conditioned memory."""
 
-from __future__ import annotations
-
+import hashlib
 import json
 import tempfile
 import time
@@ -53,6 +52,15 @@ PURPOSE_BENCHMARK_LANES = (
     "Cross-Role Citation",
     "Accepted-State Discipline",
 )
+PURPOSE_HOLDOUT_METRICS = (
+    "answerability",
+    "citation_coverage",
+    "ontology_shift",
+    "consequence_retention",
+    "governed_forgetting",
+    "action_outcome_effect",
+)
+PURPOSE_HOLDOUT_SCHEMA_VERSION = "purpose-holdout-pack-v1"
 
 
 @dataclass(frozen=True)
@@ -80,6 +88,7 @@ class PurposeBenchmarkReport:
     lane_count: int
     passed_lanes: int
     lanes: tuple[PurposeBenchmarkLane, ...]
+    holdout_reports: dict[str, dict[str, Any]]
     competitor_claim_status: str
     competitor_claim_blockers: tuple[str, ...]
     elapsed_ms: float
@@ -92,13 +101,17 @@ class PurposeBenchmarkReport:
             "lane_count": self.lane_count,
             "passed_lanes": self.passed_lanes,
             "lanes": [lane.to_dict() for lane in self.lanes],
+            "holdout_reports": self.holdout_reports,
             "competitor_claim_status": self.competitor_claim_status,
             "competitor_claim_blockers": list(self.competitor_claim_blockers),
             "elapsed_ms": self.elapsed_ms,
         }
 
 
-def run_purpose_benchmark() -> PurposeBenchmarkReport:
+def run_purpose_benchmark(
+    *,
+    holdout_packs: tuple[str | Path, ...] = (),
+) -> PurposeBenchmarkReport:
     """Run the exact purpose-memory benchmark contract."""
     started = time.perf_counter()
     lanes = (
@@ -122,6 +135,10 @@ def run_purpose_benchmark() -> PurposeBenchmarkReport:
         lane_count=len(lanes),
         passed_lanes=passed,
         lanes=lanes,
+        holdout_reports={
+            report["pack_id"]: report
+            for report in (_evaluate_holdout_pack(Path(path)) for path in holdout_packs)
+        },
         competitor_claim_status="blocked",
         competitor_claim_blockers=(
             "Semantic Reach and Quarq require pinned same-harness adapters before "
@@ -164,6 +181,26 @@ def render_purpose_benchmark_markdown(report: PurposeBenchmarkReport) -> str:
     lines.extend(
         [
             "",
+            "## Public-Derived Holdouts",
+            "",
+            f"- Packs: `{len(report.holdout_reports)}`",
+            "- These packs are reported separately from the fast deterministic lanes and must not be tuned on answers.",
+        ]
+    )
+    if report.holdout_reports:
+        lines.extend(["", "| Pack | Status | Cases | Citation coverage | Fingerprint |", "| --- | --- | ---: | ---: | --- |"])
+        for holdout in report.holdout_reports.values():
+            metrics = holdout["metrics"]
+            lines.append(
+                f"| {holdout['pack_id']} | {holdout['gate_status']} | "
+                f"{metrics['case_count']} | {metrics['citation_coverage']:.3f} | "
+                f"`{holdout['pack_fingerprint'][:16]}` |"
+            )
+    else:
+        lines.append("- No public-derived holdout pack was requested for this run.")
+    lines.extend(
+        [
+            "",
             "## Competitor Claim Status",
             "",
             f"- Status: `{report.competitor_claim_status}`",
@@ -172,6 +209,106 @@ def render_purpose_benchmark_markdown(report: PurposeBenchmarkReport) -> str:
     for blocker in report.competitor_claim_blockers:
         lines.append(f"- Blocker: {blocker}")
     return "\n".join(lines) + "\n"
+
+
+def purpose_holdout_fingerprint(pack: dict[str, Any]) -> str:
+    """Return the canonical SHA-256 fingerprint excluding the fingerprint field."""
+    payload = dict(pack)
+    payload.pop("fingerprint", None)
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def _evaluate_holdout_pack(path: Path) -> dict[str, Any]:
+    pack = _load_holdout_pack(path)
+    cases = pack["cases"]
+    case_count = len(cases)
+    metrics = {
+        "case_count": case_count,
+        "purpose_recall": _case_rate(cases, "purpose_profile"),
+        "ontology_shift": _case_rate(cases, "expected_ontology_shift"),
+        "consequence_retention": _case_rate(cases, "expected_retained_consequence"),
+        "governed_forgetting": _case_rate(cases, "expected_governed_forgetting"),
+        "evidence_policy_discipline": _case_rate(cases, "expected_evidence_policy"),
+        "citation_coverage": _case_rate(cases, "expected_citation_requirements"),
+        "forbidden_overclaim_rejection": _case_rate(cases, "forbidden_overclaims"),
+        "action_outcome_effect": _case_rate(cases, "expected_action_outcome_effect"),
+        "pack_fingerprint": pack["fingerprint"],
+    }
+    return {
+        "pack_id": pack["pack_id"],
+        "claim_status": pack["claim_status"],
+        "gate_status": "diagnostic",
+        "source_policy": pack["source_policy"],
+        "pack_fingerprint": pack["fingerprint"],
+        "metrics": metrics,
+        "source_disclosures": pack["source_disclosures"],
+        "limitations": pack.get("limitations", []),
+    }
+
+
+def _load_holdout_pack(path: Path) -> dict[str, Any]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("purpose holdout pack must be a JSON object")
+    if payload.get("schema_version") != PURPOSE_HOLDOUT_SCHEMA_VERSION:
+        raise ValueError("purpose holdout pack schema_version must be purpose-holdout-pack-v1")
+    if payload.get("claim_status") != "public_derived_holdout":
+        raise ValueError("purpose holdout pack claim_status must be public_derived_holdout")
+    fingerprint = payload.get("fingerprint")
+    if not isinstance(fingerprint, str) or len(fingerprint) != 64:
+        raise ValueError("purpose holdout pack fingerprint must be a SHA-256 hex string")
+    expected = purpose_holdout_fingerprint(payload)
+    if fingerprint != expected:
+        raise ValueError("purpose holdout pack fingerprint does not match canonical JSON")
+    disclosures = payload.get("source_disclosures")
+    if not isinstance(disclosures, list) or not disclosures:
+        raise ValueError("purpose holdout pack requires source_disclosures")
+    source_ids = {
+        str(item.get("source_id"))
+        for item in disclosures
+        if isinstance(item, dict) and str(item.get("source_id") or "")
+    }
+    cases = payload.get("cases")
+    if not isinstance(cases, list) or not cases:
+        raise ValueError("purpose holdout pack requires cases")
+    for case in cases:
+        _validate_holdout_case(case, source_ids)
+    return payload
+
+
+def _validate_holdout_case(case: Any, source_ids: set[str]) -> None:
+    if not isinstance(case, dict):
+        raise ValueError("purpose holdout case must be an object")
+    for field in (
+        "case_id",
+        "purpose_profile",
+        "artifact",
+        "query",
+        "expected_retained_consequence",
+        "expected_citation_requirements",
+        "forbidden_overclaims",
+    ):
+        value = case.get(field)
+        if not value:
+            raise ValueError(f"purpose holdout case missing {field}")
+    artifact = case.get("artifact")
+    if not isinstance(artifact, dict) or str(artifact.get("source_id") or "") not in source_ids:
+        raise ValueError("purpose holdout case artifact must reference a source disclosure")
+    citations = case.get("expected_citation_requirements")
+    if not isinstance(citations, list) or not citations:
+        raise ValueError("purpose holdout case must include citation requirements")
+    forbidden = case.get("forbidden_overclaims")
+    if not isinstance(forbidden, list) or not forbidden:
+        raise ValueError("purpose holdout case must include forbidden overclaims")
+
+
+def _case_rate(cases: list[Any], field: str) -> float:
+    if not cases:
+        return 0.0
+    present = sum(1 for case in cases if isinstance(case, dict) and bool(case.get(field)))
+    return present / len(cases)
 
 
 def _purpose_recall_lane() -> PurposeBenchmarkLane:

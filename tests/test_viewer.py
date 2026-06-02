@@ -65,6 +65,27 @@ def test_build_viewer_model_reads_eventloom_directory(tmp_path: Path) -> None:
     assert [session["session_id"] for session in model["sessions"]] == ["alpha", "beta"]
 
 
+def test_build_viewer_model_includes_purpose_summary(tmp_path: Path) -> None:
+    """The static viewer should expose purpose diagnostics without graph services."""
+    EventLog(tmp_path / "default.jsonl").append(
+        "memory.checkout.completed",
+        actor="zaxy-memory",
+        thread="default",
+        payload={
+            "purpose": {"profile": "product", "evidence_policy": "roadmap_source_required"},
+            "retention": {"purpose_policy": {"suppressed_count": 1, "suppressed_reasons": {"uncited_claim": 1}}},
+        },
+    )
+
+    model = build_viewer_model(tmp_path)
+    html = render_viewer_html(model)
+
+    assert model["purpose"]["active_profile"] == "product"
+    assert model["purpose"]["suppression"]["count"] == 1
+    assert "Purpose" in html
+    assert "active_profile" in html
+
+
 def test_render_viewer_html_escapes_payload_and_embeds_model(tmp_path: Path) -> None:
     """Generated HTML should be standalone and safe for payload text display."""
     log_path = tmp_path / "default.jsonl"

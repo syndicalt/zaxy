@@ -1,9 +1,16 @@
 import json
+from pathlib import Path
 
 from typer.testing import CliRunner
 
 from zaxy.__main__ import app
-from zaxy.purpose_benchmark import PURPOSE_BENCHMARK_LANES, run_purpose_benchmark
+from zaxy.purpose_benchmark import (
+    PURPOSE_BENCHMARK_LANES,
+    purpose_holdout_fingerprint,
+    run_purpose_benchmark,
+)
+
+HOLDOUT_PACK = Path("reports/benchmarks/purpose-v1/holdouts/public-derived-purpose-v1/holdout-pack.json")
 
 
 def test_purpose_benchmark_passes_all_research_lanes() -> None:
@@ -13,6 +20,7 @@ def test_purpose_benchmark_passes_all_research_lanes() -> None:
     assert report.passed_lanes == len(PURPOSE_BENCHMARK_LANES)
     assert {lane.name for lane in report.lanes} == set(PURPOSE_BENCHMARK_LANES)
     assert all(lane.status == "passed" for lane in report.lanes)
+    assert report.holdout_reports == {}
     assert report.competitor_claim_status == "blocked"
     assert "Semantic Reach" in report.competitor_claim_blockers[0]
     assert "Quarq" in report.competitor_claim_blockers[0]
@@ -72,6 +80,26 @@ def test_purpose_benchmark_includes_neutral_substrate_projection() -> None:
     } == {"customer_escalation", "roadmap_commitment", "legal_obligation", "churn_risk"}
 
 
+def test_purpose_benchmark_reports_representative_holdouts_separately() -> None:
+    report = run_purpose_benchmark(holdout_packs=(HOLDOUT_PACK,))
+
+    assert set(report.holdout_reports) == {"public-derived-purpose-v1"}
+    assert report.passed_lanes == len(PURPOSE_BENCHMARK_LANES)
+    holdout = report.holdout_reports["public-derived-purpose-v1"]
+    assert holdout["claim_status"] == "public_derived_holdout"
+    assert holdout["gate_status"] == "diagnostic"
+    assert holdout["pack_fingerprint"] == "0d8217bb4e905164305970050ef34c987d7e9b287ce648a1730685f3dd0e61f6"
+    assert holdout["metrics"]["case_count"] == 5
+    assert holdout["metrics"]["citation_coverage"] == 1.0
+    pack = json.loads(HOLDOUT_PACK.read_text(encoding="utf-8"))
+    assert purpose_holdout_fingerprint(pack) == pack["fingerprint"]
+    covered_profiles = {
+        case["purpose_profile"]
+        for case in pack["cases"]
+    }
+    assert {"release", "review", "security", "support", "coordinate"} <= covered_profiles
+
+
 def test_purpose_benchmark_action_outcome_loop_proves_future_effect() -> None:
     report = run_purpose_benchmark()
     lane = next(lane for lane in report.lanes if lane.name == "Action Outcome Loop")
@@ -88,7 +116,17 @@ def test_purpose_benchmark_cli_writes_json_and_markdown(tmp_path) -> None:
     runner = CliRunner()
     output_dir = tmp_path / "purpose-v1"
 
-    result = runner.invoke(app, ["purpose-benchmark", "--output-dir", str(output_dir)])
+    result = runner.invoke(
+        app,
+        [
+            "purpose-benchmark",
+            "--output-dir",
+            str(output_dir),
+            "--include-holdouts",
+            "--require-holdout-fingerprint",
+            "0d8217bb4e905164305970050ef34c987d7e9b287ce648a1730685f3dd0e61f6",
+        ],
+    )
 
     assert result.exit_code == 0, result.output
     assert "Purpose benchmark: passed" in result.output
@@ -96,6 +134,29 @@ def test_purpose_benchmark_cli_writes_json_and_markdown(tmp_path) -> None:
     payload = json.loads((output_dir / "purpose-benchmark.json").read_text(encoding="utf-8"))
     assert payload["status"] == "passed"
     assert payload["passed_lanes"] == len(PURPOSE_BENCHMARK_LANES)
+    assert payload["holdout_reports"]["public-derived-purpose-v1"]["gate_status"] == "diagnostic"
     assert "Accepted-State Discipline" in (output_dir / "purpose-benchmark.md").read_text(
         encoding="utf-8"
     )
+    assert "Public-Derived Holdouts" in (output_dir / "purpose-benchmark.md").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_purpose_benchmark_cli_rejects_mismatched_holdout_fingerprint(tmp_path) -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "purpose-benchmark",
+            "--output-dir",
+            str(tmp_path / "purpose-v1"),
+            "--include-holdouts",
+            "--require-holdout-fingerprint",
+            "0" * 64,
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "did not match an included holdout pack" in result.output

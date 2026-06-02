@@ -16,6 +16,7 @@ from zaxy.__main__ import app
 from zaxy.coordination_benchmark import (
     COORDINATION_WORKLOAD_VERSION,
     CoordinationBenchMetrics,
+    CoordinationCompetitorResultAudit,
     build_coordination_workload,
     coordination_baseline_metrics,
     coordination_competitor_adapter_disclosures,
@@ -66,6 +67,26 @@ def test_coordination_benchmark_rejects_invalid_worker_counts(tmp_path: Path, wo
     """CoordinationBench should enforce the roadmap's 3-to-10 worker range."""
     with pytest.raises(ValueError, match="workers"):
         build_coordination_workload(tmp_path / "bad.json", missions=1, workers=workers)
+
+
+def test_coordination_workload_rejects_unsupported_mission_count(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="exactly one mission"):
+        build_coordination_workload(tmp_path / "bad.json", missions=2, workers=3)
+
+
+def test_load_coordination_workload_rejects_invalid_json_shape_and_fingerprint(tmp_path: Path) -> None:
+    invalid_shape = tmp_path / "invalid-shape.json"
+    invalid_shape.write_text("[]", encoding="utf-8")
+    with pytest.raises(ValueError, match="must be a JSON object"):
+        load_coordination_workload(invalid_shape)
+
+    workload_path = tmp_path / "coordination-workload.json"
+    workload = build_coordination_workload(workload_path, missions=1, workers=3)
+    payload = workload.to_dict()
+    payload["fingerprint"] = "wrong"
+    workload_path.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="fingerprint"):
+        load_coordination_workload(workload_path)
 
 
 def test_coordination_scorer_measures_accepted_conflict_stale_duplicate_and_evidence(tmp_path: Path) -> None:
@@ -251,6 +272,56 @@ def test_coordination_competitor_claim_gate_requires_scored_quarq_and_hybi(tmp_p
     assert payload["competitor_adapters"]["hybi"]["status"] == "not_run"
 
 
+def test_coordination_competitor_claim_gate_reports_completed_row_defects(tmp_path: Path) -> None:
+    """Completed competitor rows still need local metrics and result-audit provenance."""
+    report = run_coordination_benchmark(tmp_path, missions=1, workers=3)
+    manifest = json.loads(_competitor_runner_manifest(tmp_path, report.workload_fingerprint).read_text(encoding="utf-8"))
+    audit = CoordinationCompetitorResultAudit(
+        result_fingerprint="result-1",
+        generated_at_utc="2026-06-02T00:00:00Z",
+        case_count=len(report.cases),
+        manifest=manifest,
+    )
+    complete = replace(
+        report.competitor_adapters["quarq"],
+        status="completed",
+        claim_status="same_harness",
+        metrics=report.metrics,
+        result_audit=audit,
+    )
+    missing_metrics = replace(complete, metrics=None)
+    missing_audit = replace(complete, result_audit=None)
+    missing_manifest_field = replace(
+        complete,
+        result_audit=replace(complete.result_audit, manifest={**manifest, "source_ref": ""}),
+    )
+    missing_fingerprint = replace(
+        complete,
+        result_audit=replace(complete.result_audit, result_fingerprint=""),
+    )
+    broken_report = replace(
+        report,
+        competitor_adapters={
+            "quarq": missing_metrics,
+            "hybi": missing_audit,
+            "mem0": missing_manifest_field,
+            "agent_memory": missing_fingerprint,
+        },
+    )
+
+    gate = coordination_competitor_claim_gate(
+        broken_report,
+        required_adapters=("missing", "quarq", "hybi", "mem0", "agent_memory"),
+    )
+
+    assert gate.status == "blocked"
+    assert gate.blocked_adapters["missing"] == "adapter row is missing from the report"
+    assert gate.blocked_adapters["quarq"] == "completed adapter row has no locally scored metrics"
+    assert gate.blocked_adapters["hybi"] == "completed adapter row has no result audit provenance"
+    assert gate.blocked_adapters["mem0"] == "result audit manifest is missing: source_ref"
+    assert gate.blocked_adapters["agent_memory"] == "result audit is missing result_fingerprint"
+
+
 def test_coordination_competitor_adapter_disclosures_are_strict_and_reproducible() -> None:
     """Adapter disclosures should be stable until a real same-harness adapter exists."""
     first = coordination_competitor_adapter_disclosures()
@@ -276,9 +347,21 @@ def test_coordination_competitor_runner_manifest_templates_are_fingerprint_bound
         assert manifest["adapter_contract"] == "coordinationbench-v1"
         assert manifest["workload_fingerprint"] == workload.fingerprint
         assert manifest["template"] is True
-        assert manifest["run_command"] == ["__REPLACE_WITH_PINNED_RUNNER_ARGV__"]
+        assert manifest["dataset_contract"].startswith("coordinationbench-v1")
+        assert manifest["result_export_schema"] == "schemas/result.schema.json; runner must write --output <path>"
         assert "coordination-workload.json" in manifest["workload_file"]
         assert manifest["result_file"].endswith(f"{name}-coordination-result.json")
+    for name in {"mem0", "agent_memory", "activegraph"}:
+        assert templates[name]["run_command"] == ["__REPLACE_WITH_PINNED_RUNNER_ARGV__"]
+    assert templates["quarq"]["source_ref"] == "git:b68386048795765d46c87bef5bd88ecfb1301337"
+    assert templates["quarq"]["run_command"][:4] == [
+        "python",
+        "-m",
+        "zaxy.resources.coordinationbench.unsupported_runner",
+        "--adapter",
+    ]
+    assert templates["hybi"]["source_ref"].startswith("pypi:hybi==0.1.1 sha256:")
+    assert templates["hybi"]["capability_status"] == "unsupported_runner_required"
 
 
 def test_write_coordination_benchmark_report_publishes_manifest_templates(tmp_path: Path) -> None:
@@ -300,6 +383,9 @@ def test_write_coordination_benchmark_report_publishes_manifest_templates(tmp_pa
     assert payload["template"] is True
     assert payload["workload_fingerprint"] == report.workload_fingerprint
     assert payload["run_command"] == ["__REPLACE_WITH_PINNED_RUNNER_ARGV__"]
+    quarq = json.loads((manifest_dir / "quarq.runner-manifest.template.json").read_text(encoding="utf-8"))
+    assert quarq["source_ref"] == "git:b68386048795765d46c87bef5bd88ecfb1301337"
+    assert quarq["capability_status"] == "unsupported_runner_required"
 
 
 def test_coordinationbench_contract_resources_are_packaged() -> None:
@@ -354,6 +440,58 @@ def test_validate_coordination_competitor_result_returns_local_score_and_audit(t
 
     assert payload["metrics"]["conflict_recall"] == 1.0
     assert payload["audit"]["manifest"]["source_ref"] == "abc123"
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("name", "wrong", "name does not match"),
+        ("adapter_contract", "wrong", "adapter_contract"),
+        ("source_ref", "", "source_ref must be nonempty"),
+        ("run_command", [], "run_command"),
+        ("run_command", ["__REPLACE_WITH_PINNED_RUNNER_ARGV__"], "placeholder"),
+    ],
+)
+def test_validate_coordination_competitor_runner_manifest_rejects_malformed_contracts(
+    tmp_path: Path,
+    field: str,
+    value: object,
+    message: str,
+) -> None:
+    workload = build_coordination_workload(tmp_path / "coordination-workload.json", missions=1, workers=3)
+    manifest_path = _competitor_runner_manifest(tmp_path, workload.fingerprint)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest[field] = value
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        validate_coordination_competitor_runner_manifest("mem0", workload, manifest_path)
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (lambda payload: payload.update({"name": "wrong"}), "name does not match"),
+        (lambda payload: payload.update({"adapter_contract": "wrong"}), "adapter_contract"),
+        (lambda payload: payload.update({"manifest": None}), "manifest must be an object"),
+        (lambda payload: payload["manifest"].update({"source_url": ""}), "source_url must be nonempty"),
+        (lambda payload: payload.update({"cases": {}}), "cases must be an array"),
+        (lambda payload: payload["cases"].append("not-an-object"), "case output must be an object"),
+    ],
+)
+def test_validate_coordination_competitor_result_rejects_malformed_contracts(
+    tmp_path: Path,
+    mutate,
+    message: str,
+) -> None:
+    workload = build_coordination_workload(tmp_path / "coordination-workload.json", missions=1, workers=3)
+    result_path = tmp_path / "mem0-result.json"
+    payload = _competitor_result_payload(workload.fingerprint)
+    mutate(payload)
+    result_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        validate_coordination_competitor_result("mem0", workload, result_path)
 
 
 def test_competitor_runner_rejects_unedited_template_manifest(tmp_path: Path) -> None:
@@ -454,6 +592,8 @@ def _competitor_result_payload(workload_fingerprint: str, *, include_metrics: bo
             "run_command": "mem0-coordinationbench",
             "source_url": "https://example.test/mem0-adapter",
             "source_ref": "abc123",
+            "dataset_contract": "coordinationbench-v1 workload JSON; runner receives --workload <path>",
+            "result_export_schema": "schemas/result.schema.json; runner must write --output <path>",
         },
         "cases": [case_payload],
     }
@@ -818,6 +958,8 @@ def _competitor_runner_script(tmp_path: Path, *, name: str = "mem0", display_nam
                 f"    'run_command': '{name}-coordinationbench',",
                 f"    'source_url': 'https://example.test/{name}-adapter',",
                 "    'source_ref': 'abc123',",
+                "    'dataset_contract': 'coordinationbench-v1 workload JSON; runner receives --workload <path>',",
+                "    'result_export_schema': 'schemas/result.schema.json; runner must write --output <path>',",
                 "  },",
                 "  'cases': [{",
                 "    'case_id': workload['cases'][0]['case_id'],",
@@ -863,6 +1005,8 @@ def _competitor_runner_manifest(
         "run_command": [sys.executable, str(script)],
         "source_url": f"https://example.test/{name}-adapter",
         "source_ref": "abc123",
+        "dataset_contract": "coordinationbench-v1 workload JSON; runner receives --workload <path>",
+        "result_export_schema": "schemas/result.schema.json; runner must write --output <path>",
         "workload_fingerprint": workload_fingerprint,
     }
     manifest_path = tmp_path / f"{name}-runner.json"
@@ -1012,13 +1156,16 @@ def test_competitor_runner_nonzero_exit_reports_stderr_excerpt(tmp_path: Path) -
     payload["run_command"] = [sys.executable, str(failing)]
     manifest_path.write_text(json.dumps(payload), encoding="utf-8")
 
+    output_dir = tmp_path / "runner-output"
     with pytest.raises(RuntimeError, match="adapter exploded"):
         run_coordination_competitor_runner(
             "mem0",
             workload,
             manifest_path=manifest_path,
-            output_dir=tmp_path / "runner-output",
+            output_dir=output_dir,
         )
+    assert (output_dir / "mem0-runner.stdout.txt").exists()
+    assert "adapter exploded" in (output_dir / "mem0-runner.stderr.txt").read_text(encoding="utf-8")
 
 
 def test_competitor_runner_timeout_reports_adapter_name(tmp_path: Path) -> None:

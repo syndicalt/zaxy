@@ -448,7 +448,7 @@
       <h2 id="purpose-conditioned-memory-gate">Purpose-Conditioned Memory Gate</h2>
       <p>The <code>purpose-v1</code> benchmark is Zaxy&#x27;s deterministic internal gate for the &quot;memory is purpose&quot; claim. It does not compare against Semantic Reach, Quarq, or other products. Comparative SOTA claims remain blocked until same-harness adapters are pinned and scored.</p>
       <p>Run:</p>
-      <pre><code class="language-bash">python -m zaxy purpose-benchmark --output-dir reports/benchmarks/purpose-v1</code></pre>
+      <pre><code class="language-bash">python -m zaxy purpose-benchmark --output-dir reports/benchmarks/purpose-v1 --include-holdouts</code></pre>
       <p>Archived report: <code>reports/benchmarks/purpose-v1/purpose-benchmark.json</code></p>
       <table>
         <thead>
@@ -522,6 +522,7 @@
           </tr>
         </tbody>
       </table>
+      <p>The archived report also includes a diagnostic public-derived holdout pack at <code>reports/benchmarks/purpose-v1/holdouts/public-derived-purpose-v1/</code>. Its fingerprint is <code>0d8217bb4e905164305970050ef34c987d7e9b287ce648a1730685f3dd0e61f6</code>. Holdouts are reported as <code>gate_status=diagnostic</code>, not as release-pass lanes, and cases are frozen with source disclosures and forbidden overclaims.</p>
       <p>The smaller <code>coordination-v1</code> workload remains as the contract seed. It includes three workers, overlapping auth-failure findings, duplicate evidence, stale claims, conflicting claims, and a missing-evidence finding. Use it for adapter authors and fast protocol checks, not as the representative headline.</p>
       <p>Run the MVP harness:</p>
       <pre><code class="language-bash">zaxy coordinate benchmark --output-dir reports/benchmarks/coordination-v1 --json</code></pre>
@@ -583,7 +584,7 @@
           </tr>
         </tbody>
       </table>
-      <p>The same report lists Mem0, Agent Memory, ActiveGraph, Quarq, and Semantic Reach/Hybi as <code>not_run</code> with <code>disclosure_only</code> claim status until a pinned runner manifest or strict result file is available. It also writes a machine-readable <code>competitor_claim_gate</code>; public same-harness claims for Quarq or Hybi are blocked until the gate sees completed, locally scored, fingerprinted result audits. That is deliberate: CoordinationBench should make the adapter gap visible without turning placeholder templates into public claims.</p>
+      <p>The same report lists Mem0, Agent Memory, ActiveGraph, Quarq, and Semantic Reach/Hybi as <code>not_run</code> with <code>disclosure_only</code> claim status until a pinned runner result is locally scored. Quarq and Hybi now ship pinned disclosure manifests with source refs, install commands, workload/result contracts, and explicit unsupported runner commands; those manifests still are not performance results. The report also writes a machine-readable <code>competitor_claim_gate</code>; public same-harness claims for Quarq or Hybi are blocked until the gate sees completed, locally scored, fingerprinted result audits. That is deliberate: CoordinationBench should make the adapter gap visible without turning placeholder templates into public claims.</p>
       <h2 id="external-disclosures">External Disclosures</h2>
       <p>These rows summarize public claims from other projects. They are external disclosures, not same-harness results, because Zaxy did not execute those systems inside its benchmark harness.</p>
       <table>
@@ -661,15 +662,15 @@
           </tr>
           <tr>
             <td>Quarq</td>
-            <td>CoordinationBench adapter template</td>
-            <td>The OSS repo exposes a local memory-first agent architecture, but no Zaxy-pinned CoordinationBench runner is committed.</td>
-            <td>Fill the packaged <code>quarq</code> runner manifest with pinned install/source/run commands and score the generated result locally before publishing metrics.</td>
+            <td>pinned unsupported runner manifest</td>
+            <td>The OSS repo exposes a local memory-first agent architecture. Zaxy pins <code>quarqlabs/agent-oss</code> at <code>b68386048795765d46c87bef5bd88ecfb1301337</code>, but no CoordinationBench runner adapter is committed.</td>
+            <td>Replace the packaged unsupported runner with a real workload replay adapter and score the generated result locally before publishing metrics.</td>
           </tr>
           <tr>
             <td>Semantic Reach / HyperBinder / Hybi</td>
-            <td>CoordinationBench adapter template</td>
-            <td>The public SDK is an HTTP client for a HyperBinder runtime; Zaxy has no pinned server/runtime adapter yet.</td>
-            <td>Fill the packaged <code>hybi</code> runner manifest with a pinned HyperBinder runtime and export strict result files before publishing metrics.</td>
+            <td>pinned unsupported runner manifest</td>
+            <td>The public <code>hybi</code> SDK is pinned to 0.1.1 by PyPI wheel hash, but it is an HTTP client for a HyperBinder runtime and Zaxy has no pinned server/runtime adapter yet.</td>
+            <td>Pin a HyperBinder server/runtime, replace the unsupported runner, and export strict result files before publishing metrics.</td>
           </tr>
         </tbody>
       </table>

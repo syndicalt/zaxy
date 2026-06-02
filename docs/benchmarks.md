@@ -278,7 +278,7 @@ adapters are pinned and scored.
 Run:
 
 ```bash
-python -m zaxy purpose-benchmark --output-dir reports/benchmarks/purpose-v1
+python -m zaxy purpose-benchmark --output-dir reports/benchmarks/purpose-v1 --include-holdouts
 ```
 
 Archived report:
@@ -296,6 +296,13 @@ Archived report:
 | Neutral Substrate Projection | passed | 1.000 | One neutral customer artifact can rebuild distinct cited purpose projections. |
 | Cross-Role Citation | passed | 1.000 | The same citation can support different role-specific memories. |
 | Accepted-State Discipline | passed | 1.000 | Coordinate compaction keeps accepted parent state and suppresses pending worker rows. |
+
+The archived report also includes a diagnostic public-derived holdout pack at
+`reports/benchmarks/purpose-v1/holdouts/public-derived-purpose-v1/`. Its
+fingerprint is
+`0d8217bb4e905164305970050ef34c987d7e9b287ce648a1730685f3dd0e61f6`.
+Holdouts are reported as `gate_status=diagnostic`, not as release-pass lanes,
+and cases are frozen with source disclosures and forbidden overclaims.
 
 The smaller `coordination-v1` workload remains as the contract seed. It includes
 three workers, overlapping auth-failure findings, duplicate evidence, stale
@@ -327,7 +334,10 @@ It uses workload fingerprint
 
 The same report lists Mem0, Agent Memory, ActiveGraph, Quarq, and Semantic
 Reach/Hybi as `not_run` with `disclosure_only` claim status until a pinned
-runner manifest or strict result file is available. It also writes a
+runner result is locally scored. Quarq and Hybi now ship pinned disclosure
+manifests with source refs, install commands, workload/result contracts, and
+explicit unsupported runner commands; those manifests still are not performance
+results. The report also writes a
 machine-readable `competitor_claim_gate`; public same-harness claims for Quarq
 or Hybi are blocked until the gate sees completed, locally scored,
 fingerprinted result audits. That is deliberate: CoordinationBench should make
@@ -361,8 +371,8 @@ As of May 18, 2026, competitor adapters have different readiness levels:
 | MemPalace | adapter candidate | The public repo documents `benchmarks/longmemeval_bench.py`, committed per-question results, and a no-API-key raw LongMemEval path. | Build a wrapper that exports per-query top-k contexts into Zaxy's `BenchmarkRun` schema without changing MemPalace ranking settings. |
 | Mem0 | benchmark harness candidate | `mem0ai/memory-benchmarks` includes LongMemEval scripts, but the OSS path requires Docker, Qdrant, model configuration, and LLM answer/judge settings. | Separate retrieval-only evidence from answer/judge accuracy, pin backend config, and preserve token/latency accounting. |
 | Agent Memory | external disclosure only | The product page reports LongMemEval-S R@5 and the retrieval stack, but it does not document a stable same-harness CLI/API contract for Zaxy to call. | Keep the claim in external disclosures until a reproducible benchmark command, dataset contract, and result export are available. |
-| Quarq | CoordinationBench adapter template | The OSS repo exposes a local memory-first agent architecture, but no Zaxy-pinned CoordinationBench runner is committed. | Fill the packaged `quarq` runner manifest with pinned install/source/run commands and score the generated result locally before publishing metrics. |
-| Semantic Reach / HyperBinder / Hybi | CoordinationBench adapter template | The public SDK is an HTTP client for a HyperBinder runtime; Zaxy has no pinned server/runtime adapter yet. | Fill the packaged `hybi` runner manifest with a pinned HyperBinder runtime and export strict result files before publishing metrics. |
+| Quarq | pinned unsupported runner manifest | The OSS repo exposes a local memory-first agent architecture. Zaxy pins `quarqlabs/agent-oss` at `b68386048795765d46c87bef5bd88ecfb1301337`, but no CoordinationBench runner adapter is committed. | Replace the packaged unsupported runner with a real workload replay adapter and score the generated result locally before publishing metrics. |
+| Semantic Reach / HyperBinder / Hybi | pinned unsupported runner manifest | The public `hybi` SDK is pinned to 0.1.1 by PyPI wheel hash, but it is an HTTP client for a HyperBinder runtime and Zaxy has no pinned server/runtime adapter yet. | Pin a HyperBinder server/runtime, replace the unsupported runner, and export strict result files before publishing metrics. |
 
 No same-harness adapter should be published without a pinned install command,
 dataset mapping, retrieval limit, score mapping, latency/tokens capture, and a
