@@ -1,6 +1,7 @@
 # Synthesis Context Research
 
 This note defines the next architecture target for Zaxy retrieval: a synthesis working-memory layer that sits between candidate retrieval and model-facing Memory Checkout.
+For Coordinate, synthesis working memory is the coordinator proof layer: it turns worker-local findings, conflicts, duplicate claims, stale evidence, and accepted parent state into a cited answer candidate that can be reviewed, promoted, or rejected.
 
 The current benchmark pattern is clear: Zaxy often retrieves the relevant memory neighborhood, but still misses composed answers. In the latest 100-question LongMemEval hash run, Zaxy reached `Recall@5=0.870` and `Recall@10=0.900`, while the largest remaining miss class was still `synthesis_miss`. That means the next improvements should not add more broad retrieval surfaces first. They should make retrieved evidence easier to compose, verify, and project.
 
@@ -152,6 +153,7 @@ Do not bury answer candidates in the middle of a large result list.
 
 When the model uses or rejects an answer candidate, write feedback:
 
+- `memory.synthesis.artifact.created`
 - `memory.synthesis.used`
 - `memory.synthesis.rejected`
 - `memory.synthesis.corrected`

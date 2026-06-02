@@ -162,6 +162,33 @@ def test_docs_describe_skill_memory_contract_and_guardrail() -> None:
     assert "Skill Memory changes must pass the full 500-question guardrail" in benchmarks
 
 
+def test_docs_publish_coordination_competitor_claim_gate() -> None:
+    """CoordinationBench docs should prevent Quarq/Hybi disclosure rows from becoming claims."""
+    benchmarks = Path("docs/benchmarks.md").read_text(encoding="utf-8")
+    roadmap = Path("docs/coordinate-roadmap.md").read_text(encoding="utf-8")
+    report = json.loads(
+        Path("reports/benchmarks/coordination-real-v1/coordination-benchmark.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    report_md = Path("reports/benchmarks/coordination-real-v1/coordination-benchmark.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert "competitor_claim_gate" in benchmarks
+    assert "--require-competitor-claim quarq" in benchmarks
+    assert "--require-competitor-claim hybi" in benchmarks
+    assert "disclosure-only for those systems" in benchmarks
+    assert "public-claim gate is now implemented for Quarq" in roadmap
+    assert report["competitor_claim_gate"]["status"] == "blocked"
+    assert set(report["competitor_claim_gate"]["blocked_adapters"]) == {"quarq", "hybi"}
+    assert report["competitor_adapters"]["quarq"]["claim_status"] == "disclosure_only"
+    assert report["competitor_adapters"]["hybi"]["claim_status"] == "disclosure_only"
+    assert "## Competitor Claim Gate" in report_md
+    assert "Quarq" in report_md
+    assert "Semantic Reach / HyperBinder / Hybi" in report_md
+
+
 def test_pggraph_backend_roadmap_records_contract_first_state() -> None:
     """Docs should keep pgGraph behind the projection contract and explicit backend selector."""
     agents = Path("AGENTS.md").read_text(encoding="utf-8")
@@ -653,15 +680,19 @@ def test_mcp_docs_publish_tool_contract_snapshot() -> None:
     fixture = json.loads(Path("docs/examples/mcp-tool-contract.json").read_text(encoding="utf-8"))
     docs = Path("docs/mcp.md").read_text(encoding="utf-8")
 
-    assert fixture["tool_count"] == 25
+    assert fixture["tool_count"] == 29
     assert "docs/examples/mcp-tool-contract.json" in docs
     assert "MCP tool contract snapshot" in docs
     assert {tool["name"] for tool in fixture["tools"]} >= {
         "memory_bootstrap",
         "memory_checkout",
         "memory_feedback",
+        "memory_synthesis_artifact",
+        "memory_synthesis_evidence",
         "coordination_report_finding",
         "coordination_checkout",
+        "coordination_record_synthesis_artifact",
+        "coordination_proof_trace",
     }
 
 
@@ -710,6 +741,8 @@ def test_mcp_docs_publish_representative_response_snapshots() -> None:
         "memory_verbatim",
         "context_assemble",
         "memory_feedback",
+        "memory_synthesis_artifact",
+        "memory_synthesis_evidence",
         "coordination_checkout",
     }
     assert snapshots["memory_bootstrap"]["recommended_next_tool"] == "memory_checkout"
@@ -718,13 +751,26 @@ def test_mcp_docs_publish_representative_response_snapshots() -> None:
     assert snapshots["memory_verbatim"]["first_result"]["source"] == "verbatim"
     assert snapshots["context_assemble"]["context_count"] == 1
     assert snapshots["memory_feedback"]["event_type"] == "memory.reinforced"
+    assert snapshots["memory_synthesis_artifact"]["candidate_event_type"] == "memory.synthesis.used"
+    assert snapshots["memory_synthesis_evidence"]["event_type"] == "memory.evidence.excluded"
     assert snapshots["coordination_checkout"]["accepted_count"] == 1
     assert "prompt context assembly" in docs
     assert "graph retrieval" in docs
     assert "verbatim source recall" in docs
     assert "feedback reinforcement" in docs
+    assert "synthesis artifact writes" in docs
+    assert "synthesis evidence row feedback" in docs
     assert "accepted coordination checkout counts" in docs
     assert snapshots["memory_checkout"]["diagnostics"]["feedback_tool"] == "memory_feedback"
+
+
+def test_changelog_records_memory_synthesis_artifact_contract() -> None:
+    """Public synthesis artifact contract changes should be release-noted."""
+    changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+
+    assert "memory_synthesis_artifact" in changelog
+    assert "memory_synthesis_evidence" in changelog
+    assert "ledger rows" in changelog
 
 
 def test_public_site_benchmark_claim_is_scoped_to_fixture() -> None:

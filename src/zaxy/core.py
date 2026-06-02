@@ -54,7 +54,8 @@ from zaxy.lifecycle import build_subagent_completed_event
 from zaxy.metrics import get_metrics
 from zaxy.pagination import encode_query_cursor, validate_query_cursor
 from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
-from zaxy.query import QueryRouter, build_reranker, build_retention_policy
+from zaxy.purpose import PurposeProfile, purpose_profile, purpose_retrieval_policy
+from zaxy.query import QueryRouter, ScoringProfile, build_reranker, build_retention_policy
 from zaxy.recall import RecallCandidateSet, build_recall_candidate_set, empty_recall_candidate_set
 from zaxy.refs import MemoryRef, MemoryRefStore
 from zaxy.retrieval_intent import classify_retrieval_intent
@@ -66,7 +67,7 @@ from zaxy.retrieval_plan import (
     source_context_group,
     source_lane_candidate_limit,
     source_lane_queries,
-    source_synthesis_bundle,
+    source_synthesis_bundle_result,
 )
 from zaxy.retrieval_profile import (
     RetrievalProfile,
@@ -81,6 +82,14 @@ from zaxy.security import (
     validate_session_id,
 )
 from zaxy.session import SessionManager
+from zaxy.synthesis_artifact import (
+    build_synthesis_artifact,
+    build_synthesis_candidate_event_payload,
+    build_synthesis_evidence_event_payload,
+    normalize_synthesis_outcome,
+    synthesis_outcome_event_type,
+)
+from zaxy.synthesis_packet import synthesis_packet_from_items
 from zaxy.trace import MemoryTracer
 from zaxy.transcripts import collect_transcript_events
 from zaxy.verbatim import VerbatimIndex
@@ -133,6 +142,7 @@ class MemoryCheckout:
     replay_event_count: int
     compacted: bool = False
     assembly_policy: dict[str, bool | int] = field(default_factory=dict)
+    purpose: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """Return a stable JSON-serializable payload for tools and CLIs."""
@@ -159,6 +169,7 @@ class MemoryCheckout:
             ),
             "compacted": self.compacted,
             "assembly_policy": self.assembly_policy,
+            "purpose": self.purpose,
         }
 
 
@@ -647,6 +658,7 @@ class MemoryFabric:
         embedding: list[float] | None = None,
         session_id: str = "default",
         include_source_lane: bool = True,
+        scoring_profile: str | ScoringProfile | None = None,
     ) -> list[Context]:
         """Return answer-ready context assembled from retrieval and source evidence."""
         import time
@@ -660,6 +672,7 @@ class MemoryFabric:
             limit=limit,
             embedding=embedding,
             session_id=sid,
+            scoring_profile=scoring_profile,
         )
         source_contexts = (
             await self._query_source_lane(query, contexts, sid, limit)
@@ -697,6 +710,7 @@ class MemoryFabric:
         embedding: list[float] | None = None,
         session_id: str = "default",
         trace: bool = False,
+        scoring_profile: str | ScoringProfile | None = None,
     ) -> list[Context]:
         """Retrieve backend evidence without source-lane answer assembly."""
         import time
@@ -737,6 +751,7 @@ class MemoryFabric:
                 limit=limit,
                 embedding=query_embedding,
                 session_id=sid,
+                scoring_profile=scoring_profile,
             )
         except Exception:
             get_metrics().record_degraded_operation("query", "graph_retrieval_unavailable")
@@ -862,6 +877,7 @@ class MemoryFabric:
         ]
         source_kind = "source_absence"
         assembly_hint = "source_absence"
+        synthesis_packet: dict[str, Any] | None = None
         if should_try_absence_bundle_first(query, limit=limit):
             bundle = absence_check_bundle(
                 query=query,
@@ -871,21 +887,26 @@ class MemoryFabric:
             if bundle is None:
                 source_kind = "source_synthesis"
                 assembly_hint = "source_synthesis"
-                bundle = source_synthesis_bundle(
+                result = source_synthesis_bundle_result(
                     query=query,
                     source_results=synthesis_contexts,
                     limit=limit,
                     preferred_source_groups=preferred_source_groups,
                 )
+                if result is not None:
+                    bundle = result.content
+                    synthesis_packet = result.packet
         else:
             source_kind = "source_synthesis"
             assembly_hint = "source_synthesis"
-            bundle = source_synthesis_bundle(
+            result = source_synthesis_bundle_result(
                 query=query,
                 source_results=synthesis_contexts,
                 limit=limit,
                 preferred_source_groups=preferred_source_groups,
             )
+            bundle = result.content if result is not None else None
+            synthesis_packet = result.packet if result is not None else None
             if bundle is None:
                 source_kind = "source_absence"
                 assembly_hint = "source_absence"
@@ -903,6 +924,7 @@ class MemoryFabric:
             metadata={
                 "source_kind": source_kind,
                 "assembly_hint": assembly_hint,
+                **_synthesis_packet_metadata(bundle, synthesis_packet),
             },
         )
         return [synthesis, *source_contexts]
@@ -1187,24 +1209,37 @@ class MemoryFabric:
         recall_limit: int | None = None,
         max_recent_events: int | None = None,
         as_of_seq: int | None = None,
+        purpose: PurposeProfile | dict[str, Any] | str | None = None,
     ) -> ContextAssembly:
         """Assemble recent replay plus retrieval into prompt-ready context."""
         sid = validate_session_id(session_id)
         prompt_limit = validate_limit(limit)
-        candidate_limit = prompt_limit if recall_limit is None else validate_limit(max(prompt_limit, recall_limit))
+        base_candidate_limit = prompt_limit if recall_limit is None else validate_limit(max(prompt_limit, recall_limit))
+        profile = purpose_profile(purpose)
+        retrieval_policy = purpose_retrieval_policy(
+            profile,
+            query,
+            prompt_limit=prompt_limit,
+            base_recall_limit=base_candidate_limit,
+        )
+        candidate_limit = validate_limit(
+            min(MAX_QUERY_LIMIT, max(base_candidate_limit, retrieval_policy.min_recall_limit))
+        )
+        retrieval_query = retrieval_policy.retrieval_query
         replay = await self.replay(from_seq=replay_from_seq, session_id=sid)
         graph_contexts = await self.query(
-            query,
+            retrieval_query,
             limit=candidate_limit,
             session_id=sid,
             include_source_lane=False,
+            scoring_profile=retrieval_policy.scoring_profile,
         )
         verbatim_candidate_limit = self.context_assembly_policy.verbatim_candidate_limit(
-            query=query,
+            query=retrieval_query,
             limit=candidate_limit,
         )
         verbatim_contexts = (
-            await self.query_verbatim(query, limit=verbatim_candidate_limit, session_id=sid)
+            await self.query_verbatim(retrieval_query, limit=verbatim_candidate_limit, session_id=sid)
             if verbatim_candidate_limit > 0
             else []
         )
@@ -1253,6 +1288,10 @@ class MemoryFabric:
                 lines.append(f"- {warning}")
         working_set_payload = working_set.to_dict()
         working_set_payload["retrieval_profile"] = self.retrieval_profile.to_diagnostics()
+        working_set_payload["purpose_retrieval_policy"] = retrieval_policy.to_diagnostics(
+            base_recall_limit=base_candidate_limit,
+            resolved_recall_limit=candidate_limit,
+        )
         return ContextAssembly(
             session_id=sid,
             prompt="\n".join(lines).strip(),
@@ -1275,6 +1314,7 @@ class MemoryFabric:
         limit: int = 10,
         max_recent_events: int | None = 20,
         ref: str | None = None,
+        purpose: PurposeProfile | dict[str, Any] | str | None = None,
     ) -> MemoryCheckout:
         """Checkout the current cited memory state an agent should condition on."""
         resolved_ref = self._resolve_checkout_ref(ref, session_id=session_id)
@@ -1288,11 +1328,13 @@ class MemoryFabric:
             recall_limit=_checkout_recall_limit(query, limit),
             max_recent_events=max_recent_events,
             as_of_seq=as_of_seq,
+            purpose=purpose,
         )
         return build_memory_checkout(
             query=query,
             assembly=assembly,
             ref=resolved_ref,
+            purpose=purpose,
         )
 
     def _resolve_checkout_ref(self, ref: str | None, *, session_id: str) -> MemoryRef | None:
@@ -1325,10 +1367,14 @@ class MemoryFabric:
         session_id: str = "default",
         actor: str = "zaxy",
         importance: float | None = None,
+        purpose: PurposeProfile | dict[str, Any] | str | None = None,
+        outcome: str | None = None,
     ) -> int:
         """Append feedback events for retrieved context without mutating history."""
         sid = validate_session_id(session_id)
         normalized = _normalize_context_feedback(feedback)
+        purpose_payload = _feedback_purpose_payload(purpose)
+        outcome_value = _feedback_outcome(outcome)
         count = 0
         for context in contexts:
             identity = _context_identity(context)
@@ -1343,6 +1389,10 @@ class MemoryFabric:
                 payload["citation"] = citation
             if context.metadata:
                 payload.update(_context_feedback_metadata(context.metadata))
+            if purpose_payload:
+                payload["purpose"] = purpose_payload
+            if outcome_value:
+                payload["outcome"] = outcome_value
             if normalized in {"used", "helpful"}:
                 payload.pop("feedback")
                 if importance is not None:
@@ -1362,6 +1412,105 @@ class MemoryFabric:
                 )
             count += 1
         return count
+
+    async def record_synthesis_candidate(
+        self,
+        checkout: MemoryCheckout,
+        *,
+        candidate: dict[str, Any],
+        outcome: str,
+        actor: str = "zaxy",
+        reason: str | None = None,
+    ) -> Any:
+        """Append an auditable synthesis answer-candidate artifact event."""
+        normalized = normalize_synthesis_outcome(outcome)
+        sid = validate_session_id(checkout.session_id)
+        payload = build_synthesis_candidate_event_payload(
+            checkout=checkout,
+            candidate=candidate,
+            outcome=normalized,
+            reason=reason,
+        )
+        if not self._connected:
+            try:
+                await self.connect()
+            except Exception:
+                get_metrics().record_degraded_operation("append", "graph_connect_unavailable")
+                self._connected = False
+        eventlog = self.session_manager.get(sid).eventlog
+        event = eventlog.append(
+            synthesis_outcome_event_type(normalized),
+            actor=actor,
+            payload=validate_payload(payload),
+            thread=sid,
+        )
+        await self._project_event(event, session_id=sid)
+        await self._append_generated_inferences(eventlog, source_event=event, session_id=sid)
+        return event
+
+    async def record_synthesis_evidence(
+        self,
+        checkout: MemoryCheckout,
+        *,
+        row: dict[str, Any],
+        outcome: str,
+        candidate: dict[str, Any] | None = None,
+        actor: str = "zaxy",
+        reason: str | None = None,
+    ) -> Any:
+        """Append auditable feedback for one synthesis evidence ledger row."""
+        normalized = normalize_synthesis_outcome(outcome)
+        sid = validate_session_id(checkout.session_id)
+        payload = build_synthesis_evidence_event_payload(
+            checkout=checkout,
+            row=row,
+            outcome=normalized,
+            candidate=candidate,
+            reason=reason,
+        )
+        if not self._connected:
+            try:
+                await self.connect()
+            except Exception:
+                get_metrics().record_degraded_operation("append", "graph_connect_unavailable")
+                self._connected = False
+        eventlog = self.session_manager.get(sid).eventlog
+        event_type = "memory.evidence.reinforced" if normalized == "used" else synthesis_outcome_event_type(normalized)
+        event = eventlog.append(
+            event_type,
+            actor=actor,
+            payload=validate_payload(payload),
+            thread=sid,
+        )
+        await self._project_event(event, session_id=sid)
+        await self._append_generated_inferences(eventlog, source_event=event, session_id=sid)
+        return event
+
+    async def record_synthesis_artifact(
+        self,
+        checkout: MemoryCheckout,
+        *,
+        actor: str = "zaxy",
+    ) -> Any:
+        """Append a deterministic synthesis artifact created from checkout state."""
+        sid = validate_session_id(checkout.session_id)
+        payload = build_synthesis_artifact(checkout)
+        if not self._connected:
+            try:
+                await self.connect()
+            except Exception:
+                get_metrics().record_degraded_operation("append", "graph_connect_unavailable")
+                self._connected = False
+        eventlog = self.session_manager.get(sid).eventlog
+        event = eventlog.append(
+            "memory.synthesis.artifact.created",
+            actor=actor,
+            payload=validate_payload(payload),
+            thread=sid,
+        )
+        await self._project_event(event, session_id=sid)
+        await self._append_generated_inferences(eventlog, source_event=event, session_id=sid)
+        return event
 
     async def after_turn(
         self,
@@ -1566,6 +1715,65 @@ class MemoryFabric:
         """Return accepted coordination state for prompt injection."""
         return self._coordination_manager().checkout(mission_id, include_diagnostics=include_diagnostics)
 
+    async def coordinate_record_synthesis_artifact(
+        self,
+        mission_id: str,
+        checkout: MemoryCheckout,
+        *,
+        decision_scope: str = "brief",
+        handoff_id: str | None = None,
+        actor: str = "coordinator",
+    ) -> dict[str, Any]:
+        """Persist a synthesis artifact plus a mission-scoped Coordinate proof packet."""
+        mission_sid = validate_session_id(mission_id)
+        if validate_session_id(checkout.session_id) != mission_sid:
+            raise ValueError("Coordinate synthesis checkout session_id must match mission_id")
+        artifact_payload = build_synthesis_artifact(checkout)
+        proof_packet = self._coordination_manager().proof_packet(
+            mission_sid,
+            artifact_payload,
+            decision_scope=decision_scope,
+            handoff_id=handoff_id,
+        )
+        proof_payload = validate_payload(proof_packet.to_dict())
+        if not self._connected:
+            try:
+                await self.connect()
+            except Exception:
+                get_metrics().record_degraded_operation("append", "graph_connect_unavailable")
+                self._connected = False
+        eventlog = self.session_manager.get(mission_sid).eventlog
+        artifact_event = eventlog.append(
+            "memory.synthesis.artifact.created",
+            actor=actor,
+            payload=validate_payload(artifact_payload),
+            thread=mission_sid,
+        )
+        await self._project_event(artifact_event, session_id=mission_sid)
+        await self._append_generated_inferences(eventlog, source_event=artifact_event, session_id=mission_sid)
+        proof_event = eventlog.append(
+            "coordination.proof_packet.created",
+            actor=actor,
+            payload=proof_payload,
+            thread=mission_sid,
+        )
+        await self._project_event(proof_event, session_id=mission_sid)
+        await self._append_generated_inferences(eventlog, source_event=proof_event, session_id=mission_sid)
+        return {
+            "artifact_id": artifact_payload["artifact_id"],
+            "artifact_event": {
+                "seq": artifact_event.seq,
+                "hash": artifact_event.hash,
+                "event_type": artifact_event.type,
+            },
+            "proof_event": {
+                "seq": proof_event.seq,
+                "hash": proof_event.hash,
+                "event_type": proof_event.type,
+            },
+            "proof_packet": proof_payload,
+        }
+
     async def coordinate_performance_ledger(self, mission_id: str) -> Any:
         """Return replay-backed worker outcome metrics for a coordination mission."""
         return self._coordination_manager().performance_ledger(mission_id)
@@ -1719,14 +1927,32 @@ def _normalize_context_feedback(feedback: str) -> str:
     return normalized
 
 
+def _feedback_purpose_payload(
+    purpose: PurposeProfile | dict[str, Any] | str | None,
+) -> dict[str, Any] | None:
+    if purpose is None:
+        return None
+    return purpose_profile(purpose).to_dict()
+
+
+def _feedback_outcome(outcome: str | None) -> str | None:
+    if outcome is None:
+        return None
+    value = str(outcome).strip()
+    return value or None
+
+
 def build_memory_checkout(
     *,
     query: str,
     assembly: ContextAssembly,
     ref: MemoryRef | None = None,
+    purpose: PurposeProfile | dict[str, Any] | str | None = None,
 ) -> MemoryCheckout:
     """Build the Memory Checkout contract from assembled context."""
-    checkout_contexts = assembly.recall.contexts() or assembly.contexts
+    profile = purpose_profile(purpose)
+    purpose_payload = profile.to_dict()
+    checkout_contexts = _checkout_contexts_with_synthesis(query, assembly)
     ranked_contexts = sorted(
         checkout_contexts,
         key=lambda context: _checkout_rank(context, query),
@@ -1738,6 +1964,11 @@ def build_memory_checkout(
     candidate_evidence = [
         _checkout_evidence(context) for context in ranked_contexts if _context_citation(context)
     ]
+    candidate_current_facts, candidate_evidence, purpose_policy = _apply_purpose_checkout_policy(
+        profile,
+        current_facts=candidate_current_facts,
+        evidence=candidate_evidence,
+    )
     selection = select_checkout_evidence(
         query=query,
         evidence_plan=build_evidence_plan(query, limit=10),
@@ -1756,8 +1987,11 @@ def build_memory_checkout(
         "policy": "current_only",
         "superseded_contexts_excluded": sum(1 for context in assembly.contexts if context.valid_to is not None),
     }
+    if purpose_policy["suppressed_count"]:
+        retention["purpose_policy"] = purpose_policy
     diagnostics = build_checkout_diagnostics(
         query=query,
+        purpose=purpose_payload,
         source_lanes=_checkout_source_lanes(ranked_contexts),
         current_facts=current_facts,
         evidence=evidence,
@@ -1773,11 +2007,15 @@ def build_memory_checkout(
     retrieval_profile = assembly.working_set.get("retrieval_profile")
     if isinstance(retrieval_profile, dict):
         diagnostics = {**diagnostics, "retrieval_profile": retrieval_profile}
+    purpose_retrieval = assembly.working_set.get("purpose_retrieval_policy")
+    if isinstance(purpose_retrieval, dict):
+        diagnostics = {**diagnostics, "purpose_retrieval_policy": purpose_retrieval}
     recall_diagnostics = assembly.recall.to_diagnostics()
     if recall_diagnostics["candidate_count"] and recall_diagnostics["candidate_count"] != len(assembly.contexts):
         diagnostics = {**diagnostics, "recall": recall_diagnostics}
     guidance = build_checkout_guidance(
         query=query,
+        purpose=purpose_payload,
         current_facts=current_facts,
         retention=retention,
         evidence=evidence,
@@ -1822,7 +2060,59 @@ def build_memory_checkout(
         replay_event_count=assembly.replay_event_count,
         compacted=assembly.compacted,
         assembly_policy=assembly.assembly_policy,
+        purpose=purpose_payload,
     )
+
+
+def _checkout_contexts_with_synthesis(query: str, assembly: ContextAssembly) -> list[Context]:
+    """Return recall contexts plus a compact checkout-only synthesis proof when available."""
+    checkout_contexts = list(assembly.recall.contexts() or assembly.contexts)
+    if any(
+        (context.metadata or {}).get("source_kind") == "source_synthesis"
+        or "zaxy_synthesis_bundle=true" in context.content
+        for context in checkout_contexts
+    ):
+        return checkout_contexts
+    source_contexts = [
+        context
+        for context in checkout_contexts
+        if _checkout_source_lane(context) in {"verbatim", "eventloom", "projection"}
+    ]
+    graph_contexts = [
+        context
+        for context in checkout_contexts
+        if _checkout_source_lane(context) == "graph"
+    ]
+    synthesis_contexts = _prefer_verbatim_for_duplicate_source_groups(source_contexts, graph_contexts)
+    if not synthesis_contexts:
+        return checkout_contexts
+    result = source_synthesis_bundle_result(
+        query=query,
+        source_results=synthesis_contexts,
+        limit=10,
+        preferred_source_groups=[
+            source_context_group(_source_context_text(context))
+            for context in graph_contexts
+        ],
+    )
+    if result is None:
+        return checkout_contexts
+    bundle = result.content
+    score = max((context.score for context in checkout_contexts), default=0.0) + 1.0
+    return [
+        Context(
+            content=bundle,
+            source="verbatim",
+            score=score,
+            metadata={
+                "source_kind": "source_synthesis",
+                "assembly_hint": "source_synthesis",
+                "checkout_only": True,
+                **_synthesis_packet_metadata(bundle, result.packet),
+            },
+        ),
+        *checkout_contexts,
+    ]
 
 
 def _checkout_fact(context: Context) -> dict[str, Any]:
@@ -1840,9 +2130,16 @@ def _checkout_fact(context: Context) -> dict[str, Any]:
         value = metadata.get(key)
         if isinstance(value, str) and value:
             fact[key] = value
+    for key in _CHECKOUT_METADATA_FIELDS:
+        value = metadata.get(key)
+        if isinstance(value, str | int | float | bool) and value not in ("", None):
+            fact[key] = value
     score_explanation = metadata.get("score_explanation")
     if isinstance(score_explanation, dict):
         fact["score_explanation"] = score_explanation
+    synthesis_packet = metadata.get("synthesis_packet")
+    if isinstance(synthesis_packet, dict):
+        fact["synthesis_packet"] = synthesis_packet
     return fact
 
 def _checkout_evidence(context: Context) -> dict[str, Any]:
@@ -1861,7 +2158,155 @@ def _checkout_evidence(context: Context) -> dict[str, Any]:
     score_explanation = metadata.get("score_explanation")
     if isinstance(score_explanation, dict):
         evidence["score_explanation"] = score_explanation
+    for key in _CHECKOUT_METADATA_FIELDS:
+        value = metadata.get(key)
+        if isinstance(value, str | int | float | bool) and value not in ("", None):
+            evidence[key] = value
+    synthesis_packet = metadata.get("synthesis_packet")
+    if isinstance(synthesis_packet, dict):
+        evidence["synthesis_packet"] = synthesis_packet
     return evidence
+
+
+_CHECKOUT_METADATA_FIELDS = (
+    "mission_id",
+    "worker_id",
+    "finding_id",
+    "claim_key",
+    "claim_value",
+    "coordination_status",
+    "finding_status",
+    "status",
+    "authority",
+    "authority_scope",
+    "stale",
+    "superseded_by",
+)
+
+
+def _apply_purpose_checkout_policy(
+    profile: PurposeProfile,
+    *,
+    current_facts: list[dict[str, Any]],
+    evidence: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
+    """Apply purpose suppress rules before facts become model-facing memory."""
+    if profile.profile == "general" or not profile.suppress:
+        return current_facts, evidence, _empty_purpose_policy(profile)
+    kept_facts: list[dict[str, Any]] = []
+    kept_evidence: list[dict[str, Any]] = []
+    suppressed_ids: set[str] = set()
+    reasons: dict[str, int] = {}
+    examples: list[dict[str, str]] = []
+    for item in current_facts:
+        reason = _purpose_suppression_reason(profile, item)
+        if reason is None:
+            kept_facts.append(item)
+            continue
+        identity = _checkout_policy_item_id(item)
+        suppressed_ids.add(identity)
+        reasons[reason] = reasons.get(reason, 0) + 1
+        if len(examples) < 5:
+            examples.append({"id": identity, "reason": reason})
+    for item in evidence:
+        reason = _purpose_suppression_reason(profile, item)
+        identity = _checkout_policy_item_id(item)
+        if reason is None and identity not in suppressed_ids:
+            kept_evidence.append(item)
+            continue
+        if identity in suppressed_ids:
+            continue
+        suppressed_ids.add(identity)
+        if reason is not None:
+            reasons[reason] = reasons.get(reason, 0) + 1
+    return kept_facts, kept_evidence, {
+        "profile": profile.profile,
+        "suppressed_count": len(suppressed_ids),
+        "suppressed_reasons": reasons,
+        "suppressed_examples": examples,
+        "retain": list(profile.retain),
+        "suppress": list(profile.suppress),
+    }
+
+
+def _empty_purpose_policy(profile: PurposeProfile) -> dict[str, Any]:
+    return {
+        "profile": profile.profile,
+        "suppressed_count": 0,
+        "suppressed_reasons": {},
+        "suppressed_examples": [],
+        "retain": list(profile.retain),
+        "suppress": list(profile.suppress),
+    }
+
+
+def _purpose_suppression_reason(profile: PurposeProfile, item: dict[str, Any]) -> str | None:
+    suppress = set(profile.suppress)
+    status = _checkout_policy_status(item)
+    authority = _checkout_policy_text(item.get("authority") or item.get("authority_scope"))
+    if "worker_local_pending" in suppress and (
+        status == "pending" or authority in {"worker-local", "worker_local", "pending"}
+    ):
+        return "worker_local_pending"
+    if "pending_unreviewed_claim" in suppress and status == "pending":
+        return "pending_unreviewed_claim"
+    if "rejected_finding" in suppress and status == "rejected":
+        return "rejected_finding"
+    if "stale_unpromoted_finding" in suppress and (
+        bool(item.get("stale")) or status == "stale"
+    ) and authority not in {"accepted", "parent-accepted", "parent_accepted", "promoted"}:
+        return "stale_unpromoted_finding"
+    if "low_trust_inference" in suppress and _low_trust_inferred_item(item):
+        return "low_trust_inference"
+    if "superseded_context" in suppress and item.get("valid_to"):
+        return "superseded_context"
+    if "uncited_claim" in suppress and not item.get("citation"):
+        return "uncited_claim"
+    return None
+
+
+def _checkout_policy_status(item: dict[str, Any]) -> str:
+    return _checkout_policy_text(
+        item.get("coordination_status")
+        or item.get("finding_status")
+        or item.get("status")
+    )
+
+
+def _checkout_policy_text(value: Any) -> str:
+    return str(value or "").strip().casefold().replace(" ", "-")
+
+
+def _low_trust_inferred_item(item: dict[str, Any]) -> bool:
+    explanation = item.get("score_explanation")
+    if not isinstance(explanation, dict):
+        return False
+    trust = explanation.get("inferred_edge_trust")
+    return isinstance(trust, int | float) and not isinstance(trust, bool) and float(trust) < 0.7
+
+
+def _checkout_policy_item_id(item: dict[str, Any]) -> str:
+    for key in ("finding_id", "citation", "content"):
+        value = item.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return "unknown"
+
+
+def _synthesis_packet_metadata(content: str, packet_payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    if packet_payload is not None:
+        return {"synthesis_packet": packet_payload}
+    packet = synthesis_packet_from_items([{"content": content}])
+    if not packet.answer_candidates and not packet.ledger_rows:
+        return {}
+    return {
+        "synthesis_packet": {
+            "schema_version": "synthesis_packet_v1",
+            "answer_candidates": packet.answer_candidates,
+            "ledger_rows": packet.ledger_rows,
+            "content": content,
+        }
+    }
 
 
 def _checkout_provenance(context: Context) -> dict[str, Any]:
@@ -2291,9 +2736,17 @@ def _context_identity(context: Context) -> dict[str, str]:
 
 def _context_feedback_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
     allowed = {
+        "authority",
+        "authority_scope",
+        "coordination_status",
+        "finding_id",
+        "mission_id",
         "source_kind",
         "source_event_seq",
         "source_event_hash",
+        "stale",
+        "status",
+        "worker_id",
         "provider_path",
         "model",
     }

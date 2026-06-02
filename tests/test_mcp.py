@@ -54,7 +54,9 @@ def _mcp_response_snapshot(name: str, payload: Any) -> dict[str, Any]:
                 "current_citation_count": payload["diagnostics"]["current_citation_count"],
                 "feedback_tool": payload["diagnostics"]["feedback_tool"],
                 "warning_count": payload["diagnostics"]["warning_count"],
+                "purpose_profile": payload["diagnostics"].get("purpose", {}).get("profile"),
             },
+            "purpose_profile": payload.get("purpose", {}).get("profile"),
             "quality": payload["quality"],
             "feedback_template_keys": sorted(payload["guidance"]["feedback"]["payloads"][0].keys()),
             "token_efficiency_keys": sorted(payload["token_efficiency"].keys()),
@@ -112,6 +114,24 @@ def _mcp_response_snapshot(name: str, payload: Any) -> dict[str, Any]:
             "hash_length": len(payload["hash"]),
             "event_type": payload["event_type"],
         }
+    if name == "memory_synthesis_artifact":
+        return {
+            "artifact_event_type": payload["artifact_event"]["event_type"],
+            "artifact_hash_length": len(payload["artifact_event"]["hash"]),
+            "artifact_id_prefix": payload["artifact_id"].split(":", 1)[0],
+            "candidate_event_type": (
+                payload["candidate_event"]["event_type"] if payload.get("candidate_event") else None
+            ),
+            "candidate_outcome": payload["candidate_event"].get("outcome") if payload.get("candidate_event") else None,
+        }
+    if name == "memory_synthesis_evidence":
+        return {
+            "event_type": payload["event_type"],
+            "hash_length": len(payload["hash"]),
+            "outcome": payload["outcome"],
+            "source_group": payload["source_group"],
+            "fact_id": payload["fact_id"],
+        }
     if name == "coordination_checkout":
         return {
             "mission_id": payload["mission_id"],
@@ -126,6 +146,7 @@ def _mcp_response_snapshot(name: str, payload: Any) -> dict[str, Any]:
                     item["kind"] for item in payload["accepted_findings"][0]["evidence"]
                 ],
             },
+            "purpose_profile": payload.get("purpose", {}).get("profile"),
             "prompt_contains_accepted_state": "Accepted findings" in payload["prompt"],
         }
     raise ValueError(f"unknown MCP response snapshot: {name}")
@@ -170,7 +191,7 @@ class TestToolSchema:
 
     def test_tools_list_length(self) -> None:
         """Should expose the memory and context lifecycle tools."""
-        assert len(TOOLS) == 25
+        assert len(TOOLS) == 29
 
     def test_tool_names(self) -> None:
         """Tool names should match the expected contract."""
@@ -180,6 +201,8 @@ class TestToolSchema:
             "memory_query",
             "memory_verbatim",
             "memory_feedback",
+            "memory_synthesis_artifact",
+            "memory_synthesis_evidence",
             "memory_skill",
             "memory_replay",
             "memory_invalidate",
@@ -201,6 +224,8 @@ class TestToolSchema:
             "coordination_review_finding",
             "coordination_promote",
             "coordination_handoff",
+            "coordination_record_synthesis_artifact",
+            "coordination_proof_trace",
         }
 
     def test_v06_mcp_tool_contract_matches_snapshot(self) -> None:
@@ -248,6 +273,30 @@ class TestToolSchema:
         tool = next(t for t in TOOLS if t.name == "memory_feedback")
         assert tool.inputSchema["required"] == ["entity_name", "entity_type", "feedback"]
         assert "importance" in tool.inputSchema["properties"]
+        assert "purpose" in tool.inputSchema["properties"]
+        assert "outcome" in tool.inputSchema["properties"]
+
+    def test_memory_synthesis_artifact_has_checkout_schema(self) -> None:
+        """memory_synthesis_artifact should persist checkout answer candidates."""
+        tool = next(t for t in TOOLS if t.name == "memory_synthesis_artifact")
+        assert tool.inputSchema["required"] == ["checkout"]
+        assert "candidate" in tool.inputSchema["properties"]
+        assert "outcome" in tool.inputSchema["properties"]
+        assert "session_id" not in tool.inputSchema["properties"]
+        assert tool.inputSchema["properties"]["outcome"]["enum"] == [
+            "used",
+            "helpful",
+            "rejected",
+            "corrected",
+            "excluded",
+        ]
+
+    def test_memory_synthesis_evidence_has_row_feedback_schema(self) -> None:
+        """memory_synthesis_evidence should record one synthesis ledger-row outcome."""
+        tool = next(t for t in TOOLS if t.name == "memory_synthesis_evidence")
+        assert tool.inputSchema["required"] == ["checkout", "row", "outcome"]
+        assert "candidate" in tool.inputSchema["properties"]
+        assert tool.inputSchema["properties"]["outcome"]["enum"] == ["used", "helpful", "excluded"]
 
     def test_memory_skill_has_lifecycle_action_schema(self) -> None:
         """memory_skill should expose validated skill lifecycle capture."""
@@ -276,6 +325,7 @@ class TestToolSchema:
         assert "session_id" in tool.inputSchema["properties"]
         assert "ref" in tool.inputSchema["properties"]
         assert "max_recent_events" in tool.inputSchema["properties"]
+        assert "purpose" in tool.inputSchema["properties"]
 
     def test_memory_capabilities_has_optional_query_schema(self) -> None:
         """memory_capabilities should expose model-facing Zaxy usage guidance."""
@@ -341,6 +391,22 @@ class TestToolSchema:
         assert packet.inputSchema["required"] == ["mission_id"]
         assert apply.inputSchema["required"] == ["mission_id", "decisions"]
         assert apply.inputSchema["properties"]["decisions"]["type"] == "array"
+
+    def test_coordination_record_synthesis_artifact_schema(self) -> None:
+        """Coordinate proof packet tool should require mission scope and checkout."""
+        tool = next(t for t in TOOLS if t.name == "coordination_record_synthesis_artifact")
+        assert tool.inputSchema["required"] == ["mission_id", "checkout"]
+        assert "decision_scope" in tool.inputSchema["properties"]
+        assert "candidate" in tool.inputSchema["properties"]
+        assert "outcome" in tool.inputSchema["properties"]
+
+    def test_coordination_proof_trace_schema(self) -> None:
+        """Coordinate proof trace should resolve replay chains by stable refs."""
+        tool = next(t for t in TOOLS if t.name == "coordination_proof_trace")
+        assert tool.inputSchema["required"] == ["mission_id"]
+        assert "artifact_id" in tool.inputSchema["properties"]
+        assert "handoff_id" in tool.inputSchema["properties"]
+        assert tool.inputSchema["properties"]["proof_seq"]["minimum"] == 1
 
 
 # ------------------------------------------------------------------
@@ -501,6 +567,220 @@ class TestCoordinationTools:
         assert payload["reviewed_count"] == 1
         assert payload["promoted_count"] == 1
         assert server.graph.upsert_extraction.await_count == 5
+
+    async def test_coordination_record_synthesis_artifact_returns_proof_packet(self, tmp_path: Path) -> None:
+        """MCP Coordinate synthesis should append artifact and proof packet events."""
+        server = ZaxyMCPServer(eventloom_path=str(tmp_path / ".eventloom"))
+        server.graph = AsyncMock()
+        server.tracer = AsyncMock()
+
+        await server.handle_coordination_start({"mission_id": "release-rc1", "objective": "Ship release"})
+        await server.handle_coordination_worker_create({"mission_id": "release-rc1", "worker_id": "auth-api"})
+        result = await server.handle_coordination_report_finding({
+            "mission_id": "release-rc1",
+            "worker_id": "auth-api",
+            "summary": "Expired JWKS cache causes API failures.",
+            "evidence": [{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
+        })
+        finding_id = json_loads(result[0].text)["finding_id"]
+        await server.handle_coordination_review_finding({
+            "mission_id": "release-rc1",
+            "finding_id": finding_id,
+            "status": "accepted",
+            "actor": "lead",
+        })
+        await server.handle_coordination_promote({
+            "mission_id": "release-rc1",
+            "finding_id": finding_id,
+            "actor": "lead",
+        })
+        handoff_result = await server.handle_coordination_handoff({
+            "mission_id": "release-rc1",
+            "summary": "Release handoff ready.",
+            "actor": "lead",
+        })
+        handoff_id = json_loads(handoff_result[0].text)["handoff_id"]
+
+        result = await server.handle_coordination_record_synthesis_artifact({
+            "mission_id": "release-rc1",
+            "decision_scope": "handoff",
+            "handoff_id": handoff_id,
+            "actor": "coordinator",
+            "checkout": {
+                "session_id": "release-rc1",
+                "query": "Compose accepted release findings.",
+                "prompt": "# Memory Checkout",
+                "working_set": {},
+                "ref": None,
+                "current_facts": [],
+                "evidence": [],
+                "provenance": [],
+                "retention": {},
+                "warnings": [],
+                "guidance": {},
+                "quality": {"answerability": "answer_from_memory", "confidence": 0.9},
+                "diagnostics": {
+                    "synthesis": {
+                        "answer_candidates": [
+                            {
+                                "rank": 1,
+                                "type": "coordinate_handoff",
+                                "answer": "Accepted cause: expired JWKS cache.",
+                                "support_source_ids": [finding_id],
+                            }
+                        ],
+                        "ledger_rows": [{"fact_id": finding_id, "source_group": finding_id}],
+                    }
+                },
+                "context_counts": {},
+                "replay_event_count": 0,
+                "compacted": False,
+                "assembly_policy": {},
+            },
+        })
+
+        payload = json_loads(result[0].text)
+        assert payload["artifact_event"]["event_type"] == "memory.synthesis.artifact.created"
+        assert payload["proof_event"]["event_type"] == "coordination.proof_packet.created"
+        assert payload["proof_packet"]["mission_id"] == "release-rc1"
+        assert payload["proof_packet"]["decision_scope"] == "handoff"
+        assert payload["proof_packet"]["accepted_finding_ids"] == [finding_id]
+        assert payload["proof_packet"]["handoff_event_ref"]["handoff_id"] == handoff_id
+        assert payload["proof_packet"]["non_authoritative_rows"] == []
+
+        trace_result = await server.handle_coordination_proof_trace({
+            "mission_id": "release-rc1",
+            "handoff_id": handoff_id,
+        })
+        trace = json_loads(trace_result[0].text)
+        assert trace["proof_event"]["seq"] == payload["proof_event"]["seq"]
+        assert trace["artifact_event"]["seq"] == payload["artifact_event"]["seq"]
+        assert trace["handoff_event"]["event_type"] == "coordination.handoff.created"
+        assert trace["accepted_finding_ids"] == [finding_id]
+        assert trace["answer_candidates"][0]["answer"] == "Accepted cause: expired JWKS cache."
+        assert trace["ledger_rows"][0]["source_group"] == finding_id
+
+    async def test_coordination_record_synthesis_artifact_rejects_unknown_handoff_without_appending(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """MCP handoff proof validation should run before artifact or outcome writes."""
+        server = ZaxyMCPServer(eventloom_path=str(tmp_path / ".eventloom"))
+        server.graph = AsyncMock()
+        server.tracer = AsyncMock()
+
+        await server.handle_coordination_start({"mission_id": "release-rc1", "objective": "Ship release"})
+        before = len(server.session_manager.replay("release-rc1").events)
+        checkout = {
+            "session_id": "release-rc1",
+            "query": "Compose accepted release findings.",
+            "prompt": "# Memory Checkout",
+            "working_set": {},
+            "ref": None,
+            "current_facts": [],
+            "evidence": [],
+            "provenance": [],
+            "retention": {},
+            "warnings": [],
+            "guidance": {},
+            "quality": {"answerability": "answer_from_memory", "confidence": 0.9},
+            "diagnostics": {
+                "synthesis": {
+                    "answer_candidates": [
+                        {
+                            "rank": 1,
+                            "type": "coordinate_handoff",
+                            "answer": "No accepted findings.",
+                            "support_source_ids": [],
+                        }
+                    ],
+                    "ledger_rows": [],
+                }
+            },
+            "context_counts": {},
+            "replay_event_count": 0,
+            "compacted": False,
+            "assembly_policy": {},
+        }
+
+        with pytest.raises(ValueError, match="Unknown handoff_id"):
+            await server.handle_coordination_record_synthesis_artifact({
+                "mission_id": "release-rc1",
+                "decision_scope": "handoff",
+                "handoff_id": "release-rc1:handoff:missing",
+                "actor": "coordinator",
+                "checkout": checkout,
+                "candidate": checkout["diagnostics"]["synthesis"]["answer_candidates"][0],
+                "outcome": "used",
+            })
+
+        events = server.session_manager.replay("release-rc1").events
+        assert len(events) == before
+        assert not any(event.type == "memory.synthesis.artifact.created" for event in events)
+        assert not any(event.type == "memory.synthesis.used" for event in events)
+        assert not any(event.type == "coordination.proof_packet.created" for event in events)
+
+    async def test_coordination_record_synthesis_artifact_rejects_foreign_candidate_without_appending(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """MCP Coordinate proof calls should reject candidates outside checkout diagnostics."""
+        server = ZaxyMCPServer(eventloom_path=str(tmp_path / ".eventloom"))
+        server.graph = AsyncMock()
+        server.tracer = AsyncMock()
+
+        await server.handle_coordination_start({"mission_id": "release-rc1", "objective": "Ship release"})
+        before = len(server.session_manager.replay("release-rc1").events)
+        checkout = {
+            "session_id": "release-rc1",
+            "query": "Compose accepted release findings.",
+            "prompt": "# Memory Checkout",
+            "working_set": {},
+            "ref": None,
+            "current_facts": [],
+            "evidence": [],
+            "provenance": [],
+            "retention": {},
+            "warnings": [],
+            "guidance": {},
+            "quality": {"answerability": "answer_from_memory", "confidence": 0.9},
+            "diagnostics": {
+                "synthesis": {
+                    "answer_candidates": [
+                        {
+                            "rank": 1,
+                            "type": "coordinate_handoff",
+                            "answer": "Accepted cause: expired JWKS cache.",
+                            "support_source_ids": ["finding-api"],
+                        }
+                    ],
+                    "ledger_rows": [],
+                }
+            },
+            "context_counts": {},
+            "replay_event_count": 0,
+            "compacted": False,
+            "assembly_policy": {},
+        }
+
+        with pytest.raises(ValueError, match="diagnostics.synthesis.answer_candidates"):
+            await server.handle_coordination_record_synthesis_artifact({
+                "mission_id": "release-rc1",
+                "checkout": checkout,
+                "candidate": {
+                    "rank": 1,
+                    "type": "coordinate_handoff",
+                    "answer": "Accepted cause: expired JWKS cache.",
+                    "support_source_ids": ["foreign-finding"],
+                },
+                "outcome": "used",
+            })
+
+        events = server.session_manager.replay("release-rc1").events
+        assert len(events) == before
+        assert not any(event.type == "memory.synthesis.artifact.created" for event in events)
+        assert not any(event.type == "memory.synthesis.used" for event in events)
+        assert not any(event.type == "coordination.proof_packet.created" for event in events)
 
     async def test_coordination_manager_uses_configured_semantic_detector(self, tmp_path: Path) -> None:
         """MCP coordination briefs should use the configured semantic conflict factory."""
@@ -1062,6 +1342,23 @@ class TestMemoryFeedback:
         server.tracer.trace_append.assert_awaited_once_with("memory.reinforced", "assistant", 1)
         assert json_loads(result[0].text)["event_type"] == "memory.reinforced"
 
+    async def test_feedback_preserves_purpose_and_outcome(self, server: ZaxyMCPServer) -> None:
+        """MCP feedback should record what purpose the memory helped satisfy."""
+        await server.handle_memory_feedback({
+            "entity_name": "accepted release finding",
+            "entity_type": "accepted_finding",
+            "feedback": "used",
+            "actor": "coordinator",
+            "session_id": "release-rc1",
+            "purpose": "coordinate",
+            "outcome": "supported_handoff",
+        })
+
+        payload = server.session_manager.get.return_value.eventlog.append.call_args.kwargs["payload"]
+        assert payload["purpose"]["profile"] == "coordinate"
+        assert payload["purpose"]["expected_action"] == "brief_promote_or_handoff"
+        assert payload["outcome"] == "supported_handoff"
+
     async def test_memory_feedback_response_matches_v06_snapshot(self, server: ZaxyMCPServer) -> None:
         """memory_feedback should keep its client-facing reinforcement response stable."""
         result = await server.handle_memory_feedback({
@@ -1096,6 +1393,256 @@ class TestMemoryFeedback:
         assert call.kwargs["payload"]["reason"] == "Superseded by later decision"
         assert "importance" not in call.kwargs["payload"]
         assert json_loads(result[0].text)["event_type"] == "memory.feedback"
+
+
+class TestMemorySynthesisArtifact:
+    """Tests for memory_synthesis_artifact handler."""
+
+    def _checkout_payload(self) -> dict[str, object]:
+        return {
+            "session_id": "agent-1",
+            "query": "How much did I spend on bike expenses in total?",
+            "prompt": "# Memory Checkout",
+            "working_set": {},
+            "ref": None,
+            "current_facts": [],
+            "evidence": [
+                {
+                    "content": "session_id=answer-1 I spent $120 on a bike helmet.",
+                    "citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa",
+                    "source_lane": "verbatim",
+                }
+            ],
+            "provenance": [],
+            "retention": {},
+            "warnings": [],
+            "guidance": {},
+            "quality": {"answerability": "answer_from_memory", "confidence": 0.86},
+            "diagnostics": {
+                "synthesis": {
+                    "answer_candidates": [
+                        {
+                            "rank": 1,
+                            "type": "currency",
+                            "answer": "$120",
+                            "support_source_ids": ["answer-1"],
+                        }
+                    ]
+                }
+            },
+            "context_counts": {},
+            "replay_event_count": 0,
+            "compacted": False,
+            "assembly_policy": {},
+        }
+
+    async def test_appends_synthesis_artifact_and_candidate_outcome(self, server: ZaxyMCPServer) -> None:
+        """MCP should persist checkout answer candidates through Eventloom."""
+        result = await server.handle_memory_synthesis_artifact({
+            "checkout": self._checkout_payload(),
+            "candidate": {"rank": 1, "type": "currency", "answer": "$120", "support_source_ids": ["answer-1"]},
+            "outcome": "used",
+            "actor": "assistant",
+            "reason": "answer used in final response",
+        })
+
+        calls = server.session_manager.get.return_value.eventlog.append.call_args_list
+        assert calls[0].args == ("memory.synthesis.artifact.created",)
+        assert calls[0].kwargs["actor"] == "assistant"
+        assert calls[0].kwargs["thread"] == "agent-1"
+        assert calls[0].kwargs["payload"]["schema_version"] == "synthesis_artifact_v1"
+        assert calls[1].args == ("memory.synthesis.used",)
+        assert calls[1].kwargs["payload"]["reason"] == "answer used in final response"
+        assert server.graph.upsert_extraction.await_count == 2
+        output = json_loads(result[0].text)
+        assert output["artifact_event"]["event_type"] == "memory.synthesis.artifact.created"
+        assert output["candidate_event"]["event_type"] == "memory.synthesis.used"
+        assert output["candidate_event"]["outcome"] == "used"
+        assert output["artifact_id"].startswith("sha256:")
+
+    async def test_response_matches_snapshot(self, server: ZaxyMCPServer) -> None:
+        """memory_synthesis_artifact should keep a stable compact response."""
+        result = await server.handle_memory_synthesis_artifact({
+            "checkout": self._checkout_payload(),
+            "candidate": {"rank": 1, "type": "currency", "answer": "$120", "support_source_ids": ["answer-1"]},
+            "outcome": "used",
+            "actor": "assistant",
+        })
+
+        snapshots = json.loads(Path("docs/examples/mcp-response-snapshots.json").read_text(encoding="utf-8"))
+        payload = json_loads(result[0].text)
+        assert _mcp_response_snapshot("memory_synthesis_artifact", payload) == snapshots["memory_synthesis_artifact"]
+
+    async def test_rejects_checkout_without_answer_candidates(self, server: ZaxyMCPServer) -> None:
+        """MCP should fail closed instead of writing empty synthesis artifacts."""
+        checkout = self._checkout_payload()
+        diagnostics = checkout["diagnostics"]
+        assert isinstance(diagnostics, dict)
+        diagnostics["synthesis"] = {"answer_candidates": []}
+
+        with pytest.raises(ValueError, match="answer_candidates"):
+            await server.handle_memory_synthesis_artifact({"checkout": checkout})
+
+        server.session_manager.get.return_value.eventlog.append.assert_not_called()
+
+    async def test_rejects_candidate_without_outcome(self, server: ZaxyMCPServer) -> None:
+        """Candidate feedback must be explicit so clients do not record accidental usage."""
+        with pytest.raises(ValueError, match="candidate and outcome"):
+            await server.handle_memory_synthesis_artifact({
+                "checkout": self._checkout_payload(),
+                "candidate": {"rank": 1, "answer": "$120"},
+            })
+
+        server.session_manager.get.return_value.eventlog.append.assert_not_called()
+
+    async def test_rejects_candidate_not_present_in_checkout(self, server: ZaxyMCPServer) -> None:
+        """Candidate feedback should not disagree with checkout answer candidates."""
+        with pytest.raises(ValueError, match="diagnostics.synthesis.answer_candidates"):
+            await server.handle_memory_synthesis_artifact({
+                "checkout": self._checkout_payload(),
+                "candidate": {
+                    "rank": 1,
+                    "type": "currency",
+                    "answer": "$120",
+                    "support_source_ids": ["answer-99"],
+                },
+                "outcome": "used",
+            })
+
+        server.session_manager.get.return_value.eventlog.append.assert_not_called()
+
+
+class TestMemorySynthesisEvidence:
+    """Tests for memory_synthesis_evidence handler."""
+
+    def _checkout_payload(self) -> dict[str, object]:
+        return {
+            "session_id": "agent-1",
+            "query": "How much did I spend on bike expenses in total?",
+            "prompt": "# Memory Checkout",
+            "working_set": {},
+            "ref": None,
+            "current_facts": [],
+            "evidence": [],
+            "provenance": [],
+            "retention": {},
+            "warnings": [],
+            "guidance": {},
+            "quality": {"answerability": "answer_from_memory", "confidence": 0.86},
+            "diagnostics": {
+                "synthesis": {
+                    "answer_candidates": [
+                        {
+                            "rank": 1,
+                            "type": "currency",
+                            "answer": "$145",
+                            "support_source_ids": ["answer-1"],
+                        }
+                    ],
+                    "ledger_rows": [
+                        {
+                            "fact_id": "currency:0:0",
+                            "source_group": "answer-1",
+                            "citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa",
+                            "kind": "currency",
+                            "value": "120",
+                            "include_reason": "currency_amount",
+                        },
+                        {
+                            "fact_id": "currency:duplicate",
+                            "source_group": "answer-4",
+                            "citation": "eventloom://agent-1/events/4#dddddddddddd",
+                            "kind": "currency",
+                            "value": "40",
+                            "exclude_reason": "duplicate_identity",
+                        }
+                    ],
+                }
+            },
+            "context_counts": {},
+            "replay_event_count": 0,
+            "compacted": False,
+            "assembly_policy": {},
+        }
+
+    async def test_appends_synthesis_evidence_feedback_event(self, server: ZaxyMCPServer) -> None:
+        """MCP should persist row-level synthesis evidence feedback."""
+        checkout = self._checkout_payload()
+        synthesis = checkout["diagnostics"]["synthesis"]  # type: ignore[index]
+        row = synthesis["ledger_rows"][0]  # type: ignore[index]
+        candidate = synthesis["answer_candidates"][0]  # type: ignore[index]
+
+        result = await server.handle_memory_synthesis_evidence({
+            "checkout": checkout,
+            "row": row,
+            "candidate": candidate,
+            "outcome": "used",
+            "actor": "assistant",
+            "reason": "row supported arithmetic",
+        })
+
+        call = server.session_manager.get.return_value.eventlog.append.call_args_list[-1]
+        assert call.args == ("memory.evidence.reinforced",)
+        assert call.kwargs["actor"] == "assistant"
+        assert call.kwargs["thread"] == "agent-1"
+        assert call.kwargs["payload"]["source_group"] == "answer-1"
+        assert call.kwargs["payload"]["fact_id"] == "currency:0:0"
+        assert call.kwargs["payload"]["reason"] == "row supported arithmetic"
+        assert server.graph.upsert_extraction.await_count == 1
+        output = json_loads(result[0].text)
+        assert output["event_type"] == "memory.evidence.reinforced"
+        assert output["outcome"] == "used"
+        assert output["source_group"] == "answer-1"
+
+    async def test_excluded_synthesis_evidence_response_matches_snapshot(self, server: ZaxyMCPServer) -> None:
+        """memory_synthesis_evidence should keep a stable compact response."""
+        checkout = self._checkout_payload()
+        synthesis = checkout["diagnostics"]["synthesis"]  # type: ignore[index]
+        row = synthesis["ledger_rows"][1]  # type: ignore[index]
+
+        result = await server.handle_memory_synthesis_evidence({
+            "checkout": checkout,
+            "row": row,
+            "outcome": "excluded",
+            "actor": "assistant",
+        })
+
+        snapshots = json.loads(Path("docs/examples/mcp-response-snapshots.json").read_text(encoding="utf-8"))
+        payload = json_loads(result[0].text)
+        assert _mcp_response_snapshot("memory_synthesis_evidence", payload) == snapshots["memory_synthesis_evidence"]
+
+    async def test_rejects_invalid_synthesis_evidence_inputs(self, server: ZaxyMCPServer) -> None:
+        """Evidence feedback should fail closed for malformed payloads."""
+        with pytest.raises(ValueError, match="row"):
+            await server.handle_memory_synthesis_evidence({
+                "checkout": self._checkout_payload(),
+                "row": "not-a-row",
+                "outcome": "used",
+            })
+
+        server.session_manager.get.return_value.eventlog.append.assert_not_called()
+
+    async def test_rejects_empty_or_foreign_synthesis_evidence_row(self, server: ZaxyMCPServer) -> None:
+        """Evidence feedback should refer to a specific row in the checkout."""
+        with pytest.raises(ValueError, match="fact_id, source_group, or citation"):
+            await server.handle_memory_synthesis_evidence({
+                "checkout": self._checkout_payload(),
+                "row": {},
+                "outcome": "used",
+            })
+
+        with pytest.raises(ValueError, match="diagnostics.synthesis.ledger_rows"):
+            await server.handle_memory_synthesis_evidence({
+                "checkout": self._checkout_payload(),
+                "row": {
+                    "fact_id": "currency:foreign",
+                    "source_group": "answer-99",
+                    "citation": "eventloom://agent-1/events/99#ffffffffffff",
+                },
+                "outcome": "used",
+            })
+
+        server.session_manager.get.return_value.eventlog.append.assert_not_called()
 
 
 class TestMemorySkill:
@@ -1359,6 +1906,7 @@ class TestContextLifecycleTools:
                     "query": "What context contract should the model use?",
                     "session_id": "agent-1",
                     "limit": 3,
+                    "purpose": "review",
                 })
 
         output = json_loads(result[0].text)
@@ -1369,6 +1917,16 @@ class TestContextLifecycleTools:
         assert output["evidence"][0]["citation"] == "eventloom://agent-1/events/1882#checkout"
         assert output["evidence"][0]["source_lane"] == "graph"
         assert output["provenance"][0]["event_seq"] == 1882
+        assert output["purpose"]["profile"] == "review"
+        purpose = output["diagnostics"].pop("purpose")
+        assert purpose["profile"] == "review"
+        assert purpose["evidence_policy"] == "cited_current_facts_required"
+        slot_plan = output["diagnostics"].pop("slot_plan")
+        assert slot_plan["version"] == "slot_plan_v1"
+        assert slot_plan["answer_type"] == "direct_fact"
+        assert slot_plan["operation"] == "select_fact"
+        assert slot_plan["required_slots"] == []
+        assert slot_plan["optional_slots"] == ["exact", "semantic"]
         assert output["diagnostics"] == {
             "source_lanes": {"graph": 2},
             "citation_count": 2,
@@ -1425,8 +1983,11 @@ class TestContextLifecycleTools:
             "score": 0.8,
             "citation": "eventloom://agent-1/events/1882#checkout",
             "importance": 0.6,
+            "purpose": output["purpose"],
         }
         assert "Do not treat superseded contexts as current facts." in output["guidance"]["ignore"]
+        assert output["guidance"]["purpose"]["profile"] == "review"
+        assert "Use the purpose evidence policy: cited_current_facts_required." in output["guidance"]["trust"]
         record_activity.assert_called_once_with(
             server._eventloom_path,
             session_id="agent-1",
@@ -1443,10 +2004,12 @@ class TestContextLifecycleTools:
             "confidence": 0.95,
             "reasons": [
                 "Retrieved current facts with Eventloom citations.",
+                "Applied purpose profile review with evidence policy cited_current_facts_required.",
             ],
             "required_action": None,
         }
         assert "# Memory Checkout" in output["prompt"]
+        assert "## Purpose Profile" in output["prompt"]
         assert "## Checkout Quality" in output["prompt"]
         assert "answer_from_memory" in output["prompt"]
         assert "## Checkout Guidance" in output["prompt"]

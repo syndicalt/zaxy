@@ -1155,13 +1155,22 @@ def _benchmark_contexts_from_checkout(checkout: object) -> list[str]:
     )
     ranked_contexts: list[tuple[int, int, str]] = []
     order = 0
+    seen_item_content: set[str] = set()
     for fact in getattr(checkout, "current_facts", []):
         if isinstance(fact, dict):
+            content = str(fact.get("content", ""))
+            if content in seen_item_content:
+                continue
+            seen_item_content.add(content)
             context = _benchmark_context_from_checkout_item("current_fact", fact)
             ranked_contexts.append((_benchmark_checkout_context_priority(context), order, context))
             order += 1
     for item in getattr(checkout, "evidence", []):
         if isinstance(item, dict):
+            content = str(item.get("content", ""))
+            if content in seen_item_content:
+                continue
+            seen_item_content.add(content)
             context = _benchmark_context_from_checkout_item("evidence", item)
             ranked_contexts.append((_benchmark_checkout_context_priority(context), order, context))
             order += 1

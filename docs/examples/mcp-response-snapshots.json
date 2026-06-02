@@ -1,4 +1,32 @@
 {
+  "context_assemble": {
+    "context_count": 1,
+    "first_context": {
+      "content": "MMR diversity (decision)",
+      "score": 0.9,
+      "source": "keyword"
+    },
+    "prompt_contains_context": true,
+    "replay_event_count": 1,
+    "session_id": "agent-1",
+    "warning_count": 0
+  },
+  "coordination_checkout": {
+    "accepted_count": 1,
+    "conflict_count": 0,
+    "first_accepted": {
+      "evidence_kinds": [
+        "command"
+      ],
+      "status": "accepted",
+      "summary": "API failures trace to expired JWKS cache handling.",
+      "worker_id": "auth-api"
+    },
+    "mission_id": "auth-main",
+    "pending_count": 0,
+    "prompt_contains_accepted_state": true,
+    "purpose_profile": "coordinate"
+  },
   "memory_bootstrap": {
     "eventloom_latest_seq": 1,
     "mode": "session_start",
@@ -27,6 +55,7 @@
     "diagnostics": {
       "current_citation_count": 1,
       "feedback_tool": "memory_feedback",
+      "purpose_profile": null,
       "warning_count": 0
     },
     "feedback_template_keys": [
@@ -51,6 +80,7 @@
       "## Checkout Guidance",
       "## Checkout Diagnostics"
     ],
+    "purpose_profile": "general",
     "quality": {
       "answerability": "answer_from_memory",
       "confidence": 0.75,
@@ -67,6 +97,11 @@
       "prompt_tokens"
     ]
   },
+  "memory_feedback": {
+    "event_type": "memory.reinforced",
+    "hash_length": 64,
+    "seq": 1
+  },
   "memory_query": {
     "first_result": {
       "citation": "eventloom://default/events/1#aaaaaaaaaaaa",
@@ -79,6 +114,20 @@
       "source": "exact"
     },
     "result_count": 1
+  },
+  "memory_synthesis_artifact": {
+    "artifact_event_type": "memory.synthesis.artifact.created",
+    "artifact_hash_length": 64,
+    "artifact_id_prefix": "sha256",
+    "candidate_event_type": "memory.synthesis.used",
+    "candidate_outcome": "used"
+  },
+  "memory_synthesis_evidence": {
+    "event_type": "memory.evidence.excluded",
+    "fact_id": "currency:duplicate",
+    "hash_length": 64,
+    "outcome": "excluded",
+    "source_group": "answer-4"
   },
   "memory_verbatim": {
     "first_result": {
@@ -98,37 +147,5 @@
       "source_kind": "document"
     },
     "result_count": 1
-  },
-  "context_assemble": {
-    "context_count": 1,
-    "first_context": {
-      "content": "MMR diversity (decision)",
-      "score": 0.9,
-      "source": "keyword"
-    },
-    "prompt_contains_context": true,
-    "replay_event_count": 1,
-    "session_id": "agent-1",
-    "warning_count": 0
-  },
-  "memory_feedback": {
-    "event_type": "memory.reinforced",
-    "hash_length": 64,
-    "seq": 1
-  },
-  "coordination_checkout": {
-    "accepted_count": 1,
-    "conflict_count": 0,
-    "first_accepted": {
-      "evidence_kinds": [
-        "command"
-      ],
-      "status": "accepted",
-      "summary": "API failures trace to expired JWKS cache handling.",
-      "worker_id": "auth-api"
-    },
-    "mission_id": "auth-main",
-    "pending_count": 0,
-    "prompt_contains_accepted_state": true
   }
 }

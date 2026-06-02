@@ -15,10 +15,39 @@
 | parent_checkout_answerability | 1.0 |
 | citation_coverage | 1.0 |
 | eventloom_replayable | True |
-| returned_tokens | 9876 |
-| injected_tokens | 9876 |
-| brief_latency_ms | 1.717 |
-| promotion_latency_ms | 110.779 |
+| returned_tokens | 19329 |
+| injected_tokens | 19329 |
+| brief_latency_ms | 4.446 |
+| promotion_latency_ms | 115.125 |
+| accepted_state_synthesis_quality | 1.0 |
+| non_authoritative_leakage | 1.0 |
+| purpose_feedback_coverage | 1.0 |
+
+## Coordinate Purpose/Synthesis Gate
+
+- status: `passed`
+- message: Coordinate accepted-state synthesis is proof-backed with citations, Coordinate-purpose feedback, replayable Eventloom provenance, parent checkout answerability, and no non-authoritative worker-row leakage.
+
+| Required metric | Required value |
+|-----------------|----------------|
+| accepted_state_synthesis_quality | 1.0 |
+| non_authoritative_leakage | 1.0 |
+| purpose_feedback_coverage | 1.0 |
+| citation_coverage | 1.0 |
+| parent_checkout_answerability | 1.0 |
+| eventloom_replayable | True |
+
+## Competitor Claim Gate
+
+- status: `blocked`
+- required adapters: `quarq, hybi`
+- completed adapters: `none`
+- message: Public same-harness competitor claims are blocked until required adapters have completed, locally scored, fingerprinted results.
+
+| Adapter | Blocker |
+|---------|---------|
+| Semantic Reach / HyperBinder / Hybi | adapter status is not_run/disclosure_only; same-harness public claims require completed locally scored results |
+| Quarq | adapter status is not_run/disclosure_only; same-harness public claims require completed locally scored results |
 
 ## Baselines
 
@@ -34,7 +63,9 @@
 |---------|----------|--------|--------------|----------|
 | ActiveGraph | coordinationbench-v1 | not_run | disclosure_only | No pinned adapter package/version and same-harness workload replay contract has been configured. |
 | Agent Memory | coordinationbench-v1 | not_run | disclosure_only | No pinned adapter package/version and same-harness workload replay contract has been configured. |
+| Semantic Reach / HyperBinder / Hybi | coordinationbench-v1 | not_run | disclosure_only | No pinned HyperBinder/Hybi server/runtime, source ref, and same-harness workload replay contract has been configured. |
 | Mem0 | coordinationbench-v1 | not_run | disclosure_only | No pinned adapter package/version and same-harness workload replay contract has been configured. |
+| Quarq | coordinationbench-v1 | not_run | disclosure_only | No pinned Quarq runner manifest, source ref, and same-harness workload replay contract has been configured. |
 
 ## Limitations
 

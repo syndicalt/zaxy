@@ -13,7 +13,7 @@
   ],
   "properties": {
     "name": {
-      "enum": ["mem0", "agent_memory", "activegraph"]
+      "enum": ["mem0", "agent_memory", "activegraph", "quarq", "hybi"]
     },
     "adapter_contract": {
       "const": "coordinationbench-v1"
@@ -40,7 +40,7 @@
       ],
       "properties": {
         "name": {
-          "enum": ["mem0", "agent_memory", "activegraph"]
+          "enum": ["mem0", "agent_memory", "activegraph", "quarq", "hybi"]
         },
         "display_name": {
           "type": "string",
@@ -108,6 +108,46 @@
           },
           "injected_text": {
             "type": "string"
+          },
+          "synthesis_artifact": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "ledger_rows": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": true
+            }
+          },
+          "support_source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excluded_source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "promotion_source_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "answer_candidate": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "answerability": {
+            "type": "string"
+          },
+          "non_authoritative_rows_injected": {
+            "type": "integer",
+            "minimum": 0
           },
           "latency_ms": {
             "type": "number"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from functools import lru_cache
@@ -13,6 +14,7 @@ from zaxy.evidence_candidates import (
 )
 from zaxy.retrieval_intent import RetrievalIntent, classify_retrieval_intent
 from zaxy.synthesis import build_synthesis_plan
+from zaxy.synthesis_packet import synthesis_packet_from_items
 
 _FIRST_PERSON_CONTEXT_RE = re.compile(
     r"(?<![A-Za-z0-9])"
@@ -208,6 +210,71 @@ class EvidencePlan:
         }
 
 
+@dataclass(frozen=True)
+class RetrievalSlot:
+    """One typed retrieval slot required or preferred for answer assembly."""
+
+    name: str
+    strategy: str
+    required: bool
+    budget: int | None = None
+    query: str | None = None
+    kinds: tuple[str, ...] = ()
+    operation: str | None = None
+    terms: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, object]:
+        """Return a stable model-facing slot description."""
+        payload: dict[str, object] = {
+            "name": self.name,
+            "strategy": self.strategy,
+            "required": self.required,
+        }
+        if self.budget is not None:
+            payload["budget"] = self.budget
+        if self.query is not None:
+            payload["query"] = self.query
+        if self.kinds:
+            payload["kinds"] = list(self.kinds)
+        if self.operation is not None:
+            payload["operation"] = self.operation
+        if self.terms:
+            payload["terms"] = list(self.terms)
+        return payload
+
+
+@dataclass(frozen=True)
+class SlotPlan:
+    """Deterministic per-slot retrieval contract for composed memory answers."""
+
+    query: str
+    answer_type: str
+    operation: str
+    slots: tuple[RetrievalSlot, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        """Return a stable diagnostics representation."""
+        required_slots = [slot.name for slot in self.slots if slot.required]
+        optional_slots = [slot.name for slot in self.slots if not slot.required]
+        return {
+            "version": "slot_plan_v1",
+            "query": self.query,
+            "answer_type": self.answer_type,
+            "operation": self.operation,
+            "required_slots": required_slots,
+            "optional_slots": optional_slots,
+            "slots": [slot.to_dict() for slot in self.slots],
+        }
+
+
+@dataclass(frozen=True)
+class SourceSynthesisBundleResult:
+    """Rendered synthesis bundle plus typed packet metadata."""
+
+    content: str
+    packet: dict[str, object]
+
+
 @dataclass
 class _SourceEvidenceScoreCache:
     """Memoize per-query source evidence scoring inside one synthesis pass."""
@@ -276,6 +343,65 @@ def build_evidence_plan(query: str, *, limit: int = 10) -> EvidencePlan:
         required_source_groups=required_source_groups,
         promote_cited_sources=intent.needs_source_lane or mode != "direct_fact",
         reasons=intent.reasons,
+    )
+
+
+def build_slot_plan(query: str, *, limit: int = 10) -> SlotPlan:
+    """Build a typed retrieval-slot contract for a memory query."""
+    evidence_plan = build_evidence_plan(query, limit=limit)
+    synthesis_plan = build_synthesis_plan(query, limit=limit)
+    slots: list[RetrievalSlot] = []
+    if evidence_plan.needs_source_lane or evidence_plan.required_source_groups:
+        slots.append(
+            RetrievalSlot(
+                name="source",
+                strategy="source_citation",
+                required=evidence_plan.required_source_groups > 0,
+                budget=evidence_plan.source_lane_slots,
+                query=query,
+            )
+        )
+    if synthesis_plan.required_kinds:
+        slots.append(
+            RetrievalSlot(
+                name="numeric",
+                strategy="numeric_value",
+                required=True,
+                kinds=synthesis_plan.required_kinds,
+                operation=synthesis_plan.operation,
+            )
+        )
+    if synthesis_plan.answer_type in {"temporal_interval", "date_interval"} or "temporal" in evidence_plan.reasons:
+        slots.append(
+            RetrievalSlot(
+                name="temporal",
+                strategy="temporal_anchor",
+                required=True,
+                operation=synthesis_plan.operation,
+            )
+        )
+    if synthesis_plan.subject_terms:
+        slots.append(
+            RetrievalSlot(
+                name="exact",
+                strategy="exact_terms",
+                required=False,
+                terms=synthesis_plan.subject_terms,
+            )
+        )
+    slots.append(
+        RetrievalSlot(
+            name="semantic",
+            strategy="semantic_similarity",
+            required=False,
+            query=query,
+        )
+    )
+    return SlotPlan(
+        query=query,
+        answer_type=synthesis_plan.answer_type,
+        operation=synthesis_plan.operation,
+        slots=tuple(slots),
     )
 
 
@@ -669,6 +795,23 @@ def source_synthesis_bundle(
     preferred_source_groups: list[str] | tuple[str, ...] | None = None,
 ) -> str | None:
     """Build one compact cited source bundle for multi-source synthesis queries."""
+    result = source_synthesis_bundle_result(
+        query=query,
+        source_results=source_results,
+        limit=limit,
+        preferred_source_groups=preferred_source_groups,
+    )
+    return result.content if result is not None else None
+
+
+def source_synthesis_bundle_result(
+    *,
+    query: str,
+    source_results: list[str],
+    limit: int,
+    preferred_source_groups: list[str] | tuple[str, ...] | None = None,
+) -> SourceSynthesisBundleResult | None:
+    """Build one compact cited source bundle with typed synthesis packet data."""
     intent = classify_retrieval_intent(query, limit=limit)
     if (
         not {"aggregation", "aggregation_question"} & set(intent.reasons)
@@ -766,6 +909,22 @@ def source_synthesis_bundle(
         f"source_count={len(support_sources)}",
     ]
     lines.extend(derived_lines)
+    lines.extend(_elapsed_duration_at_event_ledger_row_lines(query, grouped_sources))
+    lines.extend(_social_media_break_ledger_row_lines(query, grouped_sources))
+    lines.extend(_road_trip_drive_ledger_row_lines(query, grouped_sources))
+    lines.extend(_age_at_event_ledger_row_lines(query, grouped_sources))
+    lines.extend(_career_prior_duration_ledger_row_lines(query, grouped_sources))
+    if not any(row.get("include_reason") == "age_average_input" for row in aggregate_projection.ledger_rows):
+        lines.extend(_age_average_ledger_row_lines(query, grouped_sources))
+    lines.extend(_relative_interval_ledger_row_lines(query, grouped_sources))
+    lines.extend(_anniversary_engagement_ledger_row_lines(query, grouped_sources))
+    lines.extend(_parent_order_ledger_row_lines(query, grouped_sources))
+    lines.extend(_recency_ledger_row_lines(query, grouped_sources))
+    lines.extend(_temporal_order_ledger_row_lines(query, grouped_sources))
+    lines.extend(
+        "ledger_row=" + json.dumps(row, sort_keys=True, separators=(",", ":"))
+        for row in aggregate_projection.ledger_rows
+    )
     support_source_limit = min(group_limit, max(limit, 8))
     for index, context in enumerate(support_sources, start=1):
         lines.append(
@@ -776,7 +935,32 @@ def source_synthesis_bundle(
         )
         if index >= support_source_limit:
             break
-    return "\n".join(lines)
+    content = "\n".join(lines)
+    packet = synthesis_packet_from_items(
+        [
+            {
+                "content": content,
+                "synthesis_packet": {
+                    "schema_version": "synthesis_packet_v1",
+                    "operations": list(aggregate_projection.operations),
+                    "result": aggregate_projection.result or {},
+                    "answer_candidates": list(aggregate_projection.answer_candidates),
+                    "ledger_rows": list(aggregate_projection.ledger_rows),
+                },
+            }
+        ]
+    )
+    return SourceSynthesisBundleResult(
+        content=content,
+        packet={
+            "schema_version": "synthesis_packet_v1",
+            "operations": packet.operations,
+            "result": packet.result,
+            "answer_candidates": packet.answer_candidates,
+            "ledger_rows": packet.ledger_rows,
+            "content": content,
+        },
+    )
 
 
 def source_synthesis_candidate_limit(intent: RetrievalIntent, *, limit: int) -> int:
@@ -2075,15 +2259,18 @@ def _numeric_synthesis_lines(
     numeric_contexts = [_numeric_context_text(context) for context in contexts]
     lines: list[str] = list(aggregate_lines or [])
     has_typed_duration = any(line.startswith("duration_values=") for line in lines)
+    has_typed_projection = any(line.startswith("candidate_rank=") for line in lines)
+    has_typed_age_average = any(line.startswith("age_average=") for line in lines)
     lines.extend(_age_at_event_synthesis_lines(query, numeric_contexts))
-    lines.extend(_age_average_synthesis_lines(query, numeric_contexts))
+    if not has_typed_age_average:
+        lines.extend(_age_average_synthesis_lines(query, numeric_contexts))
     lines.extend(_elapsed_duration_at_event_synthesis_lines(query, numeric_contexts))
     lines.extend(_social_media_break_synthesis_lines(query, numeric_contexts))
     lines.extend(_road_trip_drive_synthesis_lines(query, numeric_contexts))
     lines.extend(_career_prior_duration_synthesis_lines(query, numeric_contexts))
     if _career_prior_duration_query(query):
         return lines
-    if not has_typed_duration:
+    if not has_typed_duration and not has_typed_projection:
         minute_values = _unit_values(numeric_contexts, unit_pattern=r"minutes?|mins?")
         if minute_values:
             lines.append("minute_values=" + ",".join(_format_number(value) for value in minute_values))
@@ -2196,7 +2383,7 @@ def _age_average_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
     query_tokens = set(source_tokens(query))
     if "average" not in query_tokens or "age" not in query_tokens:
         return []
-    values = _age_values(contexts)
+    values = [value for _context, value, _raw in _age_average_evidence(contexts)]
     if len(values) < 2:
         return []
     average = sum(values) / len(values)
@@ -2245,6 +2432,140 @@ def _career_prior_duration_synthesis_lines(query: str, contexts: list[str]) -> l
     ]
 
 
+def _age_at_event_ledger_row_lines(query: str, contexts: list[str]) -> list[str]:
+    if not _age_at_event_query(query):
+        return []
+    current = _personal_current_age_evidence(contexts)
+    elapsed = _elapsed_year_evidence(contexts)
+    if not current or not elapsed:
+        return []
+    current_context, current_age, current_raw = current[0]
+    elapsed_context, elapsed_years, elapsed_raw = elapsed[0]
+    if elapsed_years <= 0 or elapsed_years >= current_age:
+        return []
+    rows = [
+        {
+            "fact_id": "age_at_event:current_age",
+            "source_group": source_context_group(current_context),
+            "citation": source_context_citation(current_context),
+            "kind": "number",
+            "value": str(current_age),
+            "unit": "years",
+            "raw_span": current_raw,
+            "include_reason": "current_age",
+            "confidence": 0.82,
+        },
+        {
+            "fact_id": "age_at_event:elapsed_years",
+            "source_group": source_context_group(elapsed_context),
+            "citation": source_context_citation(elapsed_context),
+            "kind": "duration",
+            "value": str(elapsed_years),
+            "unit": "elapsed_years",
+            "raw_span": elapsed_raw,
+            "include_reason": "elapsed_since_event",
+            "confidence": 0.82,
+        },
+    ]
+    return [
+        "ledger_row=" + json.dumps(row, sort_keys=True, separators=(",", ":"))
+        for row in rows
+    ]
+
+
+def _career_prior_duration_ledger_row_lines(query: str, contexts: list[str]) -> list[str]:
+    if not _career_prior_duration_query(query):
+        return []
+    total = _career_total_month_evidence(contexts)
+    current = _current_role_month_evidence(query, contexts)
+    if total is None or current is None:
+        return []
+    total_context, total_months, total_raw = total
+    current_context, current_role_months, current_raw = current
+    if current_role_months <= 0 or current_role_months >= total_months:
+        return []
+    rows = [
+        {
+            "fact_id": "career_prior_duration:total",
+            "source_group": source_context_group(total_context),
+            "citation": source_context_citation(total_context),
+            "kind": "duration",
+            "value": str(total_months),
+            "unit": "months",
+            "raw_span": total_raw,
+            "include_reason": "total_career_duration",
+            "confidence": 0.82,
+        },
+        {
+            "fact_id": "career_prior_duration:current_role",
+            "source_group": source_context_group(current_context),
+            "citation": source_context_citation(current_context),
+            "kind": "duration",
+            "value": str(current_role_months),
+            "unit": "months",
+            "raw_span": current_raw,
+            "include_reason": "current_role_duration",
+            "confidence": 0.82,
+        },
+    ]
+    return [
+        "ledger_row=" + json.dumps(row, sort_keys=True, separators=(",", ":"))
+        for row in rows
+    ]
+
+
+def _age_average_ledger_row_lines(query: str, contexts: list[str]) -> list[str]:
+    query_tokens = set(source_tokens(query))
+    if "average" not in query_tokens or "age" not in query_tokens:
+        return []
+    evidence = _age_average_evidence(contexts)
+    if len(evidence) < 2:
+        return []
+    rows = [
+        {
+            "fact_id": f"age_average:{index}",
+            "source_group": source_context_group(context),
+            "citation": source_context_citation(context),
+            "kind": "number",
+            "value": str(value),
+            "unit": "years",
+            "raw_span": raw,
+            "include_reason": "age_average_input",
+            "confidence": 0.78,
+        }
+        for index, (context, value, raw) in enumerate(evidence)
+    ]
+    return [
+        "ledger_row=" + json.dumps(row, sort_keys=True, separators=(",", ":"))
+        for row in rows
+    ]
+
+
+def _age_average_evidence(contexts: list[str]) -> list[tuple[str, int, str]]:
+    indexed = list(enumerate(_age_value_evidence(contexts)))
+    indexed.sort(
+        key=lambda item: (
+            _source_group_natural_key(source_context_group(item[1][0])),
+            item[0],
+        )
+    )
+    return [evidence for _index, evidence in indexed]
+
+
+def _source_group_natural_key(group: str) -> tuple[str, int]:
+    match = re.match(r"^(?P<prefix>.*?)(?:[_-](?P<suffix>\d+))?$", group)
+    if not match or match.group("suffix") is None:
+        return group, -1
+    return match.group("prefix"), int(match.group("suffix"))
+
+
+def _ledger_row_lines(rows: list[dict[str, object]]) -> list[str]:
+    return [
+        "ledger_row=" + json.dumps(row, sort_keys=True, separators=(",", ":"))
+        for row in rows
+    ]
+
+
 def _career_prior_duration_query(query: str) -> bool:
     query_tokens = set(source_tokens(query))
     query_text = query.casefold()
@@ -2258,10 +2579,12 @@ def _elapsed_duration_at_event_synthesis_lines(query: str, contexts: list[str]) 
     """Project current-duration minus event-age arithmetic for prior-event queries."""
     if not _elapsed_duration_at_event_query(query):
         return []
-    current_weeks = _current_activity_weeks(query, contexts)
-    event_weeks_ago = _event_weeks_ago(query, contexts)
-    if current_weeks is None or event_weeks_ago is None:
+    current = _current_activity_week_evidence(query, contexts)
+    event = _event_weeks_ago_evidence(query, contexts)
+    if current is None or event is None:
         return []
+    current_weeks = current[1]
+    event_weeks_ago = event[1]
     if event_weeks_ago <= 0 or current_weeks <= event_weeks_ago:
         return []
     elapsed_weeks = current_weeks - event_weeks_ago
@@ -2283,12 +2606,53 @@ def _elapsed_duration_at_event_query(query: str) -> bool:
     return bool(query_tokens & {"bought", "buy", "got", "purchased", "started", "joined"})
 
 
+def _elapsed_duration_at_event_ledger_row_lines(query: str, contexts: list[str]) -> list[str]:
+    if not _elapsed_duration_at_event_query(query):
+        return []
+    current = _current_activity_week_evidence(query, contexts)
+    event = _event_weeks_ago_evidence(query, contexts)
+    if current is None or event is None:
+        return []
+    current_context, current_weeks = current
+    event_context, event_weeks = event
+    if event_weeks <= 0 or current_weeks <= event_weeks:
+        return []
+    rows = [
+        {
+            "fact_id": "elapsed_duration:current_activity",
+            "source_group": source_context_group(current_context),
+            "citation": source_context_citation(current_context),
+            "kind": "duration",
+            "value": str(current_weeks),
+            "unit": "weeks",
+            "raw_span": f"{current_weeks} weeks",
+            "include_reason": "current_activity_duration",
+            "confidence": 0.78,
+        },
+        {
+            "fact_id": "elapsed_duration:event_age",
+            "source_group": source_context_group(event_context),
+            "citation": source_context_citation(event_context),
+            "kind": "duration",
+            "value": str(event_weeks),
+            "unit": "weeks_ago",
+            "raw_span": f"{event_weeks} weeks ago",
+            "include_reason": "event_age_duration",
+            "confidence": 0.78,
+        },
+    ]
+    return [
+        "ledger_row=" + json.dumps(row, sort_keys=True, separators=(",", ":"))
+        for row in rows
+    ]
+
+
 def _social_media_break_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
     """Project total days from explicit social-media break durations."""
     query_tokens = set(source_tokens(query))
     if not {"social", "media", "breaks"} <= query_tokens and not {"social", "media", "break"} <= query_tokens:
         return []
-    values = _social_media_break_day_values(contexts)
+    values = [value for _context, value, _raw in _social_media_break_day_evidence(contexts)]
     if not values:
         return []
     total = sum(values)
@@ -2302,7 +2666,35 @@ def _social_media_break_synthesis_lines(query: str, contexts: list[str]) -> list
 
 
 def _social_media_break_day_values(contexts: list[str]) -> list[int]:
-    values: list[int] = []
+    return [value for _context, value, _raw in _social_media_break_day_evidence(contexts)]
+
+
+def _social_media_break_ledger_row_lines(query: str, contexts: list[str]) -> list[str]:
+    query_tokens = set(source_tokens(query))
+    if not {"social", "media", "breaks"} <= query_tokens and not {"social", "media", "break"} <= query_tokens:
+        return []
+    rows = [
+        {
+            "fact_id": f"social_media_break:{index}",
+            "source_group": source_context_group(context),
+            "citation": source_context_citation(context),
+            "kind": "duration",
+            "value": str(value),
+            "unit": "days",
+            "raw_span": raw,
+            "include_reason": "social_media_break_duration",
+            "confidence": 0.82,
+        }
+        for index, (context, value, raw) in enumerate(_social_media_break_day_evidence(contexts))
+    ]
+    return [
+        "ledger_row=" + json.dumps(row, sort_keys=True, separators=(",", ":"))
+        for row in rows
+    ]
+
+
+def _social_media_break_day_evidence(contexts: list[str]) -> list[tuple[str, int, str]]:
+    evidence: list[tuple[str, int, str]] = []
     seen: set[tuple[str, int]] = set()
     day_pattern = re.compile(
         r"\b(?P<value>\d{1,3}|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)"
@@ -2324,20 +2716,20 @@ def _social_media_break_day_values(contexts: list[str]) -> list[int]:
             key = (group, value)
             if value > 0 and key not in seen:
                 seen.add(key)
-                values.append(value)
+                evidence.append((context, value, match.group(0)))
         for _match in week_pattern.finditer(context):
             key = (group, 7)
             if key not in seen:
                 seen.add(key)
-                values.append(7)
-    return values
+                evidence.append((context, 7, _match.group(0)))
+    return evidence
 
 
 def _road_trip_drive_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
     """Project total hours for direct road-trip destination-drive memories."""
     if not _road_trip_drive_query(query):
         return []
-    values = _road_trip_drive_hour_values(contexts)
+    values = [value for _context, value, _raw in _road_trip_drive_hour_evidence(contexts)]
     if not values:
         return []
     total = sum(values)
@@ -2359,7 +2751,34 @@ def _road_trip_drive_query(query: str) -> bool:
 
 
 def _road_trip_drive_hour_values(contexts: list[str]) -> list[int]:
-    values: list[int] = []
+    return [value for _context, value, _raw in _road_trip_drive_hour_evidence(contexts)]
+
+
+def _road_trip_drive_ledger_row_lines(query: str, contexts: list[str]) -> list[str]:
+    if not _road_trip_drive_query(query):
+        return []
+    rows = [
+        {
+            "fact_id": f"road_trip_drive:{index}",
+            "source_group": source_context_group(context),
+            "citation": source_context_citation(context),
+            "kind": "duration",
+            "value": str(value),
+            "unit": "hours",
+            "raw_span": raw,
+            "include_reason": "road_trip_destination_drive_duration",
+            "confidence": 0.82,
+        }
+        for index, (context, value, raw) in enumerate(_road_trip_drive_hour_evidence(contexts))
+    ]
+    return [
+        "ledger_row=" + json.dumps(row, sort_keys=True, separators=(",", ":"))
+        for row in rows
+    ]
+
+
+def _road_trip_drive_hour_evidence(contexts: list[str]) -> list[tuple[str, int, str]]:
+    evidence: list[tuple[str, int, str]] = []
     seen_groups: set[str] = set()
     for context in contexts:
         lowered = context.casefold()
@@ -2383,12 +2802,17 @@ def _road_trip_drive_hour_values(contexts: list[str]) -> list[int]:
             if value <= 0:
                 continue
             seen_groups.add(group)
-            values.append(value)
+            evidence.append((context, value, match.group(0)))
             break
-    return values
+    return evidence
 
 
 def _current_activity_weeks(query: str, contexts: list[str]) -> int | None:
+    evidence = _current_activity_week_evidence(query, contexts)
+    return evidence[1] if evidence is not None else None
+
+
+def _current_activity_week_evidence(query: str, contexts: list[str]) -> tuple[str, int] | None:
     query_terms = _query_specific_terms(query)
     for context in contexts:
         if _query_overlap_score(query_terms, context) < 2:
@@ -2399,11 +2823,16 @@ def _current_activity_weeks(query: str, contexts: list[str]) -> int | None:
         if match:
             value = _integer_number_value(match.group("value"))
             if value > 0:
-                return value
+                return context, value
     return None
 
 
 def _event_weeks_ago(query: str, contexts: list[str]) -> int | None:
+    evidence = _event_weeks_ago_evidence(query, contexts)
+    return evidence[1] if evidence is not None else None
+
+
+def _event_weeks_ago_evidence(query: str, contexts: list[str]) -> tuple[str, int] | None:
     query_terms = _query_specific_terms(query)
     for context in contexts:
         if _query_overlap_score(query_terms, context) < 2:
@@ -2412,22 +2841,32 @@ def _event_weeks_ago(query: str, contexts: list[str]) -> int | None:
         if match:
             value = _integer_number_value(match.group("value"))
             if value > 0:
-                return value
+                return context, value
     return None
 
 
 def _career_total_months(contexts: list[str]) -> int | None:
+    evidence = _career_total_month_evidence(contexts)
+    return evidence[1] if evidence is not None else None
+
+
+def _career_total_month_evidence(contexts: list[str]) -> tuple[str, int, str] | None:
     for context in contexts:
         for pattern in _CAREER_TOTAL_YEARS_RE:
             match = pattern.search(context)
             if match:
                 years = int(match.group("years"))
                 if 0 < years < 80:
-                    return years * 12
+                    return context, years * 12, match.group(0)
     return None
 
 
 def _current_role_months(query: str, contexts: list[str]) -> int | None:
+    evidence = _current_role_month_evidence(query, contexts)
+    return evidence[1] if evidence is not None else None
+
+
+def _current_role_month_evidence(query: str, contexts: list[str]) -> tuple[str, int, str] | None:
     employer_terms: set[str] = set()
     for token in _EMPLOYER_TERM_RE.findall(query):
         folded = token.casefold()
@@ -2437,19 +2876,24 @@ def _current_role_months(query: str, contexts: list[str]) -> int | None:
         context_folded = context.casefold()
         if employer_terms and not any(term in context_folded for term in employer_terms):
             continue
-        months = _role_duration_months(context)
-        if months is not None:
-            return months
+        evidence = _role_duration_month_evidence(context)
+        if evidence is not None:
+            return context, evidence[0], evidence[1]
     if employer_terms:
         return None
     for context in contexts:
-        months = _role_duration_months(context)
-        if months is not None:
-            return months
+        evidence = _role_duration_month_evidence(context)
+        if evidence is not None:
+            return context, evidence[0], evidence[1]
     return None
 
 
 def _role_duration_months(text: str) -> int | None:
+    evidence = _role_duration_month_evidence(text)
+    return evidence[0] if evidence is not None else None
+
+
+def _role_duration_month_evidence(text: str) -> tuple[int, str] | None:
     for pattern in _ROLE_DURATION_RE:
         match = pattern.search(text)
         if not match:
@@ -2457,7 +2901,7 @@ def _role_duration_months(text: str) -> int | None:
         years = int(match.group("years"))
         months = int(match.groupdict().get("months") or 0)
         if 0 <= months < 12 and 0 < years < 80:
-            return (years * 12) + months
+            return (years * 12) + months, match.group(0)
     return None
 
 
@@ -2472,25 +2916,37 @@ def _format_year_month_duration(total_months: int) -> str:
 
 
 def _personal_current_age_values(contexts: list[str]) -> list[int]:
+    return [value for _context, value, _raw in _personal_current_age_evidence(contexts)]
+
+
+def _personal_current_age_evidence(contexts: list[str]) -> list[tuple[str, int, str]]:
     values: list[int] = []
+    evidence: list[tuple[str, int, str]] = []
     for context in contexts:
         for pattern in _PERSONAL_CURRENT_AGE_RE:
             for match in pattern.finditer(context):
                 value = int(match.group("value"))
                 if 0 < value < 125 and value not in values:
                     values.append(value)
-    return values
+                    evidence.append((context, value, match.group(0)))
+    return evidence
 
 
 def _elapsed_year_values(contexts: list[str]) -> list[int]:
+    return [value for _context, value, _raw in _elapsed_year_evidence(contexts)]
+
+
+def _elapsed_year_evidence(contexts: list[str]) -> list[tuple[str, int, str]]:
     values: list[int] = []
+    evidence: list[tuple[str, int, str]] = []
     for context in contexts:
         for pattern in _ELAPSED_YEAR_RE:
             for match in pattern.finditer(context):
                 value = _integer_number_value(match.group("value"))
                 if 0 < value < 125 and value not in values:
                     values.append(value)
-    return values
+                    evidence.append((context, value, match.group(0)))
+    return evidence
 
 
 def _integer_number_value(raw_value: str) -> int:
@@ -2501,14 +2957,20 @@ def _integer_number_value(raw_value: str) -> int:
 
 
 def _age_values(contexts: list[str]) -> list[int]:
+    return [value for _context, value, _raw in _age_value_evidence(contexts)]
+
+
+def _age_value_evidence(contexts: list[str]) -> list[tuple[str, int, str]]:
     values: list[int] = []
+    evidence: list[tuple[str, int, str]] = []
     for context in contexts:
         for pattern in _AGE_VALUE_RE:
             for match in pattern.finditer(context):
                 value = int(match.group("value"))
                 if 0 < value < 125 and value not in values:
                     values.append(value)
-    return values
+                    evidence.append((context, value, match.group(0)))
+    return evidence
 
 
 def _unit_values(contexts: list[str], *, unit_pattern: str) -> list[float]:
@@ -2603,6 +3065,113 @@ def _mixed_relative_interval_lines(*, week_values: list[float], month_values: li
             if week_words := _number_words(float(weeks)):
                 lines.append(f"relative_week_interval_answer={week_words} week")
     return lines
+
+
+def _relative_interval_ledger_row_lines(query: str, contexts: list[str]) -> list[str]:
+    if _elapsed_duration_at_event_query(query):
+        return []
+    query_tokens = set(source_tokens(query))
+    if not (
+        _temporal_interval_query(query)
+        or query_tokens & {"after", "before", "between", "long", "since", "until", "when"}
+    ):
+        return []
+    relevant_contexts = _query_relevant_numeric_contexts(query, contexts)
+    week_evidence = _relative_week_anchor_evidence(relevant_contexts)
+    month_evidence = _relative_month_anchor_evidence(relevant_contexts)
+    if len(week_evidence) + len(month_evidence) < 2:
+        return []
+    rows: list[dict[str, object]] = []
+    for index, (context, value, raw) in enumerate(_source_ordered_numeric_evidence(month_evidence)):
+        rows.append(
+            {
+                "fact_id": f"relative_interval:month:{index}",
+                "source_group": source_context_group(context),
+                "citation": source_context_citation(context),
+                "kind": "relative_time",
+                "value": _format_number(value),
+                "unit": "months_ago",
+                "raw_span": raw,
+                "include_reason": "relative_month_anchor",
+                "confidence": 0.8,
+            }
+        )
+    for index, (context, value, raw) in enumerate(_source_ordered_numeric_evidence(week_evidence)):
+        rows.append(
+            {
+                "fact_id": f"relative_interval:week:{index}",
+                "source_group": source_context_group(context),
+                "citation": source_context_citation(context),
+                "kind": "relative_time",
+                "value": _format_number(value),
+                "unit": "weeks_ago",
+                "raw_span": raw,
+                "include_reason": "relative_week_anchor",
+                "confidence": 0.8,
+            }
+        )
+    rows.sort(key=lambda row: _source_group_natural_key(str(row["source_group"])))
+    return _ledger_row_lines(rows)
+
+
+def _source_ordered_numeric_evidence(
+    evidence: list[tuple[str, float, str]],
+) -> list[tuple[str, float, str]]:
+    indexed = list(enumerate(evidence))
+    indexed.sort(
+        key=lambda item: (
+            _source_group_natural_key(source_context_group(item[1][0])),
+            item[0],
+        )
+    )
+    return [item for _index, item in indexed]
+
+
+def _relative_week_anchor_evidence(contexts: list[str]) -> list[tuple[str, float, str]]:
+    evidence: list[tuple[str, float, str]] = []
+    seen: set[tuple[str, float]] = set()
+    for context in contexts:
+        text = _numeric_context_text(context)
+        group = source_context_group(context)
+        for match in _unit_value_pattern(r"weeks?").finditer(text):
+            value = float(match.group("value"))
+            key = (group, value)
+            if key not in seen:
+                seen.add(key)
+                evidence.append((context, value, match.group(0)))
+        for match in _WORD_WEEK_RE.finditer(text):
+            value = float(_NUMBER_WORDS[match.group("value").casefold()])
+            key = (group, value)
+            if key not in seen:
+                seen.add(key)
+                evidence.append((context, value, match.group(0)))
+        if _LAST_WEEK_RE.search(text):
+            key = (group, 1.0)
+            if key not in seen:
+                seen.add(key)
+                evidence.append((context, 1.0, "last week"))
+    return evidence
+
+
+def _relative_month_anchor_evidence(contexts: list[str]) -> list[tuple[str, float, str]]:
+    evidence: list[tuple[str, float, str]] = []
+    seen: set[tuple[str, float]] = set()
+    for context in contexts:
+        text = _numeric_context_text(context)
+        group = source_context_group(context)
+        for match in _unit_value_pattern(r"months?").finditer(text):
+            value = float(match.group("value"))
+            key = (group, value)
+            if key not in seen:
+                seen.add(key)
+                evidence.append((context, value, match.group(0)))
+        for match in _WORD_MONTH_RE.finditer(text):
+            value = float(_NUMBER_WORDS[match.group("value").casefold()])
+            key = (group, value)
+            if key not in seen:
+                seen.add(key)
+                evidence.append((context, value, match.group(0)))
+    return evidence
 
 
 def _time_offset_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
@@ -2796,14 +3365,64 @@ def _anniversary_engagement_query(query: str) -> bool:
     return bool(tokens & {"anniversary"} and tokens & {"engaged", "engagement"} and tokens & {"month", "months"})
 
 
+def _anniversary_engagement_ledger_row_lines(query: str, contexts: list[str]) -> list[str]:
+    if not _anniversary_engagement_query(query):
+        return []
+    engagement = _first_event_month_day_evidence(contexts, terms={"engaged", "engagement"})
+    anniversary = _first_event_month_day_evidence(contexts, terms={"anniversary"})
+    if engagement is None or anniversary is None:
+        return []
+    rows = [
+        _month_day_ledger_row(
+            "anniversary_engagement:engagement",
+            engagement,
+            include_reason="engagement_date",
+        ),
+        _month_day_ledger_row(
+            "anniversary_engagement:anniversary",
+            anniversary,
+            include_reason="anniversary_date",
+        ),
+    ]
+    return _ledger_row_lines(rows)
+
+
+def _month_day_ledger_row(
+    fact_id: str,
+    evidence: tuple[str, int, int],
+    *,
+    include_reason: str,
+) -> dict[str, object]:
+    context, month, day = evidence
+    return {
+        "fact_id": fact_id,
+        "source_group": source_context_group(context),
+        "citation": source_context_citation(context),
+        "kind": "date",
+        "value": f"{month}/{day}",
+        "unit": "month_day",
+        "raw_span": f"{month}/{day}",
+        "include_reason": include_reason,
+        "confidence": 0.82,
+    }
+
+
 def _first_event_month_day(contexts: list[str], *, terms: set[str]) -> tuple[int, int] | None:
+    evidence = _first_event_month_day_evidence(contexts, terms=terms)
+    if evidence is None:
+        return None
+    return evidence[1], evidence[2]
+
+
+def _first_event_month_day_evidence(contexts: list[str], *, terms: set[str]) -> tuple[str, int, int] | None:
     for context in contexts:
         context_terms = set(source_tokens(context))
         if not context_terms & terms:
             continue
         month_days = _month_day_mentions(context)
         if month_days:
-            return month_days[0]
+            month, day = month_days[0]
+            return context, month, day
     return None
 
 
@@ -2828,6 +3447,45 @@ def _parent_order_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
     return lines
 
 
+def _parent_order_ledger_row_lines(query: str, contexts: list[str]) -> list[str]:
+    if not _parent_order_query(query):
+        return []
+    observations = _parent_order_observations(query, contexts)
+    if len(observations) < 2:
+        return []
+    rows = [
+        {
+            "fact_id": f"parent_order:{index}",
+            "source_group": source_context_group(context),
+            "citation": source_context_citation(context),
+            "kind": "date",
+            "value": f"{month}/{day}",
+            "unit": "month_day",
+            "raw_span": f"{month}/{day}",
+            "candidate": person,
+            "include_reason": "parent_order_candidate",
+            "confidence": 0.8,
+        }
+        for index, (month, day, person, context) in enumerate(observations)
+    ]
+    return _ledger_row_lines(rows)
+
+
+def _parent_order_observations(query: str, contexts: list[str]) -> list[tuple[int, int, str, str]]:
+    people = _query_person_alternatives(query)
+    if len(people) < 2:
+        return []
+    observations: list[tuple[int, int, str, str]] = []
+    for person in people:
+        event_date = _parent_event_month_day_for_person_evidence(person, contexts)
+        if event_date is None:
+            return []
+        context, month, day = event_date
+        observations.append((month, day, person.title(), context))
+    observations.sort(key=lambda item: (item[0], item[1]))
+    return observations
+
+
 def _parent_order_query(query: str) -> bool:
     tokens = set(source_tokens(query))
     return bool(tokens & {"who", "which"} and "first" in tokens and tokens & {"parent", "parents"})
@@ -2845,6 +3503,13 @@ def _query_person_alternatives(query: str) -> tuple[str, ...]:
 
 
 def _parent_event_month_day_for_person(person: str, contexts: list[str]) -> tuple[int, int] | None:
+    evidence = _parent_event_month_day_for_person_evidence(person, contexts)
+    if evidence is None:
+        return None
+    return evidence[1], evidence[2]
+
+
+def _parent_event_month_day_for_person_evidence(person: str, contexts: list[str]) -> tuple[str, int, int] | None:
     person_contexts = [
         context for context in contexts
         if _parent_context_matches_person(person, context)
@@ -2852,14 +3517,16 @@ def _parent_event_month_day_for_person(person: str, contexts: list[str]) -> tupl
     for context in person_contexts:
         event_date = _parent_event_month_day(context)
         if event_date is not None:
-            return event_date
+            month, day = event_date
+            return context, month, day
     if person == "rachel" and any("rachel" in set(source_tokens(context)) for context in person_contexts):
         for context in contexts:
             terms = set(source_tokens(context))
             if terms & {"twins", "jackson", "julia"}:
                 event_date = _parent_event_month_day(context)
                 if event_date is not None:
-                    return event_date
+                    month, day = event_date
+                    return context, month, day
     return None
 
 
@@ -2914,22 +3581,48 @@ def _recency_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
     """Project most-recent categorical answers from relative-time evidence."""
     if not _recency_comparison_query(query):
         return []
-    observations: list[tuple[int, str]] = []
+    observations = _recency_observations(query, contexts)
+    if not observations:
+        return []
+    answer = observations[0][1]
+    lines = [f"recency_answer={answer}"]
+    for index, (days_ago, value, _context) in enumerate(observations[:5], start=1):
+        lines.append(f"recency_rank={index} relative_days_ago={days_ago} candidate={value}")
+    return lines
+
+
+def _recency_ledger_row_lines(query: str, contexts: list[str]) -> list[str]:
+    if not _recency_comparison_query(query):
+        return []
+    rows = [
+        {
+            "fact_id": f"recency:{index}",
+            "source_group": source_context_group(context),
+            "citation": source_context_citation(context),
+            "kind": "relative_time",
+            "value": str(days_ago),
+            "unit": "days_ago",
+            "raw_span": str(days_ago),
+            "candidate": value,
+            "include_reason": "recency_candidate",
+            "confidence": 0.78,
+        }
+        for index, (days_ago, value, context) in enumerate(_recency_observations(query, contexts)[:5])
+    ]
+    return _ledger_row_lines(rows)
+
+
+def _recency_observations(query: str, contexts: list[str]) -> list[tuple[int, str, str]]:
+    observations: list[tuple[int, str, str]] = []
     for context in contexts:
         text = source_context_snippet(context, max_chars=1_500)
         days_ago = _relative_days_ago(text)
         if days_ago is None:
             continue
         for value in _recency_candidate_values(query, text):
-            observations.append((days_ago, value))
-    if not observations:
-        return []
+            observations.append((days_ago, value, context))
     observations.sort(key=lambda item: (item[0], item[1].casefold()))
-    answer = observations[0][1]
-    lines = [f"recency_answer={answer}"]
-    for index, (days_ago, value) in enumerate(observations[:5], start=1):
-        lines.append(f"recency_rank={index} relative_days_ago={days_ago} candidate={value}")
-    return lines
+    return observations
 
 
 def _recency_candidate_values(query: str, text: str) -> list[str]:
@@ -3045,7 +3738,40 @@ def _temporal_order_synthesis_lines(query: str, contexts: list[str]) -> list[str
     """Project relative ordering candidates from cited temporal evidence."""
     if not _temporal_order_query(query):
         return []
-    observations: list[tuple[int, str]] = []
+    observations = _temporal_order_observations(contexts)
+    if len(observations) < 2:
+        return []
+    lines = [f"temporal_order_answer={observations[0][1]}"]
+    for index, (days_ago, candidate, _context) in enumerate(observations[:5], start=1):
+        lines.append(
+            f"temporal_order_rank={index} relative_days_ago={days_ago} candidate={candidate}"
+        )
+    return lines
+
+
+def _temporal_order_ledger_row_lines(query: str, contexts: list[str]) -> list[str]:
+    if not _temporal_order_query(query):
+        return []
+    rows = [
+        {
+            "fact_id": f"temporal_order:{index}",
+            "source_group": source_context_group(context),
+            "citation": source_context_citation(context),
+            "kind": "relative_time",
+            "value": str(days_ago),
+            "unit": "days_ago",
+            "raw_span": str(days_ago),
+            "candidate": candidate,
+            "include_reason": "temporal_order_candidate",
+            "confidence": 0.78,
+        }
+        for index, (days_ago, candidate, context) in enumerate(_temporal_order_observations(contexts)[:5])
+    ]
+    return _ledger_row_lines(rows)
+
+
+def _temporal_order_observations(contexts: list[str]) -> list[tuple[int, str, str]]:
+    observations: list[tuple[int, str, str]] = []
     for context in contexts:
         text = _numeric_context_text(context)
         days_ago = _relative_days_ago(text)
@@ -3054,16 +3780,9 @@ def _temporal_order_synthesis_lines(query: str, contexts: list[str]) -> list[str
         candidate = _temporal_order_candidate(text)
         if not candidate:
             continue
-        observations.append((days_ago, candidate))
-    if len(observations) < 2:
-        return []
+        observations.append((days_ago, candidate, context))
     observations.sort(key=lambda item: item[0], reverse=True)
-    lines = [f"temporal_order_answer={observations[0][1]}"]
-    for index, (days_ago, candidate) in enumerate(observations[:5], start=1):
-        lines.append(
-            f"temporal_order_rank={index} relative_days_ago={days_ago} candidate={candidate}"
-        )
-    return lines
+    return observations
 
 
 def _temporal_order_query(query: str) -> bool:

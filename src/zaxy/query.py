@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import math
 import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
@@ -67,6 +67,8 @@ class RetentionPolicy:
     mode: str = "none"
     decay_half_life_days: int = 30
     expired_weight: float = 0.0
+    purpose_decay_half_life_days: dict[str, int] = field(default_factory=dict)
+    purpose_expired_weights: dict[str, float] = field(default_factory=dict)
 
 
 SCORING_PROFILES: dict[str, ScoringProfile] = {
@@ -148,6 +150,7 @@ class LexicalReranker:
     """Deterministic local reranker based on query-token overlap."""
 
     name = "lexical"
+    strategy = "lexical_overlap"
 
     def __init__(self, weight: float = 0.8) -> None:
         self.weight = weight
@@ -178,6 +181,7 @@ class LexicalReranker:
                     ranking_score=weighted_score,
                     reranker=self.name,
                     rerank_score=score,
+                    rerank_strategy=self.strategy,
                 )
         )
         return sorted(reranked, key=lambda item: item.ranking_score or item.score, reverse=True)[:limit]
@@ -187,6 +191,7 @@ class HTTPReranker:
     """HTTP reranker for local or self-hosted model endpoints."""
 
     name = "http"
+    strategy = "cross_encoder"
 
     def __init__(
         self,
@@ -213,7 +218,65 @@ class HTTPReranker:
         )
         response.raise_for_status()
         scores = _extract_rerank_scores(response.json(), expected=len(results))
-        return _apply_rerank_scores(results, scores, limit=limit, weight=self.weight, reranker=self.name)
+        return _apply_rerank_scores(
+            results,
+            scores,
+            limit=limit,
+            weight=self.weight,
+            reranker=self.name,
+            rerank_strategy=self.strategy,
+        )
+
+
+class LateInteractionHTTPReranker:
+    """HTTP reranker for token-level late-interaction endpoints.
+
+    The endpoint receives compact candidate text plus deterministic token lists
+    so ColBERT-style or other multi-vector rankers can score token alignment
+    without changing Zaxy's default local retrieval path.
+    """
+
+    name = "late-interaction-http"
+    strategy = "late_interaction"
+
+    def __init__(
+        self,
+        endpoint: str,
+        api_key: str | None = None,
+        weight: float = 0.35,
+        client: Any | None = None,
+    ) -> None:
+        if not endpoint:
+            raise ValueError("RERANKER_URL is required for late-interaction HTTP reranking")
+        self.endpoint = endpoint
+        self.api_key = api_key
+        self.weight = weight
+        self._client = client or httpx.Client(timeout=30.0)
+
+    async def rerank(self, query: str, results: list[SearchResult], *, limit: int) -> list[SearchResult]:
+        response = self._client.post(
+            self.endpoint,
+            headers=_auth_headers(self.api_key),
+            json={
+                "query": query,
+                "query_tokens": _token_list(query),
+                "rerank_strategy": self.strategy,
+                "candidates": [
+                    _late_interaction_candidate_payload(index, result)
+                    for index, result in enumerate(results)
+                ],
+            },
+        )
+        response.raise_for_status()
+        scores = _extract_rerank_scores(response.json(), expected=len(results))
+        return _apply_rerank_scores(
+            results,
+            scores,
+            limit=limit,
+            weight=self.weight,
+            reranker=self.name,
+            rerank_strategy=self.strategy,
+        )
 
 
 class OpenAICompatibleReranker:
@@ -224,6 +287,7 @@ class OpenAICompatibleReranker:
     """
 
     name = "openai-compatible"
+    strategy = "hosted_model"
 
     def __init__(
         self,
@@ -275,7 +339,14 @@ class OpenAICompatibleReranker:
         response.raise_for_status()
         content = response.json()["choices"][0]["message"]["content"]
         scores = _extract_rerank_scores(json.loads(content), expected=len(results))
-        return _apply_rerank_scores(results, scores, limit=limit, weight=self.weight, reranker=self.name)
+        return _apply_rerank_scores(
+            results,
+            scores,
+            limit=limit,
+            weight=self.weight,
+            reranker=self.name,
+            rerank_strategy=self.strategy,
+        )
 
 
 class QueryRouter:
@@ -320,6 +391,7 @@ class QueryRouter:
         limit: int | None = None,
         embedding: list[float] | None = None,
         session_id: str | None = None,
+        scoring_profile: str | ScoringProfile | None = None,
     ) -> list[ContextChunk]:
         """Run a hybrid query and return ranked context chunks.
 
@@ -334,6 +406,13 @@ class QueryRouter:
         lim = validate_limit(limit, default=self.default_limit)
         candidate_limit = _candidate_limit(lim)
         scope = validate_session_id(session_id or self.session_id)
+        active_profile = (
+            self.scoring_profile
+            if scoring_profile is None
+            else _resolve_scoring_profile(scoring_profile, None)
+        )
+        fusion_weights = active_profile.fusion_weights
+        temporal_weight = active_profile.temporal_weight
         results: list[SearchResult] = []
 
         # 1. Exact match attempt against the full query and structured entity
@@ -351,12 +430,12 @@ class QueryRouter:
                         _apply_salience_score(
                             SearchResult(
                                 entity=ent,
-                                score=1.0 * self.fusion_weights["exact"],
+                                score=1.0 * fusion_weights["exact"],
                                 source="exact",
                                 raw_score=1.0,
-                                source_weight=self.fusion_weights["exact"],
+                                source_weight=fusion_weights["exact"],
                                 matched_query=candidate,
-                                scoring_profile=self.scoring_profile.name,
+                                scoring_profile=active_profile.name,
                             )
                         )
                     )
@@ -382,21 +461,21 @@ class QueryRouter:
             for hit in vector_hits:
                 hit = SearchResult(
                     entity=hit.entity,
-                    score=hit.score * self.fusion_weights["vector"],
+                    score=hit.score * fusion_weights["vector"],
                     source="vector",
                     raw_score=hit.score,
-                    source_weight=self.fusion_weights["vector"],
+                    source_weight=fusion_weights["vector"],
                     matched_query=query,
-                    scoring_profile=self.scoring_profile.name,
+                    scoring_profile=active_profile.name,
                 )
-                hit = _apply_temporal_score(hit, temporal_point, self.temporal_weight)
+                hit = _apply_temporal_score(hit, temporal_point, temporal_weight)
                 results.append(_apply_salience_score(hit))
 
         # 3. Keyword search
         keyword_hits: list[SearchResult] = []
         identifier_terms = _identifier_terms(query)
         for keyword_query in _expanded_queries(query):
-            query_weight = 1.0 if keyword_query == query else self.scoring_profile.expansion_weight
+            query_weight = 1.0 if keyword_query == query else active_profile.expansion_weight
             try:
                 query_hits = await self.store.search_keyword(
                     keyword_query,
@@ -416,22 +495,22 @@ class QueryRouter:
                 )
                 hit = SearchResult(
                     entity=hit.entity,
-                    score=raw_score * self.fusion_weights["keyword"] * query_weight,
+                    score=raw_score * fusion_weights["keyword"] * query_weight,
                     source="keyword",
                     raw_score=hit.score,
-                    source_weight=self.fusion_weights["keyword"],
+                    source_weight=fusion_weights["keyword"],
                     matched_query=keyword_query,
                     query_weight=query_weight,
-                    scoring_profile=self.scoring_profile.name,
+                    scoring_profile=active_profile.name,
                 )
-                hit = _apply_temporal_score(hit, temporal_point, self.temporal_weight)
+                hit = _apply_temporal_score(hit, temporal_point, temporal_weight)
                 hit = _apply_salience_score(hit)
                 keyword_hits.append(hit)
                 results.append(hit)
 
         # 4. Traversal from exact anchors, or from top keyword + vector hits
         # when no durable exact anchor is available.
-        seen = {r.entity.name for r in results}
+        seen = {(r.entity.name, r.entity.entity_type) for r in results}
         traversal_seeds = _traversal_seeds(
             exact_hits=exact_hits,
             results=results,
@@ -453,22 +532,23 @@ class QueryRouter:
                     warnings.append("traversal search unavailable")
                     continue
                 for neighbor in neighbors:
-                    if neighbor.name in seen and hit.source != "exact":
+                    neighbor_key = (neighbor.name, neighbor.entity_type)
+                    if neighbor_key in seen and hit.source != "exact":
                         continue
                     raw_score = _traversal_raw_score(query, hit, neighbor)
                     results.append(
                         _apply_salience_score(
                             SearchResult(
                                 entity=neighbor,
-                                score=raw_score * self.fusion_weights["traversal"],
+                                score=raw_score * fusion_weights["traversal"],
                                 source="traversal",
                                 raw_score=raw_score,
-                                source_weight=self.fusion_weights["traversal"],
-                                scoring_profile=self.scoring_profile.name,
+                                source_weight=fusion_weights["traversal"],
+                                scoring_profile=active_profile.name,
                             )
                         )
                     )
-                    seen.add(neighbor.name)
+                    seen.add(neighbor_key)
 
         # 5. Deduplicate by (name, type), keep highest score
         best: dict[tuple[str, str], SearchResult] = {}
@@ -488,7 +568,12 @@ class QueryRouter:
         )
 
         # 7. Sort with either provider reranking or MMR diversity and truncate
-        ranked = await self._rank(query, [_with_warnings(r, warnings) for r in filtered], lim)
+        ranked = await self._rank(
+            query,
+            [_with_warnings(r, warnings) for r in filtered],
+            lim,
+            scoring_profile=active_profile,
+        )
 
         return [_to_chunk(r) for r in ranked]
 
@@ -509,19 +594,27 @@ class QueryRouter:
         self._traversal_available_by_session[session_id] = available
         return available
 
-    async def _rank(self, query: str, results: list[SearchResult], limit: int) -> list[SearchResult]:
+    async def _rank(
+        self,
+        query: str,
+        results: list[SearchResult],
+        limit: int,
+        *,
+        scoring_profile: ScoringProfile | None = None,
+    ) -> list[SearchResult]:
+        active_profile = scoring_profile or self.scoring_profile
         mmr_pool_limit = _mmr_pool_limit(limit, has_reranker=self.reranker is not None)
         mmr_inputs = _bounded_mmr_candidates(
             results,
             limit=mmr_pool_limit,
-            traversal_bonus=self.scoring_profile.traversal_bonus,
+            traversal_bonus=active_profile.traversal_bonus,
         )
         entity_token_cache = _entity_token_cache(mmr_inputs)
         candidates = _mmr_rank(
             mmr_inputs,
             limit=len(mmr_inputs) if self.reranker is not None else limit,
-            lambda_score=self.scoring_profile.mmr_lambda,
-            traversal_bonus=self.scoring_profile.traversal_bonus,
+            lambda_score=active_profile.mmr_lambda,
+            traversal_bonus=active_profile.traversal_bonus,
             entity_token_cache=entity_token_cache,
         )
         if self.reranker is None:
@@ -581,6 +674,14 @@ def build_reranker(settings: Any) -> Reranker | None:
             endpoint=endpoint,
             api_key=getattr(settings, "reranker_api_key", None),
         )
+    if provider in {"late-interaction-http", "late_interaction_http", "late-http", "late_http"}:
+        endpoint = getattr(settings, "reranker_url", None)
+        if not endpoint:
+            raise ValueError("RERANKER_URL is required when RERANKER_PROVIDER=late-interaction-http")
+        return LateInteractionHTTPReranker(
+            endpoint=endpoint,
+            api_key=getattr(settings, "reranker_api_key", None),
+        )
     if provider == "openai":
         api_key = getattr(settings, "openai_api_key", None)
         if not api_key:
@@ -590,7 +691,7 @@ def build_reranker(settings: Any) -> Reranker | None:
             model=getattr(settings, "openai_rerank_model", "gpt-5-mini"),
             base_url=getattr(settings, "openai_base_url", "https://api.openai.com/v1"),
         )
-    raise ValueError("RERANKER_PROVIDER must be 'none', 'lexical', 'http', or 'openai'")
+    raise ValueError("RERANKER_PROVIDER must be 'none', 'lexical', 'http', 'late-interaction-http', or 'openai'")
 
 
 def build_retention_policy(settings: Any) -> RetentionPolicy:
@@ -864,6 +965,13 @@ def _candidate_payload(index: int, result: SearchResult) -> dict[str, object]:
     }
 
 
+def _late_interaction_candidate_payload(index: int, result: SearchResult) -> dict[str, object]:
+    """Return tokenized candidate payload for late-interaction rerankers."""
+    payload = _candidate_payload(index, result)
+    payload["tokens"] = _token_list(str(payload["content"]))
+    return payload
+
+
 def _candidate_text(entity: GraphEntity) -> str:
     parts = [f"{entity.name} ({entity.entity_type})"]
     summary = entity.properties.get("summary")
@@ -1040,6 +1148,7 @@ def _apply_rerank_scores(
     limit: int,
     weight: float,
     reranker: str,
+    rerank_strategy: str,
 ) -> list[SearchResult]:
     reranked = [
         replace(
@@ -1048,6 +1157,7 @@ def _apply_rerank_scores(
             ranking_score=result.score + (weight * scores[index]),
             reranker=reranker,
             rerank_score=scores[index],
+            rerank_strategy=rerank_strategy,
         )
         for index, result in enumerate(results)
     ]
@@ -1094,6 +1204,20 @@ def _resolve_retention_policy(
         mode=mode,
         decay_half_life_days=decay_half_life_days,
         expired_weight=expired_weight,
+        purpose_decay_half_life_days={
+            "coordinate": max(decay_half_life_days, 180),
+            "security": max(decay_half_life_days, 180),
+            "review": max(decay_half_life_days, 90),
+            "release": max(decay_half_life_days, 120),
+            "coding": decay_half_life_days,
+            "research": decay_half_life_days,
+        },
+        purpose_expired_weights={
+            "coordinate": max(expired_weight, 0.15),
+            "security": max(expired_weight, 0.1),
+            "review": max(expired_weight, 0.05),
+            "release": max(expired_weight, 0.1),
+        },
     )
 
 
@@ -1262,6 +1386,10 @@ def _tokens(value: str) -> set[str]:
     return {token for token in _TOKEN_RE.findall(value.lower()) if len(token) > 1}
 
 
+def _token_list(value: str) -> list[str]:
+    return [token for token in _TOKEN_RE.findall(value.lower()) if len(token) > 1]
+
+
 def _apply_temporal_score(
     result: SearchResult,
     temporal_point: str | None,
@@ -1357,7 +1485,7 @@ def _apply_retention_policy(
             return None
         return _retention_replace(
             result,
-            multiplier=policy.expired_weight,
+            multiplier=_purpose_expired_weight(result, policy),
             policy=policy,
             expired=True,
         )
@@ -1371,7 +1499,8 @@ def _apply_retention_policy(
     if reference is None:
         return _retention_replace(result, multiplier=1.0, policy=policy, expired=False)
     age_days = max(0.0, (now - reference).total_seconds() / 86400.0)
-    multiplier = math.pow(0.5, age_days / policy.decay_half_life_days)
+    half_life_days = _purpose_decay_half_life_days(result, policy)
+    multiplier = math.pow(0.5, age_days / half_life_days)
     importance = _bounded_float(result.entity.properties.get("importance"), default=1.0)
     reinforcement_count = _bounded_float(
         result.entity.properties.get("reinforcement_count"),
@@ -1379,7 +1508,13 @@ def _apply_retention_policy(
     )
     reinforcement_boost = min(0.25, reinforcement_count * 0.03)
     multiplier = min(1.0, multiplier * importance + reinforcement_boost)
-    return _retention_replace(result, multiplier=multiplier, policy=policy, expired=False)
+    return _retention_replace(
+        result,
+        multiplier=multiplier,
+        policy=policy,
+        expired=False,
+        half_life_days=half_life_days,
+    )
 
 
 def _retention_replace(
@@ -1388,17 +1523,44 @@ def _retention_replace(
     multiplier: float,
     policy: RetentionPolicy,
     expired: bool,
+    half_life_days: int | None = None,
 ) -> SearchResult:
     metadata = dict(result.entity.properties)
     metadata["_retention_policy"] = policy.mode
     metadata["_retention_decay_multiplier"] = multiplier
     metadata["_retention_expired"] = expired
+    if half_life_days is not None:
+        metadata["_retention_half_life_days"] = half_life_days
+    purpose_profile = _purpose_profile(result)
+    if purpose_profile is not None:
+        metadata["_retention_purpose_profile"] = purpose_profile
     return replace(
         result,
         entity=replace(result.entity, properties=metadata),
         score=result.score * multiplier,
         ranking_score=None if result.ranking_score is None else result.ranking_score * multiplier,
     )
+
+
+def _purpose_profile(result: SearchResult) -> str | None:
+    value = result.entity.properties.get("purpose_profile")
+    if isinstance(value, str) and value.strip():
+        return value.strip().casefold().replace(" ", "-")
+    return None
+
+
+def _purpose_decay_half_life_days(result: SearchResult, policy: RetentionPolicy) -> int:
+    profile = _purpose_profile(result)
+    if profile is None:
+        return policy.decay_half_life_days
+    return policy.purpose_decay_half_life_days.get(profile, policy.decay_half_life_days)
+
+
+def _purpose_expired_weight(result: SearchResult, policy: RetentionPolicy) -> float:
+    profile = _purpose_profile(result)
+    if profile is None:
+        return policy.expired_weight
+    return policy.purpose_expired_weights.get(profile, policy.expired_weight)
 
 
 def _retention_now(temporal_point: str | None) -> datetime:
@@ -1445,6 +1607,7 @@ def _score_explanation(result: SearchResult) -> dict[str, Any]:
     inferred_trust = _inferred_edge_trust_metadata(result.entity.properties)
     inferred_relation_types = _inferred_relation_types(result.entity.properties)
     inference_methods = _inference_methods(result.entity.properties)
+    path_relation_types = _unique_text(_list_property(result.entity.properties.get("_path_relation_types")))
     return {
         "source": result.source,
         "raw_score": round(result.raw_score if result.raw_score is not None else result.score, 4),
@@ -1461,7 +1624,9 @@ def _score_explanation(result: SearchResult) -> dict[str, Any]:
         ),
         **({"reranker": result.reranker} if result.reranker is not None else {}),
         **({"rerank_score": round(result.rerank_score, 4)} if result.rerank_score is not None else {}),
+        **({"rerank_strategy": result.rerank_strategy} if result.rerank_strategy is not None else {}),
         **({"warnings": list(result.warnings)} if result.warnings else {}),
+        **({"path_relation_types": path_relation_types} if result.source == "traversal" and path_relation_types else {}),
         **(
             {"retention_policy": result.entity.properties["_retention_policy"]}
             if "_retention_policy" in result.entity.properties
@@ -1480,6 +1645,16 @@ def _score_explanation(result: SearchResult) -> dict[str, Any]:
         **(
             {"retention_expired": bool(result.entity.properties["_retention_expired"])}
             if "_retention_expired" in result.entity.properties
+            else {}
+        ),
+        **(
+            {"retention_half_life_days": int(result.entity.properties["_retention_half_life_days"])}
+            if "_retention_half_life_days" in result.entity.properties
+            else {}
+        ),
+        **(
+            {"retention_purpose_profile": str(result.entity.properties["_retention_purpose_profile"])}
+            if "_retention_purpose_profile" in result.entity.properties
             else {}
         ),
         **(

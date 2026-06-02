@@ -83,6 +83,72 @@ def test_checkout_policy_handles_uncited_current_fact_once_for_core_and_mcp() ->
     assert "Current citations: 0" in prompt
 
 
+def test_checkout_purpose_profile_conditions_guidance_and_prompt() -> None:
+    """Purpose profiles should make retrieval-time ontology explicit."""
+    current_facts = [
+        {
+            "content": "Release blocker: JWKS cache expires before refresh.",
+            "source": "traversal",
+            "score": 0.91,
+            "citation": "eventloom://agent-1/events/12#aaaaaaaaaaaa",
+            "valid_from": "2026-05-10T12:00:00Z",
+            "valid_to": None,
+            "source_lane": "graph",
+        }
+    ]
+    purpose = {
+        "profile": "review",
+        "task": "release-review",
+        "expected_action": "approve_or_block",
+    }
+
+    diagnostics = build_checkout_diagnostics(
+        query="current release risk",
+        purpose=purpose,
+        source_lanes={"graph": 1},
+        current_facts=current_facts,
+        evidence=current_facts,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        warnings=[],
+    )
+    guidance = build_checkout_guidance(
+        query="current release risk",
+        purpose=purpose,
+        current_facts=current_facts,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        evidence=current_facts,
+    )
+    quality = build_checkout_quality(diagnostics=diagnostics, guidance=guidance)
+    prompt = format_memory_checkout_prompt(
+        query="current release risk",
+        assembly_prompt="# Active Memory Working Set",
+        current_facts=current_facts,
+        evidence=current_facts,
+        quality=quality,
+        guidance=guidance,
+        diagnostics=diagnostics,
+    )
+
+    assert diagnostics["purpose"]["profile"] == "review"
+    assert diagnostics["purpose"]["task"] == "release-review"
+    assert diagnostics["purpose"]["expected_action"] == "approve_or_block"
+    assert diagnostics["purpose"]["ontology_lens"] == [
+        "risk",
+        "regression",
+        "missing_test",
+        "accepted_decision",
+        "blocker",
+    ]
+    assert guidance["purpose"]["evidence_policy"] == "cited_current_facts_required"
+    assert "Use the purpose evidence policy: cited_current_facts_required." in guidance["trust"]
+    assert (
+        "Applied purpose profile review with evidence policy cited_current_facts_required."
+        in quality["reasons"]
+    )
+    assert "## Purpose Profile" in prompt
+    assert "Expected action: approve_or_block" in prompt
+
+
 def test_checkout_diagnostics_summarize_inferred_context_dependency() -> None:
     """Checkout diagnostics should summarize inferred graph-path reliance."""
     current_facts = [
@@ -276,6 +342,13 @@ def test_checkout_blocks_aggregation_when_required_source_groups_are_missing() -
         "type": "memory_checkout",
         "reason": "Evidence plan requires 2 cited source groups, but checkout has 1.",
         "query": "broader cited evidence for: How many weddings did I attend?",
+        "missing_slots": ["source"],
+        "suggested_queries": [
+            {
+                "slot": "source",
+                "query": "broader cited evidence for: How many weddings did I attend?",
+            }
+        ],
     }
     assert "Evidence plan requires 2 cited source groups, but checkout has 1." in quality["reasons"]
     assert "Evidence plan status: observed_source_groups=1, required_source_groups=2, satisfied=False" in prompt
@@ -324,6 +397,79 @@ def test_memory_checkout_exposes_evidence_plan_for_aggregation() -> None:
     assert checkout.current_facts[0]["citation"] == "eventloom://agent-1/events/1#aaaaaaaaaaaa"
     assert checkout.current_facts[1]["citation"] == "eventloom://agent-1/events/2#bbbbbbbbbbbb"
     assert "Evidence plan: mode=multi_source_aggregation" in checkout.prompt
+
+
+def test_memory_checkout_exposes_slot_plan_for_numeric_aggregation() -> None:
+    """Checkout should expose per-slot retrieval requirements for composed answers."""
+    assembly = ContextAssembly(
+        session_id="agent-1",
+        prompt="# Retrieved Context",
+        contexts=[
+            Context(
+                content="session_id=answer-1 I spent $120 on a bike helmet.",
+                source="verbatim",
+                score=0.91,
+                metadata={"citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa"},
+            )
+        ],
+        replay_event_count=0,
+    )
+
+    checkout = build_memory_checkout(
+        query="How much did I spend on bike expenses in total?",
+        assembly=assembly,
+    )
+
+    assert checkout.diagnostics["slot_plan"] == {
+        "version": "slot_plan_v1",
+        "query": "How much did I spend on bike expenses in total?",
+        "answer_type": "sum",
+        "operation": "sum_values",
+        "required_slots": ["source", "numeric"],
+        "optional_slots": ["exact", "semantic"],
+        "slots": [
+            {
+                "name": "source",
+                "strategy": "source_citation",
+                "required": True,
+                "budget": 8,
+                "query": "How much did I spend on bike expenses in total?",
+            },
+            {
+                "name": "numeric",
+                "strategy": "numeric_value",
+                "required": True,
+                "kinds": ["currency"],
+                "operation": "sum_values",
+            },
+            {
+                "name": "exact",
+                "strategy": "exact_terms",
+                "required": False,
+                "terms": ["much", "spend", "bike", "expenses", "total"],
+            },
+            {
+                "name": "semantic",
+                "strategy": "semantic_similarity",
+                "required": False,
+                "query": "How much did I spend on bike expenses in total?",
+            },
+        ],
+    }
+    assert checkout.quality["required_action"] == {
+        "type": "memory_checkout",
+        "reason": "Evidence plan requires 2 cited source groups, but checkout has 1.",
+        "query": "broader cited evidence for: How much did I spend on bike expenses in total?",
+        "missing_slots": ["source"],
+        "suggested_queries": [
+            {
+                "slot": "source",
+                "query": "broader cited evidence for: How much did I spend on bike expenses in total?",
+            }
+        ],
+    }
+    assert "Slot plan: required=source, numeric; optional=exact, semantic" in checkout.prompt
+    assert "Missing slots: source" in checkout.prompt
 
 
 def test_memory_checkout_uses_evidence_selection_for_aggregation() -> None:
@@ -477,6 +623,237 @@ def test_checkout_groups_synthesis_evidence_by_source_identity() -> None:
     assert "source_id=answer-1" in prompt
     assert "evidence_count=2" in prompt
     assert "eventloom://agent-1/events/1#aaaaaaaaaaaa" in prompt
+
+
+def test_checkout_exposes_structured_numeric_answer_candidate() -> None:
+    """Synthesis bundles should become structured answer candidates in checkout diagnostics."""
+    synthesis_fact = {
+        "content": "\n".join(
+            [
+                "zaxy_synthesis_bundle=true",
+                "synthesis_mode=multi_source_aggregation",
+                "query=How much did I spend on bike expenses in total?",
+                "source_count=3",
+                "candidate_rank=1 candidate_type=currency candidate_confidence=0.83",
+                "candidate_support=answer-1,answer-2,answer-3",
+                "currency_values=$120,$40,$25",
+                "currency_total_answer=$185",
+                "currency_excluded_source_ids=answer-4",
+                (
+                    'ledger_row={"fact_id":"currency:0:0","source_group":"answer-1",'
+                    '"citation":"eventloom://agent-1/events/1#aaaaaaaaaaaa",'
+                    '"kind":"currency","value":"120","unit":"USD","label":"helmet",'
+                    '"raw_span":"$120 helmet","normalized_identity":"currency:helmet:120",'
+                    '"include_reason":"currency_amount","exclude_reason":"","confidence":0.83}'
+                ),
+                (
+                    'ledger_row={"fact_id":"currency:3:0","source_group":"answer-4",'
+                    '"citation":"eventloom://agent-1/events/4#dddddddddddd",'
+                    '"kind":"currency","value":"40","unit":"USD","label":"helmet",'
+                    '"raw_span":"$40 helmet","normalized_identity":"currency:helmet:40",'
+                    '"include_reason":"currency_amount","exclude_reason":"duplicate_identity","confidence":0.58}'
+                ),
+                "- source_id=answer-1 citation=eventloom://agent-1/events/1#aaaaaaaaaaaa snippet=helmet",
+            ]
+        ),
+        "source": "verbatim",
+        "score": 0.99,
+        "citation": "eventloom://agent-1/events/99#999999999999",
+        "source_lane": "source_synthesis",
+    }
+
+    diagnostics = build_checkout_diagnostics(
+        query="How much did I spend on bike expenses in total?",
+        source_lanes={"source_synthesis": 1, "verbatim": 3},
+        current_facts=[synthesis_fact],
+        evidence=[synthesis_fact],
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        warnings=[],
+    )
+    guidance = build_checkout_guidance(
+        query="How much did I spend on bike expenses in total?",
+        current_facts=[synthesis_fact],
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        evidence=[synthesis_fact],
+    )
+    quality = build_checkout_quality(diagnostics=diagnostics, guidance=guidance)
+    prompt = format_memory_checkout_prompt(
+        query="How much did I spend on bike expenses in total?",
+        assembly_prompt="# Active Memory Working Set",
+        current_facts=[synthesis_fact],
+        evidence=[synthesis_fact],
+        quality=quality,
+        guidance=guidance,
+        diagnostics=diagnostics,
+    )
+
+    assert diagnostics["synthesis"]["answer_candidates"] == [
+        {
+            "rank": 1,
+            "type": "currency",
+            "confidence": 0.83,
+            "answer_key": "currency_total_answer",
+            "answer": "$185",
+            "support_source_ids": ["answer-1", "answer-2", "answer-3"],
+            "excluded_source_ids": ["answer-4"],
+        }
+    ]
+    assert diagnostics["synthesis"]["ledger_rows"] == [
+        {
+            "fact_id": "currency:0:0",
+            "source_group": "answer-1",
+            "citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa",
+            "kind": "currency",
+            "value": "120",
+            "unit": "USD",
+            "label": "helmet",
+            "raw_span": "$120 helmet",
+            "normalized_identity": "currency:helmet:120",
+            "include_reason": "currency_amount",
+            "exclude_reason": "",
+            "confidence": 0.83,
+        },
+        {
+            "fact_id": "currency:3:0",
+            "source_group": "answer-4",
+            "citation": "eventloom://agent-1/events/4#dddddddddddd",
+            "kind": "currency",
+            "value": "40",
+            "unit": "USD",
+            "label": "helmet",
+            "raw_span": "$40 helmet",
+            "normalized_identity": "currency:helmet:40",
+            "include_reason": "currency_amount",
+            "exclude_reason": "duplicate_identity",
+            "confidence": 0.58,
+        },
+    ]
+    assert "Answer candidate: rank=1, type=currency, answer=$185, confidence=0.83" in prompt
+    assert "support=answer-1, answer-2, answer-3" in prompt
+    assert prompt.index("## Answer Candidates") < prompt.index("## Current Facts")
+    assert prompt.index("## Answer Candidates") < prompt.index("## Evidence")
+
+
+def test_checkout_prefers_typed_synthesis_packet_over_rendered_text() -> None:
+    """Typed packets should survive malformed or partial rendered bundle text."""
+    synthesis_fact = {
+        "content": "\n".join(
+            [
+                "zaxy_synthesis_bundle=true",
+                "candidate_rank=1 candidate_type=currency candidate_confidence=0.10",
+                "currency_total_answer=$999",
+            ]
+        ),
+        "source": "verbatim",
+        "score": 0.99,
+        "citation": "eventloom://agent-1/events/99#999999999999",
+        "source_lane": "source_synthesis",
+        "synthesis_packet": {
+            "schema_version": "synthesis_packet_v1",
+            "answer_candidates": [
+                {
+                    "rank": 1,
+                    "type": "currency",
+                    "confidence": 0.91,
+                    "answer_key": "currency_total_answer",
+                    "answer": "$145",
+                    "support_source_ids": ["answer-1", "answer-2"],
+                    "excluded_source_ids": [],
+                }
+            ],
+            "ledger_rows": [
+                {
+                    "fact_id": "currency:0:0",
+                    "source_group": "answer-1",
+                    "citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa",
+                    "kind": "currency",
+                    "value": "120",
+                    "unit": "USD",
+                    "label": "bike helmet",
+                    "raw_span": "$120 on a bike helmet",
+                    "normalized_identity": "currency:bike helmet:120",
+                    "include_reason": "currency_amount",
+                    "exclude_reason": "",
+                    "confidence": 0.86,
+                }
+            ],
+        },
+    }
+
+    diagnostics = build_checkout_diagnostics(
+        query="How much did I spend on bike expenses in total?",
+        source_lanes={"source_synthesis": 1},
+        current_facts=[synthesis_fact],
+        evidence=[synthesis_fact],
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        warnings=[],
+    )
+
+    assert diagnostics["synthesis"]["answer_candidates"][0]["answer"] == "$145"
+    assert diagnostics["synthesis"]["answer_candidates"][0]["confidence"] == 0.91
+    assert diagnostics["synthesis"]["ledger_rows"][0]["source_group"] == "answer-1"
+
+
+def test_checkout_exposes_typed_operation_result_metadata() -> None:
+    """Checkout diagnostics should keep additive operation/result packet metadata."""
+    synthesis_fact = {
+        "content": "zaxy_synthesis_bundle=true",
+        "source": "verbatim",
+        "score": 0.99,
+        "citation": "eventloom://agent-1/events/99#999999999999",
+        "source_lane": "source_synthesis",
+        "synthesis_packet": {
+            "schema_version": "synthesis_packet_v1",
+            "operations": [
+                {
+                    "name": "sum_values",
+                    "kind": "currency",
+                    "answer_key": "currency_total_answer",
+                    "support_source_ids": ["answer-1", "answer-2"],
+                }
+            ],
+            "result": {
+                "answer_key": "currency_total_answer",
+                "answer": "$145",
+                "confidence": 0.91,
+            },
+            "answer_candidates": [
+                {
+                    "rank": 1,
+                    "type": "currency",
+                    "confidence": 0.91,
+                    "answer_key": "currency_total_answer",
+                    "answer": "$145",
+                    "support_source_ids": ["answer-1", "answer-2"],
+                    "excluded_source_ids": [],
+                }
+            ],
+            "ledger_rows": [],
+        },
+    }
+
+    diagnostics = build_checkout_diagnostics(
+        query="How much did I spend on bike expenses in total?",
+        source_lanes={"source_synthesis": 1},
+        current_facts=[synthesis_fact],
+        evidence=[synthesis_fact],
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        warnings=[],
+    )
+
+    assert diagnostics["synthesis"]["operations"] == [
+        {
+            "name": "sum_values",
+            "kind": "currency",
+            "answer_key": "currency_total_answer",
+            "support_source_ids": ["answer-1", "answer-2"],
+        }
+    ]
+    assert diagnostics["synthesis"]["result"] == {
+        "answer_key": "currency_total_answer",
+        "answer": "$145",
+        "confidence": 0.91,
+    }
 
 
 def test_checkout_builds_compact_answer_contexts_for_synthesis() -> None:

@@ -281,3 +281,248 @@ def test_searches_projection_records_with_source_citations(tmp_path: Path) -> No
     assert results[0].record.text
     assert "docs/cache.md:2-6" in results[0].citations
     assert results[0].score > 0.0
+
+
+def test_coordinate_compaction_keeps_only_authoritative_parent_rows_searchable(
+    tmp_path: Path,
+) -> None:
+    """Coordinate compaction must not promote pending/rejected/stale worker rows."""
+    log = EventLog(tmp_path / "coordinate.jsonl")
+    pending = log.append(
+        "coordination.finding.reported",
+        actor="worker-api",
+        payload={
+            "mission_id": "release-1",
+            "worker_id": "worker-api",
+            "finding_id": "finding-pending",
+            "claim_key": "release.package",
+            "claim_value": "pending-wrong-claim",
+            "coordination_status": "pending",
+            "summary": "Pending worker-local claim should stay diagnostic.",
+        },
+    )
+    accepted = log.append(
+        "coordination.finding.reviewed",
+        actor="coordinator",
+        payload={
+            "mission_id": "release-1",
+            "worker_id": "worker-release",
+            "finding_id": "finding-accepted",
+            "claim_key": "release.package",
+            "claim_value": "zaxy-memory-1.0.2-ready",
+            "coordination_status": "accepted",
+            "promotion_event_ref": "eventloom://release-1/events/7#aaaaaaaaaaaa",
+            "review_event_ref": "eventloom://release-1/events/6#bbbbbbbbbbbb",
+            "source_event_ref": "eventloom://worker-release/events/3#cccccccccccc",
+            "summary": "Accepted parent state is authoritative.",
+        },
+    )
+    rejected = log.append(
+        "coordination.finding.reviewed",
+        actor="coordinator",
+        payload={
+            "mission_id": "release-1",
+            "worker_id": "worker-ui",
+            "finding_id": "finding-rejected",
+            "claim_key": "release.package",
+            "claim_value": "rejected-claim",
+            "coordination_status": "rejected",
+            "summary": "Rejected row must not become authoritative memory.",
+        },
+    )
+    stale = log.append(
+        "coordination.finding.reported",
+        actor="worker-docs",
+        payload={
+            "mission_id": "release-1",
+            "worker_id": "worker-docs",
+            "finding_id": "finding-stale",
+            "claim_key": "release.docs",
+            "claim_value": "old-doc-state",
+            "coordination_status": "pending",
+            "stale": True,
+            "superseded_by": "finding-accepted",
+            "summary": "Stale unpromoted row stays diagnostic.",
+        },
+    )
+
+    projection = build_compaction_projection(
+        log,
+        provider=HashEmbeddingProvider(dimension=64),
+        strategy="medoid",
+        max_records=1,
+        purpose="coordinate",
+    )
+
+    assert projection.strategy == "coordinate_authoritative"
+    assert projection.purpose["profile"] == "coordinate"
+    assert [record.event_seq for record in projection.records] == [accepted.seq]
+    assert projection.records[0].authority_scope == "authoritative"
+    assert projection.records[0].purpose_reasons == ("accepted_parent_state",)
+    assert projection.records[0].kind == "coordinate_authoritative"
+    assert projection.consolidation_policy["requested_strategy"] == "medoid"
+    assert projection.consolidation_policy["max_records_ignored"] is False
+    assert projection.consolidation_policy["authoritative_event_seqs"] == [accepted.seq]
+    assert projection.consolidation_policy["diagnostic_event_seqs"] == [
+        pending.seq,
+        rejected.seq,
+        stale.seq,
+    ]
+    assert projection.consolidation_policy["suppressed_count"] == 3
+
+    assert search_compaction_projections([projection], "zaxy-memory-1.0.2-ready")
+    assert search_compaction_projections([projection], "pending-wrong-claim") == []
+    assert search_compaction_projections([projection], "rejected-claim") == []
+    assert search_compaction_projections([projection], "old-doc-state") == []
+
+
+def test_security_compaction_preserves_all_source_records_for_risk_audit(
+    tmp_path: Path,
+) -> None:
+    """Security purpose should not collapse distinct findings into one medoid."""
+    log = EventLog(tmp_path / "security.jsonl")
+    for idx, label in enumerate(("secret exposure", "auth bypass", "risk acceptance"), start=1):
+        log.append(
+            "document.indexed",
+            actor="security-reviewer",
+            payload={
+                "path": f"security/finding-{idx}.md",
+                "start_line": idx,
+                "end_line": idx + 1,
+                "content": f"Security review records {label} identity-code-000{idx}.",
+            },
+        )
+
+    projection = build_compaction_projection(
+        log,
+        provider=HashEmbeddingProvider(dimension=64),
+        strategy="medoid",
+        max_records=1,
+        purpose="security",
+    )
+
+    assert projection.strategy == "purpose_preserve_all"
+    assert projection.consolidation_policy["preserve_all"] is True
+    assert projection.consolidation_policy["effective_max_records"] == 3
+    assert [record.kind for record in projection.records] == [
+        "security_retained",
+        "security_retained",
+        "security_retained",
+    ]
+    assert all("security_findings" in record.purpose_reasons for record in projection.records)
+    assert search_compaction_projections([projection], "auth bypass")
+    assert search_compaction_projections([projection], "risk acceptance")
+
+
+def test_coding_compaction_uses_bounded_purpose_exemplars_with_record_floor(
+    tmp_path: Path,
+) -> None:
+    """Coding purpose should preserve a broader exemplar set than generic medoid collapse."""
+    log = EventLog(tmp_path / "coding.jsonl")
+    for idx in range(10):
+        log.append(
+            "document.indexed",
+            actor="developer",
+            payload={
+                "path": f"tests/regression-{idx}.md",
+                "start_line": idx + 1,
+                "end_line": idx + 2,
+                "content": f"Regression invariant identity-code-{idx:04d} must survive.",
+            },
+        )
+
+    projection = build_compaction_projection(
+        log,
+        provider=HashEmbeddingProvider(dimension=64),
+        strategy="medoid",
+        max_records=2,
+        purpose="coding",
+    )
+
+    assert projection.strategy == "purpose_exemplar"
+    assert projection.consolidation_policy["preserve_all"] is False
+    assert projection.consolidation_policy["effective_max_records"] == 8
+    assert len(projection.records) == 8
+    assert {record.kind for record in projection.records} == {"coding_exemplar"}
+    assert all("test_results" in record.purpose_reasons for record in projection.records)
+
+
+def test_coordinate_compaction_blocks_status_erasure_from_authority(
+    tmp_path: Path,
+) -> None:
+    """Accepted-looking rows without authority refs should be diagnostic-only."""
+    log = EventLog(tmp_path / "coordinate-erased.jsonl")
+    erased = log.append(
+        "coordination.finding.reviewed",
+        actor="coordinator",
+        payload={
+            "mission_id": "release-1",
+            "worker_id": "worker-api",
+            "finding_id": "finding-erased",
+            "claim_key": "release.package",
+            "claim_value": "accepted-without-proof",
+            "coordination_status": "accepted",
+            "summary": "Accepted text without promotion/review/source refs is not authority.",
+        },
+    )
+
+    projection = build_compaction_projection(
+        log,
+        provider=HashEmbeddingProvider(dimension=64),
+        strategy="exemplar",
+        purpose="coordinate",
+    )
+
+    assert projection.records == ()
+    assert projection.consolidation_policy["authoritative_count"] == 0
+    assert projection.consolidation_policy["diagnostic_event_seqs"] == [erased.seq]
+    assert projection.consolidation_policy["suppressed_count"] == 1
+    assert search_compaction_projections([projection], "accepted-without-proof") == []
+
+
+def test_coordinate_compaction_roundtrip_preserves_authority_metadata(tmp_path: Path) -> None:
+    """Projection JSON should preserve purpose, authority, and diagnostic metadata."""
+    log = EventLog(tmp_path / "coordinate-roundtrip.jsonl")
+    accepted = log.append(
+        "coordination.finding.promoted",
+        actor="coordinator",
+        payload={
+            "mission_id": "release-1",
+            "worker_id": "worker-release",
+            "finding_id": "finding-promoted",
+            "claim_key": "release.package",
+            "claim_value": "ready",
+            "coordination_status": "promoted",
+            "summary": "Promoted finding survives compaction.",
+        },
+    )
+    pending = log.append(
+        "coordination.finding.reported",
+        actor="worker-release",
+        payload={
+            "mission_id": "release-1",
+            "worker_id": "worker-release",
+            "finding_id": "finding-pending",
+            "claim_key": "release.package",
+            "claim_value": "pending",
+            "coordination_status": "pending",
+            "summary": "Pending finding is diagnostic.",
+        },
+    )
+    projection = build_compaction_projection(
+        log,
+        provider=HashEmbeddingProvider(dimension=64),
+        purpose="coordinate",
+    )
+    output = write_compaction_projection(projection, tmp_path / "coordinate.compaction.json")
+
+    loaded = load_compaction_projection(output)
+
+    assert loaded.purpose["profile"] == "coordinate"
+    assert loaded.strategy == "coordinate_authoritative"
+    assert loaded.records[0].event_seq == accepted.seq
+    assert loaded.records[0].kind == "coordinate_authoritative"
+    assert loaded.records[0].authority_scope == "authoritative"
+    assert loaded.records[0].purpose_reasons == ("accepted_parent_state",)
+    assert loaded.consolidation_policy["diagnostic_event_seqs"] == [pending.seq]
+    assert "finding-pending" in loaded.consolidation_policy["diagnostic_identities"]

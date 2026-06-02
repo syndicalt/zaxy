@@ -81,6 +81,7 @@ class SearchResult:
     scoring_profile: str | None = None
     reranker: str | None = None
     rerank_score: float | None = None
+    rerank_strategy: str | None = None
     warnings: tuple[str, ...] = ()
 
 

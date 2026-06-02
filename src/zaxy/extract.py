@@ -11,6 +11,8 @@ structured event types.
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from typing import Any
@@ -350,6 +352,7 @@ def _extract_memory_reinforced(event: Event) -> ExtractionResult:
     entity_type = _optional_text(event.payload.get("entity_type")) or "memory"
     properties = _merge_properties(
         _retention_properties(event.payload),
+        _feedback_purpose_properties(event.payload),
         {
             "last_reinforced_at": event.timestamp,
             "reinforcement_count": _positive_int(event.payload.get("reinforcement_count"), default=1),
@@ -378,6 +381,232 @@ def _extract_memory_reinforced(event: Event) -> ExtractionResult:
         edges=[edge],
         source_event_seq=event.seq,
     )
+
+
+@register("memory.evidence.reinforced")
+@register("memory.evidence.excluded")
+def _extract_memory_evidence_feedback(event: Event) -> ExtractionResult:
+    """Extract row-level synthesis evidence feedback for cited facts."""
+    fact_id = _optional_text(event.payload.get("fact_id"))
+    source_group = _optional_text(event.payload.get("source_group"))
+    citation = _optional_text(event.payload.get("citation"))
+    entity_name = fact_id or source_group or citation or f"synthesis_evidence:{event.seq}"
+    outcome = _optional_text(event.payload.get("outcome"))
+    timestamp_key = "last_reinforced_at" if event.type == "memory.evidence.reinforced" else "last_excluded_at"
+    feedback_properties = {
+        key: value
+        for key, value in {
+            "outcome": outcome,
+            "source_group": source_group,
+            "citation": citation,
+            timestamp_key: event.timestamp,
+        }.items()
+        if value is not None
+    }
+    properties = _merge_properties(
+        _retention_properties(event.payload),
+        feedback_properties,
+    )
+    entity = ExtractedEntity(
+        name=entity_name,
+        entity_type="synthesis_evidence",
+        observed_at=event.timestamp,
+        summary=_optional_text(event.payload.get("reason")) or _optional_text(event.payload.get("query")),
+        properties=properties,
+    )
+    actor = ExtractedEntity(
+        name=event.actor,
+        entity_type="actor",
+        observed_at=event.timestamp,
+    )
+    relation_type = (
+        "reinforced_synthesis_evidence"
+        if event.type == "memory.evidence.reinforced"
+        else "excluded_synthesis_evidence"
+    )
+    edges = [
+        ExtractedEdge(
+            source=event.actor,
+            target=entity_name,
+            relation_type=relation_type,
+            valid_from=event.timestamp,
+        )
+    ]
+    entities = [entity, actor]
+    if source_group:
+        entities.append(
+            ExtractedEntity(
+                name=source_group,
+                entity_type="source_group",
+                observed_at=event.timestamp,
+            )
+        )
+        edges.append(
+            ExtractedEdge(
+                source=entity_name,
+                target=source_group,
+                relation_type="cites_source_group",
+                valid_from=event.timestamp,
+            )
+        )
+    return ExtractionResult(
+        entities=entities,
+        edges=edges,
+        source_event_seq=event.seq,
+    )
+
+
+@register("memory.synthesis.artifact.created")
+def _extract_memory_synthesis_artifact_created(event: Event) -> ExtractionResult:
+    """Extract a deterministic Memory Checkout synthesis artifact."""
+    artifact_id = _optional_text(event.payload.get("artifact_id")) or f"synthesis_artifact:{event.seq}"
+    session_id = _optional_text(event.payload.get("session_id") or event.thread)
+    candidates = _dict_list(event.payload.get("answer_candidates"))
+    ledger_rows = _dict_list(event.payload.get("ledger_rows"))
+    support_packet = event.payload.get("support_packet")
+    source_groups = _string_list(support_packet.get("source_groups")) if isinstance(support_packet, dict) else []
+    artifact = ExtractedEntity(
+        name=artifact_id,
+        entity_type="synthesis_artifact",
+        observed_at=event.timestamp,
+        summary=_optional_text(event.payload.get("query")),
+        properties=_compact_properties(
+            {
+                "schema_version": _optional_text(event.payload.get("schema_version")),
+                "session_id": session_id,
+                "answer_candidate_count": len(candidates),
+                "ledger_row_count": len(ledger_rows),
+                "support_source_group_count": len(source_groups),
+            }
+        ),
+    )
+    actor = ExtractedEntity(name=event.actor, entity_type="actor", observed_at=event.timestamp)
+    entities = [artifact, actor]
+    edges = [
+        ExtractedEdge(
+            source=event.actor,
+            target=artifact_id,
+            relation_type="created_synthesis_artifact",
+            valid_from=event.timestamp,
+        )
+    ]
+    for candidate in candidates:
+        candidate_id = _synthesis_candidate_id(artifact_id, candidate)
+        entities.append(
+            ExtractedEntity(
+                name=candidate_id,
+                entity_type="synthesis_answer_candidate",
+                observed_at=event.timestamp,
+                summary=_optional_text(candidate.get("answer")),
+                properties=_compact_properties(
+                    {
+                        "artifact_id": artifact_id,
+                        "rank": candidate.get("rank"),
+                        "type": _optional_text(candidate.get("type")),
+                        "answer_key": _optional_text(candidate.get("answer_key")),
+                        "confidence": _bounded_float(candidate.get("confidence")),
+                    }
+                ),
+            )
+        )
+        edges.append(
+            ExtractedEdge(
+                source=artifact_id,
+                target=candidate_id,
+                relation_type="artifact_has_answer_candidate",
+                valid_from=event.timestamp,
+            )
+        )
+        for source_group in _string_list(candidate.get("support_source_ids")):
+            entities.append(ExtractedEntity(name=source_group, entity_type="source_group", observed_at=event.timestamp))
+            edges.append(
+                ExtractedEdge(
+                    source=candidate_id,
+                    target=source_group,
+                    relation_type="candidate_supported_by_source_group",
+                    valid_from=event.timestamp,
+                )
+            )
+    for row in ledger_rows:
+        row_id = _synthesis_ledger_row_id(artifact_id, row)
+        if row_id is None:
+            continue
+        entities.append(
+            ExtractedEntity(
+                name=row_id,
+                entity_type="synthesis_ledger_row",
+                observed_at=event.timestamp,
+                summary=_join_summary(row.get("kind"), row.get("value"), row.get("label")),
+                properties=_compact_properties(
+                    {
+                        "artifact_id": artifact_id,
+                        "fact_id": _optional_text(row.get("fact_id")),
+                        "source_group": _optional_text(row.get("source_group")),
+                        "citation": _optional_text(row.get("citation")),
+                        "include_reason": _optional_text(row.get("include_reason")),
+                        "exclude_reason": _optional_text(row.get("exclude_reason")),
+                        "confidence": _bounded_float(row.get("confidence")),
+                    }
+                ),
+            )
+        )
+        edges.append(
+            ExtractedEdge(
+                source=artifact_id,
+                target=row_id,
+                relation_type="artifact_has_ledger_row",
+                valid_from=event.timestamp,
+            )
+        )
+    return ExtractionResult(entities=entities, edges=edges, source_event_seq=event.seq)
+
+
+@register("memory.synthesis.used")
+@register("memory.synthesis.rejected")
+@register("memory.synthesis.corrected")
+def _extract_memory_synthesis_outcome(event: Event) -> ExtractionResult:
+    """Extract answer-candidate outcome feedback."""
+    candidate = event.payload.get("answer_candidate")
+    candidate = candidate if isinstance(candidate, dict) else {}
+    candidate_id = _synthesis_candidate_id("candidate_feedback", candidate)
+    outcome = _optional_text(event.payload.get("outcome")) or event.type.removeprefix("memory.synthesis.")
+    entity = ExtractedEntity(
+        name=candidate_id,
+        entity_type="synthesis_answer_candidate",
+        observed_at=event.timestamp,
+        summary=_optional_text(candidate.get("answer")) or _optional_text(event.payload.get("reason")),
+        properties=_compact_properties(
+            {
+                "outcome": outcome,
+                "last_outcome_at": event.timestamp,
+                "rank": candidate.get("rank"),
+                "type": _optional_text(candidate.get("type")),
+                "answer_key": _optional_text(candidate.get("answer_key")),
+                "confidence": _bounded_float(candidate.get("confidence")),
+            }
+        ),
+    )
+    actor = ExtractedEntity(name=event.actor, entity_type="actor", observed_at=event.timestamp)
+    edges = [
+        ExtractedEdge(
+            source=event.actor,
+            target=candidate_id,
+            relation_type=f"recorded_synthesis_{outcome}",
+            valid_from=event.timestamp,
+        )
+    ]
+    entities = [entity, actor]
+    for source_group in _string_list(event.payload.get("support_source_ids")):
+        entities.append(ExtractedEntity(name=source_group, entity_type="source_group", observed_at=event.timestamp))
+        edges.append(
+            ExtractedEdge(
+                source=candidate_id,
+                target=source_group,
+                relation_type="candidate_supported_by_source_group",
+                valid_from=event.timestamp,
+            )
+        )
+    return ExtractionResult(entities=entities, edges=edges, source_event_seq=event.seq)
 
 
 @register("skill.proposed")
@@ -570,6 +799,12 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [text for item in value if (text := _optional_text(item))]
+
+
+def _dict_list(value: object) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
 
 
 def _compact_properties(properties: dict[str, Any]) -> dict[str, Any]:
@@ -987,6 +1222,124 @@ def _extract_coordination_handoff_created(event: Event) -> ExtractionResult:
         valid_from=event.timestamp,
     )
     return ExtractionResult(entities=[mission, handoff], edges=[edge], source_event_seq=event.seq)
+
+
+@register("coordination.proof_packet.created")
+def _extract_coordination_proof_packet_created(event: Event) -> ExtractionResult:
+    """Extract a mission-scoped synthesis proof packet for coordinator memory."""
+    mission_id = _coordination_mission_id(event)
+    artifact_id = _optional_text(event.payload.get("artifact_id"))
+    proof_id = artifact_id or f"{mission_id}:proof_packet:{event.seq}"
+    accepted_ids = _string_list(event.payload.get("accepted_finding_ids"))
+    diagnostic_pending_ids = _string_list(event.payload.get("diagnostic_pending_ids"))
+    conflict_ids = _string_list(event.payload.get("conflict_ids"))
+    non_authoritative_rows = _dict_list(event.payload.get("non_authoritative_rows"))
+    excluded_row_reasons = _dict_list(event.payload.get("excluded_row_reasons"))
+    handoff_ref = event.payload.get("handoff_event_ref")
+    handoff_id = _optional_text(handoff_ref.get("handoff_id")) if isinstance(handoff_ref, dict) else None
+    proof = ExtractedEntity(
+        name=proof_id,
+        entity_type="coordination_proof_packet",
+        observed_at=event.timestamp,
+        summary=_join_summary(event.payload.get("query"), event.payload.get("decision_scope")),
+        properties=_compact_properties(
+            {
+                "mission_id": mission_id,
+                "schema_version": _optional_text(event.payload.get("schema_version")),
+                "artifact_id": artifact_id,
+                "decision_scope": _optional_text(event.payload.get("decision_scope")),
+                "authority_scope": _optional_text(event.payload.get("authority_scope")),
+                "accepted_finding_count": len(accepted_ids),
+                "diagnostic_pending_count": len(diagnostic_pending_ids),
+                "conflict_count": len(conflict_ids),
+                "non_authoritative_row_count": len(non_authoritative_rows),
+                "excluded_row_reason_count": len(excluded_row_reasons),
+                "handoff_id": handoff_id,
+            }
+        ),
+    )
+    mission = ExtractedEntity(name=mission_id, entity_type="mission", observed_at=event.timestamp)
+    entities = [mission, proof]
+    edges = [
+        ExtractedEdge(
+            source=mission_id,
+            target=proof_id,
+            relation_type="mission_has_proof_packet",
+            valid_from=event.timestamp,
+        )
+    ]
+    if artifact_id:
+        entities.append(ExtractedEntity(name=artifact_id, entity_type="synthesis_artifact", observed_at=event.timestamp))
+        edges.append(
+            ExtractedEdge(
+                source=proof_id,
+                target=artifact_id,
+                relation_type="proof_links_synthesis_artifact",
+                valid_from=event.timestamp,
+            )
+        )
+    for finding_id in accepted_ids:
+        entities.append(ExtractedEntity(name=finding_id, entity_type="finding", observed_at=event.timestamp))
+        edges.append(
+            ExtractedEdge(
+                source=proof_id,
+                target=finding_id,
+                relation_type="proof_uses_accepted_finding",
+                valid_from=event.timestamp,
+            )
+        )
+    for row in non_authoritative_rows:
+        row_id = _coordination_proof_row_id(proof_id, row)
+        if row_id is None:
+            continue
+        entities.append(
+            ExtractedEntity(
+                name=row_id,
+                entity_type="coordination_non_authoritative_row",
+                observed_at=event.timestamp,
+                summary=_join_summary(row.get("status"), row.get("include_reason"), row.get("exclude_reason")),
+                properties=_compact_properties(
+                    {
+                        "mission_id": mission_id,
+                        "proof_packet_id": proof_id,
+                        "source_group": _optional_text(row.get("source_group")),
+                        "fact_id": _optional_text(row.get("fact_id")),
+                        "status": _optional_text(row.get("status")),
+                        "include_reason": _optional_text(row.get("include_reason")),
+                        "exclude_reason": _optional_text(row.get("exclude_reason")),
+                    }
+                ),
+            )
+        )
+        edges.append(
+            ExtractedEdge(
+                source=proof_id,
+                target=row_id,
+                relation_type="proof_excludes_non_authoritative_row",
+                valid_from=event.timestamp,
+            )
+        )
+    for conflict_id in conflict_ids:
+        entities.append(ExtractedEntity(name=conflict_id, entity_type="conflict", observed_at=event.timestamp))
+        edges.append(
+            ExtractedEdge(
+                source=proof_id,
+                target=conflict_id,
+                relation_type="proof_diagnoses_conflict",
+                valid_from=event.timestamp,
+            )
+        )
+    if handoff_id:
+        entities.append(ExtractedEntity(name=handoff_id, entity_type="handoff", observed_at=event.timestamp))
+        edges.append(
+            ExtractedEdge(
+                source=proof_id,
+                target=handoff_id,
+                relation_type="proof_binds_handoff",
+                valid_from=event.timestamp,
+            )
+        )
+    return ExtractionResult(entities=entities, edges=edges, source_event_seq=event.seq)
 
 
 @register("user.preference_changed")
@@ -2061,6 +2414,44 @@ def _coordination_finding_id(event: Event) -> str:
     return _optional_text(event.payload.get("finding_id")) or f"{_coordination_worker_id(event)}:finding:{event.seq}"
 
 
+def _coordination_proof_row_id(proof_id: str, row: dict[str, Any]) -> str | None:
+    """Return a stable graph id for one proof-packet diagnostic row."""
+    row_identity = _optional_text(row.get("fact_id")) or _optional_text(row.get("source_group"))
+    if row_identity is None:
+        return None
+    status = _optional_text(row.get("status")) or "non_authoritative"
+    return f"{proof_id}:row:{status}:{row_identity}"
+
+
+def _synthesis_candidate_id(scope: str, candidate: dict[str, Any]) -> str:
+    """Return a stable graph id for a synthesis answer candidate."""
+    answer_key = _optional_text(candidate.get("answer_key"))
+    if answer_key:
+        return f"{scope}:candidate:{answer_key}"
+    rank = _optional_text(candidate.get("rank"))
+    candidate_type = _optional_text(candidate.get("type"))
+    answer = _optional_text(candidate.get("answer"))
+    raw = json.dumps(
+        {"rank": rank, "type": candidate_type, "answer": answer},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+    return f"{scope}:candidate:{digest}"
+
+
+def _synthesis_ledger_row_id(artifact_id: str, row: dict[str, Any]) -> str | None:
+    """Return a stable graph id for an artifact ledger row."""
+    row_identity = _optional_text(row.get("fact_id")) or _optional_text(row.get("source_group"))
+    if row_identity:
+        return f"{artifact_id}:ledger:{row_identity}"
+    citation = _optional_text(row.get("citation"))
+    if citation is None:
+        return None
+    digest = hashlib.sha256(citation.encode("utf-8")).hexdigest()[:16]
+    return f"{artifact_id}:ledger:{digest}"
+
+
 def _required_text(value: object, *, field: str, event_seq: int) -> str:
     """Return required text or raise a precise extraction error."""
     if text := _optional_text(value):
@@ -2203,6 +2594,41 @@ def _retention_properties(payload: dict[str, Any]) -> dict[str, Any] | None:
         properties["importance"] = importance
     if reinforcement_count := _optional_positive_int(payload.get("reinforcement_count")):
         properties["reinforcement_count"] = reinforcement_count
+    return properties or None
+
+
+def _feedback_purpose_properties(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """Return compact purpose and authority metadata from feedback payloads."""
+    properties: dict[str, Any] = {}
+    purpose = payload.get("purpose")
+    if isinstance(purpose, dict):
+        for source_key, target_key in (
+            ("profile", "purpose_profile"),
+            ("role", "purpose_role"),
+            ("task", "purpose_task"),
+            ("risk", "purpose_risk"),
+            ("expected_action", "purpose_expected_action"),
+            ("evidence_policy", "purpose_evidence_policy"),
+            ("retention_policy", "purpose_retention_policy"),
+        ):
+            if value := _optional_text(purpose.get(source_key)):
+                properties[target_key] = value
+    elif value := _optional_text(purpose):
+        properties["purpose_profile"] = value
+    for key in (
+        "authority",
+        "authority_scope",
+        "coordination_status",
+        "finding_id",
+        "mission_id",
+        "outcome",
+        "worker_id",
+    ):
+        if value := _optional_text(payload.get(key)):
+            properties[key] = value
+    stale = payload.get("stale")
+    if isinstance(stale, bool):
+        properties["stale"] = stale
     return properties or None
 
 

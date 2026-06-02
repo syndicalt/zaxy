@@ -45,12 +45,12 @@
           <tr>
             <td><code>memory_checkout</code>, <code>context_assemble</code>, <code>context_after_turn</code></td>
             <td><code>Beta</code></td>
-            <td>Prompt-state and context assembly payloads.</td>
+            <td>Prompt-state and context assembly payloads, including purpose-conditioned checkout profiles.</td>
           </tr>
           <tr>
-            <td><code>memory_query</code>, <code>memory_verbatim</code>, <code>memory_feedback</code></td>
+            <td><code>memory_query</code>, <code>memory_verbatim</code>, <code>memory_feedback</code>, <code>memory_synthesis_artifact</code>, <code>memory_synthesis_evidence</code></td>
             <td><code>Beta</code></td>
-            <td>Graph, source-recall, and feedback tools.</td>
+            <td>Graph, source-recall, feedback, synthesis artifact, and row-level synthesis evidence tools.</td>
           </tr>
           <tr>
             <td><code>memory_append</code>, <code>memory_replay</code>, <code>memory_invalidate</code></td>
@@ -73,9 +73,9 @@
             <td>Finding review and promotion workflow.</td>
           </tr>
           <tr>
-            <td><code>coordination_merge_brief</code>, <code>coordination_checkout</code>, <code>coordination_handoff</code></td>
+            <td><code>coordination_merge_brief</code>, <code>coordination_checkout</code>, <code>coordination_handoff</code>, <code>coordination_record_synthesis_artifact</code>, <code>coordination_proof_trace</code></td>
             <td><code>Beta</code></td>
-            <td>Mission state, accepted memory, and handoff.</td>
+            <td>Mission state, accepted memory, Coordinate purpose policy, proof packets, proof trace replay, and handoff.</td>
           </tr>
           <tr>
             <td><code>coordination_performance_ledger</code>, <code>coordination_approval_packet</code>, <code>coordination_apply_approval</code></td>
@@ -229,7 +229,7 @@
           <tr>
             <td>Core memory and context</td>
             <td><code>Beta</code></td>
-            <td><code>memory.checkout.completed</code>, <code>memory.reinforced</code>, <code>memory.feedback</code>, <code>context.policy</code>.</td>
+            <td><code>memory.checkout.completed</code>, <code>memory.reinforced</code>, <code>memory.feedback</code>, <code>memory.synthesis.artifact.created</code>, <code>memory.synthesis.used</code>, <code>memory.synthesis.rejected</code>, <code>memory.synthesis.corrected</code>, <code>memory.evidence.reinforced</code>, <code>memory.evidence.excluded</code>, <code>context.policy</code>.</td>
           </tr>
           <tr>
             <td>Agent work records</td>
@@ -249,7 +249,7 @@
           <tr>
             <td>Coordinate lifecycle</td>
             <td><code>Beta</code></td>
-            <td><code>coordination.mission.created</code>, <code>coordination.worker.created</code>, <code>coordination.assignment.created</code>, <code>coordination.finding.reported</code>, <code>coordination.finding.reviewed</code>, <code>coordination.finding.promoted</code>, <code>coordination.handoff.created</code>.</td>
+            <td><code>coordination.mission.created</code>, <code>coordination.worker.created</code>, <code>coordination.assignment.created</code>, <code>coordination.finding.reported</code>, <code>coordination.finding.reviewed</code>, <code>coordination.finding.promoted</code>, <code>coordination.handoff.created</code>, <code>coordination.proof_packet.created</code>.</td>
           </tr>
           <tr>
             <td>Inferred edges</td>

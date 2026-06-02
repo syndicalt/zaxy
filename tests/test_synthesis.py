@@ -6,6 +6,12 @@ import builtins
 
 from zaxy import synthesis
 from zaxy.synthesis import (
+    AverageValuesOperation,
+    DifferenceBetweenOperation,
+    ListItemsOperation,
+    SumValuesOperation,
+    TemporalIntervalOperation,
+    build_age_average_ledger,
     build_count_ledger,
     build_currency_ledger,
     build_date_ledger,
@@ -15,6 +21,7 @@ from zaxy.synthesis import (
     render_currency_result,
     render_date_interval_result,
     render_duration_result,
+    synthesis_operation_for_plan,
 )
 
 
@@ -29,6 +36,236 @@ def test_build_synthesis_plan_classifies_currency_sum() -> None:
     assert plan.required_kinds == ("currency",)
     assert "money" in plan.subject_terms
     assert "total" in plan.reasons
+
+
+def test_sum_operation_preserves_currency_renderer_contract() -> None:
+    """Operation objects should execute existing ledger renderers without changing answer lines."""
+    ledger = build_currency_ledger(
+        "How much total money have I spent on bike-related expenses?",
+        [
+            "longmemeval_session_id=answer-1 I bought my Bell Zephyr bike helmet for $120.",
+            "longmemeval_session_id=answer-2 I replaced the bike chain and it cost me $25.",
+            "longmemeval_session_id=answer-3 I got bike lights for $40.",
+        ],
+    )
+
+    result = SumValuesOperation(kind="currency").execute(ledger, rank=1)
+
+    assert result.lines == render_currency_result(ledger, rank=1).lines
+    assert "currency_total_answer=$185" in result.lines
+    assert result.answer_candidate == {
+        "rank": 1,
+        "type": "currency",
+        "confidence": 0.81,
+        "answer_key": "currency_total_answer",
+        "answer": "$185",
+        "support_source_ids": ["answer-1", "answer-2", "answer-3"],
+        "excluded_source_ids": [],
+    }
+
+
+def test_difference_operation_preserves_currency_difference_contract() -> None:
+    """Difference operations should be a named pure projection over ledger rows."""
+    ledger = build_currency_ledger(
+        "How much more did I spend on accommodations in Hawaii compared to Tokyo?",
+        [
+            "longmemeval_session_id=answer-1 I spent $300 on the hotel in Hawaii.",
+            "longmemeval_session_id=answer-2 I spent $30 on the capsule hotel in Tokyo.",
+        ],
+    )
+
+    result = DifferenceBetweenOperation(kind="currency").execute(ledger, rank=2)
+
+    assert result.lines == render_currency_result(ledger, rank=2).lines
+    assert "currency_difference_answer=$270" in result.lines
+    assert result.answer_candidate == {
+        "rank": 2,
+        "type": "currency",
+        "confidence": 0.71,
+        "answer_key": "currency_difference_answer",
+        "answer": "$270",
+        "support_source_ids": ["answer-1", "answer-2"],
+        "excluded_source_ids": [],
+    }
+
+
+def test_list_operation_preserves_count_list_contract() -> None:
+    """List operations should wrap count/list synthesis without duplicating renderer logic."""
+    query = "How many movie festivals did I attend, and which were they?"
+    ledger = build_count_ledger(
+        query,
+        [
+            "longmemeval_session_id=answer-1 I attended the Spring Film Festival.",
+            "longmemeval_session_id=answer-2 I attended the Lakeside Film Festival.",
+        ],
+    )
+
+    result = ListItemsOperation().execute(ledger, query=query, rank=1)
+
+    assert result.lines == render_count_result(ledger, query, rank=1).lines
+    assert "count_answer=2" in result.lines
+    assert result.answer_candidate == {
+        "rank": 1,
+        "type": "count",
+        "confidence": 0.75,
+        "answer_key": "count_answer",
+        "answer": "2",
+        "support_source_ids": ["answer-1", "answer-2"],
+        "excluded_source_ids": [],
+    }
+
+
+def test_temporal_interval_operation_preserves_date_interval_contract() -> None:
+    """Temporal interval operations should wrap date interval synthesis."""
+    query = "How many days had passed between Sunday mass and the Ash Wednesday service?"
+    ledger = build_date_ledger(
+        query,
+        [
+            (
+                "content=longmemeval_session_id=answer-1 "
+                "longmemeval_session_date=2023/02/20 (Mon) "
+                "I attended Sunday mass at St. Mary's Church on January 2nd."
+            ),
+            (
+                "content=longmemeval_session_id=answer-2 "
+                "longmemeval_session_date=2023/02/20 (Mon) "
+                "I came from the Ash Wednesday service at the cathedral on February 1st."
+            ),
+        ],
+    )
+
+    result = TemporalIntervalOperation().execute(ledger, rank=1)
+
+    assert result.lines == render_date_interval_result(ledger, rank=1).lines
+    assert any(line.startswith("date_interval_answer=30 days") for line in result.lines)
+
+
+def test_average_operation_projects_mean_from_included_ledger_values() -> None:
+    """Average operations should expose a reusable pure projection for numeric ledgers."""
+    plan = synthesis.SynthesisPlan(
+        answer_type="average",
+        operation="average_values",
+        subject_terms=("age",),
+        required_kinds=("number",),
+        required_source_groups=2,
+        reasons=("average",),
+    )
+    rows = (
+        synthesis.EvidenceLedgerRow(
+            fact_id="age:1",
+            source_group="answer-1",
+            citation="eventloom://agent/events/1#aaaaaaaaaaaa",
+            kind="number",
+            value="32",
+            unit="years",
+            label="self",
+            raw_span="32",
+            context="I am 32.",
+            normalized_identity="age:self",
+            relevance=3,
+            include_reason="age_average_input",
+            confidence=0.8,
+        ),
+        synthesis.EvidenceLedgerRow(
+            fact_id="age:2",
+            source_group="answer-2",
+            citation="eventloom://agent/events/2#bbbbbbbbbbbb",
+            kind="number",
+            value="58",
+            unit="years",
+            label="dad",
+            raw_span="58",
+            context="Dad is 58.",
+            normalized_identity="age:dad",
+            relevance=3,
+            include_reason="age_average_input",
+            confidence=0.8,
+        ),
+    )
+    ledger = synthesis.EvidenceLedger(plan=plan, rows=rows)
+
+    result = AverageValuesOperation(kind="number", output_prefix="age").execute(ledger, rank=1)
+
+    assert result.support_source_groups == ("answer-1", "answer-2")
+    assert "age_values=32,58" in result.lines
+    assert "age_average=45" in result.lines
+
+
+def test_build_age_average_ledger_extracts_family_age_rows_from_sources() -> None:
+    """Family age average evidence should be a typed number ledger."""
+    ledger = build_age_average_ledger(
+        "What is the average age of me, my parents, and my grandparents?",
+        [
+            "longmemeval_session_id=answer_1 I just turned 32 on February 12th.",
+            "longmemeval_session_id=answer_2 my parents are getting older too - my mom is 55 and my dad is 58.",
+            "longmemeval_session_id=answer_3 My grandma is 75 and my grandpa is 78.",
+        ],
+    )
+
+    rows = ledger.included(kind="number")
+
+    assert [(row.source_group, row.value, row.unit, row.include_reason) for row in rows] == [
+        ("answer_1", "32", "years", "age_average_input"),
+        ("answer_2", "55", "years", "age_average_input"),
+        ("answer_2", "58", "years", "age_average_input"),
+        ("answer_3", "75", "years", "age_average_input"),
+        ("answer_3", "78", "years", "age_average_input"),
+    ]
+
+
+def test_age_average_operation_uses_typed_ledger_rows() -> None:
+    """Age average should flow through the generic average operation."""
+    ledger = build_age_average_ledger(
+        "What is the average age of me, my parents, and my grandparents?",
+        [
+            "longmemeval_session_id=answer_1 I just turned 32 on February 12th.",
+            "longmemeval_session_id=answer_2 my parents are getting older too - my mom is 55 and my dad is 58.",
+            "longmemeval_session_id=answer_3 My grandma is 75 and my grandpa is 78.",
+        ],
+    )
+
+    result = AverageValuesOperation(kind="number", output_prefix="age").execute(ledger, rank=1)
+
+    assert "age_values=32,55,58,75,78" in result.lines
+    assert "age_average=59.6" in result.lines
+    assert result.answer_candidate == {
+        "rank": 1,
+        "type": "number",
+        "confidence": 0.89,
+        "answer_key": "age_average",
+        "answer": "59.6",
+        "support_source_ids": ["answer_1", "answer_2", "answer_3"],
+        "excluded_source_ids": [],
+    }
+
+
+def test_synthesis_operation_registry_maps_plans_to_operation_objects() -> None:
+    """Plan operation strings should resolve to reusable operation objects."""
+    currency_sum = build_synthesis_plan("How much total money have I spent on bike-related expenses?")
+    currency_difference = build_synthesis_plan("How much more did I spend on Hawaii compared to Tokyo?")
+    duration_sum = build_synthesis_plan("How many hours did I spend on chess and piano practice?")
+    date_interval = build_date_ledger(
+        "How many days passed between Sunday mass and Ash Wednesday service?",
+        [
+            (
+                "content=longmemeval_session_id=answer-1 "
+                "longmemeval_session_date=2023/02/20 (Mon) "
+                "I attended Sunday mass at St. Mary's Church on January 2nd."
+            ),
+            (
+                "content=longmemeval_session_id=answer-2 "
+                "longmemeval_session_date=2023/02/20 (Mon) "
+                "I came from the Ash Wednesday service at the cathedral on February 1st."
+            ),
+        ],
+    ).plan
+    count = build_synthesis_plan("How many movie festivals did I attend, and which were they?")
+
+    assert isinstance(synthesis_operation_for_plan(currency_sum), SumValuesOperation)
+    assert isinstance(synthesis_operation_for_plan(currency_difference), DifferenceBetweenOperation)
+    assert isinstance(synthesis_operation_for_plan(duration_sum), SumValuesOperation)
+    assert isinstance(synthesis_operation_for_plan(date_interval), TemporalIntervalOperation)
+    assert isinstance(synthesis_operation_for_plan(count), ListItemsOperation)
 
 
 def test_build_synthesis_plan_tokenizes_query_once(monkeypatch) -> None:

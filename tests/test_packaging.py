@@ -747,6 +747,87 @@ def test_beta_readiness_requires_activation_efficiency_guardrail(tmp_path: Path)
     )
 
 
+def test_beta_readiness_requires_coordination_competitor_claim_gate(tmp_path: Path) -> None:
+    """Beta readiness should reject stale CoordinationBench competitor claim artifacts."""
+    _write_minimal_beta_ready_project(tmp_path)
+    report_path = tmp_path / "reports" / "benchmarks" / "coordination-real-v1" / "coordination-benchmark.json"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report.pop("competitor_claim_gate")
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    readiness = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in readiness["checks"]}
+    assert readiness["status"] == "error"
+    assert checks["coordination_competitor_claims"]["status"] == "error"
+    assert "missing competitor_claim_gate" in checks["coordination_competitor_claims"]["message"]
+    assert checks["coordination_competitor_claims"]["action"] == (
+        "Regenerate the CoordinationBench report with the public claim gate."
+    )
+
+
+def test_beta_readiness_rejects_unscored_quarq_same_harness_claim(tmp_path: Path) -> None:
+    """Same-harness competitor claims should require local metrics and result audit."""
+    _write_minimal_beta_ready_project(tmp_path)
+    report_path = tmp_path / "reports" / "benchmarks" / "coordination-real-v1" / "coordination-benchmark.json"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report["competitor_claim_gate"] = {
+        "status": "passed",
+        "required_adapters": ["quarq", "hybi"],
+        "completed_adapters": ["quarq", "hybi"],
+        "blocked_adapters": {},
+        "message": "claims passed",
+    }
+    report["competitor_adapters"]["quarq"] = {
+        **report["competitor_adapters"]["quarq"],
+        "status": "completed",
+        "claim_status": "same_harness",
+        "metrics": None,
+        "result_audit": None,
+    }
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    readiness = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in readiness["checks"]}
+    assert readiness["status"] == "error"
+    assert checks["coordination_competitor_claims"]["status"] == "error"
+    assert "quarq completed row is missing locally scored metrics" in checks["coordination_competitor_claims"]["message"]
+    assert "quarq completed row is missing result audit" in checks["coordination_competitor_claims"]["message"]
+
+
+def test_beta_readiness_requires_purpose_benchmark_gate(tmp_path: Path) -> None:
+    """Purpose-memory claims should require an archived passing purpose-v1 report."""
+    _write_minimal_beta_ready_project(tmp_path)
+    (tmp_path / "reports" / "benchmarks" / "purpose-v1" / "purpose-benchmark.json").unlink()
+
+    readiness = run_beta_readiness(project_root=tmp_path)
+
+    checks = {check["name"]: check for check in readiness["checks"]}
+    assert readiness["status"] == "error"
+    assert checks["purpose_benchmark_gate"]["status"] == "error"
+    assert "Purpose benchmark artifacts are missing" in checks["purpose_benchmark_gate"]["message"]
+    assert checks["purpose_benchmark_gate"]["action"] == (
+        "Run python -m zaxy purpose-benchmark --output-dir reports/benchmarks/purpose-v1."
+    )
+
+
+def test_beta_readiness_rejects_failing_purpose_benchmark_lane(tmp_path: Path) -> None:
+    """The purpose-v1 gate should fail release readiness when any lane fails."""
+    _write_minimal_beta_ready_project(tmp_path)
+    report_path = tmp_path / "reports" / "benchmarks" / "purpose-v1" / "purpose-benchmark.json"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    report["status"] = "failed"
+    report["lanes"][0]["status"] = "failed"
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    checks = {check["name"]: check for check in run_beta_readiness(project_root=tmp_path)["checks"]}
+
+    assert checks["purpose_benchmark_gate"]["status"] == "error"
+    assert "Purpose benchmark gate is unsafe" in checks["purpose_benchmark_gate"]["message"]
+    assert "failing lanes: Purpose Recall" in checks["purpose_benchmark_gate"]["message"]
+
+
 def test_beta_readiness_rejects_slow_first_run_timing_report(tmp_path: Path) -> None:
     """Beta readiness should enforce the five-minute first-run budget."""
     _write_minimal_beta_ready_project(tmp_path)
@@ -4902,6 +4983,11 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
     (root / "docs").mkdir()
     (root / "docs" / "examples").mkdir()
     (root / "examples").mkdir()
+    report_dir = root / "reports" / "benchmarks" / "coordination-real-v1"
+    purpose_report_dir = root / "reports" / "benchmarks" / "purpose-v1"
+    manifest_dir = report_dir / "competitor-runner-manifests"
+    manifest_dir.mkdir(parents=True)
+    purpose_report_dir.mkdir(parents=True)
     activation_log = EventLog(root / "reports" / "activation-release" / "agent-1.jsonl")
     now = datetime(2026, 5, 20, 12, 0, tzinfo=UTC)
     activation_log.append(
@@ -4932,6 +5018,110 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
     )
     (root / "CHANGELOG.md").write_text(
         "# Changelog\n\n## 0.2.0 - 2026-05-11\n\n- Stable release.\n",
+        encoding="utf-8",
+    )
+    (root / "docs" / "benchmarks.md").write_text(
+        "CoordinationBench competitor_claim_gate blocks public same-harness claims. "
+        "Run `zaxy coordinate benchmark --require-competitor-claim quarq "
+        "--require-competitor-claim hybi ...`; otherwise Quarq/Hybi remain "
+        "disclosure-only. The purpose-v1 benchmark blocks Semantic Reach and "
+        "Quarq comparative claims until same-harness adapters are pinned.\n",
+        encoding="utf-8",
+    )
+    (root / "docs" / "coordinate-roadmap.md").write_text(
+        "The CoordinationBench public-claim gate is now implemented for Quarq and Semantic Reach/Hybi.\n",
+        encoding="utf-8",
+    )
+    coordination_report = {
+        "version": "coordination-real-v1",
+        "workload_fingerprint": "fixture-fingerprint",
+        "metrics": {},
+        "baselines": {},
+        "cases": [],
+        "competitor_claim_gate": {
+            "status": "blocked",
+            "required_adapters": ["quarq", "hybi"],
+            "completed_adapters": [],
+            "blocked_adapters": {
+                "quarq": "adapter status is not_run/disclosure_only",
+                "hybi": "adapter status is not_run/disclosure_only",
+            },
+            "message": "Public same-harness competitor claims are blocked.",
+        },
+        "competitor_adapters": {
+            "quarq": {
+                "name": "quarq",
+                "display_name": "Quarq",
+                "adapter_contract": "coordinationbench-v1",
+                "status": "not_run",
+                "claim_status": "disclosure_only",
+                "blockers": ["No pinned runner."],
+                "metrics": None,
+                "result_audit": None,
+            },
+            "hybi": {
+                "name": "hybi",
+                "display_name": "Semantic Reach / HyperBinder / Hybi",
+                "adapter_contract": "coordinationbench-v1",
+                "status": "not_run",
+                "claim_status": "disclosure_only",
+                "blockers": ["No pinned runner."],
+                "metrics": None,
+                "result_audit": None,
+            },
+        },
+    }
+    (report_dir / "coordination-benchmark.json").write_text(
+        json.dumps(coordination_report, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    (report_dir / "coordination-benchmark.md").write_text(
+        "## Competitor Claim Gate\n\nQuarq and Semantic Reach / HyperBinder / Hybi are disclosure-only.\n",
+        encoding="utf-8",
+    )
+    for name in ("quarq", "hybi"):
+        (manifest_dir / f"{name}.runner-manifest.template.json").write_text(
+            json.dumps({"name": name, "template": True, "workload_fingerprint": "fixture-fingerprint"}),
+            encoding="utf-8",
+        )
+    purpose_lanes = [
+        "Purpose Recall",
+        "Ontology Shift",
+        "Consequence Retention",
+        "Governed Forgetting",
+        "Action Outcome Loop",
+        "Cross-Role Citation",
+        "Accepted-State Discipline",
+    ]
+    purpose_report = {
+        "version": "purpose-v1",
+        "status": "passed",
+        "lane_count": len(purpose_lanes),
+        "passed_lanes": len(purpose_lanes),
+        "lanes": [
+            {
+                "name": name,
+                "score": 1.0,
+                "threshold": 1.0,
+                "status": "passed",
+                "measurement": "fixture",
+                "evidence": {},
+            }
+            for name in purpose_lanes
+        ],
+        "competitor_claim_status": "blocked",
+        "competitor_claim_blockers": [
+            "Semantic Reach and Quarq require pinned same-harness adapters.",
+        ],
+        "generated_at": "2026-06-02T00:00:00+00:00",
+        "elapsed_ms": 1.0,
+    }
+    (purpose_report_dir / "purpose-benchmark.json").write_text(
+        json.dumps(purpose_report, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    (purpose_report_dir / "purpose-benchmark.md").write_text(
+        "# Purpose Benchmark\n\nPurpose Recall\nAccepted-State Discipline\n",
         encoding="utf-8",
     )
     (root / "docs" / "examples" / "first-run-timing-report.json").write_text(

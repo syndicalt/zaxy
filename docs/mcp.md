@@ -16,6 +16,10 @@ Use Zaxy tools in this order:
 3. For multi-agent missions, use Coordinate tools to record worker-local
    findings and promote only accepted state.
 4. After using retrieved context, call `memory_feedback`.
+5. When checkout returns synthesis answer candidates and one materially shapes
+   the answer, call `memory_synthesis_artifact`.
+6. When an individual synthesis ledger row is used or excluded, call
+   `memory_synthesis_evidence`.
 
 `memory_append(event_type, actor, payload, thread?)` appends a typed event to
 the Eventloom log for the selected session, extracts graph entities and edges,
@@ -46,7 +50,43 @@ retrieved graph entity was useful. Positive feedback values, `used` and
 `irrelevant`, appends an audit-only `memory.feedback` event and does not delete
 or decay existing memory. Fabric-level feedback for assembled `packet_memory`
 context also preserves source packet projection metadata. The tool uses the same
-session scoping rules as append and query.
+session scoping rules as append and query. Pass `purpose` and `outcome` when a
+memory item changes a purpose-specific action, such as accepted Coordinate state
+supporting a handoff; reinforced memory projection preserves compact purpose
+profile, evidence-policy, expected-action, authority, and mission metadata for
+future checkout and audit.
+
+`memory_synthesis_artifact(checkout, candidate?, outcome?, ...)` persists the
+answer candidates from a Memory Checkout response as a deterministic
+`memory.synthesis.artifact.created` event. If a selected `candidate` is
+provided, `outcome` must also be provided; Zaxy records the normalized outcome
+as `memory.synthesis.used`, `memory.synthesis.rejected`,
+`memory.synthesis.corrected`, or `memory.evidence.excluded`. The checkout
+payload owns the session scope, so this tool intentionally has no separate
+`session_id` override. Candidate feedback must match one of
+`diagnostics.synthesis.answer_candidates`; Zaxy canonicalizes the persisted
+candidate from checkout diagnostics before appending the outcome event.
+Artifacts and candidate outcomes project into graph memory as synthesis
+artifact, answer-candidate, ledger-row, and source-group relationships.
+
+`memory_synthesis_evidence(checkout, row, outcome, candidate?, reason?, actor?)`
+records synthesis evidence row feedback for one
+`diagnostics.synthesis.ledger_rows` item. `used` and `helpful` outcomes append
+`memory.evidence.reinforced`; `excluded` appends `memory.evidence.excluded`.
+The event preserves the row fact id, source group, citation, support source ids,
+optional selected answer candidate, checkout quality, slot plan, and reason.
+Use this when a composed answer depends on or explicitly rejects a ledger row
+instead of only recording the aggregate candidate outcome.
+
+In Coordinate missions, use `coordination_record_synthesis_artifact` instead of
+the generic memory tool when the answer candidate is part of a merge brief,
+approval packet, accepted checkout, or handoff. It writes the generic synthesis
+artifact and then appends a mission-scoped `coordination.proof_packet.created`
+event with accepted finding ids, review refs, promotion refs, worker source
+refs, optional handoff event refs, diagnostic pending ids, conflict ids,
+excluded row reasons, and non-authoritative row diagnostics. For
+`decision_scope="handoff"`, provide `handoff_id` so the proof packet cites the
+exact `coordination.handoff.created` sequence and hash.
 
 `memory_skill(action, skill_id, ...)` is a typed helper for procedural memory.
 It appends one of the deterministic skill lifecycle events
@@ -93,7 +133,7 @@ roadmap/status question after stale memory activity. Treat that event as a
 runtime nudge: call `memory_bootstrap` if tool awareness is unclear, then call
 `memory_checkout` for the current task before answering.
 
-`memory_checkout(query, session_id?, ref?, replay_from_seq?, limit?, max_recent_events?)`
+`memory_checkout(query, session_id?, ref?, replay_from_seq?, limit?, max_recent_events?, purpose?)`
 returns the high-level contract an agent should condition on before a turn. It
 wraps context assembly with a `# Memory Checkout` prompt, current facts that
 exclude superseded context, cited evidence, provenance parsed from
@@ -101,7 +141,19 @@ exclude superseded context, cited evidence, provenance parsed from
 set, and Checkout diagnostics. Diagnostics include source lane counts, total
 citation count, current-fact citation count, current fact count, excluded
 superseded context count, warning count, and a `memory_feedback` recommendation
-when cited context is returned. When applicable Skill Memory is retrieved,
+when cited context is returned. `purpose` may be a preset such as `coding`,
+`review`, `release`, `security`, `research`, or `coordinate`, or an object with
+role, task, risk, time horizon, expected action, evidence policy, retention
+policy, and ontology lens fields. The normalized profile is returned in
+`purpose`, diagnostics, prompt guidance, and later synthesis feedback payloads
+so memory can be conditioned by the intended action instead of query text alone.
+Non-general purpose profiles condition retrieval before checkout projection by
+adding deterministic profile emphasis terms, purpose-specific recall floors, and
+a purpose-selected scoring profile; the applied policy is reported in
+`diagnostics.purpose_retrieval_policy`. Purpose suppress rules are
+then enforced before checkout projection, and any excluded rows are summarized in
+`diagnostics.purpose_policy` and `retention.purpose_policy` so clients can audit
+why retrieved material did not become current memory. When applicable Skill Memory is retrieved,
 diagnostics also include a `skills` block and the prompt includes an
 `Applicable Skills` section with cited procedure steps. This lane is read-only:
 models may follow the guidance, but revisions require a new `memory_skill` or
@@ -197,6 +249,31 @@ Model consumption rule: answer from memory only when `quality.answerability` is
 facts materially influence the response, call `memory_feedback` with one of the
 listed payloads so Zaxy can reinforce useful context.
 
+For composed questions, checkout diagnostics also include a `slot_plan` contract
+that names required retrieval slots such as `source`, `numeric`, and `temporal`,
+plus optional `exact` and `semantic` slots. When evidence is incomplete,
+`quality.required_action` includes `missing_slots` and `suggested_queries` so the
+model can retry checkout before answering. Numeric and aggregation synthesis
+bundles are projected into `diagnostics.synthesis.answer_candidates`, including
+rank, candidate type, answer value, confidence, supporting source IDs, and
+excluded source IDs. Generated synthesis bundles also expose
+`diagnostics.synthesis.ledger_rows` with fact IDs, source groups, citations,
+values, labels, and include/exclude reasons. After using one of those candidates
+in a response, record the checkout and candidate outcome through
+`memory_synthesis_artifact`; this keeps composed answers auditable without
+mutating source memory.
+When a specific ledger row materially supports or is excluded from that answer,
+record the row-level outcome through `memory_synthesis_evidence` so future
+checkout can reinforce or diagnose the exact cited fact.
+
+In Coordinate missions, synthesis bundles are the proof format for merge
+briefs, approval packets, accepted checkout, and handoff answers. Each ledger
+row must preserve whether it came from accepted parent state, pending
+worker-local findings, rejected findings, stale evidence, or conflict
+diagnostics. Accepted checkout synthesis must default to parent-accepted state;
+pending worker-local rows may appear only in diagnostics and must be labeled
+non-authoritative.
+
 Degraded checkout response fragment:
 
 ```json
@@ -253,15 +330,35 @@ Coordination tools package the parent mission plus worker session workflow:
 `coordination_checkout`, `coordination_performance_ledger`,
 `coordination_approval_packet`, `coordination_apply_approval`,
 `coordination_review_finding`, `coordination_promote`, and
-`coordination_handoff`. They preserve worker-local findings until a coordinator
-review promotes accepted state into the parent mission history. The first merge
-brief, accepted checkout, and performance ledger are replay-backed and do not
-require graph availability. `coordination_checkout` returns promoted parent
-state by default; set `include_diagnostics` to include pending findings and
-conflicts as non-authoritative diagnostics. `coordination_performance_ledger`
+`coordination_handoff`. `coordination_record_synthesis_artifact` binds a
+mission-scoped Memory Checkout synthesis artifact to a Coordinate proof packet
+for briefs, approvals, accepted checkout, and handoffs. Handoff-scoped proof
+packets require `handoff_id` and return `handoff_event_ref` with the cited
+Eventloom sequence and hash. They preserve
+accepted finding ids, non-authoritative diagnostic rows, conflict ids, and
+handoff refs as graph-projected coordinator memory, so future checkout can
+retrieve both the accepted support and the excluded worker-local rows.
+Selected answer-candidate feedback must also match the checkout candidates, so
+the proof packet, artifact, and outcome event cannot disagree about support ids.
+Coordinate keeps worker-local findings isolated until a coordinator review
+promotes accepted state into the parent mission history. The first merge brief,
+accepted checkout, inspection handoff records, and performance ledger are
+replay-backed and do not require graph availability.
+`coordination_checkout` returns promoted parent state by default and includes
+the `coordinate` purpose profile: accepted parent state is authoritative,
+worker-local pending rows are suppressed unless diagnostics are requested, and
+proof packets/handoff refs are retained as coordinator memory. Set
+`include_diagnostics` to include pending findings and conflicts as
+non-authoritative diagnostics. `coordination_performance_ledger`
 returns per-worker outcome metrics such as accepted, rejected, duplicate,
 missing-evidence, and test-backed finding rates. `coordination_handoff` appends
-a replayable parent mission event with summary, next steps, and risks. The
+a replayable parent mission event with summary, next steps, and risks; later
+handoff-scoped proof packets are linked back during mission inspection through
+their cited `handoff_event_ref`. `coordination_proof_trace` resolves a proof by
+`artifact_id`, `handoff_id`, or `proof_seq` and returns the replayed proof
+event, synthesis artifact event, handoff event, accepted finding refs,
+review/promotion refs, answer candidates, ledger rows, and non-authoritative
+diagnostics. The
 approval tools export pending/conflicted findings for remote review and apply
 returned decisions as ordinary review events, with promotion only when a
 decision explicitly sets `promote`.
@@ -474,16 +571,19 @@ The v0.6 response-shape guardrail is
 `docs/examples/mcp-response-snapshots.json`. It stores representative,
 normalized responses for `memory_bootstrap`, `memory_checkout`,
 `memory_query`, `memory_verbatim`, `context_assemble`, `memory_feedback`, and
-`coordination_checkout`, covering startup, checkout, graph retrieval,
-verbatim source recall, prompt context assembly, feedback reinforcement, and
-accepted coordination state.
+`memory_synthesis_artifact`, `memory_synthesis_evidence`, and
+`coordination_checkout`, covering startup,
+checkout, graph retrieval, verbatim source recall, prompt context assembly,
+feedback reinforcement, synthesis artifact writes, synthesis evidence row
+feedback, and accepted coordination state.
 
 The snapshot deliberately preserves stable client fields rather than full prompt
 text. It covers startup sequence shape, recommended next tool, Eventloom status,
-checkout fact/citation diagnostics, quality status, feedback template keys,
-token-efficiency keys, required prompt sections, graph retrieval score
+checkout fact/citation diagnostics, quality status, purpose profile keys,
+feedback template keys, token-efficiency keys, required prompt sections, graph retrieval score
 explanation keys, verbatim source metadata keys, assembled context counts,
-feedback event identity, and accepted coordination checkout counts. Update it
+feedback event identity, synthesis artifact event identity and normalized
+candidate outcome, and accepted coordination checkout counts. Update it
 only when the client-facing response contract intentionally changes.
 
 ## Structured Error Payloads

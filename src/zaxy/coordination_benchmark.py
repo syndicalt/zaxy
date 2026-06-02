@@ -45,6 +45,20 @@ COORDINATION_COMPETITOR_ADAPTERS = {
             "No pinned adapter package/version and same-harness workload replay contract has been configured.",
         ],
     },
+    "quarq": {
+        "display_name": "Quarq",
+        "adapter_contract": "coordinationbench-v1",
+        "blockers": [
+            "No pinned Quarq runner manifest, source ref, and same-harness workload replay contract has been configured.",
+        ],
+    },
+    "hybi": {
+        "display_name": "Semantic Reach / HyperBinder / Hybi",
+        "adapter_contract": "coordinationbench-v1",
+        "blockers": [
+            "No pinned HyperBinder/Hybi server/runtime, source ref, and same-harness workload replay contract has been configured.",
+        ],
+    },
 }
 COORDINATION_COMPETITOR_MANIFEST_FIELDS = (
     "name",
@@ -168,6 +182,9 @@ class CoordinationBenchMetrics:
     injected_tokens: int
     brief_latency_ms: float
     promotion_latency_ms: float
+    accepted_state_synthesis_quality: float = 1.0
+    non_authoritative_leakage: float = 1.0
+    purpose_feedback_coverage: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -185,6 +202,9 @@ class CoordinationBenchMetrics:
             "injected_tokens": self.injected_tokens,
             "brief_latency_ms": self.brief_latency_ms,
             "promotion_latency_ms": self.promotion_latency_ms,
+            "accepted_state_synthesis_quality": self.accepted_state_synthesis_quality,
+            "non_authoritative_leakage": self.non_authoritative_leakage,
+            "purpose_feedback_coverage": self.purpose_feedback_coverage,
         }
 
 
@@ -244,6 +264,44 @@ class CoordinationCompetitorResultAudit:
         }
 
 
+@dataclass(frozen=True)
+class CoordinationCompetitorClaimGate:
+    """Machine-readable guardrail for public same-harness competitor claims."""
+
+    status: str
+    required_adapters: tuple[str, ...]
+    completed_adapters: tuple[str, ...]
+    blocked_adapters: dict[str, str]
+    message: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "required_adapters": list(self.required_adapters),
+            "completed_adapters": list(self.completed_adapters),
+            "blocked_adapters": dict(self.blocked_adapters),
+            "message": self.message,
+        }
+
+
+@dataclass(frozen=True)
+class CoordinationPurposeSynthesisGate:
+    """Machine-readable guardrail for Coordinate purpose/synthesis claims."""
+
+    status: str
+    required_metrics: dict[str, float | bool]
+    blocked_metrics: dict[str, str]
+    message: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "required_metrics": dict(self.required_metrics),
+            "blocked_metrics": dict(self.blocked_metrics),
+            "message": self.message,
+        }
+
+
 CoordinationCompetitorAdapter = Callable[[CoordinationBenchCase], CoordinationBenchMetrics]
 
 
@@ -287,6 +345,8 @@ class CoordinationBenchReport:
                 name: disclosure.to_dict()
                 for name, disclosure in sorted(self.competitor_adapters.items())
             },
+            "coordinate_purpose_synthesis_gate": coordination_purpose_synthesis_gate(self).to_dict(),
+            "competitor_claim_gate": coordination_competitor_claim_gate(self).to_dict(),
             "cases": [case.to_dict() for case in self.cases],
         }
 
@@ -458,6 +518,9 @@ def flat_eventlog_baseline_metrics(case: CoordinationBenchCase) -> CoordinationB
         injected_tokens=_approx_tokens(json.dumps(findings, sort_keys=True)),
         brief_latency_ms=0.0,
         promotion_latency_ms=0.0,
+        accepted_state_synthesis_quality=0.0,
+        non_authoritative_leakage=0.0,
+        purpose_feedback_coverage=0.0,
     )
 
 
@@ -548,6 +611,116 @@ def validate_coordination_competitor_result(
         "metrics": metrics.to_dict(),
         "audit": audit.to_dict(),
     }
+
+
+def coordination_competitor_claim_gate(
+    report: CoordinationBenchReport,
+    *,
+    required_adapters: tuple[str, ...] = ("quarq", "hybi"),
+) -> CoordinationCompetitorClaimGate:
+    """Return whether public same-harness claims are supported for adapters.
+
+    Disclosure-only rows remain valid benchmark metadata, but they are not
+    evidence for a public same-harness comparison claim. This guardrail requires
+    each named adapter to be completed, locally scored by Zaxy, and backed by a
+    result audit with pinned manifest provenance.
+    """
+    completed: list[str] = []
+    blocked: dict[str, str] = {}
+    for name in required_adapters:
+        disclosure = report.competitor_adapters.get(name)
+        if disclosure is None:
+            blocked[name] = "adapter row is missing from the report"
+            continue
+        if disclosure.status != "completed" or disclosure.claim_status != "same_harness":
+            blocked[name] = (
+                f"adapter status is {disclosure.status}/{disclosure.claim_status}; "
+                "same-harness public claims require completed locally scored results"
+            )
+            continue
+        if disclosure.metrics is None:
+            blocked[name] = "completed adapter row has no locally scored metrics"
+            continue
+        audit = disclosure.result_audit
+        if audit is None:
+            blocked[name] = "completed adapter row has no result audit provenance"
+            continue
+        manifest = audit.manifest
+        missing_manifest_fields = [
+            field
+            for field in COORDINATION_COMPETITOR_MANIFEST_FIELDS
+            if not str(manifest.get(field) or "").strip()
+        ]
+        if missing_manifest_fields:
+            blocked[name] = "result audit manifest is missing: " + ", ".join(missing_manifest_fields)
+            continue
+        if not audit.result_fingerprint:
+            blocked[name] = "result audit is missing result_fingerprint"
+            continue
+        completed.append(name)
+    if blocked:
+        return CoordinationCompetitorClaimGate(
+            status="blocked",
+            required_adapters=tuple(required_adapters),
+            completed_adapters=tuple(completed),
+            blocked_adapters=blocked,
+            message=(
+                "Public same-harness competitor claims are blocked until required "
+                "adapters have completed, locally scored, fingerprinted results."
+            ),
+        )
+    return CoordinationCompetitorClaimGate(
+        status="passed",
+        required_adapters=tuple(required_adapters),
+        completed_adapters=tuple(completed),
+        blocked_adapters={},
+        message="Public same-harness competitor claims are supported by completed local scoring.",
+    )
+
+
+def coordination_purpose_synthesis_gate(report: CoordinationBenchReport) -> CoordinationPurposeSynthesisGate:
+    """Return whether Coordinate purpose-conditioned synthesis is proof-backed."""
+    required: dict[str, float | bool] = {
+        "accepted_state_synthesis_quality": 1.0,
+        "non_authoritative_leakage": 1.0,
+        "purpose_feedback_coverage": 1.0,
+        "citation_coverage": 1.0,
+        "parent_checkout_answerability": 1.0,
+        "eventloom_replayable": True,
+    }
+    values = report.metrics.to_dict()
+    blocked: dict[str, str] = {}
+    for key, expected in required.items():
+        actual = values.get(key)
+        if isinstance(expected, bool):
+            if actual is not expected:
+                blocked[key] = f"expected {expected}, got {actual}"
+            continue
+        if not isinstance(actual, int | float) or float(actual) < expected:
+            blocked[key] = f"expected >= {expected}, got {actual}"
+    if not report.cases:
+        blocked["cases"] = "report has no scored cases"
+    if blocked:
+        return CoordinationPurposeSynthesisGate(
+            status="blocked",
+            required_metrics=required,
+            blocked_metrics=blocked,
+            message=(
+                "Coordinate purpose/synthesis claims are blocked until accepted-state "
+                "synthesis, purpose feedback, citations, replayability, parent checkout "
+                "answerability, and non-authoritative leakage gates all pass."
+            ),
+        )
+    return CoordinationPurposeSynthesisGate(
+        status="passed",
+        required_metrics=required,
+        blocked_metrics={},
+        message=(
+            "Coordinate accepted-state synthesis is proof-backed with citations, "
+            "Coordinate-purpose feedback, replayable Eventloom provenance, parent "
+            "checkout answerability, and no non-authoritative worker-row leakage."
+        ),
+    )
 
 
 def export_coordination_benchmark_adapter_kit(
@@ -841,6 +1014,9 @@ def _score_competitor_case_output(
         metrics,
         returned_tokens=_approx_tokens(str(payload.get("returned_text") or "")),
         injected_tokens=_approx_tokens(str(payload.get("injected_text") or "")),
+        accepted_state_synthesis_quality=_accepted_state_synthesis_quality(case, payload),
+        non_authoritative_leakage=_non_authoritative_leakage(case, payload),
+        purpose_feedback_coverage=_purpose_feedback_coverage(case, payload),
     )
 
 
@@ -915,6 +1091,34 @@ def write_coordination_benchmark_report(report: CoordinationBenchReport, output_
     lines.append("|--------|-------|")
     for key, value in metrics.items():
         lines.append(f"| {key} | {value} |")
+    synthesis_gate = coordination_purpose_synthesis_gate(report)
+    lines.extend(["", "## Coordinate Purpose/Synthesis Gate", ""])
+    lines.append(f"- status: `{synthesis_gate.status}`")
+    lines.append(f"- message: {synthesis_gate.message}")
+    lines.append("")
+    lines.append("| Required metric | Required value |")
+    lines.append("|-----------------|----------------|")
+    for key, value in synthesis_gate.required_metrics.items():
+        lines.append(f"| {key} | {value} |")
+    if synthesis_gate.blocked_metrics:
+        lines.append("")
+        lines.append("| Metric | Blocker |")
+        lines.append("|--------|---------|")
+        for key, reason in sorted(synthesis_gate.blocked_metrics.items()):
+            lines.append(f"| {key} | {reason} |")
+    claim_gate = coordination_competitor_claim_gate(report)
+    lines.extend(["", "## Competitor Claim Gate", ""])
+    lines.append(f"- status: `{claim_gate.status}`")
+    lines.append(f"- required adapters: `{', '.join(claim_gate.required_adapters)}`")
+    lines.append(f"- completed adapters: `{', '.join(claim_gate.completed_adapters) or 'none'}`")
+    lines.append(f"- message: {claim_gate.message}")
+    if claim_gate.blocked_adapters:
+        lines.append("")
+        lines.append("| Adapter | Blocker |")
+        lines.append("|---------|---------|")
+        for name, reason in sorted(claim_gate.blocked_adapters.items()):
+            display_name = COORDINATION_COMPETITOR_ADAPTERS.get(name, {}).get("display_name", name)
+            lines.append(f"| {display_name} | {reason} |")
     lines.extend(["", "## Baselines", ""])
     lines.append(
         "| Baseline | Description | accepted_finding_precision | conflict_recall | "
@@ -1181,6 +1385,8 @@ def _score_retrieved_worker_context(
         injected_tokens=_approx_tokens(injected_text),
         brief_latency_ms=0.0,
         promotion_latency_ms=0.0,
+        accepted_state_synthesis_quality=0.0,
+        non_authoritative_leakage=0.0,
     )
 
 
@@ -1219,6 +1425,10 @@ def _run_case(output_dir: Path, case: CoordinationBenchCase) -> CoordinationBenc
         eventloom_replayable=_eventloom_replayable(manager, case),
         brief_latency_ms=brief_latency_ms,
         promotion_latency_ms=promotion_latency_ms,
+    )
+    metrics = replace(
+        metrics,
+        purpose_feedback_coverage=_brief_purpose_feedback_coverage(case, brief),
     )
     return CoordinationBenchCaseResult(workload_case=case, gold=case.gold, brief=brief, metrics=metrics)
 
@@ -1399,6 +1609,164 @@ def _retrieved_answerability(findings: list[dict[str, Any]], gold: CoordinationB
     return 1.0
 
 
+def _accepted_state_synthesis_quality(case: CoordinationBenchCase, payload: dict[str, Any]) -> float:
+    if not _has_supported_synthesis_proof(case, payload):
+        return 0.0
+    text = _synthesis_answer_text(payload)
+    if not text:
+        return 0.0
+    normalized = text.casefold()
+    expected_terms = _final_question_terms(case.gold, "expected_terms")
+    forbidden_terms = _final_question_terms(case.gold, "forbidden_terms")
+    if expected_terms and not all(term in normalized for term in expected_terms):
+        return 0.0
+    if any(term in normalized for term in forbidden_terms):
+        return 0.0
+    return 1.0
+
+
+def _has_supported_synthesis_proof(case: CoordinationBenchCase, payload: dict[str, Any]) -> bool:
+    accepted_ids = {
+        str(finding.get("finding_id") or "")
+        for finding in _dict_list(payload.get("accepted_findings"))
+    }
+    expected_claim_ids = {
+        str(finding.get("finding_id") or "")
+        for finding in _dict_list(payload.get("accepted_findings"))
+        if case.gold.expected_accepted_claims.get(str(finding.get("claim_key"))) == str(finding.get("claim_value"))
+    }
+    support_ids = set(_string_list(payload.get("support_source_ids")))
+    answer_candidate = payload.get("answer_candidate")
+    if isinstance(answer_candidate, dict):
+        support_ids.update(_string_list(answer_candidate.get("support_source_ids")))
+    artifact = payload.get("synthesis_artifact")
+    ledger_support_ids: set[str] = set()
+    if isinstance(artifact, dict):
+        for candidate in _dict_list(artifact.get("answer_candidates")):
+            support_ids.update(_string_list(candidate.get("support_source_ids")))
+        for row in _dict_list(artifact.get("ledger_rows")):
+            source_group = str(row.get("source_group") or "")
+            if source_group and not str(row.get("exclude_reason") or ""):
+                ledger_support_ids.add(source_group)
+    if not support_ids:
+        return False
+    required_ids = expected_claim_ids or accepted_ids
+    if not required_ids:
+        return False
+    if not support_ids <= accepted_ids:
+        return False
+    if not (support_ids & required_ids):
+        return False
+    return not ledger_support_ids or support_ids <= ledger_support_ids
+
+
+def _non_authoritative_leakage(case: CoordinationBenchCase, payload: dict[str, Any]) -> float:
+    injected_count = _optional_int(payload.get("non_authoritative_rows_injected")) or 0
+    if injected_count > 0:
+        return 0.0
+    text = " ".join(
+        [
+            _synthesis_answer_text(payload),
+            str(payload.get("injected_text") or ""),
+            str(payload.get("returned_text") or ""),
+        ]
+    ).casefold()
+    forbidden_terms = _final_question_terms(case.gold, "forbidden_terms")
+    if any(term in text for term in forbidden_terms):
+        return 0.0
+    return 1.0
+
+
+def _purpose_feedback_coverage(case: CoordinationBenchCase, payload: dict[str, Any]) -> float:
+    """Return whether result feedback ties accepted state to Coordinate purpose."""
+    required_ids = _expected_accepted_finding_ids(case, _dict_list(payload.get("accepted_findings")))
+    if not required_ids:
+        return 0.0
+    covered: set[str] = set()
+    for event in _dict_list(payload.get("feedback_events")) + _dict_list(payload.get("memory_feedback")):
+        finding_id = str(event.get("finding_id") or "")
+        if finding_id not in required_ids:
+            continue
+        if not _feedback_has_coordinate_purpose(event):
+            continue
+        if not _feedback_has_accepted_authority(event):
+            continue
+        feedback = str(event.get("feedback") or "used").casefold().strip()
+        if feedback and feedback not in {"used", "helpful"}:
+            continue
+        covered.add(finding_id)
+    return _ratio(len(covered), len(required_ids))
+
+
+def _brief_purpose_feedback_coverage(case: CoordinationBenchCase, brief: CoordinationBrief) -> float:
+    """Return coverage for Zaxy's accepted-state feedback-ready parent rows."""
+    required_ids = {
+        finding.finding_id
+        for finding in brief.accepted_findings
+        if finding.claim_key and case.gold.expected_accepted_claims.get(finding.claim_key) == finding.claim_value
+    }
+    if not required_ids:
+        return 0.0
+    covered = {
+        finding.finding_id
+        for finding in brief.accepted_findings
+        if finding.finding_id in required_ids
+        and finding.source_event_seq is not None
+        and bool(finding.source_event_hash)
+    }
+    return _ratio(len(covered), len(required_ids))
+
+
+def _expected_accepted_finding_ids(
+    case: CoordinationBenchCase,
+    accepted_findings: list[dict[str, Any]],
+) -> set[str]:
+    return {
+        str(finding.get("finding_id") or "")
+        for finding in accepted_findings
+        if case.gold.expected_accepted_claims.get(str(finding.get("claim_key"))) == str(finding.get("claim_value"))
+    }
+
+
+def _feedback_has_coordinate_purpose(event: dict[str, Any]) -> bool:
+    purpose = event.get("purpose")
+    if isinstance(purpose, dict):
+        return str(purpose.get("profile") or "").casefold().strip() == "coordinate"
+    return str(event.get("purpose_profile") or purpose or "").casefold().strip() == "coordinate"
+
+
+def _feedback_has_accepted_authority(event: dict[str, Any]) -> bool:
+    authority = str(
+        event.get("authority_scope")
+        or event.get("authority")
+        or event.get("coordination_status")
+        or ""
+    ).casefold().strip().replace("_", "-")
+    return authority in {"accepted", "parent-accepted", "parent-accepted-state", "promoted"}
+
+
+def _synthesis_answer_text(payload: dict[str, Any]) -> str:
+    parts: list[str] = []
+    answer_candidate = payload.get("answer_candidate")
+    if isinstance(answer_candidate, dict):
+        parts.append(str(answer_candidate.get("answer") or ""))
+    artifact = payload.get("synthesis_artifact")
+    if isinstance(artifact, dict):
+        for candidate in _dict_list(artifact.get("answer_candidates")):
+            parts.append(str(candidate.get("answer") or ""))
+        parts.append(str(artifact.get("answer") or ""))
+    return " ".join(part for part in parts if part)
+
+
+def _final_question_terms(gold: CoordinationBenchGold, key: str) -> set[str]:
+    return {
+        str(term).casefold()
+        for question in gold.final_questions
+        for term in question.get(key, ())
+        if str(term)
+    }
+
+
 def _eventloom_replayable(manager: CoordinationManager, case: CoordinationBenchCase) -> bool:
     session_ids = [case.mission_id, *(str(worker["worker_id"]) for worker in case.workers)]
     return all(manager.session_manager.replay(session_id).integrity.ok for session_id in session_ids)
@@ -1422,6 +1790,9 @@ def _mean_metrics(metrics: list[CoordinationBenchMetrics]) -> CoordinationBenchM
         injected_tokens=round(_mean([item.injected_tokens for item in metrics])),
         brief_latency_ms=_mean([item.brief_latency_ms for item in metrics]),
         promotion_latency_ms=_mean([item.promotion_latency_ms for item in metrics]),
+        accepted_state_synthesis_quality=_mean([item.accepted_state_synthesis_quality for item in metrics]),
+        non_authoritative_leakage=_mean([item.non_authoritative_leakage for item in metrics]),
+        purpose_feedback_coverage=_mean([item.purpose_feedback_coverage for item in metrics]),
     )
 
 

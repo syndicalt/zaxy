@@ -173,6 +173,104 @@ the retrieved entity. Negative feedback (`irrelevant`) appends audit-only
 for `packet_memory` context preserves the packet projection citation plus source
 packet sequence/hash, provider path, and model when available.
 
+Persist synthesis answer artifacts from Memory Checkout:
+
+```python
+checkout = await fabric.checkout_memory(
+    "How much did I spend on bike expenses in total?",
+    session_id="agent-1",
+    purpose="review",
+)
+artifact_event = await fabric.record_synthesis_artifact(checkout, actor="assistant")
+candidate = checkout.diagnostics["synthesis"]["answer_candidates"][0]
+await fabric.record_synthesis_candidate(
+    checkout,
+    candidate=candidate,
+    outcome="used",
+    actor="assistant",
+)
+```
+
+`checkout_memory(..., purpose=...)` accepts a preset name such as `coding`,
+`review`, `release`, `security`, `research`, or `coordinate`, or a purpose
+object with role, task, risk, time horizon, expected action, evidence policy,
+retention policy, and ontology lens fields. The normalized profile is returned
+in the checkout payload and diagnostics so downstream feedback can distinguish
+memory that was useful for a release review from memory that was useful for
+implementation. Checkout also
+enforces purpose suppress rules before projection: for example, `coordinate`
+checkout excludes worker-local pending, rejected, and stale unpromoted rows from
+current facts while reporting the suppressed counts and reasons in
+`diagnostics.purpose_policy`.
+Non-general purpose profiles also condition retrieval before projection. Zaxy
+adds deterministic emphasis terms from the profile's ontology lens, required
+evidence, expected action, and retention policy, selects a purpose-appropriate
+scoring profile, and raises the internal recall budget without increasing the
+visible prompt limit. The applied policy is reported in
+`diagnostics.purpose_retrieval_policy`, including the profile, emphasis terms,
+scoring profile, base recall limit, and resolved recall limit.
+Feedback templates produced by checkout include the normalized purpose profile
+when the profile is not `general`, and both `record_context_feedback(...,
+purpose=..., outcome=...)` and MCP `memory_feedback(..., purpose, outcome)`
+preserve that useful-for-what metadata in Eventloom. Reinforced memory
+projection keeps compact purpose and authority fields so future retrieval can
+distinguish accepted Coordinate state that supported a handoff from the same
+fact used for a code review or implementation step.
+
+`record_synthesis_artifact` appends `memory.synthesis.artifact.created` with a
+deterministic `synthesis_artifact_v1` payload: query, checkout quality, purpose
+profile, slot plan, answer candidates, auditable ledger rows, support citations,
+source groups, snippets, and verification warnings. `record_synthesis_candidate`
+writes outcome events such as `memory.synthesis.used`,
+`memory.synthesis.rejected`, or `memory.synthesis.corrected` without mutating
+the source memory. Candidate and row-level evidence feedback also preserve the
+purpose profile that conditioned the checkout.
+
+MCP clients use the same contract through `memory_synthesis_artifact`. The tool
+accepts the Memory Checkout payload directly. If a selected `candidate` is
+provided, `outcome` must be provided in the same call; `helpful` normalizes to
+`used`, while `excluded` records `memory.evidence.excluded`.
+Selected candidates are validated against
+`diagnostics.synthesis.answer_candidates` and persisted from the canonical
+checkout candidate so support ids cannot drift from the artifact.
+MCP clients can also call `memory_synthesis_evidence` for one
+`diagnostics.synthesis.ledger_rows` item when a specific cited row was used or
+excluded, preserving the row fact id, source group, citation, selected candidate,
+and reason as row-level feedback.
+Synthesis artifacts, answer candidates, ledger rows, and outcome feedback are
+projected into graph memory as typed entities and edges for later traversal.
+
+For Coordinate, treat the same artifact as the proof packet for accepted-state
+composition:
+
+```python
+coordinate_state = await fabric.coordinate_checkout(
+    "release-rc1",
+    include_diagnostics=True,
+)
+checkout = await fabric.checkout_memory(
+    "Compose the accepted release-rc1 findings into the handoff answer.",
+    session_id="release-rc1",
+)
+proof = await fabric.coordinate_record_synthesis_artifact(
+    "release-rc1",
+    checkout,
+    decision_scope="handoff",
+    handoff_id="release-rc1:handoff:9",
+    actor="coordinator",
+)
+```
+
+The Coordinate checkout should show which rows are authoritative before the
+coordinator records a mission-scoped proof packet. It carries the `coordinate`
+purpose profile, which requires accepted parent state and treats worker-local
+pending findings as diagnostic unless explicitly included. The proof packet links the
+generic synthesis artifact to accepted findings, review events, promotion
+events, worker source events, optional handoff event refs, diagnostic pending
+rows, conflicts, and excluded duplicate, stale, or conflicting rows before
+promotion or handoff. Handoff-scoped proof packets require `handoff_id` and
+cite the matching handoff event sequence and hash.
+
 Render first-run integration payloads:
 
 ```python
@@ -191,7 +289,7 @@ those frameworks.
 Customize retrieval policy:
 
 ```python
-from zaxy.query import HTTPReranker, LexicalReranker, QueryRouter
+from zaxy.query import HTTPReranker, LateInteractionHTTPReranker, LexicalReranker, QueryRouter
 
 router = QueryRouter(
     fabric.graph,
@@ -205,7 +303,8 @@ Built-in scoring profiles are `balanced`, `precision`, `recall`, and
 `temporal`. Rerankers implement an async `rerank(query, results, limit=...)`
 method and receive fused, deduplicated graph candidates before final truncation.
 Use `LexicalReranker` for deterministic local reranking, `HTTPReranker` for
-local/self-hosted model endpoints, or `OpenAICompatibleReranker` for
+local/self-hosted model endpoints, `LateInteractionHTTPReranker` for
+ColBERT-style token-interaction endpoints, or `OpenAICompatibleReranker` for
 OpenAI-compatible chat-completions reranking.
 
 Replay a session:

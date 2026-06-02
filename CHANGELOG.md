@@ -9,6 +9,82 @@ All notable Zaxy release changes are recorded here.
   logs. Zaxy now skips incompatible top-level JSONL logs with diagnostics
   instead of treating native Eventloom `events.jsonl` as a Zaxy event log and
   failing MCP startup with missing `seq`, `actor`, or `hash` fields.
+- Added the `memory_synthesis_artifact` MCP tool and deterministic synthesis
+  artifact payloads with auditable ledger rows so answer candidates preserve
+  support, exclusion, and source-citation decisions from Memory Checkout.
+- Added the `memory_synthesis_evidence` MCP tool so clients can reinforce or
+  exclude individual synthesis ledger rows with cited fact ids, source groups,
+  answer candidates, and reasons.
+- Projected synthesis artifacts, answer candidates, ledger rows, candidate
+  outcomes, and Coordinate proof packets into graph memory, and made candidate
+  feedback canonicalize against checkout answer candidates before writing.
+- Hardened synthesis bundles so elapsed-duration, social-media break, and
+  road-trip duration fields carry ledger-row provenance, while currency-only
+  synthesis no longer emits unrelated duration fallback totals.
+- Added ledger-row provenance for age-at-event, career-prior-duration, and
+  family-age-average synthesis fields.
+- Added ledger-row provenance for relative week/month intervals, anniversary
+  month subtraction, parent-order, recency, and temporal-order synthesis fields.
+- Added optional late-interaction HTTP reranking with tokenized candidate
+  payloads and `rerank_strategy` score diagnostics while keeping lexical local
+  reranking as the deterministic default.
+- Moved Memory Checkout answer candidates to the top of the full prompt
+  contract so composed answers appear before raw facts and evidence.
+- Added reusable synthesis operation objects for sum, difference, average, list,
+  and temporal interval projection, and routed aggregate candidate assembly
+  through the operation layer without changing answer-line compatibility.
+- Replaced synthesis artifact verification placeholders with deterministic
+  missing-evidence, dedupe-decision, warning, and skill-memory contradiction
+  diagnostics from Memory Checkout.
+- Added first-class purpose profiles for Memory Checkout and Coordinate so
+  callers can condition memory by role, task, risk, evidence policy, retention
+  policy, ontology lens, and expected action. Synthesis artifacts and feedback
+  now preserve the checkout purpose profile for future outcome learning.
+- Added purpose-conditioned retrieval scoring so non-general checkout purposes
+  apply deterministic query emphasis, profile-specific recall floors, and a
+  purpose-selected scoring profile without mutating the global router policy.
+- Enforced purpose suppress rules at the Memory Checkout boundary so
+  purpose-incompatible rows do not become current facts or cited evidence, with
+  suppressed counts and reasons exposed in checkout diagnostics and retention
+  metadata.
+- Added purpose-aware Coordinate compaction projections. `zaxy compact
+  --projection-output ... --purpose coordinate` now keeps accepted/promoted
+  parent state, proof packets, and handoffs authoritative while preserving
+  pending, rejected, deferred, stale, and unpromoted worker rows only as
+  consolidation diagnostics.
+- Added generalized purpose-aware compaction policies: security, release, and
+  review preserve all source-backed records, while coding and research use
+  bounded exemplar projections with purpose-specific record floors.
+- Added purpose-aware retrieval decay floors so Coordinate, security, release,
+  and review memories resist generic staleness decay without mutating Eventloom
+  or graph facts. Score explanations now expose the applied purpose profile and
+  retention half-life.
+- Added purpose-scoped feedback for Memory Checkout and MCP so
+  `memory_feedback`/`record_context_feedback` can preserve useful-for-what
+  purpose profiles, outcomes, Coordinate authority metadata, and projected
+  purpose audit fields on reinforced memory.
+- Added the deterministic `purpose-v1` benchmark gate and `zaxy
+  purpose-benchmark` command. The archived report covers Purpose Recall,
+  Ontology Shift, Consequence Retention, Governed Forgetting, Action Outcome
+  Loop, Cross-Role Citation, and Accepted-State Discipline while blocking
+  Semantic Reach/Quarq comparative claims until same-harness adapters are
+  pinned and scored.
+- Added `purpose_feedback_coverage` to CoordinationBench so Zaxy Coordinate and
+  same-harness adapters can prove accepted parent-state feedback is tied to the
+  `coordinate` purpose profile instead of generic retrieval usefulness.
+- Added a CoordinationBench competitor claim gate for Quarq and Semantic
+  Reach/Hybi. Reports now expose a machine-readable blocked/passed verdict, the
+  CLI can fail public claim runs with `--require-competitor-claim`, and the
+  archived `coordination-real-v1` report includes disclosure-only Quarq/Hybi
+  rows plus manifest templates.
+- Added a Coordinate purpose/synthesis gate to CoordinationBench reports so
+  Coordinate product claims require proof-backed accepted-state synthesis,
+  Coordinate-purpose feedback, citation coverage, parent-checkout answerability,
+  replayability, and no non-authoritative worker-row leakage.
+- Added the `coordination_competitor_claims` beta-readiness check so release
+  readiness fails if Quarq/Hybi public docs or archived CoordinationBench
+  artifacts drift into unsafe same-harness claims without locally scored result
+  audits.
 
 ## 1.0.1 - 2026-05-31
 
