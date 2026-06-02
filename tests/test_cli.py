@@ -2693,8 +2693,10 @@ def test_serve_derives_workspace_defaults_when_not_overridden(
     mock_server_cls: MagicMock,
     mock_mcp_main: AsyncMock,
     monkeypatch,
+    tmp_path: Path,
 ) -> None:
     """A bare `zaxy serve` should scope memory to the process workspace."""
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setattr("zaxy.mcp_server.server", None)
     runner = CliRunner()
 
@@ -2714,7 +2716,7 @@ def test_serve_derives_workspace_defaults_when_not_overridden(
     kwargs = mock_server_cls.call_args.kwargs
     assert kwargs["eventloom_path"] == str(Path.cwd() / ".eventloom")
     assert kwargs["workspace_root"] == Path.cwd()
-    assert kwargs["default_session_id"] == "zaxy-default"
+    assert kwargs["default_session_id"] == f"{tmp_path.name}-default"
 
 
 @patch("zaxy.mcp_server.main", new_callable=AsyncMock)
@@ -4559,6 +4561,10 @@ def test_doctor_beta_readiness_reports_release_and_uat_gates() -> None:
     assert checks["release_smoke"]["status"] == "ok"
     assert checks["release_gate"]["status"] == "ok"
     assert "optional backend exclusion" in checks["release_gate"]["message"]
+    assert checks["coordination_competitor_claims"]["status"] == "ok"
+    assert "Quarq/Hybi posture is guarded" in checks["coordination_competitor_claims"]["message"]
+    assert checks["purpose_benchmark_gate"]["status"] == "ok"
+    assert "purpose-v1 benchmark passes" in checks["purpose_benchmark_gate"]["message"]
     assert checks["external_validation_evidence"]["status"] == "ok"
     assert "external validation is optional for v1.0 release" in checks["external_validation_evidence"]["message"]
     assert checks["clean_repo_uat"]["status"] == "ok"
@@ -5732,6 +5738,59 @@ def test_compact_writes_projection_without_rewriting_log(tmp_path: Path) -> None
     assert projection_path.exists()
     assert '"strategy": "medoid"' in projection_path.read_text(encoding="utf-8")
     assert log_path.read_text(encoding="utf-8") == before
+
+
+def test_compact_projection_accepts_coordinate_purpose_policy(tmp_path: Path) -> None:
+    """compact --purpose coordinate should write authoritative-only Coordinate projections."""
+    log_path = tmp_path / "coordinate.jsonl"
+    projection_path = tmp_path / "coordinate.compaction.json"
+    log = EventLog(log_path)
+    log.append(
+        "coordination.finding.reported",
+        actor="worker",
+        payload={
+            "mission_id": "mission-1",
+            "finding_id": "finding-pending",
+            "claim_key": "release.package",
+            "claim_value": "pending",
+            "coordination_status": "pending",
+            "summary": "Pending row should not become compact authority.",
+        },
+    )
+    log.append(
+        "coordination.finding.promoted",
+        actor="coordinator",
+        payload={
+            "mission_id": "mission-1",
+            "finding_id": "finding-promoted",
+            "claim_key": "release.package",
+            "claim_value": "ready",
+            "coordination_status": "promoted",
+            "summary": "Promoted row is compact authority.",
+        },
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "compact",
+            str(log_path),
+            "--projection-output",
+            str(projection_path),
+            "--purpose",
+            "coordinate",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(projection_path.read_text(encoding="utf-8"))
+    assert payload["purpose"]["profile"] == "coordinate"
+    assert payload["strategy"] == "coordinate_authoritative"
+    assert payload["records"][0]["kind"] == "coordinate_authoritative"
+    assert payload["records"][0]["authority_scope"] == "authoritative"
+    assert payload["consolidation_policy"]["diagnostic_event_seqs"] == [1]
+    assert payload["consolidation_policy"]["authoritative_event_seqs"] == [2]
 
 
 def test_compact_rewrite_appends_lifecycle_event(tmp_path: Path) -> None:

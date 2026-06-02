@@ -7,15 +7,48 @@ import json
 import math
 import re
 import statistics
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
 from zaxy.benchmark import _event_context
 from zaxy.embedding import EmbeddingProvider, HashEmbeddingProvider
 from zaxy.event import Event, EventLog
+from zaxy.purpose import PurposeProfile, purpose_profile
 
 _IDENTITY_RE = re.compile(r"\b(?:identity|doc|decision|task|user|goal)-code-\d{4}\b")
+_PURPOSE_CONSOLIDATION_RULES: dict[str, dict[str, Any]] = {
+    "coding": {
+        "strategy": "purpose_exemplar",
+        "min_records": 8,
+        "preserve_all": False,
+        "reason": "preserve_invariants_failed_attempts_and_test_evidence",
+    },
+    "review": {
+        "strategy": "purpose_preserve_all",
+        "min_records": 0,
+        "preserve_all": True,
+        "reason": "preserve_blocking_risks_decisions_and_verification",
+    },
+    "release": {
+        "strategy": "purpose_preserve_all",
+        "min_records": 0,
+        "preserve_all": True,
+        "reason": "preserve_release_gates_regressions_and_external_blockers",
+    },
+    "security": {
+        "strategy": "purpose_preserve_all",
+        "min_records": 0,
+        "preserve_all": True,
+        "reason": "preserve_threats_controls_findings_and_risk_acceptance",
+    },
+    "research": {
+        "strategy": "purpose_exemplar",
+        "min_records": 8,
+        "preserve_all": False,
+        "reason": "preserve_claims_sources_contradictions_and_open_questions",
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -46,6 +79,8 @@ class CompactionProjectionRecord:
     text: str
     identities: tuple[str, ...]
     citations: tuple[str, ...]
+    authority_scope: str = "authoritative"
+    purpose_reasons: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -58,6 +93,8 @@ class CompactionProjection:
     source_identities: tuple[str, ...]
     records: tuple[CompactionProjectionRecord, ...]
     audit: CompactionAuditReport
+    purpose: dict[str, Any] = field(default_factory=dict)
+    consolidation_policy: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -196,6 +233,7 @@ def build_compaction_projection(
     provider: EmbeddingProvider | None = None,
     strategy: str = "medoid",
     max_records: int = 5,
+    purpose: PurposeProfile | dict[str, Any] | str | None = None,
 ) -> CompactionProjection:
     """Build a source-backed compaction projection without rewriting the log."""
     if strategy not in {"medoid", "exemplar"}:
@@ -206,18 +244,44 @@ def build_compaction_projection(
     provider = provider or HashEmbeddingProvider()
     events = eventlog.read_all()
     audit = audit_event_log(eventlog, provider=provider)
-    selected = (
-        [_select_medoid(events, provider)]
-        if strategy == "medoid" and events
-        else _select_exemplars(events, provider, max_records)
+    profile = purpose_profile(purpose)
+    authoritative_events, diagnostic_events, consolidation_policy = _purpose_consolidation_plan(
+        events,
+        profile,
+        requested_strategy=strategy,
+        max_records=max_records,
     )
-    selected = [event for event in selected if event is not None]
+    effective_strategy = str(consolidation_policy["strategy"])
+    selected = _select_projection_events(
+        authoritative_events,
+        provider=provider,
+        strategy=effective_strategy,
+        max_records=int(consolidation_policy.get("effective_max_records") or max_records),
+    )
     records = tuple(
-        _projection_record(event, "medoid" if strategy == "medoid" else "exemplar")
+        _projection_record(
+            event,
+            _projection_record_kind(event, profile, effective_strategy),
+            authority_scope="authoritative",
+            purpose_reasons=_purpose_record_reasons(event, profile),
+        )
         for event in selected
     )
+    diagnostic_identities = tuple(
+        identity
+        for event in diagnostic_events
+        for identity in _event_identities(event)
+    )
+    consolidation_policy = {
+        **consolidation_policy,
+        "authoritative_event_seqs": [event.seq for event in authoritative_events],
+        "diagnostic_event_seqs": [event.seq for event in diagnostic_events],
+        "diagnostic_identities": list(dict.fromkeys(diagnostic_identities)),
+    }
     payload = {
-        "strategy": strategy,
+        "strategy": effective_strategy,
+        "purpose": profile.to_dict(),
+        "consolidation_policy": consolidation_policy,
         "source_hashes": [event.hash for event in events],
         "records": [record.event_ref for record in records],
     }
@@ -226,11 +290,13 @@ def build_compaction_projection(
     ).hexdigest()
     return CompactionProjection(
         projection_id=projection_id,
-        strategy=strategy,
+        strategy=effective_strategy,
         source_event_count=len(events),
         source_identities=audit.identities,
         records=records,
         audit=audit,
+        purpose=profile.to_dict(),
+        consolidation_policy=consolidation_policy,
     )
 
 
@@ -310,6 +376,10 @@ def _event_identities(event: Event) -> tuple[str, ...]:
         value = _string(payload.get(key))
         if value:
             identities.append(value)
+    for key in ("mission_id", "worker_id", "finding_id", "claim_key", "claim_value"):
+        value = _string(payload.get(key))
+        if value:
+            identities.append(value)
     content = " ".join(
         value
         for value in (
@@ -323,7 +393,13 @@ def _event_identities(event: Event) -> tuple[str, ...]:
     return tuple(dict.fromkeys(identities))
 
 
-def _projection_record(event: Event, kind: str) -> CompactionProjectionRecord:
+def _projection_record(
+    event: Event,
+    kind: str,
+    *,
+    authority_scope: str = "authoritative",
+    purpose_reasons: tuple[str, ...] = (),
+) -> CompactionProjectionRecord:
     identities = _event_identities(event)
     return CompactionProjectionRecord(
         kind=kind,
@@ -332,6 +408,173 @@ def _projection_record(event: Event, kind: str) -> CompactionProjectionRecord:
         text=_event_context(event.model_dump()),
         identities=identities,
         citations=tuple(identity for identity in identities if _is_source_citation(identity)),
+        authority_scope=authority_scope,
+        purpose_reasons=purpose_reasons,
+    )
+
+
+def _select_projection_events(
+    events: list[Event],
+    *,
+    provider: EmbeddingProvider,
+    strategy: str,
+    max_records: int,
+) -> list[Event]:
+    if strategy == "medoid" and events:
+        medoid = _select_medoid(events, provider)
+        return [medoid] if medoid is not None else []
+    if strategy == "coordinate_authoritative":
+        return list(events)
+    if strategy == "purpose_preserve_all":
+        return list(events)
+    return _select_exemplars(events, provider, max_records)
+
+
+def _purpose_consolidation_plan(
+    events: list[Event],
+    profile: PurposeProfile,
+    *,
+    requested_strategy: str,
+    max_records: int,
+) -> tuple[list[Event], list[Event], dict[str, Any]]:
+    if profile.profile == "general":
+        return list(events), [], {
+            "profile": profile.profile,
+            "strategy": requested_strategy,
+            "requested_strategy": requested_strategy,
+            "effective_max_records": max_records,
+            "preserve_all": False,
+            "authoritative_count": len(events),
+            "diagnostic_count": 0,
+            "suppressed_count": 0,
+            "retain": list(profile.retain),
+            "suppress": list(profile.suppress),
+            "warnings": list(profile.warnings),
+        }
+    if profile.profile != "coordinate":
+        rule = _PURPOSE_CONSOLIDATION_RULES.get(profile.profile, {})
+        preserve_all = bool(rule.get("preserve_all"))
+        effective_max_records = (
+            len(events)
+            if preserve_all
+            else max(max_records, int(rule.get("min_records") or max_records))
+        )
+        return list(events), [], {
+            "profile": profile.profile,
+            "strategy": str(rule.get("strategy") or "purpose_exemplar"),
+            "requested_strategy": requested_strategy,
+            "effective_max_records": effective_max_records,
+            "preserve_all": preserve_all,
+            "authoritative_count": len(events),
+            "diagnostic_count": 0,
+            "suppressed_count": 0,
+            "retain": list(profile.retain),
+            "suppress": list(profile.suppress),
+            "warnings": list(profile.warnings),
+            "purpose_consolidation_reason": str(rule.get("reason") or "purpose_retained"),
+        }
+    authoritative: list[Event] = []
+    diagnostic: list[Event] = []
+    for event in events:
+        if _is_coordinate_authoritative_event(event):
+            authoritative.append(event)
+        elif _is_coordinate_diagnostic_event(event):
+            diagnostic.append(event)
+        else:
+            authoritative.append(event)
+    return authoritative, diagnostic, {
+        "profile": profile.profile,
+        "strategy": "coordinate_authoritative",
+        "requested_strategy": requested_strategy,
+        "effective_max_records": len(authoritative),
+        "preserve_all": True,
+        "max_records_ignored": len(authoritative) > max_records,
+        "authoritative_count": len(authoritative),
+        "diagnostic_count": len(diagnostic),
+        "suppressed_count": len(diagnostic),
+        "retain": list(profile.retain),
+        "suppress": list(profile.suppress),
+        "warnings": list(profile.warnings),
+    }
+
+
+def _projection_record_kind(event: Event, profile: PurposeProfile, strategy: str) -> str:
+    if profile.profile == "coordinate":
+        if event.type in {"coordination.proof_packet.created", "coordination.handoff.created"}:
+            return "coordinate_proof"
+        return "coordinate_authoritative"
+    if strategy == "purpose_preserve_all":
+        return f"{profile.profile}_retained"
+    if strategy == "purpose_exemplar":
+        return f"{profile.profile}_exemplar"
+    return "medoid" if strategy == "medoid" else "exemplar"
+
+
+def _purpose_record_reasons(event: Event, profile: PurposeProfile) -> tuple[str, ...]:
+    if profile.profile != "coordinate":
+        reasons = [
+            str(value)
+            for value in (
+                *profile.retain,
+                *profile.ontology_lens[:2],
+            )
+            if value
+        ]
+        return tuple(dict.fromkeys(reasons)) or ("purpose_retained",)
+    if event.type in {"coordination.proof_packet.created", "coordination.handoff.created"}:
+        return ("proof_or_handoff",)
+    status = _event_status(event)
+    if status in {"accepted", "promoted", "approved"}:
+        return ("accepted_parent_state",)
+    if _string(event.payload.get("authority_scope")) == "mission-parent":
+        return ("mission_parent_authority",)
+    return ("coordinate_authoritative",)
+
+
+def _is_coordinate_authoritative_event(event: Event) -> bool:
+    if event.type in {
+        "coordination.proof_packet.created",
+        "coordination.handoff.created",
+        "coordination.finding.promoted",
+        "coordination.finding.accepted",
+    }:
+        return True
+    status = _event_status(event)
+    return (
+        status in {"accepted", "promoted", "approved"} and _coordinate_has_authority_refs(event)
+        or _string(event.payload.get("authority_scope")) == "mission-parent"
+    )
+
+
+def _is_coordinate_diagnostic_event(event: Event) -> bool:
+    if event.payload.get("stale") is True:
+        return True
+    status = _event_status(event)
+    if status in {"pending", "rejected", "deferred", "stale", "superseded"}:
+        return True
+    return event.type.startswith("coordination.")
+
+
+def _event_status(event: Event) -> str | None:
+    for key in ("coordination_status", "finding_status", "status"):
+        value = _string(event.payload.get(key))
+        if value:
+            return value.strip().casefold().replace(" ", "_").replace("-", "_")
+    return None
+
+
+def _coordinate_has_authority_refs(event: Event) -> bool:
+    for key in (
+        "promotion_event_ref",
+        "review_event_ref",
+        "source_event_ref",
+        "handoff_event_ref",
+    ):
+        if _string(event.payload.get(key)):
+            return True
+    return (
+        isinstance(event.payload.get("source_event_seq"), int)
+        and bool(_string(event.payload.get("source_event_hash")))
     )
 
 
@@ -485,6 +728,8 @@ def _projection_from_payload(payload: dict[str, Any]) -> CompactionProjection:
                 text=str(record["text"]),
                 identities=tuple(str(value) for value in record["identities"]),
                 citations=tuple(str(value) for value in record["citations"]),
+                authority_scope=str(record.get("authority_scope") or "authoritative"),
+                purpose_reasons=tuple(str(value) for value in record.get("purpose_reasons", ())),
             )
             for record in payload["records"]
         ),
@@ -506,6 +751,8 @@ def _projection_from_payload(payload: dict[str, Any]) -> CompactionProjection:
             ),
             unsafe_reasons=tuple(str(value) for value in payload["audit"]["unsafe_reasons"]),
         ),
+        purpose=dict(payload.get("purpose") or {}),
+        consolidation_policy=dict(payload.get("consolidation_policy") or {}),
     )
 
 

@@ -51,7 +51,9 @@
       </ul>
       <p>Still pending:</p>
       <ul>
-        <li>External Mem0, Agent Memory, and ActiveGraph adapter packages that replace the generated templates with real pinned <code>run_command</code> entries and publish reproducible runner packages.</li>
+        <li>External Mem0, Agent Memory, ActiveGraph, Quarq, and Semantic Reach/Hybi adapter packages that replace the generated templates with real pinned <code>run_command</code> entries and publish reproducible runner packages.</li>
+        <li>The CoordinationBench public-claim gate is now implemented for Quarq and Semantic Reach/Hybi; it stays blocked while those adapters are disclosure-only and passes only after locally scored result audits exist.</li>
+        <li>A refreshed public-derived CoordinationBench report after the in-repo Zaxy-owned adapter&#x27;s source-aware answer packet and proof-backed synthesis quality scoring are rerun against the holdout packs.</li>
       </ul>
       <h2 id="product-position">Product Position</h2>
       <p>Zaxy Coordinate is the coordinator memory layer for agent teams:</p>
@@ -198,6 +200,8 @@ zaxy coordinate audit-report --mission auth-main</code></pre>
         <li>Which findings conflict or duplicate each other?</li>
         <li>Which findings lack evidence?</li>
         <li>Which files, commands, tests, transcripts, or tool outputs support each claim?</li>
+        <li>Which composed answer candidates were synthesized from accepted or pending evidence, and which source rows were included, excluded as duplicates, stale, or contradictory?</li>
+        <li>Which proof packets bind the composed answer to accepted finding ids, handoff refs, conflicts, and non-authoritative diagnostic rows in the graph?</li>
         <li>What coordinator decision is needed next?</li>
       </ul>
       <p>The brief must separate:</p>
@@ -214,6 +218,7 @@ zaxy coordinate audit-report --mission auth-main</code></pre>
       <p><code>zaxy coordinate checkout</code> returns only parent-accepted state by default:</p>
       <pre><code class="language-bash">zaxy coordinate checkout --mission auth-main</code></pre>
       <p>Worker-local findings should never leak into accepted project memory unless the coordinator explicitly promotes them. Operators can request non-authoritative pending and conflict diagnostics explicitly:</p>
+      <p>Synthesis over Coordinate checkout must use parent-accepted state by default. Pending worker-local rows may appear only in diagnostics and must be labeled non-authoritative.</p>
       <pre><code class="language-bash">zaxy coordinate checkout --mission auth-main --include-diagnostics</code></pre>
       <p>This feature is a direct guard against memory contamination.</p>
       <h2 id="evidence-ledger">Evidence Ledger</h2>
@@ -281,6 +286,7 @@ zaxy coordinate audit-report --mission auth-main</code></pre>
         <li>evidence coverage</li>
         <li>parent-checkout answerability</li>
         <li>citation coverage</li>
+        <li>purpose feedback coverage</li>
         <li>replayability from Eventloom only</li>
         <li>injected tokens</li>
         <li>returned tokens</li>
@@ -390,7 +396,8 @@ zaxy coordinate benchmark-adapter validate-result mem0=coordinationbench-kit/tem
         <li>Workers can report findings with citations and evidence.</li>
         <li>The coordinator can produce a cited brief that separates accepted, pending, rejected, deferred, and conflicted state.</li>
         <li>Accepted-state checkout excludes unpromoted worker findings by default.</li>
-        <li>The final handoff is replayable from Eventloom only.</li>
+        <li>Coordinator briefs and handoffs can include cited synthesis artifacts that explain composed accepted-state answers without leaking unpromoted worker findings.</li>
+        <li>The final handoff and its supporting proof packets are replayable from Eventloom only; mission inspection links handoff records to proof refs through cited <code>handoff_event_ref</code> values.</li>
         <li>CoordinationBench shows Zaxy Coordinate beating implemented flat transcript, markdown, and BM25 baselines on conflict recall, accepted state precision, citation coverage, and token efficiency.</li>
         <li>Vector, non-coordinate Zaxy, and external competitor comparisons appear only when their pinned adapters have run through the same harness; otherwise they remain disclosure-only and are not used for public superiority claims.</li>
       </ul>

@@ -7,6 +7,8 @@ Tools exposed:
 - memory_append: Append a typed event to the log.
 - memory_query: Query the temporal knowledge graph.
 - memory_feedback: Record retrieval feedback for a graph entity.
+- memory_synthesis_artifact: Persist checkout synthesis answer candidates and feedback.
+- memory_synthesis_evidence: Record feedback for one synthesis ledger row.
 - memory_replay: Replay events from a session.
 - memory_invalidate: Mark a fact as superseded.
 """
@@ -37,7 +39,7 @@ from mcp.types import TextContent, Tool
 from zaxy.capabilities import build_memory_bootstrap, build_memory_capabilities
 from zaxy.config import get_settings
 from zaxy.context import Context, ContextAssemblyPolicy, context_counts
-from zaxy.core import ContextAssembly, build_memory_checkout
+from zaxy.core import ContextAssembly, MemoryCheckout, build_memory_checkout
 from zaxy.extract import extract
 from zaxy.lifecycle import (
     build_session_ended_event,
@@ -50,6 +52,7 @@ from zaxy.memory_persistence import record_memory_activity
 from zaxy.metrics import get_metrics
 from zaxy.pagination import encode_query_cursor, validate_query_cursor
 from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
+from zaxy.purpose import purpose_profile
 from zaxy.query import QueryRouter, build_retention_policy
 from zaxy.refs import MemoryRef, MemoryRefStore
 from zaxy.remote_security import AuditEventExporter, RemoteAuditEvent, SessionRateLimiter
@@ -65,6 +68,13 @@ from zaxy.security import (
     validate_session_id,
 )
 from zaxy.session import SessionManager
+from zaxy.synthesis_artifact import (
+    build_synthesis_artifact,
+    build_synthesis_candidate_event_payload,
+    build_synthesis_evidence_event_payload,
+    normalize_synthesis_outcome,
+    synthesis_outcome_event_type,
+)
 from zaxy.trace import MemoryTracer
 from zaxy.verbatim import VerbatimIndex
 from zaxy.working_set import build_working_set, format_working_set
@@ -163,10 +173,74 @@ TOOLS = [
                 "score": {"type": "number", "description": "Original retrieval score"},
                 "citation": {"type": "string", "description": "Eventloom citation for the retrieved context"},
                 "reason": {"type": "string", "description": "Short rationale for the feedback"},
+                "purpose": {
+                    "oneOf": [{"type": "string"}, {"type": "object"}],
+                    "description": "Optional purpose profile or preset that made this memory useful",
+                },
+                "outcome": {
+                    "type": "string",
+                    "description": "Optional action outcome, e.g. supported_handoff or avoided_failed_path",
+                },
                 "importance": {
                     "type": "number",
                     "description": "Optional 0..1 reinforcement importance for positive feedback",
                 },
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_synthesis_artifact",
+        description="Persist Memory Checkout answer candidates as synthesis artifacts and optional outcome feedback.",
+        inputSchema={
+            "type": "object",
+            "required": ["checkout"],
+            "properties": {
+                "checkout": {
+                    "type": "object",
+                    "description": "Memory Checkout response payload containing diagnostics.synthesis.answer_candidates",
+                },
+                "candidate": {
+                    "type": "object",
+                    "description": "Optional selected answer candidate from checkout diagnostics",
+                },
+                "outcome": {
+                    "type": "string",
+                    "enum": ["used", "helpful", "rejected", "corrected", "excluded"],
+                    "description": "Optional outcome to record for the selected answer candidate",
+                },
+                "reason": {"type": "string", "description": "Short rationale for candidate outcome feedback"},
+                "actor": {"type": "string", "description": "Actor recording the artifact", "default": "zaxy"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_synthesis_evidence",
+        description="Record feedback for one Memory Checkout synthesis ledger row.",
+        inputSchema={
+            "type": "object",
+            "required": ["checkout", "row", "outcome"],
+            "properties": {
+                "checkout": {
+                    "type": "object",
+                    "description": "Memory Checkout response payload containing diagnostics.synthesis.ledger_rows",
+                },
+                "row": {
+                    "type": "object",
+                    "description": "One ledger row from diagnostics.synthesis.ledger_rows",
+                },
+                "candidate": {
+                    "type": "object",
+                    "description": "Optional answer candidate associated with the ledger row",
+                },
+                "outcome": {
+                    "type": "string",
+                    "enum": ["used", "helpful", "excluded"],
+                    "description": "Evidence-row outcome to record",
+                },
+                "reason": {"type": "string", "description": "Short rationale for evidence-row feedback"},
+                "actor": {"type": "string", "description": "Actor recording the evidence feedback", "default": "zaxy"},
             },
             "additionalProperties": False,
         },
@@ -294,6 +368,10 @@ TOOLS = [
                 "replay_from_seq": {"type": "integer", "default": 1},
                 "limit": {"type": "integer", "default": 10},
                 "max_recent_events": {"type": "integer", "default": 20},
+                "purpose": {
+                    "oneOf": [{"type": "string"}, {"type": "object"}],
+                    "description": "Purpose profile name or object used to condition checkout guidance.",
+                },
             },
             "additionalProperties": False,
         },
@@ -509,6 +587,55 @@ TOOLS = [
                 "next_steps": {"type": "array", "items": {"type": "string"}},
                 "risks": {"type": "array", "items": {"type": "string"}},
                 "actor": {"type": "string", "default": "coordinator"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="coordination_record_synthesis_artifact",
+        description=(
+            "Persist a Coordinate synthesis proof packet for a mission-scoped Memory Checkout. "
+            "Handoff-scoped packets require handoff_id and return handoff_event_ref with the cited handoff seq/hash."
+        ),
+        inputSchema={
+            "type": "object",
+            "required": ["mission_id", "checkout"],
+            "properties": {
+                "mission_id": {"type": "string"},
+                "checkout": {
+                    "type": "object",
+                    "description": "Memory Checkout payload scoped to the same mission_id",
+                },
+                "decision_scope": {"type": "string", "default": "brief"},
+                "handoff_id": {
+                    "type": "string",
+                    "description": "Required when decision_scope is handoff; binds proof to a handoff event.",
+                },
+                "candidate": {
+                    "type": "object",
+                    "description": "Optional selected answer candidate from checkout diagnostics",
+                },
+                "outcome": {
+                    "type": "string",
+                    "enum": ["used", "helpful", "rejected", "corrected", "excluded"],
+                },
+                "reason": {"type": "string"},
+                "actor": {"type": "string", "default": "coordinator"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="coordination_proof_trace",
+        description="Replay a Coordinate proof packet chain by artifact_id, handoff_id, or proof_seq.",
+        inputSchema={
+            "type": "object",
+            "required": ["mission_id"],
+            "properties": {
+                "mission_id": {"type": "string"},
+                "artifact_id": {"type": "string"},
+                "handoff_id": {"type": "string"},
+                "proof_seq": {"type": "integer", "minimum": 1},
             },
             "additionalProperties": False,
         },
@@ -950,6 +1077,118 @@ class ZaxyMCPServer:
         await self._project_coordination_result(result.event, session_id=mission_id)
         return [TextContent(type="text", text=json.dumps(_coordination_result_payload(result, result.event.type)))]
 
+    async def handle_coordination_record_synthesis_artifact(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle coordination_record_synthesis_artifact tool calls."""
+        mission_id = validate_session_id(_required_text(arguments.get("mission_id"), "mission_id"))
+        self._enforce_coordination_mission_scope(mission_id)
+        checkout_payload = arguments.get("checkout")
+        if not isinstance(checkout_payload, dict):
+            raise ValueError("checkout must be a Memory Checkout object")
+        checkout = _memory_checkout_from_payload(checkout_payload)
+        if checkout.session_id != mission_id:
+            raise ValueError("Coordinate synthesis checkout session_id must match mission_id")
+        actor = _optional_text(arguments.get("actor")) or "coordinator"
+        decision_scope = _optional_text(arguments.get("decision_scope")) or "brief"
+        handoff_id = _optional_text(arguments.get("handoff_id"))
+        has_candidate = arguments.get("candidate") is not None
+        has_outcome = arguments.get("outcome") is not None
+        if has_candidate != has_outcome:
+            raise ValueError("candidate and outcome must be supplied together")
+
+        candidate_payload: dict[str, Any] | None = None
+        candidate_event_type: str | None = None
+        normalized_outcome: str | None = None
+        if has_candidate and has_outcome:
+            candidate = arguments.get("candidate")
+            if not isinstance(candidate, dict):
+                raise ValueError("candidate must be an object")
+            raw_outcome = arguments.get("outcome")
+            if not isinstance(raw_outcome, str):
+                raise ValueError("outcome must be supplied with candidate")
+            normalized_outcome = normalize_synthesis_outcome(raw_outcome)
+            candidate_event_type = synthesis_outcome_event_type(normalized_outcome)
+            candidate_payload = build_synthesis_candidate_event_payload(
+                checkout=checkout,
+                candidate=candidate,
+                outcome=normalized_outcome,
+                reason=_optional_text(arguments.get("reason")),
+            )
+
+        artifact_payload = build_synthesis_artifact(checkout)
+        proof_packet = self._coordination_manager().proof_packet(
+            mission_id,
+            artifact_payload,
+            decision_scope=decision_scope,
+            handoff_id=handoff_id,
+        )
+        proof_payload = validate_payload(proof_packet.to_dict())
+        eventlog = self.session_manager.get(mission_id).eventlog
+        artifact_event = eventlog.append(
+            "memory.synthesis.artifact.created",
+            actor=actor,
+            payload=validate_payload(artifact_payload),
+            thread=mission_id,
+        )
+        await self._project_coordination_result(artifact_event, session_id=mission_id)
+
+        candidate_event = None
+        if candidate_payload is not None and candidate_event_type is not None:
+            candidate_event = eventlog.append(
+                candidate_event_type,
+                actor=actor,
+                payload=validate_payload(candidate_payload),
+                thread=mission_id,
+            )
+            await self._project_coordination_result(candidate_event, session_id=mission_id)
+
+        proof_event = eventlog.append(
+            "coordination.proof_packet.created",
+            actor=actor,
+            payload=proof_payload,
+            thread=mission_id,
+        )
+        await self._project_coordination_result(proof_event, session_id=mission_id)
+        response = {
+            "artifact_id": artifact_payload["artifact_id"],
+            "artifact_event": {
+                "seq": artifact_event.seq,
+                "hash": artifact_event.hash,
+                "event_type": artifact_event.type,
+            },
+            "candidate_event": (
+                {
+                    "seq": candidate_event.seq,
+                    "hash": candidate_event.hash,
+                    "event_type": candidate_event_type,
+                    "outcome": normalized_outcome,
+                }
+                if candidate_event is not None
+                else None
+            ),
+            "proof_event": {
+                "seq": proof_event.seq,
+                "hash": proof_event.hash,
+                "event_type": proof_event.type,
+            },
+            "proof_packet": proof_payload,
+        }
+        return [TextContent(type="text", text=json.dumps(response, indent=2))]
+
+    async def handle_coordination_proof_trace(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle coordination_proof_trace tool calls."""
+        mission_id = validate_session_id(_required_text(arguments.get("mission_id"), "mission_id"))
+        self._enforce_coordination_mission_scope(mission_id)
+        proof_seq = arguments.get("proof_seq")
+        if proof_seq is not None and (not isinstance(proof_seq, int) or proof_seq < 1):
+            raise ValueError("proof_seq must be a positive integer")
+        trace = self._coordination_manager().proof_trace(
+            mission_id,
+            artifact_id=_optional_text(arguments.get("artifact_id")),
+            handoff_id=_optional_text(arguments.get("handoff_id")),
+            proof_seq=proof_seq,
+        )
+        return [TextContent(type="text", text=json.dumps(trace.to_dict(), indent=2))]
+
     def _coordination_manager(self) -> Any:
         """Return a coordination manager bound to this server's session manager."""
         from zaxy.coordination import CoordinationManager
@@ -1121,6 +1360,12 @@ class ZaxyMCPServer:
             "citation": _optional_text(arguments.get("citation")),
             "reason": _optional_text(arguments.get("reason")),
         }
+        purpose_payload = _purpose_payload(arguments.get("purpose"))
+        if purpose_payload:
+            payload["purpose"] = purpose_payload
+        outcome = _optional_text(arguments.get("outcome"))
+        if outcome:
+            payload["outcome"] = outcome
         event_type = "memory.feedback"
         if feedback in {"used", "helpful"}:
             event_type = "memory.reinforced"
@@ -1148,6 +1393,137 @@ class ZaxyMCPServer:
                 text=json.dumps({"seq": event.seq, "hash": event.hash, "event_type": event_type}),
             )
         ]
+
+    async def handle_memory_synthesis_artifact(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_synthesis_artifact tool call."""
+        checkout_payload = arguments.get("checkout")
+        if not isinstance(checkout_payload, dict):
+            raise ValueError("checkout must be a Memory Checkout object")
+        actor = _optional_text(arguments.get("actor")) or "zaxy"
+        checkout = _memory_checkout_from_payload(checkout_payload)
+        session_id = self._session_id_from_arguments(
+            {"session_id": checkout.session_id},
+            default=self._default_session_id,
+        )
+        has_candidate = arguments.get("candidate") is not None
+        has_outcome = arguments.get("outcome") is not None
+        if has_candidate != has_outcome:
+            raise ValueError("candidate and outcome must be supplied together")
+
+        candidate_event = None
+        candidate_event_type: str | None = None
+        normalized_outcome: str | None = None
+        candidate_event_payload: dict[str, Any] | None = None
+        if has_candidate and has_outcome:
+            candidate = arguments.get("candidate")
+            if not isinstance(candidate, dict):
+                raise ValueError("candidate must be an object")
+            raw_outcome = arguments.get("outcome")
+            if not isinstance(raw_outcome, str):
+                raise ValueError("outcome must be supplied with candidate")
+            normalized_outcome = normalize_synthesis_outcome(raw_outcome)
+            candidate_event_payload = build_synthesis_candidate_event_payload(
+                checkout=checkout,
+                candidate=candidate,
+                outcome=normalized_outcome,
+                reason=_optional_text(arguments.get("reason")),
+            )
+            candidate_event_type = synthesis_outcome_event_type(normalized_outcome)
+
+        artifact_payload = build_synthesis_artifact(checkout)
+        eventlog = self.session_manager.get(session_id).eventlog
+        artifact_event = eventlog.append(
+            "memory.synthesis.artifact.created",
+            actor=actor,
+            payload=validate_payload(artifact_payload),
+            thread=session_id,
+        )
+        extraction = extract(artifact_event)
+        await self.graph.upsert_extraction(extraction, session_id=session_id)
+        await self.tracer.trace_append("memory.synthesis.artifact.created", actor, artifact_event.seq)
+
+        if candidate_event_payload is not None and candidate_event_type is not None:
+            candidate_event = eventlog.append(
+                candidate_event_type,
+                actor=actor,
+                payload=validate_payload(candidate_event_payload),
+                thread=session_id,
+            )
+            extraction = extract(candidate_event)
+            await self.graph.upsert_extraction(extraction, session_id=session_id)
+            await self.tracer.trace_append(candidate_event_type, actor, candidate_event.seq)
+
+        response = {
+            "artifact_id": artifact_payload["artifact_id"],
+            "artifact_event": {
+                "seq": artifact_event.seq,
+                "hash": artifact_event.hash,
+                "event_type": "memory.synthesis.artifact.created",
+            },
+            "candidate_event": (
+                {
+                    "seq": candidate_event.seq,
+                    "hash": candidate_event.hash,
+                    "event_type": candidate_event_type,
+                    "outcome": normalized_outcome,
+                }
+                if candidate_event is not None
+                else None
+            ),
+        }
+        return [TextContent(type="text", text=json.dumps(response, indent=2))]
+
+    async def handle_memory_synthesis_evidence(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_synthesis_evidence tool calls."""
+        checkout_payload = arguments.get("checkout")
+        if not isinstance(checkout_payload, dict):
+            raise ValueError("checkout must be a Memory Checkout object")
+        row = arguments.get("row")
+        if not isinstance(row, dict):
+            raise ValueError("row must be a synthesis ledger row object")
+        candidate = arguments.get("candidate")
+        if candidate is not None and not isinstance(candidate, dict):
+            raise ValueError("candidate must be an object")
+        raw_outcome = arguments.get("outcome")
+        if not isinstance(raw_outcome, str):
+            raise ValueError("outcome must be one of: used, helpful, excluded")
+        normalized_outcome = normalize_synthesis_outcome(raw_outcome)
+        if normalized_outcome not in {"used", "excluded"}:
+            raise ValueError("outcome must be one of: used, helpful, excluded")
+        actor = _optional_text(arguments.get("actor")) or "zaxy"
+        checkout = _memory_checkout_from_payload(checkout_payload)
+        _require_synthesis_row_in_checkout(checkout, row)
+        session_id = self._session_id_from_arguments(
+            {"session_id": checkout.session_id},
+            default=self._default_session_id,
+        )
+        payload = build_synthesis_evidence_event_payload(
+            checkout=checkout,
+            row=row,
+            outcome=normalized_outcome,
+            candidate=candidate,
+            reason=_optional_text(arguments.get("reason")),
+        )
+        event_type = "memory.evidence.reinforced" if normalized_outcome == "used" else "memory.evidence.excluded"
+        eventlog = self.session_manager.get(session_id).eventlog
+        event = eventlog.append(
+            event_type,
+            actor=actor,
+            payload=validate_payload(payload),
+            thread=session_id,
+        )
+        extraction = extract(event)
+        await self.graph.upsert_extraction(extraction, session_id=session_id)
+        await self.tracer.trace_append(event_type, actor, event.seq)
+        response = {
+            "seq": event.seq,
+            "hash": event.hash,
+            "event_type": event_type,
+            "outcome": normalized_outcome,
+            "source_group": payload.get("source_group"),
+            "fact_id": payload.get("fact_id"),
+        }
+        return [TextContent(type="text", text=json.dumps(response, indent=2))]
 
     async def handle_memory_skill(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle memory_skill lifecycle helper calls."""
@@ -1294,6 +1670,7 @@ class ZaxyMCPServer:
             query=query,
             assembly=_context_assembly_from_payload(assembly),
             ref=resolved_ref,
+            purpose=arguments.get("purpose"),
         ).to_dict()
         record_memory_activity(
             self._eventloom_path,
@@ -1722,6 +2099,56 @@ def _context_assembly_from_payload(payload: dict[str, Any]) -> ContextAssembly:
     )
 
 
+def _memory_checkout_from_payload(payload: dict[str, Any]) -> MemoryCheckout:
+    """Convert an MCP checkout payload into the shared core checkout contract."""
+    return MemoryCheckout(
+        session_id=validate_session_id(str(payload.get("session_id") or "default")),
+        query=str(payload.get("query") or ""),
+        prompt=str(payload.get("prompt") or ""),
+        working_set=_dict_payload(payload.get("working_set")),
+        ref=_optional_dict_payload(payload.get("ref")),
+        current_facts=_dict_list_payload(payload.get("current_facts")),
+        evidence=_dict_list_payload(payload.get("evidence")),
+        provenance=_dict_list_payload(payload.get("provenance")),
+        retention=_dict_payload(payload.get("retention")),
+        warnings=_string_payload_list(payload.get("warnings")),
+        guidance=_dict_payload(payload.get("guidance")),
+        quality=_dict_payload(payload.get("quality")),
+        diagnostics=_dict_payload(payload.get("diagnostics")),
+        context_counts=_int_dict_payload(payload.get("context_counts")),
+        replay_event_count=_int_payload(payload.get("replay_event_count")),
+        compacted=payload.get("compacted") is True,
+        assembly_policy=_dict_payload(payload.get("assembly_policy")),
+        purpose=_dict_payload(payload.get("purpose")),
+    )
+
+
+def _require_synthesis_row_in_checkout(checkout: MemoryCheckout, row: dict[str, Any]) -> None:
+    """Ensure MCP row feedback refers to a row carried by this checkout."""
+    identity = _synthesis_row_identity(row)
+    if not any(identity.values()):
+        raise ValueError("row must include fact_id, source_group, or citation")
+    diagnostics = checkout.diagnostics if isinstance(checkout.diagnostics, dict) else {}
+    synthesis = diagnostics.get("synthesis")
+    if not isinstance(synthesis, dict):
+        raise ValueError("checkout must include diagnostics.synthesis.ledger_rows")
+    ledger_rows = synthesis.get("ledger_rows")
+    if not isinstance(ledger_rows, list) or not ledger_rows:
+        raise ValueError("checkout must include diagnostics.synthesis.ledger_rows")
+    for ledger_row in ledger_rows:
+        if isinstance(ledger_row, dict) and _synthesis_row_identity(ledger_row) == identity:
+            return
+    raise ValueError("row must match diagnostics.synthesis.ledger_rows")
+
+
+def _synthesis_row_identity(row: dict[str, Any]) -> dict[str, str | None]:
+    return {
+        "fact_id": _optional_text(row.get("fact_id")),
+        "source_group": _optional_text(row.get("source_group")),
+        "citation": _optional_text(row.get("citation")),
+    }
+
+
 def _context_from_payload(payload: dict[str, Any]) -> Context:
     metadata = payload.get("metadata")
     metadata = metadata if isinstance(metadata, dict) else {}
@@ -1856,6 +2283,40 @@ def _normalize_feedback(feedback: object) -> str:
     return normalized
 
 
+def _dict_payload(value: object) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def _optional_dict_payload(value: object) -> dict[str, Any] | None:
+    return dict(value) if isinstance(value, dict) else None
+
+
+def _dict_list_payload(value: object) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [dict(item) for item in value if isinstance(item, dict)]
+
+
+def _string_payload_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
+def _int_dict_payload(value: object) -> dict[str, int]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        str(key): int(item)
+        for key, item in value.items()
+        if isinstance(item, int) and not isinstance(item, bool)
+    }
+
+
+def _int_payload(value: object) -> int:
+    return int(value) if isinstance(value, int) and not isinstance(value, bool) else 0
+
+
 def _skill_event_type(action: object) -> str:
     normalized = str(action).casefold().strip()
     allowed = {
@@ -1884,6 +2345,14 @@ def _optional_text(value: object) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def _purpose_payload(value: object) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if isinstance(value, str | dict):
+        return purpose_profile(value).to_dict()
+    raise ValueError("purpose must be a profile name or object")
 
 
 def _optional_text_list(value: object) -> list[str]:
@@ -1946,6 +2415,10 @@ async def _dispatch_tool_call(
         return await active_server.handle_memory_verbatim(arguments)
     if name == "memory_feedback":
         return await active_server.handle_memory_feedback(arguments)
+    if name == "memory_synthesis_artifact":
+        return await active_server.handle_memory_synthesis_artifact(arguments)
+    if name == "memory_synthesis_evidence":
+        return await active_server.handle_memory_synthesis_evidence(arguments)
     if name == "memory_skill":
         return await active_server.handle_memory_skill(arguments)
     if name == "memory_replay":
@@ -1988,6 +2461,10 @@ async def _dispatch_tool_call(
         return await active_server.handle_coordination_promote(arguments)
     if name == "coordination_handoff":
         return await active_server.handle_coordination_handoff(arguments)
+    if name == "coordination_record_synthesis_artifact":
+        return await active_server.handle_coordination_record_synthesis_artifact(arguments)
+    if name == "coordination_proof_trace":
+        return await active_server.handle_coordination_proof_trace(arguments)
     raise ValueError(f"Unknown tool: {name}")
 
 
@@ -2142,12 +2619,15 @@ async def proxy_main(coordinator: EmbeddedMcpRuntimeCoordinator) -> None:
     socket_path = str(record["socket_path"])
     reader, writer = await asyncio.open_unix_connection(socket_path)
     logger.info("zaxy_mcp_proxy_connected socket=%s", socket_path)
+    eof_sent = False
 
     async def stdin_to_socket() -> None:
+        nonlocal eof_sent
         while True:
             line = await asyncio.to_thread(sys.stdin.buffer.readline)
             if not line:
                 writer.write_eof()
+                eof_sent = True
                 await writer.drain()
                 break
             writer.write(line)
@@ -2166,6 +2646,11 @@ async def proxy_main(coordinator: EmbeddedMcpRuntimeCoordinator) -> None:
         for task in pending:
             task.cancel()
     finally:
+        if not eof_sent:
+            with suppress(Exception):
+                writer.write_eof()
+                eof_sent = True
+                await writer.drain()
         writer.close()
         with suppress(Exception):
             await writer.wait_closed()

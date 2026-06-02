@@ -134,9 +134,15 @@ The first production slice is implemented:
 
 Still pending:
 
-- External Mem0, Agent Memory, and ActiveGraph adapter packages that replace the
-  generated templates with real pinned `run_command` entries and publish
-  reproducible runner packages.
+- External Mem0, Agent Memory, ActiveGraph, Quarq, and Semantic Reach/Hybi
+  adapter packages that replace the generated templates with real pinned
+  `run_command` entries and publish reproducible runner packages.
+- The CoordinationBench public-claim gate is now implemented for Quarq and
+  Semantic Reach/Hybi; it stays blocked while those adapters are
+  disclosure-only and passes only after locally scored result audits exist.
+- A refreshed public-derived CoordinationBench report after the in-repo
+  Zaxy-owned adapter's source-aware answer packet and proof-backed synthesis
+  quality scoring are rerun against the holdout packs.
 
 ## Product Position
 
@@ -286,6 +292,11 @@ bounded, cited state object that a high-level coordinator can act on.
 - Which findings conflict or duplicate each other?
 - Which findings lack evidence?
 - Which files, commands, tests, transcripts, or tool outputs support each claim?
+- Which composed answer candidates were synthesized from accepted or pending
+  evidence, and which source rows were included, excluded as duplicates, stale,
+  or contradictory?
+- Which proof packets bind the composed answer to accepted finding ids,
+  handoff refs, conflicts, and non-authoritative diagnostic rows in the graph?
 - What coordinator decision is needed next?
 
 The brief must separate:
@@ -310,6 +321,10 @@ zaxy coordinate checkout --mission auth-main
 Worker-local findings should never leak into accepted project memory unless the
 coordinator explicitly promotes them. Operators can request non-authoritative
 pending and conflict diagnostics explicitly:
+
+Synthesis over Coordinate checkout must use parent-accepted state by default.
+Pending worker-local rows may appear only in diagnostics and must be labeled
+non-authoritative.
 
 ```bash
 zaxy coordinate checkout --mission auth-main --include-diagnostics
@@ -413,6 +428,7 @@ Report:
 - evidence coverage
 - parent-checkout answerability
 - citation coverage
+- purpose feedback coverage
 - replayability from Eventloom only
 - injected tokens
 - returned tokens
@@ -589,7 +605,12 @@ Zaxy Coordinate is ready to headline the product when:
 - The coordinator can produce a cited brief that separates accepted, pending,
   rejected, deferred, and conflicted state.
 - Accepted-state checkout excludes unpromoted worker findings by default.
-- The final handoff is replayable from Eventloom only.
+- Coordinator briefs and handoffs can include cited synthesis artifacts that
+  explain composed accepted-state answers without leaking unpromoted worker
+  findings.
+- The final handoff and its supporting proof packets are replayable from
+  Eventloom only; mission inspection links handoff records to proof refs through
+  cited `handoff_event_ref` values.
 - CoordinationBench shows Zaxy Coordinate beating implemented flat transcript,
   markdown, and BM25 baselines on conflict recall, accepted state precision,
   citation coverage, and token efficiency.

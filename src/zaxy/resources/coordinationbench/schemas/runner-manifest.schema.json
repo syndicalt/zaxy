@@ -17,7 +17,7 @@
   ],
   "properties": {
     "name": {
-      "enum": ["mem0", "agent_memory", "activegraph"]
+      "enum": ["mem0", "agent_memory", "activegraph", "quarq", "hybi"]
     },
     "display_name": {
       "type": "string",

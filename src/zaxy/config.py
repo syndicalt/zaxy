@@ -355,7 +355,7 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     reranker_provider: str = Field(
         default="none",
-        description="Reranker provider: none, lexical, http, or openai",
+        description="Reranker provider: none, lexical, http, late-interaction-http, or openai",
     )
     reranker_url: str | None = Field(
         default=None,

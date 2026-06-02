@@ -1,5 +1,5 @@
 {
-  "tool_count": 25,
+  "tool_count": 29,
   "tools": [
     {
       "description": "Append a typed event to the agent's persistent memory log.",
@@ -142,6 +142,21 @@
             "description": "Optional 0..1 reinforcement importance for positive feedback",
             "type": "number"
           },
+          "outcome": {
+            "description": "Optional action outcome, e.g. supported_handoff or avoided_failed_path",
+            "type": "string"
+          },
+          "purpose": {
+            "description": "Optional purpose profile or preset that made this memory useful",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object"
+              }
+            ]
+          },
           "query": {
             "description": "Query that returned the context",
             "type": "string"
@@ -172,6 +187,92 @@
         "type": "object"
       },
       "name": "memory_feedback"
+    },
+    {
+      "description": "Persist Memory Checkout answer candidates as synthesis artifacts and optional outcome feedback.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "default": "zaxy",
+            "description": "Actor recording the artifact",
+            "type": "string"
+          },
+          "candidate": {
+            "description": "Optional selected answer candidate from checkout diagnostics",
+            "type": "object"
+          },
+          "checkout": {
+            "description": "Memory Checkout response payload containing diagnostics.synthesis.answer_candidates",
+            "type": "object"
+          },
+          "outcome": {
+            "description": "Optional outcome to record for the selected answer candidate",
+            "enum": [
+              "used",
+              "helpful",
+              "rejected",
+              "corrected",
+              "excluded"
+            ],
+            "type": "string"
+          },
+          "reason": {
+            "description": "Short rationale for candidate outcome feedback",
+            "type": "string"
+          }
+        },
+        "required": [
+          "checkout"
+        ],
+        "type": "object"
+      },
+      "name": "memory_synthesis_artifact"
+    },
+    {
+      "description": "Record feedback for one Memory Checkout synthesis ledger row.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "default": "zaxy",
+            "description": "Actor recording the evidence feedback",
+            "type": "string"
+          },
+          "candidate": {
+            "description": "Optional answer candidate associated with the ledger row",
+            "type": "object"
+          },
+          "checkout": {
+            "description": "Memory Checkout response payload containing diagnostics.synthesis.ledger_rows",
+            "type": "object"
+          },
+          "outcome": {
+            "description": "Evidence-row outcome to record",
+            "enum": [
+              "used",
+              "helpful",
+              "excluded"
+            ],
+            "type": "string"
+          },
+          "reason": {
+            "description": "Short rationale for evidence-row feedback",
+            "type": "string"
+          },
+          "row": {
+            "description": "One ledger row from diagnostics.synthesis.ledger_rows",
+            "type": "object"
+          }
+        },
+        "required": [
+          "checkout",
+          "row",
+          "outcome"
+        ],
+        "type": "object"
+      },
+      "name": "memory_synthesis_evidence"
     },
     {
       "description": "Append a typed skill lifecycle event and project it into Skill Memory.",
@@ -377,6 +478,17 @@
           "max_recent_events": {
             "default": 20,
             "type": "integer"
+          },
+          "purpose": {
+            "description": "Purpose profile name or object used to condition checkout guidance.",
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "object"
+              }
+            ]
           },
           "query": {
             "type": "string"
@@ -811,6 +923,82 @@
         "type": "object"
       },
       "name": "coordination_handoff"
+    },
+    {
+      "description": "Persist a Coordinate synthesis proof packet for a mission-scoped Memory Checkout. Handoff-scoped packets require handoff_id and return handoff_event_ref with the cited handoff seq/hash.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "default": "coordinator",
+            "type": "string"
+          },
+          "candidate": {
+            "description": "Optional selected answer candidate from checkout diagnostics",
+            "type": "object"
+          },
+          "checkout": {
+            "description": "Memory Checkout payload scoped to the same mission_id",
+            "type": "object"
+          },
+          "decision_scope": {
+            "default": "brief",
+            "type": "string"
+          },
+          "handoff_id": {
+            "description": "Required when decision_scope is handoff; binds proof to a handoff event.",
+            "type": "string"
+          },
+          "mission_id": {
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "used",
+              "helpful",
+              "rejected",
+              "corrected",
+              "excluded"
+            ],
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "mission_id",
+          "checkout"
+        ],
+        "type": "object"
+      },
+      "name": "coordination_record_synthesis_artifact"
+    },
+    {
+      "description": "Replay a Coordinate proof packet chain by artifact_id, handoff_id, or proof_seq.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          },
+          "handoff_id": {
+            "type": "string"
+          },
+          "mission_id": {
+            "type": "string"
+          },
+          "proof_seq": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "mission_id"
+        ],
+        "type": "object"
+      },
+      "name": "coordination_proof_trace"
     }
   ]
 }

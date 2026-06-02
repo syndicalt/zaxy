@@ -184,7 +184,9 @@ a memory system can turn multiple isolated worker sessions into one governed
 parent mission history. The scorer reports accepted-finding precision and
 recall, conflict precision and recall, stale-claim rejection, duplicate
 consolidation, evidence coverage, parent-checkout answerability, citation
-coverage, Eventloom replayability, token estimates, and brief/promotion latency.
+coverage, accepted-state synthesis quality, non-authoritative leakage,
+purpose feedback coverage, Eventloom replayability, token estimates, and
+brief/promotion latency.
 
 The current official CoordinationBench adapter result is a first-party,
 same-harness run through the external CoordinationBench scorer. The adapter was
@@ -226,13 +228,71 @@ conflict detection across public-derived cases. Until independent review and
 unseen workload promotion are complete, Zaxy should not market a perfect
 CoordinationBench score as representative performance.
 
+The in-repo Zaxy-owned CoordinationBench adapter now emits a source-aware
+accepted-state answer packet for each case: `returned_text`, `answer_candidate`,
+`synthesis_artifact`, `support_source_ids`, `excluded_source_ids`, and
+`non_authoritative_rows_injected`. The scorer treats
+`accepted_state_synthesis_quality` as proof-backed: plain returned text is not
+enough to receive synthesis-quality credit. Public-derived holdout numbers must
+be rerun and archived before this adapter hardening changes any published
+holdout claim.
+The report also includes a machine-readable
+`coordinate_purpose_synthesis_gate` that passes only when accepted-state
+synthesis quality, non-authoritative leakage, Coordinate-purpose feedback
+coverage, citation coverage, parent-checkout answerability, and Eventloom
+replayability all meet their required floors. This is the gate for Zaxy
+Coordinate product claims; it is separate from the competitor claim gate.
+Coordinate proof packets are also projected into graph memory as
+mission-scoped proof nodes with accepted-finding, conflict, handoff, and
+non-authoritative-row edges, so benchmark evidence remains replayable and
+queryable instead of living only as text output.
+`purpose_feedback_coverage` is an internal Coordinate audit metric: Zaxy gets
+credit when accepted parent-state findings are feedback-ready with source
+citations, while external same-harness adapters get credit only when their
+strict result files include explicit Coordinate-purpose feedback events for the
+accepted findings. Disclosure-only competitor rows do not receive feedback
+coverage credit.
+
 The internal `coordination-real-v1` report is archived at
 [`reports/benchmarks/coordination-real-v1/coordination-benchmark.md`](../reports/benchmarks/coordination-real-v1/coordination-benchmark.md).
 It remains useful as a Zaxy development smoke test over real project history.
 It should not be used as the headline benchmark claim because it was produced
 inside the Zaxy repo and is easier to tune against than an external holdout
 pack. The report includes local baselines, disclosure-only adapter templates
-for Mem0, Agent Memory, and ActiveGraph, limitations, and reproduction commands.
+for Mem0, Agent Memory, ActiveGraph, Quarq, and Semantic Reach/Hybi,
+limitations, and reproduction commands. Its `competitor_claim_gate` is
+currently `blocked` for Quarq and Hybi, which means the report may disclose
+adapter status but must not be used as a same-harness public claim for either
+system.
+Its `coordinate_purpose_synthesis_gate` is `passed`, which means the internal
+real-history report is suitable as a development proof of the Coordinate
+purpose/synthesis contract while still not being a public competitor claim.
+
+## Purpose-Conditioned Memory Gate
+
+The `purpose-v1` benchmark is Zaxy's deterministic internal gate for the
+"memory is purpose" claim. It does not compare against Semantic Reach, Quarq,
+or other products. Comparative SOTA claims remain blocked until same-harness
+adapters are pinned and scored.
+
+Run:
+
+```bash
+python -m zaxy purpose-benchmark --output-dir reports/benchmarks/purpose-v1
+```
+
+Archived report:
+`reports/benchmarks/purpose-v1/purpose-benchmark.json`
+
+| Lane | Status | Score | What it proves |
+| --- | --- | ---: | --- |
+| Purpose Recall | passed | 1.000 | Purpose profiles apply recall floors and ontology evidence terms. |
+| Ontology Shift | passed | 1.000 | The same query resolves to distinct purpose-specific retrieval lenses. |
+| Consequence Retention | passed | 1.000 | Profiles retain failures, accepted decisions, risks, and proof outcomes. |
+| Governed Forgetting | passed | 1.000 | Decay mode protects obligations and risk memory while downweighting noise. |
+| Action Outcome Loop | passed | 1.000 | Feedback records useful-for-purpose outcome metadata. |
+| Cross-Role Citation | passed | 1.000 | The same citation can support different role-specific memories. |
+| Accepted-State Discipline | passed | 1.000 | Coordinate compaction keeps accepted parent state and suppresses pending worker rows. |
 
 The smaller `coordination-v1` workload remains as the contract seed. It includes
 three workers, overlapping auth-failure findings, duplicate evidence, stale
@@ -255,17 +315,21 @@ The current `coordination-v1` report is published at
 It uses workload fingerprint
 `4b6f01f5a0e9275bd6cd0238d439ee326d471483d5da3cc1dcc9a258d21bfafc` and reports:
 
-| System | Accepted precision | Conflict recall | Stale rejection | Parent answerability | Citation coverage |
-|--------|--------------------|-----------------|-----------------|----------------------|-------------------|
-| Zaxy Coordinate | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
-| Markdown notes | 0.400 | 0.000 | 0.000 | 0.000 | 0.000 |
-| BM25 worker logs | 0.333 | 0.000 | 0.000 | 0.000 | 0.000 |
-| Flat transcript | 0.200 | 0.000 | 0.000 | 0.000 | 0.000 |
+| System | Accepted precision | Conflict recall | Stale rejection | Parent answerability | Synthesis quality | Leakage guard | Citation coverage |
+|--------|--------------------|-----------------|-----------------|----------------------|-------------------|---------------|-------------------|
+| Zaxy Coordinate | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| Markdown notes | 0.400 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 |
+| BM25 worker logs | 0.333 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 |
+| Flat transcript | 0.200 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 |
 
-The same report lists Mem0, Agent Memory, and ActiveGraph as `not_run` with
-`disclosure_only` claim status until a pinned runner manifest or strict result
-file is available. That is deliberate: CoordinationBench should make the
-adapter gap visible without turning placeholder templates into public claims.
+The same report lists Mem0, Agent Memory, ActiveGraph, Quarq, and Semantic
+Reach/Hybi as `not_run` with `disclosure_only` claim status until a pinned
+runner manifest or strict result file is available. It also writes a
+machine-readable `competitor_claim_gate`; public same-harness claims for Quarq
+or Hybi are blocked until the gate sees completed, locally scored,
+fingerprinted result audits. That is deliberate: CoordinationBench should make
+the adapter gap visible without turning placeholder templates into public
+claims.
 
 ## External Disclosures
 
@@ -278,6 +342,8 @@ systems inside its benchmark harness.
 | MemPalace | 96.6% raw LongMemEval R@5; 98.4% held-out hybrid R@5; tuned full-set runs reported separately | [MemPalace BENCHMARKS.md](https://github.com/MemPalace/mempalace/blob/develop/benchmarks/BENCHMARKS.md), [independent benchmark analysis](https://www.mempalace.tech/benchmarks) | Strong public target for LongMemEval-style retrieval; their docs and public analysis distinguish raw, held-out, and tuned reranked results. |
 | Agent Memory | 95.2% R@5 on LongMemEval-S, with BM25 + vector + graph retrieval and on-device reranking | [agent-memory.dev](https://www.agent-memory.dev/) | Direct product-positioning target for coding-agent memory with aggressive hook and viewer UX. |
 | Mem0 | +26% Accuracy over OpenAI Memory on LOCOMO; 91% faster responses and 90% lower token usage than full-context approaches | [mem0 LLM.md](https://github.com/mem0ai/mem0/blob/main/LLM.md), [memory-benchmarks](https://github.com/mem0ai/memory-benchmarks) | Different benchmark family and metric; useful as production-memory context, but not directly comparable to LongMemEval R@5. |
+| Quarq | Reports memory-first agent behavior and high LongMemEval-S accuracy claims. | [quarq.io/agent](https://www.quarq.io/agent), [quarqlabs/agent-oss](https://github.com/quarqlabs/agent-oss) | Strong retrieval-protocol target, but Zaxy does not treat the claim as same-harness until a pinned runner or strict result file is locally scored. |
+| Semantic Reach / HyperBinder / Hybi | Claims a unified HDC-backed substrate for semantic, graph, relational, and exact retrieval. | [semantic-reach.io](https://www.semantic-reach.io/), [HyperBinder SDK](https://semanticreach.github.io/hyperbinder-sdk/), [hybi on PyPI](https://pypi.org/project/hybi/) | Architecture target for slot-aware retrieval, but public evidence is not a Zaxy same-harness result without a pinned HyperBinder/Hybi runtime adapter. |
 
 When writing public copy, do not collapse these into a single leaderboard.
 Metric families differ: R@5 retrieval, Answer@5 expected-term recall, LOCOMO
@@ -292,11 +358,17 @@ As of May 18, 2026, competitor adapters have different readiness levels:
 | MemPalace | adapter candidate | The public repo documents `benchmarks/longmemeval_bench.py`, committed per-question results, and a no-API-key raw LongMemEval path. | Build a wrapper that exports per-query top-k contexts into Zaxy's `BenchmarkRun` schema without changing MemPalace ranking settings. |
 | Mem0 | benchmark harness candidate | `mem0ai/memory-benchmarks` includes LongMemEval scripts, but the OSS path requires Docker, Qdrant, model configuration, and LLM answer/judge settings. | Separate retrieval-only evidence from answer/judge accuracy, pin backend config, and preserve token/latency accounting. |
 | Agent Memory | external disclosure only | The product page reports LongMemEval-S R@5 and the retrieval stack, but it does not document a stable same-harness CLI/API contract for Zaxy to call. | Keep the claim in external disclosures until a reproducible benchmark command, dataset contract, and result export are available. |
+| Quarq | CoordinationBench adapter template | The OSS repo exposes a local memory-first agent architecture, but no Zaxy-pinned CoordinationBench runner is committed. | Fill the packaged `quarq` runner manifest with pinned install/source/run commands and score the generated result locally before publishing metrics. |
+| Semantic Reach / HyperBinder / Hybi | CoordinationBench adapter template | The public SDK is an HTTP client for a HyperBinder runtime; Zaxy has no pinned server/runtime adapter yet. | Fill the packaged `hybi` runner manifest with a pinned HyperBinder runtime and export strict result files before publishing metrics. |
 
 No same-harness adapter should be published without a pinned install command,
 dataset mapping, retrieval limit, score mapping, latency/tokens capture, and a
 clear statement about whether the competitor result is retrieval recall,
 answer/judge accuracy, or another metric family.
+For Quarq and Semantic Reach/Hybi specifically, public CoordinationBench copy
+must also pass `zaxy coordinate benchmark --require-competitor-claim quarq
+--require-competitor-claim hybi ...`; otherwise the report remains
+disclosure-only for those systems.
 
 ## Backend Shootout
 
@@ -663,10 +735,14 @@ present, run all archived public LongMemEval guardrails with:
 scripts/benchmark-guardrails.sh
 ```
 
-`zaxy doctor --beta-readiness` also exposes the release benchmark posture as a
-named `benchmark_no_regression` check. It requires the release script to keep
+`zaxy doctor --beta-readiness` also exposes release benchmark posture through
+named checks. `benchmark_no_regression` requires the release script to keep
 checkout quality floors, citation coverage at `1.0`, and p95/p99 checkout
 latency budgets across smoke, performance, and scale backend reports.
+`coordination_competitor_claims` verifies that the archived CoordinationBench
+report, docs, and Quarq/Hybi manifest templates preserve the public-claim gate:
+disclosure-only rows must remain blocked, and any same-harness claim must carry
+locally scored metrics plus result-audit provenance.
 
 Related references: [testing.md](testing.md), [retrieval.md](retrieval.md),
 [competitive-positioning.md](competitive-positioning.md),

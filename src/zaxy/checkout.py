@@ -9,7 +9,9 @@ from __future__ import annotations
 from typing import Any
 
 from zaxy.evidence import build_evidence_set
+from zaxy.purpose import PurposeProfile, purpose_profile
 from zaxy.retrieval_intent import classify_retrieval_intent
+from zaxy.synthesis_packet import synthesis_packet_from_items
 
 _COMPACT_CONTEXT_LIMIT = 8
 _COMPACT_SNIPPET_LIMIT = 500
@@ -18,6 +20,7 @@ _COMPACT_SNIPPET_LIMIT = 500
 def build_checkout_diagnostics(
     *,
     query: str | None = None,
+    purpose: PurposeProfile | dict[str, Any] | str | None = None,
     source_lanes: dict[str, int],
     current_facts: list[dict[str, Any]],
     evidence: list[dict[str, Any]],
@@ -36,9 +39,18 @@ def build_checkout_diagnostics(
         "feedback_tool": "memory_feedback",
         "feedback_reason": "Reinforce cited context if it materially informed the next response.",
     }
+    purpose_policy = retention.get("purpose_policy")
+    if isinstance(purpose_policy, dict):
+        diagnostics["purpose_policy"] = purpose_policy
+    profile = purpose_profile(purpose)
+    if profile.profile != "general":
+        diagnostics["purpose"] = profile.to_dict()
     evidence_plan = _checkout_evidence_plan(query)
     if evidence_plan:
         diagnostics["evidence_plan"] = evidence_plan
+    slot_plan = _checkout_slot_plan(query)
+    if slot_plan:
+        diagnostics["slot_plan"] = slot_plan
     inferred_context = _inferred_context_diagnostics(current_facts)
     if inferred_context["context_count"]:
         diagnostics["inferred_context"] = inferred_context
@@ -66,6 +78,7 @@ def build_checkout_diagnostics(
 def build_checkout_guidance(
     *,
     query: str,
+    purpose: PurposeProfile | dict[str, Any] | str | None = None,
     current_facts: list[dict[str, Any]],
     retention: dict[str, Any],
     evidence: list[dict[str, Any]],
@@ -74,7 +87,7 @@ def build_checkout_guidance(
     feedback_payloads = [
         payload
         for fact in current_facts
-        if (payload := build_checkout_feedback_payload(fact, query)) is not None
+        if (payload := build_checkout_feedback_payload(fact, query, purpose=purpose)) is not None
     ][:3]
     trust = [
         "Use current_facts as the primary working memory for this turn.",
@@ -88,6 +101,17 @@ def build_checkout_guidance(
         trust.append("Treat this checkout as low-confidence because it has no cited evidence.")
     if retention.get("superseded_contexts_excluded", 0):
         ignore.append("Superseded contexts were excluded from current_facts but remain auditable.")
+    purpose_policy = retention.get("purpose_policy")
+    if isinstance(purpose_policy, dict) and purpose_policy.get("suppressed_count"):
+        ignore.append(
+            "Purpose policy suppressed "
+            f"{purpose_policy.get('suppressed_count')} retrieved rows before checkout projection."
+        )
+    profile = purpose_profile(purpose)
+    purpose_guidance = _purpose_guidance(profile)
+    if purpose_guidance:
+        trust.extend(purpose_guidance["trust"])
+        ignore.extend(purpose_guidance["ignore"])
     inferred_context = _inferred_context_diagnostics(current_facts)
     if inferred_context["context_count"]:
         trust.append("Checkout depends on inferred graph paths; inspect inferred_context diagnostics.")
@@ -104,6 +128,7 @@ def build_checkout_guidance(
     return {
         "trust": trust,
         "ignore": ignore,
+        "purpose": purpose_guidance,
         "synthesis": synthesis,
         "recommended_next_call": {
             "tool": "memory_checkout",
@@ -142,6 +167,15 @@ def build_checkout_quality(
         reasons.append("Superseded contexts were excluded from current facts.")
     if warning_count:
         reasons.append("Checkout contains warnings that reduce confidence.")
+    purpose = diagnostics.get("purpose")
+    if isinstance(purpose, dict):
+        reasons.append(
+            "Applied purpose profile "
+            f"{purpose.get('profile')} with evidence policy {purpose.get('evidence_policy')}."
+        )
+    purpose_policy = diagnostics.get("purpose_policy")
+    if isinstance(purpose_policy, dict) and _int_metric(purpose_policy.get("suppressed_count")):
+        reasons.append("Purpose policy suppressed non-matching retrieved rows before projection.")
     inferred_context = diagnostics.get("inferred_context")
     if isinstance(inferred_context, dict) and _int_metric(inferred_context.get("context_count")):
         reasons.append("Checkout includes inferred graph paths.")
@@ -166,6 +200,8 @@ def build_checkout_quality(
             "type": "memory_checkout",
             "reason": reason,
             "query": str(evidence_plan_status.get("refresh_query", "broader cited evidence")),
+            "missing_slots": _missing_slots_for_evidence_status(diagnostics),
+            "suggested_queries": _suggested_slot_queries(diagnostics, evidence_plan_status),
         }
     confidence = 0.25
     confidence += min(current_fact_count, 2) * 0.22
@@ -215,10 +251,16 @@ def format_memory_checkout_prompt(
     diagnostics: dict[str, Any],
 ) -> str:
     """Format the prompt-ready Memory Checkout contract."""
-    lines = ["# Memory Checkout", f"Query: {query}", "", "## Current Facts"]
+    lines = ["# Memory Checkout", f"Query: {query}"]
+    _append_purpose(lines, diagnostics.get("purpose"))
+    _append_answer_candidates(lines, diagnostics.get("synthesis"))
+    lines.extend(["", "## Current Facts"])
     compact_contexts = diagnostics.get("compact_contexts")
     if isinstance(compact_contexts, list) and compact_contexts:
-        lines = ["# Memory Checkout", f"Query: {query}", "", "## Compact Answer Context"]
+        lines = ["# Memory Checkout", f"Query: {query}"]
+        _append_purpose(lines, diagnostics.get("purpose"))
+        _append_answer_candidates(lines, diagnostics.get("synthesis"))
+        lines.extend(["", "## Compact Answer Context"])
         for context in compact_contexts:
             if isinstance(context, str):
                 lines.append(f"- {_trim_text(context, 700)}")
@@ -248,6 +290,14 @@ def format_memory_checkout_prompt(
         lines.append(f"- Trust: {item}")
     for item in guidance.get("ignore", []):
         lines.append(f"- Ignore: {item}")
+    purpose_guidance = guidance.get("purpose")
+    if isinstance(purpose_guidance, dict):
+        lines.extend(["", "## Purpose Guidance"])
+        lines.append(f"- Profile: {purpose_guidance.get('profile')}")
+        lines.append(f"- Evidence policy: {purpose_guidance.get('evidence_policy')}")
+        lines.append(f"- Expected action: {purpose_guidance.get('expected_action')}")
+        for lens in _text_list(purpose_guidance.get("ontology_lens")):
+            lines.append(f"- Lens: {lens}")
     synthesis = guidance.get("synthesis")
     if isinstance(synthesis, dict):
         lines.extend(["", "## Synthesis Guidance"])
@@ -286,6 +336,18 @@ def format_memory_checkout_prompt(
             f"required_source_groups={evidence_plan_status.get('required_source_groups')}, "
             f"satisfied={evidence_plan_status.get('satisfied')}"
         )
+    slot_plan = diagnostics.get("slot_plan")
+    if isinstance(slot_plan, dict):
+        required_slots = _text_list(slot_plan.get("required_slots"))
+        optional_slots = _text_list(slot_plan.get("optional_slots"))
+        lines.append(
+            "- Slot plan: "
+            f"required={', '.join(required_slots) if required_slots else 'none'}; "
+            f"optional={', '.join(optional_slots) if optional_slots else 'none'}"
+        )
+    missing_slots = _text_list(_dict_value(quality.get("required_action"), "missing_slots"))
+    if missing_slots:
+        lines.append(f"- Missing slots: {', '.join(missing_slots)}")
     lines.append(f"- Source lanes: {_format_source_lanes(source_lanes)}")
     lines.append(f"- Citations: {diagnostics.get('citation_count', 0)}")
     lines.append(f"- Current citations: {diagnostics.get('current_citation_count', 0)}")
@@ -364,7 +426,7 @@ def _checkout_synthesis_diagnostics(
         for item in [*current_facts, *evidence]
         if isinstance((citation := item.get("citation")), str) and citation
     }
-    return {
+    diagnostics: dict[str, Any] = {
         "mode": mode,
         "reasons": sorted(reasons),
         "source_lane_slots": intent.source_lane_slots,
@@ -373,6 +435,18 @@ def _checkout_synthesis_diagnostics(
         "source_lanes": source_lanes,
         "evidence_groups": evidence_groups,
     }
+    synthesis_packet = synthesis_packet_from_items([*current_facts, *evidence])
+    answer_candidates = synthesis_packet.answer_candidates
+    if answer_candidates:
+        diagnostics["answer_candidates"] = answer_candidates
+    ledger_rows = synthesis_packet.ledger_rows
+    if ledger_rows:
+        diagnostics["ledger_rows"] = ledger_rows
+    if synthesis_packet.operations:
+        diagnostics["operations"] = synthesis_packet.operations
+    if synthesis_packet.result:
+        diagnostics["result"] = synthesis_packet.result
+    return diagnostics
 
 
 def _checkout_synthesis_guidance(
@@ -461,6 +535,7 @@ def _compact_contract(
             "memory_checkout_compact=true",
             "memory_checkout=true",
             f"query={query}",
+            f"purpose_profile={_dict_value(diagnostics.get('purpose'), 'profile')}",
             f"answerability={quality.get('answerability')}",
             f"confidence={quality.get('confidence')}",
             f"evidence_plan_mode={_dict_value(evidence_plan, 'mode')}",
@@ -588,11 +663,49 @@ def _checkout_evidence_plan(query: str | None) -> dict[str, object] | None:
     return build_evidence_plan(query, limit=10).to_dict()
 
 
-def build_checkout_feedback_payload(fact: dict[str, Any], query: str) -> dict[str, Any] | None:
+def _checkout_slot_plan(query: str | None) -> dict[str, object] | None:
+    if query is None:
+        return None
+    from zaxy.retrieval_plan import build_slot_plan
+
+    return build_slot_plan(query, limit=10).to_dict()
+
+
+def _missing_slots_for_evidence_status(diagnostics: dict[str, Any]) -> list[str]:
+    evidence_plan_status = diagnostics.get("evidence_plan_status")
+    if not isinstance(evidence_plan_status, dict) or evidence_plan_status.get("satisfied"):
+        return []
+    missing: list[str] = []
+    slot_plan = diagnostics.get("slot_plan")
+    required_slots = _text_list(slot_plan.get("required_slots")) if isinstance(slot_plan, dict) else []
+    if "source" in required_slots:
+        missing.append("source")
+    return missing
+
+
+def _suggested_slot_queries(
+    diagnostics: dict[str, Any],
+    evidence_plan_status: dict[str, Any],
+) -> list[dict[str, str]]:
+    refresh_query = str(evidence_plan_status.get("refresh_query", "broader cited evidence"))
+    suggestions = [
+        {"slot": slot, "query": refresh_query}
+        for slot in _missing_slots_for_evidence_status(diagnostics)
+    ]
+    return suggestions
+
+
+def build_checkout_feedback_payload(
+    fact: dict[str, Any],
+    query: str,
+    *,
+    purpose: PurposeProfile | dict[str, Any] | str | None = None,
+) -> dict[str, Any] | None:
     """Build a memory_feedback payload for a cited current fact."""
     citation = fact.get("citation")
     if not isinstance(citation, str) or not citation:
         return None
+    profile = purpose_profile(purpose)
     entity_name = fact.get("entity_name")
     entity_type = fact.get("entity_type")
     payload: dict[str, Any] = {
@@ -606,7 +719,58 @@ def build_checkout_feedback_payload(fact: dict[str, Any], query: str) -> dict[st
         "citation": citation,
         "importance": 0.6,
     }
+    for key in (
+        "authority",
+        "authority_scope",
+        "coordination_status",
+        "finding_id",
+        "mission_id",
+        "stale",
+        "status",
+        "worker_id",
+    ):
+        value = fact.get(key)
+        if isinstance(value, str | int | float | bool) and value not in ("", None):
+            payload[key] = value
+    if profile.profile != "general":
+        payload["purpose"] = profile.to_dict()
     return {key: value for key, value in payload.items() if value is not None}
+
+
+def _purpose_guidance(profile: PurposeProfile) -> dict[str, Any] | None:
+    if profile.profile == "general":
+        return None
+    payload = profile.to_dict()
+    trust = [
+        (
+            "Apply the purpose profile before treating retrieved material as memory; "
+            f"expected action is {profile.expected_action}."
+        ),
+        f"Use the purpose evidence policy: {profile.evidence_policy}.",
+    ]
+    if profile.required_evidence:
+        trust.append("Required evidence: " + ", ".join(profile.required_evidence) + ".")
+    ignore = [f"Suppress for this purpose: {item}." for item in profile.suppress[:3]]
+    ignore.extend(profile.warnings)
+    payload["trust"] = trust
+    payload["ignore"] = ignore
+    return payload
+
+
+def _append_purpose(lines: list[str], purpose: Any) -> None:
+    if not isinstance(purpose, dict):
+        return
+    lines.extend(["", "## Purpose Profile"])
+    lines.append(f"- Profile: {purpose.get('profile')}")
+    lines.append(f"- Role: {purpose.get('role')}")
+    lines.append(f"- Task: {purpose.get('task')}")
+    lines.append(f"- Risk: {purpose.get('risk')}")
+    lines.append(f"- Time horizon: {purpose.get('time_horizon')}")
+    lines.append(f"- Expected action: {purpose.get('expected_action')}")
+    lines.append(f"- Evidence policy: {purpose.get('evidence_policy')}")
+    lenses = _text_list(purpose.get("ontology_lens"))
+    if lenses:
+        lines.append(f"- Ontology lens: {', '.join(lenses)}")
 
 
 def _append_required_action(lines: list[str], required_action: Any) -> None:
@@ -644,6 +808,31 @@ def _append_synthesis_evidence(lines: list[str], synthesis: Any) -> None:
             f"citations={citation_text}; "
             f"source_lanes={lane_text}; "
             f"snippet={group.get('snippet', '')}"
+        )
+
+
+def _append_answer_candidates(lines: list[str], synthesis: Any) -> None:
+    if not isinstance(synthesis, dict):
+        return
+    candidates = synthesis.get("answer_candidates")
+    if not isinstance(candidates, list) or not candidates:
+        return
+    lines.extend(["", "## Answer Candidates"])
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        support = ", ".join(_text_list(candidate.get("support_source_ids")))
+        excluded = ", ".join(_text_list(candidate.get("excluded_source_ids")))
+        suffix = f"; support={support}" if support else ""
+        if excluded:
+            suffix += f"; excluded={excluded}"
+        lines.append(
+            "- Answer candidate: "
+            f"rank={candidate.get('rank')}, "
+            f"type={candidate.get('type')}, "
+            f"answer={candidate.get('answer')}, "
+            f"confidence={candidate.get('confidence')}"
+            f"{suffix}"
         )
 
 

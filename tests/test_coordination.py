@@ -6,6 +6,8 @@ import importlib.util
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from zaxy.coordination import ConflictState, CoordinationManager, LocalSemanticConflictDetector
 from zaxy.coordination_git import build_test_result_evidence, capture_git_metadata
 
@@ -86,6 +88,204 @@ def test_coordination_manager_promotes_accepted_findings_to_parent_session(tmp_p
     assert [event.type for event in worker_events] == ["coordination.finding.reported"]
     assert promotion.summary == finding.summary
     assert promotion.evidence[0]["reference"] == "pytest tests/test_auth.py -q"
+
+
+def test_coordination_proof_packet_scopes_and_labels_authority(tmp_path: Path) -> None:
+    """Proof packets should not over-claim accepted support or hide diagnostic rows."""
+    manager = CoordinationManager(eventloom_path=tmp_path / ".eventloom")
+    manager.start_mission("release-rc1", objective="Ship release", actor="lead")
+    for worker_id in ("auth-api", "auth-docs", "auth-ui", "auth-stale", "auth-reject", "auth-defer"):
+        manager.create_worker("release-rc1", worker_id, actor="lead")
+    accepted_used = manager.report_finding(
+        "release-rc1",
+        "auth-api",
+        summary="Expired JWKS cache is the accepted auth failure cause.",
+        actor="auth-api-agent",
+        claim_key="auth.failure.cause",
+        claim_value="expired-jwks-cache",
+    )
+    accepted_other = manager.report_finding(
+        "release-rc1",
+        "auth-docs",
+        summary="Docs need release note updates.",
+        actor="auth-docs-agent",
+        claim_key="release.docs",
+        claim_value="needs-update",
+    )
+    pending = manager.report_finding(
+        "release-rc1",
+        "auth-ui",
+        summary="UI retry claim is still pending.",
+        actor="auth-ui-agent",
+    )
+    stale = manager.report_finding(
+        "release-rc1",
+        "auth-stale",
+        summary="Old flag state is superseded.",
+        actor="auth-stale-agent",
+        evidence=[{"kind": "file", "reference": "flags.json", "stale": True}],
+    )
+    rejected = manager.report_finding(
+        "release-rc1",
+        "auth-reject",
+        summary="Rejected browser refresh cause.",
+        actor="auth-reject-agent",
+    )
+    deferred = manager.report_finding(
+        "release-rc1",
+        "auth-defer",
+        summary="Deferred rollout metric claim.",
+        actor="auth-defer-agent",
+    )
+    for finding in (accepted_used, accepted_other):
+        manager.review_finding("release-rc1", finding.finding_id, status="accepted", actor="lead")
+        manager.promote_finding("release-rc1", finding.finding_id, actor="lead")
+    manager.review_finding("release-rc1", rejected.finding_id, status="rejected", actor="lead")
+    manager.review_finding("release-rc1", deferred.finding_id, status="deferred", actor="lead")
+    artifact = {
+        "artifact_id": "sha256:proof",
+        "query": "Compose accepted release findings.",
+        "operations": [
+            {
+                "name": "coordinate_parent_state_synthesis",
+                "answer_key": "coordinate_handoff_answer",
+                "support_source_ids": [accepted_used.finding_id],
+            }
+        ],
+        "result": {
+            "answer_key": "coordinate_handoff_answer",
+            "answer": "Accepted cause: expired JWKS cache.",
+            "confidence": 0.9,
+        },
+        "answer_candidates": [
+            {
+                "answer": "Accepted cause: expired JWKS cache.",
+                "support_source_ids": [accepted_used.finding_id],
+            }
+        ],
+        "ledger_rows": [
+            {"source_group": accepted_used.finding_id, "include_reason": "accepted_parent_state"},
+            {"source_group": accepted_other.finding_id, "include_reason": "unused_accepted_state"},
+            {"source_group": pending.finding_id, "include_reason": "diagnostic_pending"},
+            {"source_group": stale.finding_id, "include_reason": "diagnostic_stale"},
+            {"source_group": rejected.finding_id, "include_reason": "diagnostic_rejected"},
+            {"source_group": deferred.finding_id, "include_reason": "diagnostic_deferred"},
+        ],
+    }
+
+    packet = manager.proof_packet("release-rc1", artifact).to_dict()
+
+    assert packet["accepted_finding_ids"] == [accepted_used.finding_id]
+    assert {row["source_group"]: row["status"] for row in packet["non_authoritative_rows"]} == {
+        accepted_other.finding_id: "accepted_not_used",
+        pending.finding_id: "pending",
+        stale.finding_id: "stale",
+        rejected.finding_id: "rejected",
+        deferred.finding_id: "deferred",
+    }
+
+
+def test_coordination_proof_packet_links_handoff_event_ref(tmp_path: Path) -> None:
+    """Handoff-scoped proof packets should bind to a concrete handoff event."""
+    manager = CoordinationManager(eventloom_path=tmp_path / ".eventloom")
+    manager.start_mission("release-rc1", objective="Ship release", actor="lead")
+    manager.create_worker("release-rc1", "auth-api", actor="lead")
+    finding = manager.report_finding(
+        "release-rc1",
+        "auth-api",
+        summary="Expired JWKS cache is accepted.",
+        actor="auth-api-agent",
+    )
+    manager.review_finding("release-rc1", finding.finding_id, status="accepted", actor="lead")
+    manager.promote_finding("release-rc1", finding.finding_id, actor="lead")
+    handoff = manager.create_handoff(
+        "release-rc1",
+        summary="Release handoff ready.",
+        actor="lead",
+    )
+    artifact = {
+        "artifact_id": "sha256:proof",
+        "query": "Compose accepted handoff.",
+        "answer_candidates": [{"answer": "Accepted cause", "support_source_ids": [finding.finding_id]}],
+        "ledger_rows": [{"source_group": finding.finding_id, "include_reason": "accepted_parent_state"}],
+    }
+
+    packet = manager.proof_packet(
+        "release-rc1",
+        artifact,
+        decision_scope="handoff",
+        handoff_id=handoff.handoff_id,
+    ).to_dict()
+
+    assert packet["handoff_event_ref"] == {
+        "handoff_id": handoff.handoff_id,
+        "seq": handoff.event.seq,
+        "hash": handoff.event.hash,
+    }
+
+
+def test_coordination_proof_packet_requires_known_handoff_for_handoff_scope(tmp_path: Path) -> None:
+    """Handoff-scoped proof packets should not silently float without provenance."""
+    manager = CoordinationManager(eventloom_path=tmp_path / ".eventloom")
+    manager.start_mission("release-rc1", objective="Ship release", actor="lead")
+    artifact = {"artifact_id": "sha256:proof", "query": "Compose accepted handoff.", "ledger_rows": []}
+
+    with pytest.raises(ValueError, match="handoff_id is required"):
+        manager.proof_packet("release-rc1", artifact, decision_scope="handoff")
+
+    with pytest.raises(ValueError, match="Unknown handoff_id"):
+        manager.proof_packet(
+            "release-rc1",
+            artifact,
+            decision_scope="handoff",
+            handoff_id="release-rc1:handoff:missing",
+        )
+
+
+def test_coordination_proof_packet_surfaces_mixed_identity_non_authoritative_rows(tmp_path: Path) -> None:
+    """A pending fact under an accepted source group must not be hidden as authoritative."""
+    manager = CoordinationManager(eventloom_path=tmp_path / ".eventloom")
+    manager.start_mission("release-rc1", objective="Ship release", actor="lead")
+    manager.create_worker("release-rc1", "auth-api", actor="lead")
+    manager.create_worker("release-rc1", "auth-ui", actor="lead")
+    accepted = manager.report_finding(
+        "release-rc1",
+        "auth-api",
+        summary="Expired JWKS cache is accepted.",
+        actor="auth-api-agent",
+    )
+    pending = manager.report_finding(
+        "release-rc1",
+        "auth-ui",
+        summary="Browser refresh cause is still pending.",
+        actor="auth-ui-agent",
+    )
+    manager.review_finding("release-rc1", accepted.finding_id, status="accepted", actor="lead")
+    manager.promote_finding("release-rc1", accepted.finding_id, actor="lead")
+    artifact = {
+        "artifact_id": "sha256:proof",
+        "query": "Compose accepted release findings.",
+        "answer_candidates": [{"answer": "Accepted cause", "support_source_ids": [accepted.finding_id]}],
+        "ledger_rows": [
+            {
+                "source_group": accepted.finding_id,
+                "fact_id": pending.finding_id,
+                "include_reason": "diagnostic_pending_under_accepted_group",
+            }
+        ],
+    }
+
+    packet = manager.proof_packet("release-rc1", artifact).to_dict()
+
+    assert packet["non_authoritative_rows"] == [
+        {
+            "source_group": accepted.finding_id,
+            "status": "pending",
+            "include_reason": "diagnostic_pending_under_accepted_group",
+            "exclude_reason": None,
+            "fact_id": pending.finding_id,
+        }
+    ]
 
 
 def test_capture_git_metadata_reports_branch_worktree_changed_files_and_diff(tmp_path: Path) -> None:
@@ -259,6 +459,10 @@ def test_coordination_checkout_defaults_to_accepted_parent_state_only(tmp_path: 
     assert payload["conflicts"] == []
     assert ui_finding.finding_id not in payload["prompt"]
     assert "API failures trace to expired JWKS cache handling." in payload["prompt"]
+    assert payload["purpose"]["profile"] == "coordinate"
+    assert payload["purpose"]["evidence_policy"] == "accepted_parent_state_with_citations_required"
+    assert "Purpose profile: coordinate" in payload["prompt"]
+    assert "Authority: accepted parent state only" in payload["prompt"]
 
 
 def test_coordination_checkout_can_include_pending_and_conflict_diagnostics(tmp_path: Path) -> None:
@@ -626,6 +830,187 @@ def test_coordination_audit_report_cites_eventloom_sequence_and_hash(tmp_path: P
         for path in sorted(eventloom_path.glob("*.jsonl"))
     }
     assert after_events == before_events
+
+
+def test_coordination_audit_report_reconstructs_proof_packet_fields(tmp_path: Path) -> None:
+    """Proof packet audit rows should expose enough payload to rebuild authority decisions."""
+    manager = CoordinationManager(eventloom_path=tmp_path / ".eventloom")
+    manager.start_mission("auth-main", objective="Ship auth refactor", actor="lead")
+    manager.create_worker("auth-main", "auth-api", actor="lead")
+    finding = manager.report_finding(
+        "auth-main",
+        "auth-api",
+        summary="Expired JWKS cache causes API failures.",
+        actor="auth-api-agent",
+    )
+    review = manager.review_finding("auth-main", finding.finding_id, status="accepted", actor="lead")
+    promotion = manager.promote_finding("auth-main", finding.finding_id, actor="lead")
+    handoff = manager.create_handoff("auth-main", summary="Auth mission ready.", actor="lead")
+    artifact = {
+        "artifact_id": "sha256:proof",
+        "query": "Compose accepted handoff.",
+        "answer_candidates": [{"answer": "Accepted cause", "support_source_ids": [finding.finding_id]}],
+        "ledger_rows": [
+            {"source_group": finding.finding_id, "include_reason": "accepted_parent_state"},
+            {"source_group": "pending-finding", "include_reason": "diagnostic_pending"},
+        ],
+    }
+    proof = manager.proof_packet(
+        "auth-main",
+        artifact,
+        decision_scope="handoff",
+        handoff_id=handoff.handoff_id,
+    ).to_dict()
+    manager.session_manager.get("auth-main").eventlog.append(
+        "coordination.proof_packet.created",
+        actor="coordinator",
+        payload=proof,
+        thread="auth-main",
+    )
+
+    report = manager.audit_report("auth-main")
+
+    proof_event = next(event for event in report.events if event["event_type"] == "coordination.proof_packet.created")
+    assert proof_event["artifact_id"] == "sha256:proof"
+    assert proof_event["decision_scope"] == "handoff"
+    assert proof_event["authority_scope"] == "parent_accepted_state"
+    assert proof_event["accepted_finding_ids"] == [finding.finding_id]
+    assert proof_event["review_event_refs"] == [
+        {"seq": review.event.seq, "hash": review.event.hash, "finding_id": finding.finding_id}
+    ]
+    assert proof_event["promotion_event_refs"] == [
+        {"seq": promotion.event.seq, "hash": promotion.event.hash, "finding_id": finding.finding_id}
+    ]
+    assert proof_event["worker_source_event_refs"][0]["finding_id"] == finding.finding_id
+    assert proof_event["non_authoritative_rows"] == [
+        {
+            "source_group": "pending-finding",
+            "status": "unknown",
+            "include_reason": "diagnostic_pending",
+            "exclude_reason": None,
+        }
+    ]
+    assert proof_event["handoff_event_ref"] == {
+        "handoff_id": handoff.handoff_id,
+        "seq": handoff.event.seq,
+        "hash": handoff.event.hash,
+    }
+
+
+def test_coordination_inspection_links_handoff_to_proof_packet_refs(tmp_path: Path) -> None:
+    """Replay-backed inspection should show which proof packet supports a handoff."""
+    manager = CoordinationManager(eventloom_path=tmp_path / ".eventloom")
+    manager.start_mission("auth-main", objective="Ship auth refactor", actor="lead")
+    manager.create_worker("auth-main", "auth-api", actor="lead")
+    finding = manager.report_finding(
+        "auth-main",
+        "auth-api",
+        summary="Expired JWKS cache causes API failures.",
+        actor="auth-api-agent",
+    )
+    manager.review_finding("auth-main", finding.finding_id, status="accepted", actor="lead")
+    manager.promote_finding("auth-main", finding.finding_id, actor="lead")
+    handoff = manager.create_handoff("auth-main", summary="Auth mission ready.", actor="lead")
+    proof = manager.proof_packet(
+        "auth-main",
+        {
+            "artifact_id": "sha256:proof",
+            "query": "Compose accepted handoff.",
+            "answer_candidates": [{"answer": "Accepted cause", "support_source_ids": [finding.finding_id]}],
+            "ledger_rows": [{"source_group": finding.finding_id, "include_reason": "accepted_parent_state"}],
+        },
+        decision_scope="handoff",
+        handoff_id=handoff.handoff_id,
+    ).to_dict()
+    proof_event = manager.session_manager.get("auth-main").eventlog.append(
+        "coordination.proof_packet.created",
+        actor="coordinator",
+        payload=proof,
+        thread="auth-main",
+    )
+
+    inspection = manager.inspect_mission("auth-main").to_dict()
+
+    handoff_record = inspection["handoffs"][0]
+    assert handoff_record["handoff_id"] == handoff.handoff_id
+    assert handoff_record["proof_event_refs"] == [
+        {
+            "seq": proof_event.seq,
+            "hash": proof_event.hash,
+            "artifact_id": "sha256:proof",
+            "decision_scope": "handoff",
+            "authority_scope": "parent_accepted_state",
+            "accepted_finding_ids": [finding.finding_id],
+        }
+    ]
+
+
+def test_coordination_proof_trace_replays_artifact_handoff_and_ledger(tmp_path: Path) -> None:
+    """Proof trace should reconstruct the full Eventloom chain behind a handoff answer."""
+    manager = CoordinationManager(eventloom_path=tmp_path / ".eventloom")
+    manager.start_mission("auth-main", objective="Ship auth refactor", actor="lead")
+    manager.create_worker("auth-main", "auth-api", actor="lead")
+    finding = manager.report_finding(
+        "auth-main",
+        "auth-api",
+        summary="Expired JWKS cache causes API failures.",
+        actor="auth-api-agent",
+    )
+    review = manager.review_finding("auth-main", finding.finding_id, status="accepted", actor="lead")
+    promotion = manager.promote_finding("auth-main", finding.finding_id, actor="lead")
+    handoff = manager.create_handoff("auth-main", summary="Auth mission ready.", actor="lead")
+    artifact = {
+        "schema_version": "synthesis_artifact_v1",
+        "artifact_id": "sha256:proof",
+        "query": "Compose accepted handoff.",
+        "answer_candidates": [
+            {
+                "rank": 1,
+                "answer": "Accepted cause",
+                "support_source_ids": [finding.finding_id],
+            }
+        ],
+        "ledger_rows": [
+            {
+                "fact_id": finding.finding_id,
+                "source_group": finding.finding_id,
+                "include_reason": "accepted_parent_state",
+            }
+        ],
+    }
+    artifact_event = manager.session_manager.get("auth-main").eventlog.append(
+        "memory.synthesis.artifact.created",
+        actor="coordinator",
+        payload=artifact,
+        thread="auth-main",
+    )
+    proof = manager.proof_packet(
+        "auth-main",
+        artifact,
+        decision_scope="handoff",
+        handoff_id=handoff.handoff_id,
+    ).to_dict()
+    proof_event = manager.session_manager.get("auth-main").eventlog.append(
+        "coordination.proof_packet.created",
+        actor="coordinator",
+        payload=proof,
+        thread="auth-main",
+    )
+
+    trace = manager.proof_trace("auth-main", handoff_id=handoff.handoff_id).to_dict()
+
+    assert trace["proof_event"]["seq"] == proof_event.seq
+    assert trace["artifact_event"]["seq"] == artifact_event.seq
+    assert trace["handoff_event"]["seq"] == handoff.event.seq
+    assert trace["accepted_finding_ids"] == [finding.finding_id]
+    assert trace["review_event_refs"] == [
+        {"seq": review.event.seq, "hash": review.event.hash, "finding_id": finding.finding_id}
+    ]
+    assert trace["promotion_event_refs"] == [
+        {"seq": promotion.event.seq, "hash": promotion.event.hash, "finding_id": finding.finding_id}
+    ]
+    assert trace["answer_candidates"] == artifact["answer_candidates"]
+    assert trace["ledger_rows"] == artifact["ledger_rows"]
 
 
 def test_coordination_brief_marks_explicitly_stale_findings(tmp_path: Path) -> None:

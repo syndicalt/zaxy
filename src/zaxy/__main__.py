@@ -857,10 +857,18 @@ def coordinate_benchmark(
         "--competitor-runner",
         help="Pinned competitor runner manifest as NAME=PATH; may be repeated",
     ),
+    require_competitor_claim: list[str] | None = typer.Option(  # noqa: B008
+        None,
+        "--require-competitor-claim",
+        help="Require named competitor adapters to have completed same-harness local scoring; may be repeated",
+    ),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """Run CoordinationBench against a generated or frozen workload."""
-    from zaxy.coordination_benchmark import run_coordination_benchmark
+    from zaxy.coordination_benchmark import (
+        coordination_competitor_claim_gate,
+        run_coordination_benchmark,
+    )
 
     competitor_results = _coordinate_competitor_results_from_options(competitor_result or [])
     competitor_runners = _coordinate_competitor_results_from_options(competitor_runner or [])
@@ -875,6 +883,14 @@ def coordinate_benchmark(
         competitor_results=competitor_results,
         competitor_runners=competitor_runners,
     )
+    required_claims = tuple(require_competitor_claim or ())
+    if required_claims:
+        gate = coordination_competitor_claim_gate(report, required_adapters=required_claims)
+        if gate.status != "passed":
+            blockers = "; ".join(
+                f"{name}: {reason}" for name, reason in sorted(gate.blocked_adapters.items())
+            )
+            raise typer.BadParameter(f"competitor claim gate blocked: {blockers}")
     payload = report.to_dict()
     if json_output:
         typer.echo(json.dumps(payload, indent=2, sort_keys=True))
@@ -3048,6 +3064,11 @@ def compact(
     ),
     strategy: str = typer.Option("medoid", help="Projection strategy: medoid or exemplar"),
     max_records: int = typer.Option(5, min=1, help="Maximum exemplar records to store"),
+    purpose: str | None = typer.Option(
+        None,
+        "--purpose",
+        help="Optional purpose profile for projection policy, e.g. coordinate",
+    ),
 ) -> None:
     """Compact an Eventloom log and optionally create snapshots."""
     from zaxy.compaction import (
@@ -3093,6 +3114,7 @@ def compact(
                 log,
                 strategy=strategy,
                 max_records=max_records,
+                purpose=purpose,
             )
         except ValueError as exc:
             raise typer.BadParameter(str(exc)) from exc
@@ -3934,6 +3956,29 @@ def benchmark_inventory(
         typer.echo(json.dumps([asdict(entry) for entry in inventory], indent=2, sort_keys=True))
     else:
         typer.echo(format_mempalace_workload_inventory(inventory), nl=False)
+
+
+@app.command("purpose-benchmark")
+def purpose_benchmark(
+    output_dir: Path = typer.Option(  # noqa: B008
+        Path("reports/benchmarks/purpose-v1"),
+        help="Directory for JSON and Markdown purpose benchmark reports",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Print report JSON instead of text summary"),
+) -> None:
+    """Run deterministic purpose-conditioned memory benchmark gates."""
+    from zaxy.purpose_benchmark import run_purpose_benchmark, write_purpose_benchmark_report
+
+    report = run_purpose_benchmark()
+    written = write_purpose_benchmark_report(report, output_dir)
+    if json_output:
+        typer.echo(json.dumps(report.to_dict(), indent=2, sort_keys=True))
+    else:
+        typer.echo(f"Purpose benchmark: {report.status}")
+        typer.echo(f"Lanes: {report.passed_lanes}/{report.lane_count} passed")
+        typer.echo(f"JSON: {written['json']}")
+        typer.echo(f"Markdown: {written['markdown']}")
+    raise typer.Exit(0 if report.status == "passed" else 1)
 
 
 @app.command("benchmark-compare")

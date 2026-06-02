@@ -1,0 +1,409 @@
+{
+  "competitor_claim_blockers": [
+    "Semantic Reach and Quarq require pinned same-harness adapters before Zaxy can publish comparative SOTA claims."
+  ],
+  "competitor_claim_status": "blocked",
+  "elapsed_ms": 1.899,
+  "generated_at": "2026-06-02T20:27:48.342820+00:00",
+  "lane_count": 7,
+  "lanes": [
+    {
+      "evidence": {
+        "passed_profiles": [
+          "coding",
+          "review",
+          "release",
+          "security",
+          "research",
+          "coordinate"
+        ]
+      },
+      "measurement": "all purpose profiles apply recall floors and ontology evidence terms",
+      "name": "Purpose Recall",
+      "score": 1.0,
+      "status": "passed",
+      "threshold": 1.0
+    },
+    {
+      "evidence": {
+        "signatures": {
+          "coding": [
+            "recall",
+            [
+              "implementation",
+              "implement_or_verify",
+              "cite_current_facts_and_verification",
+              "preserve_invariants_failed_attempts_and_test_evidence",
+              "invariant",
+              "regression",
+              "prior_fix",
+              "open_blocker"
+            ]
+          ],
+          "coordinate": [
+            "recall",
+            [
+              "mission_state",
+              "brief_promote_or_handoff",
+              "accepted_parent_state_with_citations_required",
+              "preserve_accepted_findings_conflicts_handoffs_and_proof_packets",
+              "accepted_finding",
+              "pending_diagnostic",
+              "conflict",
+              "stale_evidence"
+            ]
+          ],
+          "release": [
+            "temporal",
+            [
+              "release_readiness",
+              "ship_block_or_defer",
+              "release_gate_evidence_required",
+              "preserve_release_gates_regressions_and_external_blockers",
+              "release_gate",
+              "regression",
+              "changelog",
+              "packaging"
+            ]
+          ],
+          "research": [
+            "recall",
+            [
+              "evidence_synthesis",
+              "synthesize_or_identify_gap",
+              "multi_source_citations_preferred",
+              "preserve_claims_sources_contradictions_and_open_questions",
+              "claim",
+              "source",
+              "contradiction",
+              "method"
+            ]
+          ],
+          "review": [
+            "precision",
+            [
+              "review",
+              "approve_or_block",
+              "cited_current_facts_required",
+              "preserve_risks_decisions_and_verification",
+              "risk",
+              "regression",
+              "missing_test",
+              "accepted_decision"
+            ]
+          ],
+          "security": [
+            "precision",
+            [
+              "security_assessment",
+              "block_or_accept_risk",
+              "cited_security_evidence_required",
+              "preserve_threats_controls_findings_and_risk_acceptance",
+              "secret",
+              "credential",
+              "auth",
+              "authorization"
+            ]
+          ]
+        }
+      },
+      "measurement": "same source query resolves to distinct purpose-specific retrieval lenses",
+      "name": "Ontology Shift",
+      "score": 1.0,
+      "status": "passed",
+      "threshold": 0.75
+    },
+    {
+      "evidence": {
+        "retained_terms": {
+          "coding": [
+            "failed_fixes",
+            "test_results"
+          ],
+          "coordinate": [
+            "accepted_parent_state",
+            "proof_packets"
+          ],
+          "release": [
+            "external_blockers",
+            "gate_failures"
+          ],
+          "research": [
+            "contradictions",
+            "open_questions"
+          ],
+          "review": [
+            "blocking_risks",
+            "review_decisions"
+          ],
+          "security": [
+            "risk_acceptance",
+            "security_findings"
+          ]
+        }
+      },
+      "measurement": "profiles retain prior failures, accepted decisions, risks, and proof outcomes",
+      "name": "Consequence Retention",
+      "score": 1.0,
+      "status": "passed",
+      "threshold": 1.0
+    },
+    {
+      "evidence": {
+        "purpose_decay_half_life_days": {
+          "coding": 30,
+          "coordinate": 180,
+          "release": 120,
+          "research": 30,
+          "review": 90,
+          "security": 180
+        },
+        "purpose_expired_weights": {
+          "coordinate": 0.15,
+          "release": 0.1,
+          "review": 0.05,
+          "security": 0.1
+        }
+      },
+      "measurement": "decay mode downweights noise while protecting obligations and risk memory",
+      "name": "Governed Forgetting",
+      "score": 1.0,
+      "status": "passed",
+      "threshold": 1.0
+    },
+    {
+      "evidence": {
+        "feedback_payload": {
+          "actor": "assistant",
+          "citation": "eventloom://purpose/events/7#abc123",
+          "entity_name": "migration retry",
+          "entity_type": "decision",
+          "feedback": "used",
+          "importance": 0.6,
+          "purpose": {
+            "evidence_policy": "cite_current_facts_and_verification",
+            "expected_action": "implement_or_verify",
+            "ontology_lens": [
+              "invariant",
+              "regression",
+              "prior_fix",
+              "open_blocker",
+              "test_evidence"
+            ],
+            "permission_scope": "repo-local",
+            "profile": "coding",
+            "required_evidence": [
+              "current_fact_citation",
+              "verification_or_source_citation"
+            ],
+            "retain": [
+              "architectural_constraints",
+              "failed_fixes",
+              "accepted_decisions",
+              "test_results"
+            ],
+            "retention_policy": "preserve_invariants_failed_attempts_and_test_evidence",
+            "risk": "correctness-critical",
+            "role": "coding-agent",
+            "suppress": [
+              "superseded_context",
+              "uncited_claim"
+            ],
+            "task": "implementation",
+            "time_horizon": "current-change"
+          },
+          "query": "ship migration",
+          "score": 0.91,
+          "source": "eventloom"
+        }
+      },
+      "measurement": "feedback payload records useful-for-purpose outcome metadata",
+      "name": "Action Outcome Loop",
+      "score": 1.0,
+      "status": "passed",
+      "threshold": 1.0
+    },
+    {
+      "evidence": {
+        "citations": [
+          "eventloom://purpose/events/9#def456"
+        ],
+        "payloads": {
+          "release": {
+            "actor": "assistant",
+            "citation": "eventloom://purpose/events/9#def456",
+            "entity_name": "auth token rotation",
+            "entity_type": "decision",
+            "feedback": "used",
+            "importance": 0.6,
+            "purpose": {
+              "evidence_policy": "release_gate_evidence_required",
+              "expected_action": "ship_block_or_defer",
+              "ontology_lens": [
+                "release_gate",
+                "regression",
+                "changelog",
+                "packaging",
+                "deployment",
+                "external_validation"
+              ],
+              "permission_scope": "repo-local",
+              "profile": "release",
+              "required_evidence": [
+                "release_check_ref",
+                "test_result_ref",
+                "changelog_ref"
+              ],
+              "retain": [
+                "release_decisions",
+                "gate_failures",
+                "packaging_evidence",
+                "external_blockers"
+              ],
+              "retention_policy": "preserve_release_gates_regressions_and_external_blockers",
+              "risk": "high",
+              "role": "release-manager",
+              "suppress": [
+                "draft_claim",
+                "uncited_release_assertion",
+                "stale_gate_result"
+              ],
+              "task": "release-readiness",
+              "time_horizon": "release",
+              "warnings": [
+                "Treat stale release-gate evidence as blocking until refreshed."
+              ]
+            },
+            "query": "auth token rotation",
+            "score": 0.88,
+            "source": "eventloom"
+          },
+          "review": {
+            "actor": "assistant",
+            "citation": "eventloom://purpose/events/9#def456",
+            "entity_name": "auth token rotation",
+            "entity_type": "decision",
+            "feedback": "used",
+            "importance": 0.6,
+            "purpose": {
+              "evidence_policy": "cited_current_facts_required",
+              "expected_action": "approve_or_block",
+              "ontology_lens": [
+                "risk",
+                "regression",
+                "missing_test",
+                "accepted_decision",
+                "blocker"
+              ],
+              "permission_scope": "repo-local",
+              "profile": "review",
+              "required_evidence": [
+                "accepted_or_cited_fact",
+                "verification_evidence"
+              ],
+              "retain": [
+                "blocking_risks",
+                "accepted_findings",
+                "test_results",
+                "review_decisions"
+              ],
+              "retention_policy": "preserve_risks_decisions_and_verification",
+              "risk": "high",
+              "role": "reviewer",
+              "suppress": [
+                "pending_unreviewed_claim",
+                "superseded_context",
+                "low_trust_inference"
+              ],
+              "task": "review",
+              "time_horizon": "release"
+            },
+            "query": "auth token rotation",
+            "score": 0.88,
+            "source": "eventloom"
+          },
+          "security": {
+            "actor": "assistant",
+            "citation": "eventloom://purpose/events/9#def456",
+            "entity_name": "auth token rotation",
+            "entity_type": "decision",
+            "feedback": "used",
+            "importance": 0.6,
+            "purpose": {
+              "evidence_policy": "cited_security_evidence_required",
+              "expected_action": "block_or_accept_risk",
+              "ontology_lens": [
+                "secret",
+                "credential",
+                "auth",
+                "authorization",
+                "exposure",
+                "vulnerability",
+                "risk_acceptance"
+              ],
+              "permission_scope": "repo-local",
+              "profile": "security",
+              "required_evidence": [
+                "source_citation",
+                "mitigation_ref",
+                "risk_owner_ref"
+              ],
+              "retain": [
+                "security_findings",
+                "mitigations",
+                "risk_acceptance",
+                "secret_handling"
+              ],
+              "retention_policy": "preserve_threats_controls_findings_and_risk_acceptance",
+              "risk": "critical",
+              "role": "security-reviewer",
+              "suppress": [
+                "uncited_safe_claim",
+                "low_trust_inference",
+                "stale_mitigation"
+              ],
+              "task": "security-assessment",
+              "time_horizon": "incident-or-release",
+              "warnings": [
+                "Do not treat absence of retrieved findings as evidence of safety."
+              ]
+            },
+            "query": "auth token rotation",
+            "score": 0.88,
+            "source": "eventloom"
+          }
+        },
+        "profiles": [
+          "release",
+          "review",
+          "security"
+        ]
+      },
+      "measurement": "same cited evidence can create distinct role-specific useful memory",
+      "name": "Cross-Role Citation",
+      "score": 1.0,
+      "status": "passed",
+      "threshold": 1.0
+    },
+    {
+      "evidence": {
+        "record_identities": [
+          "docs/auth.md:turn-4",
+          "eventloom://mission-auth/events/1#f25ee23ec74d",
+          "finding-accepted",
+          "mission-auth"
+        ],
+        "strategy": "coordinate_authoritative",
+        "suppressed_count": 1
+      },
+      "measurement": "Coordinate projection keeps accepted parent state and suppresses pending worker rows",
+      "name": "Accepted-State Discipline",
+      "score": 1.0,
+      "status": "passed",
+      "threshold": 1.0
+    }
+  ],
+  "passed_lanes": 7,
+  "status": "passed",
+  "version": "purpose-v1"
+}

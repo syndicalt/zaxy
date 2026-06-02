@@ -20,7 +20,9 @@ as-of query is used, retention policy effects when configured, and final ranking
 score. The ranking pass uses maximum marginal relevance so near-duplicate hits
 do not crowd out adjacent context. Traversal hits get a small preservation bonus
 because graph-neighbor evidence is often the difference between generic search
-and relational memory.
+and relational memory. Traversal score explanations include
+`path_relation_types`, so Coordinate proof queries can show chains such as
+mission proof, synthesis artifact, answer candidate, and ledger-row links.
 
 Keyword search includes a deterministic expansion pass for terse agent queries.
 For example, `auth decision` also searches known equivalents such as
@@ -34,13 +36,35 @@ graph-neighbor evidence in play, and `temporal` gives as-of freshness a stronger
 role. Callers can also pass a custom `ScoringProfile` or override individual
 fusion weights for advanced deployments.
 
+Purpose profiles make the retrieval-time ontology explicit. Memory Checkout
+accepts `purpose` as a preset (`coding`, `review`, `release`, `security`,
+`research`, or `coordinate`) or as a structured profile with role, task, risk,
+time horizon, expected action, permission scope, evidence policy, retention
+policy, and ontology lens fields. The profile is returned in checkout
+diagnostics and prompt guidance, so the same source evidence can be treated as
+an implementation invariant, release risk, security exposure, research
+contradiction, pending diagnostic, accepted coordinator finding, or handoff
+proof depending on the caller's intended action. Non-general profiles add
+deterministic retrieval emphasis terms, purpose-specific recall floors, and a
+purpose-selected scoring profile before checkout projection; the applied policy is reported in
+`diagnostics.purpose_retrieval_policy`. Checkout also applies the profile's
+purpose policy before retrieved rows become current memory: suppressed rows are
+excluded from `current_facts` and cited evidence, while counts and reasons are
+reported in `diagnostics.purpose_policy` and `retention.purpose_policy`. The
+`coordinate` profile preserves accepted parent state and proof packets while
+suppressing worker-local pending rows unless diagnostics are requested.
+
 Reranking is pluggable. `LexicalReranker` is a deterministic local provider
 that promotes candidates with better query-token coverage over the fused graph
 candidate set. Hosted or model-backed rerankers can implement the same async
 interface and return candidates with `reranker` and `rerank_score` metadata.
 Zaxy ships `HTTPReranker` for local/self-hosted rerank endpoints and
+`LateInteractionHTTPReranker` for ColBERT-style token-interaction endpoints that
+accept tokenized query and candidate payloads. It also ships
 `OpenAICompatibleReranker` for OpenAI-compatible chat-completions models that
-return JSON candidate scores. `build_reranker(settings)` wires configured
+return JSON candidate scores. Score diagnostics include `rerank_strategy` so
+benchmark reports can separate deterministic lexical, cross-encoder, hosted, and
+late-interaction reranking paths. `build_reranker(settings)` wires configured
 providers into `MemoryFabric`.
 
 Retrieval degrades by strategy instead of failing the whole query. If vector
@@ -77,7 +101,14 @@ candidate context. `RETENTION_POLICY=filter_expired` hides results whose
 keeps results eligible but applies a half-life multiplier based on
 `last_reinforced_at` or `valid_from`, with optional `importance` and
 `reinforcement_count` metadata nudging the multiplier. Expired results under
-decay use `RETENTION_EXPIRED_WEIGHT`. Goal, task, decision, context policy, fallback event, and `memory.reinforced` extractors project these fields into graph properties. These effects are exposed in
+decay use `RETENTION_EXPIRED_WEIGHT`. Purpose-scoped memories can override the
+decay half-life without mutating storage: Coordinate and security memories use
+at least a 180-day half-life, release memories at least 120 days, and review
+memories at least 90 days, while coding and research use the configured default.
+Expired Coordinate, security, release, and review memories under decay keep a
+small bounded score floor; `filter_expired` still hides expired rows regardless
+of purpose. Goal, task, decision, context policy, fallback event, and
+`memory.reinforced` extractors project these fields into graph properties. These effects are exposed in
 `score_explanation` and are not written back as memory facts.
 
 The vector path depends on embeddings. Local deterministic embeddings are useful
@@ -158,12 +189,22 @@ embedding providers, and broader degraded-mode observability. These should
 augment Zaxy's temporal/provenance layer rather than replace it with generic
 chunk search.
 
-Future compaction work should remain identity-preserving. Consolidated vectors
-or summaries may route queries and reduce token load, but they should not become
-the sole authority for event, document, transcript, or graph facts. Prompt
-assembly emits warnings when compacted or projection-derived context lacks
-source-level citations, and when replay truncation leaves no retrieved source
-support. `MemoryFabric(eventloom_path=...)` auto-discovers
+Compaction remains identity-preserving. Consolidated vectors or summaries may
+route queries and reduce token load, but they should not become the sole
+authority for event, document, transcript, or graph facts. Purpose-aware
+compaction projection is available with `zaxy compact --projection-output ...
+--purpose <profile>`. Security, release, and review profiles preserve all
+source-backed records because risks, gates, decisions, and mitigations should
+not be collapsed into a single representative. Coding and research profiles use
+bounded exemplar sets with purpose-specific record floors, so invariants,
+failed attempts, tests, claims, sources, contradictions, and open questions
+survive better than generic medoid collapse. Coordinate projections force
+authoritative records, retain accepted/promoted parent state plus proof and
+handoff events, and keep pending, rejected, deferred, stale, or unpromoted
+worker rows out of searchable authoritative projection records while reporting
+them in `consolidation_policy` diagnostics. Prompt assembly emits warnings when
+compacted or projection-derived context lacks source-level citations, and when
+replay truncation leaves no retrieved source support. `MemoryFabric(eventloom_path=...)` auto-discovers
 `*.compaction.json` artifacts under the Eventloom directory; explicit
 `projection_paths=[...]` remain available for artifacts stored elsewhere.
 Returned projection contexts carry `projection_id`, `event_ref`, and source

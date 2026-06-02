@@ -629,6 +629,35 @@ class TestContextFeedback:
         assert call.kwargs["payload"]["entity_type"] == "decision"
         assert call.kwargs["payload"]["importance"] == 0.8
 
+    async def test_context_feedback_preserves_purpose_profile(self, fabric: MemoryFabric) -> None:
+        """Feedback should preserve the purpose that made retrieved context useful."""
+        context = Context(
+            content="Accepted parent state: API failures trace to expired JWKS cache handling.",
+            source="keyword",
+            score=0.93,
+            metadata={
+                "entity_name": "expired JWKS cache handling",
+                "entity_type": "accepted_finding",
+                "citation": "eventloom://auth-main/events/8#hhhhhhhhhhhh",
+            },
+        )
+
+        count = await fabric.record_context_feedback(
+            [context],
+            feedback="used",
+            session_id="auth-main",
+            actor="coordinator",
+            importance=0.9,
+            purpose="coordinate",
+            outcome="supported_handoff",
+        )
+
+        assert count == 1
+        payload = fabric.session_manager.get.return_value.eventlog.append.call_args_list[-1].kwargs["payload"]
+        assert payload["purpose"]["profile"] == "coordinate"
+        assert payload["purpose"]["expected_action"] == "brief_promote_or_handoff"
+        assert payload["outcome"] == "supported_handoff"
+
     async def test_positive_feedback_falls_back_to_content_identity(self, fabric: MemoryFabric) -> None:
         """Context without entity metadata should still produce a stable reinforcement event."""
         context = Context(content="Fallback note", source="eventloom", score=0.5)
@@ -638,6 +667,326 @@ class TestContextFeedback:
         payload = fabric.session_manager.get.return_value.eventlog.append.call_args_list[-1].kwargs["payload"]
         assert payload["entity_name"] == "Fallback note"
         assert payload["entity_type"] == "memory"
+
+    async def test_synthesis_candidate_use_writes_eventloom_artifact(self, fabric: MemoryFabric) -> None:
+        """Used answer candidates should write a cited synthesis artifact event."""
+        checkout = MemoryCheckout(
+            session_id="agent-1",
+            query="How much did I spend on bike expenses in total?",
+            prompt="# Memory Checkout",
+            working_set={},
+            ref=None,
+            current_facts=[],
+            evidence=[
+                {
+                    "content": "session_id=answer-1 I spent $120 on a bike helmet.",
+                    "citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa",
+                    "source_lane": "verbatim",
+                }
+            ],
+            provenance=[],
+            retention={},
+            warnings=[],
+            guidance={},
+            quality={"answerability": "answer_from_memory", "confidence": 0.86},
+            diagnostics={
+                "slot_plan": {
+                    "version": "slot_plan_v1",
+                    "required_slots": ["source", "numeric"],
+                    "optional_slots": ["exact", "semantic"],
+                },
+                "synthesis": {
+                    "answer_candidates": [
+                        {
+                            "rank": 1,
+                            "type": "currency",
+                            "confidence": 0.83,
+                            "answer_key": "currency_total_answer",
+                            "answer": "$185",
+                            "support_source_ids": ["answer-1", "answer-2", "answer-3"],
+                            "excluded_source_ids": ["answer-4"],
+                        }
+                    ]
+                },
+            },
+            context_counts={},
+            replay_event_count=0,
+            compacted=False,
+            assembly_policy={},
+        )
+
+        event = await fabric.record_synthesis_candidate(
+            checkout,
+            candidate=checkout.diagnostics["synthesis"]["answer_candidates"][0],
+            outcome="used",
+            actor="assistant",
+        )
+
+        log = fabric.session_manager.get.return_value.eventlog
+        call = log.append.call_args_list[-1]
+        assert call.args == ("memory.synthesis.used",)
+        assert call.kwargs["actor"] == "assistant"
+        assert call.kwargs["thread"] == "agent-1"
+        assert call.kwargs["payload"] == {
+            "query": "How much did I spend on bike expenses in total?",
+            "outcome": "used",
+            "answer_candidate": {
+                "rank": 1,
+                "type": "currency",
+                "confidence": 0.83,
+                "answer_key": "currency_total_answer",
+                "answer": "$185",
+                "support_source_ids": ["answer-1", "answer-2", "answer-3"],
+                "excluded_source_ids": ["answer-4"],
+            },
+            "quality": {"answerability": "answer_from_memory", "confidence": 0.86},
+            "slot_plan": {
+                "version": "slot_plan_v1",
+                "required_slots": ["source", "numeric"],
+                "optional_slots": ["exact", "semantic"],
+            },
+            "support_source_ids": ["answer-1", "answer-2", "answer-3"],
+            "excluded_source_ids": ["answer-4"],
+            "citations": ["eventloom://agent-1/events/1#aaaaaaaaaaaa"],
+        }
+        assert event.seq == 1
+
+    async def test_synthesis_candidate_rejection_writes_audit_event(self, fabric: MemoryFabric) -> None:
+        """Rejected answer candidates should be auditable without reinforcement semantics."""
+        checkout = MemoryCheckout(
+            session_id="agent-1",
+            query="How many weddings did I attend?",
+            prompt="# Memory Checkout",
+            working_set={},
+            ref=None,
+            current_facts=[],
+            evidence=[],
+            provenance=[],
+            retention={},
+            warnings=[],
+            guidance={},
+            quality={"answerability": "refresh_recommended", "confidence": 0.52},
+            diagnostics={
+                "synthesis": {
+                    "answer_candidates": [
+                        {"rank": 1, "type": "count", "answer": "4"}
+                    ]
+                }
+            },
+            context_counts={},
+            replay_event_count=0,
+            compacted=False,
+            assembly_policy={},
+        )
+
+        await fabric.record_synthesis_candidate(
+            checkout,
+            candidate={"rank": 1, "type": "count", "answer": "4"},
+            outcome="rejected",
+            actor="assistant",
+            reason="supporting sources were incomplete",
+        )
+
+        call = fabric.session_manager.get.return_value.eventlog.append.call_args_list[-1]
+        assert call.args == ("memory.synthesis.rejected",)
+        assert call.kwargs["payload"]["reason"] == "supporting sources were incomplete"
+        assert call.kwargs["payload"]["outcome"] == "rejected"
+
+    async def test_synthesis_candidate_rejects_foreign_checkout_candidate(self, fabric: MemoryFabric) -> None:
+        """Candidate feedback should fail closed when it is not from the checkout."""
+        checkout = MemoryCheckout(
+            session_id="agent-1",
+            query="How many weddings did I attend?",
+            prompt="# Memory Checkout",
+            working_set={},
+            ref=None,
+            current_facts=[],
+            evidence=[],
+            provenance=[],
+            retention={},
+            warnings=[],
+            guidance={},
+            quality={"answerability": "refresh_recommended", "confidence": 0.52},
+            diagnostics={
+                "synthesis": {
+                    "answer_candidates": [
+                        {"rank": 1, "type": "count", "answer": "4", "support_source_ids": ["answer-1"]}
+                    ]
+                }
+            },
+            context_counts={},
+            replay_event_count=0,
+            compacted=False,
+            assembly_policy={},
+        )
+
+        with pytest.raises(ValueError, match="diagnostics.synthesis.answer_candidates"):
+            await fabric.record_synthesis_candidate(
+                checkout,
+                candidate={"rank": 1, "type": "count", "answer": "4", "support_source_ids": ["answer-99"]},
+                outcome="used",
+                actor="assistant",
+            )
+
+        fabric.session_manager.get.return_value.eventlog.append.assert_not_called()
+
+    async def test_synthesis_evidence_feedback_writes_row_event(self, fabric: MemoryFabric) -> None:
+        """Used evidence rows should write auditable row-level reinforcement events."""
+        checkout = MemoryCheckout(
+            session_id="agent-1",
+            query="How much did I spend on bike expenses in total?",
+            prompt="# Memory Checkout",
+            working_set={},
+            ref=None,
+            current_facts=[],
+            evidence=[],
+            provenance=[],
+            retention={},
+            warnings=[],
+            guidance={},
+            quality={"answerability": "answer_from_memory", "confidence": 0.86},
+            diagnostics={
+                "slot_plan": {"version": "slot_plan_v1", "operation": "sum_values"},
+                "synthesis": {
+                    "answer_candidates": [
+                        {
+                            "rank": 1,
+                            "type": "currency",
+                            "answer": "$145",
+                            "support_source_ids": ["answer-1"],
+                        }
+                    ],
+                    "ledger_rows": [
+                        {
+                            "fact_id": "currency:0:0",
+                            "source_group": "answer-1",
+                            "citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa",
+                            "kind": "currency",
+                            "value": "120",
+                            "include_reason": "currency_amount",
+                        }
+                    ],
+                },
+            },
+            context_counts={},
+            replay_event_count=0,
+            compacted=False,
+            assembly_policy={},
+        )
+
+        event = await fabric.record_synthesis_evidence(
+            checkout,
+            row=checkout.diagnostics["synthesis"]["ledger_rows"][0],
+            outcome="used",
+            candidate=checkout.diagnostics["synthesis"]["answer_candidates"][0],
+            actor="assistant",
+            reason="row supported arithmetic",
+        )
+
+        call = fabric.session_manager.get.return_value.eventlog.append.call_args_list[-1]
+        assert call.args == ("memory.evidence.reinforced",)
+        assert call.kwargs["actor"] == "assistant"
+        assert call.kwargs["thread"] == "agent-1"
+        assert call.kwargs["payload"]["source_group"] == "answer-1"
+        assert call.kwargs["payload"]["fact_id"] == "currency:0:0"
+        assert call.kwargs["payload"]["reason"] == "row supported arithmetic"
+        assert event.seq == 1
+
+    async def test_synthesis_evidence_exclusion_writes_evidence_excluded_event(self, fabric: MemoryFabric) -> None:
+        """Excluded synthesis rows should write evidence exclusion audit events."""
+        checkout = MemoryCheckout(
+            session_id="agent-1",
+            query="How much did I spend on bike expenses in total?",
+            prompt="# Memory Checkout",
+            working_set={},
+            ref=None,
+            current_facts=[],
+            evidence=[],
+            provenance=[],
+            retention={},
+            warnings=[],
+            guidance={},
+            quality={"answerability": "answer_from_memory", "confidence": 0.86},
+            diagnostics={},
+            context_counts={},
+            replay_event_count=0,
+            compacted=False,
+            assembly_policy={},
+        )
+
+        await fabric.record_synthesis_evidence(
+            checkout,
+            row={
+                "fact_id": "currency:duplicate",
+                "source_group": "answer-4",
+                "citation": "eventloom://agent-1/events/4#dddddddddddd",
+                "kind": "currency",
+                "value": "40",
+                "exclude_reason": "duplicate_identity",
+            },
+            outcome="excluded",
+            actor="assistant",
+            reason="duplicate source row",
+        )
+
+        call = fabric.session_manager.get.return_value.eventlog.append.call_args_list[-1]
+        assert call.args == ("memory.evidence.excluded",)
+        assert call.kwargs["payload"]["outcome"] == "excluded"
+        assert call.kwargs["payload"]["source_group"] == "answer-4"
+        assert call.kwargs["payload"]["reason"] == "duplicate source row"
+
+    async def test_synthesis_artifact_created_writes_deterministic_payload(self, fabric: MemoryFabric) -> None:
+        """Checkout answer candidates should be persisted as synthesis artifacts."""
+        checkout = MemoryCheckout(
+            session_id="agent-1",
+            query="How much did I spend on bike expenses in total?",
+            prompt="# Memory Checkout",
+            working_set={},
+            ref=None,
+            current_facts=[],
+            evidence=[
+                {
+                    "content": "session_id=answer-1 I spent $120 on a bike helmet.",
+                    "citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa",
+                    "source_lane": "verbatim",
+                }
+            ],
+            provenance=[],
+            retention={},
+            warnings=[],
+            guidance={},
+            quality={"answerability": "answer_from_memory", "confidence": 0.86},
+            diagnostics={
+                "synthesis": {
+                    "answer_candidates": [
+                        {
+                            "rank": 1,
+                            "type": "currency",
+                            "answer": "$120",
+                            "support_source_ids": ["answer-1"],
+                        }
+                    ]
+                }
+            },
+            context_counts={},
+            replay_event_count=0,
+            compacted=False,
+            assembly_policy={},
+        )
+
+        event = await fabric.record_synthesis_artifact(checkout, actor="assistant")
+
+        call = fabric.session_manager.get.return_value.eventlog.append.call_args_list[-1]
+        assert call.args == ("memory.synthesis.artifact.created",)
+        assert call.kwargs["actor"] == "assistant"
+        assert call.kwargs["thread"] == "agent-1"
+        assert call.kwargs["payload"]["schema_version"] == "synthesis_artifact_v1"
+        assert call.kwargs["payload"]["artifact_id"].startswith("sha256:")
+        assert call.kwargs["payload"]["answer_candidates"][0]["answer"] == "$120"
+        assert call.kwargs["payload"]["support_packet"]["citations"] == [
+            "eventloom://agent-1/events/1#aaaaaaaaaaaa"
+        ]
+        assert event.seq == 1
 
     async def test_positive_feedback_preserves_packet_memory_provenance(self, fabric: MemoryFabric) -> None:
         """Packet-memory feedback should preserve source packet identifiers."""
@@ -1319,10 +1668,84 @@ class TestQuery:
         assert results[0].source == "verbatim"
         assert results[0].metadata is not None
         assert results[0].metadata["source_kind"] == "source_synthesis"
+        assert results[0].metadata["synthesis_packet"]["schema_version"] == "synthesis_packet_v1"
+        assert results[0].metadata["synthesis_packet"]["answer_candidates"]
         assert "zaxy_synthesis_bundle=true" in results[0].content
         assert "answer_1" in results[0].content
         assert "answer_2" in results[0].content
         assert "answer_3" in results[0].content
+
+    async def test_query_synthesis_context_uses_typed_bundle_packet(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Synthetic contexts should preserve typed packet data instead of reparsing text."""
+        fabric.query_router.query.return_value = []
+        typed_packet = {
+            "schema_version": "synthesis_packet_v1",
+            "answer_candidates": [
+                {
+                    "rank": 1,
+                    "type": "currency",
+                    "confidence": 0.91,
+                    "answer_key": "currency_total_answer",
+                    "answer": "$145",
+                    "support_source_ids": ["answer-1", "answer-2"],
+                    "excluded_source_ids": [],
+                }
+            ],
+            "ledger_rows": [
+                {
+                    "fact_id": "typed:currency:1",
+                    "source_group": "answer-1",
+                    "citation": "eventloom://agent/events/1#aaaaaaaaaaaa",
+                    "kind": "currency",
+                    "value": "120",
+                    "include_reason": "currency_amount",
+                }
+            ],
+            "content": "zaxy_synthesis_bundle=true",
+        }
+        source_contexts = [
+            Context(
+                content="longmemeval_session_id=answer-1 I bought a helmet for $120.",
+                source="verbatim",
+                score=10.0,
+                metadata={"citation": "eventloom://agent-1/events/1#cccccccccccc"},
+            ),
+            Context(
+                content="longmemeval_session_id=answer-2 I bought a chain for $25.",
+                source="verbatim",
+                score=9.0,
+                metadata={"citation": "eventloom://agent-1/events/2#cccccccccccc"},
+            ),
+        ]
+
+        with (
+            patch.object(fabric, "query_verbatim", return_value=source_contexts),
+            patch(
+                "zaxy.core.source_synthesis_bundle_result",
+                return_value=SimpleNamespace(
+                    content="\n".join(
+                        [
+                            "zaxy_synthesis_bundle=true",
+                            "candidate_rank=1 candidate_type=currency candidate_confidence=0.10",
+                            "currency_total_answer=$1",
+                        ]
+                    ),
+                    packet=typed_packet,
+                ),
+            ),
+        ):
+            results = await fabric.query(
+                "How much total money have I spent on bike-related expenses?",
+                session_id="agent-1",
+                limit=5,
+            )
+
+        packet = results[0].metadata["synthesis_packet"]
+        assert packet["answer_candidates"][0]["answer"] == "$145"
+        assert packet["ledger_rows"][0]["fact_id"] == "typed:currency:1"
 
     async def test_query_adds_absence_bundle_when_source_synthesis_defers(
         self,
@@ -1725,7 +2148,13 @@ class TestContextAssembly:
         assert checkout.evidence[0]["citation"] == "eventloom://agent-1/events/3#cccccccccccc"
         assert checkout.evidence[0]["source_lane"] == "graph"
         assert checkout.provenance[0]["event_seq"] == 3
-        assert checkout.diagnostics == {
+        diagnostics = dict(checkout.diagnostics)
+        slot_plan = diagnostics.pop("slot_plan")
+        assert slot_plan["version"] == "slot_plan_v1"
+        assert slot_plan["answer_type"] == "direct_fact"
+        assert slot_plan["operation"] == "select_fact"
+        assert slot_plan["required_slots"] == []
+        assert diagnostics == {
             "source_lanes": {"graph": 2},
             "citation_count": 2,
             "current_citation_count": 1,
@@ -1775,6 +2204,16 @@ class TestContextAssembly:
                 "lanes": ["bm25", "hash_vector", "verbatim", "graph", "lexical_rerank"],
                 "hosted": False,
                 "experimental": False,
+            },
+            "purpose_retrieval_policy": {
+                "profile": "general",
+                "applied": False,
+                "emphasis_terms": [],
+                "scoring_profile": "balanced",
+                "recall_multiplier": 1,
+                "min_recall_limit": 0,
+                "base_recall_limit": 3,
+                "resolved_recall_limit": 3,
             },
         }
         assert checkout.guidance["recommended_next_call"] == {
@@ -1965,6 +2404,158 @@ class TestContextAssembly:
         assert checkout.quality["confidence"] == 0.77
         assert checkout.quality["required_action"] == checkout.guidance["recommended_next_call"]
         assert "Checkout contains warnings that reduce confidence." in checkout.quality["reasons"]
+
+    def test_memory_checkout_serializes_purpose_profile(self) -> None:
+        """build_memory_checkout() should preserve the purpose-conditioned contract."""
+        assembly = ContextAssembly(
+            session_id="agent-1",
+            prompt="# Active Memory Working Set\n- JWKS cache risk is current.",
+            contexts=[
+                Context(
+                    content="JWKS cache risk is current.",
+                    source="keyword",
+                    score=0.91,
+                    metadata={"citation": "eventloom://agent-1/events/8#hhhhhhhhhhhh"},
+                    valid_from="2026-05-10T12:00:00Z",
+                    valid_to=None,
+                )
+            ],
+            working_set={"items": []},
+            context_counts={"graph": 1},
+            replay_event_count=8,
+            compacted=False,
+            warnings=[],
+            assembly_policy={},
+        )
+
+        checkout = build_memory_checkout(
+            query="review current auth risks",
+            assembly=assembly,
+            purpose={"profile": "review", "expected_action": "approve_or_block"},
+        )
+        payload = checkout.to_dict()
+
+        assert payload["purpose"]["profile"] == "review"
+        assert payload["purpose"]["expected_action"] == "approve_or_block"
+        assert payload["diagnostics"]["purpose"]["evidence_policy"] == "cited_current_facts_required"
+        assert "## Purpose Profile" in payload["prompt"]
+
+    def test_checkout_feedback_payloads_include_purpose_profile(self) -> None:
+        """Checkout feedback templates should preserve useful-for-what metadata."""
+        assembly = ContextAssembly(
+            session_id="agent-1",
+            prompt="# Active Memory Working Set\n- JWKS cache risk is current.",
+            contexts=[
+                Context(
+                    content="JWKS cache risk is current.",
+                    source="keyword",
+                    score=0.91,
+                    metadata={
+                        "citation": "eventloom://agent-1/events/8#hhhhhhhhhhhh",
+                        "entity_name": "JWKS cache risk",
+                        "entity_type": "risk",
+                    },
+                    valid_from="2026-05-10T12:00:00Z",
+                    valid_to=None,
+                )
+            ],
+            working_set={"items": []},
+            context_counts={"graph": 1},
+            replay_event_count=8,
+            compacted=False,
+            warnings=[],
+            assembly_policy={},
+        )
+
+        checkout = build_memory_checkout(
+            query="review current auth risks",
+            assembly=assembly,
+            purpose={"profile": "review", "expected_action": "approve_or_block"},
+        )
+
+        feedback_payload = checkout.guidance["feedback"]["payloads"][0]
+        assert feedback_payload["purpose"]["profile"] == "review"
+        assert feedback_payload["purpose"]["expected_action"] == "approve_or_block"
+
+    def test_memory_checkout_applies_coordinate_purpose_suppression(self) -> None:
+        """Coordinate purpose should prevent worker-local pending rows becoming current memory."""
+        assembly = ContextAssembly(
+            session_id="auth-main",
+            prompt="# Active Memory Working Set\n- Accepted and pending findings were retrieved.",
+            contexts=[
+                Context(
+                    content="Accepted parent state: API failures trace to expired JWKS cache handling.",
+                    source="keyword",
+                    score=0.91,
+                    metadata={
+                        "citation": "eventloom://auth-main/events/8#hhhhhhhhhhhh",
+                        "mission_id": "auth-main",
+                        "finding_id": "finding-api",
+                        "coordination_status": "accepted",
+                        "authority_scope": "parent-accepted",
+                    },
+                    valid_from="2026-05-10T12:00:00Z",
+                    valid_to=None,
+                ),
+                Context(
+                    content="Pending worker-local claim: UI refresh handling is missing retry state.",
+                    source="keyword",
+                    score=0.99,
+                    metadata={
+                        "citation": "eventloom://auth-main/events/9#iiiiiiiiiiii",
+                        "mission_id": "auth-main",
+                        "worker_id": "auth-ui",
+                        "finding_id": "finding-ui",
+                        "coordination_status": "pending",
+                        "authority_scope": "worker-local",
+                    },
+                    valid_from="2026-05-10T12:05:00Z",
+                    valid_to=None,
+                ),
+            ],
+            working_set={"items": []},
+            context_counts={"graph": 2},
+            replay_event_count=9,
+            compacted=False,
+            warnings=[],
+            assembly_policy={},
+        )
+
+        checkout = build_memory_checkout(
+            query="current accepted coordination state",
+            assembly=assembly,
+            purpose="coordinate",
+        )
+
+        assert [fact["finding_id"] for fact in checkout.current_facts] == ["finding-api"]
+        assert [item["finding_id"] for item in checkout.evidence] == ["finding-api"]
+        assert checkout.diagnostics["purpose_policy"]["suppressed_count"] == 1
+        assert checkout.diagnostics["purpose_policy"]["suppressed_reasons"] == {"worker_local_pending": 1}
+        assert checkout.retention["purpose_policy"]["suppress"] == [
+            "worker_local_pending",
+            "rejected_finding",
+            "stale_unpromoted_finding",
+        ]
+        assert checkout.guidance["feedback"]["payloads"] == [
+            {
+                "entity_name": "Accepted parent state: API failures trace to expired JWKS cache handling.",
+                "entity_type": "memory",
+                "feedback": "used",
+                "actor": "assistant",
+                "query": "current accepted coordination state",
+                "source": "keyword",
+                "score": 0.91,
+                "citation": "eventloom://auth-main/events/8#hhhhhhhhhhhh",
+                "importance": 0.6,
+                "mission_id": "auth-main",
+                "finding_id": "finding-api",
+                "coordination_status": "accepted",
+                "authority_scope": "parent-accepted",
+                "purpose": checkout.purpose,
+            }
+        ]
+        assert "UI refresh handling" not in checkout.prompt
+        assert "Purpose policy suppressed non-matching retrieved rows before projection." in checkout.quality["reasons"]
 
     def test_checkout_memory_reports_inferred_context_dependency(self) -> None:
         """build_memory_checkout() should expose inferred-path reliance to the model."""
@@ -2436,6 +3027,170 @@ class TestContextAssembly:
             "eventloom://agent-1/events/3#333333333333",
         ]
         assert "required_source_groups=2" in checkout.prompt
+
+    async def test_checkout_memory_general_purpose_does_not_rewrite_retrieval(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """General checkout should keep retrieval query semantics unchanged."""
+        fabric.session_manager.replay.return_value = MagicMock(
+            events=[],
+            integrity=MagicMock(ok=True),
+        )
+        fabric.query_router.query.return_value = []
+
+        with patch.object(fabric, "query_verbatim", return_value=[]):
+            checkout = await fabric.checkout_memory(
+                "current release state",
+                session_id="agent-1",
+                limit=3,
+            )
+
+        assert fabric.query_router.query.await_args.args[0] == "current release state"
+        assert checkout.diagnostics["purpose_retrieval_policy"] == {
+            "profile": "general",
+            "applied": False,
+            "emphasis_terms": [],
+            "scoring_profile": "balanced",
+            "recall_multiplier": 1,
+            "min_recall_limit": 0,
+            "base_recall_limit": 3,
+            "resolved_recall_limit": 3,
+        }
+
+    async def test_checkout_memory_applies_coordinate_purpose_retrieval_policy(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Coordinate checkout should retrieve with mission-state terms before projection."""
+        fabric.session_manager.replay.return_value = MagicMock(
+            events=[],
+            integrity=MagicMock(ok=True),
+        )
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content="Accepted parent state requires proof packet citations.",
+                source="keyword",
+                score=0.9,
+                valid_from=None,
+                valid_to=None,
+                citation="eventloom://agent-1/events/9#999999999999",
+                metadata={
+                    "coordination_status": "accepted",
+                    "authority_scope": "mission-parent",
+                },
+            )
+        ]
+
+        with patch.object(fabric, "query_verbatim", return_value=[]):
+            checkout = await fabric.checkout_memory(
+                "current mission state",
+                session_id="agent-1",
+                limit=3,
+                purpose="coordinate",
+            )
+
+        retrieval_query = fabric.query_router.query.await_args.args[0]
+        assert retrieval_query.startswith("current mission state purpose:coordinate")
+        assert "accepted_finding" in retrieval_query
+        assert "proof_packet" in retrieval_query
+        assert fabric.query_router.query.await_args.kwargs["limit"] == 24
+        assert fabric.query_router.query.await_args.kwargs["scoring_profile"] == "recall"
+        assert checkout.diagnostics["purpose_retrieval_policy"]["applied"] is True
+        assert checkout.diagnostics["purpose_retrieval_policy"]["profile"] == "coordinate"
+        assert checkout.diagnostics["purpose_retrieval_policy"]["scoring_profile"] == "recall"
+        assert checkout.diagnostics["purpose_retrieval_policy"]["base_recall_limit"] == 3
+        assert checkout.diagnostics["purpose_retrieval_policy"]["resolved_recall_limit"] == 24
+        assert checkout.current_facts[0]["authority_scope"] == "mission-parent"
+
+    async def test_checkout_memory_synthesizes_top_recall_sources_without_expanding_prompt_budget(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Checkout synthesis should use top recall sources even beyond visible prompt slots."""
+        fabric.session_manager.replay.return_value = MagicMock(
+            events=[],
+            integrity=MagicMock(ok=True),
+        )
+        fabric.query_router.query.return_value = []
+        source_contexts = [
+            ContextChunk(
+                content="session_id=distractor-1 I researched bike routes with no expenses.",
+                source="verbatim",
+                score=0.99,
+                valid_from=None,
+                valid_to=None,
+                metadata={
+                    "citation": "eventloom://agent-1/events/1#111111111111",
+                    "assembly_lane": "verbatim",
+                },
+            ),
+            ContextChunk(
+                content="session_id=distractor-2 My bike commute took 20 minutes.",
+                source="verbatim",
+                score=0.98,
+                valid_from=None,
+                valid_to=None,
+                metadata={
+                    "citation": "eventloom://agent-1/events/2#222222222222",
+                    "assembly_lane": "verbatim",
+                },
+            ),
+            ContextChunk(
+                content="session_id=answer-1 I bought my Bell Zephyr bike helmet for $120.",
+                source="verbatim",
+                score=0.97,
+                valid_from=None,
+                valid_to=None,
+                metadata={
+                    "citation": "eventloom://agent-1/events/3#333333333333",
+                    "assembly_lane": "verbatim",
+                },
+            ),
+            ContextChunk(
+                content="session_id=answer-2 I replaced the bike chain and it cost me $25.",
+                source="verbatim",
+                score=0.96,
+                valid_from=None,
+                valid_to=None,
+                metadata={
+                    "citation": "eventloom://agent-1/events/4#444444444444",
+                    "assembly_lane": "verbatim",
+                },
+            ),
+            ContextChunk(
+                content="session_id=answer-3 I got a new set of bike lights installed, which were $40.",
+                source="verbatim",
+                score=0.95,
+                valid_from=None,
+                valid_to=None,
+                metadata={
+                    "citation": "eventloom://agent-1/events/5#555555555555",
+                    "assembly_lane": "verbatim",
+                },
+            ),
+        ]
+
+        with patch.object(fabric, "query_verbatim", return_value=source_contexts):
+            checkout = await fabric.checkout_memory(
+                "How much total money have I spent on bike-related expenses?",
+                session_id="agent-1",
+                limit=2,
+            )
+
+        assert fabric.query_router.query.await_args.kwargs["limit"] > 2
+        assert "bike lights installed" not in checkout.prompt.split("# Memory Checkout", 1)[0]
+        assert checkout.diagnostics["synthesis"]["answer_candidates"][0]["answer"] == "$185"
+        assert checkout.diagnostics["synthesis"]["answer_candidates"][0]["support_source_ids"] == [
+            "answer-1",
+            "answer-2",
+            "answer-3",
+        ]
+        assert [
+            row["source_group"]
+            for row in checkout.diagnostics["synthesis"]["ledger_rows"]
+            if row.get("include_reason") == "currency_amount"
+        ] == ["answer-1", "answer-2", "answer-3"]
 
     async def test_assemble_context_includes_recent_packet_memory_lane(
         self,
@@ -3016,6 +3771,8 @@ class TestCoordinationAPI:
         assert checkout.accepted_findings[0].finding_id == finding.finding_id
         assert checkout.pending_findings == []
         assert checkout.excluded_pending_count == 1
+        assert checkout.purpose["profile"] == "coordinate"
+        assert "Purpose profile: coordinate" in checkout.prompt
 
     async def test_coordinate_brief_uses_configured_local_semantic_conflict_provider(
         self,
@@ -3118,6 +3875,172 @@ class TestCoordinationAPI:
         assert result.reviewed_count == 1
         assert result.promoted_count == 1
         assert fabric.graph.upsert_extraction.await_count == 5
+
+    async def test_coordinate_record_synthesis_artifact_writes_proof_packet(self, tmp_path: Path) -> None:
+        """Coordinate synthesis should persist a mission-scoped proof packet."""
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        fabric.graph = AsyncMock()
+        fabric.tracer = AsyncMock()
+
+        await fabric.coordinate_start_mission("release-rc1", objective="Ship release", actor="lead")
+        await fabric.coordinate_create_worker("release-rc1", "auth-api", actor="lead")
+        finding = await fabric.coordinate_report_finding(
+            "release-rc1",
+            "auth-api",
+            summary="Expired JWKS cache is the accepted auth failure cause.",
+            actor="auth-api-agent",
+            evidence=[{"kind": "command", "reference": "pytest tests/test_auth.py -q"}],
+            claim_key="auth.failure.cause",
+            claim_value="expired-jwks-cache",
+        )
+        review = await fabric.coordinate_review_finding(
+            "release-rc1",
+            finding.finding_id or "",
+            status="accepted",
+            actor="lead",
+            rationale="Command-backed.",
+        )
+        promotion = await fabric.coordinate_promote_finding("release-rc1", finding.finding_id or "", actor="lead")
+        handoff = await fabric.coordinate_create_handoff(
+            "release-rc1",
+            summary="Release handoff ready.",
+            actor="lead",
+        )
+        checkout = MemoryCheckout(
+            session_id="release-rc1",
+            query="Compose accepted release findings into the handoff answer.",
+            prompt="# Memory Checkout",
+            working_set={},
+            ref=None,
+            current_facts=[],
+            evidence=[
+                {
+                    "content": "finding-api accepted the JWKS cache cause.",
+                    "citation": f"eventloom://release-rc1/events/{promotion.event.seq}#{promotion.event.hash[:12]}",
+                    "source_lane": "graph",
+                }
+            ],
+            provenance=[],
+            retention={},
+            warnings=[],
+            guidance={},
+            quality={"answerability": "answer_from_memory", "confidence": 0.9},
+            diagnostics={
+                "synthesis": {
+                    "answer_candidates": [
+                        {
+                            "rank": 1,
+                            "type": "coordinate_handoff",
+                            "answer": "Accepted cause: expired JWKS cache.",
+                            "support_source_ids": [finding.finding_id],
+                        }
+                    ],
+                    "ledger_rows": [
+                        {
+                            "fact_id": finding.finding_id,
+                            "source_group": finding.finding_id,
+                            "citation": f"eventloom://release-rc1/events/{promotion.event.seq}#{promotion.event.hash[:12]}",
+                            "include_reason": "accepted_parent_state",
+                        }
+                    ],
+                }
+            },
+            context_counts={},
+            replay_event_count=0,
+            compacted=False,
+            assembly_policy={},
+        )
+
+        result = await fabric.coordinate_record_synthesis_artifact(
+            "release-rc1",
+            checkout,
+            decision_scope="handoff",
+            handoff_id=handoff.handoff_id,
+            actor="coordinator",
+        )
+
+        assert result["artifact_event"]["event_type"] == "memory.synthesis.artifact.created"
+        assert result["proof_event"]["event_type"] == "coordination.proof_packet.created"
+        proof = result["proof_packet"]
+        assert proof["authority_scope"] == "parent_accepted_state"
+        assert proof["artifact_id"] == result["artifact_id"]
+        assert proof["accepted_finding_ids"] == [finding.finding_id]
+        assert proof["review_event_refs"] == [
+            {"seq": review.event.seq, "hash": review.event.hash, "finding_id": finding.finding_id}
+        ]
+        assert proof["promotion_event_refs"] == [
+            {"seq": promotion.event.seq, "hash": promotion.event.hash, "finding_id": finding.finding_id}
+        ]
+        assert proof["worker_source_event_refs"][0]["worker_id"] == "auth-api"
+        assert proof["worker_source_event_refs"][0]["finding_id"] == finding.finding_id
+        assert proof["handoff_event_ref"] == {
+            "handoff_id": handoff.handoff_id,
+            "seq": handoff.event.seq,
+            "hash": handoff.event.hash,
+        }
+        assert proof["non_authoritative_rows"] == []
+        proof_events = [
+            event
+            for event in fabric.session_manager.replay("release-rc1").events
+            if event.type == "coordination.proof_packet.created"
+        ]
+        assert proof_events[-1].payload["handoff_event_ref"] == proof["handoff_event_ref"]
+
+    async def test_coordinate_record_synthesis_artifact_rejects_unknown_handoff_without_appending(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Invalid handoff-scoped proof calls should fail before writing audit events."""
+        fabric = MemoryFabric(eventloom_path=str(tmp_path / ".eventloom"), tracer_disabled=True)
+        fabric.graph = AsyncMock()
+        fabric.tracer = AsyncMock()
+
+        await fabric.coordinate_start_mission("release-rc1", objective="Ship release", actor="lead")
+        checkout = MemoryCheckout(
+            session_id="release-rc1",
+            query="Compose accepted release findings into the handoff answer.",
+            prompt="# Memory Checkout",
+            working_set={},
+            ref=None,
+            current_facts=[],
+            evidence=[],
+            provenance=[],
+            retention={},
+            warnings=[],
+            guidance={},
+            quality={"answerability": "answer_from_memory", "confidence": 0.9},
+            diagnostics={
+                "synthesis": {
+                    "answer_candidates": [
+                        {
+                            "rank": 1,
+                            "type": "coordinate_handoff",
+                            "answer": "No accepted findings.",
+                            "support_source_ids": [],
+                        }
+                    ],
+                    "ledger_rows": [],
+                }
+            },
+            context_counts={},
+            replay_event_count=0,
+            compacted=False,
+            assembly_policy={},
+        )
+        before = len(fabric.session_manager.replay("release-rc1").events)
+
+        with pytest.raises(ValueError, match="Unknown handoff_id"):
+            await fabric.coordinate_record_synthesis_artifact(
+                "release-rc1",
+                checkout,
+                decision_scope="handoff",
+                handoff_id="release-rc1:handoff:missing",
+            )
+
+        events = fabric.session_manager.replay("release-rc1").events
+        assert len(events) == before
+        assert not any(event.type == "memory.synthesis.artifact.created" for event in events)
+        assert not any(event.type == "coordination.proof_packet.created" for event in events)
 
     async def test_coordinate_record_detected_conflicts_projects_source_state_conflict(
         self,

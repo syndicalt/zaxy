@@ -105,6 +105,40 @@ await fabric.record_context_feedback(
     importance=0.8,
 )</code></pre>
       <p>Positive feedback (<code>used</code> or <code>helpful</code>) appends <code>memory.reinforced</code> events for the retrieved entity. Negative feedback (<code>irrelevant</code>) appends audit-only <code>memory.feedback</code> events and does not delete or decay existing memory. Feedback for <code>packet_memory</code> context preserves the packet projection citation plus source packet sequence/hash, provider path, and model when available.</p>
+      <p>Persist synthesis answer artifacts from Memory Checkout:</p>
+      <pre><code class="language-python">checkout = await fabric.checkout_memory(
+    &quot;How much did I spend on bike expenses in total?&quot;,
+    session_id=&quot;agent-1&quot;,
+    purpose=&quot;review&quot;,
+)
+artifact_event = await fabric.record_synthesis_artifact(checkout, actor=&quot;assistant&quot;)
+candidate = checkout.diagnostics[&quot;synthesis&quot;][&quot;answer_candidates&quot;][0]
+await fabric.record_synthesis_candidate(
+    checkout,
+    candidate=candidate,
+    outcome=&quot;used&quot;,
+    actor=&quot;assistant&quot;,
+)</code></pre>
+      <p><code>checkout_memory(..., purpose=...)</code> accepts a preset name such as <code>coding</code>, <code>review</code>, <code>release</code>, <code>security</code>, <code>research</code>, or <code>coordinate</code>, or a purpose object with role, task, risk, time horizon, expected action, evidence policy, retention policy, and ontology lens fields. The normalized profile is returned in the checkout payload and diagnostics so downstream feedback can distinguish memory that was useful for a release review from memory that was useful for implementation. Checkout also enforces purpose suppress rules before projection: for example, <code>coordinate</code> checkout excludes worker-local pending, rejected, and stale unpromoted rows from current facts while reporting the suppressed counts and reasons in <code>diagnostics.purpose_policy</code>. Non-general purpose profiles also condition retrieval before projection. Zaxy adds deterministic emphasis terms from the profile&#x27;s ontology lens, required evidence, expected action, and retention policy, selects a purpose-appropriate scoring profile, and raises the internal recall budget without increasing the visible prompt limit. The applied policy is reported in <code>diagnostics.purpose_retrieval_policy</code>, including the profile, emphasis terms, scoring profile, base recall limit, and resolved recall limit. Feedback templates produced by checkout include the normalized purpose profile when the profile is not <code>general</code>, and both <code>record_context_feedback(..., purpose=..., outcome=...)</code> and MCP <code>memory_feedback(..., purpose, outcome)</code> preserve that useful-for-what metadata in Eventloom. Reinforced memory projection keeps compact purpose and authority fields so future retrieval can distinguish accepted Coordinate state that supported a handoff from the same fact used for a code review or implementation step.</p>
+      <p><code>record_synthesis_artifact</code> appends <code>memory.synthesis.artifact.created</code> with a deterministic <code>synthesis_artifact_v1</code> payload: query, checkout quality, purpose profile, slot plan, answer candidates, auditable ledger rows, support citations, source groups, snippets, and verification warnings. <code>record_synthesis_candidate</code> writes outcome events such as <code>memory.synthesis.used</code>, <code>memory.synthesis.rejected</code>, or <code>memory.synthesis.corrected</code> without mutating the source memory. Candidate and row-level evidence feedback also preserve the purpose profile that conditioned the checkout.</p>
+      <p>MCP clients use the same contract through <code>memory_synthesis_artifact</code>. The tool accepts the Memory Checkout payload directly. If a selected <code>candidate</code> is provided, <code>outcome</code> must be provided in the same call; <code>helpful</code> normalizes to <code>used</code>, while <code>excluded</code> records <code>memory.evidence.excluded</code>. Selected candidates are validated against <code>diagnostics.synthesis.answer_candidates</code> and persisted from the canonical checkout candidate so support ids cannot drift from the artifact. MCP clients can also call <code>memory_synthesis_evidence</code> for one <code>diagnostics.synthesis.ledger_rows</code> item when a specific cited row was used or excluded, preserving the row fact id, source group, citation, selected candidate, and reason as row-level feedback. Synthesis artifacts, answer candidates, ledger rows, and outcome feedback are projected into graph memory as typed entities and edges for later traversal.</p>
+      <p>For Coordinate, treat the same artifact as the proof packet for accepted-state composition:</p>
+      <pre><code class="language-python">coordinate_state = await fabric.coordinate_checkout(
+    &quot;release-rc1&quot;,
+    include_diagnostics=True,
+)
+checkout = await fabric.checkout_memory(
+    &quot;Compose the accepted release-rc1 findings into the handoff answer.&quot;,
+    session_id=&quot;release-rc1&quot;,
+)
+proof = await fabric.coordinate_record_synthesis_artifact(
+    &quot;release-rc1&quot;,
+    checkout,
+    decision_scope=&quot;handoff&quot;,
+    handoff_id=&quot;release-rc1:handoff:9&quot;,
+    actor=&quot;coordinator&quot;,
+)</code></pre>
+      <p>The Coordinate checkout should show which rows are authoritative before the coordinator records a mission-scoped proof packet. It carries the <code>coordinate</code> purpose profile, which requires accepted parent state and treats worker-local pending findings as diagnostic unless explicitly included. The proof packet links the generic synthesis artifact to accepted findings, review events, promotion events, worker source events, optional handoff event refs, diagnostic pending rows, conflicts, and excluded duplicate, stale, or conflicting rows before promotion or handoff. Handoff-scoped proof packets require <code>handoff_id</code> and cite the matching handoff event sequence and hash.</p>
       <p>Render first-run integration payloads:</p>
       <pre><code class="language-python">from zaxy import render_agent_integration_template, render_handoff_adapter, render_mcp_client_config
 
@@ -113,7 +147,7 @@ handoff_payload = render_handoff_adapter(handoff, &quot;langgraph&quot;)
 template = render_agent_integration_template(&quot;langgraph&quot;, session_id=&quot;agent-1&quot;)</code></pre>
       <p><code>render_mcp_client_config()</code> supports <code>claude-desktop</code>, <code>cursor</code>, and <code>vscode</code> JSON fragments for local MCP setup. <code>render_handoff_adapter()</code> supports <code>generic</code>, <code>langgraph</code>, <code>crewai</code>, and <code>autogen</code> payload shapes without importing those frameworks.</p>
       <p>Customize retrieval policy:</p>
-      <pre><code class="language-python">from zaxy.query import HTTPReranker, LexicalReranker, QueryRouter
+      <pre><code class="language-python">from zaxy.query import HTTPReranker, LateInteractionHTTPReranker, LexicalReranker, QueryRouter
 
 router = QueryRouter(
     fabric.graph,
@@ -121,7 +155,7 @@ router = QueryRouter(
     reranker=LexicalReranker(),
 )
 chunks = await router.query(&quot;auth decision rationale&quot;, session_id=&quot;agent-1&quot;)</code></pre>
-      <p>Built-in scoring profiles are <code>balanced</code>, <code>precision</code>, <code>recall</code>, and <code>temporal</code>. Rerankers implement an async <code>rerank(query, results, limit=...)</code> method and receive fused, deduplicated graph candidates before final truncation. Use <code>LexicalReranker</code> for deterministic local reranking, <code>HTTPReranker</code> for local/self-hosted model endpoints, or <code>OpenAICompatibleReranker</code> for OpenAI-compatible chat-completions reranking.</p>
+      <p>Built-in scoring profiles are <code>balanced</code>, <code>precision</code>, <code>recall</code>, and <code>temporal</code>. Rerankers implement an async <code>rerank(query, results, limit=...)</code> method and receive fused, deduplicated graph candidates before final truncation. Use <code>LexicalReranker</code> for deterministic local reranking, <code>HTTPReranker</code> for local/self-hosted model endpoints, <code>LateInteractionHTTPReranker</code> for ColBERT-style token-interaction endpoints, or <code>OpenAICompatibleReranker</code> for OpenAI-compatible chat-completions reranking.</p>
       <p>Replay a session:</p>
       <pre><code class="language-python">replay = fabric.replay(session_id=&quot;agent-1&quot;, from_seq=0)</code></pre>
       <p>Invalidate a graph fact:</p>

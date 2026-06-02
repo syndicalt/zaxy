@@ -113,17 +113,26 @@ def _case_result(
             if finding.finding_id not in accepted
         }
     )
-    accepted_group = _accepted_value_group(public_findings, accepted)
+    accepted_groups = _accepted_value_groups(public_findings, accepted)
+    answer_packets = [
+        _answer(question, accepted_groups, public_findings, stale_ids=set(stale), rejected_ids=set(rejected))
+        for question in case.get("questions", [])
+    ]
+    final_packet = answer_packets[0] if answer_packets else _empty_answer_packet()
     return {
         "case_id": case_id,
         "accepted_findings": accepted,
         "rejected_findings": rejected,
         "stale_findings": stale,
         "conflicts": _conflicts(brief.conflicts),
-        "answers": [
-            _answer(question, accepted_group)
-            for question in case.get("questions", [])
-        ],
+        "answers": [packet["answer_payload"] for packet in answer_packets],
+        "returned_text": final_packet["answer"],
+        "injected_text": final_packet["answer"],
+        "answer_candidate": final_packet["answer_candidate"],
+        "synthesis_artifact": final_packet["synthesis_artifact"],
+        "support_source_ids": final_packet["support_source_ids"],
+        "excluded_source_ids": final_packet["excluded_source_ids"],
+        "non_authoritative_rows_injected": final_packet["non_authoritative_rows_injected"],
         "audit": {
             "replayable": True,
             "notes": _audit_notes(runtime_case),
@@ -263,26 +272,41 @@ def _evidence_kind(reference: str) -> str:
     return "source"
 
 
-def _accepted_value_group(
+def _accepted_value_groups(
     findings: list[dict[str, Any]],
     accepted_ids: list[str],
-) -> list[dict[str, Any]]:
+) -> list[list[dict[str, Any]]]:
     if not accepted_ids:
         return []
-    accepted_id = accepted_ids[0]
-    accepted = next(finding for finding in findings if str(finding["finding_id"]) == accepted_id)
-    return [
-        finding
-        for finding in findings
-        if finding.get("claim_key") == accepted.get("claim_key")
-        and finding.get("claim_value") == accepted.get("claim_value")
-    ]
+    accepted_id_set = set(accepted_ids)
+    groups: list[list[dict[str, Any]]] = []
+    for accepted_id in accepted_ids:
+        accepted = next(finding for finding in findings if str(finding["finding_id"]) == accepted_id)
+        group = [
+            finding
+            for finding in findings
+            if str(finding["finding_id"]) in accepted_id_set
+            and finding.get("claim_key") == accepted.get("claim_key")
+            and finding.get("claim_value") == accepted.get("claim_value")
+            and finding.get("evidence")
+        ]
+        groups.append(group)
+    return groups
 
 
-def _answer(question: dict[str, Any], accepted_group: list[dict[str, Any]]) -> dict[str, Any]:
+def _answer(
+    question: dict[str, Any],
+    accepted_groups: list[list[dict[str, Any]]],
+    findings: list[dict[str, Any]],
+    *,
+    stale_ids: set[str],
+    rejected_ids: set[str],
+) -> dict[str, Any]:
+    accepted_group = _select_answer_group(question, accepted_groups)
     if not accepted_group:
         answer = "No supported answer found."
         evidence: list[str] = []
+        support_ids: list[str] = []
     else:
         accepted = _best_finding(accepted_group)
         answer = f"{accepted.get('claim_key')} is {accepted.get('claim_value')}."
@@ -293,11 +317,145 @@ def _answer(question: dict[str, Any], accepted_group: list[dict[str, Any]]) -> d
                 for reference in finding.get("evidence", [])
             }
         )
+        support_ids = [str(finding["finding_id"]) for finding in accepted_group]
+    excluded_ids = [
+        str(finding["finding_id"])
+        for finding in findings
+        if str(finding["finding_id"]) in stale_ids
+        or (
+            str(finding["finding_id"]) in rejected_ids
+            and support_ids
+            and any(
+                finding.get("claim_key") == support.get("claim_key")
+                for support in accepted_group
+            )
+            and str(finding["finding_id"]) not in support_ids
+        )
+    ]
+    ledger_rows = [
+        *_support_ledger_rows(accepted_group),
+        *_excluded_ledger_rows(findings, excluded_ids, stale_ids=stale_ids),
+    ]
+    answer_candidate = {
+        "rank": 1,
+        "type": "coordinate_answer",
+        "confidence": 0.9 if support_ids else 0.0,
+        "answer": answer,
+        "support_source_ids": support_ids,
+        "excluded_source_ids": excluded_ids,
+    }
+    artifact = {
+        "schema_version": "coordinationbench_synthesis_artifact_v1",
+        "answer_candidates": [answer_candidate],
+        "ledger_rows": ledger_rows,
+    }
     return {
         "question_id": str(question["question_id"]),
         "answer": answer,
         "evidence": evidence,
+        "support_source_ids": support_ids,
+        "excluded_source_ids": excluded_ids,
+        "answer_candidate": answer_candidate,
+        "synthesis_artifact": artifact,
+        "non_authoritative_rows_injected": 0,
+        "answer_payload": {
+            "question_id": str(question["question_id"]),
+            "answer": answer,
+            "evidence": evidence,
+        },
     }
+
+
+def _empty_answer_packet() -> dict[str, Any]:
+    answer = "No supported answer found."
+    answer_candidate = {
+        "rank": 1,
+        "type": "coordinate_answer",
+        "confidence": 0.0,
+        "answer": answer,
+        "support_source_ids": [],
+        "excluded_source_ids": [],
+    }
+    return {
+        "question_id": "",
+        "answer": answer,
+        "evidence": [],
+        "support_source_ids": [],
+        "excluded_source_ids": [],
+        "answer_candidate": answer_candidate,
+        "synthesis_artifact": {
+            "schema_version": "coordinationbench_synthesis_artifact_v1",
+            "answer_candidates": [answer_candidate],
+            "ledger_rows": [],
+        },
+        "non_authoritative_rows_injected": 0,
+        "answer_payload": {"question_id": "", "answer": answer, "evidence": []},
+    }
+
+
+def _select_answer_group(question: dict[str, Any], groups: list[list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    if not groups:
+        return []
+    query_terms = _answer_terms(str(question.get("prompt") or ""))
+    return max(groups, key=lambda group: (_group_overlap(query_terms, group), _group_score(group)))
+
+
+def _group_overlap(query_terms: set[str], group: list[dict[str, Any]]) -> int:
+    if not query_terms:
+        return 0
+    text = " ".join(
+        str(finding.get(key) or "")
+        for finding in group
+        for key in ("claim_key", "claim_value", "summary")
+    )
+    return len(query_terms & _answer_terms(text))
+
+
+def _group_score(group: list[dict[str, Any]]) -> float:
+    return sum(_finding_source_score(finding) for finding in group)
+
+
+def _answer_terms(text: str) -> set[str]:
+    return {token for token in text.casefold().replace(".", " ").replace("-", " ").split() if len(token) > 2}
+
+
+def _support_ledger_rows(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {
+            "source_group": str(finding["finding_id"]),
+            "include_reason": "accepted_parent_state",
+            "claim_key": _optional_str(finding.get("claim_key")),
+            "claim_value": _optional_str(finding.get("claim_value")),
+            "citations": [str(reference) for reference in finding.get("evidence", [])],
+        }
+        for finding in findings
+    ]
+
+
+def _excluded_ledger_rows(
+    findings: list[dict[str, Any]],
+    excluded_ids: list[str],
+    *,
+    stale_ids: set[str],
+) -> list[dict[str, Any]]:
+    by_id = {str(finding["finding_id"]): finding for finding in findings}
+    rows: list[dict[str, Any]] = []
+    for finding_id in excluded_ids:
+        finding = by_id.get(finding_id)
+        if finding is None:
+            continue
+        stale = finding_id in stale_ids
+        rows.append(
+            {
+                "source_group": finding_id,
+                "include_reason": "stale_or_rejected_state",
+                "exclude_reason": "stale" if stale else "rejected",
+                "claim_key": _optional_str(finding.get("claim_key")),
+                "claim_value": _optional_str(finding.get("claim_value")),
+                "citations": [str(reference) for reference in finding.get("evidence", [])],
+            }
+        )
+    return rows
 
 
 def _conflicts(conflicts: list[Any]) -> list[dict[str, Any]]:

@@ -24,13 +24,13 @@ are tested through `docs/examples/mcp-tool-contract.json` and
 | Surface | Status | Contract authority |
 | --- | --- | --- |
 | `memory_bootstrap`, `memory_capabilities` | `Beta` | Model-facing bootstrap and capability manifest. |
-| `memory_checkout`, `context_assemble`, `context_after_turn` | `Beta` | Prompt-state and context assembly payloads. |
-| `memory_query`, `memory_verbatim`, `memory_feedback` | `Beta` | Graph, source-recall, and feedback tools. |
+| `memory_checkout`, `context_assemble`, `context_after_turn` | `Beta` | Prompt-state and context assembly payloads, including purpose-conditioned checkout profiles. |
+| `memory_query`, `memory_verbatim`, `memory_feedback`, `memory_synthesis_artifact`, `memory_synthesis_evidence` | `Beta` | Graph, source-recall, feedback, synthesis artifact, and row-level synthesis evidence tools. |
 | `memory_append`, `memory_replay`, `memory_invalidate` | `Beta` | Eventloom and temporal graph operations. |
 | `memory_skill` | `Experimental` | Procedural Skill Memory lifecycle helper. |
 | `coordination_start`, `coordination_worker_create`, `coordination_assign` | `Beta` | Coordinate mission setup tools. |
 | `coordination_report_finding`, `coordination_review_finding`, `coordination_promote` | `Beta` | Finding review and promotion workflow. |
-| `coordination_merge_brief`, `coordination_checkout`, `coordination_handoff` | `Beta` | Mission state, accepted memory, and handoff. |
+| `coordination_merge_brief`, `coordination_checkout`, `coordination_handoff`, `coordination_record_synthesis_artifact`, `coordination_proof_trace` | `Beta` | Mission state, accepted memory, Coordinate purpose policy, proof packets, proof trace replay, and handoff. |
 | `coordination_performance_ledger`, `coordination_approval_packet`, `coordination_apply_approval` | `Beta` | Audit and approval surfaces. |
 
 ## Python SDK Public Exports
@@ -79,11 +79,11 @@ additive unless a migration event documents the change.
 
 | Event family | Status | Examples |
 | --- | --- | --- |
-| Core memory and context | `Beta` | `memory.checkout.completed`, `memory.reinforced`, `memory.feedback`, `context.policy`. |
+| Core memory and context | `Beta` | `memory.checkout.completed`, `memory.reinforced`, `memory.feedback`, `memory.synthesis.artifact.created`, `memory.synthesis.used`, `memory.synthesis.rejected`, `memory.synthesis.corrected`, `memory.evidence.reinforced`, `memory.evidence.excluded`, `context.policy`. |
 | Agent work records | `Beta` | `goal.created`, `task.proposed`, `task.completed`, `decision.made`, `verification.recorded`, `issue.diagnosed`, `handoff.created`. |
 | Transcript and observations | `Beta` | `transcript.turn`, `command.completed`, `file.edit.applied`, `tool_call.completed`, `hook.checkpoint`. |
 | Document and code indexing | `Beta` | `document.indexed`, code file/symbol/import/call/coverage projection events. |
-| Coordinate lifecycle | `Beta` | `coordination.mission.created`, `coordination.worker.created`, `coordination.assignment.created`, `coordination.finding.reported`, `coordination.finding.reviewed`, `coordination.finding.promoted`, `coordination.handoff.created`. |
+| Coordinate lifecycle | `Beta` | `coordination.mission.created`, `coordination.worker.created`, `coordination.assignment.created`, `coordination.finding.reported`, `coordination.finding.reviewed`, `coordination.finding.promoted`, `coordination.handoff.created`, `coordination.proof_packet.created`. |
 | Inferred edges | `Beta` | `inference.edge.generated` with explicit confidence, method, and evidence metadata. |
 | Skill Memory | `Experimental` | `skill.proposed`, `skill.validated`, `skill.revised`, `skill.deprecated`, `skill.contradicted`, `skill.applied`, `skill.outcome_recorded`. |
 

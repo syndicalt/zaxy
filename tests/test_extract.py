@@ -457,6 +457,15 @@ class TestMemoryReinforced:
                 "summary": "Still relevant after review.",
                 "importance": 0.9,
                 "reinforcement_count": 4,
+                "purpose": {
+                    "profile": "coordinate",
+                    "expected_action": "brief_promote_or_handoff",
+                    "evidence_policy": "accepted_parent_state_with_citations_required",
+                },
+                "authority_scope": "parent-accepted",
+                "mission_id": "auth-main",
+                "finding_id": "finding-api",
+                "outcome": "supported_handoff",
             },
             actor="assistant",
         )
@@ -469,9 +478,156 @@ class TestMemoryReinforced:
         assert entity.properties == {
             "importance": 0.9,
             "last_reinforced_at": "2024-01-01T00:00:00Z",
+            "purpose_profile": "coordinate",
+            "purpose_expected_action": "brief_promote_or_handoff",
+            "purpose_evidence_policy": "accepted_parent_state_with_citations_required",
+            "authority_scope": "parent-accepted",
+            "mission_id": "auth-main",
+            "finding_id": "finding-api",
+            "outcome": "supported_handoff",
             "reinforcement_count": 4,
         }
         assert result.edges[0].relation_type == "reinforced_memory"
+
+
+class TestMemoryEvidenceFeedback:
+    """Tests for row-level synthesis evidence feedback extractors."""
+
+    def test_extracts_reinforced_synthesis_evidence_metadata(self) -> None:
+        ev = _make_event(
+            "memory.evidence.reinforced",
+            {
+                "query": "How much did I spend on bike expenses?",
+                "outcome": "used",
+                "fact_id": "currency:0:0",
+                "source_group": "answer-1",
+                "citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa",
+                "reason": "row supported arithmetic",
+            },
+            actor="assistant",
+        )
+
+        result = extract(ev)
+
+        entity = next(e for e in result.entities if e.entity_type == "synthesis_evidence")
+        assert entity.name == "currency:0:0"
+        assert entity.summary == "row supported arithmetic"
+        assert entity.properties == {
+            "outcome": "used",
+            "source_group": "answer-1",
+            "citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa",
+            "last_reinforced_at": "2024-01-01T00:00:00Z",
+        }
+        assert result.edges[0].relation_type == "reinforced_synthesis_evidence"
+        assert result.edges[1].relation_type == "cites_source_group"
+
+    def test_extracts_excluded_synthesis_evidence_metadata(self) -> None:
+        ev = _make_event(
+            "memory.evidence.excluded",
+            {
+                "outcome": "excluded",
+                "fact_id": "currency:duplicate",
+                "source_group": "answer-4",
+                "reason": "duplicate source row",
+            },
+            actor="assistant",
+        )
+
+        result = extract(ev)
+
+        entity = next(e for e in result.entities if e.entity_type == "synthesis_evidence")
+        assert entity.name == "currency:duplicate"
+        assert entity.properties == {
+            "outcome": "excluded",
+            "source_group": "answer-4",
+            "last_excluded_at": "2024-01-01T00:00:00Z",
+        }
+        assert result.edges[0].relation_type == "excluded_synthesis_evidence"
+
+
+class TestMemorySynthesisArtifacts:
+    """Tests for synthesis artifact and candidate outcome extractors."""
+
+    def test_extracts_synthesis_artifact_candidates_and_ledger_rows(self) -> None:
+        ev = _make_event(
+            "memory.synthesis.artifact.created",
+            {
+                "schema_version": "synthesis_artifact_v1",
+                "artifact_id": "sha256:artifact",
+                "session_id": "release-rc1",
+                "query": "Compose accepted release findings.",
+                "answer_candidates": [
+                    {
+                        "rank": 1,
+                        "type": "coordinate_handoff",
+                        "answer_key": "coordinate_handoff_answer",
+                        "answer": "Accepted cause: expired JWKS cache.",
+                        "confidence": 0.9,
+                        "support_source_ids": ["auth-api:finding:1"],
+                    }
+                ],
+                "ledger_rows": [
+                    {
+                        "fact_id": "auth-api:finding:1",
+                        "source_group": "auth-api:finding:1",
+                        "citation": "eventloom://release-rc1/events/4#aaaaaaaaaaaa",
+                        "include_reason": "accepted_parent_state",
+                    }
+                ],
+                "support_packet": {"source_groups": ["auth-api:finding:1"]},
+            },
+            actor="coordinator",
+        )
+
+        result = extract(ev)
+
+        artifact = next(e for e in result.entities if e.entity_type == "synthesis_artifact")
+        assert artifact.name == "sha256:artifact"
+        assert artifact.properties == {
+            "schema_version": "synthesis_artifact_v1",
+            "session_id": "release-rc1",
+            "answer_candidate_count": 1,
+            "ledger_row_count": 1,
+            "support_source_group_count": 1,
+        }
+        candidate = next(e for e in result.entities if e.entity_type == "synthesis_answer_candidate")
+        assert candidate.name == "sha256:artifact:candidate:coordinate_handoff_answer"
+        row = next(e for e in result.entities if e.entity_type == "synthesis_ledger_row")
+        assert row.name == "sha256:artifact:ledger:auth-api:finding:1"
+        assert [edge.relation_type for edge in result.edges] == [
+            "created_synthesis_artifact",
+            "artifact_has_answer_candidate",
+            "candidate_supported_by_source_group",
+            "artifact_has_ledger_row",
+        ]
+
+    def test_extracts_synthesis_candidate_outcome_feedback(self) -> None:
+        ev = _make_event(
+            "memory.synthesis.used",
+            {
+                "query": "Compose accepted release findings.",
+                "outcome": "used",
+                "answer_candidate": {
+                    "rank": 1,
+                    "type": "coordinate_handoff",
+                    "answer_key": "coordinate_handoff_answer",
+                    "answer": "Accepted cause: expired JWKS cache.",
+                    "support_source_ids": ["auth-api:finding:1"],
+                },
+                "support_source_ids": ["auth-api:finding:1"],
+            },
+            actor="coordinator",
+        )
+
+        result = extract(ev)
+
+        candidate = next(e for e in result.entities if e.entity_type == "synthesis_answer_candidate")
+        assert candidate.name == "candidate_feedback:candidate:coordinate_handoff_answer"
+        assert candidate.properties["outcome"] == "used"
+        assert [edge.relation_type for edge in result.edges] == [
+            "recorded_synthesis_used",
+            "candidate_supported_by_source_group",
+        ]
 
 
 class TestHookCheckpoint:
@@ -898,6 +1054,69 @@ class TestCoordinationEvents:
         assert "Auth mission complete." in handoff.summary
         assert "Release branch" in handoff.summary
         assert result.edges[0].relation_type == "mission_has_handoff"
+
+    def test_proof_packet_created_projects_authority_and_diagnostics(self) -> None:
+        ev = _make_event(
+            "coordination.proof_packet.created",
+            {
+                "schema_version": "coordination_proof_packet_v1",
+                "mission_id": "release-rc1",
+                "artifact_id": "sha256:proof",
+                "query": "Compose accepted release findings.",
+                "decision_scope": "handoff",
+                "authority_scope": "parent_accepted_state",
+                "accepted_finding_ids": ["auth-api:finding:1"],
+                "diagnostic_pending_ids": ["auth-ui:finding:1"],
+                "conflict_ids": ["conflict:abc123"],
+                "excluded_row_reasons": [{"source_group": "auth-ui:finding:1", "exclude_reason": "pending"}],
+                "non_authoritative_rows": [
+                    {
+                        "source_group": "auth-ui:finding:1",
+                        "fact_id": "auth-ui:finding:1",
+                        "status": "pending",
+                        "include_reason": "diagnostic_pending",
+                    }
+                ],
+                "handoff_event_ref": {
+                    "handoff_id": "release-rc1:handoff:9",
+                    "seq": 9,
+                    "hash": "b" * 64,
+                },
+            },
+            actor="coordinator",
+        )
+
+        result = extract(ev)
+
+        proof = next(e for e in result.entities if e.entity_type == "coordination_proof_packet")
+        assert proof.name == "sha256:proof"
+        assert proof.summary == "Compose accepted release findings. handoff"
+        assert proof.properties == {
+            "mission_id": "release-rc1",
+            "schema_version": "coordination_proof_packet_v1",
+            "artifact_id": "sha256:proof",
+            "decision_scope": "handoff",
+            "authority_scope": "parent_accepted_state",
+            "accepted_finding_count": 1,
+            "diagnostic_pending_count": 1,
+            "conflict_count": 1,
+            "non_authoritative_row_count": 1,
+            "excluded_row_reason_count": 1,
+            "handoff_id": "release-rc1:handoff:9",
+        }
+        artifact = next(e for e in result.entities if e.entity_type == "synthesis_artifact")
+        assert artifact.name == "sha256:proof"
+        diagnostic_row = next(e for e in result.entities if e.entity_type == "coordination_non_authoritative_row")
+        assert diagnostic_row.name == "sha256:proof:row:pending:auth-ui:finding:1"
+        assert diagnostic_row.properties["status"] == "pending"
+        assert [edge.relation_type for edge in result.edges] == [
+            "mission_has_proof_packet",
+            "proof_links_synthesis_artifact",
+            "proof_uses_accepted_finding",
+            "proof_excludes_non_authoritative_row",
+            "proof_diagnoses_conflict",
+            "proof_binds_handoff",
+        ]
 
 
 class TestPreferenceChanged:

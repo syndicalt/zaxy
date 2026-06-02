@@ -110,6 +110,8 @@ def run_beta_readiness(
         _check_release_gate_script(root),
         _check_backend_report_inputs(root),
         _check_benchmark_no_regression(root),
+        _check_coordination_competitor_claim_posture(root),
+        _check_purpose_benchmark_gate(root),
         _check_release_gate_surface_coverage(root),
         _check_external_validation_evidence(
             root,
@@ -612,6 +614,226 @@ def _check_benchmark_no_regression(root: Path) -> dict[str, str]:
             "Release benchmark checks gate checkout quality, citation coverage, "
             "and p95/p99 latency budgets across smoke, performance, and scale reports."
         ),
+    }
+
+
+def _check_coordination_competitor_claim_posture(root: Path) -> dict[str, str]:
+    """Verify public CoordinationBench docs do not overclaim Quarq/Hybi results."""
+    report_path = root / "reports" / "benchmarks" / "coordination-real-v1" / "coordination-benchmark.json"
+    markdown_path = root / "reports" / "benchmarks" / "coordination-real-v1" / "coordination-benchmark.md"
+    benchmarks_path = root / "docs" / "benchmarks.md"
+    roadmap_path = root / "docs" / "coordinate-roadmap.md"
+    manifest_dir = root / "reports" / "benchmarks" / "coordination-real-v1" / "competitor-runner-manifests"
+    missing_files = [
+        str(path.relative_to(root))
+        for path in (report_path, markdown_path, benchmarks_path, roadmap_path)
+        if not path.is_file()
+    ]
+    for name in ("quarq", "hybi"):
+        manifest_path = manifest_dir / f"{name}.runner-manifest.template.json"
+        if not manifest_path.is_file():
+            missing_files.append(str(manifest_path.relative_to(root)))
+    if missing_files:
+        return {
+            "name": "coordination_competitor_claims",
+            "status": "error",
+            "message": "CoordinationBench competitor claim artifacts are missing: " + ", ".join(missing_files),
+            "action": "Restore the archived CoordinationBench report, docs, and Quarq/Hybi manifest templates.",
+        }
+    try:
+        report = _json_loads(report_path)
+    except ValueError as exc:
+        return {
+            "name": "coordination_competitor_claims",
+            "status": "error",
+            "message": f"CoordinationBench report is not valid JSON: {exc}",
+            "action": "Regenerate or repair reports/benchmarks/coordination-real-v1/coordination-benchmark.json.",
+        }
+    docs = _read_many(root, ["docs/benchmarks.md", "docs/coordinate-roadmap.md"])
+    markdown = markdown_path.read_text(encoding="utf-8")
+    required_doc_fragments = [
+        "competitor_claim_gate",
+        "--require-competitor-claim quarq",
+        "--require-competitor-claim hybi",
+        "disclosure-only",
+        "public-claim gate",
+    ]
+    missing_docs = [fragment for fragment in required_doc_fragments if fragment not in docs]
+    if "## Competitor Claim Gate" not in markdown:
+        missing_docs.append("archived report markdown must include Competitor Claim Gate")
+    if missing_docs:
+        return {
+            "name": "coordination_competitor_claims",
+            "status": "error",
+            "message": "CoordinationBench competitor claim docs are incomplete: " + ", ".join(missing_docs),
+            "action": "Document the Quarq/Hybi claim gate and disclosure-only posture before release.",
+        }
+    adapters = report.get("competitor_adapters")
+    if not isinstance(adapters, dict):
+        return {
+            "name": "coordination_competitor_claims",
+            "status": "error",
+            "message": "CoordinationBench report is missing competitor_adapters.",
+            "action": "Regenerate the CoordinationBench report with competitor disclosures.",
+        }
+    gate = report.get("competitor_claim_gate")
+    if not isinstance(gate, dict):
+        return {
+            "name": "coordination_competitor_claims",
+            "status": "error",
+            "message": "CoordinationBench report is missing competitor_claim_gate.",
+            "action": "Regenerate the CoordinationBench report with the public claim gate.",
+        }
+    blockers: list[str] = []
+    for name in ("quarq", "hybi"):
+        adapter = adapters.get(name)
+        if not isinstance(adapter, dict):
+            blockers.append(f"{name} disclosure row is missing")
+            continue
+        status = str(adapter.get("status") or "")
+        claim_status = str(adapter.get("claim_status") or "")
+        if status == "not_run" and claim_status == "disclosure_only":
+            continue
+        if status != "completed" or claim_status != "same_harness":
+            blockers.append(f"{name} has unsupported status {status}/{claim_status}")
+            continue
+        if not isinstance(adapter.get("metrics"), dict):
+            blockers.append(f"{name} completed row is missing locally scored metrics")
+        audit = adapter.get("result_audit")
+        if not isinstance(audit, dict):
+            blockers.append(f"{name} completed row is missing result audit")
+            continue
+        if not str(audit.get("result_fingerprint") or ""):
+            blockers.append(f"{name} result audit is missing result_fingerprint")
+        manifest = audit.get("manifest")
+        if not isinstance(manifest, dict):
+            blockers.append(f"{name} result audit manifest is missing")
+            continue
+        missing_manifest_fields = [
+            field
+            for field in (
+                "name",
+                "display_name",
+                "adapter_contract",
+                "adapter_version",
+                "install_command",
+                "run_command",
+                "source_url",
+                "source_ref",
+            )
+            if not str(manifest.get(field) or "").strip()
+        ]
+        if missing_manifest_fields:
+            blockers.append(f"{name} result audit manifest missing {', '.join(missing_manifest_fields)}")
+    gate_status = str(gate.get("status") or "")
+    blocked_adapters = gate.get("blocked_adapters")
+    if gate_status == "blocked":
+        blocked_names = set(blocked_adapters) if isinstance(blocked_adapters, dict) else set()
+        if not {"quarq", "hybi"} <= blocked_names:
+            blockers.append("blocked claim gate must name quarq and hybi")
+    elif gate_status == "passed":
+        completed = {str(item) for item in gate.get("completed_adapters", []) if isinstance(item, str)}
+        if not {"quarq", "hybi"} <= completed:
+            blockers.append("passed claim gate must include completed quarq and hybi")
+    else:
+        blockers.append(f"competitor_claim_gate has unsupported status {gate_status!r}")
+    if blockers:
+        return {
+            "name": "coordination_competitor_claims",
+            "status": "error",
+            "message": "CoordinationBench competitor claim posture is unsafe: " + "; ".join(blockers),
+            "action": "Keep Quarq/Hybi disclosure-only or attach completed same-harness result audits before release.",
+        }
+    return {
+        "name": "coordination_competitor_claims",
+        "status": "ok",
+        "message": (
+            "CoordinationBench Quarq/Hybi posture is guarded: disclosure-only rows stay blocked "
+            "unless completed same-harness result audits exist."
+        ),
+    }
+
+
+def _check_purpose_benchmark_gate(root: Path) -> dict[str, str]:
+    """Verify purpose-conditioned memory claims have a passing archived gate."""
+    report_path = root / "reports" / "benchmarks" / "purpose-v1" / "purpose-benchmark.json"
+    markdown_path = root / "reports" / "benchmarks" / "purpose-v1" / "purpose-benchmark.md"
+    docs_path = root / "docs" / "benchmarks.md"
+    missing_files = [
+        str(path.relative_to(root))
+        for path in (report_path, markdown_path, docs_path)
+        if not path.is_file()
+    ]
+    if missing_files:
+        return {
+            "name": "purpose_benchmark_gate",
+            "status": "error",
+            "message": "Purpose benchmark artifacts are missing: " + ", ".join(missing_files),
+            "action": "Run python -m zaxy purpose-benchmark --output-dir reports/benchmarks/purpose-v1.",
+        }
+    try:
+        report = _json_loads(report_path)
+    except ValueError as exc:
+        return {
+            "name": "purpose_benchmark_gate",
+            "status": "error",
+            "message": f"Purpose benchmark report is not valid JSON: {exc}",
+            "action": "Regenerate reports/benchmarks/purpose-v1/purpose-benchmark.json.",
+        }
+    required_lanes = {
+        "Purpose Recall",
+        "Ontology Shift",
+        "Consequence Retention",
+        "Governed Forgetting",
+        "Action Outcome Loop",
+        "Cross-Role Citation",
+        "Accepted-State Discipline",
+    }
+    lanes = report.get("lanes")
+    if not isinstance(lanes, list):
+        return {
+            "name": "purpose_benchmark_gate",
+            "status": "error",
+            "message": "Purpose benchmark report is missing lanes.",
+            "action": "Regenerate the purpose-v1 benchmark report.",
+        }
+    lane_statuses = {
+        str(lane.get("name") or ""): str(lane.get("status") or "")
+        for lane in lanes
+        if isinstance(lane, dict)
+    }
+    missing_lanes = sorted(required_lanes - set(lane_statuses))
+    failing_lanes = sorted(name for name in required_lanes if lane_statuses.get(name) != "passed")
+    blockers: list[str] = []
+    if str(report.get("version") or "") != "purpose-v1":
+        blockers.append("version must be purpose-v1")
+    if str(report.get("status") or "") != "passed":
+        blockers.append("report status must be passed")
+    if missing_lanes:
+        blockers.append("missing lanes: " + ", ".join(missing_lanes))
+    if failing_lanes:
+        blockers.append("failing lanes: " + ", ".join(failing_lanes))
+    competitor_status = str(report.get("competitor_claim_status") or "")
+    if competitor_status != "blocked":
+        blockers.append("competitor_claim_status must remain blocked without same-harness adapters")
+    docs = _read_many(root, ["docs/benchmarks.md"])
+    markdown = markdown_path.read_text(encoding="utf-8")
+    for fragment in ("purpose-v1", "Semantic Reach", "Quarq", "same-harness"):
+        if fragment not in docs:
+            blockers.append(f"docs/benchmarks.md missing {fragment}")
+    if "Purpose Recall" not in markdown or "Accepted-State Discipline" not in markdown:
+        blockers.append("purpose benchmark markdown is missing required lane names")
+    if blockers:
+        return {
+            "name": "purpose_benchmark_gate",
+            "status": "error",
+            "message": "Purpose benchmark gate is unsafe: " + "; ".join(blockers),
+            "action": "Regenerate the purpose-v1 report and document the blocked competitor-claim posture.",
+        }
+    return {
+        "name": "purpose_benchmark_gate",
+        "status": "ok",
+        "message": "purpose-v1 benchmark passes all seven purpose-memory lanes with competitor claims blocked.",
     }
 
 

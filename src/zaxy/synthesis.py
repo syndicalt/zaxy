@@ -22,6 +22,13 @@ _CURRENCY_PURCHASE_LABEL_BEFORE_AMOUNT_RE = re.compile(
     r"(?:a|an|the|my)?\s*(?P<item>[^.!?;,]{1,100})",
     flags=re.IGNORECASE,
 )
+_AGE_AVERAGE_RE = (
+    re.compile(r"\b(?:just\s+turned|turned|am|is)\s+(?P<value>\d{1,3})\b", flags=re.IGNORECASE),
+    re.compile(
+        r"\b(?P<person>mom|dad|mother|father|grandma|grandpa|grandmother|grandfather)\s+is\s+(?P<value>\d{1,3})\b",
+        flags=re.IGNORECASE,
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -97,6 +104,99 @@ class SynthesisResult:
     lines: tuple[str, ...]
     support_source_groups: tuple[str, ...]
     excluded_source_groups: tuple[str, ...] = ()
+    answer_candidate: dict[str, object] | None = None
+
+
+@dataclass(frozen=True)
+class SumValuesOperation:
+    """Pure sum projection over an evidence ledger."""
+
+    kind: str
+
+    def execute(self, ledger: EvidenceLedger, *, rank: int, query: str = "") -> SynthesisResult:
+        del query
+        if self.kind == "currency":
+            return render_currency_result(ledger, rank=rank)
+        if self.kind == "duration":
+            return render_duration_result(ledger, rank=rank)
+        return _numeric_average_or_sum_result(
+            ledger,
+            rank=rank,
+            kind=self.kind,
+            output_prefix=self.kind,
+            operation="sum",
+        )
+
+
+@dataclass(frozen=True)
+class DifferenceBetweenOperation:
+    """Pure difference projection over an evidence ledger."""
+
+    kind: str
+
+    def execute(self, ledger: EvidenceLedger, *, rank: int, query: str = "") -> SynthesisResult:
+        del query
+        if self.kind == "currency":
+            return render_currency_result(ledger, rank=rank)
+        return _numeric_difference_result(
+            ledger,
+            rank=rank,
+            kind=self.kind,
+            output_prefix=self.kind,
+        )
+
+
+@dataclass(frozen=True)
+class AverageValuesOperation:
+    """Pure average projection over numeric ledger rows."""
+
+    kind: str
+    output_prefix: str | None = None
+
+    def execute(self, ledger: EvidenceLedger, *, rank: int, query: str = "") -> SynthesisResult:
+        del query
+        return _numeric_average_or_sum_result(
+            ledger,
+            rank=rank,
+            kind=self.kind,
+            output_prefix=self.output_prefix or self.kind,
+            operation="average",
+        )
+
+
+@dataclass(frozen=True)
+class ListItemsOperation:
+    """Pure list/count projection over event ledger rows."""
+
+    def execute(self, ledger: EvidenceLedger, *, rank: int, query: str = "") -> SynthesisResult:
+        return render_count_result(ledger, query, rank=rank)
+
+
+@dataclass(frozen=True)
+class TemporalIntervalOperation:
+    """Pure temporal interval projection over date ledger rows."""
+
+    def execute(self, ledger: EvidenceLedger, *, rank: int, query: str = "") -> SynthesisResult:
+        del query
+        return render_date_interval_result(ledger, rank=rank)
+
+
+def synthesis_operation_for_plan(
+    plan: SynthesisPlan,
+) -> SumValuesOperation | DifferenceBetweenOperation | AverageValuesOperation | ListItemsOperation | TemporalIntervalOperation:
+    """Return the pure operation object for a deterministic synthesis plan."""
+    required_kind = plan.required_kinds[0] if plan.required_kinds else "value"
+    if plan.operation == "difference_between":
+        return DifferenceBetweenOperation(kind=required_kind)
+    if plan.operation == "average_values":
+        if required_kind == "number" and "age" in plan.subject_terms:
+            return AverageValuesOperation(kind=required_kind, output_prefix="age")
+        return AverageValuesOperation(kind=required_kind)
+    if plan.operation in {"count_distinct", "list_items"}:
+        return ListItemsOperation()
+    if plan.operation in {"date_difference", "temporal_interval"}:
+        return TemporalIntervalOperation()
+    return SumValuesOperation(kind=required_kind)
 
 
 @dataclass(frozen=True)
@@ -401,6 +501,65 @@ def build_currency_ledger(query: str, contexts: list[str], *, plan: SynthesisPla
     return _filter_currency_ledger(ledger, focus_terms)
 
 
+def build_age_average_ledger(query: str, contexts: list[str], *, plan: SynthesisPlan | None = None) -> EvidenceLedger:
+    """Extract family age evidence into a typed number ledger for average synthesis."""
+    plan = plan or build_synthesis_plan(query)
+    query_tokens = set(source_tokens(query))
+    if plan.operation != "average_values" or "age" not in query_tokens:
+        return EvidenceLedger(plan=plan, rows=())
+    evidence = _age_average_evidence(contexts)
+    rows = [
+        EvidenceLedgerRow(
+            fact_id=f"age_average:{index}",
+            source_group=source_group(context),
+            citation=source_citation(context),
+            kind="number",
+            value=str(value),
+            unit="years",
+            label="age",
+            raw_span=raw,
+            context=context_text(context),
+            normalized_identity=f"age_average:{source_group(context)}:{value}",
+            relevance=4,
+            include_reason="age_average_input",
+            confidence=0.78,
+        )
+        for index, (context, value, raw) in enumerate(evidence)
+    ]
+    return EvidenceLedger(plan=plan, rows=tuple(rows))
+
+
+def _age_average_evidence(contexts: list[str]) -> list[tuple[str, int, str]]:
+    indexed = list(enumerate(_age_value_evidence(contexts)))
+    indexed.sort(
+        key=lambda item: (
+            _source_group_natural_key(source_group(item[1][0])),
+            item[0],
+        )
+    )
+    return [evidence for _index, evidence in indexed]
+
+
+def _age_value_evidence(contexts: list[str]) -> list[tuple[str, int, str]]:
+    values: list[int] = []
+    evidence: list[tuple[str, int, str]] = []
+    for context in contexts:
+        for pattern in _AGE_AVERAGE_RE:
+            for match in pattern.finditer(context):
+                value = int(match.group("value"))
+                if 0 < value < 125 and value not in values:
+                    values.append(value)
+                    evidence.append((context, value, match.group(0)))
+    return evidence
+
+
+def _source_group_natural_key(group: str) -> tuple[str, int]:
+    match = re.match(r"^(?P<prefix>.*?)(?:[_-](?P<suffix>\d+))?$", group)
+    if not match or match.group("suffix") is None:
+        return group, -1
+    return match.group("prefix"), int(match.group("suffix"))
+
+
 def render_currency_result(ledger: EvidenceLedger, *, rank: int) -> SynthesisResult:
     """Render currency synthesis lines from an evidence ledger."""
     candidates = ledger.included(kind="currency")
@@ -430,10 +589,97 @@ def render_currency_result(ledger: EvidenceLedger, *, rank: int) -> SynthesisRes
         difference = max(values) - min(values)
         lines.append(f"currency_difference={format_currency(difference)}")
         lines.append(f"currency_difference_answer={format_currency(difference)}")
+    answer_key = "currency_total_answer"
+    answer = format_currency(total)
+    if ledger.plan.operation == "difference_between" and len(values) >= 2:
+        answer_key = "currency_difference_answer"
+        answer = format_currency(max(values) - min(values))
     return SynthesisResult(
         lines=tuple(lines),
         support_source_groups=tuple(dict.fromkeys(row.source_group for row in candidates)),
         excluded_source_groups=tuple(dict.fromkeys(row.source_group for row in excluded)),
+        answer_candidate=_answer_candidate(
+            rank=rank,
+            candidate_type="currency",
+            candidates=candidates,
+            excluded=excluded,
+            answer_key=answer_key,
+            answer=answer,
+        ),
+    )
+
+
+def _numeric_average_or_sum_result(
+    ledger: EvidenceLedger,
+    *,
+    rank: int,
+    kind: str,
+    output_prefix: str,
+    operation: str,
+) -> SynthesisResult:
+    candidates = ledger.included(kind=kind)
+    excluded = ledger.excluded(kind=kind)
+    if not candidates:
+        return SynthesisResult(lines=(), support_source_groups=())
+    values = [float(row.value) for row in candidates]
+    answer = sum(values) / len(values) if operation == "average" else sum(values)
+    operation_name = "average" if operation == "average" else "total"
+    lines = [
+        *_candidate_diagnostic_lines(kind, candidates, rank=rank),
+        f"{output_prefix}_values=" + ",".join(format_number(value) for value in values),
+        f"{output_prefix}_{operation_name}={format_number(answer)}",
+    ]
+    if operation == "sum":
+        lines.append(f"{output_prefix}_total_answer={format_number(answer)}")
+    answer_key = f"{output_prefix}_{operation_name}"
+    if operation == "sum":
+        answer_key = f"{output_prefix}_total_answer"
+    return SynthesisResult(
+        lines=tuple(lines),
+        support_source_groups=tuple(dict.fromkeys(row.source_group for row in candidates)),
+        excluded_source_groups=tuple(dict.fromkeys(row.source_group for row in excluded)),
+        answer_candidate=_answer_candidate(
+            rank=rank,
+            candidate_type=kind,
+            candidates=candidates,
+            excluded=excluded,
+            answer_key=answer_key,
+            answer=format_number(answer),
+        ),
+    )
+
+
+def _numeric_difference_result(
+    ledger: EvidenceLedger,
+    *,
+    rank: int,
+    kind: str,
+    output_prefix: str,
+) -> SynthesisResult:
+    candidates = ledger.included(kind=kind)
+    excluded = ledger.excluded(kind=kind)
+    if len(candidates) < 2:
+        return SynthesisResult(lines=(), support_source_groups=())
+    values = [float(row.value) for row in candidates]
+    difference = max(values) - min(values)
+    lines = [
+        *_candidate_diagnostic_lines(kind, candidates, rank=rank),
+        f"{output_prefix}_values=" + ",".join(format_number(value) for value in values),
+        f"{output_prefix}_difference={format_number(difference)}",
+        f"{output_prefix}_difference_answer={format_number(difference)}",
+    ]
+    return SynthesisResult(
+        lines=tuple(lines),
+        support_source_groups=tuple(dict.fromkeys(row.source_group for row in candidates)),
+        excluded_source_groups=tuple(dict.fromkeys(row.source_group for row in excluded)),
+        answer_candidate=_answer_candidate(
+            rank=rank,
+            candidate_type=kind,
+            candidates=candidates,
+            excluded=excluded,
+            answer_key=f"{output_prefix}_difference_answer",
+            answer=format_number(difference),
+        ),
     )
 
 
@@ -551,6 +797,14 @@ def render_count_result(
         lines=tuple(lines),
         support_source_groups=tuple(dict.fromkeys(row.source_group for row in candidates)),
         excluded_source_groups=_ordered_source_groups(excluded),
+        answer_candidate=_answer_candidate(
+            rank=rank,
+            candidate_type="count",
+            candidates=candidates,
+            excluded=excluded,
+            answer_key="count_answer",
+            answer=str(len(candidates)),
+        ),
     )
 
 
@@ -867,6 +1121,15 @@ def render_date_interval_result(ledger: EvidenceLedger, *, rank: int) -> Synthes
         lines=tuple(lines),
         support_source_groups=tuple(support_groups),
         excluded_source_groups=tuple(dict.fromkeys(row.source_group for row in excluded)),
+        answer_candidate=_answer_candidate(
+            rank=rank,
+            candidate_type="date_interval",
+            candidates=(intervals[0][4], intervals[0][5]),
+            excluded=excluded,
+            answer_key="date_interval_answer",
+            answer=f"{intervals[0][3]} days. {intervals[0][3] + 1} days (including the last day) is also acceptable.",
+            support=support_groups,
+        ),
     )
 
 
@@ -975,6 +1238,14 @@ def render_duration_result(ledger: EvidenceLedger, *, rank: int) -> SynthesisRes
         lines=tuple(lines),
         support_source_groups=tuple(dict.fromkeys(row.source_group for row in candidates)),
         excluded_source_groups=tuple(dict.fromkeys(row.source_group for row in excluded)),
+        answer_candidate=_answer_candidate(
+            rank=rank,
+            candidate_type="duration",
+            candidates=candidates,
+            excluded=excluded,
+            answer_key="duration_total_answer",
+            answer=_line_answer(lines, "duration_total_answer"),
+        ),
     )
 
 
@@ -2625,6 +2896,35 @@ def _candidate_diagnostic_lines(
         "candidate_support="
         + ",".join(dict.fromkeys(row.source_group for row in candidates)),
     ]
+
+
+def _answer_candidate(
+    *,
+    rank: int,
+    candidate_type: str,
+    candidates: tuple[EvidenceLedgerRow, ...],
+    excluded: tuple[EvidenceLedgerRow, ...],
+    answer_key: str,
+    answer: str,
+    support: list[str] | None = None,
+) -> dict[str, object]:
+    return {
+        "rank": rank,
+        "type": candidate_type,
+        "confidence": float(_candidate_confidence(candidates)),
+        "answer_key": answer_key,
+        "answer": answer,
+        "support_source_ids": list(dict.fromkeys(support or [row.source_group for row in candidates])),
+        "excluded_source_ids": list(dict.fromkeys(row.source_group for row in excluded)),
+    }
+
+
+def _line_answer(lines: list[str], key: str) -> str:
+    prefix = f"{key}="
+    for line in lines:
+        if line.startswith(prefix):
+            return line.removeprefix(prefix)
+    return ""
 
 
 def _candidate_diagnostic_lines_with_support(

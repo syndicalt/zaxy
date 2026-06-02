@@ -3890,7 +3890,7 @@ async def test_zaxy_retriever_projects_numeric_operators_in_aggregation_bundle()
     assert "currency_values=$300,$30" in bundle
     assert "currency_difference=$270" in bundle
     assert "currency_difference_answer=$270" in bundle
-    assert "minute_total_hours=0.5 hours" in bundle
+    assert "minute_total_hours=0.5 hours" not in bundle
 
 
 async def test_zaxy_retriever_deduplicates_repeated_currency_items() -> None:

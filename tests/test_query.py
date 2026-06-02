@@ -10,6 +10,7 @@ from zaxy.config import Settings
 from zaxy.graph import GraphEntity, GraphStore, SearchResult
 from zaxy.query import (
     HTTPReranker,
+    LateInteractionHTTPReranker,
     LexicalReranker,
     OpenAICompatibleReranker,
     QueryRouter,
@@ -442,6 +443,101 @@ class TestQueryRouting:
 
         result_names = [result.content.split(" ", 1)[0] for result in results]
         assert result_names.index("task-0000") <= 1
+
+    async def test_coordinate_proof_query_surfaces_artifact_candidate_and_ledger_row(
+        self,
+        router: QueryRouter,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Mission proof traversal should expose the composed answer proof graph."""
+        mission = GraphEntity(
+            name="release-rc1",
+            entity_type="mission",
+            valid_from="2026-06-02T00:00:00Z",
+            valid_to=None,
+            properties={"summary": "Ship release candidate with accepted findings."},
+        )
+        proof = GraphEntity(
+            name="sha256:proof",
+            entity_type="coordination_proof_packet",
+            valid_from="2026-06-02T00:01:00Z",
+            valid_to=None,
+            properties={
+                "summary": "Compose accepted release findings.",
+                "decision_scope": "handoff",
+                "authority_scope": "parent_accepted_state",
+                "_path_relation_types": ["mission_has_proof_packet"],
+                "_path_length": 1,
+            },
+        )
+        artifact = GraphEntity(
+            name="sha256:proof",
+            entity_type="synthesis_artifact",
+            valid_from="2026-06-02T00:01:01Z",
+            valid_to=None,
+            properties={
+                "answer_candidate_count": 1,
+                "ledger_row_count": 1,
+                "_path_relation_types": ["mission_has_proof_packet", "proof_links_synthesis_artifact"],
+                "_path_length": 2,
+            },
+        )
+        candidate = GraphEntity(
+            name="sha256:proof:candidate:coordinate_handoff_answer",
+            entity_type="synthesis_answer_candidate",
+            valid_from="2026-06-02T00:01:02Z",
+            valid_to=None,
+            properties={
+                "summary": "Accepted cause: expired JWKS cache.",
+                "answer_key": "coordinate_handoff_answer",
+                "_path_relation_types": [
+                    "mission_has_proof_packet",
+                    "proof_links_synthesis_artifact",
+                    "artifact_has_answer_candidate",
+                ],
+                "_path_length": 3,
+            },
+        )
+        row = GraphEntity(
+            name="sha256:proof:ledger:auth-api:finding:1",
+            entity_type="synthesis_ledger_row",
+            valid_from="2026-06-02T00:01:03Z",
+            valid_to=None,
+            properties={
+                "fact_id": "auth-api:finding:1",
+                "source_group": "auth-api:finding:1",
+                "include_reason": "accepted_parent_state",
+                "_path_relation_types": [
+                    "mission_has_proof_packet",
+                    "proof_links_synthesis_artifact",
+                    "artifact_has_ledger_row",
+                ],
+                "_path_length": 3,
+            },
+        )
+
+        mock_store.search_keyword.return_value = [
+            SearchResult(entity=mission, score=1.0, source="keyword")
+        ]
+        mock_store.search_traversal.return_value = [proof, artifact, candidate, row]
+        mock_store.has_traversal_edges = AsyncMock(return_value=True)
+
+        results = await router.query("release-rc1 handoff proof accepted findings", limit=8)
+
+        by_type = {result.entity_type: result for result in results}
+        assert "coordination_proof_packet" in by_type
+        assert "synthesis_artifact" in by_type
+        assert "synthesis_answer_candidate" in by_type
+        assert "synthesis_ledger_row" in by_type
+        assert by_type["synthesis_answer_candidate"].source == "traversal"
+        assert "Accepted cause: expired JWKS cache." in by_type["synthesis_answer_candidate"].content
+        assert by_type["synthesis_ledger_row"].score_explanation is not None
+        assert by_type["synthesis_ledger_row"].score_explanation["path_relation_types"] == [
+            "mission_has_proof_packet",
+            "proof_links_synthesis_artifact",
+            "artifact_has_ledger_row",
+        ]
+        mock_store.search_traversal.assert_awaited()
 
     async def test_identifier_keyword_hits_outrank_semantic_vector_neighbors(
         self,
@@ -1741,6 +1837,38 @@ class TestQueryRouting:
         assert results[0].score_explanation["scoring_profile"] == "precision"
         assert results[0].score_explanation["source_weight"] == 0.65
 
+    async def test_query_scoring_profile_override_is_per_call(
+        self,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Purpose checkout should be able to change ranking policy without mutating the router."""
+        router = QueryRouter(store=mock_store, default_limit=5, session_id="agent-1", scoring_profile="balanced")
+        mock_store.search_keyword.return_value = [
+            SearchResult(
+                entity=GraphEntity(
+                    name="Release gate",
+                    entity_type="decision",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={},
+                ),
+                score=1.0,
+                source="keyword",
+            )
+        ]
+
+        precision_results = await router.query("release gate", scoring_profile="precision")
+        balanced_results = await router.query("release gate")
+
+        assert precision_results[0].score == pytest.approx(0.65)
+        assert precision_results[0].score_explanation is not None
+        assert precision_results[0].score_explanation["scoring_profile"] == "precision"
+        assert precision_results[0].score_explanation["source_weight"] == 0.65
+        assert balanced_results[0].score == pytest.approx(0.8)
+        assert balanced_results[0].score_explanation is not None
+        assert balanced_results[0].score_explanation["scoring_profile"] == "balanced"
+        assert router.scoring_profile.name == "balanced"
+
     def test_custom_fusion_weights_override_individual_sources(self, mock_store: AsyncMock) -> None:
         """Partial fusion overrides should preserve unspecified source weights."""
         router = QueryRouter(
@@ -1842,6 +1970,153 @@ class TestQueryRouting:
         assert results[1].score_explanation is not None
         assert results[1].score_explanation["retention_decay_multiplier"] < 1.0
 
+    async def test_decay_retention_policy_uses_purpose_specific_half_life(
+        self,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Purpose metadata should let Coordinate authority resist generic decay."""
+        router = QueryRouter(
+            store=mock_store,
+            default_limit=5,
+            session_id="agent-1",
+            retention_policy="decay",
+            retention_decay_half_life_days=30,
+        )
+        mock_store.search_keyword.return_value = [
+            SearchResult(
+                entity=GraphEntity(
+                    name="Coordinate accepted state",
+                    entity_type="memory",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={"purpose_profile": "coordinate"},
+                ),
+                score=1.0,
+                source="keyword",
+            ),
+            SearchResult(
+                entity=GraphEntity(
+                    name="Generic old note",
+                    entity_type="memory",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={},
+                ),
+                score=0.9,
+                source="keyword",
+            ),
+        ]
+
+        results = await router.query("state note", temporal_point="2024-03-01T00:00:00Z", limit=2)
+
+        assert results[0].content.startswith("Coordinate accepted state")
+        assert results[0].score_explanation is not None
+        assert results[0].score_explanation["retention_policy"] == "decay"
+        assert results[0].score_explanation["retention_purpose_profile"] == "coordinate"
+        assert results[0].score_explanation["retention_half_life_days"] == 180
+        assert results[0].score_explanation["retention_decay_multiplier"] > results[1].score_explanation["retention_decay_multiplier"]
+
+    async def test_decay_retention_policy_uses_purpose_specific_expired_weight(
+        self,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Expired purpose-scoped memory should remain downweighted, not rewritten or deleted."""
+        router = QueryRouter(
+            store=mock_store,
+            default_limit=5,
+            session_id="agent-1",
+            retention_policy="decay",
+            retention_expired_weight=0.0,
+        )
+        mock_store.search_keyword.return_value = [
+            SearchResult(
+                entity=GraphEntity(
+                    name="Expired coordinate handoff",
+                    entity_type="memory",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={
+                        "expires_at": "2024-02-01T00:00:00Z",
+                        "purpose_profile": "coordinate",
+                    },
+                ),
+                score=1.0,
+                source="keyword",
+            )
+        ]
+
+        results = await router.query("coordinate handoff", temporal_point="2024-03-01T00:00:00Z", limit=1)
+
+        assert len(results) == 1
+        assert results[0].score == pytest.approx(0.1252)
+        assert results[0].score_explanation is not None
+        assert results[0].score_explanation["retention_expired"] is True
+        assert results[0].score_explanation["retention_purpose_profile"] == "coordinate"
+        assert results[0].score_explanation["retention_decay_multiplier"] == 0.15
+
+    async def test_filter_expired_retention_policy_ignores_purpose_expired_weight(
+        self,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Purpose overrides should not bypass explicit expired filtering."""
+        router = QueryRouter(
+            store=mock_store,
+            default_limit=5,
+            session_id="agent-1",
+            retention_policy="filter_expired",
+        )
+        mock_store.search_keyword.return_value = [
+            SearchResult(
+                entity=GraphEntity(
+                    name="Expired coordinate handoff",
+                    entity_type="memory",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={
+                        "expires_at": "2024-02-01T00:00:00Z",
+                        "purpose_profile": "coordinate",
+                    },
+                ),
+                score=1.0,
+                source="keyword",
+            )
+        ]
+
+        assert await router.query("coordinate handoff", temporal_point="2024-03-01T00:00:00Z") == []
+
+    async def test_retention_policy_diagnostics_do_not_mutate_source_entity(
+        self,
+        mock_store: AsyncMock,
+    ) -> None:
+        """Retention diagnostics should be copied onto result metadata only."""
+        router = QueryRouter(
+            store=mock_store,
+            default_limit=5,
+            session_id="agent-1",
+            retention_policy="decay",
+        )
+        properties = {"purpose_profile": "Security Review"}
+        mock_store.search_keyword.return_value = [
+            SearchResult(
+                entity=GraphEntity(
+                    name="Security review note",
+                    entity_type="memory",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties=properties,
+                ),
+                score=1.0,
+                source="keyword",
+            )
+        ]
+
+        results = await router.query("security review", temporal_point="2024-03-01T00:00:00Z")
+
+        assert results[0].score_explanation is not None
+        assert results[0].score_explanation["retention_purpose_profile"] == "security-review"
+        assert results[0].score_explanation["retention_half_life_days"] == 30
+        assert "_retention_policy" not in properties
+
     def test_build_retention_policy_uses_configured_defaults(self) -> None:
         """Retention policy config should be explicit and auditable."""
         policy = build_retention_policy(
@@ -1856,6 +2131,22 @@ class TestQueryRouting:
         assert policy.mode == "decay"
         assert policy.decay_half_life_days == 14
         assert policy.expired_weight == 0.25
+        assert policy.purpose_decay_half_life_days["coordinate"] == 180
+        assert policy.purpose_decay_half_life_days["security"] == 180
+        assert policy.purpose_decay_half_life_days["review"] == 90
+        assert policy.purpose_expired_weights["coordinate"] == 0.25
+
+        long_policy = build_retention_policy(
+            Settings(
+                _env_file=None,
+                retention_policy="decay",
+                retention_decay_half_life_days=365,
+                retention_expired_weight=0.2,
+            )
+        )
+        assert long_policy.purpose_decay_half_life_days["coordinate"] == 365
+        assert long_policy.purpose_decay_half_life_days["security"] == 365
+        assert long_policy.purpose_decay_half_life_days["review"] == 365
 
     async def test_lexical_reranker_can_promote_best_text_match(
         self,
@@ -1898,6 +2189,7 @@ class TestQueryRouting:
         assert results[0].content.startswith("Auth decision")
         assert results[0].score_explanation is not None
         assert results[0].score_explanation["reranker"] == "lexical"
+        assert results[0].score_explanation["rerank_strategy"] == "lexical_overlap"
         assert results[0].score_explanation["rerank_score"] > 0
 
     async def test_vector_failure_falls_back_to_keyword_results(
@@ -2100,8 +2392,78 @@ class TestModelRerankers:
 
         assert reranked[0].entity.name == "Auth decision"
         assert reranked[0].reranker == "http"
+        assert reranked[0].rerank_strategy == "cross_encoder"
         assert captured["url"] == "http://localhost:11434/rerank"
         assert captured["headers"] == {"Authorization": "Bearer local-key"}
+
+    async def test_late_interaction_http_reranker_sends_tokenized_candidates(self) -> None:
+        """Late-interaction rerankers should expose token-alignment inputs and metadata."""
+        captured: dict[str, object] = {}
+
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict[str, object]:
+                return {"results": [{"index": 1, "score": 0.97}, {"index": 0, "score": 0.1}]}
+
+        class FakeClient:
+            def post(
+                self,
+                url: str,
+                *,
+                headers: dict[str, str],
+                json: dict[str, object],
+            ) -> FakeResponse:
+                captured["url"] = url
+                captured["headers"] = headers
+                captured["json"] = json
+                return FakeResponse()
+
+        results = [
+            SearchResult(
+                entity=GraphEntity(
+                    name="General note",
+                    entity_type="document",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={"summary": "Background"},
+                ),
+                score=0.8,
+                source="keyword",
+            ),
+            SearchResult(
+                entity=GraphEntity(
+                    name="Auth decision",
+                    entity_type="decision",
+                    valid_from="2024-01-01T00:00:00Z",
+                    valid_to=None,
+                    properties={"summary": "Auth decision rationale"},
+                ),
+                score=0.7,
+                source="keyword",
+            ),
+        ]
+        reranker = LateInteractionHTTPReranker(
+            endpoint="http://localhost:8080/late-rerank",
+            api_key="local-key",
+            client=FakeClient(),
+        )
+
+        reranked = await reranker.rerank("auth decision rationale", results, limit=1)
+
+        assert reranked[0].entity.name == "Auth decision"
+        assert reranked[0].reranker == "late-interaction-http"
+        assert reranked[0].rerank_strategy == "late_interaction"
+        assert captured["url"] == "http://localhost:8080/late-rerank"
+        assert captured["headers"] == {"Authorization": "Bearer local-key"}
+        body = captured["json"]
+        assert isinstance(body, dict)
+        assert body["rerank_strategy"] == "late_interaction"
+        assert body["query_tokens"] == ["auth", "decision", "rationale"]
+        candidates = body["candidates"]
+        assert isinstance(candidates, list)
+        assert candidates[1]["tokens"] == ["auth", "decision", "decision", "auth", "decision", "rationale"]
 
     def test_build_reranker_uses_configured_provider(self) -> None:
         """Reranker factory should build the configured provider."""
@@ -2125,6 +2487,15 @@ class TestModelRerankers:
             )
         )
         assert isinstance(openai, OpenAICompatibleReranker)
+
+        late_interaction = build_reranker(
+            Settings(
+                _env_file=None,
+                reranker_provider="late-interaction-http",
+                reranker_url="http://localhost:8080/late-rerank",
+            )
+        )
+        assert isinstance(late_interaction, LateInteractionHTTPReranker)
 
     def test_build_reranker_rejects_missing_required_config(self) -> None:
         """Hosted/local reranker providers should fail loudly when misconfigured."""

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import builtins
+import json
 
 from zaxy import evidence_candidates, retrieval_plan, synthesis
 from zaxy.evidence_candidates import EvidenceProjection
@@ -48,6 +49,547 @@ def test_source_synthesis_reuses_candidate_evidence_scores(monkeypatch) -> None:
 
     assert bundle is not None
     assert len(calls) <= len(contexts) + 1
+
+
+def test_source_synthesis_bundle_result_preserves_string_api_and_typed_packet(monkeypatch) -> None:
+    """Typed bundle results should preserve exact legacy content while carrying packet data."""
+    typed_candidate = {
+        "rank": 1,
+        "type": "currency",
+        "confidence": 0.91,
+        "answer_key": "currency_total_answer",
+        "answer": "$145",
+        "support_source_ids": ["answer-1", "answer-2"],
+        "excluded_source_ids": [],
+    }
+    typed_row = {
+        "fact_id": "typed:currency:1",
+        "source_group": "answer-1",
+        "citation": "eventloom://agent/events/1#aaaaaaaaaaaa",
+        "kind": "currency",
+        "value": "120",
+        "include_reason": "currency_amount",
+    }
+
+    def fake_projection(query: str, contexts: list[str]) -> EvidenceProjection:
+        del query, contexts
+        return EvidenceProjection(
+            lines=(
+                "candidate_rank=1 candidate_type=currency candidate_confidence=0.10",
+                "currency_total_answer=$1",
+            ),
+            source_groups=("answer-1", "answer-2"),
+            ledger_rows=(typed_row,),
+            answer_candidates=(typed_candidate,),
+        )
+
+    monkeypatch.setattr(retrieval_plan, "aggregate_candidate_projection", fake_projection)
+    monkeypatch.setattr(retrieval_plan, "aggregate_evidence_score", lambda query, context: 1)
+    source_results = [
+        "longmemeval_session_id=answer-1 I bought a bike helmet for $120.",
+        "longmemeval_session_id=answer-2 I bought a bike chain for $25.",
+    ]
+
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="How much total money have I spent on bike-related expenses?",
+        source_results=source_results,
+        limit=5,
+    )
+    legacy = retrieval_plan.source_synthesis_bundle(
+        query="How much total money have I spent on bike-related expenses?",
+        source_results=source_results,
+        limit=5,
+    )
+
+    assert result is not None
+    assert result.content == legacy
+    assert result.packet["schema_version"] == "synthesis_packet_v1"
+    assert result.packet["content"] == result.content
+    assert result.packet["answer_candidates"] == [typed_candidate]
+    assert result.packet["ledger_rows"][0] == typed_row
+
+
+def test_source_synthesis_bundle_result_includes_operation_result_metadata() -> None:
+    """Generated typed bundle packets should include operation/result metadata."""
+    result = retrieval_plan.source_synthesis_bundle_result(
+        query="How much total money have I spent on bike-related expenses?",
+        source_results=[
+            "longmemeval_session_id=answer-1 I bought my Bell Zephyr bike helmet for $120.",
+            "longmemeval_session_id=answer-2 I replaced the bike chain and it cost me $25.",
+            "longmemeval_session_id=answer-3 I got a new set of bike lights installed, which were $40.",
+        ],
+        limit=5,
+    )
+
+    assert result is not None
+    assert result.packet["operations"][0]["name"] == "sum_values"
+    assert result.packet["operations"][0]["kind"] == "currency"
+    assert result.packet["result"] == {
+        "answer_key": "currency_total_answer",
+        "answer": "$185",
+        "confidence": 0.81,
+        "support_source_ids": ["answer-1", "answer-2", "answer-3"],
+        "excluded_source_ids": [],
+    }
+
+
+def test_aggregate_candidate_projection_exposes_typed_answer_candidates() -> None:
+    """Aggregate synthesis should expose operation-produced candidates without text reparsing."""
+    projection = evidence_candidates.aggregate_candidate_projection(
+        "How much total money have I spent on bike-related expenses?",
+        [
+            "longmemeval_session_id=answer-1 I bought my Bell Zephyr bike helmet for $120.",
+            "longmemeval_session_id=answer-2 I replaced the bike chain and it cost me $25.",
+            "longmemeval_session_id=answer-3 I got a new set of bike lights installed, which were $40.",
+        ],
+    )
+
+    assert projection.answer_candidates == (
+        {
+            "rank": 1,
+            "type": "currency",
+            "confidence": 0.81,
+            "answer_key": "currency_total_answer",
+            "answer": "$185",
+            "support_source_ids": ["answer-1", "answer-2", "answer-3"],
+            "excluded_source_ids": [],
+        },
+    )
+
+
+def test_source_synthesis_bundle_emits_auditable_ledger_rows() -> None:
+    """Generated synthesis bundles should carry ledger include/exclude decisions."""
+    bundle = retrieval_plan.source_synthesis_bundle(
+        query="How much total money have I spent on bike-related expenses?",
+        source_results=[
+            "longmemeval_session_id=answer-1 I bought my Bell Zephyr bike helmet for $120.",
+            "longmemeval_session_id=answer-2 I replaced the bike chain and it cost me $25.",
+            "longmemeval_session_id=answer-3 I got a new set of bike lights installed, which were $40.",
+            "longmemeval_session_id=answer-4 I recently got a new set of bike lights installed, which were $40.",
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    rows = [
+        json.loads(line.removeprefix("ledger_row="))
+        for line in bundle.splitlines()
+        if line.startswith("ledger_row=")
+    ]
+
+    assert [row["source_group"] for row in rows if not row.get("exclude_reason")] == [
+        "answer-1",
+        "answer-2",
+        "answer-3",
+    ]
+    assert [(row["source_group"], row["exclude_reason"]) for row in rows if row.get("exclude_reason")] == [
+        ("answer-4", "duplicate_identity")
+    ]
+
+
+def test_age_average_bundle_uses_typed_aggregate_projection(monkeypatch) -> None:
+    """Age-average output should come from typed synthesis operations, not ad hoc line rendering."""
+    monkeypatch.setattr(retrieval_plan, "_age_average_synthesis_lines", lambda query, contexts: [])
+    bundle = retrieval_plan.source_synthesis_bundle(
+        query="What is the average age of me, my parents, and my grandparents?",
+        source_results=[
+            "longmemeval_session_id=answer_1 I just turned 32 on February 12th.",
+            "longmemeval_session_id=answer_2 my parents are getting older too - my mom is 55 and my dad is 58.",
+            "longmemeval_session_id=answer_3 My grandma is 75 and my grandpa is 78.",
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "candidate_type=number" in bundle
+    assert "age_values=32,55,58,75,78" in bundle
+    assert "age_average=59.6" in bundle
+    assert bundle.count("age_average=59.6") == 1
+    rows = [
+        json.loads(line.removeprefix("ledger_row="))
+        for line in bundle.splitlines()
+        if line.startswith("ledger_row=")
+    ]
+    age_rows = [row for row in rows if row.get("include_reason") == "age_average_input"]
+    assert [row["value"] for row in age_rows] == ["32", "55", "58", "75", "78"]
+    assert {"fact_id", "citation", "kind", "value", "include_reason"} <= set(rows[0])
+
+
+def test_elapsed_duration_at_event_bundle_emits_ledger_rows() -> None:
+    """Elapsed-duration arithmetic should preserve both input rows in the ledger."""
+    bundle = retrieval_plan.source_synthesis_bundle(
+        query="How long had I been taking guitar lessons when I bought the new guitar amp?",
+        source_results=[
+            (
+                "longmemeval_session_id=answer_436d4309_1 "
+                "I've been taking weekly guitar lessons with Alex for six weeks now."
+            ),
+            (
+                "longmemeval_session_id=answer_436d4309_2 "
+                "I just got a new amp two weeks ago and want to get the most out of it."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    rows = [
+        json.loads(line.removeprefix("ledger_row="))
+        for line in bundle.splitlines()
+        if line.startswith("ledger_row=")
+    ]
+
+    assert "elapsed_at_event_answer=Four weeks" in bundle
+    assert [(row["source_group"], row["kind"], row["value"], row["unit"]) for row in rows] == [
+        ("answer_436d4309_1", "duration", "6", "weeks"),
+        ("answer_436d4309_2", "duration", "2", "weeks_ago"),
+    ]
+    assert {row["include_reason"] for row in rows} == {
+        "current_activity_duration",
+        "event_age_duration",
+    }
+
+
+def test_social_media_break_bundle_emits_break_specific_ledger_rows() -> None:
+    """Social-media break totals should be backed by break-specific ledger rows."""
+    bundle = retrieval_plan.source_synthesis_bundle(
+        query="How many days did I take social media breaks in total?",
+        source_results=[
+            (
+                "longmemeval_session_id=answer_a4204937_1 "
+                "Choose a daily time limit like 15 minutes or 1 hour for social media."
+            ),
+            (
+                "longmemeval_session_id=answer_a4204937_1 "
+                "I've been making an effort to cut down on social media lately - "
+                "I even took a week-long break from it in mid-January."
+            ),
+            (
+                "longmemeval_session_id=answer_a4204937_2 "
+                "I've been making an effort to cut down on social media lately - "
+                "I actually just got back from a 10-day break in mid-February."
+            ),
+            (
+                "longmemeval_session_id=distractor "
+                "Set a daily time limit of 15 minutes for Instagram Monday to Friday."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    rows = [
+        json.loads(line.removeprefix("ledger_row="))
+        for line in bundle.splitlines()
+        if line.startswith("ledger_row=")
+    ]
+    break_rows = [row for row in rows if row.get("include_reason") == "social_media_break_duration"]
+
+    assert "social_media_break_total=17 days" in bundle
+    assert [(row["source_group"], row["value"], row["unit"]) for row in break_rows] == [
+        ("answer_a4204937_1", "7", "days"),
+        ("answer_a4204937_2", "10", "days"),
+    ]
+    assert any(
+        row["source_group"] == "distractor" and row.get("exclude_reason") == "not_personal_memory"
+        for row in rows
+    )
+
+
+def test_road_trip_drive_bundle_emits_drive_specific_ledger_rows() -> None:
+    """Road-trip drive totals should be backed by destination-drive ledger rows."""
+    bundle = retrieval_plan.source_synthesis_bundle(
+        query="How many hours in total did I spend driving to my three road trip destinations combined?",
+        source_results=[
+            (
+                "longmemeval_session_id=answer_526354c8_1 "
+                "my recent trip to Outer Banks in North Carolina - "
+                "it only took me four hours to drive there from my place."
+            ),
+            (
+                "longmemeval_session_id=answer_526354c8_2 "
+                "when I drove for six hours to Washington D.C. recently"
+            ),
+            (
+                "longmemeval_session_id=answer_526354c8_3 "
+                "my recent trip to the mountains in Tennessee - "
+                "I drove for five hours to get there and it was totally worth it."
+            ),
+            (
+                "longmemeval_session_id=distractor "
+                "From the Outer Banks, it is about a 2-hour drive to Topsail Island, "
+                "and then another 4-5 hours to Tybee Island from there."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    rows = [
+        json.loads(line.removeprefix("ledger_row="))
+        for line in bundle.splitlines()
+        if line.startswith("ledger_row=")
+    ]
+    drive_rows = [row for row in rows if row.get("include_reason") == "road_trip_destination_drive_duration"]
+
+    assert "road_trip_drive_total=15 hours" in bundle
+    assert "road_trip_drive_total_round_trip=30 hours" in bundle
+    assert [(row["source_group"], row["value"], row["unit"]) for row in drive_rows] == [
+        ("answer_526354c8_1", "4", "hours"),
+        ("answer_526354c8_3", "5", "hours"),
+        ("answer_526354c8_2", "6", "hours"),
+    ]
+    assert any(
+        row["source_group"] == "distractor" and row.get("exclude_reason") == "not_personal_memory"
+        for row in rows
+    )
+
+
+def test_currency_synthesis_does_not_emit_unledgered_duration_fallback() -> None:
+    """Currency-only synthesis should not leak unrelated duration totals."""
+    bundle = retrieval_plan.source_synthesis_bundle(
+        query="How much more did I spend on accommodations per night in Hawaii compared to Tokyo?",
+        source_results=[
+            "longmemeval_session_id=answer-1 I spent $300 per night for the Hawaii hotel.",
+            "longmemeval_session_id=answer-2 I spent $30 per night for the Tokyo capsule hotel.",
+            "longmemeval_session_id=distractor I jogged for 30 minutes before checkout.",
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "currency_difference_answer=$270" in bundle
+    assert "minute_total_hours=0.5 hours" not in bundle
+
+
+def test_age_at_event_bundle_emits_operation_ledger_rows() -> None:
+    """Age-at-event subtraction should preserve current age and elapsed-year inputs."""
+    bundle = retrieval_plan.source_synthesis_bundle(
+        query="How old was I when I moved to the United States?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=answer_1 "
+                "I'm 32-year-old male and have been updating my immigration paperwork."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#def "
+                "longmemeval_session_id=answer_2 "
+                "I've been living in the United States for the past five years on a work visa."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    rows = [
+        json.loads(line.removeprefix("ledger_row="))
+        for line in bundle.splitlines()
+        if line.startswith("ledger_row=")
+    ]
+    age_rows = [row for row in rows if row.get("fact_id", "").startswith("age_at_event:")]
+
+    assert "age_at_event_answer=27" in bundle
+    assert [(row["source_group"], row["value"], row["unit"], row["include_reason"]) for row in age_rows] == [
+        ("answer_1", "32", "years", "current_age"),
+        ("answer_2", "5", "elapsed_years", "elapsed_since_event"),
+    ]
+
+
+def test_career_prior_duration_bundle_emits_operation_ledger_rows() -> None:
+    """Career-prior subtraction should preserve total and current-role inputs."""
+    bundle = retrieval_plan.source_synthesis_bundle(
+        query="How long have I been working before I started my current job at NovaTech?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=answer_1 "
+                "I've been working professionally for 9 years and I'm currently using a notebook."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#def "
+                "longmemeval_session_id=answer_2 "
+                "I've been working at NovaTech for about 4 years and 3 months now."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    rows = [
+        json.loads(line.removeprefix("ledger_row="))
+        for line in bundle.splitlines()
+        if line.startswith("ledger_row=")
+    ]
+    career_rows = [row for row in rows if row.get("fact_id", "").startswith("career_prior_duration:")]
+
+    assert "career_prior_duration_answer=4 years and 9 months" in bundle
+    assert [(row["source_group"], row["value"], row["unit"], row["include_reason"]) for row in career_rows] == [
+        ("answer_1", "108", "months", "total_career_duration"),
+        ("answer_2", "51", "months", "current_role_duration"),
+    ]
+
+
+def test_age_average_bundle_emits_age_ledger_rows() -> None:
+    """Age-average fields should preserve each age input with source groups."""
+    bundle = retrieval_plan.source_synthesis_bundle(
+        query="What is the average age of me, my parents, and my grandparents?",
+        source_results=[
+            "longmemeval_session_id=answer_2504635e_1 I just turned 32 on February 12th.",
+            "longmemeval_session_id=answer_2504635e_2 my parents are getting older too - my mom is 55 and my dad is 58.",
+            "longmemeval_session_id=answer_2504635e_3 My grandma is 75 and my grandpa is 78.",
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    rows = [
+        json.loads(line.removeprefix("ledger_row="))
+        for line in bundle.splitlines()
+        if line.startswith("ledger_row=")
+    ]
+    age_rows = [row for row in rows if row.get("include_reason") == "age_average_input"]
+
+    assert "age_average=59.6" in bundle
+    assert [(row["source_group"], row["value"], row["unit"]) for row in age_rows] == [
+        ("answer_2504635e_1", "32", "years"),
+        ("answer_2504635e_2", "55", "years"),
+        ("answer_2504635e_2", "58", "years"),
+        ("answer_2504635e_3", "75", "years"),
+        ("answer_2504635e_3", "78", "years"),
+    ]
+
+
+def test_relative_week_interval_bundle_emits_anchor_ledger_rows() -> None:
+    """Week-interval fields should preserve both relative-time anchors."""
+    bundle = retrieval_plan.source_synthesis_bundle(
+        query="How long had I been a member of Book Lovers Unite when I attended the meetup?",
+        source_results=[
+            "longmemeval_session_id=joined I joined Book Lovers Unite three weeks ago.",
+            "longmemeval_session_id=meetup I attended a meetup organized by Book Lovers Unite last week.",
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    rows = [
+        json.loads(line.removeprefix("ledger_row="))
+        for line in bundle.splitlines()
+        if line.startswith("ledger_row=")
+    ]
+    interval_rows = [row for row in rows if row.get("include_reason") == "relative_week_anchor"]
+
+    assert "week_interval_answer=Two weeks" in bundle
+    assert [(row["source_group"], row["value"], row["unit"]) for row in interval_rows] == [
+        ("joined", "3", "weeks_ago"),
+        ("meetup", "1", "weeks_ago"),
+    ]
+
+
+def test_mixed_relative_interval_bundle_emits_month_and_week_ledger_rows() -> None:
+    """Mixed month/week interval fields should preserve normalized anchors."""
+    bundle = retrieval_plan.source_synthesis_bundle(
+        query="How long had I been using the new area rug when I rearranged my living room furniture?",
+        source_results=[
+            "longmemeval_session_id=answer_1 I recently got a new area rug for my living room a month ago.",
+            "longmemeval_session_id=answer_2 I rearranged the furniture three weeks ago.",
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    rows = [
+        json.loads(line.removeprefix("ledger_row="))
+        for line in bundle.splitlines()
+        if line.startswith("ledger_row=")
+    ]
+    interval_rows = [row for row in rows if row.get("include_reason") in {"relative_month_anchor", "relative_week_anchor"}]
+
+    assert "relative_week_interval_answer=One week" in bundle
+    assert [(row["source_group"], row["value"], row["unit"], row["include_reason"]) for row in interval_rows] == [
+        ("answer_1", "1", "months_ago", "relative_month_anchor"),
+        ("answer_2", "3", "weeks_ago", "relative_week_anchor"),
+    ]
+
+
+def test_anniversary_interval_bundle_emits_month_day_ledger_rows() -> None:
+    """Anniversary subtraction should preserve both dated inputs."""
+    bundle = retrieval_plan.source_synthesis_bundle(
+        query="How many months before my anniversary did Rachel get engaged?",
+        source_results=[
+            "longmemeval_session_id=answer_aaf71ce2_2 My close friend Rachel got engaged last month on May 15th.",
+            "longmemeval_session_id=answer_aaf71ce2_3 Our anniversary is coming up on July 22nd.",
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    rows = [
+        json.loads(line.removeprefix("ledger_row="))
+        for line in bundle.splitlines()
+        if line.startswith("ledger_row=")
+    ]
+    anniversary_rows = [row for row in rows if row.get("fact_id", "").startswith("anniversary_engagement:")]
+
+    assert "anniversary_engagement_interval_answer=2 months" in bundle
+    assert [(row["source_group"], row["value"], row["unit"], row["include_reason"]) for row in anniversary_rows] == [
+        ("answer_aaf71ce2_2", "5/15", "month_day", "engagement_date"),
+        ("answer_aaf71ce2_3", "7/22", "month_day", "anniversary_date"),
+    ]
+
+
+def test_categorical_temporal_bundle_emits_choice_ledger_rows() -> None:
+    """Parent, recency, and temporal-order answers should expose compared candidates."""
+    cases = [
+        (
+            "Who became a parent first, Rachel or Alex?",
+            [
+                "longmemeval_session_id=answer_1 Rachel's twins Jackson and Julia were born on February 12th.",
+                "longmemeval_session_id=answer_2 My cousin Alex just adopted a baby girl from China in January.",
+            ],
+            "parent_order_answer=Alex",
+            "parent_order_candidate",
+            [("answer_2", "Alex"), ("answer_1", "Rachel")],
+        ),
+        (
+            "Which streaming service did I start using most recently?",
+            [
+                "longmemeval_session_id=answer_1 I started using Hulu a few months ago.",
+                "longmemeval_session_id=answer_2 I started using Disney+ last week.",
+            ],
+            "recency_answer=Disney+",
+            "recency_candidate",
+            [("answer_2", "Disney+"), ("answer_1", "Hulu")],
+        ),
+        (
+            "Who did I meet first, Mark and Sarah or Tom?",
+            [
+                "longmemeval_session_id=answer_1 I met Mark and Sarah on a beach trip about a month ago.",
+                "longmemeval_session_id=answer_2 A few months ago, I volunteered and met a guy named Tom.",
+            ],
+            "temporal_order_answer=Tom",
+            "temporal_order_candidate",
+            [("answer_2", "Tom"), ("answer_1", "Mark and Sarah")],
+        ),
+    ]
+
+    for query, source_results, answer_line, include_reason, expected in cases:
+        bundle = retrieval_plan.source_synthesis_bundle(
+            query=query,
+            source_results=source_results,
+            limit=5,
+        )
+
+        assert bundle is not None
+        rows = [
+            json.loads(line.removeprefix("ledger_row="))
+            for line in bundle.splitlines()
+            if line.startswith("ledger_row=")
+        ]
+        choice_rows = [row for row in rows if row.get("include_reason") == include_reason]
+
+        assert answer_line in bundle
+        assert [(row["source_group"], row["candidate"]) for row in choice_rows] == expected
 
 
 def test_source_ordering_reuses_context_tokens_across_ranking_passes(monkeypatch) -> None:

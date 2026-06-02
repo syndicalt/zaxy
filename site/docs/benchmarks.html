@@ -315,7 +315,7 @@
       <p>Zaxy also has a synthetic suite-v1 benchmark review in <a href="benchmark-review.html">benchmark-review.md</a>. That review covers 650 paired queries across current memory, historical memory, graph traversal, indexed documents, sanitized transcripts, and mixed cross-lane context. On that representative agent-context workload, Zaxy scored 1.000 with OpenAI <code>text-embedding-3-small</code>, compared with 0.520 for vector and markdown+vector baselines and 0.005 for direct markdown scanning.</p>
       <p>Use suite-v1 to evaluate Zaxy&#x27;s architectural thesis: temporal, relational, replayable agent context should beat flat chunk retrieval on tasks that require current-vs-historical truth, graph relationships, citations, and mixed context. Use LongMemEval-compatible runs to compare with public memory-product claims.</p>
       <h2 id="coordinationbench">CoordinationBench</h2>
-      <p>CoordinationBench is the benchmark lane for Zaxy Coordinate. It measures whether a memory system can turn multiple isolated worker sessions into one governed parent mission history. The scorer reports accepted-finding precision and recall, conflict precision and recall, stale-claim rejection, duplicate consolidation, evidence coverage, parent-checkout answerability, citation coverage, Eventloom replayability, token estimates, and brief/promotion latency.</p>
+      <p>CoordinationBench is the benchmark lane for Zaxy Coordinate. It measures whether a memory system can turn multiple isolated worker sessions into one governed parent mission history. The scorer reports accepted-finding precision and recall, conflict precision and recall, stale-claim rejection, duplicate consolidation, evidence coverage, parent-checkout answerability, citation coverage, accepted-state synthesis quality, non-authoritative leakage, purpose feedback coverage, Eventloom replayability, token estimates, and brief/promotion latency.</p>
       <p>The current official CoordinationBench adapter result is a first-party, same-harness run through the external CoordinationBench scorer. The adapter was frozen before holdout evaluation and is recorded in CoordinationBench at <code>submissions/participants/zaxy-coordinate.adapter.json</code> with these source hashes:</p>
       <table>
         <thead>
@@ -443,7 +443,67 @@
         </tbody>
       </table>
       <p>The public-derived holdout mean is <code>0.606</code>. That result is the right product signal: the replay-backed coordination layer gets strong accepted-state precision and duplicate consolidation, but the current frozen adapter still needs better source-aware final answering, stale-source interpretation, and conflict detection across public-derived cases. Until independent review and unseen workload promotion are complete, Zaxy should not market a perfect CoordinationBench score as representative performance.</p>
-      <p>The internal <code>coordination-real-v1</code> report is archived at <a href="../reports/benchmarks/coordination-real-v1/coordination-benchmark.md"><code>reports/benchmarks/coordination-real-v1/coordination-benchmark.md</code></a>. It remains useful as a Zaxy development smoke test over real project history. It should not be used as the headline benchmark claim because it was produced inside the Zaxy repo and is easier to tune against than an external holdout pack. The report includes local baselines, disclosure-only adapter templates for Mem0, Agent Memory, and ActiveGraph, limitations, and reproduction commands.</p>
+      <p>The in-repo Zaxy-owned CoordinationBench adapter now emits a source-aware accepted-state answer packet for each case: <code>returned_text</code>, <code>answer_candidate</code>, <code>synthesis_artifact</code>, <code>support_source_ids</code>, <code>excluded_source_ids</code>, and <code>non_authoritative_rows_injected</code>. The scorer treats <code>accepted_state_synthesis_quality</code> as proof-backed: plain returned text is not enough to receive synthesis-quality credit. Public-derived holdout numbers must be rerun and archived before this adapter hardening changes any published holdout claim. The report also includes a machine-readable <code>coordinate_purpose_synthesis_gate</code> that passes only when accepted-state synthesis quality, non-authoritative leakage, Coordinate-purpose feedback coverage, citation coverage, parent-checkout answerability, and Eventloom replayability all meet their required floors. This is the gate for Zaxy Coordinate product claims; it is separate from the competitor claim gate. Coordinate proof packets are also projected into graph memory as mission-scoped proof nodes with accepted-finding, conflict, handoff, and non-authoritative-row edges, so benchmark evidence remains replayable and queryable instead of living only as text output. <code>purpose_feedback_coverage</code> is an internal Coordinate audit metric: Zaxy gets credit when accepted parent-state findings are feedback-ready with source citations, while external same-harness adapters get credit only when their strict result files include explicit Coordinate-purpose feedback events for the accepted findings. Disclosure-only competitor rows do not receive feedback coverage credit.</p>
+      <p>The internal <code>coordination-real-v1</code> report is archived at <a href="../reports/benchmarks/coordination-real-v1/coordination-benchmark.md"><code>reports/benchmarks/coordination-real-v1/coordination-benchmark.md</code></a>. It remains useful as a Zaxy development smoke test over real project history. It should not be used as the headline benchmark claim because it was produced inside the Zaxy repo and is easier to tune against than an external holdout pack. The report includes local baselines, disclosure-only adapter templates for Mem0, Agent Memory, ActiveGraph, Quarq, and Semantic Reach/Hybi, limitations, and reproduction commands. Its <code>competitor_claim_gate</code> is currently <code>blocked</code> for Quarq and Hybi, which means the report may disclose adapter status but must not be used as a same-harness public claim for either system. Its <code>coordinate_purpose_synthesis_gate</code> is <code>passed</code>, which means the internal real-history report is suitable as a development proof of the Coordinate purpose/synthesis contract while still not being a public competitor claim.</p>
+      <h2 id="purpose-conditioned-memory-gate">Purpose-Conditioned Memory Gate</h2>
+      <p>The <code>purpose-v1</code> benchmark is Zaxy&#x27;s deterministic internal gate for the &quot;memory is purpose&quot; claim. It does not compare against Semantic Reach, Quarq, or other products. Comparative SOTA claims remain blocked until same-harness adapters are pinned and scored.</p>
+      <p>Run:</p>
+      <pre><code class="language-bash">python -m zaxy purpose-benchmark --output-dir reports/benchmarks/purpose-v1</code></pre>
+      <p>Archived report: <code>reports/benchmarks/purpose-v1/purpose-benchmark.json</code></p>
+      <table>
+        <thead>
+          <tr>
+            <th>Lane</th>
+            <th>Status</th>
+            <th>Score</th>
+            <th>What it proves</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Purpose Recall</td>
+            <td>passed</td>
+            <td>1.000</td>
+            <td>Purpose profiles apply recall floors and ontology evidence terms.</td>
+          </tr>
+          <tr>
+            <td>Ontology Shift</td>
+            <td>passed</td>
+            <td>1.000</td>
+            <td>The same query resolves to distinct purpose-specific retrieval lenses.</td>
+          </tr>
+          <tr>
+            <td>Consequence Retention</td>
+            <td>passed</td>
+            <td>1.000</td>
+            <td>Profiles retain failures, accepted decisions, risks, and proof outcomes.</td>
+          </tr>
+          <tr>
+            <td>Governed Forgetting</td>
+            <td>passed</td>
+            <td>1.000</td>
+            <td>Decay mode protects obligations and risk memory while downweighting noise.</td>
+          </tr>
+          <tr>
+            <td>Action Outcome Loop</td>
+            <td>passed</td>
+            <td>1.000</td>
+            <td>Feedback records useful-for-purpose outcome metadata.</td>
+          </tr>
+          <tr>
+            <td>Cross-Role Citation</td>
+            <td>passed</td>
+            <td>1.000</td>
+            <td>The same citation can support different role-specific memories.</td>
+          </tr>
+          <tr>
+            <td>Accepted-State Discipline</td>
+            <td>passed</td>
+            <td>1.000</td>
+            <td>Coordinate compaction keeps accepted parent state and suppresses pending worker rows.</td>
+          </tr>
+        </tbody>
+      </table>
       <p>The smaller <code>coordination-v1</code> workload remains as the contract seed. It includes three workers, overlapping auth-failure findings, duplicate evidence, stale claims, conflicting claims, and a missing-evidence finding. Use it for adapter authors and fast protocol checks, not as the representative headline.</p>
       <p>Run the MVP harness:</p>
       <pre><code class="language-bash">zaxy coordinate benchmark --output-dir reports/benchmarks/coordination-v1 --json</code></pre>
@@ -457,12 +517,16 @@
             <th>Conflict recall</th>
             <th>Stale rejection</th>
             <th>Parent answerability</th>
+            <th>Synthesis quality</th>
+            <th>Leakage guard</th>
             <th>Citation coverage</th>
           </tr>
         </thead>
         <tbody>
           <tr>
             <td>Zaxy Coordinate</td>
+            <td>1.000</td>
+            <td>1.000</td>
             <td>1.000</td>
             <td>1.000</td>
             <td>1.000</td>
@@ -476,10 +540,14 @@
             <td>0.000</td>
             <td>0.000</td>
             <td>0.000</td>
+            <td>0.000</td>
+            <td>0.000</td>
           </tr>
           <tr>
             <td>BM25 worker logs</td>
             <td>0.333</td>
+            <td>0.000</td>
+            <td>0.000</td>
             <td>0.000</td>
             <td>0.000</td>
             <td>0.000</td>
@@ -492,10 +560,12 @@
             <td>0.000</td>
             <td>0.000</td>
             <td>0.000</td>
+            <td>0.000</td>
+            <td>0.000</td>
           </tr>
         </tbody>
       </table>
-      <p>The same report lists Mem0, Agent Memory, and ActiveGraph as <code>not_run</code> with <code>disclosure_only</code> claim status until a pinned runner manifest or strict result file is available. That is deliberate: CoordinationBench should make the adapter gap visible without turning placeholder templates into public claims.</p>
+      <p>The same report lists Mem0, Agent Memory, ActiveGraph, Quarq, and Semantic Reach/Hybi as <code>not_run</code> with <code>disclosure_only</code> claim status until a pinned runner manifest or strict result file is available. It also writes a machine-readable <code>competitor_claim_gate</code>; public same-harness claims for Quarq or Hybi are blocked until the gate sees completed, locally scored, fingerprinted result audits. That is deliberate: CoordinationBench should make the adapter gap visible without turning placeholder templates into public claims.</p>
       <h2 id="external-disclosures">External Disclosures</h2>
       <p>These rows summarize public claims from other projects. They are external disclosures, not same-harness results, because Zaxy did not execute those systems inside its benchmark harness.</p>
       <table>
@@ -525,6 +595,18 @@
             <td>+26% Accuracy over OpenAI Memory on LOCOMO; 91% faster responses and 90% lower token usage than full-context approaches</td>
             <td><a href="https://github.com/mem0ai/mem0/blob/main/LLM.md">mem0 LLM.md</a>, <a href="https://github.com/mem0ai/memory-benchmarks">memory-benchmarks</a></td>
             <td>Different benchmark family and metric; useful as production-memory context, but not directly comparable to LongMemEval R@5.</td>
+          </tr>
+          <tr>
+            <td>Quarq</td>
+            <td>Reports memory-first agent behavior and high LongMemEval-S accuracy claims.</td>
+            <td><a href="https://www.quarq.io/agent">quarq.io/agent</a>, <a href="https://github.com/quarqlabs/agent-oss">quarqlabs/agent-oss</a></td>
+            <td>Strong retrieval-protocol target, but Zaxy does not treat the claim as same-harness until a pinned runner or strict result file is locally scored.</td>
+          </tr>
+          <tr>
+            <td>Semantic Reach / HyperBinder / Hybi</td>
+            <td>Claims a unified HDC-backed substrate for semantic, graph, relational, and exact retrieval.</td>
+            <td><a href="https://www.semantic-reach.io/">semantic-reach.io</a>, <a href="https://semanticreach.github.io/hyperbinder-sdk/">HyperBinder SDK</a>, <a href="https://pypi.org/project/hybi/">hybi on PyPI</a></td>
+            <td>Architecture target for slot-aware retrieval, but public evidence is not a Zaxy same-harness result without a pinned HyperBinder/Hybi runtime adapter.</td>
           </tr>
         </tbody>
       </table>
@@ -559,9 +641,21 @@
             <td>The product page reports LongMemEval-S R@5 and the retrieval stack, but it does not document a stable same-harness CLI/API contract for Zaxy to call.</td>
             <td>Keep the claim in external disclosures until a reproducible benchmark command, dataset contract, and result export are available.</td>
           </tr>
+          <tr>
+            <td>Quarq</td>
+            <td>CoordinationBench adapter template</td>
+            <td>The OSS repo exposes a local memory-first agent architecture, but no Zaxy-pinned CoordinationBench runner is committed.</td>
+            <td>Fill the packaged <code>quarq</code> runner manifest with pinned install/source/run commands and score the generated result locally before publishing metrics.</td>
+          </tr>
+          <tr>
+            <td>Semantic Reach / HyperBinder / Hybi</td>
+            <td>CoordinationBench adapter template</td>
+            <td>The public SDK is an HTTP client for a HyperBinder runtime; Zaxy has no pinned server/runtime adapter yet.</td>
+            <td>Fill the packaged <code>hybi</code> runner manifest with a pinned HyperBinder runtime and export strict result files before publishing metrics.</td>
+          </tr>
         </tbody>
       </table>
-      <p>No same-harness adapter should be published without a pinned install command, dataset mapping, retrieval limit, score mapping, latency/tokens capture, and a clear statement about whether the competitor result is retrieval recall, answer/judge accuracy, or another metric family.</p>
+      <p>No same-harness adapter should be published without a pinned install command, dataset mapping, retrieval limit, score mapping, latency/tokens capture, and a clear statement about whether the competitor result is retrieval recall, answer/judge accuracy, or another metric family. For Quarq and Semantic Reach/Hybi specifically, public CoordinationBench copy must also pass <code>zaxy coordinate benchmark --require-competitor-claim quarq --require-competitor-claim hybi ...</code>; otherwise the report remains disclosure-only for those systems.</p>
       <h2 id="backend-shootout">Backend Shootout</h2>
       <p>Embedded graph work needs a backend shootout before any default-backend change. The shootout contract compares <code>embedded</code>, <code>LatticeDB</code>, <code>Neo4j</code>, <code>pgGraph</code>, and <code>BM25</code> on the same Eventloom history and query file. It must report cold bootstrap time, first useful init time, first checkout time, append-to-projection p95, projection events per second, checkout p95, checkout p99, traversal p95, dashboard graph-load timing, returned tokens, injected tokens, citation coverage, quality against expected query terms when provided, Answer@5/Recall@5 fields for LongMemEval-compatible workloads, resident memory delta, on-disk footprint, and rebuild recovery time. Every generated JSON report also carries a report schema version, UTC generation timestamp, source fingerprints for the Eventloom and query files, and workload fingerprints for the filtered events and normalized query specs. Release evidence should use <code>--require-report-metadata --require-markdown-report --require-query-results --require-git-tracked-inputs --verify-report-fingerprints</code> so stale reports fail when their input Eventloom or query file changes, so the human-readable Markdown sidecar carries matching provenance, so aggregate metrics are backed by per-query diagnostics, and so release evidence cannot depend on local-only benchmark inputs. It also verifies event/query counts so tampered count metadata cannot pass as release evidence.</p>
       <p>The local harness is:</p>
@@ -740,7 +834,7 @@
       <p>For release gates, compare reports with <code>zaxy benchmark-compare</code> and keep the thresholds explicit. For market comparisons, keep external products in disclosure rows until they can run against the same dataset, query order, retrieval limit, scoring code, and citation requirements.</p>
       <p>From a clean checkout with the cached LongMemEval dataset and embedding cache present, run all archived public LongMemEval guardrails with:</p>
       <pre><code class="language-bash">scripts/benchmark-guardrails.sh</code></pre>
-      <p><code>zaxy doctor --beta-readiness</code> also exposes the release benchmark posture as a named <code>benchmark_no_regression</code> check. It requires the release script to keep checkout quality floors, citation coverage at <code>1.0</code>, and p95/p99 checkout latency budgets across smoke, performance, and scale backend reports.</p>
+      <p><code>zaxy doctor --beta-readiness</code> also exposes release benchmark posture through named checks. <code>benchmark_no_regression</code> requires the release script to keep checkout quality floors, citation coverage at <code>1.0</code>, and p95/p99 checkout latency budgets across smoke, performance, and scale backend reports. <code>coordination_competitor_claims</code> verifies that the archived CoordinationBench report, docs, and Quarq/Hybi manifest templates preserve the public-claim gate: disclosure-only rows must remain blocked, and any same-harness claim must carry locally scored metrics plus result-audit provenance.</p>
       <p>Related references: <a href="testing.html">testing.md</a>, <a href="retrieval.html">retrieval.md</a>, <a href="competitive-positioning.html">competitive-positioning.md</a>, <a href="benchmark-review.html">benchmark-review.md</a>, and <a href="../README.html">README.md</a>. The public explanation is <a href="../index.html">site/index.html</a>.</p>
     </article>
   </main>

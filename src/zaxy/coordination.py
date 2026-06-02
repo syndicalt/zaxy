@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from zaxy.event import Event
+from zaxy.purpose import coordinate_purpose_profile
 from zaxy.security import validate_payload, validate_session_id
 from zaxy.session import SessionManager
 
@@ -234,6 +235,7 @@ class CoordinationCheckout:
     excluded_conflict_count: int
     excluded_stale_count: int
     prompt: str
+    purpose: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -248,6 +250,7 @@ class CoordinationCheckout:
             "excluded_conflict_count": self.excluded_conflict_count,
             "excluded_stale_count": self.excluded_stale_count,
             "prompt": self.prompt,
+            "purpose": self.purpose,
         }
 
 
@@ -390,6 +393,35 @@ class CoordinationMissionInspection:
             "handoffs": self.handoffs,
             "conflicts": [conflict.to_dict() for conflict in self.brief.conflicts],
             "approval_packet": self.approval_packet.to_dict(),
+        }
+
+
+@dataclass(frozen=True)
+class CoordinationProofTrace:
+    """Replay-backed proof chain for a Coordinate synthesis artifact."""
+
+    mission_id: str
+    proof_event: dict[str, Any]
+    proof_packet: dict[str, Any]
+    artifact_event: dict[str, Any] | None
+    synthesis_artifact: dict[str, Any] | None
+    handoff_event: dict[str, Any] | None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "mission_id": self.mission_id,
+            "proof_event": self.proof_event,
+            "proof_packet": self.proof_packet,
+            "artifact_event": self.artifact_event,
+            "synthesis_artifact": self.synthesis_artifact,
+            "handoff_event": self.handoff_event,
+            "accepted_finding_ids": _string_list(self.proof_packet.get("accepted_finding_ids")),
+            "review_event_refs": _dict_list(self.proof_packet.get("review_event_refs")),
+            "promotion_event_refs": _dict_list(self.proof_packet.get("promotion_event_refs")),
+            "worker_source_event_refs": _dict_list(self.proof_packet.get("worker_source_event_refs")),
+            "answer_candidates": _dict_list((self.synthesis_artifact or {}).get("answer_candidates")),
+            "ledger_rows": _dict_list((self.synthesis_artifact or {}).get("ledger_rows")),
+            "non_authoritative_rows": _dict_list(self.proof_packet.get("non_authoritative_rows")),
         }
 
 
@@ -562,6 +594,45 @@ class CoordinationApprovalDecisionResult:
                 }
                 for event in self.events
             ],
+        }
+
+
+@dataclass(frozen=True)
+class CoordinationProofPacket:
+    """Mission-scoped proof wrapper for a synthesis artifact."""
+
+    mission_id: str
+    artifact_id: str
+    query: str
+    decision_scope: str
+    authority_scope: str
+    accepted_finding_ids: list[str]
+    promotion_event_refs: list[dict[str, Any]]
+    review_event_refs: list[dict[str, Any]]
+    worker_source_event_refs: list[dict[str, Any]]
+    handoff_event_ref: dict[str, Any] | None
+    diagnostic_pending_ids: list[str]
+    conflict_ids: list[str]
+    excluded_row_reasons: list[dict[str, Any]]
+    non_authoritative_rows: list[dict[str, Any]]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": "coordination_proof_packet_v1",
+            "mission_id": self.mission_id,
+            "artifact_id": self.artifact_id,
+            "query": self.query,
+            "decision_scope": self.decision_scope,
+            "authority_scope": self.authority_scope,
+            "accepted_finding_ids": self.accepted_finding_ids,
+            "promotion_event_refs": self.promotion_event_refs,
+            "review_event_refs": self.review_event_refs,
+            "worker_source_event_refs": self.worker_source_event_refs,
+            "handoff_event_ref": self.handoff_event_ref,
+            "diagnostic_pending_ids": self.diagnostic_pending_ids,
+            "conflict_ids": self.conflict_ids,
+            "excluded_row_reasons": self.excluded_row_reasons,
+            "non_authoritative_rows": self.non_authoritative_rows,
         }
 
 
@@ -821,6 +892,53 @@ class CoordinationManager:
             excluded_conflict_count=0 if include_diagnostics else len(brief.conflicts),
             excluded_stale_count=0 if include_diagnostics else len(brief.stale_findings),
             prompt=_checkout_prompt(brief, include_diagnostics=include_diagnostics),
+            purpose=coordinate_purpose_profile().to_dict(),
+        )
+
+    def proof_packet(
+        self,
+        mission_id: str,
+        synthesis_artifact: dict[str, Any],
+        *,
+        decision_scope: str = "brief",
+        handoff_id: str | None = None,
+    ) -> CoordinationProofPacket:
+        """Return a mission-scoped proof packet for a synthesis artifact."""
+        mission_sid = validate_session_id(mission_id)
+        parent_events = self.session_manager.replay(mission_sid).events
+        handoff_event_ref = _handoff_event_ref(parent_events, handoff_id, decision_scope=decision_scope)
+        brief = self.brief(mission_sid)
+        all_accepted_ids = [finding.finding_id for finding in brief.accepted_findings]
+        accepted_ids = _artifact_supported_accepted_ids(
+            synthesis_artifact,
+            accepted_ids=all_accepted_ids,
+        )
+        pending_ids = [finding.finding_id for finding in brief.pending_findings]
+        ledger_rows = _artifact_ledger_rows(synthesis_artifact)
+        return CoordinationProofPacket(
+            mission_id=mission_sid,
+            artifact_id=str(synthesis_artifact.get("artifact_id") or ""),
+            query=str(synthesis_artifact.get("query") or ""),
+            decision_scope=decision_scope,
+            authority_scope="parent_accepted_state",
+            accepted_finding_ids=accepted_ids,
+            promotion_event_refs=_promotion_event_refs(parent_events, accepted_ids),
+            review_event_refs=_review_event_refs(parent_events, accepted_ids),
+            worker_source_event_refs=_worker_source_event_refs(brief.accepted_findings),
+            handoff_event_ref=handoff_event_ref,
+            diagnostic_pending_ids=pending_ids,
+            conflict_ids=[_conflict_id(conflict) for conflict in brief.conflicts],
+            excluded_row_reasons=_excluded_row_reasons(ledger_rows),
+            non_authoritative_rows=_non_authoritative_rows(
+                ledger_rows,
+                supported_accepted_ids=set(accepted_ids),
+                all_accepted_ids=set(all_accepted_ids),
+                pending_ids=set(pending_ids),
+                conflicted_ids={finding.finding_id for finding in brief.conflicted_findings},
+                stale_ids={finding.finding_id for finding in brief.stale_findings},
+                rejected_ids={finding.finding_id for finding in brief.rejected_findings},
+                deferred_ids={finding.finding_id for finding in brief.deferred_findings},
+            ),
         )
 
     def inspect_mission(self, mission_id: str) -> CoordinationMissionInspection:
@@ -836,6 +954,40 @@ class CoordinationManager:
             approval_packet=self.approval_packet(mission_sid),
             decisions=_review_decisions(parent_events),
             handoffs=_handoff_records(parent_events),
+        )
+
+    def proof_trace(
+        self,
+        mission_id: str,
+        *,
+        artifact_id: str | None = None,
+        handoff_id: str | None = None,
+        proof_seq: int | None = None,
+    ) -> CoordinationProofTrace:
+        """Return the replay-backed proof chain for a Coordinate synthesis packet."""
+        mission_sid = validate_session_id(mission_id)
+        if artifact_id is None and handoff_id is None and proof_seq is None:
+            raise ValueError("proof_trace requires artifact_id, handoff_id, or proof_seq")
+        parent_events = self.session_manager.replay(mission_sid).events
+        proof_event = _find_proof_event(
+            parent_events,
+            artifact_id=artifact_id,
+            handoff_id=handoff_id,
+            proof_seq=proof_seq,
+        )
+        proof_payload = dict(proof_event.payload)
+        linked_artifact_id = _optional_str(proof_payload.get("artifact_id"))
+        artifact_event = _find_synthesis_artifact_event(parent_events, linked_artifact_id)
+        handoff_ref = proof_payload.get("handoff_event_ref")
+        linked_handoff_id = _optional_str(handoff_ref.get("handoff_id")) if isinstance(handoff_ref, dict) else None
+        handoff_event = _find_handoff_event(parent_events, linked_handoff_id)
+        return CoordinationProofTrace(
+            mission_id=mission_sid,
+            proof_event=_event_ref(proof_event),
+            proof_packet=proof_payload,
+            artifact_event=_event_ref(artifact_event) if artifact_event is not None else None,
+            synthesis_artifact=dict(artifact_event.payload) if artifact_event is not None else None,
+            handoff_event=_event_ref(handoff_event) if handoff_event is not None else None,
         )
 
     def performance_ledger(self, mission_id: str) -> CoordinationPerformanceLedger:
@@ -1210,14 +1362,191 @@ def _review_decisions(events: list[Event]) -> list[dict[str, Any]]:
     return decisions
 
 
+def _review_event_refs(events: list[Event], finding_ids: list[str]) -> list[dict[str, Any]]:
+    wanted = set(finding_ids)
+    refs: list[dict[str, Any]] = []
+    for event in events:
+        if event.type != "coordination.finding.reviewed":
+            continue
+        finding_id = str(event.payload.get("finding_id") or "")
+        if finding_id not in wanted:
+            continue
+        refs.append({"seq": event.seq, "hash": event.hash, "finding_id": finding_id})
+    return refs
+
+
+def _promotion_event_refs(events: list[Event], finding_ids: list[str]) -> list[dict[str, Any]]:
+    wanted = set(finding_ids)
+    refs: list[dict[str, Any]] = []
+    for event in events:
+        if event.type != "coordination.finding.promoted":
+            continue
+        finding_id = str(event.payload.get("finding_id") or "")
+        if finding_id not in wanted:
+            continue
+        refs.append({"seq": event.seq, "hash": event.hash, "finding_id": finding_id})
+    return refs
+
+
+def _worker_source_event_refs(findings: list[FindingState]) -> list[dict[str, Any]]:
+    refs: list[dict[str, Any]] = []
+    for finding in findings:
+        if finding.source_event_seq is None or finding.source_event_hash is None:
+            continue
+        refs.append(
+            {
+                "worker_id": finding.worker_id,
+                "finding_id": finding.finding_id,
+                "seq": finding.source_event_seq,
+                "hash": finding.source_event_hash,
+            }
+        )
+    return refs
+
+
+def _artifact_ledger_rows(synthesis_artifact: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = synthesis_artifact.get("ledger_rows")
+    if not isinstance(rows, list):
+        return []
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def _artifact_supported_accepted_ids(
+    synthesis_artifact: dict[str, Any],
+    *,
+    accepted_ids: list[str],
+) -> list[str]:
+    accepted = set(accepted_ids)
+    supported: list[str] = []
+    for source_id in _artifact_support_source_ids(synthesis_artifact):
+        if source_id in accepted and source_id not in supported:
+            supported.append(source_id)
+    if supported:
+        return supported
+    for row in _artifact_ledger_rows(synthesis_artifact):
+        source_id = _optional_str(row.get("source_group")) or _optional_str(row.get("fact_id")) or ""
+        if source_id in accepted and source_id not in supported:
+            supported.append(source_id)
+    return supported
+
+
+def _artifact_support_source_ids(synthesis_artifact: dict[str, Any]) -> list[str]:
+    source_ids: list[str] = []
+    for candidate in _artifact_answer_candidates(synthesis_artifact):
+        for source_id in _string_list(candidate.get("support_source_ids")):
+            if source_id not in source_ids:
+                source_ids.append(source_id)
+    return source_ids
+
+
+def _artifact_answer_candidates(synthesis_artifact: dict[str, Any]) -> list[dict[str, Any]]:
+    candidates = synthesis_artifact.get("answer_candidates")
+    if not isinstance(candidates, list):
+        return []
+    return [candidate for candidate in candidates if isinstance(candidate, dict)]
+
+
+def _excluded_row_reasons(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    reasons: list[dict[str, Any]] = []
+    for row in rows:
+        exclude_reason = row.get("exclude_reason")
+        if not isinstance(exclude_reason, str) or not exclude_reason:
+            continue
+        reasons.append(
+            {
+                "fact_id": _optional_str(row.get("fact_id")),
+                "source_group": _optional_str(row.get("source_group")),
+                "exclude_reason": exclude_reason,
+            }
+        )
+    return reasons
+
+
+def _non_authoritative_rows(
+    rows: list[dict[str, Any]],
+    *,
+    supported_accepted_ids: set[str],
+    all_accepted_ids: set[str],
+    pending_ids: set[str],
+    conflicted_ids: set[str],
+    stale_ids: set[str],
+    rejected_ids: set[str],
+    deferred_ids: set[str],
+) -> list[dict[str, Any]]:
+    non_authoritative: list[dict[str, Any]] = []
+    for row in rows:
+        source_group = _optional_str(row.get("source_group")) or ""
+        fact_id = _optional_str(row.get("fact_id")) or ""
+        identities = [identity for identity in (fact_id, source_group) if identity]
+        if not identities:
+            continue
+        status = _non_authoritative_status(
+            identities,
+            supported_accepted_ids=supported_accepted_ids,
+            all_accepted_ids=all_accepted_ids,
+            pending_ids=pending_ids,
+            conflicted_ids=conflicted_ids,
+            stale_ids=stale_ids,
+            rejected_ids=rejected_ids,
+            deferred_ids=deferred_ids,
+        )
+        if status is None:
+            continue
+        source_id = source_group or fact_id
+        payload = {
+            "source_group": source_id,
+            "status": status,
+            "include_reason": _optional_str(row.get("include_reason")),
+            "exclude_reason": _optional_str(row.get("exclude_reason")),
+        }
+        if fact_id:
+            payload["fact_id"] = fact_id
+        non_authoritative.append(payload)
+    return non_authoritative
+
+
+def _non_authoritative_status(
+    identities: list[str],
+    *,
+    supported_accepted_ids: set[str],
+    all_accepted_ids: set[str],
+    pending_ids: set[str],
+    conflicted_ids: set[str],
+    stale_ids: set[str],
+    rejected_ids: set[str],
+    deferred_ids: set[str],
+) -> str | None:
+    if any(identity in rejected_ids for identity in identities):
+        return "rejected"
+    if any(identity in deferred_ids for identity in identities):
+        return "deferred"
+    if any(identity in conflicted_ids for identity in identities):
+        return "conflicted"
+    if any(identity in stale_ids for identity in identities):
+        return "stale"
+    if any(identity in pending_ids for identity in identities):
+        return "pending"
+    if any(identity in all_accepted_ids and identity not in supported_accepted_ids for identity in identities):
+        return "accepted_not_used"
+    if any(identity in supported_accepted_ids for identity in identities):
+        return None
+    return "unknown"
+
+
+def _conflict_id(conflict: ConflictState) -> str:
+    return f"conflict:{_conflict_signature(conflict)[:16]}"
+
+
 def _handoff_records(events: list[Event]) -> list[dict[str, Any]]:
+    proof_refs = _proof_refs_by_handoff_id(events)
     handoffs: list[dict[str, Any]] = []
     for event in events:
         if event.type != "coordination.handoff.created":
             continue
+        handoff_id = str(event.payload.get("handoff_id") or "")
         handoffs.append(
             {
-                "handoff_id": str(event.payload.get("handoff_id") or ""),
+                "handoff_id": handoff_id,
                 "summary": str(event.payload.get("summary") or ""),
                 "next_steps": _string_list(event.payload.get("next_steps")),
                 "risks": _string_list(event.payload.get("risks")),
@@ -1225,9 +1554,109 @@ def _handoff_records(events: list[Event]) -> list[dict[str, Any]]:
                 "event_seq": event.seq,
                 "event_hash": event.hash,
                 "timestamp": event.timestamp,
+                "proof_event_refs": proof_refs.get(handoff_id, []),
             }
         )
     return handoffs
+
+
+def _proof_refs_by_handoff_id(events: list[Event]) -> dict[str, list[dict[str, Any]]]:
+    refs: dict[str, list[dict[str, Any]]] = {}
+    for event in events:
+        if event.type != "coordination.proof_packet.created":
+            continue
+        handoff_ref = event.payload.get("handoff_event_ref")
+        if not isinstance(handoff_ref, dict):
+            continue
+        handoff_id = str(handoff_ref.get("handoff_id") or "")
+        if not handoff_id:
+            continue
+        refs.setdefault(handoff_id, []).append(
+            {
+                "seq": event.seq,
+                "hash": event.hash,
+                "artifact_id": str(event.payload.get("artifact_id") or ""),
+                "decision_scope": str(event.payload.get("decision_scope") or ""),
+                "authority_scope": str(event.payload.get("authority_scope") or ""),
+                "accepted_finding_ids": _string_list(event.payload.get("accepted_finding_ids")),
+            }
+        )
+    return refs
+
+
+def _find_proof_event(
+    events: list[Event],
+    *,
+    artifact_id: str | None,
+    handoff_id: str | None,
+    proof_seq: int | None,
+) -> Event:
+    for event in events:
+        if event.type != "coordination.proof_packet.created":
+            continue
+        if proof_seq is not None and event.seq != proof_seq:
+            continue
+        if artifact_id is not None and str(event.payload.get("artifact_id") or "") != artifact_id:
+            continue
+        if handoff_id is not None:
+            handoff_ref = event.payload.get("handoff_event_ref")
+            if not isinstance(handoff_ref, dict) or str(handoff_ref.get("handoff_id") or "") != handoff_id:
+                continue
+        return event
+    raise ValueError("No coordination proof packet matched the requested selector")
+
+
+def _find_synthesis_artifact_event(events: list[Event], artifact_id: str | None) -> Event | None:
+    if artifact_id is None:
+        return None
+    for event in events:
+        if event.type != "memory.synthesis.artifact.created":
+            continue
+        if str(event.payload.get("artifact_id") or "") == artifact_id:
+            return event
+    return None
+
+
+def _find_handoff_event(events: list[Event], handoff_id: str | None) -> Event | None:
+    if handoff_id is None:
+        return None
+    for event in events:
+        if event.type != "coordination.handoff.created":
+            continue
+        if str(event.payload.get("handoff_id") or "") == handoff_id:
+            return event
+    return None
+
+
+def _event_ref(event: Event) -> dict[str, Any]:
+    return {
+        "event_type": event.type,
+        "seq": event.seq,
+        "hash": event.hash,
+        "thread": event.thread,
+        "actor": event.actor,
+        "timestamp": event.timestamp,
+    }
+
+
+def _handoff_event_ref(
+    events: list[Event],
+    handoff_id: str | None,
+    *,
+    decision_scope: str,
+) -> dict[str, Any] | None:
+    if decision_scope != "handoff" and handoff_id is None:
+        return None
+    if decision_scope == "handoff" and not handoff_id:
+        raise ValueError("handoff_id is required for handoff proof packets")
+    if not handoff_id:
+        return None
+    for event in events:
+        if event.type != "coordination.handoff.created":
+            continue
+        if str(event.payload.get("handoff_id") or "") == handoff_id:
+            return {"handoff_id": handoff_id, "seq": event.seq, "hash": event.hash}
+    raise ValueError(f"Unknown handoff_id for mission proof packet: {handoff_id}")
 
 
 def _audit_event_records(parent_events: list[Event], worker_events: list[Event]) -> list[dict[str, Any]]:
@@ -1255,6 +1684,19 @@ def _audit_event_record(event: Event) -> dict[str, Any]:
         "summary",
         "objective",
         "assignment",
+        "artifact_id",
+        "query",
+        "decision_scope",
+        "authority_scope",
+        "accepted_finding_ids",
+        "promotion_event_refs",
+        "review_event_refs",
+        "worker_source_event_refs",
+        "handoff_event_ref",
+        "diagnostic_pending_ids",
+        "conflict_ids",
+        "excluded_row_reasons",
+        "non_authoritative_rows",
     ]:
         if key in event.payload:
             record[key] = event.payload.get(key)
@@ -1278,6 +1720,12 @@ def _string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [str(item) for item in value if str(item)]
+
+
+def _dict_list(value: object) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
 
 
 def _audit_report_markdown(
@@ -1316,6 +1764,9 @@ def _audit_event_details(event: dict[str, Any]) -> str:
         ("worker", "worker_id"),
         ("finding", "finding_id"),
         ("handoff", "handoff_id"),
+        ("artifact", "artifact_id"),
+        ("scope", "decision_scope"),
+        ("authority", "authority_scope"),
         ("status", "status"),
     ]:
         value = event.get(key)
@@ -1666,9 +2117,13 @@ def _rate(numerator: int, denominator: int) -> float:
 
 
 def _checkout_prompt(brief: CoordinationBrief, *, include_diagnostics: bool) -> str:
+    purpose = coordinate_purpose_profile()
     lines = [
         f"Coordination checkout for mission {brief.mission_id}.",
         f"Objective: {brief.objective or '-'}",
+        f"Purpose profile: {purpose.profile}",
+        f"Evidence policy: {purpose.evidence_policy}",
+        "Authority: accepted parent state only; worker-local pending findings are diagnostic unless included.",
         "Accepted findings:",
     ]
     if brief.accepted_findings:
