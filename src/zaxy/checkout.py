@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from zaxy.evidence import build_evidence_set
-from zaxy.purpose import PurposeProfile, purpose_profile
+from zaxy.evidence import build_evidence_set, evaluate_evidence_policy
+from zaxy.purpose import PurposeProfile, purpose_ontology_lens, purpose_profile
 from zaxy.retrieval_intent import classify_retrieval_intent
 from zaxy.synthesis_packet import synthesis_packet_from_items
 
@@ -61,6 +61,22 @@ def build_checkout_diagnostics(
         evidence=evidence,
     )
     diagnostics["evidence_set"] = evidence_set.to_diagnostics()
+    ontology_lens = purpose_ontology_lens(profile)
+    if ontology_lens.applied:
+        diagnostics["purpose_ontology_lens"] = {
+            **ontology_lens.to_diagnostics(),
+            "current_fact_roles": _purpose_role_matches(ontology_lens, current_facts),
+            "evidence_roles": _purpose_role_matches(ontology_lens, evidence),
+        }
+    evidence_policy = evaluate_evidence_policy(
+        profile=profile,
+        query=query,
+        current_facts=current_facts,
+        evidence=evidence,
+        evidence_set=evidence_set,
+    )
+    if evidence_policy is not None:
+        diagnostics["evidence_policy"] = evidence_policy.to_diagnostics()
     synthesis = _checkout_synthesis_diagnostics(
         query=query,
         current_facts=current_facts,
@@ -212,6 +228,26 @@ def build_checkout_quality(
     confidence -= min(0.35, warning_count * 0.18)
     if evidence_plan_block is not None:
         confidence -= 0.25
+    evidence_policy = diagnostics.get("evidence_policy")
+    evidence_policy_block: dict[str, Any] | None = None
+    if isinstance(evidence_policy, dict) and not evidence_policy.get("satisfied"):
+        failure_reasons = _text_list(evidence_policy.get("failure_reasons"))
+        missing_requirements = _text_list(evidence_policy.get("missing_requirements"))
+        suggested_queries = _text_list(evidence_policy.get("suggested_queries"))
+        reason = (
+            "Purpose evidence policy is not satisfied"
+            + (f": {'; '.join(failure_reasons)}" if failure_reasons else ".")
+        )
+        reasons.append(reason)
+        evidence_policy_block = {
+            "type": "memory_checkout",
+            "reason": reason,
+            "mode": evidence_policy.get("mode"),
+            "missing_requirements": missing_requirements,
+            "suggested_queries": suggested_queries,
+            "query": suggested_queries[0] if suggested_queries else "refresh purpose evidence",
+        }
+        confidence -= 0.3
     confidence = round(max(0.0, confidence), 2)
     recommended_next_call = guidance.get("recommended_next_call")
     required_action = recommended_next_call if isinstance(recommended_next_call, dict) else None
@@ -224,6 +260,9 @@ def build_checkout_quality(
                 "before answering from memory."
             ),
         }
+    elif evidence_policy_block is not None:
+        answerability = "refresh_recommended"
+        required_action = evidence_policy_block
     elif evidence_plan_block is not None:
         answerability = "refresh_recommended"
         required_action = evidence_plan_block
@@ -336,6 +375,23 @@ def format_memory_checkout_prompt(
             f"required_source_groups={evidence_plan_status.get('required_source_groups')}, "
             f"satisfied={evidence_plan_status.get('satisfied')}"
         )
+    purpose_lens = diagnostics.get("purpose_ontology_lens")
+    if isinstance(purpose_lens, dict):
+        lines.append(
+            "- Purpose ontology lens: "
+            f"profile={purpose_lens.get('profile')}, "
+            f"relationship_roles={', '.join(_text_list(purpose_lens.get('relationship_roles')))}"
+        )
+    evidence_policy = diagnostics.get("evidence_policy")
+    if isinstance(evidence_policy, dict):
+        lines.append(
+            "- Evidence policy: "
+            f"profile={evidence_policy.get('profile')}, "
+            f"mode={evidence_policy.get('mode')}, "
+            f"satisfied={evidence_policy.get('satisfied')}"
+        )
+        for reason in _text_list(evidence_policy.get("failure_reasons")):
+            lines.append(f"- Evidence policy failure: {reason}")
     slot_plan = diagnostics.get("slot_plan")
     if isinstance(slot_plan, dict):
         required_slots = _text_list(slot_plan.get("required_slots"))
@@ -735,6 +791,37 @@ def build_checkout_feedback_payload(
     if profile.profile != "general":
         payload["purpose"] = profile.to_dict()
     return {key: value for key, value in payload.items() if value is not None}
+
+
+def _purpose_role_matches(
+    ontology_lens: Any,
+    items: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    matches: list[dict[str, Any]] = []
+    for item in items:
+        text = " ".join(
+            str(value)
+            for value in (
+                item.get("content"),
+                item.get("entity_name"),
+                item.get("entity_type"),
+                item.get("source"),
+            )
+            if value
+        )
+        roles = ontology_lens.matched_entity_roles(text)
+        if not roles:
+            continue
+        payload = {
+            "id": str(item.get("citation") or item.get("entity_name") or item.get("content") or "")[:160],
+            "roles": list(roles),
+        }
+        if item.get("citation"):
+            payload["citation"] = str(item["citation"])
+        matches.append(payload)
+        if len(matches) >= 8:
+            break
+    return matches
 
 
 def _purpose_guidance(profile: PurposeProfile) -> dict[str, Any] | None:

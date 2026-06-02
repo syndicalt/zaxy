@@ -1,4 +1,4 @@
-from zaxy.purpose import purpose_profile, purpose_retrieval_policy
+from zaxy.purpose import purpose_ontology_lens, purpose_profile, purpose_retrieval_policy
 
 
 def test_release_security_and_research_purpose_presets_are_first_class() -> None:
@@ -56,3 +56,25 @@ def test_general_purpose_retrieval_policy_is_noop() -> None:
     assert policy.emphasis_terms == ()
     assert policy.scoring_profile == "balanced"
     assert policy.min_recall_limit == 0
+
+
+def test_purpose_ontology_lens_maps_same_evidence_to_distinct_roles() -> None:
+    text = (
+        "Accepted auth release gate found credential exposure with failing test evidence "
+        "and mitigation owner review."
+    )
+
+    coding = purpose_ontology_lens("coding")
+    security = purpose_ontology_lens("security")
+    release = purpose_ontology_lens("release")
+    coordinate = purpose_ontology_lens("coordinate")
+
+    assert "test" in coding.matched_entity_roles(text)
+    assert "credential" in security.matched_entity_roles(text)
+    assert "release_gate" in release.matched_entity_roles(text)
+    assert "accepted_state" in coordinate.entity_roles
+    assert security.path_multiplier(["exposes_secret"]) > release.path_multiplier(["exposes_secret"])
+    assert coordinate.path_multiplier(["mission_has_proof_packet"]) > coding.path_multiplier(
+        ["mission_has_proof_packet"]
+    )
+    assert security.to_diagnostics()["edge_trust_multipliers"]["exposes_secret"] == 1.6

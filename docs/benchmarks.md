@@ -287,10 +287,11 @@ Archived report:
 | Lane | Status | Score | What it proves |
 | --- | --- | ---: | --- |
 | Purpose Recall | passed | 1.000 | Purpose profiles apply recall floors and ontology evidence terms. |
-| Ontology Shift | passed | 1.000 | The same query resolves to distinct purpose-specific retrieval lenses. |
+| Ontology Shift | passed | 0.750 | The same query resolves to distinct purpose-specific retrieval lenses and graph path roles. |
 | Consequence Retention | passed | 1.000 | Profiles retain failures, accepted decisions, risks, and proof outcomes. |
 | Governed Forgetting | passed | 1.000 | Decay mode protects obligations and risk memory while downweighting noise. |
-| Action Outcome Loop | passed | 1.000 | Feedback records useful-for-purpose outcome metadata. |
+| Action Outcome Loop | passed | 1.000 | Purpose outcome history changes future rank and warning candidates. |
+| Evidence Policy Discipline | passed | 1.000 | Security, release, and Coordinate fixtures enforce missing and supported evidence policies. |
 | Cross-Role Citation | passed | 1.000 | The same citation can support different role-specific memories. |
 | Accepted-State Discipline | passed | 1.000 | Coordinate compaction keeps accepted parent state and suppresses pending worker rows. |
 

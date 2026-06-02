@@ -4564,7 +4564,13 @@ def test_doctor_beta_readiness_reports_release_and_uat_gates() -> None:
     assert checks["coordination_competitor_claims"]["status"] == "ok"
     assert "Quarq/Hybi posture is guarded" in checks["coordination_competitor_claims"]["message"]
     assert checks["purpose_benchmark_gate"]["status"] == "ok"
-    assert "purpose-v1 benchmark passes" in checks["purpose_benchmark_gate"]["message"]
+    assert "purpose-v1 benchmark passes all purpose-memory lanes" in checks[
+        "purpose_benchmark_gate"
+    ]["message"]
+    assert checks["purpose_evidence_policy"]["status"] == "ok"
+    assert "security, release, and Coordinate evidence-policy fixtures" in checks[
+        "purpose_evidence_policy"
+    ]["message"]
     assert checks["external_validation_evidence"]["status"] == "ok"
     assert "external validation is optional for v1.0 release" in checks["external_validation_evidence"]["message"]
     assert checks["clean_repo_uat"]["status"] == "ok"

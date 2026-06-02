@@ -583,7 +583,7 @@
       <h2 id="10-benchmark-direction">10. Benchmark Direction</h2>
       <p>Zaxy now includes a deterministic <code>purpose-v1</code> benchmark gate that tests the article&#x27;s thesis directly. Run it with:</p>
       <pre><code class="language-bash">python -m zaxy purpose-benchmark --output-dir reports/benchmarks/purpose-v1</code></pre>
-      <p>The archived report at <code>reports/benchmarks/purpose-v1/purpose-benchmark.json</code> passes all seven internal lanes. This is an internal Zaxy gate, not a public competitor leaderboard: Semantic Reach and Quarq remain blocked until pinned same-harness adapters are available.</p>
+      <p>The archived report at <code>reports/benchmarks/purpose-v1/purpose-benchmark.json</code> passes all eight internal lanes. This is an internal Zaxy gate, not a public competitor leaderboard: Semantic Reach and Quarq remain blocked until pinned same-harness adapters are available.</p>
       <table>
         <thead>
           <tr>
@@ -611,6 +611,10 @@
           <tr>
             <td>Action Outcome Loop</td>
             <td>Corrections and failed attempts alter next execution.</td>
+          </tr>
+          <tr>
+            <td>Evidence Policy Discipline</td>
+            <td>High-risk purposes enforce missing and supported evidence fixtures.</td>
           </tr>
           <tr>
             <td>Cross-Role Citation</td>
@@ -670,7 +674,7 @@
       <p>Do not compact legal obligations the same way as coding hints or support context.</p>
       <p>Status: implemented for the Coordinate production path through purpose-aware compaction projections and for retrieval-time decay through purpose-specific half-life and expired-weight floors. Broader consolidation strategies for every purpose profile now have explicit preserve-all or exemplar policies; future work is expanding the profile set beyond the current presets.</p>
       <h3 id="phase-5-purpose-benchmarks">Phase 5: Purpose Benchmarks</h3>
-      <p>Status: implemented as the deterministic <code>purpose-v1</code> gate. The report covers Purpose Recall, Ontology Shift, Consequence Retention, Governed Forgetting, Action Outcome Loop, Cross-Role Citation, and Accepted-State Discipline. The gate must pass before purpose-conditioned memory claims are treated as releaseable. Comparative Semantic Reach or Quarq claims remain blocked until same-harness adapters are pinned and scored.</p>
+      <p>Status: implemented as the deterministic <code>purpose-v1</code> gate. The report covers Purpose Recall, Ontology Shift, Consequence Retention, Governed Forgetting, Action Outcome Loop, Evidence Policy Discipline, Cross-Role Citation, and Accepted-State Discipline. The gate must pass before purpose-conditioned memory claims are treated as releaseable. Comparative Semantic Reach or Quarq claims remain blocked until same-harness adapters are pinned and scored.</p>
       <p>Maintain benchmark lanes that show Zaxy can retrieve and preserve different memories from the same evidence depending on purpose.</p>
       <p>This is a stronger internal product claim than generic token savings, but it does not become a comparative SOTA claim until external products are evaluated on the same harness.</p>
       <h2 id="12-implementation-roadmap-for-remaining-weak-areas">12. Implementation Roadmap for Remaining Weak Areas</h2>
@@ -680,38 +684,46 @@
       <p>Problem: Zaxy applies purpose at retrieval and checkout, but graph structure is still mostly role-neutral. The same evidence should project different relationship structures for coding, security, release, support, legal, product, and coordination without reingesting the source.</p>
       <p>Implementation:</p>
       <ul>
-        <li>Add a <code>PurposeOntologyLens</code> contract that maps a <code>PurposeProfile</code> to allowed entity roles, relationship roles, edge trust multipliers, suppression rules, and required source groups.</li>
-        <li>Store purpose projection metadata as overlay artifacts, not as rewritten source facts.</li>
-        <li>Add purpose-aware graph expansion in checkout so traversal can ask for <code>risk</code>, <code>obligation</code>, <code>invariant</code>, <code>commitment</code>, <code>blocker</code>, <code>workaround</code>, or <code>accepted_state</code> views over the same Eventloom evidence.</li>
+        <li>Add a <code>PurposeOntologyLens</code> contract that maps a <code>PurposeProfile</code> to allowed entity roles, relationship roles, edge trust multipliers, suppression rules, and required source groups. <strong>Implemented for current purpose presets as a retrieval-time overlay contract.</strong></li>
+        <li>Store purpose projection metadata as overlay artifacts, not as rewritten source facts. <strong>Implemented in checkout diagnostics and the strengthened <code>purpose-v1</code> Ontology Shift lane.</strong></li>
+        <li>Add purpose-aware graph expansion in checkout so traversal can ask for <code>risk</code>, <code>obligation</code>, <code>invariant</code>, <code>commitment</code>, <code>blocker</code>, <code>workaround</code>, or <code>accepted_state</code> views over the same Eventloom evidence. <strong>Partially implemented as checkout/path overlay diagnostics; backend traversal APIs are still future work.</strong></li>
         <li>Add diagnostics showing which purpose lens changed the retrieved graph path.</li>
       </ul>
+      <p><strong>Implemented for checkout overlay role matches and benchmark path multipliers.</strong></p>
       <p>Exit criteria:</p>
       <ul>
-        <li>One source artifact can produce distinct cited checkout paths for coding, security, release, and coordination.</li>
+        <li>One source artifact can produce distinct cited checkout paths for coding, security, release, and coordination. <strong>Partially satisfied through overlay role/path diagnostics; full cited backend traversal-path projection remains pending.</strong></li>
         <li><code>purpose-v1</code> gains a stronger Ontology Shift lane that verifies edge/path differences, not only query-term and scoring-profile differences.</li>
+      </ul>
+      <p><strong>Implemented.</strong></p>
+      <ul>
         <li>No Eventloom source event is rewritten to satisfy a purpose projection.</li>
       </ul>
+      <p><strong>Preserved.</strong></p>
       <h3 id="priority-2-evidence-policy-enforcement">Priority 2: Evidence Policy Enforcement</h3>
       <p>Problem: Purpose evidence policy is visible and diagnostic, but some policies still behave as guidance instead of hard checkout gates. High-risk purposes need enforceable standards.</p>
       <p>Implementation:</p>
       <ul>
-        <li>Create a shared <code>EvidencePolicy</code> evaluator for checkout, MCP, synthesis artifacts, Coordinate promotion, and purpose benchmarks.</li>
-        <li>Support policy modes: <code>warn</code>, <code>suppress</code>, <code>block_checkout</code>, and <code>require_refresh</code>.</li>
+        <li>Create a shared <code>EvidencePolicy</code> evaluator for checkout, MCP, synthesis artifacts, Coordinate promotion, and purpose benchmarks. <strong>Implemented for checkout diagnostics, quality, synthesis promotion, and purpose benchmarks; MCP and Coordinate promotion wiring remain pending.</strong></li>
+        <li>Support policy modes: <code>warn</code>, <code>suppress</code>, <code>block_checkout</code>, and <code>require_refresh</code>. <strong>Implemented in the evaluator contract.</strong></li>
         <li>Make high-risk profiles enforce stricter defaults:</li>
         <li>security: source citation plus mitigation or risk-owner reference</li>
-        <li>release: release gate plus changelog/test/package evidence</li>
-        <li>coordinate: promotion/review/source event reference</li>
+      </ul>
+      <p><strong>implemented</strong></p>
+      <ul>
+        <li>release: release gate plus changelog/test/package evidence <strong>implemented</strong></li>
+        <li>coordinate: promotion/review/source event reference <strong>implemented</strong></li>
         <li>legal future profile: exact wording plus date/authority references</li>
-        <li>Add machine-readable failure reasons and suggested follow-up checkout queries.</li>
+        <li>Add machine-readable failure reasons and suggested follow-up checkout queries. <strong>Implemented.</strong></li>
       </ul>
       <p>Exit criteria:</p>
       <ul>
-        <li>Checkout can refuse or mark non-actionable high-risk answers that lack the required evidence.</li>
-        <li>Synthesis artifacts cannot promote unsupported answer candidates for high-risk purposes.</li>
-        <li>Beta readiness includes an evidence-policy fixture for at least security, release, and coordinate.</li>
+        <li>Checkout can refuse or mark non-actionable high-risk answers that lack the required evidence. <strong>Implemented as <code>refresh_recommended</code> with policy failure diagnostics and required-action queries.</strong></li>
+        <li>Synthesis artifacts cannot promote unsupported answer candidates for high-risk purposes. <strong>Implemented for positive <code>used</code> synthesis candidate feedback; unsupported high-risk artifacts now preserve promotion-gate failures.</strong></li>
+        <li>Beta readiness includes an evidence-policy fixture for at least security, release, and coordinate. <strong>Implemented through an executable beta-readiness check and archived <code>purpose-v1</code> Evidence Policy Discipline lane.</strong></li>
       </ul>
       <h3 id="priority-3-outcome-learning-loop">Priority 3: Outcome Learning Loop</h3>
-      <p>Problem: Feedback captures useful-for-what metadata, but Zaxy does not yet use enough historical outcomes to adjust future scoring, decay, warnings, or compaction automatically.</p>
+      <p>Problem: Feedback captures useful-for-what metadata, and Zaxy now uses the Eventloom outcome history to adjust future checkout ranking and warnings. The remaining work is to broaden the same outcome categories across every product surface and compaction policy.</p>
       <p>Implementation:</p>
       <ul>
         <li>Normalize outcome categories across MCP feedback, checkout feedback, synthesis evidence feedback, Coordinate reviews, and Skill Memory outcomes.</li>
@@ -729,10 +741,14 @@
       </ul>
       <p>Exit criteria:</p>
       <ul>
-        <li>Repeated positive outcomes increase retrieval priority for that purpose with score explanations.</li>
+        <li>Repeated positive outcomes increase retrieval priority for that purpose with score explanations. <strong>Implemented for replay-derived checkout context learning.</strong></li>
         <li>Repeated negative outcomes produce warnings or suppression candidates.</li>
+      </ul>
+      <p><strong>Implemented for replay-derived checkout context learning.</strong></p>
+      <ul>
         <li><code>purpose-v1</code> Action Outcome Loop verifies that outcome history changes a future checkout ranking or warning, not only that feedback is persisted.</li>
       </ul>
+      <p><strong>Implemented in the archived <code>purpose-v1</code> report.</strong></p>
       <h3 id="priority-4-broader-purpose-profiles-without-company-brain-overclaiming">Priority 4: Broader Purpose Profiles Without Company-Brain Overclaiming</h3>
       <p>Problem: Zaxy is strong for agent/project work but still not a full Company Brain. It needs more purpose profiles before it can credibly cover wider organizational memory.</p>
       <p>Implementation:</p>

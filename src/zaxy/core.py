@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import re
 from contextlib import suppress
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -1243,7 +1243,14 @@ class MemoryFabric:
             if verbatim_candidate_limit > 0
             else []
         )
-        packet_memory_contexts = self._recent_packet_memory_contexts(list(replay.events))
+        replay_events = list(replay.events)
+        if as_of_seq is not None:
+            replay_events = [event for event in replay_events if event.seq <= as_of_seq]
+        purpose_outcomes = _purpose_outcome_aggregates(replay_events, profile)
+        graph_contexts = _apply_purpose_outcome_learning(graph_contexts, purpose_outcomes)
+        verbatim_contexts = _apply_purpose_outcome_learning(verbatim_contexts, purpose_outcomes)
+        packet_memory_contexts = self._recent_packet_memory_contexts(replay_events)
+        packet_memory_contexts = _apply_purpose_outcome_learning(packet_memory_contexts, purpose_outcomes)
         recall_contexts = [*graph_contexts, *verbatim_contexts, *packet_memory_contexts]
         recall = build_recall_candidate_set(recall_contexts, budget=candidate_limit)
         contexts = self.context_assembly_policy.assemble(
@@ -1259,9 +1266,6 @@ class MemoryFabric:
                 _contexts_as_of_seq(recall.contexts(), as_of_seq),
                 budget=candidate_limit,
             )
-        replay_events = list(replay.events)
-        if as_of_seq is not None:
-            replay_events = [event for event in replay_events if event.seq <= as_of_seq]
         compacted = False
         if max_recent_events is not None and len(replay_events) > max_recent_events:
             replay_events = replay_events[-max_recent_events:]
@@ -1920,6 +1924,237 @@ def _packet_memory_reinforcements(events: list[Any]) -> dict[str, dict[str, floa
     return reinforcements
 
 
+_POSITIVE_PURPOSE_OUTCOMES = {
+    "avoided_failed_path",
+    "blocked_unsafe_action",
+    "changed_answer",
+    "helpful",
+    "prevented_redundant_investigation",
+    "resolved_conflict",
+    "supported_handoff",
+    "used",
+}
+_NEGATIVE_PURPOSE_OUTCOMES = {
+    "caused_regression",
+    "corrected",
+    "excluded",
+    "failed",
+    "irrelevant",
+    "rejected",
+}
+
+
+def _purpose_outcome_aggregates(
+    events: list[Any],
+    profile: PurposeProfile,
+) -> dict[str, dict[str, Any]]:
+    """Return replay-derived purpose outcome counts keyed by stable memory identity."""
+    if profile.profile == "general":
+        return {}
+    aggregates: dict[str, dict[str, Any]] = {}
+    for event in events:
+        event_type = getattr(event, "type", "")
+        if event_type not in {
+            "memory.reinforced",
+            "memory.feedback",
+            "memory.evidence.reinforced",
+            "memory.evidence.excluded",
+        }:
+            continue
+        payload = getattr(event, "payload", {})
+        if not isinstance(payload, dict) or not _purpose_payload_matches(payload, profile):
+            continue
+        outcome = _purpose_feedback_outcome(event_type, payload)
+        if outcome is None:
+            continue
+        polarity = _purpose_outcome_polarity(outcome)
+        if polarity is None:
+            continue
+        keys = _purpose_outcome_payload_keys(payload)
+        if not keys:
+            continue
+        for key in keys:
+            aggregate = aggregates.setdefault(
+                key,
+                {
+                    "positive_count": 0,
+                    "negative_count": 0,
+                    "outcomes": [],
+                    "latest_event_seq": None,
+                },
+            )
+            count_key = "positive_count" if polarity == "positive" else "negative_count"
+            aggregate[count_key] = int(aggregate[count_key]) + 1
+            if outcome not in aggregate["outcomes"]:
+                aggregate["outcomes"].append(outcome)
+            seq = getattr(event, "seq", None)
+            if isinstance(seq, int):
+                aggregate["latest_event_seq"] = seq
+    return aggregates
+
+
+def _apply_purpose_outcome_learning(
+    contexts: list[Context],
+    aggregates: dict[str, dict[str, Any]],
+) -> list[Context]:
+    """Return contexts scored with bounded replay-derived outcome learning."""
+    if not aggregates:
+        return contexts
+    learned: list[Context] = []
+    for context in contexts:
+        aggregate = _purpose_outcome_for_context(context, aggregates)
+        if aggregate is None:
+            learned.append(context)
+            continue
+        positive_count = int(aggregate.get("positive_count", 0))
+        negative_count = int(aggregate.get("negative_count", 0))
+        boost = min(0.20, positive_count * 0.06)
+        penalty = min(0.18, negative_count * 0.06)
+        score_multiplier = max(0.1, 1.0 + boost - penalty)
+        metadata = dict(context.metadata or {})
+        outcome_payload = {
+            "positive_count": positive_count,
+            "negative_count": negative_count,
+            "score_boost": round(boost, 4),
+            "score_penalty": round(penalty, 4),
+            "outcomes": list(aggregate.get("outcomes", [])),
+            "suppression_candidate": negative_count >= 2 and negative_count >= positive_count,
+        }
+        if aggregate.get("latest_event_seq") is not None:
+            outcome_payload["latest_event_seq"] = aggregate["latest_event_seq"]
+        metadata.update(
+            {
+                "purpose_outcome_positive_count": positive_count,
+                "purpose_outcome_negative_count": negative_count,
+                "purpose_outcome_score_boost": round(boost, 4),
+                "purpose_outcome_score_penalty": round(penalty, 4),
+                "purpose_outcome_suppression_candidate": outcome_payload["suppression_candidate"],
+            }
+        )
+        score_explanation = dict(metadata.get("score_explanation") or {})
+        score_explanation["purpose_outcome"] = outcome_payload
+        metadata["score_explanation"] = score_explanation
+        learned.append(
+            replace(
+                context,
+                score=context.score * score_multiplier,
+                metadata=metadata,
+            )
+        )
+    return sorted(learned, key=lambda item: item.score, reverse=True)
+
+
+def _purpose_payload_matches(payload: dict[str, Any], profile: PurposeProfile) -> bool:
+    purpose = payload.get("purpose")
+    value = purpose.get("profile") if isinstance(purpose, dict) else purpose
+    if not isinstance(value, str) or not value.strip():
+        return False
+    return value.strip().casefold().replace(" ", "-") == profile.profile
+
+
+def _purpose_feedback_outcome(event_type: str, payload: dict[str, Any]) -> str | None:
+    outcome = payload.get("outcome")
+    if isinstance(outcome, str) and outcome.strip():
+        return outcome.strip().casefold().replace(" ", "_")
+    feedback = payload.get("feedback")
+    if isinstance(feedback, str) and feedback.strip():
+        return feedback.strip().casefold().replace(" ", "_")
+    if event_type in {"memory.reinforced", "memory.evidence.reinforced"}:
+        return "used"
+    if event_type == "memory.evidence.excluded":
+        return "excluded"
+    return None
+
+
+def _purpose_outcome_polarity(outcome: str) -> str | None:
+    if outcome in _POSITIVE_PURPOSE_OUTCOMES:
+        return "positive"
+    if outcome in _NEGATIVE_PURPOSE_OUTCOMES:
+        return "negative"
+    return None
+
+
+def _purpose_outcome_payload_keys(payload: dict[str, Any]) -> list[str]:
+    citation = payload.get("citation")
+    if isinstance(citation, str) and citation.strip():
+        return [f"citation:{citation.strip()}"]
+    source_event_hash = payload.get("source_event_hash")
+    if isinstance(source_event_hash, str) and source_event_hash.strip():
+        return [f"hash:{source_event_hash.strip()}"]
+    source_group = payload.get("source_group")
+    if isinstance(source_group, str) and source_group.strip():
+        return [f"source_group:{source_group.strip()}"]
+    entity_name = payload.get("entity_name")
+    entity_type = payload.get("entity_type")
+    if isinstance(entity_name, str) and entity_name.strip():
+        kind = entity_type.strip() if isinstance(entity_type, str) and entity_type.strip() else "memory"
+        return [f"entity:{kind}:{entity_name.strip()}"]
+    return []
+
+
+def _purpose_outcome_for_context(
+    context: Context,
+    aggregates: dict[str, dict[str, Any]],
+) -> dict[str, Any] | None:
+    keys = _purpose_outcome_context_keys(context)
+    merged: dict[str, Any] | None = None
+    for key in keys:
+        aggregate = aggregates.get(key)
+        if aggregate is None:
+            continue
+        if merged is None:
+            merged = {
+                "positive_count": 0,
+                "negative_count": 0,
+                "outcomes": [],
+                "latest_event_seq": None,
+            }
+        merged["positive_count"] = int(merged["positive_count"]) + int(aggregate.get("positive_count", 0))
+        merged["negative_count"] = int(merged["negative_count"]) + int(aggregate.get("negative_count", 0))
+        for outcome in aggregate.get("outcomes", []):
+            if outcome not in merged["outcomes"]:
+                merged["outcomes"].append(outcome)
+        latest = aggregate.get("latest_event_seq")
+        if isinstance(latest, int):
+            current = merged.get("latest_event_seq")
+            merged["latest_event_seq"] = latest if not isinstance(current, int) else max(current, latest)
+    return merged
+
+
+def _purpose_outcome_context_keys(context: Context) -> list[str]:
+    metadata = context.metadata or {}
+    citation = _context_citation(context)
+    if citation:
+        return [f"citation:{citation.strip()}"]
+    source_event_hash = metadata.get("source_event_hash")
+    if isinstance(source_event_hash, str) and source_event_hash.strip():
+        return [f"hash:{source_event_hash.strip()}"]
+    identity = _context_identity(context)
+    return [f"entity:{identity['entity_type']}:{identity['entity_name']}"]
+
+
+def _purpose_outcome_suppression_candidates(current_facts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    for fact in current_facts:
+        explanation = fact.get("score_explanation")
+        if not isinstance(explanation, dict):
+            continue
+        outcome = explanation.get("purpose_outcome")
+        if not isinstance(outcome, dict) or not outcome.get("suppression_candidate"):
+            continue
+        candidates.append(
+            {
+                "entity_name": fact.get("entity_name") or _context_content_identity(str(fact.get("content", ""))),
+                "entity_type": fact.get("entity_type") or "memory",
+                "citation": fact.get("citation"),
+                "negative_count": int(outcome.get("negative_count", 0)),
+                "positive_count": int(outcome.get("positive_count", 0)),
+                "outcomes": [str(value) for value in outcome.get("outcomes", [])],
+            }
+        )
+    return candidates
+
+
 def _normalize_context_feedback(feedback: str) -> str:
     normalized = feedback.casefold().strip()
     if normalized not in {"used", "helpful", "irrelevant"}:
@@ -1989,6 +2224,13 @@ def build_memory_checkout(
     }
     if purpose_policy["suppressed_count"]:
         retention["purpose_policy"] = purpose_policy
+    suppression_candidates = _purpose_outcome_suppression_candidates(current_facts)
+    if suppression_candidates:
+        existing_policy = retention.get("purpose_policy")
+        policy_payload = dict(existing_policy) if isinstance(existing_policy, dict) else {}
+        policy_payload["suppression_candidates"] = suppression_candidates
+        retention["purpose_policy"] = policy_payload
+        warnings.append("Purpose outcome history marks retrieved memory as a suppression candidate.")
     diagnostics = build_checkout_diagnostics(
         query=query,
         purpose=purpose_payload,
@@ -2181,6 +2423,11 @@ _CHECKOUT_METADATA_FIELDS = (
     "authority_scope",
     "stale",
     "superseded_by",
+    "purpose_outcome_positive_count",
+    "purpose_outcome_negative_count",
+    "purpose_outcome_score_boost",
+    "purpose_outcome_score_penalty",
+    "purpose_outcome_suppression_candidate",
 )
 
 
@@ -2677,7 +2924,7 @@ def _contexts_as_of_seq(contexts: list[Context], as_of_seq: int) -> list[Context
     return filtered
 
 
-def _checkout_rank(context: Context, query: str) -> tuple[float, int, int, int, str, float]:
+def _checkout_rank(context: Context, query: str) -> tuple[float, int, int, int, float, str, float]:
     query_tokens = _checkout_tokens(query)
     content_tokens = _checkout_tokens(context.content)
     overlap = len(query_tokens & content_tokens) / max(1, len(query_tokens))
@@ -2687,11 +2934,13 @@ def _checkout_rank(context: Context, query: str) -> tuple[float, int, int, int, 
     citation_priority = 1 if _context_citation(context) else 0
     source_lane = _checkout_source_lane(context)
     source_priority = 1 if source_lane in {"verbatim", "eventloom", "projection"} else 0
+    purpose_outcome_rank = _purpose_outcome_rank(metadata)
     return (
         overlap,
         citation_priority,
         source_priority,
         type_priority,
+        purpose_outcome_rank,
         context.valid_from or "",
         context.score,
     )
@@ -2699,6 +2948,20 @@ def _checkout_rank(context: Context, query: str) -> tuple[float, int, int, int, 
 
 def _checkout_tokens(value: str) -> set[str]:
     return {token for token in re.findall(r"[a-z0-9]+", value.casefold()) if len(token) > 2}
+
+
+def _purpose_outcome_rank(metadata: dict[str, Any]) -> float:
+    positive = _numeric_metadata(metadata.get("purpose_outcome_positive_count"))
+    negative = _numeric_metadata(metadata.get("purpose_outcome_negative_count"))
+    return max(-0.18, min(0.20, positive * 0.06 - negative * 0.06))
+
+
+def _numeric_metadata(value: object) -> float:
+    if isinstance(value, bool):
+        return 0.0
+    if isinstance(value, int | float):
+        return float(value)
+    return 0.0
 
 
 def _citation_event_identity(citation: str | None) -> tuple[int | None, str | None]:

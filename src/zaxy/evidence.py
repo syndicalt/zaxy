@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from zaxy.purpose import PurposeProfile, purpose_profile
 from zaxy.retrieval_plan import EvidencePlan
 
 _SOURCE_ID_PATTERNS = (
@@ -51,6 +52,106 @@ class CheckoutEvidenceSelection:
 
     current_facts: list[dict[str, Any]]
     evidence: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class EvidencePolicyRequirement:
+    """One purpose-scoped evidence requirement."""
+
+    key: str
+    description: str
+    mode: str
+    terms: tuple[str, ...]
+    suggested_query: str
+
+    def to_dict(self) -> dict[str, Any]:
+        """Return a stable diagnostic payload."""
+        return {
+            "key": self.key,
+            "description": self.description,
+            "mode": self.mode,
+            "terms": list(self.terms),
+            "suggested_query": self.suggested_query,
+        }
+
+
+@dataclass(frozen=True)
+class EvidencePolicyResult:
+    """Purpose-scoped evidence policy evaluation result."""
+
+    profile: str
+    mode: str
+    satisfied: bool
+    requirements: tuple[EvidencePolicyRequirement, ...]
+    satisfied_requirements: tuple[str, ...]
+    missing_requirements: tuple[str, ...]
+    failure_reasons: tuple[str, ...]
+    suggested_queries: tuple[str, ...]
+
+    def to_diagnostics(self) -> dict[str, Any]:
+        """Return a stable checkout diagnostic payload."""
+        return {
+            "profile": self.profile,
+            "mode": self.mode,
+            "satisfied": self.satisfied,
+            "requirements": [requirement.to_dict() for requirement in self.requirements],
+            "satisfied_requirements": list(self.satisfied_requirements),
+            "missing_requirements": list(self.missing_requirements),
+            "failure_reasons": list(self.failure_reasons),
+            "suggested_queries": list(self.suggested_queries),
+        }
+
+
+_EVIDENCE_POLICY_REQUIREMENTS: dict[str, tuple[EvidencePolicyRequirement, ...]] = {
+    "security": (
+        EvidencePolicyRequirement(
+            key="source_citation",
+            description="Security memory requires cited source evidence.",
+            mode="block_checkout",
+            terms=("eventloom://", "source_path", "source", "citation"),
+            suggested_query="cited source evidence for security risk",
+        ),
+        EvidencePolicyRequirement(
+            key="mitigation_or_risk_owner",
+            description="Security memory requires mitigation or risk-owner evidence.",
+            mode="require_refresh",
+            terms=("mitigation", "mitigated", "risk_owner", "risk owner", "accepted risk"),
+            suggested_query="mitigation or risk owner evidence for security risk",
+        ),
+    ),
+    "release": (
+        EvidencePolicyRequirement(
+            key="release_gate",
+            description="Release memory requires release-gate evidence.",
+            mode="block_checkout",
+            terms=("release gate", "release_gate", "doctor", "readiness", "gate"),
+            suggested_query="release gate evidence with current readiness status",
+        ),
+        EvidencePolicyRequirement(
+            key="verification_refs",
+            description="Release memory requires test, changelog, or package verification evidence.",
+            mode="require_refresh",
+            terms=("test", "pytest", "changelog", "package", "twine", "build"),
+            suggested_query="test changelog package evidence for release readiness",
+        ),
+    ),
+    "coordinate": (
+        EvidencePolicyRequirement(
+            key="promotion_or_review_ref",
+            description="Coordinate memory requires promotion or review evidence.",
+            mode="block_checkout",
+            terms=("promoted", "promotion", "review", "accepted", "parent state"),
+            suggested_query="Coordinate promotion review accepted parent-state evidence",
+        ),
+        EvidencePolicyRequirement(
+            key="source_event_ref",
+            description="Coordinate memory requires source-event evidence.",
+            mode="require_refresh",
+            terms=("eventloom://", "source_event_seq", "source_event_hash", "citation"),
+            suggested_query="Coordinate source event citation for accepted finding",
+        ),
+    ),
+}
 
 
 def select_checkout_evidence(
@@ -104,6 +205,47 @@ def build_evidence_set(
         current_citation_count=sum(1 for fact in current_facts if fact.get("citation")),
     )
     return EvidenceSet(groups=groups, status=status)
+
+
+def evaluate_evidence_policy(
+    *,
+    profile: PurposeProfile | dict[str, Any] | str | None,
+    query: str | None,
+    current_facts: list[dict[str, Any]],
+    evidence: list[dict[str, Any]],
+    evidence_set: EvidenceSet | None = None,
+) -> EvidencePolicyResult | None:
+    """Evaluate hard purpose evidence requirements for model-facing checkout."""
+    normalized = purpose_profile(profile)
+    requirements = _EVIDENCE_POLICY_REQUIREMENTS.get(normalized.profile)
+    if not requirements:
+        return None
+    haystack = _policy_haystack(
+        current_facts=current_facts,
+        evidence=evidence,
+        evidence_set=evidence_set,
+    )
+    satisfied: list[str] = []
+    missing: list[EvidencePolicyRequirement] = []
+    for requirement in requirements:
+        if _requirement_satisfied(requirement, haystack):
+            satisfied.append(requirement.key)
+        else:
+            missing.append(requirement)
+    suggested_queries = tuple(
+        _purpose_refresh_query(requirement, query=query, profile=normalized)
+        for requirement in missing
+    )
+    return EvidencePolicyResult(
+        profile=normalized.profile,
+        mode=_strongest_mode(requirement.mode for requirement in missing),
+        satisfied=not missing,
+        requirements=requirements,
+        satisfied_requirements=tuple(satisfied),
+        missing_requirements=tuple(requirement.key for requirement in missing),
+        failure_reasons=tuple(requirement.description for requirement in missing),
+        suggested_queries=suggested_queries,
+    )
 
 
 def evidence_plan_status(
@@ -315,3 +457,57 @@ def _int_metric(value: Any) -> int:
 
 def _float_metric(value: Any) -> float:
     return value if isinstance(value, int | float) and not isinstance(value, bool) else 0.0
+
+
+def _policy_haystack(
+    *,
+    current_facts: list[dict[str, Any]],
+    evidence: list[dict[str, Any]],
+    evidence_set: EvidenceSet | None,
+) -> str:
+    values: list[str] = []
+    for item in [*current_facts, *evidence]:
+        for value in item.values():
+            if isinstance(value, str):
+                values.append(value)
+            elif isinstance(value, int | float | bool):
+                values.append(str(value))
+    if evidence_set is not None:
+        for group in evidence_set.groups:
+            values.extend(
+                str(value)
+                for value in group.values()
+                if isinstance(value, str | int | float | bool)
+            )
+    return "\n".join(values).casefold()
+
+
+def _requirement_satisfied(requirement: EvidencePolicyRequirement, haystack: str) -> bool:
+    return any(term.casefold() in haystack for term in requirement.terms)
+
+
+def _strongest_mode(modes: Any) -> str:
+    order = {
+        "warn": 0,
+        "suppress": 1,
+        "require_refresh": 2,
+        "block_checkout": 3,
+    }
+    strongest = "warn"
+    for mode in modes:
+        text = str(mode)
+        if order.get(text, -1) > order[strongest]:
+            strongest = text
+    return strongest
+
+
+def _purpose_refresh_query(
+    requirement: EvidencePolicyRequirement,
+    *,
+    query: str | None,
+    profile: PurposeProfile,
+) -> str:
+    base = requirement.suggested_query
+    if query:
+        return f"{base} for {profile.profile}: {query}"
+    return f"{base} for {profile.profile}"

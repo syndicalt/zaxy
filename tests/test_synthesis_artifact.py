@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -124,6 +125,22 @@ def _checkout() -> MemoryCheckout:
     )
 
 
+def _promotable_checkout() -> MemoryCheckout:
+    checkout = _checkout()
+    diagnostics = dict(checkout.diagnostics)
+    diagnostics.pop("evidence_plan_status", None)
+    return replace(
+        checkout,
+        diagnostics=diagnostics,
+        quality={
+            "answerability": "answer_from_memory",
+            "confidence": 0.91,
+            "reasons": ["Retrieved current facts with Eventloom citations."],
+            "required_action": None,
+        },
+    )
+
+
 def test_synthesis_artifact_is_deterministic_and_json_safe() -> None:
     """Artifact identity should depend on checkout/candidate evidence, not prompt text."""
     first = build_synthesis_artifact(_checkout())
@@ -193,7 +210,132 @@ def test_synthesis_artifact_preserves_candidates_support_and_verification() -> N
                 "confidence": 0.61,
             }
         ],
+        "promotion_gate": {
+            "allowed": False,
+            "reason": "missing_query_evidence",
+            "profile": "general",
+            "missing_evidence": [
+                {
+                    "observed_source_groups": 1,
+                    "required_source_groups": 2,
+                    "refresh_query": "bike expenses supporting source",
+                    "missing_slots": ["source"],
+                    "suggested_queries": [
+                        {"slot": "source", "query": "bike expenses supporting source"}
+                    ],
+                }
+            ],
+        },
     }
+
+
+def test_synthesis_artifact_preserves_high_risk_evidence_policy_failures() -> None:
+    """Artifacts should keep purpose evidence-policy failures for promotion audit."""
+    checkout = _checkout()
+    diagnostics = dict(checkout.diagnostics)
+    diagnostics["evidence_policy"] = {
+        "profile": "security",
+        "mode": "require_refresh",
+        "satisfied": False,
+        "missing_requirements": ["mitigation_or_risk_owner"],
+        "failure_reasons": ["Security memory requires mitigation or risk-owner evidence."],
+        "suggested_queries": [
+            "mitigation or risk owner evidence for security risk for security: bike expenses"
+        ],
+    }
+    checkout = replace(
+        checkout,
+        purpose={"profile": "security"},
+        quality={
+            "answerability": "refresh_recommended",
+            "confidence": 0.57,
+            "reasons": ["Purpose evidence policy is not satisfied."],
+            "required_action": {
+                "type": "memory_checkout",
+                "mode": "require_refresh",
+                "missing_requirements": ["mitigation_or_risk_owner"],
+                "suggested_queries": [
+                    "mitigation or risk owner evidence for security risk for security: bike expenses"
+                ],
+            },
+        },
+        diagnostics=diagnostics,
+    )
+
+    artifact = build_synthesis_artifact(checkout)
+
+    assert artifact["verification"]["evidence_policy_failures"] == [
+        {
+            "profile": "security",
+            "mode": "require_refresh",
+            "missing_requirements": ["mitigation_or_risk_owner"],
+            "failure_reasons": ["Security memory requires mitigation or risk-owner evidence."],
+            "suggested_queries": [
+                "mitigation or risk owner evidence for security risk for security: bike expenses"
+            ],
+        }
+    ]
+    assert artifact["verification"]["promotion_gate"] == {
+        "allowed": False,
+        "reason": "evidence_policy_unsatisfied",
+        "profile": "security",
+        "mode": "require_refresh",
+        "missing_requirements": ["mitigation_or_risk_owner"],
+        "failure_reasons": ["Security memory requires mitigation or risk-owner evidence."],
+        "suggested_queries": [
+            "mitigation or risk owner evidence for security risk for security: bike expenses"
+        ],
+    }
+
+
+def test_synthesis_candidate_feedback_blocks_used_outcome_when_policy_unsatisfied() -> None:
+    """Unsupported high-risk answer candidates should not be promoted as used."""
+    checkout = _checkout()
+    diagnostics = dict(checkout.diagnostics)
+    diagnostics["evidence_policy"] = {
+        "profile": "security",
+        "mode": "require_refresh",
+        "satisfied": False,
+        "missing_requirements": ["mitigation_or_risk_owner"],
+        "failure_reasons": ["Security memory requires mitigation or risk-owner evidence."],
+        "suggested_queries": ["mitigation or risk owner evidence"],
+    }
+    checkout = replace(checkout, diagnostics=diagnostics)
+    candidate = checkout.diagnostics["synthesis"]["answer_candidates"][0]
+
+    with pytest.raises(ValueError, match="cannot promote synthesis candidate for security"):
+        build_synthesis_candidate_event_payload(
+            checkout=checkout,
+            candidate=candidate,
+            outcome="used",
+        )
+
+    corrected = build_synthesis_candidate_event_payload(
+        checkout=checkout,
+        candidate=candidate,
+        outcome="corrected",
+        reason="candidate lacked security mitigation evidence",
+    )
+    assert corrected["outcome"] == "corrected"
+
+
+def test_synthesis_candidate_feedback_requires_cited_support_sources() -> None:
+    """Used feedback should require candidate support ids to resolve to cited checkout evidence."""
+    checkout = _promotable_checkout()
+    diagnostics = dict(checkout.diagnostics)
+    synthesis = dict(diagnostics["synthesis"])
+    candidate = dict(synthesis["answer_candidates"][0])
+    candidate["support_source_ids"] = ["answer-99"]
+    synthesis["answer_candidates"] = [candidate]
+    diagnostics["synthesis"] = synthesis
+    checkout = replace(checkout, diagnostics=diagnostics)
+
+    with pytest.raises(ValueError, match="support_sources_missing_citations|answer-99"):
+        build_synthesis_candidate_event_payload(
+            checkout=checkout,
+            candidate=candidate,
+            outcome="used",
+        )
 
 
 def test_synthesis_artifact_preserves_auditable_ledger_rows() -> None:
@@ -374,7 +516,7 @@ def test_synthesis_artifact_requires_answer_candidates() -> None:
 
 def test_synthesis_candidate_event_payload_preserves_support_citations() -> None:
     """Candidate feedback should keep the selected answer, citations, and quality."""
-    checkout = _checkout()
+    checkout = _promotable_checkout()
     candidate = checkout.diagnostics["synthesis"]["answer_candidates"][0]
 
     payload = build_synthesis_candidate_event_payload(
@@ -388,7 +530,11 @@ def test_synthesis_candidate_event_payload_preserves_support_citations() -> None
         "query": "How much did I spend on bike expenses in total?",
         "outcome": "used",
         "answer_candidate": candidate,
-        "quality": {"answerability": "answer_from_memory", "confidence": 0.86},
+        "quality": {
+            "answerability": "answer_from_memory",
+            "confidence": 0.91,
+            "reasons": ["Retrieved current facts with Eventloom citations."],
+        },
         "slot_plan": {
             "version": "slot_plan_v1",
             "answer_type": "sum",

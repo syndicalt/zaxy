@@ -25,7 +25,7 @@ from zaxy.core import (
     build_memory_checkout,
 )
 from zaxy.embedding import HashEmbeddingProvider
-from zaxy.event import Event, EventLog
+from zaxy.event import Event, EventLog, IntegrityReport, ReplayResult
 from zaxy.query import ContextChunk
 from zaxy.refs import MemoryRef
 from zaxy.retrieval_profile import resolve_retrieval_profile
@@ -227,6 +227,37 @@ async def test_memory_fabric_queries_packet_projection_sources(tmp_path: Path) -
         "source_event_hash": "b" * 64,
         "provider_path": "/v1/responses",
     }
+
+
+def _feedback_event(
+    seq: int,
+    event_type: str,
+    *,
+    citation: str,
+    purpose: str,
+    outcome: str,
+    entity_name: str,
+    entity_type: str,
+    feedback: str | None = None,
+) -> Event:
+    payload: dict[str, object] = {
+        "entity_name": entity_name,
+        "entity_type": entity_type,
+        "citation": citation,
+        "purpose": {"profile": purpose},
+        "outcome": outcome,
+    }
+    if feedback is not None:
+        payload["feedback"] = feedback
+    return Event(
+        seq=seq,
+        timestamp=f"2026-06-02T00:00:0{seq}Z",
+        type=event_type,
+        actor="assistant",
+        thread="agent-1",
+        payload=payload,
+        hash=str(seq) * 64,
+    )
 
 # ------------------------------------------------------------------
 # Fixtures
@@ -668,6 +699,181 @@ class TestContextFeedback:
         assert payload["entity_name"] == "Fallback note"
         assert payload["entity_type"] == "memory"
 
+
+class TestPurposeOutcomeLearning:
+    """Tests for replay-derived purpose outcome effects on future checkout."""
+
+    async def test_checkout_memory_repeated_positive_purpose_outcomes_boost_rank(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Repeated successful outcome history should boost matching memory in the next checkout."""
+        fabric._connected = True
+        fabric.session_manager.replay.return_value = ReplayResult(
+            events=[
+                _feedback_event(
+                    1,
+                    "memory.reinforced",
+                    citation=f"eventloom://agent-1/events/9#{'b' * 64}",
+                    purpose="coding",
+                    outcome="avoided_failed_path",
+                    entity_name="migration retry",
+                    entity_type="decision",
+                ),
+                _feedback_event(
+                    2,
+                    "memory.reinforced",
+                    citation=f"eventloom://agent-1/events/9#{'b' * 64}",
+                    purpose="coding",
+                    outcome="prevented_redundant_investigation",
+                    entity_name="migration retry",
+                    entity_type="decision",
+                ),
+            ],
+            integrity=IntegrityReport(ok=True, total_events=2),
+        )
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content="Migration retry can keep the legacy lock timeout.",
+                source="keyword",
+                score=0.96,
+                valid_from="2026-06-02T00:00:00Z",
+                valid_to=None,
+                citation=f"eventloom://agent-1/events/8#{'a' * 64}",
+                entity_name="legacy migration retry",
+                entity_type="decision",
+            ),
+            ContextChunk(
+                content="Retry the migration with lock timeout disabled.",
+                source="keyword",
+                score=0.9,
+                valid_from="2026-06-02T00:00:00Z",
+                valid_to=None,
+                citation=f"eventloom://agent-1/events/9#{'b' * 64}",
+                entity_name="migration retry",
+                entity_type="decision",
+            ),
+        ]
+
+        with patch.object(fabric, "query_verbatim", return_value=[]):
+            checkout = await fabric.checkout_memory("migration retry", session_id="agent-1", purpose="coding")
+
+        assert checkout.current_facts[0]["entity_name"] == "migration retry"
+        purpose_outcome = checkout.current_facts[0]["score_explanation"]["purpose_outcome"]
+        assert purpose_outcome["positive_count"] == 2
+        assert purpose_outcome["score_boost"] == 0.12
+
+    async def test_checkout_memory_positive_outcomes_do_not_cross_purpose_profiles(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Outcome boosts are purpose-scoped and must not bleed between task profiles."""
+        fabric._connected = True
+        fabric.session_manager.replay.return_value = ReplayResult(
+            events=[
+                _feedback_event(
+                    1,
+                    "memory.reinforced",
+                    citation=f"eventloom://agent-1/events/9#{'b' * 64}",
+                    purpose="coordinate",
+                    outcome="supported_handoff",
+                    entity_name="migration retry",
+                    entity_type="decision",
+                )
+            ],
+            integrity=IntegrityReport(ok=True, total_events=1),
+        )
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content="Migration retry can keep the legacy lock timeout.",
+                source="keyword",
+                score=0.96,
+                valid_from="2026-06-02T00:00:00Z",
+                valid_to=None,
+                citation=f"eventloom://agent-1/events/8#{'a' * 64}",
+                entity_name="legacy migration retry",
+                entity_type="decision",
+            ),
+            ContextChunk(
+                content="Retry the migration with lock timeout disabled.",
+                source="keyword",
+                score=0.9,
+                valid_from="2026-06-02T00:00:00Z",
+                valid_to=None,
+                citation=f"eventloom://agent-1/events/9#{'b' * 64}",
+                entity_name="migration retry",
+                entity_type="decision",
+            ),
+        ]
+
+        with patch.object(fabric, "query_verbatim", return_value=[]):
+            checkout = await fabric.checkout_memory("migration retry", session_id="agent-1", purpose="coding")
+
+        assert checkout.current_facts[0]["entity_name"] == "legacy migration retry"
+        assert "purpose_outcome" not in checkout.current_facts[1].get("score_explanation", {})
+
+    async def test_checkout_memory_repeated_negative_outcomes_surface_warning_candidate(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """Repeated negative outcome history should warn without deleting memory."""
+        fabric._connected = True
+        citation = f"eventloom://agent-1/events/9#{'b' * 64}"
+        fabric.session_manager.replay.return_value = ReplayResult(
+            events=[
+                _feedback_event(
+                    1,
+                    "memory.feedback",
+                    citation=citation,
+                    purpose="coding",
+                    outcome="caused_regression",
+                    feedback="irrelevant",
+                    entity_name="migration retry",
+                    entity_type="decision",
+                ),
+                _feedback_event(
+                    2,
+                    "memory.feedback",
+                    citation=citation,
+                    purpose="coding",
+                    outcome="failed",
+                    feedback="irrelevant",
+                    entity_name="migration retry",
+                    entity_type="decision",
+                ),
+            ],
+            integrity=IntegrityReport(ok=True, total_events=2),
+        )
+        fabric.query_router.query.return_value = [
+            ContextChunk(
+                content="Retry the migration with lock timeout disabled.",
+                source="keyword",
+                score=0.9,
+                valid_from="2026-06-02T00:00:00Z",
+                valid_to=None,
+                citation=citation,
+                entity_name="migration retry",
+                entity_type="decision",
+            )
+        ]
+
+        with patch.object(fabric, "query_verbatim", return_value=[]):
+            checkout = await fabric.checkout_memory("migration retry", session_id="agent-1", purpose="coding")
+
+        assert checkout.diagnostics["warning_count"] == 1
+        assert "Checkout contains warnings that reduce confidence." in checkout.quality["reasons"]
+        candidates = checkout.diagnostics["purpose_policy"]["suppression_candidates"]
+        assert candidates == [
+            {
+                "entity_name": "migration retry",
+                "entity_type": "decision",
+                "citation": citation,
+                "negative_count": 2,
+                "positive_count": 0,
+                "outcomes": ["caused_regression", "failed"],
+            }
+        ]
+
     async def test_synthesis_candidate_use_writes_eventloom_artifact(self, fabric: MemoryFabric) -> None:
         """Used answer candidates should write a cited synthesis artifact event."""
         checkout = MemoryCheckout(
@@ -682,7 +888,17 @@ class TestContextFeedback:
                     "content": "session_id=answer-1 I spent $120 on a bike helmet.",
                     "citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa",
                     "source_lane": "verbatim",
-                }
+                },
+                {
+                    "content": "session_id=answer-2 I spent $45 on a bike tune-up.",
+                    "citation": "eventloom://agent-1/events/2#bbbbbbbbbbbb",
+                    "source_lane": "verbatim",
+                },
+                {
+                    "content": "session_id=answer-3 I spent $20 on bike lights.",
+                    "citation": "eventloom://agent-1/events/3#cccccccccccc",
+                    "source_lane": "verbatim",
+                },
             ],
             provenance=[],
             retention={},

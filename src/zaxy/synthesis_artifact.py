@@ -60,6 +60,7 @@ def build_synthesis_candidate_event_payload(
 ) -> dict[str, Any]:
     """Build a stable Eventloom payload for synthesis candidate outcome feedback."""
     answer_candidate = _checkout_candidate(checkout, candidate)
+    _assert_candidate_feedback_allowed(checkout, outcome, answer_candidate)
     support_ids = _string_list(answer_candidate.get("support_source_ids"))
     excluded_ids = _string_list(answer_candidate.get("excluded_source_ids"))
     diagnostics = _json_object(getattr(checkout, "diagnostics", {}))
@@ -273,15 +274,22 @@ def _diagnostics_summary(diagnostics: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _verification(checkout: Any) -> dict[str, list[Any]]:
+def _verification(checkout: Any) -> dict[str, Any]:
     diagnostics = _json_object(getattr(checkout, "diagnostics", {}))
     quality = _json_object(getattr(checkout, "quality", {}))
-    return {
+    payload: dict[str, Any] = {
         "warnings": list(getattr(checkout, "warnings", []) or []),
         "missing_evidence": _missing_evidence(diagnostics, quality),
         "contradictions": _contradictions(diagnostics),
         "dedupe_decisions": _dedupe_decisions(diagnostics),
     }
+    evidence_policy_failures = _evidence_policy_failures(diagnostics)
+    if evidence_policy_failures:
+        payload["evidence_policy_failures"] = evidence_policy_failures
+    promotion_gate = _promotion_gate(checkout)
+    if not promotion_gate["allowed"]:
+        payload["promotion_gate"] = promotion_gate
+    return payload
 
 
 def _missing_evidence(diagnostics: dict[str, Any], quality: dict[str, Any]) -> list[dict[str, Any]]:
@@ -300,6 +308,108 @@ def _missing_evidence(diagnostics: dict[str, Any], quality: dict[str, Any]) -> l
     }
     cleaned = {key: value for key, value in payload.items() if value not in (None, [], {})}
     return [cleaned] if cleaned else []
+
+
+def _evidence_policy_failures(diagnostics: dict[str, Any]) -> list[dict[str, Any]]:
+    policy = diagnostics.get("evidence_policy")
+    if not isinstance(policy, dict) or policy.get("satisfied"):
+        return []
+    payload = {
+        "profile": _json_value(policy.get("profile")),
+        "mode": _json_value(policy.get("mode")),
+        "missing_requirements": _json_value(policy.get("missing_requirements")),
+        "failure_reasons": _json_value(policy.get("failure_reasons")),
+        "suggested_queries": _json_value(policy.get("suggested_queries")),
+    }
+    cleaned = {key: value for key, value in payload.items() if value not in (None, "", [], {})}
+    return [cleaned] if cleaned else []
+
+
+def _assert_candidate_feedback_allowed(
+    checkout: Any,
+    outcome: str,
+    answer_candidate: dict[str, Any],
+) -> None:
+    if normalize_synthesis_outcome(outcome) != "used":
+        return
+    gate = _promotion_gate(checkout, candidate=answer_candidate)
+    if gate["allowed"]:
+        return
+    profile = str(gate.get("profile") or "purpose")
+    missing = ", ".join(_string_list(gate.get("missing_requirements"))) or str(
+        gate.get("reason") or "required evidence"
+    )
+    raise ValueError(
+        f"cannot promote synthesis candidate for {profile}; promotion gate is blocked: {missing}"
+    )
+
+
+def _promotion_gate(checkout: Any, candidate: dict[str, Any] | None = None) -> dict[str, Any]:
+    diagnostics = _json_object(getattr(checkout, "diagnostics", {}))
+    quality = _json_object(getattr(checkout, "quality", {}))
+    policy = diagnostics.get("evidence_policy")
+    profile = "general"
+    missing_requirements: list[str] = []
+    suggested_queries: list[str] = []
+    failure_reasons: list[str] = []
+    if isinstance(policy, dict):
+        profile = str(policy.get("profile") or profile)
+        missing_requirements = _string_list(policy.get("missing_requirements"))
+        suggested_queries = _string_list(policy.get("suggested_queries"))
+        failure_reasons = _string_list(policy.get("failure_reasons"))
+    if isinstance(policy, dict) and policy.get("satisfied") is False:
+        return {
+            "allowed": False,
+            "reason": "evidence_policy_unsatisfied",
+            "profile": profile,
+            "mode": policy.get("mode"),
+            "missing_requirements": missing_requirements,
+            "failure_reasons": failure_reasons,
+            "suggested_queries": suggested_queries,
+        }
+    if quality.get("answerability") != "answer_from_memory":
+        return {
+            "allowed": False,
+            "reason": "checkout_not_answerable_from_memory",
+            "profile": profile,
+            "answerability": quality.get("answerability"),
+            "missing_requirements": missing_requirements,
+            "failure_reasons": failure_reasons,
+            "suggested_queries": suggested_queries,
+        }
+    missing_evidence = _missing_evidence(diagnostics, quality)
+    if missing_evidence:
+        return {
+            "allowed": False,
+            "reason": "missing_query_evidence",
+            "profile": profile,
+            "missing_evidence": missing_evidence,
+        }
+    if candidate is not None:
+        support_ids = _string_list(candidate.get("support_source_ids"))
+        unresolved = _unresolved_support_source_ids(checkout, support_ids)
+        if unresolved:
+            return {
+                "allowed": False,
+                "reason": "support_sources_missing_citations",
+                "profile": profile,
+                "unresolved_support_source_ids": unresolved,
+            }
+    return {"allowed": True, "profile": profile}
+
+
+def _unresolved_support_source_ids(checkout: Any, support_ids: list[str]) -> list[str]:
+    if not support_ids:
+        return []
+    cited_source_ids = set()
+    for item in [*getattr(checkout, "current_facts", []), *getattr(checkout, "evidence", [])]:
+        if not isinstance(item, dict):
+            continue
+        citation = item.get("citation")
+        if not isinstance(citation, str) or not citation:
+            continue
+        cited_source_ids.add(evidence_source_id(item))
+    return [source_id for source_id in support_ids if source_id not in cited_source_ids]
 
 
 def _dedupe_decisions(diagnostics: dict[str, Any]) -> list[dict[str, Any]]:
