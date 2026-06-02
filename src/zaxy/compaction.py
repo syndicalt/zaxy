@@ -48,6 +48,36 @@ _PURPOSE_CONSOLIDATION_RULES: dict[str, dict[str, Any]] = {
         "preserve_all": False,
         "reason": "preserve_claims_sources_contradictions_and_open_questions",
     },
+    "support": {
+        "strategy": "purpose_exemplar",
+        "min_records": 8,
+        "preserve_all": False,
+        "reason": "preserve_escalations_workarounds_customer_impact_and_resolutions",
+    },
+    "product": {
+        "strategy": "purpose_exemplar",
+        "min_records": 8,
+        "preserve_all": False,
+        "reason": "preserve_roadmap_signals_promises_tradeoffs_and_experiment_outcomes",
+    },
+    "sales": {
+        "strategy": "purpose_preserve_all",
+        "min_records": 0,
+        "preserve_all": True,
+        "reason": "preserve_commitments_objections_renewal_risks_and_account_context",
+    },
+    "legal": {
+        "strategy": "purpose_preserve_all",
+        "min_records": 0,
+        "preserve_all": True,
+        "reason": "preserve_obligations_approvals_deadlines_and_exceptions",
+    },
+    "executive": {
+        "strategy": "purpose_preserve_all",
+        "min_records": 0,
+        "preserve_all": True,
+        "reason": "preserve_strategic_exceptions_market_patterns_risks_and_decisions",
+    },
 }
 
 

@@ -100,6 +100,16 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
         assert f'id="{section_id}"' in html
 
 
+def test_memory_purpose_positioning_does_not_overclaim_company_brain() -> None:
+    """Broader purpose profiles must stay framed as project-local agent work memory."""
+    text = Path("docs/memory-is-purpose-zaxy-analysis.md").read_text(encoding="utf-8")
+
+    assert 'Zaxy should not yet claim the full Company Brain category.' in text
+    assert "purpose-conditioned memory layer for agent work" in text
+    assert "enterprise connectors before the policy model is proven." in text
+    assert "Public positioning still says \"agent work memory\"" in text
+
+
 def test_v05_docs_render_to_static_site() -> None:
     """v0.5 roadmap and quickstarts should be published to the static site."""
     for path in (

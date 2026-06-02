@@ -151,6 +151,121 @@ _EVIDENCE_POLICY_REQUIREMENTS: dict[str, tuple[EvidencePolicyRequirement, ...]] 
             suggested_query="Coordinate source event citation for accepted finding",
         ),
     ),
+    "support": (
+        EvidencePolicyRequirement(
+            key="customer_report_ref",
+            description="Support memory requires cited customer report evidence.",
+            mode="require_refresh",
+            terms=("customer", "case", "ticket", "report", "eventloom://", "citation"),
+            suggested_query="cited customer report evidence for support case",
+        ),
+        EvidencePolicyRequirement(
+            key="workaround_or_resolution_ref",
+            description="Support memory requires workaround or resolution evidence.",
+            mode="require_refresh",
+            terms=("workaround", "resolution", "resolved", "mitigation"),
+            suggested_query="workaround or resolution evidence for support case",
+        ),
+        EvidencePolicyRequirement(
+            key="impact_ref",
+            description="Support memory requires customer-impact evidence.",
+            mode="warn",
+            terms=("impact", "severity", "affected", "customer impact"),
+            suggested_query="customer impact evidence for support case",
+        ),
+    ),
+    "product": (
+        EvidencePolicyRequirement(
+            key="roadmap_signal_ref",
+            description="Product memory requires cited roadmap signal evidence.",
+            mode="require_refresh",
+            terms=("roadmap", "signal", "customer", "request", "feedback", "citation"),
+            suggested_query="roadmap signal evidence with cited source",
+        ),
+        EvidencePolicyRequirement(
+            key="tradeoff_ref",
+            description="Product memory requires tradeoff or constraint evidence.",
+            mode="warn",
+            terms=("tradeoff", "constraint", "cost", "risk", "defer"),
+            suggested_query="product tradeoff or constraint evidence",
+        ),
+        EvidencePolicyRequirement(
+            key="experiment_or_customer_ref",
+            description="Product memory requires experiment outcome or customer evidence.",
+            mode="warn",
+            terms=("experiment", "outcome", "customer", "promise", "result"),
+            suggested_query="experiment outcome or customer promise evidence",
+        ),
+    ),
+    "sales": (
+        EvidencePolicyRequirement(
+            key="buyer_ref",
+            description="Sales memory requires cited buyer or account evidence.",
+            mode="require_refresh",
+            terms=("buyer", "account", "stakeholder", "customer", "citation"),
+            suggested_query="buyer account evidence with cited source",
+        ),
+        EvidencePolicyRequirement(
+            key="commitment_ref",
+            description="Sales memory requires explicit commitment evidence.",
+            mode="require_refresh",
+            terms=("commitment", "committed", "promised", "followup", "next step"),
+            suggested_query="buyer commitment or follow-up evidence",
+        ),
+        EvidencePolicyRequirement(
+            key="objection_or_renewal_ref",
+            description="Sales memory requires objection or renewal-risk evidence.",
+            mode="warn",
+            terms=("objection", "renewal", "blocker", "risk", "budget"),
+            suggested_query="buyer objection or renewal risk evidence",
+        ),
+    ),
+    "legal": (
+        EvidencePolicyRequirement(
+            key="exact_quote_ref",
+            description="Legal memory requires exact cited wording.",
+            mode="block_checkout",
+            terms=("exact quote", "quoted", "clause", "section"),
+            suggested_query="exact quoted legal wording with citation",
+        ),
+        EvidencePolicyRequirement(
+            key="authority_ref",
+            description="Legal memory requires authority or approval evidence.",
+            mode="require_refresh",
+            terms=("authority", "approved", "approval", "counsel", "owner"),
+            suggested_query="legal authority or approval evidence",
+        ),
+        EvidencePolicyRequirement(
+            key="date_or_deadline_ref",
+            description="Legal memory requires date or deadline evidence.",
+            mode="require_refresh",
+            terms=("date", "deadline", "expires", "effective", "due"),
+            suggested_query="legal date deadline or effective-window evidence",
+        ),
+    ),
+    "executive": (
+        EvidencePolicyRequirement(
+            key="decision_ref",
+            description="Executive memory requires cited decision evidence.",
+            mode="require_refresh",
+            terms=("decision", "approved", "exception", "owner", "citation"),
+            suggested_query="executive decision evidence with owner",
+        ),
+        EvidencePolicyRequirement(
+            key="risk_or_metric_ref",
+            description="Executive memory requires risk or metric evidence.",
+            mode="warn",
+            terms=("risk", "metric", "kpi", "market", "trend", "pattern"),
+            suggested_query="executive risk metric or market-pattern evidence",
+        ),
+        EvidencePolicyRequirement(
+            key="owner_or_source_ref",
+            description="Executive memory requires owner or source evidence.",
+            mode="require_refresh",
+            terms=("owner", "source", "sponsor", "accountable", "eventloom://", "citation"),
+            suggested_query="executive owner or source evidence",
+        ),
+    ),
 }
 
 

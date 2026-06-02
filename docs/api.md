@@ -82,6 +82,13 @@ files. It skips hidden directories, chunks content by line range, writes
 entity. Retrieved document chunks cite their original file and starting line
 with `file://path:line` citations.
 
+Document and transcript projection also emits a role-neutral
+`neutral_substrate` graph record with actor, artifact, action, time, source,
+quote, uncertainty, permission scope, candidate claim, and Eventloom source
+backpointer. Purpose-specific meanings such as `legal_obligation`,
+`roadmap_commitment`, `customer_escalation`, or `churn_risk` are projection
+views rebuilt from that neutral record, not labels written by ingestion.
+
 Ingest a sanitized transcript:
 
 ```python
@@ -192,12 +199,15 @@ await fabric.record_synthesis_candidate(
 ```
 
 `checkout_memory(..., purpose=...)` accepts a preset name such as `coding`,
-`review`, `release`, `security`, `research`, or `coordinate`, or a purpose
+`review`, `release`, `security`, `research`, `support`, `product`, `sales`,
+`legal`, `executive`, or `coordinate`, or a purpose
 object with role, task, risk, time horizon, expected action, evidence policy,
 retention policy, and ontology lens fields. The normalized profile is returned
 in the checkout payload and diagnostics so downstream feedback can distinguish
 memory that was useful for a release review from memory that was useful for
-implementation. Checkout also
+implementation. The broader support/product/sales/legal/executive presets are
+project-local agent-work policies; they do not imply enterprise connectors,
+global permissions, or a full Company Brain product category. Checkout also
 enforces purpose suppress rules before projection: for example, `coordinate`
 checkout excludes worker-local pending, rejected, and stale unpromoted rows from
 current facts while reporting the suppressed counts and reasons in

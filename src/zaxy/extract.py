@@ -18,6 +18,11 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 from zaxy.event import Event
+from zaxy.neutral import (
+    audit_ingestion_purpose_labels,
+    neutral_document_record,
+    neutral_transcript_record,
+)
 
 
 @dataclass(frozen=True)
@@ -815,6 +820,33 @@ def _compact_properties(properties: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _event_ref(event: Event) -> str:
+    return f"eventloom://{event.thread}/events/{event.seq}#{event.hash}"
+
+
+def _neutral_audit_projection(
+    event: Event,
+    neutral_substrate_id: str,
+) -> tuple[ExtractedEntity | None, ExtractedEdge | None]:
+    audit = audit_ingestion_purpose_labels(event.payload, source_event_ref=_event_ref(event))
+    if audit.safe:
+        return None, None
+    entity = ExtractedEntity(
+        name=f"neutral-audit:{event.thread}:{event.seq}",
+        entity_type="neutral_projection_audit",
+        observed_at=event.timestamp,
+        summary="Ingestion payload contains irreversible purpose-specific labels.",
+        properties=audit.to_dict(),
+    )
+    edge = ExtractedEdge(
+        source=entity.name,
+        target=neutral_substrate_id,
+        relation_type="flags_ingestion_purpose_label",
+        valid_from=event.timestamp,
+    )
+    return entity, edge
+
+
 @register("hook.checkpoint")
 def _extract_hook_checkpoint(event: Event) -> ExtractionResult:
     """Extract a searchable observer checkpoint."""
@@ -1398,13 +1430,39 @@ def _extract_document_indexed(event: Event) -> ExtractionResult:
         )
         or {},
     )
+    neutral = neutral_document_record(
+        actor=event.actor,
+        timestamp=event.timestamp,
+        path=path,
+        start_line=start_line,
+        end_line=end_line,
+        content=content,
+        source_event_ref=_event_ref(event),
+        permission_scope=_optional_text(event.payload.get("permission_scope")),
+        uncertainty=_optional_text(event.payload.get("uncertainty")),
+        candidate_claim=_optional_text(event.payload.get("candidate_claim")),
+    )
+    neutral_entity = ExtractedEntity(
+        name=neutral.substrate_id,
+        entity_type="neutral_substrate",
+        observed_at=event.timestamp,
+        summary=neutral.quote,
+        properties=neutral.to_properties(),
+    )
+    neutral_edge = ExtractedEdge(
+        source=neutral.substrate_id,
+        target=document_name,
+        relation_type="neutral_substrate_cites_source",
+        valid_from=event.timestamp,
+    )
+    audit_entity, audit_edge = _neutral_audit_projection(event, neutral.substrate_id)
     entities, edges = _document_session_context(
         event,
         document_name=document_name,
     )
     return ExtractionResult(
-        entities=[entity, *entities],
-        edges=edges,
+        entities=[entity, neutral_entity, *([audit_entity] if audit_entity is not None else []), *entities],
+        edges=[neutral_edge, *([audit_edge] if audit_edge is not None else []), *edges],
         source_event_seq=event.seq,
     )
 
@@ -2296,9 +2354,35 @@ def _extract_transcript_turn(event: Event) -> ExtractionResult:
             "redacted_paths": redacted_paths,
         },
     )
+    neutral = neutral_transcript_record(
+        actor=event.actor,
+        timestamp=event.timestamp,
+        source=source,
+        turn_index=turn_index,
+        role=role,
+        content=content,
+        source_event_ref=_event_ref(event),
+        permission_scope=_optional_text(event.payload.get("permission_scope")),
+        uncertainty=_optional_text(event.payload.get("uncertainty")),
+        candidate_claim=_optional_text(event.payload.get("candidate_claim")),
+    )
+    neutral_entity = ExtractedEntity(
+        name=neutral.substrate_id,
+        entity_type="neutral_substrate",
+        observed_at=event.timestamp,
+        summary=neutral.quote,
+        properties=neutral.to_properties(),
+    )
+    neutral_edge = ExtractedEdge(
+        source=neutral.substrate_id,
+        target=entity.name,
+        relation_type="neutral_substrate_cites_source",
+        valid_from=event.timestamp,
+    )
+    audit_entity, audit_edge = _neutral_audit_projection(event, neutral.substrate_id)
     return ExtractionResult(
-        entities=[entity],
-        edges=[],
+        entities=[entity, neutral_entity, *([audit_entity] if audit_entity is not None else [])],
+        edges=[neutral_edge, *([audit_edge] if audit_edge is not None else [])],
         source_event_seq=event.seq,
     )
 

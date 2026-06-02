@@ -788,6 +788,8 @@ def _check_purpose_benchmark_gate(root: Path) -> dict[str, str]:
         "Governed Forgetting",
         "Action Outcome Loop",
         "Evidence Policy Discipline",
+        "Broader Profile Fixtures",
+        "Neutral Substrate Projection",
         "Cross-Role Citation",
         "Accepted-State Discipline",
     }
@@ -830,7 +832,16 @@ def _check_purpose_benchmark_gate(root: Path) -> dict[str, str]:
         if not isinstance(evidence, dict) or not evidence:
             blockers.append("Evidence Policy Discipline lane evidence is missing")
         else:
-            for profile in ("security", "release", "coordinate"):
+            for profile in (
+                "security",
+                "release",
+                "coordinate",
+                "support",
+                "product",
+                "sales",
+                "legal",
+                "executive",
+            ):
                 profile_evidence = evidence.get(profile)
                 if not isinstance(profile_evidence, dict):
                     blockers.append(f"Evidence Policy Discipline missing {profile} fixture evidence")
@@ -844,6 +855,48 @@ def _check_purpose_benchmark_gate(root: Path) -> dict[str, str]:
                     blockers.append(f"Evidence Policy Discipline {profile} unsupported fixture must fail")
                 if supported.get("satisfied") is not True:
                     blockers.append(f"Evidence Policy Discipline {profile} supported fixture must pass")
+    broader_profile_lane = next(
+        (
+            lane
+            for lane in lanes
+            if isinstance(lane, dict) and str(lane.get("name") or "") == "Broader Profile Fixtures"
+        ),
+        None,
+    )
+    if not isinstance(broader_profile_lane, dict):
+        blockers.append("Broader Profile Fixtures lane is missing")
+    else:
+        evidence = broader_profile_lane.get("evidence")
+        if not isinstance(evidence, dict) or not evidence:
+            blockers.append("Broader Profile Fixtures lane evidence is missing")
+        else:
+            passed_profiles = evidence.get("passed_profiles")
+            required_profiles = {"support", "product", "sales", "legal", "executive"}
+            if not isinstance(passed_profiles, list) or required_profiles - set(map(str, passed_profiles)):
+                blockers.append("Broader Profile Fixtures must pass support, product, sales, legal, and executive")
+            if evidence.get("local_project_memory_positioning") is not True:
+                blockers.append("Broader Profile Fixtures must preserve local/project-memory positioning")
+    neutral_lane = next(
+        (
+            lane
+            for lane in lanes
+            if isinstance(lane, dict) and str(lane.get("name") or "") == "Neutral Substrate Projection"
+        ),
+        None,
+    )
+    if not isinstance(neutral_lane, dict):
+        blockers.append("Neutral Substrate Projection lane is missing")
+    else:
+        evidence = neutral_lane.get("evidence")
+        if not isinstance(evidence, dict) or not evidence:
+            blockers.append("Neutral Substrate Projection lane evidence is missing")
+        else:
+            projections = evidence.get("purpose_projections")
+            audit = evidence.get("ingestion_audit")
+            if not isinstance(projections, dict) or set(projections) != {"support", "product", "legal", "executive"}:
+                blockers.append("Neutral Substrate Projection must include support, product, legal, and executive projections")
+            if not isinstance(audit, dict) or audit.get("safe") is not True:
+                blockers.append("Neutral Substrate Projection ingestion audit must be safe")
     competitor_status = str(report.get("competitor_claim_status") or "")
     if competitor_status != "blocked":
         blockers.append("competitor_claim_status must remain blocked without same-harness adapters")
@@ -896,6 +949,31 @@ def _check_purpose_evidence_policy_fixture(root: Path) -> dict[str, str]:
             "content": "Worker-local finding says auth cache is stale.",
             "missing": {"promotion_or_review_ref"},
         },
+        "support": {
+            "query": "triage customer escalation",
+            "content": "Customer case says the dashboard is broken.",
+            "missing": {"workaround_or_resolution_ref"},
+        },
+        "product": {
+            "query": "prioritize roadmap signal",
+            "content": "Roadmap should prioritize dashboard export.",
+            "missing": {"tradeoff_ref"},
+        },
+        "sales": {
+            "query": "prepare account follow-up",
+            "content": "The account wants a follow-up.",
+            "missing": {"commitment_ref"},
+        },
+        "legal": {
+            "query": "review contract obligation",
+            "content": "The contract allows redistribution.",
+            "missing": {"exact_quote_ref"},
+        },
+        "executive": {
+            "query": "summarize strategic exception",
+            "content": "There is a strategic exception.",
+            "missing": {"risk_or_metric_ref"},
+        },
     }
     blockers: list[str] = []
     for profile, fixture in fixtures.items():
@@ -921,8 +999,8 @@ def _check_purpose_evidence_policy_fixture(root: Path) -> dict[str, str]:
             blockers.append(
                 f"{profile} missing requirements {sorted(missing)} did not include {sorted(expected_missing)}"
             )
-        if result.mode not in {"block_checkout", "require_refresh"}:
-            blockers.append(f"{profile} policy mode {result.mode!r} is not release-blocking")
+        if result.mode not in {"block_checkout", "require_refresh", "warn"}:
+            blockers.append(f"{profile} policy mode {result.mode!r} is not actionable")
         if not result.suggested_queries:
             blockers.append(f"{profile} policy did not emit suggested refresh queries")
     if blockers:
@@ -930,12 +1008,12 @@ def _check_purpose_evidence_policy_fixture(root: Path) -> dict[str, str]:
             "name": "purpose_evidence_policy",
             "status": "error",
             "message": "Purpose evidence policy fixtures failed: " + "; ".join(blockers),
-            "action": "Restore security, release, and Coordinate evidence-policy fixtures before release.",
+            "action": "Restore purpose evidence-policy fixtures before release.",
         }
     return {
         "name": "purpose_evidence_policy",
         "status": "ok",
-        "message": "security, release, and Coordinate evidence-policy fixtures enforce refresh/block behavior.",
+        "message": "security, release, Coordinate, support, product, sales, legal, and executive evidence-policy fixtures enforce actionable behavior.",
     }
 
 

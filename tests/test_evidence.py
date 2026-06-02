@@ -239,3 +239,66 @@ def test_coordinate_evidence_policy_requires_promotion_review_and_source_refs() 
     assert result.satisfied is False
     assert result.mode == "block_checkout"
     assert result.missing_requirements == ("promotion_or_review_ref",)
+
+
+def test_broader_profile_evidence_policies_are_executable() -> None:
+    """Support/product/sales/legal/executive policies should fail and pass deterministically."""
+    fixtures = {
+        "support": {
+            "unsupported": "Customer case says the dashboard is broken.",
+            "supported": "Customer ticket report has cited impact severity and a documented workaround resolution.",
+            "missing": "workaround_or_resolution_ref",
+        },
+        "product": {
+            "unsupported": "Roadmap should prioritize dashboard export.",
+            "supported": "Roadmap signal from customer feedback includes tradeoff, experiment outcome, and customer promise.",
+            "missing": "tradeoff_ref",
+        },
+        "sales": {
+            "unsupported": "The account wants a follow-up.",
+            "supported": "Buyer account stakeholder recorded commitment, next step followup, objection, renewal blocker, and budget risk.",
+            "missing": "commitment_ref",
+        },
+        "legal": {
+            "unsupported": "The contract allows redistribution.",
+            "supported": "Exact quote from clause section is approved by counsel authority with effective date and deadline.",
+            "missing": "exact_quote_ref",
+        },
+        "executive": {
+            "unsupported": "There is a strategic exception.",
+            "supported": "Executive decision approved strategic exception with owner, source, risk metric, market trend, and accountable sponsor.",
+            "missing": "risk_or_metric_ref",
+        },
+    }
+
+    for profile, fixture in fixtures.items():
+        unsupported_fact = {
+            "content": fixture["unsupported"],
+            "source": "graph",
+            "citation": f"eventloom://policy/events/{profile}#abcdefabcdef",
+        }
+        supported_fact = {
+            "content": fixture["supported"],
+            "source": "graph",
+            "citation": f"eventloom://policy/events/{profile}#abcdefabcdef",
+        }
+
+        unsupported = evaluate_evidence_policy(
+            profile=profile,
+            query=f"{profile} policy",
+            current_facts=[unsupported_fact],
+            evidence=[unsupported_fact],
+        )
+        supported = evaluate_evidence_policy(
+            profile=profile,
+            query=f"{profile} policy",
+            current_facts=[supported_fact],
+            evidence=[supported_fact],
+        )
+
+        assert unsupported is not None
+        assert supported is not None
+        assert unsupported.satisfied is False
+        assert fixture["missing"] in unsupported.missing_requirements
+        assert unsupported.suggested_queries
+        assert supported.satisfied is True

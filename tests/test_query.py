@@ -2134,7 +2134,13 @@ class TestQueryRouting:
         assert policy.purpose_decay_half_life_days["coordinate"] == 180
         assert policy.purpose_decay_half_life_days["security"] == 180
         assert policy.purpose_decay_half_life_days["review"] == 90
+        assert policy.purpose_decay_half_life_days["support"] == 90
+        assert policy.purpose_decay_half_life_days["product"] == 120
+        assert policy.purpose_decay_half_life_days["sales"] == 120
+        assert policy.purpose_decay_half_life_days["legal"] == 365
+        assert policy.purpose_decay_half_life_days["executive"] == 180
         assert policy.purpose_expired_weights["coordinate"] == 0.25
+        assert policy.purpose_expired_weights["legal"] == 0.25
 
         long_policy = build_retention_policy(
             Settings(
@@ -2147,6 +2153,8 @@ class TestQueryRouting:
         assert long_policy.purpose_decay_half_life_days["coordinate"] == 365
         assert long_policy.purpose_decay_half_life_days["security"] == 365
         assert long_policy.purpose_decay_half_life_days["review"] == 365
+        assert long_policy.purpose_decay_half_life_days["legal"] == 365
+        assert long_policy.purpose_decay_half_life_days["executive"] == 365
 
     async def test_lexical_reranker_can_promote_best_text_match(
         self,

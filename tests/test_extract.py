@@ -1222,8 +1222,7 @@ class TestDocumentIndexed:
 
         result = extract(ev)
 
-        assert len(result.entities) == 1
-        doc = result.entities[0]
+        doc = next(entity for entity in result.entities if entity.entity_type == "document")
         assert doc.name == "docs/guide.md:4-8"
         assert doc.entity_type == "document"
         assert doc.summary == "Alpha context\nBeta context"
@@ -1232,6 +1231,56 @@ class TestDocumentIndexed:
             "source_start_line": 4,
             "source_end_line": 8,
             "source_sha256": "abc123",
+        }
+        neutral = next(entity for entity in result.entities if entity.entity_type == "neutral_substrate")
+        assert neutral.name == "neutral:document:docs/guide.md:4-8"
+        assert neutral.properties == {
+            "actor": "indexer",
+            "artifact": "docs/guide.md:4-8",
+            "action": "document_indexed",
+            "time": "2024-01-01T00:00:00Z",
+            "source": "docs/guide.md",
+            "quote": "Alpha context Beta context",
+            "uncertainty": "unspecified",
+            "permission_scope": "project-local",
+            "candidate_claim": "Alpha context Beta context",
+            "source_event_ref": f"eventloom://default/events/1#{'a' * 64}",
+        }
+        assert ExtractedEdge(
+            source=neutral.name,
+            target=doc.name,
+            relation_type="neutral_substrate_cites_source",
+            valid_from="2024-01-01T00:00:00Z",
+        ) in result.edges
+        assert not any(entity.entity_type == "neutral_projection_audit" for entity in result.entities)
+
+    def test_flags_ingestion_time_purpose_labels_without_rewriting_document(self) -> None:
+        ev = _make_event(
+            "document.indexed",
+            {
+                "path": "customers/acme-email.txt",
+                "start_line": 1,
+                "end_line": 2,
+                "content": "ACME asks whether the export clause applies to dashboard data.",
+                "labels": ["legal_obligation"],
+                "permission_scope": "project-local",
+            },
+            actor="support-agent",
+        )
+
+        result = extract(ev)
+
+        doc = next(entity for entity in result.entities if entity.entity_type == "document")
+        neutral = next(entity for entity in result.entities if entity.entity_type == "neutral_substrate")
+        audit = next(entity for entity in result.entities if entity.entity_type == "neutral_projection_audit")
+        assert doc.properties["source_path"] == "customers/acme-email.txt"
+        assert "legal_obligation" not in doc.properties.values()
+        assert neutral.properties["permission_scope"] == "project-local"
+        assert audit.properties == {
+            "safe": False,
+            "forbidden_labels": ("legal_obligation",),
+            "source_event_ref": f"eventloom://default/events/1#{'a' * 64}",
+            "action": "flag_ingestion_purpose_label",
         }
 
     def test_extracts_document_retrieval_salience(self) -> None:
@@ -1332,14 +1381,12 @@ class TestDocumentIndexed:
         assert document.properties["longmemeval_session_id"] == "session-1"
         assert document.properties["longmemeval_chunk_index"] == 1
         assert document.properties["longmemeval_chunk_count"] == 3
-        assert result.edges == [
-            ExtractedEdge(
-                source="longmemeval:session:session-1",
-                target="longmemeval/user/session-1/chunk-0001.md:1-10",
-                relation_type="has_document_chunk",
-                valid_from="2024-01-01T00:00:00Z",
-            )
-        ]
+        assert ExtractedEdge(
+            source="longmemeval:session:session-1",
+            target="longmemeval/user/session-1/chunk-0001.md:1-10",
+            relation_type="has_document_chunk",
+            valid_from="2024-01-01T00:00:00Z",
+        ) in result.edges
 
 
 class TestCodeFileIndexed:
@@ -1972,8 +2019,7 @@ class TestTranscriptTurn:
 
         result = extract(ev)
 
-        assert len(result.entities) == 1
-        turn = result.entities[0]
+        turn = next(entity for entity in result.entities if entity.entity_type == "transcript_turn")
         assert turn.name == "codex:turn-7"
         assert turn.entity_type == "transcript_turn"
         assert turn.summary == "assistant: We decided to ship the retrieval sprint."
@@ -1983,6 +2029,26 @@ class TestTranscriptTurn:
             "transcript_turn_index": 7,
             "redacted_paths": [],
         }
+        neutral = next(entity for entity in result.entities if entity.entity_type == "neutral_substrate")
+        assert neutral.name == "neutral:transcript:codex:turn-7"
+        assert neutral.properties == {
+            "actor": "assistant",
+            "artifact": "codex:turn-7",
+            "action": "transcript_turn",
+            "time": "2024-01-01T00:00:00Z",
+            "source": "codex",
+            "quote": "We decided to ship the retrieval sprint.",
+            "uncertainty": "sanitized",
+            "permission_scope": "session",
+            "candidate_claim": "We decided to ship the retrieval sprint",
+            "source_event_ref": f"eventloom://default/events/1#{'a' * 64}",
+        }
+        assert ExtractedEdge(
+            source=neutral.name,
+            target=turn.name,
+            relation_type="neutral_substrate_cites_source",
+            valid_from="2024-01-01T00:00:00Z",
+        ) in result.edges
 
 
 class TestLlmPacketProjection:
