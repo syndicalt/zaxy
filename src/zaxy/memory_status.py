@@ -2,11 +2,24 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+import json
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
+
+from pydantic import ValidationError
 
 from zaxy.event import Event, EventLog
 from zaxy.security import eventlog_path, validate_session_id
+
+_REQUIRED_ZAXY_EVENT_FIELDS = frozenset({"seq", "timestamp", "type", "actor", "payload", "hash"})
+
+
+@dataclass(frozen=True)
+class SkippedLog:
+    """A JSONL file skipped during a broad Eventloom directory scan."""
+
+    path: str
+    reason: str
 
 
 @dataclass(frozen=True)
@@ -33,6 +46,7 @@ class MemoryStatus:
     session_count: int
     total_events: int
     sessions: list[SessionStatus]
+    skipped_logs: list[SkippedLog] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, object]:
         """Return a stable JSON-serializable representation."""
@@ -61,6 +75,7 @@ class MemoryLog:
     session_id: str | None
     limit: int
     entries: list[MemoryLogEntry]
+    skipped_logs: list[SkippedLog] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, object]:
         """Return a stable JSON-serializable representation."""
@@ -87,12 +102,19 @@ class MemoryDiff:
 def inspect_memory_status(eventloom_path: str | Path) -> MemoryStatus:
     """Inspect Eventloom JSONL session logs without requiring graph services."""
     base = Path(eventloom_path).resolve()
-    sessions = [_inspect_log(path) for path in _eventlog_paths(base)]
+    paths, skipped_logs = _eventlog_paths(base)
+    sessions: list[SessionStatus] = []
+    for path in paths:
+        try:
+            sessions.append(_inspect_log(path))
+        except ValidationError as exc:
+            skipped_logs.append(_skipped_log(path, _validation_error_reason(exc)))
     return MemoryStatus(
         eventloom_path=str(base),
         session_count=len(sessions),
         total_events=sum(session.event_count for session in sessions),
         sessions=sessions,
+        skipped_logs=skipped_logs,
     )
 
 
@@ -104,12 +126,21 @@ def inspect_memory_log(
 ) -> MemoryLog:
     """Return recent Eventloom events without requiring graph services."""
     base = Path(eventloom_path).resolve()
-    paths = [_session_log_path(base, session_id)] if session_id else _eventlog_paths(base)
+    if session_id:
+        paths = [_session_log_path(base, session_id)]
+        skipped_logs: list[SkippedLog] = []
+    else:
+        paths, skipped_logs = _eventlog_paths(base)
     entries: list[MemoryLogEntry] = []
     for path in paths:
         log = EventLog(path)
-        integrity = log.verify()
-        for event in log.read_all():
+        try:
+            integrity = log.verify()
+            events = log.read_all()
+        except ValidationError as exc:
+            skipped_logs.append(_skipped_log(path, _validation_error_reason(exc)))
+            continue
+        for event in events:
             entries.append(_log_entry(path.stem, event, integrity_ok=integrity.ok))
     entries.sort(key=lambda entry: (entry.timestamp, entry.session_id, entry.seq), reverse=True)
     safe_limit = max(0, limit)
@@ -118,6 +149,7 @@ def inspect_memory_log(
         session_id=session_id,
         limit=safe_limit,
         entries=entries[:safe_limit],
+        skipped_logs=skipped_logs,
     )
 
 
@@ -163,6 +195,7 @@ def format_memory_status(status: MemoryStatus) -> str:
         f"Total events: {status.total_events}",
     ]
     if not status.sessions:
+        _append_skipped_logs(lines, status.skipped_logs)
         return "\n".join(lines)
     lines.append("")
     lines.append("Session logs:")
@@ -177,6 +210,7 @@ def format_memory_status(status: MemoryStatus) -> str:
         )
         if session.integrity_reason:
             lines.append(f"    reason={session.integrity_reason}")
+    _append_skipped_logs(lines, status.skipped_logs)
     return "\n".join(lines)
 
 
@@ -202,7 +236,9 @@ def format_memory_diff(diff: MemoryDiff) -> str:
 def format_memory_log(memory_log: MemoryLog) -> str:
     """Format recent Eventloom events for humans."""
     if not memory_log.entries:
-        return "No memory events found."
+        empty_lines = ["No memory events found."]
+        _append_skipped_logs(empty_lines, memory_log.skipped_logs)
+        return "\n".join(empty_lines)
     lines: list[str] = []
     for entry in memory_log.entries:
         lines.append(
@@ -213,15 +249,25 @@ def format_memory_log(memory_log: MemoryLog) -> str:
             lines.append(f"  {entry.summary}")
         if not entry.integrity_ok:
             lines.append("  integrity=FAILED")
+    _append_skipped_logs(lines, memory_log.skipped_logs)
     return "\n".join(lines)
 
 
-def _eventlog_paths(base: Path) -> list[Path]:
+def _eventlog_paths(base: Path) -> tuple[list[Path], list[SkippedLog]]:
     if base.is_file():
-        return [base]
+        reason = _eventlog_skip_reason(base)
+        return ([], [_skipped_log(base, reason)]) if reason else ([base], [])
     if not base.exists():
-        return []
-    return sorted(path for path in base.glob("*.jsonl") if path.is_file())
+        return [], []
+    paths: list[Path] = []
+    skipped_logs: list[SkippedLog] = []
+    for path in sorted(path for path in base.glob("*.jsonl") if path.is_file()):
+        reason = _eventlog_skip_reason(path)
+        if reason:
+            skipped_logs.append(_skipped_log(path, reason))
+        else:
+            paths.append(path)
+    return paths, skipped_logs
 
 
 def _session_log_path(base: Path, session_id: str | None) -> Path:
@@ -272,3 +318,48 @@ def _event_summary(event: Event) -> str:
     if event.payload:
         return ", ".join(sorted(str(key) for key in event.payload))
     return ""
+
+
+def _eventlog_skip_reason(path: Path) -> str | None:
+    """Return why a broad scan should skip this JSONL file, if applicable."""
+    try:
+        with path.open(encoding="utf-8") as fh:
+            first_line = next((line.strip() for line in fh if line.strip()), "")
+    except OSError as exc:
+        return f"could not read log: {exc}"
+    if not first_line:
+        return None
+    try:
+        record = json.loads(first_line)
+    except json.JSONDecodeError:
+        return "first non-empty line is not valid JSON"
+    if not isinstance(record, dict):
+        return "first non-empty line is not a JSON object"
+    missing = sorted(_REQUIRED_ZAXY_EVENT_FIELDS - set(record))
+    if missing:
+        return f"missing required Zaxy event fields: {', '.join(missing)}"
+    return None
+
+
+def _validation_error_reason(exc: ValidationError) -> str:
+    missing = sorted(
+        str(error["loc"][0])
+        for error in exc.errors()
+        if error.get("type") == "missing" and error.get("loc")
+    )
+    if missing:
+        return f"invalid Zaxy event log; missing fields after preflight: {', '.join(missing)}"
+    return "invalid Zaxy event log; event validation failed"
+
+
+def _skipped_log(path: Path, reason: str) -> SkippedLog:
+    return SkippedLog(path=str(path.resolve()), reason=reason)
+
+
+def _append_skipped_logs(lines: list[str], skipped_logs: list[SkippedLog]) -> None:
+    if not skipped_logs:
+        return
+    lines.append("")
+    lines.append("Skipped logs:")
+    for skipped in skipped_logs:
+        lines.append(f"  {skipped.path}: {skipped.reason}")

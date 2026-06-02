@@ -53,6 +53,8 @@ def build_memory_capabilities(
                 "latest_seq": session_status.latest_seq if session_status else None,
                 "latest_hash": session_status.latest_hash if session_status else None,
                 "integrity_ok": session_status.integrity_ok if session_status else None,
+                "skipped_log_count": len(memory_status.skipped_logs),
+                "skipped_logs": [skipped.path for skipped in memory_status.skipped_logs],
             },
             "hooks": {
                 "status": hook_status["status"],

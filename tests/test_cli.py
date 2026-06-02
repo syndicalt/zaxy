@@ -35,7 +35,7 @@ def test_version_option_reports_project_version() -> None:
     result = runner.invoke(app, ["--version"])
 
     assert result.exit_code == 0
-    assert result.output.strip() == "zaxy 1.0.1"
+    assert result.output.strip() == "zaxy 1.0.2"
 
 
 def test_memory_status_prints_eventloom_sessions(tmp_path: Path) -> None:
