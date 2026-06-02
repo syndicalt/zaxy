@@ -58,6 +58,31 @@ def test_inspect_memory_status_accepts_single_log_file(tmp_path: Path) -> None:
     assert status.sessions[0].latest_type == "task.completed"
 
 
+def test_inspect_memory_status_skips_native_eventloom_jsonl(tmp_path: Path) -> None:
+    """Directory status should not parse native Eventloom files as Zaxy logs."""
+    eventloom = tmp_path / ".eventloom"
+    _write_native_eventloom_log(eventloom / "events.jsonl")
+    EventLog(eventloom / "agent.jsonl").append(
+        "task.completed",
+        actor="assistant",
+        payload={"summary": "Captured Zaxy session memory."},
+        thread="agent",
+    )
+
+    status = inspect_memory_status(eventloom)
+
+    assert status.session_count == 1
+    assert status.total_events == 1
+    assert status.sessions[0].session_id == "agent"
+    assert len(status.skipped_logs) == 1
+    assert status.skipped_logs[0].path.endswith(".eventloom/events.jsonl")
+    assert "missing required Zaxy event fields:" in status.skipped_logs[0].reason
+    assert "seq" in status.skipped_logs[0].reason
+    assert "actor" in status.skipped_logs[0].reason
+    assert "hash" in status.skipped_logs[0].reason
+    assert "Skipped logs:" in format_memory_status(status)
+
+
 def test_inspect_memory_log_orders_recent_events_across_sessions(tmp_path: Path) -> None:
     """Memory log should show newest events first across Eventloom sessions."""
     EventLog(tmp_path / ".eventloom" / "agent-a.jsonl").append(
@@ -79,6 +104,25 @@ def test_inspect_memory_log_orders_recent_events_across_sessions(tmp_path: Path)
     assert log.entries[0].summary == "Use source-aware assembly."
     assert log.entries[1].summary == "Ship it"
     assert log.entries[0].integrity_ok is True
+
+
+def test_inspect_memory_log_skips_native_eventloom_jsonl(tmp_path: Path) -> None:
+    """Directory log scans should ignore non-Zaxy JSONL instead of raising."""
+    eventloom = tmp_path / ".eventloom"
+    _write_native_eventloom_log(eventloom / "events.jsonl")
+    EventLog(eventloom / "agent.jsonl").append(
+        "decision.recorded",
+        actor="assistant",
+        payload={"decision": "Treat mixed Eventloom directories as valid."},
+        thread="agent",
+    )
+
+    memory_log = inspect_memory_log(eventloom, limit=10)
+
+    assert len(memory_log.entries) == 1
+    assert memory_log.entries[0].session_id == "agent"
+    assert len(memory_log.skipped_logs) == 1
+    assert memory_log.skipped_logs[0].path.endswith(".eventloom/events.jsonl")
 
 
 def test_inspect_memory_log_filters_session_and_limit(tmp_path: Path) -> None:
@@ -184,3 +228,24 @@ def test_inspect_memory_diff_rejects_invalid_ranges(tmp_path: Path) -> None:
         assert "from_seq must be <= to_seq" in str(exc)
     else:
         raise AssertionError("expected invalid range to fail")
+
+
+def _write_native_eventloom_log(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "id": "evt_demo_goal",
+                "type": "goal.created",
+                "actorId": "user",
+                "threadId": "thread_main",
+                "payload": {"title": "Native Eventloom event"},
+                "integrity": {
+                    "hash": "sha256:abc123",
+                    "previousHash": None,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )

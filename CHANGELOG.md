@@ -2,6 +2,14 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 1.0.2 - 2026-06-02
+
+- Fixed Memory Capabilities and read-only memory status/log inspection for
+  repositories that contain native Eventloom JSONL files next to Zaxy session
+  logs. Zaxy now skips incompatible top-level JSONL logs with diagnostics
+  instead of treating native Eventloom `events.jsonl` as a Zaxy event log and
+  failing MCP startup with missing `seq`, `actor`, or `hash` fields.
+
 ## 1.0.1 - 2026-05-31
 
 - Fixed embedded MCP worker startup for long-running multi-agent sessions by

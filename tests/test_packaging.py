@@ -222,7 +222,7 @@ def test_cli_version_exits_before_loading_command_graph() -> None:
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.splitlines() == ["zaxy 1.0.1", "exit=0", "False", "False", "False"]
+    assert result.stdout.splitlines() == ["zaxy 1.0.2", "exit=0", "False", "False", "False"]
 
 
 def test_cli_help_avoids_mcp_server_stack_until_serve_runs() -> None:
@@ -288,7 +288,7 @@ def test_package_version_source_fallback_is_independent_of_cwd(
     monkeypatch.setattr(release.metadata, "version", missing_distribution)
     monkeypatch.chdir(tmp_path)
 
-    assert package_version() == "1.0.1"
+    assert package_version() == "1.0.2"
 
 
 def test_package_version_prefers_source_tree_version_in_editable_checkout(monkeypatch) -> None:
@@ -297,7 +297,7 @@ def test_package_version_prefers_source_tree_version_in_editable_checkout(monkey
 
     monkeypatch.setattr(release.metadata, "version", lambda _name: "0.1.0")
 
-    assert package_version() == "1.0.1"
+    assert package_version() == "1.0.2"
 
 
 def test_changelog_records_initial_pypi_release() -> None:
@@ -326,6 +326,7 @@ def test_changelog_covers_release_candidate_path_from_04_to_10() -> None:
     changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
 
     for heading in (
+        "## 1.0.2 - 2026-06-02",
         "## 1.0.1 - 2026-05-31",
         "## 1.0.0 - 2026-05-31",
         "## 0.9.0 - Release Candidate",
