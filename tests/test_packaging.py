@@ -854,7 +854,7 @@ def test_beta_readiness_runs_purpose_evidence_policy_fixture(tmp_path: Path) -> 
     checks = {check["name"]: check for check in run_beta_readiness(project_root=tmp_path)["checks"]}
 
     assert checks["purpose_evidence_policy"]["status"] == "ok"
-    assert "security, release, and Coordinate evidence-policy fixtures" in checks[
+    assert "support, product, sales, legal, and executive evidence-policy fixtures" in checks[
         "purpose_evidence_policy"
     ]["message"]
 
@@ -5122,6 +5122,8 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
         "Governed Forgetting",
         "Action Outcome Loop",
         "Evidence Policy Discipline",
+        "Broader Profile Fixtures",
+        "Neutral Substrate Projection",
         "Cross-Role Citation",
         "Accepted-State Discipline",
     ]
@@ -5151,8 +5153,43 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
                             "unsupported": {"satisfied": False},
                             "supported": {"satisfied": True},
                         },
+                        "support": {
+                            "unsupported": {"satisfied": False},
+                            "supported": {"satisfied": True},
+                        },
+                        "product": {
+                            "unsupported": {"satisfied": False},
+                            "supported": {"satisfied": True},
+                        },
+                        "sales": {
+                            "unsupported": {"satisfied": False},
+                            "supported": {"satisfied": True},
+                        },
+                        "legal": {
+                            "unsupported": {"satisfied": False},
+                            "supported": {"satisfied": True},
+                        },
+                        "executive": {
+                            "unsupported": {"satisfied": False},
+                            "supported": {"satisfied": True},
+                        },
                     }
                     if name == "Evidence Policy Discipline"
+                    else {
+                        "passed_profiles": ["support", "product", "sales", "legal", "executive"],
+                        "local_project_memory_positioning": True,
+                    }
+                    if name == "Broader Profile Fixtures"
+                    else {
+                        "ingestion_audit": {"safe": True},
+                        "purpose_projections": {
+                            "support": {},
+                            "product": {},
+                            "legal": {},
+                            "executive": {},
+                        },
+                    }
+                    if name == "Neutral Substrate Projection"
                     else {}
                 ),
             }

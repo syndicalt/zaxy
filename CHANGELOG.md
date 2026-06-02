@@ -86,6 +86,16 @@ All notable Zaxy release changes are recorded here.
   purpose, repeated negative outcomes surface suppression candidates and warning
   pressure without deleting memory, and `memory.feedback` now projects auditable
   feedback metadata into the graph.
+- Added broader project-local purpose profiles for support, product, sales,
+  legal, and executive work. Each profile now has explicit retrieval, ontology,
+  evidence, retention, suppression, compaction, checkout, and `purpose-v1`
+  benchmark coverage while preserving the agent-work-memory positioning and
+  avoiding full Company Brain claims.
+- Added neutral document/transcript substrate projection. `document.indexed`
+  and `transcript.turn` now emit `neutral_substrate` records with source
+  backpointers, ingestion audits flag irreversible purpose labels, and
+  `purpose-v1` proves one customer artifact can rebuild distinct support,
+  product, legal, and executive purpose projections.
 - Added `purpose_feedback_coverage` to CoordinationBench so Zaxy Coordinate and
   same-harness adapters can prove accepted parent-state feedback is tied to the
   `coordinate` purpose profile instead of generic retrieval usefulness.

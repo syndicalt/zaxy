@@ -3,9 +3,9 @@
     "Semantic Reach and Quarq require pinned same-harness adapters before Zaxy can publish comparative SOTA claims."
   ],
   "competitor_claim_status": "blocked",
-  "elapsed_ms": 2.065,
-  "generated_at": "2026-06-02T21:45:55.136277+00:00",
-  "lane_count": 8,
+  "elapsed_ms": 10.166,
+  "generated_at": "2026-06-02T22:02:58.689711+00:00",
+  "lane_count": 10,
   "lanes": [
     {
       "evidence": {
@@ -15,6 +15,11 @@
           "release",
           "security",
           "research",
+          "support",
+          "product",
+          "sales",
+          "legal",
+          "executive",
           "coordinate"
         ]
       },
@@ -92,6 +97,63 @@
               "conflict"
             ]
           ],
+          "executive": [
+            "precision",
+            [
+              "strategic_brief",
+              "summarize_risk_exception_or_pattern",
+              "strategic_exception_and_risk_evidence_required",
+              "preserve_strategic_exceptions_market_patterns_risks_and_decisions",
+              "strategic_exception",
+              "market_pattern",
+              "risk_summary",
+              "decision"
+            ],
+            [
+              "strategic_exception",
+              "market_pattern",
+              "risk_summary",
+              "decision"
+            ]
+          ],
+          "legal": [
+            "precision",
+            [
+              "obligation_review",
+              "quote_obligation_or_require_review",
+              "exact_wording_authority_and_date_required",
+              "preserve_obligations_approvals_deadlines_and_exceptions",
+              "legal_obligation",
+              "approval",
+              "deadline",
+              "exception"
+            ],
+            [
+              "legal_obligation",
+              "approval",
+              "deadline",
+              "exception"
+            ]
+          ],
+          "product": [
+            "temporal",
+            [
+              "roadmap_planning",
+              "prioritize_or_defer_with_evidence",
+              "roadmap_signal_and_tradeoff_evidence_required",
+              "preserve_roadmap_signals_promises_tradeoffs_and_experiment_outcomes",
+              "roadmap_signal",
+              "customer_promise",
+              "tradeoff",
+              "experiment"
+            ],
+            [
+              "roadmap_signal",
+              "customer_promise",
+              "tradeoff",
+              "experiment"
+            ]
+          ],
           "release": [
             "temporal",
             [
@@ -149,6 +211,25 @@
               "accepted_decision"
             ]
           ],
+          "sales": [
+            "precision",
+            [
+              "account_followup",
+              "prepare_commitment_or_followup",
+              "buyer_commitment_and_objection_evidence_required",
+              "preserve_commitments_objections_renewal_risks_and_account_context",
+              "buyer_commitment",
+              "objection",
+              "renewal_risk",
+              "account_context"
+            ],
+            [
+              "buyer_commitment",
+              "objection",
+              "renewal_risk",
+              "account_context"
+            ]
+          ],
           "security": [
             "precision",
             [
@@ -166,6 +247,25 @@
               "mitigation",
               "risk_acceptance",
               "authorization"
+            ]
+          ],
+          "support": [
+            "recall",
+            [
+              "customer_support",
+              "triage_escalate_or_apply_workaround",
+              "customer_impact_and_workaround_evidence_required",
+              "preserve_escalations_workarounds_customer_impact_and_resolutions",
+              "customer_impact",
+              "escalation",
+              "workaround",
+              "resolution"
+            ],
+            [
+              "customer_impact",
+              "escalation",
+              "workaround",
+              "resolution"
             ]
           ]
         }
@@ -187,6 +287,18 @@
             "accepted_parent_state",
             "proof_packets"
           ],
+          "executive": [
+            "risk_summaries",
+            "strategic_exceptions"
+          ],
+          "legal": [
+            "deadlines",
+            "legal_obligations"
+          ],
+          "product": [
+            "experiment_outcomes",
+            "roadmap_signals"
+          ],
           "release": [
             "external_blockers",
             "gate_failures"
@@ -199,9 +311,17 @@
             "blocking_risks",
             "review_decisions"
           ],
+          "sales": [
+            "buyer_commitments",
+            "renewal_blockers"
+          ],
           "security": [
             "risk_acceptance",
             "security_findings"
+          ],
+          "support": [
+            "customer_impact",
+            "workaround_history"
           ]
         }
       },
@@ -216,16 +336,26 @@
         "purpose_decay_half_life_days": {
           "coding": 30,
           "coordinate": 180,
+          "executive": 180,
+          "legal": 365,
+          "product": 120,
           "release": 120,
           "research": 30,
           "review": 90,
-          "security": 180
+          "sales": 120,
+          "security": 180,
+          "support": 90
         },
         "purpose_expired_weights": {
           "coordinate": 0.15,
+          "executive": 0.1,
+          "legal": 0.2,
+          "product": 0.05,
           "release": 0.1,
           "review": 0.05,
-          "security": 0.1
+          "sales": 0.08,
+          "security": 0.1,
+          "support": 0.05
         }
       },
       "measurement": "decay mode downweights noise while protecting obligations and risk memory",
@@ -333,6 +463,66 @@
             ]
           }
         },
+        "executive": {
+          "supported": {
+            "missing_requirements": [],
+            "mode": "warn",
+            "satisfied": true,
+            "suggested_queries": []
+          },
+          "unsupported": {
+            "missing_requirements": [
+              "risk_or_metric_ref"
+            ],
+            "mode": "warn",
+            "satisfied": false,
+            "suggested_queries": [
+              "executive risk metric or market-pattern evidence for executive: executive evidence policy fixture"
+            ]
+          }
+        },
+        "legal": {
+          "supported": {
+            "missing_requirements": [],
+            "mode": "warn",
+            "satisfied": true,
+            "suggested_queries": []
+          },
+          "unsupported": {
+            "missing_requirements": [
+              "exact_quote_ref",
+              "authority_ref",
+              "date_or_deadline_ref"
+            ],
+            "mode": "block_checkout",
+            "satisfied": false,
+            "suggested_queries": [
+              "exact quoted legal wording with citation for legal: legal evidence policy fixture",
+              "legal authority or approval evidence for legal: legal evidence policy fixture",
+              "legal date deadline or effective-window evidence for legal: legal evidence policy fixture"
+            ]
+          }
+        },
+        "product": {
+          "supported": {
+            "missing_requirements": [],
+            "mode": "warn",
+            "satisfied": true,
+            "suggested_queries": []
+          },
+          "unsupported": {
+            "missing_requirements": [
+              "tradeoff_ref",
+              "experiment_or_customer_ref"
+            ],
+            "mode": "warn",
+            "satisfied": false,
+            "suggested_queries": [
+              "product tradeoff or constraint evidence for product: product evidence policy fixture",
+              "experiment outcome or customer promise evidence for product: product evidence policy fixture"
+            ]
+          }
+        },
         "release": {
           "supported": {
             "missing_requirements": [],
@@ -348,6 +538,26 @@
             "satisfied": false,
             "suggested_queries": [
               "test changelog package evidence for release readiness for release: release evidence policy fixture"
+            ]
+          }
+        },
+        "sales": {
+          "supported": {
+            "missing_requirements": [],
+            "mode": "warn",
+            "satisfied": true,
+            "suggested_queries": []
+          },
+          "unsupported": {
+            "missing_requirements": [
+              "commitment_ref",
+              "objection_or_renewal_ref"
+            ],
+            "mode": "require_refresh",
+            "satisfied": false,
+            "suggested_queries": [
+              "buyer commitment or follow-up evidence for sales: sales evidence policy fixture",
+              "buyer objection or renewal risk evidence for sales: sales evidence policy fixture"
             ]
           }
         },
@@ -368,10 +578,246 @@
               "mitigation or risk owner evidence for security risk for security: security evidence policy fixture"
             ]
           }
+        },
+        "support": {
+          "supported": {
+            "missing_requirements": [],
+            "mode": "warn",
+            "satisfied": true,
+            "suggested_queries": []
+          },
+          "unsupported": {
+            "missing_requirements": [
+              "workaround_or_resolution_ref",
+              "impact_ref"
+            ],
+            "mode": "require_refresh",
+            "satisfied": false,
+            "suggested_queries": [
+              "workaround or resolution evidence for support case for support: support evidence policy fixture",
+              "customer impact evidence for support case for support: support evidence policy fixture"
+            ]
+          }
         }
       },
-      "measurement": "security, release, and Coordinate fixtures enforce missing and supported evidence policies",
+      "measurement": "purpose fixtures enforce missing and supported evidence policies",
       "name": "Evidence Policy Discipline",
+      "score": 1.0,
+      "status": "passed",
+      "threshold": 1.0
+    },
+    {
+      "evidence": {
+        "checkout_ready": {
+          "executive": {
+            "has_evidence_policy": true,
+            "has_retain": true,
+            "has_retention_policy": true,
+            "has_suppress": true,
+            "lens_applied": true
+          },
+          "legal": {
+            "has_evidence_policy": true,
+            "has_retain": true,
+            "has_retention_policy": true,
+            "has_suppress": true,
+            "lens_applied": true
+          },
+          "product": {
+            "has_evidence_policy": true,
+            "has_retain": true,
+            "has_retention_policy": true,
+            "has_suppress": true,
+            "lens_applied": true
+          },
+          "sales": {
+            "has_evidence_policy": true,
+            "has_retain": true,
+            "has_retention_policy": true,
+            "has_suppress": true,
+            "lens_applied": true
+          },
+          "support": {
+            "has_evidence_policy": true,
+            "has_retain": true,
+            "has_retention_policy": true,
+            "has_suppress": true,
+            "lens_applied": true
+          }
+        },
+        "compaction": {
+          "executive": {
+            "purpose": "executive",
+            "record_kinds": [
+              "executive_retained"
+            ],
+            "retain": [
+              "strategic_exceptions",
+              "market_patterns",
+              "risk_summaries",
+              "executive_decisions"
+            ],
+            "strategy": "purpose_preserve_all",
+            "suppress": [
+              "single_source_overclaim",
+              "uncited_claim",
+              "stale_source",
+              "low_trust_inference"
+            ]
+          },
+          "legal": {
+            "purpose": "legal",
+            "record_kinds": [
+              "legal_retained"
+            ],
+            "retain": [
+              "legal_obligations",
+              "approvals",
+              "deadlines",
+              "exceptions"
+            ],
+            "strategy": "purpose_preserve_all",
+            "suppress": [
+              "uncited_claim",
+              "paraphrased_obligation",
+              "stale_authority",
+              "low_trust_inference"
+            ]
+          },
+          "product": {
+            "purpose": "product",
+            "record_kinds": [
+              "product_exemplar"
+            ],
+            "retain": [
+              "roadmap_signals",
+              "customer_promises",
+              "tradeoffs",
+              "experiment_outcomes"
+            ],
+            "strategy": "purpose_exemplar",
+            "suppress": [
+              "single_source_overclaim",
+              "uncited_claim",
+              "stale_source"
+            ]
+          },
+          "sales": {
+            "purpose": "sales",
+            "record_kinds": [
+              "sales_retained"
+            ],
+            "retain": [
+              "buyer_commitments",
+              "buyer_objections",
+              "renewal_blockers",
+              "account_context"
+            ],
+            "strategy": "purpose_preserve_all",
+            "suppress": [
+              "uncited_claim",
+              "stale_commitment",
+              "superseded_context"
+            ]
+          },
+          "support": {
+            "purpose": "support",
+            "record_kinds": [
+              "support_exemplar"
+            ],
+            "retain": [
+              "escalation_context",
+              "workaround_history",
+              "customer_impact",
+              "resolution_evidence"
+            ],
+            "strategy": "purpose_exemplar",
+            "suppress": [
+              "uncited_claim",
+              "stale_workaround",
+              "superseded_context"
+            ]
+          }
+        },
+        "local_project_memory_positioning": true,
+        "passed_profiles": [
+          "support",
+          "product",
+          "sales",
+          "legal",
+          "executive"
+        ]
+      },
+      "measurement": "support product sales legal and executive profiles have checkout compaction and benchmark fixtures",
+      "name": "Broader Profile Fixtures",
+      "score": 1.0,
+      "status": "passed",
+      "threshold": 1.0
+    },
+    {
+      "evidence": {
+        "ingestion_audit": {
+          "action": "ok",
+          "forbidden_labels": [],
+          "safe": true,
+          "source_event_ref": "eventloom://customer-acme/events/1#cde5458fce4b33efd8f7d714f81b018438debe0ee23379e5d27a17fd27280e6a"
+        },
+        "neutral_substrate": {
+          "name": "neutral:document:customers/acme-email.txt:1-4",
+          "properties": {
+            "action": "document_indexed",
+            "actor": "support-agent",
+            "artifact": "customers/acme-email.txt:1-4",
+            "candidate_claim": "ACME reports dashboard export failures affecting renewal",
+            "permission_scope": "project-local",
+            "quote": "ACME reports dashboard export failures affecting renewal. They ask whether the export clause applies to dashboard data and want the roadmap promise reviewed by Friday.",
+            "source": "customers/acme-email.txt",
+            "source_event_ref": "eventloom://customer-acme/events/1#cde5458fce4b33efd8f7d714f81b018438debe0ee23379e5d27a17fd27280e6a",
+            "time": "2026-06-02T22:02:58.688318Z",
+            "uncertainty": "customer email requires purpose-specific review"
+          }
+        },
+        "purpose_projections": {
+          "executive": {
+            "neutral_substrate_id": "neutral:document:customers/acme-email.txt:1-4",
+            "projection_id": "purpose:executive:churn_risk:neutral:document:customers/acme-email.txt:1-4",
+            "purpose_label": "churn_risk",
+            "purpose_profile": "executive",
+            "quote": "ACME reports dashboard export failures affecting renewal. They ask whether the export clause applies to dashboard data and want the roadmap promise reviewed by Friday.",
+            "source_backpointer": "customers/acme-email.txt:1-4",
+            "source_event_ref": "eventloom://customer-acme/events/1#cde5458fce4b33efd8f7d714f81b018438debe0ee23379e5d27a17fd27280e6a"
+          },
+          "legal": {
+            "neutral_substrate_id": "neutral:document:customers/acme-email.txt:1-4",
+            "projection_id": "purpose:legal:legal_obligation:neutral:document:customers/acme-email.txt:1-4",
+            "purpose_label": "legal_obligation",
+            "purpose_profile": "legal",
+            "quote": "ACME reports dashboard export failures affecting renewal. They ask whether the export clause applies to dashboard data and want the roadmap promise reviewed by Friday.",
+            "source_backpointer": "customers/acme-email.txt:1-4",
+            "source_event_ref": "eventloom://customer-acme/events/1#cde5458fce4b33efd8f7d714f81b018438debe0ee23379e5d27a17fd27280e6a"
+          },
+          "product": {
+            "neutral_substrate_id": "neutral:document:customers/acme-email.txt:1-4",
+            "projection_id": "purpose:product:roadmap_commitment:neutral:document:customers/acme-email.txt:1-4",
+            "purpose_label": "roadmap_commitment",
+            "purpose_profile": "product",
+            "quote": "ACME reports dashboard export failures affecting renewal. They ask whether the export clause applies to dashboard data and want the roadmap promise reviewed by Friday.",
+            "source_backpointer": "customers/acme-email.txt:1-4",
+            "source_event_ref": "eventloom://customer-acme/events/1#cde5458fce4b33efd8f7d714f81b018438debe0ee23379e5d27a17fd27280e6a"
+          },
+          "support": {
+            "neutral_substrate_id": "neutral:document:customers/acme-email.txt:1-4",
+            "projection_id": "purpose:support:customer_escalation:neutral:document:customers/acme-email.txt:1-4",
+            "purpose_label": "customer_escalation",
+            "purpose_profile": "support",
+            "quote": "ACME reports dashboard export failures affecting renewal. They ask whether the export clause applies to dashboard data and want the roadmap promise reviewed by Friday.",
+            "source_backpointer": "customers/acme-email.txt:1-4",
+            "source_event_ref": "eventloom://customer-acme/events/1#cde5458fce4b33efd8f7d714f81b018438debe0ee23379e5d27a17fd27280e6a"
+          }
+        }
+      },
+      "measurement": "one neutral customer artifact can rebuild distinct cited purpose projections",
+      "name": "Neutral Substrate Projection",
       "score": 1.0,
       "status": "passed",
       "threshold": 1.0
@@ -542,7 +988,7 @@
       "evidence": {
         "record_identities": [
           "docs/auth.md:turn-4",
-          "eventloom://mission-auth/events/1#c4b7ccab2fca",
+          "eventloom://mission-auth/events/1#1f1d21c3edd3",
           "finding-accepted",
           "mission-auth"
         ],
@@ -556,7 +1002,7 @@
       "threshold": 1.0
     }
   ],
-  "passed_lanes": 8,
+  "passed_lanes": 10,
   "status": "passed",
   "version": "purpose-v1"
 }

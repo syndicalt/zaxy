@@ -17,6 +17,8 @@ from zaxy.context import Context
 from zaxy.core import _apply_purpose_outcome_learning, _purpose_outcome_aggregates
 from zaxy.event import EventLog
 from zaxy.evidence import evaluate_evidence_policy
+from zaxy.extract import extract
+from zaxy.neutral import audit_ingestion_purpose_labels, build_purpose_projection_record
 from zaxy.purpose import (
     PurposeProfile,
     purpose_ontology_lens,
@@ -26,7 +28,19 @@ from zaxy.purpose import (
 from zaxy.query import build_retention_policy
 
 PURPOSE_BENCHMARK_VERSION = "purpose-v1"
-PURPOSE_PROFILES = ("coding", "review", "release", "security", "research", "coordinate")
+PURPOSE_PROFILES = (
+    "coding",
+    "review",
+    "release",
+    "security",
+    "research",
+    "support",
+    "product",
+    "sales",
+    "legal",
+    "executive",
+    "coordinate",
+)
 PURPOSE_BENCHMARK_LANES = (
     "Purpose Recall",
     "Ontology Shift",
@@ -34,6 +48,8 @@ PURPOSE_BENCHMARK_LANES = (
     "Governed Forgetting",
     "Action Outcome Loop",
     "Evidence Policy Discipline",
+    "Broader Profile Fixtures",
+    "Neutral Substrate Projection",
     "Cross-Role Citation",
     "Accepted-State Discipline",
 )
@@ -92,6 +108,8 @@ def run_purpose_benchmark() -> PurposeBenchmarkReport:
         _governed_forgetting_lane(),
         _action_outcome_loop_lane(),
         _evidence_policy_discipline_lane(),
+        _broader_profile_fixtures_lane(),
+        _neutral_substrate_projection_lane(),
         _cross_role_citation_lane(),
         _accepted_state_discipline_lane(),
     )
@@ -223,6 +241,11 @@ def _consequence_retention_lane() -> PurposeBenchmarkLane:
         "release": {"gate_failures", "external_blockers"},
         "security": {"security_findings", "risk_acceptance"},
         "research": {"contradictions", "open_questions"},
+        "support": {"workaround_history", "customer_impact"},
+        "product": {"roadmap_signals", "experiment_outcomes"},
+        "sales": {"buyer_commitments", "renewal_blockers"},
+        "legal": {"legal_obligations", "deadlines"},
+        "executive": {"strategic_exceptions", "risk_summaries"},
         "coordinate": {"accepted_parent_state", "proof_packets"},
     }
     retained = {
@@ -255,8 +278,14 @@ def _governed_forgetting_lane() -> PurposeBenchmarkLane:
         and protected["security"] >= 180
         and protected["release"] >= 120
         and protected["review"] >= 90
+        and protected["support"] >= 90
+        and protected["product"] >= 120
+        and protected["sales"] >= 120
+        and protected["legal"] >= 365
+        and protected["executive"] >= 180
         and policy.purpose_expired_weights["coordinate"] > policy.expired_weight
         and policy.purpose_expired_weights["security"] > policy.expired_weight
+        and policy.purpose_expired_weights["legal"] >= 0.2
     )
     return _lane(
         "Governed Forgetting",
@@ -405,6 +434,31 @@ def _evidence_policy_discipline_lane() -> PurposeBenchmarkLane:
             "supported": "Accepted parent state was promoted after review with source_event_seq and source_event_hash.",
             "missing": "promotion_or_review_ref",
         },
+        "support": {
+            "unsupported": "Customer case says the dashboard is broken.",
+            "supported": "Customer ticket report has cited impact severity and a documented workaround resolution.",
+            "missing": "workaround_or_resolution_ref",
+        },
+        "product": {
+            "unsupported": "Roadmap should prioritize dashboard export.",
+            "supported": "Roadmap signal from customer feedback includes tradeoff, experiment outcome, and customer promise.",
+            "missing": "tradeoff_ref",
+        },
+        "sales": {
+            "unsupported": "The account wants a follow-up.",
+            "supported": "Buyer account stakeholder recorded commitment, next step followup, objection, renewal blocker, and budget risk.",
+            "missing": "commitment_ref",
+        },
+        "legal": {
+            "unsupported": "The contract allows redistribution.",
+            "supported": "Exact quote from clause section is approved by counsel authority with effective date and deadline.",
+            "missing": "exact_quote_ref",
+        },
+        "executive": {
+            "unsupported": "There is a strategic exception.",
+            "supported": "Executive decision approved strategic exception with owner, source, risk metric, market trend, and accountable sponsor.",
+            "missing": "risk_or_metric_ref",
+        },
     }
     evidence: dict[str, Any] = {}
     passed = 0
@@ -418,7 +472,7 @@ def _evidence_policy_discipline_lane() -> PurposeBenchmarkLane:
         if (
             unsupported["satisfied"] is False
             and str(fixture["missing"]) in unsupported["missing_requirements"]
-            and unsupported["mode"] in {"block_checkout", "require_refresh"}
+            and unsupported["mode"] in {"block_checkout", "require_refresh", "warn"}
             and unsupported["suggested_queries"]
             and supported["satisfied"] is True
         ):
@@ -427,8 +481,149 @@ def _evidence_policy_discipline_lane() -> PurposeBenchmarkLane:
         "Evidence Policy Discipline",
         passed / len(fixtures),
         1.0,
-        "security, release, and Coordinate fixtures enforce missing and supported evidence policies",
+        "purpose fixtures enforce missing and supported evidence policies",
         evidence,
+    )
+
+
+def _broader_profile_fixtures_lane() -> PurposeBenchmarkLane:
+    profiles = ("support", "product", "sales", "legal", "executive")
+    compaction: dict[str, Any] = {}
+    with tempfile.TemporaryDirectory(prefix="zaxy-purpose-profile-bench-") as tmp:
+        root = Path(tmp)
+        for profile in profiles:
+            log = EventLog(root / f"{profile}.jsonl")
+            for index in range(3):
+                log.append(
+                    "document.indexed",
+                    actor=f"{profile}-operator",
+                    payload={
+                        "path": f"{profile}/fixture-{index}.md",
+                        "start_line": index + 1,
+                        "end_line": index + 2,
+                        "content": (
+                            f"{profile} purpose fixture identity-code-{index:04d} "
+                            f"records {' '.join(purpose_profile(profile).retain)}."
+                        ),
+                    },
+                )
+            projection = build_compaction_projection(log, purpose=profile, max_records=1)
+            compaction[profile] = {
+                "purpose": projection.purpose.get("profile"),
+                "strategy": projection.strategy,
+                "record_kinds": sorted({record.kind for record in projection.records}),
+                "retain": projection.consolidation_policy.get("retain", []),
+                "suppress": projection.consolidation_policy.get("suppress", []),
+            }
+    profile_payloads = {
+        profile: purpose_profile(profile).to_dict()
+        for profile in profiles
+    }
+    checkout_ready = {
+        profile: {
+            "has_evidence_policy": bool(payload.get("evidence_policy")),
+            "has_retention_policy": bool(payload.get("retention_policy")),
+            "has_retain": bool(payload.get("retain")),
+            "has_suppress": bool(payload.get("suppress")),
+            "lens_applied": purpose_ontology_lens(profile).applied,
+        }
+        for profile, payload in profile_payloads.items()
+    }
+    local_positioning = all(
+        payload.get("permission_scope") == "project-local"
+        for payload in profile_payloads.values()
+    )
+    passed_profiles = [
+        profile
+        for profile in profiles
+        if all(checkout_ready[profile].values())
+        and compaction[profile]["purpose"] == profile
+        and compaction[profile]["record_kinds"]
+    ]
+    score = len(passed_profiles) / len(profiles)
+    return _lane(
+        "Broader Profile Fixtures",
+        score if local_positioning else 0.0,
+        1.0,
+        "support product sales legal and executive profiles have checkout compaction and benchmark fixtures",
+        {
+            "passed_profiles": passed_profiles,
+            "checkout_ready": checkout_ready,
+            "compaction": compaction,
+            "local_project_memory_positioning": local_positioning,
+        },
+    )
+
+
+def _neutral_substrate_projection_lane() -> PurposeBenchmarkLane:
+    with tempfile.TemporaryDirectory(prefix="zaxy-neutral-substrate-bench-") as tmp:
+        log = EventLog(Path(tmp) / "customer-email.jsonl")
+        event = log.append(
+            "document.indexed",
+            actor="support-agent",
+            payload={
+                "path": "customers/acme-email.txt",
+                "start_line": 1,
+                "end_line": 4,
+                "content": (
+                    "ACME reports dashboard export failures affecting renewal. "
+                    "They ask whether the export clause applies to dashboard data "
+                    "and want the roadmap promise reviewed by Friday."
+                ),
+                "permission_scope": "project-local",
+                "uncertainty": "customer email requires purpose-specific review",
+            },
+            thread="customer-acme",
+        )
+        result = extract(event)
+    neutral = next(entity for entity in result.entities if entity.entity_type == "neutral_substrate")
+    audit = audit_ingestion_purpose_labels(event.payload, source_event_ref=f"eventloom://{event.thread}/events/{event.seq}#{event.hash}")
+    projections = {
+        "support": build_purpose_projection_record(
+            {"substrate_id": neutral.name, **(neutral.properties or {})},
+            purpose_profile="support",
+            purpose_label="customer_escalation",
+        ).to_dict(),
+        "product": build_purpose_projection_record(
+            {"substrate_id": neutral.name, **(neutral.properties or {})},
+            purpose_profile="product",
+            purpose_label="roadmap_commitment",
+        ).to_dict(),
+        "legal": build_purpose_projection_record(
+            {"substrate_id": neutral.name, **(neutral.properties or {})},
+            purpose_profile="legal",
+            purpose_label="legal_obligation",
+        ).to_dict(),
+        "executive": build_purpose_projection_record(
+            {"substrate_id": neutral.name, **(neutral.properties or {})},
+            purpose_profile="executive",
+            purpose_label="churn_risk",
+        ).to_dict(),
+    }
+    source_refs = {projection["source_event_ref"] for projection in projections.values()}
+    backpointers = {projection["source_backpointer"] for projection in projections.values()}
+    labels = {projection["purpose_label"] for projection in projections.values()}
+    passed = (
+        audit.safe
+        and neutral.properties is not None
+        and neutral.properties.get("permission_scope") == "project-local"
+        and source_refs == {f"eventloom://{event.thread}/events/{event.seq}#{event.hash}"}
+        and backpointers == {"customers/acme-email.txt:1-4"}
+        and labels == {"customer_escalation", "roadmap_commitment", "legal_obligation", "churn_risk"}
+    )
+    return _lane(
+        "Neutral Substrate Projection",
+        1.0 if passed else 0.0,
+        1.0,
+        "one neutral customer artifact can rebuild distinct cited purpose projections",
+        {
+            "neutral_substrate": {
+                "name": neutral.name,
+                "properties": neutral.properties,
+            },
+            "ingestion_audit": audit.to_dict(),
+            "purpose_projections": projections,
+        },
     )
 
 

@@ -528,7 +528,7 @@ python -m zaxy purpose-benchmark --output-dir reports/benchmarks/purpose-v1
 ```
 
 The archived report at
-`reports/benchmarks/purpose-v1/purpose-benchmark.json` passes all eight
+`reports/benchmarks/purpose-v1/purpose-benchmark.json` passes all ten
 internal lanes. This is an internal Zaxy gate, not a public competitor
 leaderboard: Semantic Reach and Quarq remain blocked until pinned same-harness
 adapters are available.
@@ -541,6 +541,8 @@ adapters are available.
 | Governed Forgetting | Noise decays while obligations and invariants survive. |
 | Action Outcome Loop | Corrections and failed attempts alter next execution. |
 | Evidence Policy Discipline | High-risk purposes enforce missing and supported evidence fixtures. |
+| Broader Profile Fixtures | Support, product, sales, legal, and executive stay local/project-scoped while gaining checkout, compaction, and benchmark fixtures. |
+| Neutral Substrate Projection | One neutral customer artifact rebuilds distinct cited support, product, legal, and executive purpose projections. |
 | Cross-Role Citation | Same evidence supports different role-specific memories. |
 | Accepted-State Discipline | Pending claims do not contaminate authoritative memory. |
 
@@ -620,10 +622,11 @@ work is expanding the profile set beyond the current presets.
 
 Status: implemented as the deterministic `purpose-v1` gate. The report covers
 Purpose Recall, Ontology Shift, Consequence Retention, Governed Forgetting,
-Action Outcome Loop, Evidence Policy Discipline, Cross-Role Citation, and
-Accepted-State Discipline. The gate must pass before purpose-conditioned memory
-claims are treated as releaseable. Comparative Semantic Reach or Quarq claims
-remain blocked until same-harness adapters are pinned and scored.
+Action Outcome Loop, Evidence Policy Discipline, Broader Profile Fixtures,
+Neutral Substrate Projection, Cross-Role Citation, and Accepted-State
+Discipline. The gate must pass before purpose-conditioned memory claims are
+treated as releaseable. Comparative Semantic Reach or Quarq claims remain
+blocked until same-harness adapters are pinned and scored.
 
 Maintain benchmark lanes that show Zaxy can retrieve and preserve different
 memories from the same evidence depending on purpose.
@@ -758,22 +761,27 @@ organizational memory.
 Implementation:
 
 - Add first-class profiles for:
-  - support: escalation context, workaround history, customer-impact evidence
-  - product: roadmap signals, customer promises, tradeoffs, experiment outcomes
-  - sales: commitments, buyer objections, renewal blockers, account context
-  - legal: exact obligations, approvals, deadlines, exceptions
-  - executive: strategic exceptions, market patterns, risk summaries
+  - support: escalation context, workaround history, customer-impact evidence **implemented**
+  - product: roadmap signals, customer promises, tradeoffs, experiment outcomes **implemented**
+  - sales: commitments, buyer objections, renewal blockers, account context **implemented**
+  - legal: exact obligations, approvals, deadlines, exceptions **implemented**
+  - executive: strategic exceptions, market patterns, risk summaries **implemented**
 - Keep these profiles local/project-memory oriented first. Do not require broad
-  enterprise connectors before the policy model is proven.
-- Extend purpose-aware compaction rules for each new profile.
+  enterprise connectors before the policy model is proven. **Preserved through
+  project-local profile scopes and docs positioning tests.**
+- Extend purpose-aware compaction rules for each new profile. **Implemented.**
 - Add fixtures from documents/transcripts/tickets rather than only agent traces.
+  **Implemented through document-backed compaction and `purpose-v1` broader
+  profile fixtures.**
 
 Exit criteria:
 
 - Each new profile has explicit retain/suppress/evidence/retention policies.
+  **Implemented.**
 - Each new profile has at least one checkout, compaction, and benchmark fixture.
+  **Implemented.**
 - Public positioning still says "agent work memory" unless enterprise
-  integrations and permissions are actually implemented.
+  integrations and permissions are actually implemented. **Preserved.**
 
 ### Priority 5: Neutral Substrate for Documents and Transcripts
 
@@ -785,20 +793,26 @@ Implementation:
 
 - Add neutral extraction records for documents/transcripts:
   `actor`, `artifact`, `action`, `time`, `source`, `quote`, `uncertainty`,
-  `permission_scope`, and `candidate_claim`.
+  `permission_scope`, and `candidate_claim`. **Implemented as
+  `neutral_substrate` graph records for `document.indexed` and
+  `transcript.turn`.**
 - Move purpose-specific labels like `legal_obligation`, `churn_risk`,
   `roadmap_commitment`, or `security_warning` into purpose projections with
-  source backpointers.
+  source backpointers. **Implemented through neutral purpose projection records
+  and the `purpose-v1` Neutral Substrate Projection lane.**
 - Add a projection audit that flags irreversible purpose labels written during
-  ingestion.
+  ingestion. **Implemented for document and transcript ingestion payloads.**
 
 Exit criteria:
 
 - Document ingestion can preserve a customer email without choosing exactly one
-  meaning at ingest time.
+  meaning at ingest time. **Implemented.**
 - Product, support, legal, and executive checkouts can derive different cited
-  memories from the same artifact.
+  memories from the same artifact. **Implemented as benchmarked purpose
+  projections from one neutral customer artifact.**
 - Reprojection can rebuild purpose views from neutral substrate and Eventloom.
+  **Implemented for Eventloom-backed neutral extraction and deterministic
+  purpose projection records.**
 
 ### Priority 6: Purpose Control Plane UX
 

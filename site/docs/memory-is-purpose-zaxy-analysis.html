@@ -583,7 +583,7 @@
       <h2 id="10-benchmark-direction">10. Benchmark Direction</h2>
       <p>Zaxy now includes a deterministic <code>purpose-v1</code> benchmark gate that tests the article&#x27;s thesis directly. Run it with:</p>
       <pre><code class="language-bash">python -m zaxy purpose-benchmark --output-dir reports/benchmarks/purpose-v1</code></pre>
-      <p>The archived report at <code>reports/benchmarks/purpose-v1/purpose-benchmark.json</code> passes all eight internal lanes. This is an internal Zaxy gate, not a public competitor leaderboard: Semantic Reach and Quarq remain blocked until pinned same-harness adapters are available.</p>
+      <p>The archived report at <code>reports/benchmarks/purpose-v1/purpose-benchmark.json</code> passes all ten internal lanes. This is an internal Zaxy gate, not a public competitor leaderboard: Semantic Reach and Quarq remain blocked until pinned same-harness adapters are available.</p>
       <table>
         <thead>
           <tr>
@@ -615,6 +615,14 @@
           <tr>
             <td>Evidence Policy Discipline</td>
             <td>High-risk purposes enforce missing and supported evidence fixtures.</td>
+          </tr>
+          <tr>
+            <td>Broader Profile Fixtures</td>
+            <td>Support, product, sales, legal, and executive stay local/project-scoped while gaining checkout, compaction, and benchmark fixtures.</td>
+          </tr>
+          <tr>
+            <td>Neutral Substrate Projection</td>
+            <td>One neutral customer artifact rebuilds distinct cited support, product, legal, and executive purpose projections.</td>
           </tr>
           <tr>
             <td>Cross-Role Citation</td>
@@ -674,7 +682,7 @@
       <p>Do not compact legal obligations the same way as coding hints or support context.</p>
       <p>Status: implemented for the Coordinate production path through purpose-aware compaction projections and for retrieval-time decay through purpose-specific half-life and expired-weight floors. Broader consolidation strategies for every purpose profile now have explicit preserve-all or exemplar policies; future work is expanding the profile set beyond the current presets.</p>
       <h3 id="phase-5-purpose-benchmarks">Phase 5: Purpose Benchmarks</h3>
-      <p>Status: implemented as the deterministic <code>purpose-v1</code> gate. The report covers Purpose Recall, Ontology Shift, Consequence Retention, Governed Forgetting, Action Outcome Loop, Evidence Policy Discipline, Cross-Role Citation, and Accepted-State Discipline. The gate must pass before purpose-conditioned memory claims are treated as releaseable. Comparative Semantic Reach or Quarq claims remain blocked until same-harness adapters are pinned and scored.</p>
+      <p>Status: implemented as the deterministic <code>purpose-v1</code> gate. The report covers Purpose Recall, Ontology Shift, Consequence Retention, Governed Forgetting, Action Outcome Loop, Evidence Policy Discipline, Broader Profile Fixtures, Neutral Substrate Projection, Cross-Role Citation, and Accepted-State Discipline. The gate must pass before purpose-conditioned memory claims are treated as releaseable. Comparative Semantic Reach or Quarq claims remain blocked until same-harness adapters are pinned and scored.</p>
       <p>Maintain benchmark lanes that show Zaxy can retrieve and preserve different memories from the same evidence depending on purpose.</p>
       <p>This is a stronger internal product claim than generic token savings, but it does not become a comparative SOTA claim until external products are evaluated on the same harness.</p>
       <h2 id="12-implementation-roadmap-for-remaining-weak-areas">12. Implementation Roadmap for Remaining Weak Areas</h2>
@@ -754,35 +762,43 @@
       <p>Implementation:</p>
       <ul>
         <li>Add first-class profiles for:</li>
-        <li>support: escalation context, workaround history, customer-impact evidence</li>
-        <li>product: roadmap signals, customer promises, tradeoffs, experiment outcomes</li>
-        <li>sales: commitments, buyer objections, renewal blockers, account context</li>
-        <li>legal: exact obligations, approvals, deadlines, exceptions</li>
-        <li>executive: strategic exceptions, market patterns, risk summaries</li>
-        <li>Keep these profiles local/project-memory oriented first. Do not require broad enterprise connectors before the policy model is proven.</li>
-        <li>Extend purpose-aware compaction rules for each new profile.</li>
+        <li>support: escalation context, workaround history, customer-impact evidence <strong>implemented</strong></li>
+        <li>product: roadmap signals, customer promises, tradeoffs, experiment outcomes <strong>implemented</strong></li>
+        <li>sales: commitments, buyer objections, renewal blockers, account context <strong>implemented</strong></li>
+        <li>legal: exact obligations, approvals, deadlines, exceptions <strong>implemented</strong></li>
+        <li>executive: strategic exceptions, market patterns, risk summaries <strong>implemented</strong></li>
+        <li>Keep these profiles local/project-memory oriented first. Do not require broad enterprise connectors before the policy model is proven. <strong>Preserved through project-local profile scopes and docs positioning tests.</strong></li>
+        <li>Extend purpose-aware compaction rules for each new profile. <strong>Implemented.</strong></li>
         <li>Add fixtures from documents/transcripts/tickets rather than only agent traces.</li>
       </ul>
+      <p><strong>Implemented through document-backed compaction and <code>purpose-v1</code> broader profile fixtures.</strong></p>
       <p>Exit criteria:</p>
       <ul>
         <li>Each new profile has explicit retain/suppress/evidence/retention policies.</li>
+      </ul>
+      <p><strong>Implemented.</strong></p>
+      <ul>
         <li>Each new profile has at least one checkout, compaction, and benchmark fixture.</li>
-        <li>Public positioning still says &quot;agent work memory&quot; unless enterprise integrations and permissions are actually implemented.</li>
+      </ul>
+      <p><strong>Implemented.</strong></p>
+      <ul>
+        <li>Public positioning still says &quot;agent work memory&quot; unless enterprise integrations and permissions are actually implemented. <strong>Preserved.</strong></li>
       </ul>
       <h3 id="priority-5-neutral-substrate-for-documents-and-transcripts">Priority 5: Neutral Substrate for Documents and Transcripts</h3>
       <p>Problem: Typed agent events are safe to extract deterministically, but broader documents can be over-labeled too early. Zaxy should preserve role-neutral semantic substrate first and apply stronger business ontology at retrieval.</p>
       <p>Implementation:</p>
       <ul>
-        <li>Add neutral extraction records for documents/transcripts: <code>actor</code>, <code>artifact</code>, <code>action</code>, <code>time</code>, <code>source</code>, <code>quote</code>, <code>uncertainty</code>, <code>permission_scope</code>, and <code>candidate_claim</code>.</li>
-        <li>Move purpose-specific labels like <code>legal_obligation</code>, <code>churn_risk</code>, <code>roadmap_commitment</code>, or <code>security_warning</code> into purpose projections with source backpointers.</li>
-        <li>Add a projection audit that flags irreversible purpose labels written during ingestion.</li>
+        <li>Add neutral extraction records for documents/transcripts: <code>actor</code>, <code>artifact</code>, <code>action</code>, <code>time</code>, <code>source</code>, <code>quote</code>, <code>uncertainty</code>, <code>permission_scope</code>, and <code>candidate_claim</code>. <strong>Implemented as <code>neutral_substrate</code> graph records for <code>document.indexed</code> and <code>transcript.turn</code>.</strong></li>
+        <li>Move purpose-specific labels like <code>legal_obligation</code>, <code>churn_risk</code>, <code>roadmap_commitment</code>, or <code>security_warning</code> into purpose projections with source backpointers. <strong>Implemented through neutral purpose projection records and the <code>purpose-v1</code> Neutral Substrate Projection lane.</strong></li>
+        <li>Add a projection audit that flags irreversible purpose labels written during ingestion. <strong>Implemented for document and transcript ingestion payloads.</strong></li>
       </ul>
       <p>Exit criteria:</p>
       <ul>
-        <li>Document ingestion can preserve a customer email without choosing exactly one meaning at ingest time.</li>
-        <li>Product, support, legal, and executive checkouts can derive different cited memories from the same artifact.</li>
+        <li>Document ingestion can preserve a customer email without choosing exactly one meaning at ingest time. <strong>Implemented.</strong></li>
+        <li>Product, support, legal, and executive checkouts can derive different cited memories from the same artifact. <strong>Implemented as benchmarked purpose projections from one neutral customer artifact.</strong></li>
         <li>Reprojection can rebuild purpose views from neutral substrate and Eventloom.</li>
       </ul>
+      <p><strong>Implemented for Eventloom-backed neutral extraction and deterministic purpose projection records.</strong></p>
       <h3 id="priority-6-purpose-control-plane-ux">Priority 6: Purpose Control Plane UX</h3>
       <p>Problem: The core product should not be only a library/API feature. Operators need to see which purpose profile was used, what was suppressed, why a checkout was trusted, and what action the memory changed.</p>
       <p>Implementation:</p>

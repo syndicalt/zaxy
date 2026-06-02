@@ -23,11 +23,53 @@ def test_purpose_benchmark_includes_evidence_policy_fixtures() -> None:
     lane = next(lane for lane in report.lanes if lane.name == "Evidence Policy Discipline")
 
     assert lane.status == "passed"
-    assert set(lane.evidence) == {"security", "release", "coordinate"}
-    for profile in ("security", "release", "coordinate"):
+    assert set(lane.evidence) == {
+        "security",
+        "release",
+        "coordinate",
+        "support",
+        "product",
+        "sales",
+        "legal",
+        "executive",
+    }
+    for profile in lane.evidence:
         assert lane.evidence[profile]["unsupported"]["satisfied"] is False
         assert lane.evidence[profile]["unsupported"]["suggested_queries"]
         assert lane.evidence[profile]["supported"]["satisfied"] is True
+
+
+def test_purpose_benchmark_includes_broader_profile_fixtures() -> None:
+    report = run_purpose_benchmark()
+    lane = next(lane for lane in report.lanes if lane.name == "Broader Profile Fixtures")
+
+    assert lane.status == "passed"
+    assert set(lane.evidence["passed_profiles"]) == {"support", "product", "sales", "legal", "executive"}
+    assert lane.evidence["local_project_memory_positioning"] is True
+    for profile in ("support", "product", "sales", "legal", "executive"):
+        assert lane.evidence["checkout_ready"][profile]["has_evidence_policy"] is True
+        assert lane.evidence["checkout_ready"][profile]["lens_applied"] is True
+        assert lane.evidence["compaction"][profile]["purpose"] == profile
+        assert lane.evidence["compaction"][profile]["record_kinds"]
+
+
+def test_purpose_benchmark_includes_neutral_substrate_projection() -> None:
+    report = run_purpose_benchmark()
+    lane = next(lane for lane in report.lanes if lane.name == "Neutral Substrate Projection")
+
+    assert lane.status == "passed"
+    assert lane.evidence["ingestion_audit"]["safe"] is True
+    projections = lane.evidence["purpose_projections"]
+    assert set(projections) == {"support", "product", "legal", "executive"}
+    assert {projection["neutral_substrate_id"] for projection in projections.values()} == {
+        lane.evidence["neutral_substrate"]["name"]
+    }
+    assert {projection["source_backpointer"] for projection in projections.values()} == {
+        "customers/acme-email.txt:1-4"
+    }
+    assert {
+        projection["purpose_label"] for projection in projections.values()
+    } == {"customer_escalation", "roadmap_commitment", "legal_obligation", "churn_risk"}
 
 
 def test_purpose_benchmark_action_outcome_loop_proves_future_effect() -> None:

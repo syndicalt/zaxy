@@ -291,7 +291,9 @@ Archived report:
 | Consequence Retention | passed | 1.000 | Profiles retain failures, accepted decisions, risks, and proof outcomes. |
 | Governed Forgetting | passed | 1.000 | Decay mode protects obligations and risk memory while downweighting noise. |
 | Action Outcome Loop | passed | 1.000 | Purpose outcome history changes future rank and warning candidates. |
-| Evidence Policy Discipline | passed | 1.000 | Security, release, and Coordinate fixtures enforce missing and supported evidence policies. |
+| Evidence Policy Discipline | passed | 1.000 | Purpose fixtures enforce missing and supported evidence policies. |
+| Broader Profile Fixtures | passed | 1.000 | Support, product, sales, legal, and executive profiles have checkout, compaction, and benchmark fixtures. |
+| Neutral Substrate Projection | passed | 1.000 | One neutral customer artifact can rebuild distinct cited purpose projections. |
 | Cross-Role Citation | passed | 1.000 | The same citation can support different role-specific memories. |
 | Accepted-State Discipline | passed | 1.000 | Coordinate compaction keeps accepted parent state and suppresses pending worker rows. |
 

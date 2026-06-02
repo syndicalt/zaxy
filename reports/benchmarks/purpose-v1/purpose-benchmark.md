@@ -1,10 +1,10 @@
 # Purpose Benchmark
 
 - Version: `purpose-v1`
-- Generated: `2026-06-02T21:45:55.136277+00:00`
+- Generated: `2026-06-02T22:02:58.689711+00:00`
 - Status: `passed`
-- Lanes: `8/8` passed
-- Elapsed: `2.065 ms`
+- Lanes: `10/10` passed
+- Elapsed: `10.166 ms`
 
 | Lane | Status | Score | Threshold | Measurement |
 | --- | --- | ---: | ---: | --- |
@@ -13,7 +13,9 @@
 | Consequence Retention | passed | 1.000 | 1.000 | profiles retain prior failures, accepted decisions, risks, and proof outcomes |
 | Governed Forgetting | passed | 1.000 | 1.000 | decay mode downweights noise while protecting obligations and risk memory |
 | Action Outcome Loop | passed | 1.000 | 1.000 | purpose outcome history changes future rank and warning candidates |
-| Evidence Policy Discipline | passed | 1.000 | 1.000 | security, release, and Coordinate fixtures enforce missing and supported evidence policies |
+| Evidence Policy Discipline | passed | 1.000 | 1.000 | purpose fixtures enforce missing and supported evidence policies |
+| Broader Profile Fixtures | passed | 1.000 | 1.000 | support product sales legal and executive profiles have checkout compaction and benchmark fixtures |
+| Neutral Substrate Projection | passed | 1.000 | 1.000 | one neutral customer artifact can rebuild distinct cited purpose projections |
 | Cross-Role Citation | passed | 1.000 | 1.000 | same cited evidence can create distinct role-specific useful memory |
 | Accepted-State Discipline | passed | 1.000 | 1.000 | Coordinate projection keeps accepted parent state and suppresses pending worker rows |
 

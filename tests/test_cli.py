@@ -4568,7 +4568,7 @@ def test_doctor_beta_readiness_reports_release_and_uat_gates() -> None:
         "purpose_benchmark_gate"
     ]["message"]
     assert checks["purpose_evidence_policy"]["status"] == "ok"
-    assert "security, release, and Coordinate evidence-policy fixtures" in checks[
+    assert "support, product, sales, legal, and executive evidence-policy fixtures" in checks[
         "purpose_evidence_policy"
     ]["message"]
     assert checks["external_validation_evidence"]["status"] == "ok"

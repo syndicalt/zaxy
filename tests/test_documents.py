@@ -25,6 +25,9 @@ class TestCollectDocumentEvents:
             "content": "# Guide\n\nAlpha context",
             "sha256": events[0]["payload"]["sha256"],
         }
+        assert "labels" not in events[0]["payload"]
+        assert "purpose_label" not in events[0]["payload"]
+        assert "entity_type" not in events[0]["payload"]
         assert events[1]["payload"]["start_line"] == 4
         assert events[1]["payload"]["end_line"] == 5
         assert events[1]["payload"]["content"] == "Beta context\nGamma context"

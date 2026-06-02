@@ -142,6 +142,96 @@ def test_security_checkout_policy_marks_unsupported_answer_non_actionable() -> N
     assert "Current citations: 1" in prompt
 
 
+def test_broader_profile_checkout_diagnostics_are_first_class() -> None:
+    fixtures = {
+        "support": "Customer ticket report has cited impact severity and a documented workaround resolution.",
+        "product": "Roadmap signal from customer feedback includes tradeoff, experiment outcome, and customer promise.",
+        "sales": "Buyer account stakeholder recorded commitment, next step followup, objection, renewal blocker, and budget risk.",
+        "legal": "Exact quote from clause section is approved by counsel authority with effective date and deadline.",
+        "executive": "Executive decision approved strategic exception with owner, source, risk metric, market trend, and accountable sponsor.",
+    }
+
+    for profile, content in fixtures.items():
+        current_facts = [
+            {
+                "content": content,
+                "source": "keyword",
+                "score": 0.82,
+                "citation": f"eventloom://agent-1/events/{profile}#aaaaaaaaaaaa",
+                "valid_from": "2026-06-02T12:00:00Z",
+                "valid_to": None,
+                "source_lane": "graph",
+                "entity_name": f"{profile} fixture",
+                "entity_type": "memory",
+            }
+        ]
+        retention = {"policy": "current_only", "superseded_contexts_excluded": 0}
+        diagnostics = build_checkout_diagnostics(
+            query=f"{profile} checkout fixture",
+            purpose=profile,
+            source_lanes={"graph": 1},
+            current_facts=current_facts,
+            evidence=[dict(current_facts[0])],
+            retention=retention,
+            warnings=[],
+        )
+        guidance = build_checkout_guidance(
+            query=f"{profile} checkout fixture",
+            purpose=profile,
+            current_facts=current_facts,
+            retention=retention,
+            evidence=[dict(current_facts[0])],
+        )
+        quality = build_checkout_quality(diagnostics=diagnostics, guidance=guidance)
+
+        assert diagnostics["purpose"]["profile"] == profile
+        assert diagnostics["purpose_ontology_lens"]["profile"] == profile
+        assert diagnostics["evidence_policy"]["satisfied"] is True
+        assert guidance["purpose"]["profile"] == profile
+        assert guidance["purpose"]["evidence_policy"] == diagnostics["purpose"]["evidence_policy"]
+        assert quality["answerability"] == "answer_from_memory"
+
+
+def test_legal_checkout_blocks_unsupported_paraphrased_obligation() -> None:
+    current_facts = [
+        {
+            "content": "The contract allows redistribution.",
+            "source": "keyword",
+            "score": 0.82,
+            "citation": "eventloom://agent-1/events/legal#aaaaaaaaaaaa",
+            "valid_from": "2026-06-02T12:00:00Z",
+            "valid_to": None,
+            "source_lane": "graph",
+            "entity_name": "redistribution obligation",
+            "entity_type": "legal_obligation",
+        }
+    ]
+    retention = {"policy": "current_only", "superseded_contexts_excluded": 0}
+    diagnostics = build_checkout_diagnostics(
+        query="review redistribution obligation",
+        purpose="legal",
+        source_lanes={"graph": 1},
+        current_facts=current_facts,
+        evidence=[dict(current_facts[0])],
+        retention=retention,
+        warnings=[],
+    )
+    guidance = build_checkout_guidance(
+        query="review redistribution obligation",
+        purpose="legal",
+        current_facts=current_facts,
+        retention=retention,
+        evidence=[dict(current_facts[0])],
+    )
+    quality = build_checkout_quality(diagnostics=diagnostics, guidance=guidance)
+
+    assert diagnostics["evidence_policy"]["satisfied"] is False
+    assert diagnostics["evidence_policy"]["mode"] == "block_checkout"
+    assert "exact_quote_ref" in diagnostics["evidence_policy"]["missing_requirements"]
+    assert quality["answerability"] == "refresh_recommended"
+    assert quality["required_action"]["mode"] == "block_checkout"
+
+
 def test_checkout_purpose_profile_conditions_guidance_and_prompt() -> None:
     """Purpose profiles should make retrieval-time ontology explicit."""
     current_facts = [

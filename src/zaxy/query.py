@@ -1209,6 +1209,11 @@ def _resolve_retention_policy(
             "security": max(decay_half_life_days, 180),
             "review": max(decay_half_life_days, 90),
             "release": max(decay_half_life_days, 120),
+            "support": max(decay_half_life_days, 90),
+            "product": max(decay_half_life_days, 120),
+            "sales": max(decay_half_life_days, 120),
+            "legal": max(decay_half_life_days, 365),
+            "executive": max(decay_half_life_days, 180),
             "coding": decay_half_life_days,
             "research": decay_half_life_days,
         },
@@ -1217,6 +1222,11 @@ def _resolve_retention_policy(
             "security": max(expired_weight, 0.1),
             "review": max(expired_weight, 0.05),
             "release": max(expired_weight, 0.1),
+            "support": max(expired_weight, 0.05),
+            "product": max(expired_weight, 0.05),
+            "sales": max(expired_weight, 0.08),
+            "legal": max(expired_weight, 0.2),
+            "executive": max(expired_weight, 0.1),
         },
     )
 

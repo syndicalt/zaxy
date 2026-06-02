@@ -447,6 +447,46 @@ def test_coding_compaction_uses_bounded_purpose_exemplars_with_record_floor(
     assert all("test_results" in record.purpose_reasons for record in projection.records)
 
 
+def test_broader_profile_compaction_rules_are_explicit(tmp_path: Path) -> None:
+    expected = {
+        "support": ("purpose_exemplar", "support_exemplar", False),
+        "product": ("purpose_exemplar", "product_exemplar", False),
+        "sales": ("purpose_preserve_all", "sales_retained", True),
+        "legal": ("purpose_preserve_all", "legal_retained", True),
+        "executive": ("purpose_preserve_all", "executive_retained", True),
+    }
+
+    for profile, (strategy, kind, preserve_all) in expected.items():
+        log = EventLog(tmp_path / f"{profile}.jsonl")
+        for idx in range(3):
+            log.append(
+                "document.indexed",
+                actor=f"{profile}-operator",
+                payload={
+                    "path": f"{profile}/fixture-{idx}.md",
+                    "start_line": idx + 1,
+                    "end_line": idx + 2,
+                    "content": f"{profile} fixture identity-code-{idx:04d} should survive.",
+                },
+            )
+
+        projection = build_compaction_projection(
+            log,
+            provider=HashEmbeddingProvider(dimension=64),
+            strategy="medoid",
+            max_records=1,
+            purpose=profile,
+        )
+
+        assert projection.purpose["profile"] == profile
+        assert projection.strategy == strategy
+        assert projection.consolidation_policy["preserve_all"] is preserve_all
+        assert projection.consolidation_policy["retain"]
+        assert projection.consolidation_policy["suppress"]
+        assert {record.kind for record in projection.records} == {kind}
+        assert all(record.purpose_reasons for record in projection.records)
+
+
 def test_coordinate_compaction_blocks_status_erasure_from_authority(
     tmp_path: Path,
 ) -> None:

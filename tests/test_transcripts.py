@@ -28,6 +28,9 @@ class TestCollectTranscriptEvents:
             "content": "[REDACTED]",
             "redacted_paths": ["content"],
         }
+        assert "labels" not in events[0]["payload"]
+        assert "purpose_label" not in events[0]["payload"]
+        assert "entity_type" not in events[0]["payload"]
         assert events[1]["payload"]["content"] == "I will store only safe context."
 
     def test_skips_empty_turns(self) -> None:
