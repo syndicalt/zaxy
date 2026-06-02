@@ -112,6 +112,7 @@ def run_beta_readiness(
         _check_benchmark_no_regression(root),
         _check_coordination_competitor_claim_posture(root),
         _check_purpose_benchmark_gate(root),
+        _check_purpose_evidence_policy_fixture(root),
         _check_release_gate_surface_coverage(root),
         _check_external_validation_evidence(
             root,
@@ -786,6 +787,7 @@ def _check_purpose_benchmark_gate(root: Path) -> dict[str, str]:
         "Consequence Retention",
         "Governed Forgetting",
         "Action Outcome Loop",
+        "Evidence Policy Discipline",
         "Cross-Role Citation",
         "Accepted-State Discipline",
     }
@@ -813,6 +815,35 @@ def _check_purpose_benchmark_gate(root: Path) -> dict[str, str]:
         blockers.append("missing lanes: " + ", ".join(missing_lanes))
     if failing_lanes:
         blockers.append("failing lanes: " + ", ".join(failing_lanes))
+    evidence_policy_lane = next(
+        (
+            lane
+            for lane in lanes
+            if isinstance(lane, dict) and str(lane.get("name") or "") == "Evidence Policy Discipline"
+        ),
+        None,
+    )
+    if not isinstance(evidence_policy_lane, dict):
+        blockers.append("Evidence Policy Discipline lane is missing")
+    else:
+        evidence = evidence_policy_lane.get("evidence")
+        if not isinstance(evidence, dict) or not evidence:
+            blockers.append("Evidence Policy Discipline lane evidence is missing")
+        else:
+            for profile in ("security", "release", "coordinate"):
+                profile_evidence = evidence.get(profile)
+                if not isinstance(profile_evidence, dict):
+                    blockers.append(f"Evidence Policy Discipline missing {profile} fixture evidence")
+                    continue
+                unsupported = profile_evidence.get("unsupported")
+                supported = profile_evidence.get("supported")
+                if not isinstance(unsupported, dict) or not isinstance(supported, dict):
+                    blockers.append(f"Evidence Policy Discipline {profile} fixture evidence is incomplete")
+                    continue
+                if unsupported.get("satisfied") is not False:
+                    blockers.append(f"Evidence Policy Discipline {profile} unsupported fixture must fail")
+                if supported.get("satisfied") is not True:
+                    blockers.append(f"Evidence Policy Discipline {profile} supported fixture must pass")
     competitor_status = str(report.get("competitor_claim_status") or "")
     if competitor_status != "blocked":
         blockers.append("competitor_claim_status must remain blocked without same-harness adapters")
@@ -833,7 +864,78 @@ def _check_purpose_benchmark_gate(root: Path) -> dict[str, str]:
     return {
         "name": "purpose_benchmark_gate",
         "status": "ok",
-        "message": "purpose-v1 benchmark passes all seven purpose-memory lanes with competitor claims blocked.",
+        "message": "purpose-v1 benchmark passes all purpose-memory lanes with competitor claims blocked.",
+    }
+
+
+def _check_purpose_evidence_policy_fixture(root: Path) -> dict[str, str]:
+    """Verify high-risk purpose evidence policies are executable release fixtures."""
+    del root
+    try:
+        from zaxy.evidence import evaluate_evidence_policy
+    except Exception as exc:
+        return {
+            "name": "purpose_evidence_policy",
+            "status": "error",
+            "message": f"could not import evidence policy evaluator: {exc}",
+            "action": "Restore zaxy.evidence.evaluate_evidence_policy.",
+        }
+    fixtures = {
+        "security": {
+            "query": "review credential exposure",
+            "content": "Credential exposure found in auth config.",
+            "missing": {"mitigation_or_risk_owner"},
+        },
+        "release": {
+            "query": "ship release",
+            "content": "Release gate is green for the current candidate.",
+            "missing": {"verification_refs"},
+        },
+        "coordinate": {
+            "query": "handoff accepted auth state",
+            "content": "Worker-local finding says auth cache is stale.",
+            "missing": {"promotion_or_review_ref"},
+        },
+    }
+    blockers: list[str] = []
+    for profile, fixture in fixtures.items():
+        fact = {
+            "content": str(fixture["content"]),
+            "source": "graph",
+            "citation": f"eventloom://fixture/events/{profile}#abcdefabcdef",
+        }
+        result = evaluate_evidence_policy(
+            profile=profile,
+            query=str(fixture["query"]),
+            current_facts=[fact],
+            evidence=[fact],
+        )
+        if result is None:
+            blockers.append(f"{profile} policy did not run")
+            continue
+        if result.satisfied:
+            blockers.append(f"{profile} unsupported fixture unexpectedly satisfied policy")
+        missing = set(result.missing_requirements)
+        expected_missing = set(fixture["missing"])
+        if not expected_missing <= missing:
+            blockers.append(
+                f"{profile} missing requirements {sorted(missing)} did not include {sorted(expected_missing)}"
+            )
+        if result.mode not in {"block_checkout", "require_refresh"}:
+            blockers.append(f"{profile} policy mode {result.mode!r} is not release-blocking")
+        if not result.suggested_queries:
+            blockers.append(f"{profile} policy did not emit suggested refresh queries")
+    if blockers:
+        return {
+            "name": "purpose_evidence_policy",
+            "status": "error",
+            "message": "Purpose evidence policy fixtures failed: " + "; ".join(blockers),
+            "action": "Restore security, release, and Coordinate evidence-policy fixtures before release.",
+        }
+    return {
+        "name": "purpose_evidence_policy",
+        "status": "ok",
+        "message": "security, release, and Coordinate evidence-policy fixtures enforce refresh/block behavior.",
     }
 
 

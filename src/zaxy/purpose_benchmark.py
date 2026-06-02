@@ -13,8 +13,16 @@ from typing import Any
 
 from zaxy.checkout import build_checkout_feedback_payload
 from zaxy.compaction import build_compaction_projection
+from zaxy.context import Context
+from zaxy.core import _apply_purpose_outcome_learning, _purpose_outcome_aggregates
 from zaxy.event import EventLog
-from zaxy.purpose import PurposeProfile, purpose_profile, purpose_retrieval_policy
+from zaxy.evidence import evaluate_evidence_policy
+from zaxy.purpose import (
+    PurposeProfile,
+    purpose_ontology_lens,
+    purpose_profile,
+    purpose_retrieval_policy,
+)
 from zaxy.query import build_retention_policy
 
 PURPOSE_BENCHMARK_VERSION = "purpose-v1"
@@ -25,6 +33,7 @@ PURPOSE_BENCHMARK_LANES = (
     "Consequence Retention",
     "Governed Forgetting",
     "Action Outcome Loop",
+    "Evidence Policy Discipline",
     "Cross-Role Citation",
     "Accepted-State Discipline",
 )
@@ -82,6 +91,7 @@ def run_purpose_benchmark() -> PurposeBenchmarkReport:
         _consequence_retention_lane(),
         _governed_forgetting_lane(),
         _action_outcome_loop_lane(),
+        _evidence_policy_discipline_lane(),
         _cross_role_citation_lane(),
         _accepted_state_discipline_lane(),
     )
@@ -165,20 +175,44 @@ def _purpose_recall_lane() -> PurposeBenchmarkLane:
 
 
 def _ontology_shift_lane() -> PurposeBenchmarkLane:
+    source_paths = {
+        "coding": ("failed_attempt", "tests_symbol"),
+        "release": ("fails_release_gate", "has_changelog"),
+        "security": ("uses_credential", "risk_accepted_by"),
+        "coordinate": ("mission_has_proof_packet", "artifact_has_ledger_row"),
+    }
     signatures = {
         profile.profile: (
             _policy_for(profile).scoring_profile,
             tuple(_policy_for(profile).emphasis_terms[:8]),
+            tuple(purpose_ontology_lens(profile).relationship_roles[:4]),
         )
         for profile in (_profile(name) for name in PURPOSE_PROFILES)
     }
+    path_overlays = {
+        profile: {
+            "multiplier": purpose_ontology_lens(profile).path_multiplier(path),
+            "relationship_roles": list(purpose_ontology_lens(profile).matched_relationship_roles(path)),
+        }
+        for profile, path in source_paths.items()
+    }
     unique_signatures = set(signatures.values())
+    distinct_path_multipliers = {
+        overlay["multiplier"]
+        for overlay in path_overlays.values()
+    }
+    path_roles_present = all(overlay["relationship_roles"] for overlay in path_overlays.values())
+    score = min(
+        len(unique_signatures) / len(signatures),
+        len(distinct_path_multipliers) / len(path_overlays),
+        1.0 if path_roles_present else 0.0,
+    )
     return _lane(
         "Ontology Shift",
-        len(unique_signatures) / len(signatures),
+        score,
         0.75,
-        "same source query resolves to distinct purpose-specific retrieval lenses",
-        {"signatures": signatures},
+        "same source query resolves to distinct purpose-specific retrieval lenses and graph path roles",
+        {"signatures": signatures, "path_overlays": path_overlays},
     )
 
 
@@ -237,30 +271,188 @@ def _governed_forgetting_lane() -> PurposeBenchmarkLane:
 
 
 def _action_outcome_loop_lane() -> PurposeBenchmarkLane:
+    citation = "eventloom://purpose/events/7#abc123"
     fact = {
         "content": "Retry the migration with lock timeout disabled",
         "entity_name": "migration retry",
         "entity_type": "decision",
-        "citation": "eventloom://purpose/events/7#abc123",
+        "citation": citation,
         "source": "eventloom",
         "score": 0.91,
     }
     payload = build_checkout_feedback_payload(fact, "ship migration", purpose="coding")
     purpose = payload.get("purpose") if isinstance(payload, dict) else None
+    profile = purpose_profile("coding")
+    events = [
+        SimpleNamespace(
+            seq=1,
+            type="memory.reinforced",
+            payload={
+                "entity_name": "migration retry",
+                "entity_type": "decision",
+                "citation": citation,
+                "purpose": {"profile": "coding"},
+                "outcome": "avoided_failed_path",
+            },
+        ),
+        SimpleNamespace(
+            seq=2,
+            type="memory.reinforced",
+            payload={
+                "entity_name": "migration retry",
+                "entity_type": "decision",
+                "citation": citation,
+                "purpose": {"profile": "coding"},
+                "outcome": "prevented_redundant_investigation",
+            },
+        ),
+        SimpleNamespace(
+            seq=3,
+            type="memory.feedback",
+            payload={
+                "entity_name": "stale migration retry",
+                "entity_type": "decision",
+                "citation": "eventloom://purpose/events/8#def456",
+                "purpose": {"profile": "coding"},
+                "feedback": "irrelevant",
+                "outcome": "caused_regression",
+            },
+        ),
+        SimpleNamespace(
+            seq=4,
+            type="memory.feedback",
+            payload={
+                "entity_name": "stale migration retry",
+                "entity_type": "decision",
+                "citation": "eventloom://purpose/events/8#def456",
+                "purpose": {"profile": "coding"},
+                "feedback": "irrelevant",
+                "outcome": "failed",
+            },
+        ),
+    ]
+    aggregates = _purpose_outcome_aggregates(events, profile)
+    learned = _apply_purpose_outcome_learning(
+        [
+            Context(
+                content="Stale migration retry advice.",
+                source="keyword",
+                score=0.95,
+                metadata={
+                    "entity_name": "stale migration retry",
+                    "entity_type": "decision",
+                    "citation": "eventloom://purpose/events/8#def456",
+                },
+            ),
+            Context(
+                content="Retry the migration with lock timeout disabled.",
+                source="keyword",
+                score=0.9,
+                metadata={
+                    "entity_name": "migration retry",
+                    "entity_type": "decision",
+                    "citation": citation,
+                },
+            ),
+        ],
+        aggregates,
+    )
+    learned_explanations = [
+        (context.metadata or {}).get("score_explanation", {}).get("purpose_outcome", {})
+        for context in learned
+    ]
+    boosted = learned[0].metadata and learned[0].metadata.get("entity_name") == "migration retry"
+    suppression_candidate = any(
+        isinstance(explanation, dict) and explanation.get("suppression_candidate")
+        for explanation in learned_explanations
+    )
     passed = (
         isinstance(payload, dict)
         and payload.get("feedback") == "used"
         and isinstance(purpose, dict)
         and purpose.get("profile") == "coding"
         and purpose.get("expected_action") == "implement_or_verify"
+        and boosted
+        and suppression_candidate
     )
     return _lane(
         "Action Outcome Loop",
         1.0 if passed else 0.0,
         1.0,
-        "feedback payload records useful-for-purpose outcome metadata",
-        {"feedback_payload": payload or {}},
+        "purpose outcome history changes future rank and warning candidates",
+        {
+            "feedback_payload": payload or {},
+            "boosted_context": learned[0].metadata.get("entity_name") if learned[0].metadata else None,
+            "outcome_explanations": learned_explanations,
+        },
     )
+
+
+def _evidence_policy_discipline_lane() -> PurposeBenchmarkLane:
+    fixtures = {
+        "security": {
+            "unsupported": "Credential exposure found in auth config.",
+            "supported": "Credential exposure has source citation, mitigation, and risk owner accepted risk.",
+            "missing": "mitigation_or_risk_owner",
+        },
+        "release": {
+            "unsupported": "Release gate is green for the current candidate.",
+            "supported": "Release gate is green with pytest test result, changelog entry, package build, and twine check.",
+            "missing": "verification_refs",
+        },
+        "coordinate": {
+            "unsupported": "Worker-local finding says auth cache is stale.",
+            "supported": "Accepted parent state was promoted after review with source_event_seq and source_event_hash.",
+            "missing": "promotion_or_review_ref",
+        },
+    }
+    evidence: dict[str, Any] = {}
+    passed = 0
+    for profile, fixture in fixtures.items():
+        unsupported = _policy_fixture_result(profile, str(fixture["unsupported"]))
+        supported = _policy_fixture_result(profile, str(fixture["supported"]))
+        evidence[profile] = {
+            "unsupported": unsupported,
+            "supported": supported,
+        }
+        if (
+            unsupported["satisfied"] is False
+            and str(fixture["missing"]) in unsupported["missing_requirements"]
+            and unsupported["mode"] in {"block_checkout", "require_refresh"}
+            and unsupported["suggested_queries"]
+            and supported["satisfied"] is True
+        ):
+            passed += 1
+    return _lane(
+        "Evidence Policy Discipline",
+        passed / len(fixtures),
+        1.0,
+        "security, release, and Coordinate fixtures enforce missing and supported evidence policies",
+        evidence,
+    )
+
+
+def _policy_fixture_result(profile: str, content: str) -> dict[str, Any]:
+    fact = {
+        "content": content,
+        "source": "graph",
+        "citation": f"eventloom://purpose-policy/events/{profile}#abcdefabcdef",
+    }
+    result = evaluate_evidence_policy(
+        profile=profile,
+        query=f"{profile} evidence policy fixture",
+        current_facts=[fact],
+        evidence=[fact],
+    )
+    if result is None:
+        return {"satisfied": False, "mode": "missing", "missing_requirements": [], "suggested_queries": []}
+    diagnostics = result.to_diagnostics()
+    return {
+        "satisfied": diagnostics["satisfied"],
+        "mode": diagnostics["mode"],
+        "missing_requirements": diagnostics["missing_requirements"],
+        "suggested_queries": diagnostics["suggested_queries"],
+    }
 
 
 def _cross_role_citation_lane() -> PurposeBenchmarkLane:

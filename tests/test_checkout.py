@@ -78,9 +78,68 @@ def test_checkout_policy_handles_uncited_current_fact_once_for_core_and_mcp() ->
         ],
         "required_action": guidance["recommended_next_call"],
     }
+    assert "No cited evidence was retrieved." in prompt
+
+
+def test_security_checkout_policy_marks_unsupported_answer_non_actionable() -> None:
+    """High-risk purpose evidence failures should change checkout quality and prompt."""
+    current_facts = [
+        {
+            "content": "Credential exposure found in auth config.",
+            "source": "keyword",
+            "score": 0.82,
+            "citation": "eventloom://agent-1/events/7#aaaaaaaaaaaa",
+            "valid_from": "2026-06-02T12:00:00Z",
+            "valid_to": None,
+            "source_lane": "graph",
+            "entity_name": "auth credential exposure",
+            "entity_type": "security_finding",
+        }
+    ]
+    evidence = [dict(current_facts[0])]
+    retention = {"policy": "current_only", "superseded_contexts_excluded": 0}
+
+    diagnostics = build_checkout_diagnostics(
+        query="review auth credential exposure",
+        purpose="security",
+        source_lanes={"graph": 1},
+        current_facts=current_facts,
+        evidence=evidence,
+        retention=retention,
+        warnings=[],
+    )
+    guidance = build_checkout_guidance(
+        query="review auth credential exposure",
+        purpose="security",
+        current_facts=current_facts,
+        retention=retention,
+        evidence=evidence,
+    )
+    quality = build_checkout_quality(diagnostics=diagnostics, guidance=guidance)
+    prompt = format_memory_checkout_prompt(
+        query="review auth credential exposure",
+        assembly_prompt="# Active Memory Working Set\n- Credential exposure found.",
+        current_facts=current_facts,
+        evidence=evidence,
+        quality=quality,
+        guidance=guidance,
+        diagnostics=diagnostics,
+    )
+
+    assert diagnostics["purpose_ontology_lens"]["profile"] == "security"
+    assert diagnostics["purpose_ontology_lens"]["current_fact_roles"][0]["roles"] == [
+        "credential",
+        "auth",
+    ]
+    assert diagnostics["evidence_policy"]["satisfied"] is False
+    assert diagnostics["evidence_policy"]["missing_requirements"] == ["mitigation_or_risk_owner"]
+    assert quality["answerability"] == "refresh_recommended"
+    assert quality["required_action"]["mode"] == "require_refresh"
+    assert "Purpose evidence policy is not satisfied" in quality["reasons"][-1]
+    assert "Evidence policy failure: Security memory requires mitigation" in prompt
     assert "## Checkout Quality" in prompt
     assert "refresh_recommended" in prompt
-    assert "Current citations: 0" in prompt
+    assert "Current citations: 1" in prompt
 
 
 def test_checkout_purpose_profile_conditions_guidance_and_prompt() -> None:

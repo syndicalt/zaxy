@@ -828,6 +828,37 @@ def test_beta_readiness_rejects_failing_purpose_benchmark_lane(tmp_path: Path) -
     assert "failing lanes: Purpose Recall" in checks["purpose_benchmark_gate"]["message"]
 
 
+def test_beta_readiness_rejects_empty_evidence_policy_fixture_evidence(tmp_path: Path) -> None:
+    """Evidence Policy Discipline must include archived fixture evidence."""
+    _write_minimal_beta_ready_project(tmp_path)
+    report_path = tmp_path / "reports" / "benchmarks" / "purpose-v1" / "purpose-benchmark.json"
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    for lane in report["lanes"]:
+        if lane["name"] == "Evidence Policy Discipline":
+            lane["evidence"] = {}
+            break
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+
+    checks = {check["name"]: check for check in run_beta_readiness(project_root=tmp_path)["checks"]}
+
+    assert checks["purpose_benchmark_gate"]["status"] == "error"
+    assert "Evidence Policy Discipline lane evidence is missing" in checks[
+        "purpose_benchmark_gate"
+    ]["message"]
+
+
+def test_beta_readiness_runs_purpose_evidence_policy_fixture(tmp_path: Path) -> None:
+    """Beta readiness should exercise high-risk purpose evidence policy fixtures."""
+    _write_minimal_beta_ready_project(tmp_path)
+
+    checks = {check["name"]: check for check in run_beta_readiness(project_root=tmp_path)["checks"]}
+
+    assert checks["purpose_evidence_policy"]["status"] == "ok"
+    assert "security, release, and Coordinate evidence-policy fixtures" in checks[
+        "purpose_evidence_policy"
+    ]["message"]
+
+
 def test_beta_readiness_rejects_slow_first_run_timing_report(tmp_path: Path) -> None:
     """Beta readiness should enforce the five-minute first-run budget."""
     _write_minimal_beta_ready_project(tmp_path)
@@ -5090,6 +5121,7 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
         "Consequence Retention",
         "Governed Forgetting",
         "Action Outcome Loop",
+        "Evidence Policy Discipline",
         "Cross-Role Citation",
         "Accepted-State Discipline",
     ]
@@ -5105,7 +5137,24 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
                 "threshold": 1.0,
                 "status": "passed",
                 "measurement": "fixture",
-                "evidence": {},
+                "evidence": (
+                    {
+                        "security": {
+                            "unsupported": {"satisfied": False},
+                            "supported": {"satisfied": True},
+                        },
+                        "release": {
+                            "unsupported": {"satisfied": False},
+                            "supported": {"satisfied": True},
+                        },
+                        "coordinate": {
+                            "unsupported": {"satisfied": False},
+                            "supported": {"satisfied": True},
+                        },
+                    }
+                    if name == "Evidence Policy Discipline"
+                    else {}
+                ),
             }
             for name in purpose_lanes
         ],

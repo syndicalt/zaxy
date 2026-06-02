@@ -3,9 +3,9 @@
     "Semantic Reach and Quarq require pinned same-harness adapters before Zaxy can publish comparative SOTA claims."
   ],
   "competitor_claim_status": "blocked",
-  "elapsed_ms": 1.899,
-  "generated_at": "2026-06-02T20:27:48.342820+00:00",
-  "lane_count": 7,
+  "elapsed_ms": 2.065,
+  "generated_at": "2026-06-02T21:45:55.136277+00:00",
+  "lane_count": 8,
   "lanes": [
     {
       "evidence": {
@@ -26,6 +26,33 @@
     },
     {
       "evidence": {
+        "path_overlays": {
+          "coding": {
+            "multiplier": 1.6875,
+            "relationship_roles": [
+              "failed_attempt"
+            ]
+          },
+          "coordinate": {
+            "multiplier": 1.74,
+            "relationship_roles": [
+              "proof_packet"
+            ]
+          },
+          "release": {
+            "multiplier": 1.74,
+            "relationship_roles": [
+              "release_gate"
+            ]
+          },
+          "security": {
+            "multiplier": 1.62,
+            "relationship_roles": [
+              "risk_acceptance",
+              "credential"
+            ]
+          }
+        },
         "signatures": {
           "coding": [
             "recall",
@@ -38,6 +65,12 @@
               "regression",
               "prior_fix",
               "open_blocker"
+            ],
+            [
+              "invariant",
+              "regression",
+              "prior_fix",
+              "test_evidence"
             ]
           ],
           "coordinate": [
@@ -51,6 +84,12 @@
               "pending_diagnostic",
               "conflict",
               "stale_evidence"
+            ],
+            [
+              "accepted_state",
+              "proof_packet",
+              "handoff",
+              "conflict"
             ]
           ],
           "release": [
@@ -64,6 +103,12 @@
               "regression",
               "changelog",
               "packaging"
+            ],
+            [
+              "release_gate",
+              "packaging",
+              "deployment",
+              "external_validation"
             ]
           ],
           "research": [
@@ -77,6 +122,12 @@
               "source",
               "contradiction",
               "method"
+            ],
+            [
+              "supports_claim",
+              "contradicts_claim",
+              "uses_method",
+              "open_question"
             ]
           ],
           "review": [
@@ -86,6 +137,12 @@
               "approve_or_block",
               "cited_current_facts_required",
               "preserve_risks_decisions_and_verification",
+              "risk",
+              "regression",
+              "missing_test",
+              "accepted_decision"
+            ],
+            [
               "risk",
               "regression",
               "missing_test",
@@ -103,13 +160,19 @@
               "credential",
               "auth",
               "authorization"
+            ],
+            [
+              "exposure",
+              "mitigation",
+              "risk_acceptance",
+              "authorization"
             ]
           ]
         }
       },
-      "measurement": "same source query resolves to distinct purpose-specific retrieval lenses",
+      "measurement": "same source query resolves to distinct purpose-specific retrieval lenses and graph path roles",
       "name": "Ontology Shift",
-      "score": 1.0,
+      "score": 0.75,
       "status": "passed",
       "threshold": 0.75
     },
@@ -173,6 +236,7 @@
     },
     {
       "evidence": {
+        "boosted_context": "migration retry",
         "feedback_payload": {
           "actor": "assistant",
           "citation": "eventloom://purpose/events/7#abc123",
@@ -215,10 +279,99 @@
           "query": "ship migration",
           "score": 0.91,
           "source": "eventloom"
+        },
+        "outcome_explanations": [
+          {
+            "latest_event_seq": 2,
+            "negative_count": 0,
+            "outcomes": [
+              "avoided_failed_path",
+              "prevented_redundant_investigation"
+            ],
+            "positive_count": 2,
+            "score_boost": 0.12,
+            "score_penalty": 0.0,
+            "suppression_candidate": false
+          },
+          {
+            "latest_event_seq": 4,
+            "negative_count": 2,
+            "outcomes": [
+              "caused_regression",
+              "failed"
+            ],
+            "positive_count": 0,
+            "score_boost": 0.0,
+            "score_penalty": 0.12,
+            "suppression_candidate": true
+          }
+        ]
+      },
+      "measurement": "purpose outcome history changes future rank and warning candidates",
+      "name": "Action Outcome Loop",
+      "score": 1.0,
+      "status": "passed",
+      "threshold": 1.0
+    },
+    {
+      "evidence": {
+        "coordinate": {
+          "supported": {
+            "missing_requirements": [],
+            "mode": "warn",
+            "satisfied": true,
+            "suggested_queries": []
+          },
+          "unsupported": {
+            "missing_requirements": [
+              "promotion_or_review_ref"
+            ],
+            "mode": "block_checkout",
+            "satisfied": false,
+            "suggested_queries": [
+              "Coordinate promotion review accepted parent-state evidence for coordinate: coordinate evidence policy fixture"
+            ]
+          }
+        },
+        "release": {
+          "supported": {
+            "missing_requirements": [],
+            "mode": "warn",
+            "satisfied": true,
+            "suggested_queries": []
+          },
+          "unsupported": {
+            "missing_requirements": [
+              "verification_refs"
+            ],
+            "mode": "require_refresh",
+            "satisfied": false,
+            "suggested_queries": [
+              "test changelog package evidence for release readiness for release: release evidence policy fixture"
+            ]
+          }
+        },
+        "security": {
+          "supported": {
+            "missing_requirements": [],
+            "mode": "warn",
+            "satisfied": true,
+            "suggested_queries": []
+          },
+          "unsupported": {
+            "missing_requirements": [
+              "mitigation_or_risk_owner"
+            ],
+            "mode": "require_refresh",
+            "satisfied": false,
+            "suggested_queries": [
+              "mitigation or risk owner evidence for security risk for security: security evidence policy fixture"
+            ]
+          }
         }
       },
-      "measurement": "feedback payload records useful-for-purpose outcome metadata",
-      "name": "Action Outcome Loop",
+      "measurement": "security, release, and Coordinate fixtures enforce missing and supported evidence policies",
+      "name": "Evidence Policy Discipline",
       "score": 1.0,
       "status": "passed",
       "threshold": 1.0
@@ -389,7 +542,7 @@
       "evidence": {
         "record_identities": [
           "docs/auth.md:turn-4",
-          "eventloom://mission-auth/events/1#f25ee23ec74d",
+          "eventloom://mission-auth/events/1#c4b7ccab2fca",
           "finding-accepted",
           "mission-auth"
         ],
@@ -403,7 +556,7 @@
       "threshold": 1.0
     }
   ],
-  "passed_lanes": 7,
+  "passed_lanes": 8,
   "status": "passed",
   "version": "purpose-v1"
 }

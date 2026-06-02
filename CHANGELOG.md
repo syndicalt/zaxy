@@ -69,6 +69,23 @@ All notable Zaxy release changes are recorded here.
   Loop, Cross-Role Citation, and Accepted-State Discipline while blocking
   Semantic Reach/Quarq comparative claims until same-harness adapters are
   pinned and scored.
+- Added the first `PurposeOntologyLens` overlay contract and high-risk
+  `EvidencePolicy` evaluator. Checkout diagnostics now expose purpose role
+  matches, lens metadata, missing evidence requirements, failure reasons, and
+  refresh queries for security, release, and Coordinate profiles without
+  rewriting Eventloom or graph facts. The `purpose-v1` Ontology Shift lane now
+  verifies purpose-specific graph path roles and edge multipliers.
+- Added synthesis promotion gating for high-risk purpose evidence failures:
+  synthesis artifacts now preserve promotion-gate/evidence-policy failures, and
+  positive `used` candidate feedback is rejected until answerability, required
+  evidence, and cited support-source checks pass. The `purpose-v1` benchmark now
+  includes an Evidence Policy Discipline lane, and beta readiness executes
+  security, release, and Coordinate policy fixtures.
+- Added replay-derived purpose outcome learning for Memory Checkout. Repeated
+  positive outcomes now apply bounded, explainable rank boosts for the matching
+  purpose, repeated negative outcomes surface suppression candidates and warning
+  pressure without deleting memory, and `memory.feedback` now projects auditable
+  feedback metadata into the graph.
 - Added `purpose_feedback_coverage` to CoordinationBench so Zaxy Coordinate and
   same-harness adapters can prove accepted parent-state feedback is tied to the
   `coordinate` purpose profile instead of generic retrieval usefulness.

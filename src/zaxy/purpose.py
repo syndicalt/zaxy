@@ -93,6 +93,86 @@ class PurposeRetrievalPolicy:
         }
 
 
+@dataclass(frozen=True)
+class PurposeOntologyLens:
+    """Retrieval-time graph ontology overlay for a purpose profile."""
+
+    profile: str
+    entity_roles: tuple[str, ...] = ()
+    relationship_roles: tuple[str, ...] = ()
+    edge_trust_multipliers: dict[str, float] | None = None
+    suppress_rules: tuple[str, ...] = ()
+    required_source_groups: tuple[str, ...] = ()
+
+    @property
+    def applied(self) -> bool:
+        """Return whether the lens changes graph interpretation."""
+        return bool(
+            self.entity_roles
+            or self.relationship_roles
+            or self.edge_trust_multipliers
+            or self.suppress_rules
+            or self.required_source_groups
+        )
+
+    def path_multiplier(self, relation_types: tuple[str, ...] | list[str]) -> float:
+        """Return a bounded trust multiplier for a traversal path."""
+        multipliers = self.edge_trust_multipliers or {}
+        if not multipliers or not relation_types:
+            return 1.0
+        multiplier = 1.0
+        for relation in relation_types:
+            normalized = _clean_text(relation).replace("-", "_")
+            multiplier *= multipliers.get(normalized, 1.0)
+        return max(0.25, min(2.5, multiplier))
+
+    def matched_relationship_roles(self, relation_types: tuple[str, ...] | list[str]) -> tuple[str, ...]:
+        """Return lens relationship roles that matched a traversal path."""
+        if not relation_types or not self.relationship_roles:
+            return ()
+        path_tokens = {
+            token
+            for relation in relation_types
+            for token in str(relation or "").casefold().replace("-", "_").split("_")
+            if token
+        }
+        matches = [
+            role
+            for role in self.relationship_roles
+            if any(token in path_tokens for token in str(role).casefold().replace("-", "_").split("_"))
+        ]
+        return tuple(dict.fromkeys(matches))
+
+    def matched_entity_roles(self, text: str) -> tuple[str, ...]:
+        """Return lens entity roles that match text for checkout diagnostics."""
+        if not text or not self.entity_roles:
+            return ()
+        tokens = {
+            token
+            for token in text.casefold().replace("-", "_").replace(":", "_").split("_")
+            if token
+        }
+        words = set(text.casefold().replace("-", " ").replace("_", " ").split())
+        matches = []
+        for role in self.entity_roles:
+            role_tokens = set(str(role).casefold().replace("-", "_").split("_"))
+            if role_tokens & tokens or role_tokens & words:
+                matches.append(role)
+        return tuple(dict.fromkeys(matches))
+
+    def to_diagnostics(self) -> dict[str, Any]:
+        """Return a JSON-serializable lens diagnostic payload."""
+        return {
+            "profile": self.profile,
+            "applied": self.applied,
+            "entity_roles": list(self.entity_roles),
+            "relationship_roles": list(self.relationship_roles),
+            "edge_trust_multipliers": dict(self.edge_trust_multipliers or {}),
+            "suppress_rules": list(self.suppress_rules),
+            "required_source_groups": list(self.required_source_groups),
+        }
+
+
 _PRESETS: dict[str, PurposeProfile] = {
     "general": PurposeProfile(),
     "coding": PurposeProfile(
@@ -248,6 +328,93 @@ _PURPOSE_SCORING_PROFILES = {
     "coordinate": "recall",
 }
 
+_PURPOSE_ONTOLOGY_LENSES: dict[str, PurposeOntologyLens] = {
+    "coding": PurposeOntologyLens(
+        profile="coding",
+        entity_roles=("artifact", "symbol", "test", "task", "decision", "failure"),
+        relationship_roles=("invariant", "regression", "prior_fix", "test_evidence", "failed_attempt"),
+        edge_trust_multipliers={
+            "tests_symbol": 1.25,
+            "calls_symbol": 1.15,
+            "implements_decision": 1.2,
+            "failed_attempt": 1.35,
+            "superseded_by": 0.6,
+        },
+        suppress_rules=("superseded_context", "uncited_claim"),
+        required_source_groups=("source_citation", "verification_or_source_citation"),
+    ),
+    "review": PurposeOntologyLens(
+        profile="review",
+        entity_roles=("risk", "finding", "test", "decision", "regression"),
+        relationship_roles=("risk", "regression", "missing_test", "accepted_decision", "blocker"),
+        edge_trust_multipliers={
+            "blocks_release": 1.4,
+            "missing_test": 1.3,
+            "accepted_decision": 1.2,
+            "low_trust_inference": 0.55,
+        },
+        suppress_rules=("pending_unreviewed_claim", "superseded_context", "low_trust_inference"),
+        required_source_groups=("accepted_or_cited_fact", "verification_evidence"),
+    ),
+    "release": PurposeOntologyLens(
+        profile="release",
+        entity_roles=("release_gate", "package", "test", "changelog", "deployment", "blocker"),
+        relationship_roles=("release_gate", "packaging", "deployment", "external_validation", "blocker"),
+        edge_trust_multipliers={
+            "passes_release_gate": 1.35,
+            "fails_release_gate": 1.45,
+            "has_changelog": 1.2,
+            "external_validation": 1.25,
+            "stale_gate_result": 0.5,
+        },
+        suppress_rules=("draft_claim", "uncited_release_assertion", "stale_gate_result"),
+        required_source_groups=("release_check_ref", "test_result_ref", "changelog_ref"),
+    ),
+    "security": PurposeOntologyLens(
+        profile="security",
+        entity_roles=("secret", "credential", "auth", "authorization", "vulnerability", "mitigation"),
+        relationship_roles=("exposure", "mitigation", "risk_acceptance", "authorization", "credential"),
+        edge_trust_multipliers={
+            "exposes_secret": 1.6,
+            "uses_credential": 1.35,
+            "mitigates_risk": 1.25,
+            "risk_accepted_by": 1.2,
+            "stale_mitigation": 0.45,
+        },
+        suppress_rules=("uncited_safe_claim", "low_trust_inference", "stale_mitigation"),
+        required_source_groups=("source_citation", "mitigation_ref", "risk_owner_ref"),
+    ),
+    "research": PurposeOntologyLens(
+        profile="research",
+        entity_roles=("claim", "source", "method", "benchmark", "contradiction", "question"),
+        relationship_roles=("supports_claim", "contradicts_claim", "uses_method", "open_question"),
+        edge_trust_multipliers={
+            "supports_claim": 1.15,
+            "contradicts_claim": 1.3,
+            "uses_method": 1.15,
+            "single_source_overclaim": 0.55,
+        },
+        suppress_rules=("single_source_overclaim", "uncited_claim", "stale_source"),
+        required_source_groups=("source_citation", "method_ref", "contradiction_ref"),
+    ),
+    "coordinate": PurposeOntologyLens(
+        profile="coordinate",
+        entity_roles=("mission", "finding", "conflict", "handoff", "proof_packet", "accepted_state"),
+        relationship_roles=("accepted_state", "proof_packet", "handoff", "conflict", "promotion"),
+        edge_trust_multipliers={
+            "mission_has_proof_packet": 1.45,
+            "proof_links_synthesis_artifact": 1.25,
+            "artifact_has_answer_candidate": 1.2,
+            "artifact_has_ledger_row": 1.2,
+            "promotes_finding": 1.35,
+            "worker_local_pending": 0.45,
+            "rejected_finding": 0.35,
+        },
+        suppress_rules=("worker_local_pending", "rejected_finding", "stale_unpromoted_finding"),
+        required_source_groups=("promotion_event_ref", "review_event_ref", "source_event_ref"),
+    ),
+}
+
 
 def purpose_profile(value: PurposeProfile | dict[str, Any] | str | None = None) -> PurposeProfile:
     """Normalize caller input into a stable purpose profile."""
@@ -292,6 +459,25 @@ def purpose_profile(value: PurposeProfile | dict[str, Any] | str | None = None) 
 def coordinate_purpose_profile() -> PurposeProfile:
     """Return the default purpose lens for Coordinate parent state."""
     return _PRESETS["coordinate"]
+
+
+def purpose_ontology_lens(
+    profile: PurposeProfile | dict[str, Any] | str | None = None,
+) -> PurposeOntologyLens:
+    """Return the retrieval-time ontology overlay for a purpose profile."""
+    normalized = purpose_profile(profile)
+    if normalized.profile == "general":
+        return PurposeOntologyLens(profile="general")
+    preset = _PURPOSE_ONTOLOGY_LENSES.get(normalized.profile)
+    if preset is not None:
+        return preset
+    return PurposeOntologyLens(
+        profile=normalized.profile,
+        entity_roles=normalized.ontology_lens,
+        relationship_roles=normalized.ontology_lens,
+        suppress_rules=normalized.suppress,
+        required_source_groups=normalized.required_evidence,
+    )
 
 
 def purpose_retrieval_policy(

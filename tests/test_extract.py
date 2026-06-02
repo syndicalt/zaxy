@@ -490,6 +490,48 @@ class TestMemoryReinforced:
         assert result.edges[0].relation_type == "reinforced_memory"
 
 
+class TestMemoryFeedback:
+    """Tests for memory.feedback extractor."""
+
+    def test_memory_feedback_projects_negative_outcome_metadata(self) -> None:
+        """Negative feedback should remain auditable and linked to target memory."""
+        event = _make_event(
+            "memory.feedback",
+            {
+                "entity_name": "migration retry",
+                "entity_type": "decision",
+                "feedback": "irrelevant",
+                "outcome": "caused_regression",
+                "citation": "eventloom://agent-1/events/9#bbbb",
+                "purpose": {
+                    "profile": "coding",
+                    "expected_action": "implement_or_verify",
+                },
+            },
+            actor="assistant",
+        )
+
+        result = extract(event)
+
+        feedback = next(entity for entity in result.entities if entity.entity_type == "memory_feedback")
+        target = next(entity for entity in result.entities if entity.name == "migration retry")
+        assert feedback.properties == {
+            "purpose_profile": "coding",
+            "purpose_expected_action": "implement_or_verify",
+            "outcome": "caused_regression",
+            "feedback": "irrelevant",
+            "citation": "eventloom://agent-1/events/9#bbbb",
+            "last_feedback_at": "2024-01-01T00:00:00Z",
+        }
+        assert target.properties["feedback"] == "irrelevant"
+        assert any(
+            edge.source == feedback.name
+            and edge.target == "migration retry"
+            and edge.relation_type == "feedback_about_memory"
+            for edge in result.edges
+        )
+
+
 class TestMemoryEvidenceFeedback:
     """Tests for row-level synthesis evidence feedback extractors."""
 

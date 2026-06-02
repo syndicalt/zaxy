@@ -18,6 +18,30 @@ def test_purpose_benchmark_passes_all_research_lanes() -> None:
     assert "Quarq" in report.competitor_claim_blockers[0]
 
 
+def test_purpose_benchmark_includes_evidence_policy_fixtures() -> None:
+    report = run_purpose_benchmark()
+    lane = next(lane for lane in report.lanes if lane.name == "Evidence Policy Discipline")
+
+    assert lane.status == "passed"
+    assert set(lane.evidence) == {"security", "release", "coordinate"}
+    for profile in ("security", "release", "coordinate"):
+        assert lane.evidence[profile]["unsupported"]["satisfied"] is False
+        assert lane.evidence[profile]["unsupported"]["suggested_queries"]
+        assert lane.evidence[profile]["supported"]["satisfied"] is True
+
+
+def test_purpose_benchmark_action_outcome_loop_proves_future_effect() -> None:
+    report = run_purpose_benchmark()
+    lane = next(lane for lane in report.lanes if lane.name == "Action Outcome Loop")
+
+    assert lane.status == "passed"
+    assert lane.evidence["boosted_context"] == "migration retry"
+    assert any(
+        explanation.get("suppression_candidate")
+        for explanation in lane.evidence["outcome_explanations"]
+    )
+
+
 def test_purpose_benchmark_cli_writes_json_and_markdown(tmp_path) -> None:
     runner = CliRunner()
     output_dir = tmp_path / "purpose-v1"

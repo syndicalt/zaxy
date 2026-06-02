@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from zaxy.evidence import build_evidence_set, select_checkout_evidence
+from zaxy.evidence import build_evidence_set, evaluate_evidence_policy, select_checkout_evidence
 from zaxy.retrieval_plan import build_evidence_plan
 
 
@@ -163,3 +163,79 @@ def test_checkout_evidence_selection_preserves_direct_fact_order() -> None:
 
     assert selection.current_facts == [first, second]
     assert selection.evidence == [second]
+
+
+def test_security_evidence_policy_blocks_without_mitigation_or_owner() -> None:
+    """Security checkouts should require more than a cited risk claim."""
+    fact = {
+        "content": "Credential exposure found in auth config.",
+        "source": "graph",
+        "citation": "eventloom://agent-1/events/4#dddddddddddd",
+    }
+    evidence_set = build_evidence_set(
+        query="review credential exposure",
+        evidence_plan=None,
+        current_facts=[fact],
+        evidence=[fact],
+    )
+
+    result = evaluate_evidence_policy(
+        profile="security",
+        query="review credential exposure",
+        current_facts=[fact],
+        evidence=[fact],
+        evidence_set=evidence_set,
+    )
+
+    assert result is not None
+    assert result.satisfied is False
+    assert result.mode == "require_refresh"
+    assert result.satisfied_requirements == ("source_citation",)
+    assert result.missing_requirements == ("mitigation_or_risk_owner",)
+    assert "mitigation or risk-owner" in result.failure_reasons[0]
+
+
+def test_release_evidence_policy_requires_gate_and_verification_refs() -> None:
+    """Release checkouts should require gate and verification evidence."""
+    fact = {
+        "content": "Release readiness is green according to the current gate.",
+        "source": "graph",
+        "citation": "eventloom://agent-1/events/5#eeeeeeeeeeee",
+    }
+
+    result = evaluate_evidence_policy(
+        profile="release",
+        query="ship release",
+        current_facts=[fact],
+        evidence=[fact],
+    )
+
+    assert result is not None
+    assert result.satisfied is False
+    assert result.mode == "require_refresh"
+    assert result.satisfied_requirements == ("release_gate",)
+    assert result.missing_requirements == ("verification_refs",)
+    assert result.suggested_queries == (
+        "test changelog package evidence for release readiness for release: ship release",
+    )
+
+
+def test_coordinate_evidence_policy_requires_promotion_review_and_source_refs() -> None:
+    """Coordinate checkouts should reject pending-looking evidence without parent authority."""
+    fact = {
+        "content": "Worker-local finding says auth cache is stale.",
+        "source": "graph",
+        "citation": "eventloom://worker/events/2#ffffffffffff",
+    }
+
+    result = evaluate_evidence_policy(
+        profile="coordinate",
+        query="handoff accepted auth state",
+        current_facts=[fact],
+        evidence=[fact],
+    )
+
+    assert result is not None
+    assert result.satisfied is False
+    assert result.mode == "block_checkout"
+    assert result.missing_requirements == ("promotion_or_review_ref",)

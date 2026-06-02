@@ -1534,6 +1534,64 @@ def _extract_projection_refresh_event(event: Event) -> ExtractionResult:
     )
 
 
+@register("memory.feedback")
+def _extract_memory_feedback(event: Event) -> ExtractionResult:
+    """Extract negative or neutral context feedback without mutating target memory."""
+    entity_name = _optional_text(event.payload.get("entity_name")) or f"memory:{event.seq}"
+    entity_type = _optional_text(event.payload.get("entity_type")) or "memory"
+    feedback = _optional_text(event.payload.get("feedback")) or "unknown"
+    citation = _optional_text(event.payload.get("citation"))
+    feedback_entity = ExtractedEntity(
+        name=f"{entity_type}:{entity_name}:feedback:{event.seq}",
+        entity_type="memory_feedback",
+        observed_at=event.timestamp,
+        summary=_optional_text(event.payload.get("reason")) or f"{feedback} feedback for {entity_name}",
+        properties=_merge_properties(
+            _feedback_purpose_properties(event.payload),
+            {
+                "feedback": feedback,
+                "citation": citation,
+                "last_feedback_at": event.timestamp,
+            },
+        )
+        or {},
+    )
+    target = ExtractedEntity(
+        name=entity_name,
+        entity_type=entity_type,
+        observed_at=event.timestamp,
+        properties=_merge_properties(
+            _feedback_purpose_properties(event.payload),
+            {
+                "feedback": feedback,
+                "citation": citation,
+                "last_feedback_at": event.timestamp,
+            },
+        )
+        or {},
+    )
+    actor = ExtractedEntity(name=event.actor, entity_type="actor", observed_at=event.timestamp)
+    edges = [
+        ExtractedEdge(
+            source=event.actor,
+            target=feedback_entity.name,
+            relation_type="recorded_memory_feedback",
+            valid_from=event.timestamp,
+        ),
+        ExtractedEdge(
+            source=feedback_entity.name,
+            target=entity_name,
+            relation_type="feedback_about_memory",
+            valid_from=event.timestamp,
+        ),
+    ]
+    return ExtractionResult(
+        entities=[feedback_entity, target, actor],
+        edges=edges,
+        source_event_seq=event.seq,
+    )
+
+
 @register("memory.bootstrap.shown")
 @register("memory.checkout.completed")
 @register("memory.feedback.recorded")
