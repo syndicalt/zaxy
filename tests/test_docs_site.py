@@ -68,11 +68,11 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     """The public site should explain the product, architecture, docs, and install path."""
     html = Path("site/index.html").read_text(encoding="utf-8")
 
-    assert "<title>Zaxy 1.0.0 - coordinator memory for agent teams</title>" in html
+    assert "<title>Zaxy - event-sourced memory for agent work</title>" in html
     assert 'name="description"' in html
     assert 'property="og:image"' in html
-    assert "Coordinator memory for agent teams" in html
-    assert "Run many agents without losing the plot" in html
+    assert "Event-sourced memory for agent work" in html
+    assert "purpose-conditioned checkout" in html
     assert "Worker sessions" in html
     assert "Parent mission" in html
     assert "Approval packets" in html
@@ -80,17 +80,21 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     assert "coordination_checkout" in html
     assert "coordination_approval_packet" in html
     assert "CoordinationAdapter" in html
+    assert "Purpose Benchmark" in html
     assert "CoordinationBench" in html
     assert "Eventloom source of truth" in html
     assert "Pathlight" in html
     assert "embedded Kuzu" in html
     assert "PyPI 1.0.2" in html
-    assert "1972 tests passed" in html
-    assert "92.04% coverage" in html
+    assert "purpose-v1 passed" in html
+    assert "Quarq/Hybi claims blocked" in html
     assert "external verification requested" in html
+    assert "public-derived purpose holdout" in html
+    assert "external Semantic Reach or Quarq superiority claims" in html
 
     for section_id in (
         "coordinate",
+        "purpose",
         "architecture",
         "mcp",
         "benchmarks",
@@ -505,9 +509,9 @@ def test_public_site_benchmark_claims_use_current_full_set_guardrails() -> None:
     html = Path("site/index.html").read_text(encoding="utf-8")
 
     assert "CoordinationBench v1" in html
-    assert "1.000 accepted precision" in html
-    assert "0.200 flat precision" in html
-    assert "Mem0, Agent Memory, and ActiveGraph" in html
+    assert "accepted-finding precision and recall" in html
+    assert "0.272727 precision" in html
+    assert "Mem0 / Agent Memory / ActiveGraph" in html
     assert "disclosure only" in html
     assert "Flat transcript" in html
     assert "Markdown notes" in html
@@ -794,17 +798,17 @@ def test_public_site_benchmark_claim_is_scoped_to_fixture() -> None:
     assert "Agent Memory" in html
     assert "ActiveGraph" in html
     assert "1.000" in html
-    assert "0.400" in html
-    assert "0.333" in html
-    assert "0.200" in html
+    assert "0.636364" in html
+    assert "0.666667" in html
+    assert "0.272727" in html
     assert "disclosure only" in html
     assert "not_run" in html
     assert 'class="benchmark-metrics"' in html
     assert 'class="benchmark-card benchmark-card-primary"' in html
     assert 'class="benchmark-comparison"' in html
     assert 'class="benchmark-links"' in html
-    assert "reports/benchmarks/coordination-v1/coordination-benchmark.md" in html
-    assert "reports/benchmarks/longmemeval-500-hash/live-benchmark.md" in html
+    assert "docs/benchmark-review.html" in html
+    assert "docs/external-validation.html" in html
     assert "docs/benchmarks.html" in html
     assert "docs/coordinate-roadmap.html" in html
     assert "production-grade vector RAG" not in html
