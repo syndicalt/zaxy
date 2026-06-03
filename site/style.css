@@ -1,5 +1,5 @@
 :root {
-  color-scheme: light;
+  color-scheme: light dark;
   --ink: #0b1014;
   --surface: #111820;
   --surface-raised: #18222c;
@@ -118,8 +118,8 @@ pre {
   gap: 24px;
   min-height: 70px;
   padding: 14px clamp(20px, 5vw, 72px);
-  border-bottom: 1px solid rgba(204, 215, 210, 0.82);
-  background: rgba(248, 250, 247, 0.93);
+  border-bottom: 1px solid var(--line-dark);
+  background: rgba(8, 12, 15, 0.96);
   backdrop-filter: blur(18px);
 }
 
@@ -131,7 +131,7 @@ pre {
 
 .brand {
   gap: 12px;
-  color: var(--ink);
+  color: #f8fbfa;
   font-weight: 850;
   text-decoration: none;
 }
@@ -141,10 +141,10 @@ pre {
   width: 32px;
   height: 32px;
   place-items: center;
-  border: 1px solid var(--ink);
+  border: 1px solid #f8fbfa;
   border-radius: 6px;
-  background: var(--ink);
-  color: var(--paper);
+  background: #f8fbfa;
+  color: var(--ink);
   font-family: var(--display);
   font-size: 20px;
   font-weight: 600;
@@ -154,7 +154,7 @@ pre {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 18px;
-  color: var(--muted);
+  color: #9faeaa;
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 1.2px;
@@ -167,15 +167,15 @@ pre {
 
 .nav-links a:hover,
 .nav-links a:focus-visible {
-  color: var(--ink);
+  color: #f8fbfa;
 }
 
 .nav-links .nav-cta {
   padding: 9px 13px;
-  border: 1px solid var(--ink);
+  border: 1px solid #f8fbfa;
   border-radius: 6px;
-  background: var(--ink);
-  color: var(--paper);
+  background: #f8fbfa;
+  color: var(--ink);
 }
 
 .hero {
@@ -183,8 +183,11 @@ pre {
   min-height: 88vh;
   overflow: hidden;
   padding: 120px clamp(20px, 5vw, 72px) 52px;
-  border-bottom: 1px solid var(--line);
-  background: var(--ink);
+  border-bottom: 1px solid var(--line-dark);
+  background:
+    linear-gradient(90deg, rgba(220, 230, 226, 0.055) 1px, transparent 1px) 0 0 / 86px 86px,
+    linear-gradient(180deg, rgba(220, 230, 226, 0.045) 1px, transparent 1px) 0 0 / 86px 86px,
+    var(--ink);
 }
 
 .hero-backdrop,
@@ -194,16 +197,12 @@ pre {
 }
 
 .hero-backdrop {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  object-position: center;
-  opacity: 0.34;
-  filter: saturate(1.08) contrast(1.08);
+  display: none;
 }
 
 .hero-shade {
-  background: rgba(8, 12, 15, 0.64);
+  pointer-events: none;
+  background: transparent;
 }
 
 .hero-inner,
