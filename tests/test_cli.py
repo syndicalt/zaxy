@@ -92,6 +92,76 @@ def test_memory_status_json_output(tmp_path: Path) -> None:
     assert payload["sessions"][0]["latest_hash"] == event.hash
 
 
+def test_memory_purpose_commands_report_status_lanes_and_feedback(tmp_path: Path) -> None:
+    """memory purpose should expose replay-only purpose diagnostics without graph services."""
+    eventloom = tmp_path / ".eventloom"
+    log = EventLog(eventloom / "default.jsonl")
+    log.append(
+        "memory.checkout.completed",
+        actor="zaxy-memory",
+        thread="default",
+        payload={
+            "purpose": {"profile": "legal", "evidence_policy": "exact_quote_and_citation_required"},
+            "retention": {
+                "purpose_policy": {
+                    "suppressed_count": 1,
+                    "suppressed_reasons": {"unsupported_legal_claim": 1},
+                }
+            },
+            "diagnostics": {
+                "evidence_policy": {
+                    "status": "missing",
+                    "missing": ["exact_quote"],
+                    "suggested_queries": ["refresh exact contract clause"],
+                }
+            },
+            "quality": {
+                "required_action": {
+                    "type": "memory_checkout",
+                    "query": "refresh exact contract clause",
+                }
+            },
+        },
+    )
+    log.append(
+        "memory.feedback",
+        actor="assistant",
+        thread="default",
+        payload={"purpose": {"profile": "legal"}, "citation": "event:default:1", "feedback": "rejected"},
+    )
+
+    runner = CliRunner()
+    status = runner.invoke(app, ["memory", "purpose", "status", "--eventloom-path", str(eventloom)])
+    lanes = runner.invoke(app, ["memory", "purpose", "lanes", "--eventloom-path", str(eventloom), "--json"])
+    feedback = runner.invoke(
+        app,
+        [
+            "memory",
+            "purpose",
+            "feedback",
+            "--eventloom-path",
+            str(eventloom),
+            "--profile",
+            "legal",
+            "--outcome",
+            "negative",
+            "--json",
+        ],
+    )
+
+    assert status.exit_code == 0
+    assert "active profile: legal" in status.output
+    assert "suppressed rows: 1" in status.output
+    assert lanes.exit_code == 0
+    lanes_payload = json.loads(lanes.output)
+    assert lanes_payload["lanes"][0]["profile"] == "legal"
+    assert lanes_payload["lanes"][0]["evidence_policy_fail_count"] == 1
+    assert feedback.exit_code == 0
+    feedback_payload = json.loads(feedback.output)
+    assert feedback_payload["targets"][0]["target"] == "citation:event:default:1"
+    assert feedback_payload["targets"][0]["negative_count"] == 1
+
+
 def test_trace_export_json_correlates_eventloom_sessions(tmp_path: Path) -> None:
     """trace export should expose neutral spans and edges from replayed Eventloom logs."""
     eventloom_path = tmp_path / ".eventloom"

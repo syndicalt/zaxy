@@ -1271,6 +1271,32 @@ class DashboardApp:
                     )
                 },
             )
+        if path == "/api/purpose/status":
+            session_id = _str_param(params, "session_id") or self.scope.session_id
+            from zaxy.purpose_control import build_purpose_status
+
+            return 200, headers, {"purpose": build_purpose_status(self.scope.eventloom_path, session_id=session_id)}
+        if path == "/api/purpose/lanes":
+            session_id = _str_param(params, "session_id") or self.scope.session_id
+            from zaxy.purpose_control import build_purpose_lanes
+
+            return 200, headers, {"purpose_lanes": build_purpose_lanes(self.scope.eventloom_path, session_id=session_id)}
+        if path == "/api/purpose/feedback":
+            session_id = _str_param(params, "session_id") or self.scope.session_id
+            profile = _str_param(params, "profile")
+            outcome = _str_param(params, "outcome") or "all"
+            limit = _int_param(params, "limit", default=20, minimum=1, maximum=250)
+            from zaxy.purpose_control import build_purpose_feedback
+
+            return 200, headers, {
+                "purpose_feedback": build_purpose_feedback(
+                    self.scope.eventloom_path,
+                    session_id=session_id,
+                    profile=profile,
+                    outcome=outcome,
+                    limit=limit,
+                )
+            }
         if path == "/api/checkout":
             checkout_query = _str_param(params, "query")
             if checkout_query is None:
@@ -1574,7 +1600,14 @@ class DashboardApp:
             "memory_activation": inspect_memory_activation(
                 eventloom_path=self.scope.eventloom_path,
             ),
+            "purpose": self._purpose_status_body(session_id=session_id),
         }
+
+    def _purpose_status_body(self, *, session_id: str | None) -> dict[str, Any]:
+        """Return replay-only purpose diagnostics for the dashboard overview."""
+        from zaxy.purpose_control import build_purpose_status
+
+        return build_purpose_status(self.scope.eventloom_path, session_id=session_id)
 
 
 def _str_param(params: dict[str, list[str]], name: str) -> str | None:
@@ -2122,6 +2155,7 @@ def render_dashboard_html() -> str:
     <button data-tab="sessions">Sessions</button>
     <button data-tab="graph">Graph</button>
     <button data-tab="coordinate">Coordinate</button>
+    <button data-tab="purpose">Purpose</button>
     <button data-tab="checkout">Checkout</button>
     <button data-tab="events">Events</button>
   </nav>
@@ -2141,6 +2175,8 @@ def render_dashboard_html() -> str:
         <div class="metric"><span>Latest capture</span><strong id="metric-latest-capture">-</strong></div>
         <div class="metric"><span>Latest reminder</span><strong id="metric-latest-reminder">-</strong></div>
         <div class="metric"><span>Last feedback</span><strong id="metric-last-feedback">-</strong></div>
+        <div class="metric"><span>Purpose profile</span><strong id="metric-purpose-profile">-</strong></div>
+        <div class="metric"><span>Suppressed rows</span><strong id="metric-purpose-suppressed">-</strong></div>
       </div>
       <div class="panel warning" id="memory-persistence-warning"></div>
       <div class="panel warning" id="memory-activation-warning"></div>
@@ -2167,6 +2203,29 @@ def render_dashboard_html() -> str:
           <button id="checkout-run-button" type="button">Run checkout</button>
         </div>
         <pre id="checkout-json">{}</pre>
+      </div>
+    </section>
+    <section class="tab" id="purpose">
+      <div class="panel">
+        <div class="grid">
+          <div class="metric"><span>Active profile</span><strong id="purpose-active-profile">-</strong></div>
+          <div class="metric"><span>Evidence policy</span><strong id="purpose-evidence-status">-</strong></div>
+          <div class="metric"><span>Suppressed</span><strong id="purpose-suppressed-count">-</strong></div>
+          <div class="metric"><span>Feedback</span><strong id="purpose-feedback-count">-</strong></div>
+          <div class="metric"><span>Coordinate accepted</span><strong id="purpose-coordinate-accepted">-</strong></div>
+          <div class="metric"><span>Coordinate pending</span><strong id="purpose-coordinate-pending">-</strong></div>
+          <div class="metric"><span>Coordinate stale</span><strong id="purpose-coordinate-stale">-</strong></div>
+          <div class="metric"><span>Proof packets</span><strong id="purpose-coordinate-proof-packets">-</strong></div>
+        </div>
+        <table>
+          <thead><tr><th>Profile</th><th>Checkouts</th><th>Evidence failures</th><th>Suppressed</th><th>Feedback</th></tr></thead>
+          <tbody id="purpose-lanes-body"></tbody>
+        </table>
+        <table>
+          <thead><tr><th>Target</th><th>Profile</th><th>Outcome</th><th>Latest</th></tr></thead>
+          <tbody id="purpose-feedback-body"></tbody>
+        </table>
+        <pre id="purpose-json">{}</pre>
       </div>
     </section>
     <section class="tab" id="coordinate">
@@ -2205,6 +2264,8 @@ def render_dashboard_html() -> str:
     const graphSearchUrl = "/api/graph/search";
     const graphNeighborhoodUrl = "/api/graph/neighborhood";
     const checkoutUrl = "/api/checkout";
+    const purposeStatusUrl = "/api/purpose/status";
+    const purposeFeedbackUrl = "/api/purpose/feedback";
     const coordinationMissionUrl = "/api/coordination/mission";
     const coordinationReviewExportUrl = "/api/coordinate/review-export";
     const coordinationReviewUrl = "/api/coordinate/review-finding";
@@ -2257,6 +2318,7 @@ def render_dashboard_html() -> str:
       document.getElementById("metric-latest-capture").textContent = status.memory_activation.latest_capture ? status.memory_activation.latest_capture.seq : "-";
       document.getElementById("metric-latest-reminder").textContent = status.memory_activation.latest_reminder ? status.memory_activation.latest_reminder.seq : "-";
       document.getElementById("metric-last-feedback").textContent = status.memory_persistence.last_feedback_seq || "-";
+      renderPurposeStatus(status.purpose || {});
       document.getElementById("memory-persistence-warning").textContent = status.memory_persistence.warning || "";
       document.getElementById("memory-activation-warning").textContent = status.memory_activation.status === "ok" ? "" : `${status.memory_activation.message}: ${(status.memory_activation.actions || []).join(" ")}`;
       document.getElementById("status-json").textContent = JSON.stringify(status, null, 2);
@@ -2306,6 +2368,35 @@ def render_dashboard_html() -> str:
       }
       const checkout = await fetch(`${checkoutUrl}?query=${encodeURIComponent(query)}&limit=10`).then((response) => response.json());
       document.getElementById("checkout-json").textContent = JSON.stringify(checkout, null, 2);
+    }
+    function renderPurposeStatus(purpose) {
+      const suppression = purpose.suppression || {};
+      const consequence = purpose.consequence_history || {};
+      const coordinate = purpose.coordinate || {};
+      const missions = coordinate.missions || [];
+      const coordinateTotals = missions.reduce((totals, mission) => ({
+        accepted: totals.accepted + (mission.accepted_count || 0),
+        pending: totals.pending + (mission.pending_count || 0),
+        stale: totals.stale + (mission.stale_count || 0),
+        proofPackets: totals.proofPackets + (mission.proof_packet_count || 0)
+      }), { accepted: 0, pending: 0, stale: 0, proofPackets: 0 });
+      document.getElementById("metric-purpose-profile").textContent = purpose.active_profile || "-";
+      document.getElementById("metric-purpose-suppressed").textContent = suppression.count || 0;
+      document.getElementById("purpose-active-profile").textContent = purpose.active_profile || "-";
+      document.getElementById("purpose-evidence-status").textContent = purpose.evidence_policy_status ? purpose.evidence_policy_status.status : "-";
+      document.getElementById("purpose-suppressed-count").textContent = suppression.count || 0;
+      document.getElementById("purpose-feedback-count").textContent = `+${consequence.positive_count || 0}/-${consequence.negative_count || 0}`;
+      document.getElementById("purpose-coordinate-accepted").textContent = coordinateTotals.accepted;
+      document.getElementById("purpose-coordinate-pending").textContent = coordinateTotals.pending;
+      document.getElementById("purpose-coordinate-stale").textContent = coordinateTotals.stale;
+      document.getElementById("purpose-coordinate-proof-packets").textContent = coordinateTotals.proofPackets;
+      document.getElementById("purpose-lanes-body").innerHTML = (purpose.lanes || []).map((lane) => `
+        <tr><td><code>${escapeHtml(lane.profile || "")}</code></td><td>${lane.checkout_count || 0}</td><td>${lane.evidence_policy_fail_count || 0}</td><td>${lane.suppressed_count || 0}</td><td>+${lane.positive_feedback_count || 0}/-${lane.negative_feedback_count || 0}</td></tr>
+      `).join("");
+      document.getElementById("purpose-feedback-body").innerHTML = (consequence.targets || []).map((target) => `
+        <tr><td><code>${escapeHtml(target.target || "")}</code></td><td>${escapeHtml(target.profile || "")}</td><td>+${target.positive_count || 0}/-${target.negative_count || 0}${target.suppression_candidate ? " suppress" : ""}</td><td>${target.latest_event ? target.latest_event.seq : ""}</td></tr>
+      `).join("");
+      document.getElementById("purpose-json").textContent = JSON.stringify(purpose, null, 2);
     }
     async function loadCoordinationMission() {
       const missionId = document.getElementById("coordination-mission-id").value.trim();

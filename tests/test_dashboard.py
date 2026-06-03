@@ -153,6 +153,55 @@ def test_dashboard_surfaces_memory_persistence_status(tmp_path: Path) -> None:
     assert body["memory_persistence"]["last_checkout_seq"] == 2
 
 
+def test_dashboard_surfaces_purpose_control_plane_without_graph_backend(tmp_path: Path) -> None:
+    """Purpose dashboard APIs should summarize replay state without graph services."""
+    workspace = tmp_path / "project"
+    eventloom = workspace / ".eventloom"
+    workspace.mkdir()
+    log = EventLog(eventloom / "default.jsonl")
+    log.append(
+        "memory.checkout.completed",
+        actor="zaxy-memory",
+        thread="default",
+        payload={
+            "purpose": {"profile": "support", "evidence_policy": "customer_thread_and_current_status_required"},
+            "retention": {"purpose_policy": {"suppressed_count": 1, "suppressed_reasons": {"stale_status": 1}}},
+            "diagnostics": {
+                "evidence_policy": {
+                    "status": "missing",
+                    "missing": ["current_status"],
+                    "suggested_queries": ["refresh support status"],
+                }
+            },
+            "quality": {"required_action": {"type": "memory_checkout", "query": "refresh support status"}},
+        },
+    )
+    log.append(
+        "memory.feedback",
+        actor="assistant",
+        thread="default",
+        payload={"purpose": {"profile": "support"}, "citation": "event:default:1", "feedback": "rejected"},
+    )
+    app = DashboardApp(resolve_dashboard_scope(DashboardConfig(workspace=workspace)))
+
+    status_code, _headers, body = app.handle_api("GET", "/api/purpose/status", "")
+    lanes_code, _lanes_headers, lanes_body = app.handle_api("GET", "/api/purpose/lanes", "")
+    feedback_code, _feedback_headers, feedback_body = app.handle_api(
+        "GET",
+        "/api/purpose/feedback",
+        "profile=support&outcome=negative",
+    )
+
+    assert status_code == 200
+    assert body["purpose"]["active_profile"] == "support"
+    assert body["purpose"]["suppression"]["count"] == 1
+    assert body["purpose"]["refresh_suggestions"][0]["query"] == "refresh support status"
+    assert lanes_code == 200
+    assert lanes_body["purpose_lanes"]["lanes"][0]["profile"] == "support"
+    assert feedback_code == 200
+    assert feedback_body["purpose_feedback"]["targets"][0]["negative_count"] == 1
+
+
 def test_dashboard_surfaces_memory_activation_status(tmp_path: Path) -> None:
     workspace = tmp_path / "project"
     workspace.mkdir()
@@ -272,6 +321,9 @@ def test_dashboard_shell_shows_memory_persistence_metrics() -> None:
     assert "checkout-query" in html
     assert "Run checkout" in html
     assert "checkout-json" in html
+    assert 'data-tab="purpose"' in html
+    assert "/api/purpose/status" in html
+    assert "purpose-lanes-body" in html
 
 
 def test_default_dashboard_graph_uses_eventloom_when_neo4j_is_absent(tmp_path: Path) -> None:

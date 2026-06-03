@@ -810,23 +810,30 @@
         <li>retained consequence history</li>
         <li>stale or missing evidence refresh suggestions</li>
         <li>Coordinate accepted-state versus worker-local diagnostics</li>
+      </ul>
+      <p><strong>Implemented through the local dashboard Purpose tab/API and the static Eventloom viewer Purpose panel, both backed by replay-only <code>purpose_control</code> summaries.</strong></p>
+      <ul>
         <li>Add CLI inspection:</li>
         <li><code>zaxy memory purpose status</code></li>
         <li><code>zaxy memory purpose lanes</code></li>
         <li><code>zaxy memory purpose feedback</code></li>
+      </ul>
+      <p><strong>Implemented as replay-only <code>memory purpose</code> subcommands.</strong></p>
+      <ul>
         <li>Keep Coordinate first in the UI, because it is the strongest flagship proof.</li>
       </ul>
+      <p><strong>Implemented by surfacing Coordinate accepted parent rows, pending/stale worker diagnostics, approval counts, and proof packet counts in the purpose status surface.</strong></p>
       <p>Exit criteria:</p>
       <ul>
-        <li>A maintainer can inspect why a checkout changed future work without reading raw JSON.</li>
-        <li>Coordinate users can see accepted parent memory, pending worker diagnostics, and proof packets in one surface.</li>
-        <li>Purpose diagnostics are available without requiring Neo4j.</li>
+        <li>A maintainer can inspect why a checkout changed future work without reading raw JSON. <strong>Implemented with human-readable CLI summaries and dashboard metrics.</strong></li>
+        <li>Coordinate users can see accepted parent memory, pending worker diagnostics, and proof packets in one surface. <strong>Implemented in <code>zaxy memory purpose status</code> and the dashboard Purpose tab.</strong></li>
+        <li>Purpose diagnostics are available without requiring Neo4j. <strong>Implemented by direct Eventloom replay; no projection backend is constructed.</strong></li>
       </ul>
       <h3 id="priority-7-same-harness-semantic-reach-and-quarq-evaluation">Priority 7: Same-Harness Semantic Reach and Quarq Evaluation</h3>
       <p>Problem: Zaxy now blocks comparative claims correctly, but it still lacks scored same-harness adapters for Semantic Reach / HyperBinder / Hybi and Quarq.</p>
       <p>Implementation:</p>
       <ul>
-        <li>Fill the packaged Quarq and Hybi runner manifests with pinned source refs, install commands, runtime commands, dataset contracts, and result export schemas.</li>
+        <li>Fill the packaged Quarq and Hybi runner manifests with pinned source refs, install commands, runtime commands, dataset contracts, and result export schemas. <strong>Implemented as pinned unsupported runner manifests: Quarq pins <code>quarqlabs/agent-oss</code> at <code>b68386048795765d46c87bef5bd88ecfb1301337</code>; Hybi pins <code>hybi==0.1.1</code> by PyPI wheel hash.</strong></li>
         <li>Add strict result audits:</li>
         <li>exact source ref</li>
         <li>command argv</li>
@@ -834,15 +841,23 @@
         <li>result fingerprint</li>
         <li>locally scored metrics</li>
         <li>failure logs when unsupported</li>
-        <li>Run them against CoordinationBench and the purpose benchmark where adapter capabilities allow.</li>
+      </ul>
+      <p><strong>Implemented for runner manifests/results; nonzero runner failures now archive stdout/stderr paths before raising.</strong></p>
+      <ul>
+        <li>Run them against CoordinationBench and the purpose benchmark where adapter capabilities allow. <strong>Not claimable yet: packaged Quarq/Hybi commands are explicit unsupported runners until real workload replay adapters exist.</strong></li>
         <li>Keep disclosure-only status until results are locally reproducible.</li>
       </ul>
+      <p><strong>Implemented; the competitor claim gate still requires completed locally scored Quarq and Hybi rows.</strong></p>
       <p>Exit criteria:</p>
       <ul>
         <li><code>competitor_claim_gate</code> can pass only with completed Quarq and Hybi rows.</li>
-        <li>Public benchmark docs distinguish unsupported adapter gaps from scored performance gaps.</li>
+      </ul>
+      <p><strong>Implemented.</strong></p>
+      <ul>
+        <li>Public benchmark docs distinguish unsupported adapter gaps from scored performance gaps. <strong>Implemented in <code>docs/benchmarks.md</code>.</strong></li>
         <li>No public copy uses SOTA or superiority language without same-harness results.</li>
       </ul>
+      <p><strong>Maintained by disclosure-only docs and release checks.</strong></p>
       <h3 id="priority-8-representative-purpose-holdouts">Priority 8: Representative Purpose Holdouts</h3>
       <p>Problem: <code>purpose-v1</code> is a deterministic internal gate. It proves the contract, but it is not yet a representative public benchmark.</p>
       <p>Implementation:</p>
@@ -852,14 +867,24 @@
         <li>security over redacted vulnerability/fix histories</li>
         <li>support/product/legal over synthetic but realistic document transcripts</li>
         <li>Coordinate over multi-agent missions with unseen worker conflicts</li>
+      </ul>
+      <p><strong>Implemented as <code>reports/benchmarks/purpose-v1/holdouts/public-derived-purpose-v1/</code>, a diagnostic public-derived pack with source disclosures and five frozen representative cases.</strong></p>
+      <ul>
         <li>Add metrics for answerability, citation coverage, ontology shift, consequence retention, governed forgetting, and action outcome effect.</li>
+      </ul>
+      <p><strong>Implemented in <code>holdout_reports.public-derived-purpose-v1.metrics</code>, kept separate from <code>passed_lanes</code>.</strong></p>
+      <ul>
         <li>Archive hash fingerprints and forbid tuning on holdout answers.</li>
       </ul>
+      <p><strong>Implemented with canonical pack fingerprint <code>0d8217bb4e905164305970050ef34c987d7e9b287ce648a1730685f3dd0e61f6</code> and no-tuning limitations in the pack README/report.</strong></p>
       <p>Exit criteria:</p>
       <ul>
-        <li>Internal deterministic gates remain fast.</li>
+        <li>Internal deterministic gates remain fast. <strong>Implemented; holdouts are optional/diagnostic and do not affect deterministic lane count.</strong></li>
         <li>Public-derived holdouts are reported separately from first-party smoke lanes.</li>
-        <li>Zaxy can state where it is strong and where it still fails without overstating the result.</li>
+      </ul>
+      <p><strong>Implemented as <code>holdout_reports</code> and a separate Markdown section.</strong></p>
+      <ul>
+        <li>Zaxy can state where it is strong and where it still fails without overstating the result. <strong>Implemented through forbidden-overclaim fields, source disclosures, and diagnostic holdout status.</strong></li>
       </ul>
       <h3 id="recommended-order">Recommended Order</h3>
       <ol>

@@ -12,7 +12,16 @@ from pathlib import Path
 import zaxy.external_validation as external_validation
 from zaxy.event import EventLog
 from zaxy.external_validation import validate_external_validation_report
-from zaxy.release import package_version, run_beta_readiness
+from zaxy.release import (
+    _check_beta_roadmap,
+    _check_capture_happy_path,
+    _check_coordination_competitor_claim_posture,
+    _check_docs_happy_path,
+    _check_first_run_timing,
+    _overall_status,
+    package_version,
+    run_beta_readiness,
+)
 
 
 def test_pyproject_declares_typed_package_and_release_tools() -> None:
@@ -874,6 +883,139 @@ def test_beta_readiness_rejects_slow_first_run_timing_report(tmp_path: Path) -> 
     assert checks["first_run_timing"]["action"] == (
         "Update docs/examples/first-run-timing-report.json with a passing clean first-run timing report."
     )
+
+
+def test_first_run_timing_gate_reports_missing_and_invalid_json(tmp_path: Path) -> None:
+    missing = _check_first_run_timing(tmp_path)
+    assert missing["status"] == "error"
+    assert "missing or unreadable" in missing["message"]
+
+    report = tmp_path / "docs" / "examples" / "first-run-timing-report.json"
+    report.parent.mkdir(parents=True)
+    report.write_text("{not-json", encoding="utf-8")
+
+    invalid = _check_first_run_timing(tmp_path)
+    assert invalid["status"] == "error"
+    assert "invalid JSON" in invalid["message"]
+
+
+def test_first_run_timing_gate_reports_missing_fields_and_formats_decimals(tmp_path: Path) -> None:
+    report = tmp_path / "docs" / "examples" / "first-run-timing-report.json"
+    report.parent.mkdir(parents=True)
+    report.write_text(
+        json.dumps(
+            {
+                "threshold_seconds": 299.5,
+                "time_to_successful_doctor_seconds": True,
+                "time_to_first_successful_example_seconds": 301.25,
+                "requires_sidecar": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    result = _check_first_run_timing(tmp_path)
+
+    assert result["status"] == "error"
+    assert "threshold_seconds=299.5 must be 300" in result["message"]
+    assert "time_to_successful_doctor_seconds is missing" in result["message"]
+    assert "time_to_first_successful_example_seconds=301.25 exceeds 300" in result["message"]
+    assert "requires_sidecar must be false" in result["message"]
+
+
+def test_release_doc_gates_report_missing_happy_path_references(tmp_path: Path) -> None:
+    readme = tmp_path / "README.md"
+    readme.write_text("zaxy init\n", encoding="utf-8")
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "getting-started.md").write_text("zaxy memory checkout\n", encoding="utf-8")
+    (docs / "testing.md").write_text("scripts/beta-uat.sh\n", encoding="utf-8")
+
+    docs_result = _check_docs_happy_path(tmp_path)
+    capture_result = _check_capture_happy_path(tmp_path)
+    roadmap_result = _check_beta_roadmap(tmp_path)
+
+    assert docs_result["status"] == "error"
+    assert "pipx install zaxy-memory" in docs_result["message"]
+    assert capture_result["status"] == "error"
+    assert "deterministic" in capture_result["message"]
+    assert roadmap_result["status"] == "error"
+    assert "BETA.md is missing or unreadable" in roadmap_result["message"]
+
+
+def test_release_doc_gates_accept_complete_happy_path_references(tmp_path: Path) -> None:
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (tmp_path / "README.md").write_text(
+        "pipx install zaxy-memory\nzaxy init\nzaxy memory bootstrap\n",
+        encoding="utf-8",
+    )
+    (docs / "getting-started.md").write_text(
+        "zaxy memory checkout\nzaxy doctor --beta-readiness\n"
+        "deterministic\nzaxy capture start\nzaxy capture status\n",
+        encoding="utf-8",
+    )
+    (docs / "testing.md").write_text("scripts/beta-uat.sh\n", encoding="utf-8")
+    (docs / "hooks.md").write_text("zaxy hook-status\nobservation coverage\n", encoding="utf-8")
+    (docs / "mcp.md").write_text("zaxy capture-soak\n", encoding="utf-8")
+    (tmp_path / "BETA.md").write_text(
+        "Git for LLM memory\nMemPalace-comparable\ntemporal recall\nsource recall\n"
+        "graph traversal\ncontext-collapse\nCrewAI\ncapture soak\nrelease criteria\n",
+        encoding="utf-8",
+    )
+
+    assert _check_docs_happy_path(tmp_path)["status"] == "ok"
+    assert _check_capture_happy_path(tmp_path)["status"] == "ok"
+    assert _check_beta_roadmap(tmp_path)["status"] == "ok"
+
+
+def test_coordination_competitor_posture_reports_completed_adapter_audit_defects(tmp_path: Path) -> None:
+    report_dir = tmp_path / "reports" / "benchmarks" / "coordination-real-v1"
+    manifest_dir = report_dir / "competitor-runner-manifests"
+    docs_dir = tmp_path / "docs"
+    manifest_dir.mkdir(parents=True)
+    docs_dir.mkdir()
+    docs_text = (
+        "competitor_claim_gate\n--require-competitor-claim quarq\n"
+        "--require-competitor-claim hybi\ndisclosure-only\npublic-claim gate\n"
+    )
+    (docs_dir / "benchmarks.md").write_text(docs_text, encoding="utf-8")
+    (docs_dir / "coordinate-roadmap.md").write_text(docs_text, encoding="utf-8")
+    (report_dir / "coordination-benchmark.md").write_text("## Competitor Claim Gate\n", encoding="utf-8")
+    for name in ("quarq", "hybi"):
+        (manifest_dir / f"{name}.runner-manifest.template.json").write_text("{}", encoding="utf-8")
+    report = {
+        "competitor_adapters": {
+            "quarq": {
+                "status": "completed",
+                "claim_status": "same_harness",
+                "metrics": {},
+                "result_audit": {"manifest": {"name": "quarq"}},
+            },
+            "hybi": {
+                "status": "completed",
+                "claim_status": "same_harness",
+                "metrics": {},
+                "result_audit": {"result_fingerprint": "", "manifest": None},
+            },
+        },
+        "competitor_claim_gate": {"status": "passed", "completed_adapters": ["quarq"]},
+    }
+    (report_dir / "coordination-benchmark.json").write_text(json.dumps(report), encoding="utf-8")
+
+    result = _check_coordination_competitor_claim_posture(tmp_path)
+
+    assert result["status"] == "error"
+    assert "quarq result audit is missing result_fingerprint" in result["message"]
+    assert "quarq result audit manifest missing" in result["message"]
+    assert "hybi result audit manifest is missing" in result["message"]
+    assert "passed claim gate must include completed quarq and hybi" in result["message"]
+
+
+def test_release_overall_status_precedence() -> None:
+    assert _overall_status([{"status": "ok"}, {"status": "warning"}]) == "warning"
+    assert _overall_status([{"status": "warning"}, {"status": "error"}]) == "error"
+    assert _overall_status([{"status": "ok"}]) == "ok"
 
 
 def test_beta_readiness_requires_checkout_token_efficiency_guardrail(tmp_path: Path) -> None:
@@ -5056,7 +5198,8 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
         "Run `zaxy coordinate benchmark --require-competitor-claim quarq "
         "--require-competitor-claim hybi ...`; otherwise Quarq/Hybi remain "
         "disclosure-only. The purpose-v1 benchmark blocks Semantic Reach and "
-        "Quarq comparative claims until same-harness adapters are pinned.\n",
+        "Quarq comparative claims until same-harness adapters are pinned. "
+        "Public-derived purpose holdouts are diagnostic and separate from lanes.\n",
         encoding="utf-8",
     )
     (root / "docs" / "coordinate-roadmap.md").write_text(
@@ -5196,6 +5339,15 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
             for name in purpose_lanes
         ],
         "competitor_claim_status": "blocked",
+        "holdout_reports": {
+            "public-derived-purpose-v1": {
+                "pack_id": "public-derived-purpose-v1",
+                "claim_status": "public_derived_holdout",
+                "gate_status": "diagnostic",
+                "pack_fingerprint": "fixture-holdout-fingerprint",
+                "metrics": {"case_count": 5},
+            }
+        },
         "competitor_claim_blockers": [
             "Semantic Reach and Quarq require pinned same-harness adapters.",
         ],
@@ -5207,7 +5359,20 @@ def _write_minimal_beta_ready_project(root: Path) -> None:
         encoding="utf-8",
     )
     (purpose_report_dir / "purpose-benchmark.md").write_text(
-        "# Purpose Benchmark\n\nPurpose Recall\nAccepted-State Discipline\n",
+        "# Purpose Benchmark\n\nPurpose Recall\nAccepted-State Discipline\nPublic-Derived Holdouts\n",
+        encoding="utf-8",
+    )
+    holdout_dir = purpose_report_dir / "holdouts" / "public-derived-purpose-v1"
+    holdout_dir.mkdir(parents=True)
+    (holdout_dir / "holdout-pack.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "purpose-holdout-pack-v1",
+                "pack_id": "public-derived-purpose-v1",
+                "claim_status": "public_derived_holdout",
+                "fingerprint": "fixture-holdout-fingerprint",
+            }
+        ),
         encoding="utf-8",
     )
     (root / "docs" / "examples" / "first-run-timing-report.json").write_text(

@@ -15,10 +15,10 @@
 | parent_checkout_answerability | 1.0 |
 | citation_coverage | 1.0 |
 | eventloom_replayable | True |
-| returned_tokens | 19329 |
-| injected_tokens | 19329 |
-| brief_latency_ms | 4.446 |
-| promotion_latency_ms | 115.125 |
+| returned_tokens | 24057 |
+| injected_tokens | 24057 |
+| brief_latency_ms | 4.017 |
+| promotion_latency_ms | 125.48 |
 | accepted_state_synthesis_quality | 1.0 |
 | non_authoritative_leakage | 1.0 |
 | purpose_feedback_coverage | 1.0 |
@@ -63,9 +63,9 @@
 |---------|----------|--------|--------------|----------|
 | ActiveGraph | coordinationbench-v1 | not_run | disclosure_only | No pinned adapter package/version and same-harness workload replay contract has been configured. |
 | Agent Memory | coordinationbench-v1 | not_run | disclosure_only | No pinned adapter package/version and same-harness workload replay contract has been configured. |
-| Semantic Reach / HyperBinder / Hybi | coordinationbench-v1 | not_run | disclosure_only | No pinned HyperBinder/Hybi server/runtime, source ref, and same-harness workload replay contract has been configured. |
+| Semantic Reach / HyperBinder / Hybi | coordinationbench-v1 | not_run | disclosure_only | Pinned hybi SDK metadata exists, but no completed same-harness HyperBinder runtime result has been locally scored. |
 | Mem0 | coordinationbench-v1 | not_run | disclosure_only | No pinned adapter package/version and same-harness workload replay contract has been configured. |
-| Quarq | coordinationbench-v1 | not_run | disclosure_only | No pinned Quarq runner manifest, source ref, and same-harness workload replay contract has been configured. |
+| Quarq | coordinationbench-v1 | not_run | disclosure_only | Pinned Quarq source metadata exists, but no completed same-harness CoordinationBench result has been locally scored. |
 
 ## Limitations
 

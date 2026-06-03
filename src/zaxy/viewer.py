@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from zaxy.event import Event, EventLog
+from zaxy.purpose_control import build_purpose_status
 
 BOOTSTRAP_EVENTS = {
     "session.genesis",
@@ -79,6 +80,7 @@ def build_viewer_model(path: str | Path) -> dict[str, Any]:
         "sessions": sorted(sessions.values(), key=lambda item: str(item["session_id"])),
         "events": events,
         "integrity": integrity,
+        "purpose": build_purpose_status(source),
     }
 
 
@@ -214,6 +216,8 @@ def render_viewer_html(model: dict[str, Any]) -> str:
         <div class="stat"><strong id="total-sessions">0</strong><span>Sessions</span></div>
         <div class="stat"><strong id="total-logs">0</strong><span>Logs</span></div>
       </div>
+      <h2>Purpose</h2>
+      <div id="purpose"></div>
       <div id="sessions"></div>
     </aside>
     <section>
@@ -257,6 +261,7 @@ def render_viewer_html(model: dict[str, Any]) -> str:
     totalEvents.textContent = data.total_events;
     totalSessions.textContent = data.sessions.length;
     totalLogs.textContent = data.log_paths.length;
+    renderPurpose(data.purpose || {{}});
     sessions.innerHTML = data.sessions.map((session) => `
       <div class="session">
         <strong>${{escapeHtml(session.session_id)}}</strong>
@@ -273,6 +278,27 @@ def render_viewer_html(model: dict[str, Any]) -> str:
         "\\"": "&quot;",
         "'": "&#39;"
       }}[char]));
+    }}
+
+    function renderPurpose(purpose) {{
+      const el = document.querySelector("#purpose");
+      const suppression = purpose.suppression || {{}};
+      const consequence = purpose.consequence_history || {{}};
+      const coordinate = purpose.coordinate || {{}};
+      const missions = coordinate.missions || [];
+      const accepted = missions.reduce((total, mission) => total + (mission.accepted_count || 0), 0);
+      const pending = missions.reduce((total, mission) => total + (mission.pending_count || 0), 0);
+      const stale = missions.reduce((total, mission) => total + (mission.stale_count || 0), 0);
+      const proofPackets = missions.reduce((total, mission) => total + (mission.proof_packet_count || 0), 0);
+      el.innerHTML = `
+        <div class="session">
+          <strong>${{escapeHtml(purpose.active_profile || "none")}}</strong>
+          <div class="subtle">evidence: ${{escapeHtml((purpose.evidence_policy_status || {{}}).status || "missing")}}</div>
+          <div class="subtle">suppressed: ${{suppression.count || 0}}</div>
+          <div class="subtle">feedback: +${{consequence.positive_count || 0}} / -${{consequence.negative_count || 0}}</div>
+          <div class="subtle">Coordinate: accepted=${{accepted}} pending=${{pending}} stale=${{stale}} proof_packets=${{proofPackets}}</div>
+        </div>
+      `;
     }}
 
     function renderEvents() {{

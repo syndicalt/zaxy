@@ -36,7 +36,9 @@
         "install_command",
         "run_command",
         "source_url",
-        "source_ref"
+        "source_ref",
+        "dataset_contract",
+        "result_export_schema"
       ],
       "properties": {
         "name": {
@@ -78,6 +80,14 @@
           "minLength": 1
         },
         "source_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "dataset_contract": {
+          "type": "string",
+          "minLength": 1
+        },
+        "result_export_schema": {
           "type": "string",
           "minLength": 1
         }

@@ -1967,6 +1967,32 @@ class TestContextLifecycleTools:
                     },
                 ]
             },
+            "purpose_ontology_lens": {
+                "applied": True,
+                "profile": "review",
+                "entity_roles": ["risk", "finding", "test", "decision", "regression"],
+                "relationship_roles": [
+                    "risk",
+                    "regression",
+                    "missing_test",
+                    "accepted_decision",
+                    "blocker",
+                ],
+                "current_fact_roles": [],
+                "evidence_roles": [],
+                "required_source_groups": ["accepted_or_cited_fact", "verification_evidence"],
+                "suppress_rules": [
+                    "pending_unreviewed_claim",
+                    "superseded_context",
+                    "low_trust_inference",
+                ],
+                "edge_trust_multipliers": {
+                    "accepted_decision": 1.2,
+                    "blocks_release": 1.4,
+                    "low_trust_inference": 0.55,
+                    "missing_test": 1.3,
+                },
+            },
         }
         assert output["guidance"]["recommended_next_call"] == {
             "tool": "memory_checkout",

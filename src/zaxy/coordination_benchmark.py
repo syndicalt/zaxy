@@ -48,15 +48,53 @@ COORDINATION_COMPETITOR_ADAPTERS = {
     "quarq": {
         "display_name": "Quarq",
         "adapter_contract": "coordinationbench-v1",
+        "adapter_version": "v0.4.0",
+        "install_command": (
+            "git clone https://github.com/quarqlabs/agent-oss.git quarq-agent-oss && "
+            "git -C quarq-agent-oss checkout b68386048795765d46c87bef5bd88ecfb1301337"
+        ),
+        "run_command": [
+            "python",
+            "-m",
+            "zaxy.resources.coordinationbench.unsupported_runner",
+            "--adapter",
+            "quarq",
+        ],
+        "source_url": "https://github.com/quarqlabs/agent-oss",
+        "source_ref": "git:b68386048795765d46c87bef5bd88ecfb1301337",
+        "capability_status": "unsupported_runner_required",
+        "unsupported_reason": (
+            "Quarq Agent is a local personal-memory agent, but no Zaxy-pinned "
+            "CoordinationBench runner adapter is committed for its current public runtime."
+        ),
         "blockers": [
-            "No pinned Quarq runner manifest, source ref, and same-harness workload replay contract has been configured.",
+            "Pinned Quarq source metadata exists, but no completed same-harness CoordinationBench result has been locally scored.",
         ],
     },
     "hybi": {
         "display_name": "Semantic Reach / HyperBinder / Hybi",
         "adapter_contract": "coordinationbench-v1",
+        "adapter_version": "hybi==0.1.1",
+        "install_command": (
+            "pip install hybi==0.1.1 "
+            "# expected wheel sha256:96dc256022d74ae7d05a91cb0cccfd8cd561bf25f91a21540b20a39f7748e223"
+        ),
+        "run_command": [
+            "python",
+            "-m",
+            "zaxy.resources.coordinationbench.unsupported_runner",
+            "--adapter",
+            "hybi",
+        ],
+        "source_url": "https://pypi.org/project/hybi/0.1.1/",
+        "source_ref": "pypi:hybi==0.1.1 sha256:96dc256022d74ae7d05a91cb0cccfd8cd561bf25f91a21540b20a39f7748e223",
+        "capability_status": "unsupported_runner_required",
+        "unsupported_reason": (
+            "The public hybi package is an HTTP SDK for a running HyperBinder server; "
+            "Zaxy has no pinned HyperBinder server/runtime adapter for CoordinationBench replay."
+        ),
         "blockers": [
-            "No pinned HyperBinder/Hybi server/runtime, source ref, and same-harness workload replay contract has been configured.",
+            "Pinned hybi SDK metadata exists, but no completed same-harness HyperBinder runtime result has been locally scored.",
         ],
     },
 }
@@ -69,6 +107,8 @@ COORDINATION_COMPETITOR_MANIFEST_FIELDS = (
     "run_command",
     "source_url",
     "source_ref",
+    "dataset_contract",
+    "result_export_schema",
 )
 COORDINATION_COMPETITOR_RUNNER_PLACEHOLDER = "__REPLACE_WITH_PINNED_RUNNER_ARGV__"
 
@@ -562,15 +602,22 @@ def coordination_competitor_runner_manifest_templates(
     """
     manifests: dict[str, dict[str, Any]] = {}
     for name, spec in sorted(COORDINATION_COMPETITOR_ADAPTERS.items()):
+        run_command = spec.get("run_command")
+        if not isinstance(run_command, list):
+            run_command = [COORDINATION_COMPETITOR_RUNNER_PLACEHOLDER]
         manifests[name] = {
             "name": name,
             "display_name": str(spec["display_name"]),
             "adapter_contract": "coordinationbench-v1",
-            "adapter_version": "replace-with-pinned-version",
-            "install_command": "replace-with-reproducible-install-command",
-            "run_command": [COORDINATION_COMPETITOR_RUNNER_PLACEHOLDER],
-            "source_url": "replace-with-adapter-source-url",
-            "source_ref": "replace-with-pinned-source-ref",
+            "adapter_version": str(spec.get("adapter_version") or "replace-with-pinned-version"),
+            "install_command": str(spec.get("install_command") or "replace-with-reproducible-install-command"),
+            "run_command": [str(item) for item in run_command],
+            "source_url": str(spec.get("source_url") or "replace-with-adapter-source-url"),
+            "source_ref": str(spec.get("source_ref") or "replace-with-pinned-source-ref"),
+            "dataset_contract": "coordinationbench-v1 workload JSON; runner receives --workload <path>",
+            "result_export_schema": "schemas/result.schema.json; runner must write --output <path>",
+            "capability_status": str(spec.get("capability_status") or "template"),
+            "unsupported_reason": str(spec.get("unsupported_reason") or ""),
             "workload_fingerprint": workload.fingerprint,
             "workload_file": "coordination-workload.json",
             "result_file": f"{name}-coordination-result.json",
@@ -844,13 +891,16 @@ def run_coordination_competitor_runner(
         raise TimeoutError(
             f"CoordinationBench competitor runner timed out for {name} after {timeout_seconds}s"
         ) from exc
-    if completed.returncode != 0:
-        stderr = completed.stderr.strip()
-        raise RuntimeError(f"CoordinationBench competitor runner failed for {name}: {stderr}")
     stdout_path = output_dir / f"{name}-runner.stdout.txt"
     stderr_path = output_dir / f"{name}-runner.stderr.txt"
     stdout_path.write_text(completed.stdout, encoding="utf-8")
     stderr_path.write_text(completed.stderr, encoding="utf-8")
+    if completed.returncode != 0:
+        stderr = completed.stderr.strip()
+        raise RuntimeError(
+            f"CoordinationBench competitor runner failed for {name}: {stderr} "
+            f"(stdout={stdout_path}, stderr={stderr_path})"
+        )
     if not result_path.is_file():
         raise RuntimeError(f"CoordinationBench competitor runner did not write result: {result_path}")
     metrics, audit = _score_competitor_result_file(name, workload, result_path)
@@ -1236,6 +1286,8 @@ def _competitor_result_template(name: str, workload: CoordinationBenchWorkload) 
             "run_command": "replace-with-runner-entrypoint",
             "source_url": "replace-with-adapter-source-url",
             "source_ref": "replace-with-pinned-source-ref",
+            "dataset_contract": "coordinationbench-v1 workload JSON; runner receives --workload <path>",
+            "result_export_schema": "schemas/result.schema.json; runner must write --output <path>",
         },
         "cases": [
             {

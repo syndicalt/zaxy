@@ -13,6 +13,8 @@
     "run_command",
     "source_url",
     "source_ref",
+    "dataset_contract",
+    "result_export_schema",
     "workload_fingerprint"
   ],
   "properties": {
@@ -47,6 +49,14 @@
       "minLength": 1
     },
     "source_ref": {
+      "type": "string",
+      "minLength": 1
+    },
+    "dataset_contract": {
+      "type": "string",
+      "minLength": 1
+    },
+    "result_export_schema": {
       "type": "string",
       "minLength": 1
     },

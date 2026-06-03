@@ -96,6 +96,17 @@ All notable Zaxy release changes are recorded here.
   backpointers, ingestion audits flag irreversible purpose labels, and
   `purpose-v1` proves one customer artifact can rebuild distinct support,
   product, legal, and executive purpose projections.
+- Added the replay-only purpose control plane. `zaxy memory purpose status`,
+  `zaxy memory purpose lanes`, `zaxy memory purpose feedback`, the local
+  dashboard Purpose tab/API, and the static Eventloom viewer now expose active
+  profiles, evidence-policy failures, suppressed rows, refresh suggestions,
+  retained consequence history, and Coordinate accepted-state versus worker
+  diagnostics without requiring Neo4j.
+- Hardened CoordinationBench Quarq/Hybi same-harness posture. Packaged Quarq
+  and Hybi manifests now include pinned public source/package refs, install
+  commands, workload/result contracts, explicit unsupported runner commands, and
+  archived stdout/stderr on runner failure while keeping public competitor
+  claims blocked until completed local scoring exists.
 - Added `purpose_feedback_coverage` to CoordinationBench so Zaxy Coordinate and
   same-harness adapters can prove accepted parent-state feedback is tied to the
   `coordinate` purpose profile instead of generic retrieval usefulness.
