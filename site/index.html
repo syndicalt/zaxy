@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Zaxy 1.0.0 - coordinator memory for agent teams</title>
-  <meta name="description" content="Zaxy Coordinate is the coordinator memory layer for multi-agent projects: isolated worker sessions, cited findings, conflict review, and accepted merge-back into one replayable parent mission history." />
-  <meta property="og:title" content="Zaxy 1.0.0 - coordinator memory for agent teams" />
-  <meta property="og:description" content="Isolated workers. Cited findings. Conflict review. Accepted merge-back into one replayable project history." />
+  <title>Zaxy - event-sourced memory for agent work</title>
+  <meta name="description" content="Zaxy is an event-sourced, purpose-conditioned memory runtime for agent work: isolated worker sessions, accepted project state, cited Memory Checkout, purpose diagnostics, and replayable provenance." />
+  <meta property="og:title" content="Zaxy - event-sourced memory for agent work" />
+  <meta property="og:description" content="Purpose-conditioned coordinator memory for agent teams, with Eventloom provenance and embedded local graph projection." />
   <meta property="og:type" content="website" />
   <meta property="og:image" content="https://docs.zaxy.io/assets/zaxy-v1-header.png" />
   <meta property="og:image:width" content="1991" />
@@ -14,225 +14,242 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:image" content="https://docs.zaxy.io/assets/zaxy-v1-header.png" />
   <link rel="canonical" href="https://docs.zaxy.io/" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=Inter:wght@400;550;650;750;850&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
   <link rel="preload" as="image" href="assets/graph.png" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <nav class="nav" aria-label="Primary">
-    <a class="brand" href="#top"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <a class="brand" href="#top"><span class="brand-mark" aria-hidden="true">Z</span><span>Zaxy</span></a>
     <div class="nav-links">
       <a href="#coordinate">Coordinate</a>
+      <a href="#purpose">Purpose</a>
       <a href="#benchmarks">Benchmarks</a>
       <a href="#install">Install</a>
       <a href="#docs">Docs</a>
-      <a href="docs/external-validation.html">Verify</a>
       <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
     </div>
   </nav>
 
   <main>
-    <section class="hero" id="top">
-      <div class="hero-copy">
-        <p class="eyebrow">Coordinator memory for agent teams</p>
-        <h1>Run many agents without losing the plot.</h1>
+    <section class="hero" id="top" aria-label="Zaxy overview">
+      <img class="hero-backdrop" src="assets/graph.png" alt="" aria-hidden="true" />
+      <div class="hero-shade" aria-hidden="true"></div>
+      <div class="hero-inner">
+        <p class="eyebrow">Event-sourced memory for agent work</p>
+        <h1>Zaxy</h1>
         <p class="tagline">
-          Zaxy Coordinate gives multi-agent projects a parent mission, isolated
-          worker sessions, cited findings, conflict diagnostics, approval packets,
-          and accepted merge-back into one replayable project history.
+          Zaxy keeps multi-agent projects replayable: parent missions, isolated
+          worker sessions, cited findings, purpose-conditioned checkout, conflict
+          review, and accepted merge-back into one durable project history.
         </p>
         <div class="cta-row">
           <a href="#install" class="btn btn-primary">Install locally</a>
-          <a href="docs/coordinate-roadmap.html" class="btn btn-secondary">Read Coordinate docs</a>
-          <a href="reports/benchmarks/coordination-v1/coordination-benchmark.md" class="btn btn-secondary">View CoordinationBench</a>
+          <a href="docs/coordinate-roadmap.html" class="btn btn-secondary">Coordinate docs</a>
+          <a href="docs/memory-is-purpose-zaxy-analysis.html" class="btn btn-secondary">Purpose roadmap</a>
         </div>
       </div>
-      <div class="system-visual graph-visual" aria-label="Zaxy Coordinate architecture preview">
-        <img class="graph-preview graph-preview-primary" src="assets/graph.png" alt="Zaxy Coordinate graph showing worker sessions, findings, coordinator review, parent mission, and Eventloom source of truth" />
+      <div class="hero-console" aria-label="Memory runtime status">
+        <div><span>runtime</span><strong>embedded Kuzu default</strong></div>
+        <div><span>source</span><strong>Eventloom append-only JSONL</strong></div>
+        <div><span>checkout</span><strong>cited, purpose-conditioned context</strong></div>
       </div>
     </section>
 
     <section class="proof-strip" aria-label="Project status">
-      <span>1972 tests passed</span>
-      <span>92.04% coverage</span>
-      <span>ruff clean</span>
-      <span>mypy clean</span>
       <span>PyPI 1.0.2</span>
+      <span>embedded local runtime</span>
+      <span>purpose-v1 passed</span>
+      <span>CoordinationBench gate passed</span>
+      <span>Quarq/Hybi claims blocked</span>
       <span>external verification requested</span>
     </section>
 
     <section id="coordinate" class="section">
       <div class="section-heading">
-        <p class="eyebrow">The wedge</p>
+        <p class="eyebrow">Coordinate</p>
         <h2>Worker-local claims are not project truth.</h2>
         <p>
-          Spawning agents is easy. The hard part is turning ten isolated
-          investigations into one trustworthy state of work. Zaxy keeps worker
-          sessions separate, records findings with evidence, marks stale and
-          conflicting claims, and promotes only accepted findings into the parent
-          mission session.
+          Spawning agents is easy. The hard part is turning isolated
+          investigations into one trustworthy state of work. Zaxy records each
+          worker in its own Eventloom session, reviews findings with evidence,
+          marks stale and conflicting claims, and promotes only accepted facts
+          into the parent mission.
         </p>
       </div>
-      <div class="value-grid">
-        <article><h3>Parent mission</h3><p>The coordinator owns the accepted project history, decisions, handoff, and Memory Checkout state.</p></article>
-        <article><h3>Worker sessions</h3><p>Agents investigate in isolated Eventloom logs, so exploration does not contaminate authoritative memory.</p></article>
+      <div class="rail-list">
+        <article><h3>Parent mission</h3><p>The coordinator owns accepted project history, decisions, handoff, and Memory Checkout state.</p></article>
+        <article><h3>Worker sessions</h3><p>Agents investigate in isolated logs, so exploration does not contaminate authoritative memory.</p></article>
         <article><h3>Approval packets</h3><p>Human or coordinator-agent review accepts, rejects, defers, or promotes findings with cited provenance.</p></article>
       </div>
     </section>
 
-    <section id="architecture" class="section band">
+    <section id="architecture" class="section section-dark">
       <div class="section-heading">
         <p class="eyebrow">Architecture</p>
-        <h2>Event-sourced coordination, not a shared scratchpad.</h2>
+        <h2>Eventloom is truth. The graph is a rebuildable projection.</h2>
       </div>
       <div class="flow">
         <div><strong>Mission</strong><span>objective and parent state</span></div>
-        <div><strong>Workers</strong><span>isolated sessions</span></div>
-        <div><strong>Findings</strong><span>evidence and confidence</span></div>
+        <div><strong>Workers</strong><span>isolated Eventloom sessions</span></div>
+        <div><strong>Findings</strong><span>evidence, confidence, citations</span></div>
         <div><strong>Review</strong><span>conflicts, stale claims, approvals</span></div>
-        <div><strong>Checkout</strong><span>accepted cited context</span></div>
+        <div><strong>Checkout</strong><span>accepted cited prompt state</span></div>
       </div>
       <p>
-        Eventloom remains the append-only source of truth. The embedded Kuzu
-        projection is the default local graph runtime; Neo4j, pgGraph, LatticeDB,
-        and Pathlight are advanced integration tracks. MCP exposes both memory
-        primitives and first-class coordination tools.
+        Eventloom source of truth remains the append-only project record. The
+        default local runtime is embedded Kuzu, launched and cleaned by
+        <code>zaxy init</code> and <code>zaxy doctor</code>. Neo4j remains the
+        sidecar control backend; pgGraph, LatticeDB, and Pathlight are
+        advanced integration tracks for teams that need alternate deployment or
+        observability posture.
       </p>
     </section>
 
-    <section id="mcp" class="section">
+    <section id="purpose" class="section">
       <div class="section-heading">
-        <p class="eyebrow">Interfaces</p>
-        <h2>CLI, MCP, dashboard, and adapters all speak the same coordination model.</h2>
+        <p class="eyebrow">Purpose control plane</p>
+        <h2>The same evidence can mean different memory for different work.</h2>
+        <p>
+          Zaxy now carries purpose through retrieval, checkout diagnostics,
+          feedback, compaction, and Coordinate accepted state. This is still
+          framed as project-local agent work memory, not a broad Company Brain
+          claim.
+        </p>
       </div>
       <div class="tool-grid">
-        <article><code>zaxy coordinate brief</code><p>Replay mission state, accepted findings, conflicts, stale claims, missing evidence, and next decisions.</p></article>
-        <article><code>coordination_checkout</code><p>Return accepted parent state plus diagnostic worker-local findings without treating them as truth.</p></article>
-        <article><code>coordination_approval_packet</code><p>Generate a reviewable payload for accept/reject/defer/promote decisions.</p></article>
-        <article><code>memory_checkout</code><p>Keep the lower-level model-facing contract with answerability, required_action, current_citation_count, and memory_feedback guidance.</p></article>
-        <article><code>CoordinationAdapter</code><p>Dependency-light Python wrapper with LangGraph and CrewAI helper paths.</p></article>
-        <article><code>dashboard --enable-coordinate-review</code><p>Opt-in human review controls on top of replay-backed mission state; read-only remains the default.</p></article>
+        <article><code>memory_checkout(..., purpose="coding")</code><p>Applies deterministic purpose emphasis, recall floors, scoring profile selection, and checkout guidance.</p></article>
+        <article><code>zaxy memory purpose status</code><p>Replays active profile, checkout quality, accepted Coordinate state, and feedback posture without graph mutation.</p></article>
+        <article><code>zaxy memory purpose lanes</code><p>Shows purpose-specific checkout lanes, cited source groups, and suppression candidates.</p></article>
+        <article><code>zaxy memory purpose feedback</code><p>Surfaces positive and negative outcome history so future retrieval can prioritize useful purpose-specific memory.</p></article>
       </div>
     </section>
 
-    <section id="benchmarks" class="section band">
+    <section id="mcp" class="section section-compact">
+      <div class="section-heading">
+        <p class="eyebrow">Interfaces</p>
+        <h2>CLI, MCP, dashboard, and adapters share the same contracts.</h2>
+      </div>
+      <div class="interface-list">
+        <span><code>coordination_checkout</code> accepted parent state plus diagnostic worker-local findings</span>
+        <span><code>coordination_approval_packet</code> reviewable accept/reject/defer/promote payloads</span>
+        <span><code>memory_checkout</code> answerability, current_citation_count, required action, and memory_feedback guidance</span>
+        <span><code>CoordinationAdapter</code> dependency-light Python wrapper with LangGraph and CrewAI helper paths</span>
+        <span><code>dashboard --enable-coordinate-review</code> opt-in human review controls over replay-backed state; read-only remains the default</span>
+      </div>
+    </section>
+
+    <section id="benchmarks" class="section section-dark">
       <div class="section-heading">
         <p class="eyebrow">Benchmark evidence</p>
-        <h2>CoordinationBench is the coordination benchmark.</h2>
+        <h2>Public claims stay inside the evidence boundary.</h2>
         <p>
-          Zaxy Coordinate now has a frozen first-party adapter for the external
-          CoordinationBench scorer. CoordinationBench v1 and v1-scale score
-          accepted-finding precision and recall, stale rejection, duplicate
-          consolidation, evidence grounding, and answerability. Zaxy scores
-          1.000 on those public reproducibility lanes, then lands at a 0.606
-          mean on public-derived holdout packs. Treat the holdout number as
-          the real current baseline.
+          Current artifacts separate internal release gates from comparative
+          claims. Purpose-v1 passes its deterministic contract lanes.
+          CoordinationBench v1 passes accepted-finding precision and recall,
+          conflict handling, stale rejection, proof-backed synthesis, and parent
+          answerability. Semantic Reach/Hybi and Quarq rows remain disclosure only
+          until pinned same-harness adapters produce locally scored,
+          fingerprinted results.
         </p>
       </div>
       <div class="benchmark-metrics">
         <article class="benchmark-card benchmark-card-primary">
-          <span class="benchmark-card-label">Holdout mean</span>
-          <h3>0.606 overall</h3>
-          <p>Frozen-adapter public-derived packs expose the next work: final answering, stale interpretation, and broader conflict detection.</p>
+          <span class="benchmark-card-label">Purpose Benchmark</span>
+          <h3>10/10 lanes passed</h3>
+          <p>Purpose recall, ontology shift, outcome feedback, evidence discipline, and neutral-substrate projection are covered by purpose-v1.</p>
         </article>
         <article class="benchmark-card">
-          <span class="benchmark-card-label">Public lanes</span>
-          <h3>1.000 overall</h3>
-          <p>The v1 and v1-scale scores are first-party public-label reproducibility results, not representative leaderboard claims.</p>
+          <span class="benchmark-card-label">CoordinationBench</span>
+          <h3>1.000 gate metrics</h3>
+          <p>Accepted-state synthesis, non-authoritative leakage, citation coverage, parent answerability, and Eventloom replayability pass.</p>
         </article>
         <article class="benchmark-card">
           <span class="benchmark-card-label">Competitors</span>
-          <h3>disclosure only</h3>
-          <p>Mem0, Agent Memory, and ActiveGraph adapters are listed as not_run until pinned same-harness runner manifests exist.</p>
+          <h3>blocked claims</h3>
+          <p>Quarq and Semantic Reach/Hybi are pinned as unsupported disclosure rows until same-harness audits complete.</p>
         </article>
       </div>
-      <div class="benchmark-comparison" role="region" aria-label="CoordinationBench comparison table">
+      <div class="benchmark-comparison" role="region" aria-label="Current benchmark evidence table">
         <div class="benchmark-comparison-heading">
-          <h3>CoordinationBench Results</h3>
-          <p>Frozen adapter result: CoordinationBench v1 shows 1.000 accepted precision versus 0.200 flat precision, while public-derived holdouts show the current generalization gap.</p>
+          <h3>Current Evidence Boundary</h3>
+          <p>These rows are release evidence and disclosure status, not a universal memory leaderboard.</p>
         </div>
         <table>
           <thead>
             <tr>
-              <th>Lane</th>
-              <th>overall</th>
-              <th>accepted precision</th>
-              <th>conflict recall</th>
-              <th>stale rejection</th>
-              <th>answerability</th>
+              <th>Artifact</th>
+              <th>Status</th>
+              <th>What it supports</th>
+              <th>What it does not support</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td><strong>v1-audited</strong></td>
-              <td><span class="benchmark-result">1.000</span></td>
-              <td><span class="benchmark-result">1.000</span></td>
-              <td><span class="benchmark-result">1.000</span></td>
-              <td><span class="benchmark-result">1.000</span></td>
-              <td><span class="benchmark-result">1.000</span></td>
+              <td><strong>purpose-v1</strong></td>
+              <td><span class="benchmark-result">passed</span></td>
+              <td>Purpose-conditioned retrieval, checkout, feedback, and compaction contract.</td>
+              <td>external Semantic Reach or Quarq superiority claims.</td>
             </tr>
             <tr>
-              <td><strong>v1-scale</strong></td>
-              <td><span class="benchmark-result">1.000</span></td>
-              <td><span class="benchmark-result">1.000</span></td>
-              <td><span class="benchmark-result">1.000</span></td>
-              <td><span class="benchmark-result">1.000</span></td>
-              <td><span class="benchmark-result">1.000</span></td>
+              <td><strong>public-derived purpose holdout</strong></td>
+              <td><span class="benchmark-result">diagnostic</span></td>
+              <td>Representative pressure cases with citation coverage and frozen fingerprint.</td>
+              <td>Release gate or outside-user validation.</td>
             </tr>
             <tr>
-              <td><strong>public-derived holdout mean</strong></td>
-              <td><span class="benchmark-result">0.606</span></td>
-              <td><span class="benchmark-result">0.846</span></td>
-              <td><span class="benchmark-result">0.375</span></td>
-              <td><span class="benchmark-result">0.000</span></td>
-              <td><span class="benchmark-result">0.000</span></td>
+              <td><strong>CoordinationBench real-v1</strong></td>
+              <td><span class="benchmark-result">passed</span></td>
+              <td>Accepted parent state, conflict handling, stale rejection, proof-backed synthesis.</td>
+              <td>Generic RAG, open-domain QA, or all memory workflows.</td>
             </tr>
             <tr>
-              <td><strong>source-weight baseline v1</strong></td>
-              <td><span class="benchmark-result">0.411</span></td>
-              <td><span class="benchmark-result">0.683</span></td>
-              <td><span class="benchmark-result">0.800</span></td>
-              <td><span class="benchmark-result">0.333</span></td>
-              <td><span class="benchmark-result">0.600</span></td>
-            </tr>
-            <tr>
-              <td><strong>Markdown notes</strong></td>
-              <td><span class="benchmark-result">0.400</span></td>
-              <td><span class="benchmark-result">0.000</span></td>
-              <td><span class="benchmark-result">0.000</span></td>
-              <td><span class="benchmark-result">0.000</span></td>
-              <td><span class="benchmark-result">0.000</span></td>
+              <td><strong>Quarq / Semantic Reach Hybi</strong></td>
+              <td><span class="benchmark-result">blocked</span></td>
+              <td>Adapter metadata and public disclosure that same-harness work is still required.</td>
+              <td>Completed competitor scoring.</td>
             </tr>
             <tr>
               <td><strong>BM25 worker logs</strong></td>
-              <td><span class="benchmark-result">0.333</span></td>
-              <td><span class="benchmark-result">0.000</span></td>
-              <td><span class="benchmark-result">0.000</span></td>
-              <td><span class="benchmark-result">0.000</span></td>
-              <td><span class="benchmark-result">0.000</span></td>
+              <td><span class="benchmark-result">0.666667 precision</span></td>
+              <td>Same-harness local baseline over rendered worker findings.</td>
+              <td>Accepted project state, conflict recall, stale rejection, or citation coverage.</td>
+            </tr>
+            <tr>
+              <td><strong>Markdown notes</strong></td>
+              <td><span class="benchmark-result">0.636364 precision</span></td>
+              <td>Same-harness local baseline without promotion or conflict semantics.</td>
+              <td>Authoritative parent checkout or proof-backed merge-back.</td>
             </tr>
             <tr>
               <td><strong>Flat transcript</strong></td>
-              <td><span class="benchmark-result">0.200</span></td>
-              <td><span class="benchmark-result">0.000</span></td>
-              <td><span class="benchmark-result">0.000</span></td>
-              <td><span class="benchmark-result">0.000</span></td>
-              <td><span class="benchmark-result">0.000</span></td>
+              <td><span class="benchmark-result">0.272727 precision</span></td>
+              <td>Contamination baseline that treats all worker output as accepted state.</td>
+              <td>Reliable accepted-state precision, stale rejection, or conflict review.</td>
+            </tr>
+            <tr>
+              <td><strong>Mem0 / Agent Memory / ActiveGraph</strong></td>
+              <td><span class="benchmark-result">not_run</span></td>
+              <td>disclosure only rows until pinned same-harness runner manifests exist.</td>
+              <td>Any comparative score.</td>
             </tr>
           </tbody>
         </table>
       </div>
       <div class="benchmark-links" aria-label="Benchmark reports">
-        <a href="docs/benchmarks.html#coordinationbench"><span>CoordinationBench report</span><small>Frozen adapter and holdout results</small></a>
-        <a href="docs/benchmarks.html"><span>Benchmark hub</span><small>LongMemEval, backend shootout, disclosures</small></a>
-        <a href="docs/coordinate-roadmap.html"><span>Coordinate roadmap</span><small>Product direction and adapter contract</small></a>
-        <a href="reports/benchmarks/longmemeval-500-hash/live-benchmark.md"><span>LongMemEval guardrail</span><small>Supporting memory retrieval evidence</small></a>
+        <a href="docs/benchmarks.html#coordinationbench"><span>CoordinationBench report</span><small>Gate status and baselines</small></a>
+        <a href="docs/memory-is-purpose-zaxy-analysis.html#priority-8-public-derived-purpose-holdout-pack"><span>Purpose roadmap</span><small>Purpose-v1 and holdout boundary</small></a>
+        <a href="docs/benchmark-review.html"><span>Benchmark review</span><small>Contribution and claim discipline</small></a>
+        <a href="docs/external-validation.html"><span>External verification</span><small>Public request and report contract</small></a>
       </div>
     </section>
 
     <section id="install" class="section install">
       <div class="section-heading">
         <p class="eyebrow">Install</p>
-        <h2>Five-minute local smoke test, then expose coordination through MCP.</h2>
+        <h2>Initialize a local embedded runtime, then expose memory through MCP.</h2>
       </div>
       <div class="install-grid">
         <pre><code>pipx install zaxy-memory
@@ -246,40 +263,41 @@ zaxy coordinate assign --mission auth-main --worker auth-api "trace failures"
 zaxy coordinate brief --mission auth-main
 zaxy coordinate checkout --mission auth-main</code></pre>
       </div>
-      <div class="value-grid install-notes">
+      <div class="rail-list install-notes">
         <article><h3>What happens when you run init</h3><p>Zaxy writes `.env.local`, records session genesis and heartbeat, checks graph posture, and prints the MCP command or config path.</p></article>
-        <article><h3>What stays local</h3><p>Session history lives in `.eventloom/` as append-only JSONL. The graph is a rebuildable projection.</p></article>
-        <article><h3>How you prove it worked</h3><p><code>memory log</code>, <code>memory bootstrap</code>, <code>doctor</code>, and <code>hook-status</code> expose Last checkout, capture readiness, and stale-memory warnings.</p></article>
+        <article><h3>What stays local</h3><p>Session history lives in <code>.eventloom/</code> as append-only JSONL. The graph is a rebuildable projection.</p></article>
+        <article><h3>How to prove capture</h3><p><code>memory log</code>, <code>memory bootstrap</code>, <code>doctor</code>, and <code>hook-status</code> expose Last checkout, capture, and stale-memory posture.</p></article>
       </div>
     </section>
 
     <section id="docs" class="section docs">
       <div class="section-heading">
         <p class="eyebrow">Documentation</p>
-        <h2>Start with Coordinate. Keep the rest as operator reference.</h2>
+        <h2>Start with Coordinate and purpose. Keep the rest as operator reference.</h2>
       </div>
       <div class="docs-grid docs-grid-featured">
-        <a href="docs/announcements/zaxy-v1.0.html">Zaxy 1.0.0 release</a>
-        <a href="docs/announcements/zaxy-v1.0-x-article.html">Zaxy 1.0.0 X article</a>
-        <a href="docs/media/zaxy-collaborate-demo.html">Zaxy Collaborate demo media</a>
-        <a href="docs/announcements/zaxy-coordinate.html">Zaxy Coordinate announcement</a>
-        <a href="docs/announcements/zaxy-0.4.0.html">Zaxy 0.4.0 archive</a>
         <a href="docs/coordinate-roadmap.html">Coordinate roadmap</a>
-        <a href="docs/v1-roadmap.html">v1 roadmap</a>
+        <a href="docs/memory-is-purpose-zaxy-analysis.html">Purpose analysis and roadmap</a>
         <a href="docs/benchmarks.html">Benchmarks</a>
-        <a href="docs/integrations.html">Framework integrations</a>
+        <a href="docs/external-validation.html">External verification request</a>
         <a href="docs/getting-started.html">Getting started</a>
         <a href="docs/mcp-quickstart.html">MCP quickstart</a>
         <a href="docs/coordinate-quickstart.html">Coordinate quickstart</a>
         <a href="docs/first-run-validation.html">First-run validation</a>
-        <a href="docs/external-validation.html">External verification request</a>
-        <a href="docs/mcp.html">MCP interface</a>
+        <a href="docs/media/zaxy-collaborate-demo.html">Zaxy Collaborate demo media</a>
         <a href="docs/architecture.html">Architecture</a>
+        <a href="docs/mcp.html">MCP interface</a>
+        <a href="docs/integrations.html">Framework integrations</a>
         <a href="docs/why-zaxy.html">Why Zaxy</a>
       </div>
       <details class="docs-more">
         <summary>Operator and internals reference</summary>
         <div class="docs-grid">
+          <a href="docs/announcements/zaxy-v1.0.html">Zaxy 1.0.0 release</a>
+          <a href="docs/announcements/zaxy-v1.0-x-article.html">Zaxy 1.0.0 X article</a>
+          <a href="docs/announcements/zaxy-coordinate.html">Zaxy Coordinate announcement</a>
+          <a href="docs/announcements/zaxy-0.4.0.html">Zaxy 0.4.0 archive</a>
+          <a href="docs/v1-roadmap.html">v1 roadmap</a>
           <a href="docs/configuration.html">Configuration</a>
           <a href="docs/mcp-install-targets.html">MCP install targets</a>
           <a href="docs/eventloom.html">Eventloom contract</a>
@@ -313,7 +331,7 @@ zaxy coordinate checkout --mission auth-main</code></pre>
   </main>
 
   <footer>
-    <span>Zaxy v1.0.0 - MIT</span>
+    <span>Zaxy v1.0.2 - MIT</span>
     <span><a href="README.html">README</a> <a href="docs/runbook.html">Runbook</a></span>
   </footer>
 </body>
