@@ -16,6 +16,7 @@ from typer.testing import CliRunner
 from zaxy.__main__ import app
 from zaxy.coordination import CoordinationManager
 from zaxy.event import EventLog
+from zaxy.release import package_version
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -36,7 +37,7 @@ def test_version_option_reports_project_version() -> None:
     result = runner.invoke(app, ["--version"])
 
     assert result.exit_code == 0
-    assert result.output.strip() == "zaxy 1.0.2"
+    assert result.output.strip() == f"zaxy {package_version()}"
 
 
 def test_memory_status_prints_eventloom_sessions(tmp_path: Path) -> None:

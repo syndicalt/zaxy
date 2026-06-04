@@ -2,6 +2,24 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 1.0.3 - 2026-06-04
+
+- Promoted the current74 full 500-question LongMemEval-compatible report as the
+  public benchmark headline: mean score 0.940, Answer@5 0.906, citation
+  coverage 1.000, R@1/R@5/R@10 0.906/1.000/1.000, p95 687.67 ms, and p99
+  969.10 ms.
+- Archived the current74 report, reproduction command, and benchmark-compare
+  guardrail while preserving separate legacy `limit=10` and same-harness
+  backend-evaluation floors.
+- Added deterministic evidence-program tracing and broader answer-candidate
+  synthesis coverage for preference, temporal, scalar, arithmetic, and
+  source-cited answer assembly.
+- Updated public benchmark, retrieval, testing, competitive-positioning, README,
+  and generated static-site documentation to match the released benchmark
+  posture and external disclosure rules.
+- Added preference synthesis and rendered-packet coverage so the 92% coverage
+  ratchet remains enforced across Python 3.11, 3.12, and 3.13.
+
 ## 1.0.2 - 2026-06-02
 
 - Fixed Memory Capabilities and read-only memory status/log inspection for
