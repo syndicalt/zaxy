@@ -234,6 +234,10 @@ zaxy benchmark --output-dir reports/benchmarks/longmemeval-100-comparison \
   --zaxy-backend checkout --reuse-projection \
   --embedding-cache .cache/zaxy/longmemeval-embeddings.json
 
+# Current full-set LongMemEval-compatible checkout evidence:
+# reports/benchmarks/longmemeval-500-current74-zaxyonly-gated-relative-temporal-anchor-embedded-reuse-20260604/
+# Mean 0.940, Answer@5 0.906, citation coverage 1.000, R@1/R@5/R@10 0.906/1.000/1.000.
+
 # Production deployment preflight
 scripts/validate-deployment.sh --root .
 

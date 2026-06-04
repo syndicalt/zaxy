@@ -19,9 +19,11 @@ verbatim, and active working-set views.
 
 ## MemPalace Target
 
-MemPalace is the current public target for LLM memory product comparison. Zaxy
-should compete on trust and provenance rather than trying to match every UX
-surface first. The benchmark lane should stay architecture-driven:
+MemPalace and AgentGraph-style graph memory are the current public validation
+points for Zaxy's thesis. The market is moving toward persistent, structured
+memory rather than flat context files. Zaxy should compete on trust,
+provenance, and replayability rather than trying to match every UX surface
+first. The benchmark lane should stay architecture-driven:
 
 1. Temporal correctness: recover old and current facts without overwriting
    history.
@@ -37,26 +39,27 @@ surface first. The benchmark lane should stay architecture-driven:
 ## Public Benchmark Posture
 
 The current Zaxy public benchmark hub is [benchmarks.md](benchmarks.md). Zaxy's
-same-harness evidence should distinguish the archived LongMemEval-compatible
-100-question headline from the full 500-question archive. The 100-question run
-remains the strongest headline: Zaxy mean score 0.970, Answer@5 0.950,
-citation coverage 1.000, and R@1/R@5/R@10 1.000, with BM25 in the same report
-at mean score 0.540, Answer@5 0.500, and R@5 0.840. The legacy `limit=10` full
-500-question hash run is a separate no-regression floor: Zaxy checkout mean
-score 0.626, Answer@5 0.608, citation coverage 1.000, and R@1/R@5/R@10 of
-0.944/0.956/0.956 versus BM25 mean score 0.560, Answer@5 0.516, and R@5 0.770.
-The current same-harness `limit=5` backend-evaluation control uses workload
-SHA-256 `0dc36a139bb9a4fdc7c6cd34400737a58a1eb7410517341f015e9fbfc76ed854`
-and sets the projection-backend floor at Zaxy checkout mean score 0.714,
-Answer@5 0.626, citation coverage 1.000, and R@5 0.958.
+same-harness evidence now leads with the full 500-question current74 checkout
+archive: mean score 0.940, Answer@5 0.906, citation coverage 1.000,
+R@1/R@5/R@10 of 0.906/1.000/1.000, p95 687.67 ms, and p99 969.10 ms on
+workload SHA-256 `90fb2307195d7e16b963a2b8a30f03b375bd42a45d41aeaa55423029dd84e3fc`.
+The 100-question BM25 comparison remains a useful tradeoff report: Zaxy mean
+score 0.970, Answer@5 0.950, citation coverage 1.000, and R@1/R@5/R@10 1.000,
+with BM25 in the same report at mean score 0.540, Answer@5 0.500, and R@5
+0.840. The older BM25-included full 500-question hash run remains historical
+legacy `limit=10` floor evidence, not the current headline. Projection-backend
+work should use the current same-harness `limit=5` backend-evaluation floor
+instead of mixing those older `limit=10` thresholds into backend comparisons.
 
 Competitor numbers belong in an external-disclosure table, not a universal
 leaderboard. MemPalace publicly reports 96.6% raw LongMemEval R@5 and 98.4%
-held-out hybrid R@5. Agent Memory publicly reports 95.2% R@5 on LongMemEval-S.
-Mem0 publicly reports 94.4% LongMemEval accuracy and lower-token memory
-retrieval, plus LoCoMo accuracy gains; those are different metric families from
-Zaxy's local retrieval reports unless run through the same harness. These claims
-are important market context, but they are not same-harness Zaxy results.
+held-out hybrid R@5, plus optional LLM-reranked full-set runs reported at
+99%+ R@5. Agent Memory publicly reports 95.2% R@5 on LongMemEval-S. Mem0
+publicly reports LongMemEval accuracy in the low-to-mid 90s and lower-token
+memory retrieval, plus LoCoMo accuracy gains; those are different metric
+families from Zaxy's local retrieval reports unless run through the same
+harness. These claims are important market context, but they are not
+same-harness Zaxy results.
 
 ## Same-Harness Adapter Feasibility
 
@@ -79,9 +82,10 @@ export are available.
 
 ## Near-Term Roadmap
 
-- Treat the archived full 500-question LongMemEval-compatible report as the
-  no-regression floor, and work down synthesis misses without reducing citation
-  coverage or R@5.
+- Treat the current74 full 500-question LongMemEval-compatible report as the
+  public headline and no-regression floor: mean score 0.940, Answer@5 0.906,
+  citation coverage 1.000, and R@5 1.000. Work down synthesis misses without
+  reducing citation coverage or R@5.
 - Keep same-harness BM25 baselines in public benchmark reports so Zaxy claims
   show both retrieval quality and latency/token tradeoffs against a strong
   lexical baseline.

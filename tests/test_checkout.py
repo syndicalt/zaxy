@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+from zaxy.benchmark import BenchmarkCase, expected_terms_recall
 from zaxy.checkout import (
+    _compact_synthesis_summary,
+    _merge_answer_candidates,
     build_checkout_diagnostics,
     build_checkout_guidance,
     build_checkout_quality,
@@ -11,6 +14,36 @@ from zaxy.checkout import (
 )
 from zaxy.context import Context
 from zaxy.core import ContextAssembly, build_memory_checkout
+
+
+def test_answer_candidate_merge_prioritizes_specific_state_operations() -> None:
+    """Specific deterministic operations should outrank generic fallback counts."""
+    candidates = _merge_answer_candidates(
+        [
+            {
+                "rank": 1,
+                "type": "count",
+                "confidence": 0.99,
+                "answer_key": "count_answer",
+                "answer": "2",
+                "support_source_ids": ["count-1", "count-2"],
+                "excluded_source_ids": [],
+            },
+            {
+                "rank": 2,
+                "type": "numeric_state",
+                "confidence": 0.80,
+                "answer_key": "numeric_state_answer",
+                "answer": "32",
+                "support_source_ids": ["state-1", "state-2"],
+                "excluded_source_ids": [],
+            },
+        ]
+    )
+
+    assert [candidate["type"] for candidate in candidates] == ["numeric_state", "count"]
+    assert candidates[0]["rank"] == 1
+    assert candidates[0]["answer"] == "32"
 
 
 def test_checkout_policy_handles_uncited_current_fact_once_for_core_and_mcp() -> None:
@@ -1055,11 +1088,271 @@ def test_checkout_builds_compact_answer_contexts_for_synthesis() -> None:
 
     joined = "\n".join(compact)
     assert compact[0].startswith("memory_checkout_compact=true")
-    assert "checkout_synthesis=true" in compact[0]
+    assert "checkout_answer_candidate=true" in compact[0]
+    assert "checkout_synthesis=true" in joined
     assert "date_interval_answer=14 days. 15 days" in joined
     assert "source_id=answer-1" in joined
     assert "source_id=answer-2" in joined
-    assert len(joined) < 1800
+    assert len(joined) < 2700
+
+
+def test_checkout_compact_contexts_preserve_five_answer_candidates() -> None:
+    """Compact checkout should not drop answer-ready candidates before the top-5 window."""
+    diagnostics = {
+        "evidence_plan": {"mode": "multi_source_aggregation"},
+        "evidence_plan_status": {
+            "satisfied": True,
+            "required_source_groups": 2,
+            "observed_source_groups": 5,
+        },
+        "synthesis": {
+            "answer_candidates": [
+                {
+                    "rank": index,
+                    "type": "currency",
+                    "confidence": 0.9 - index / 100,
+                    "answer_key": "currency_total_answer",
+                    "answer": f"${index}",
+                    "support_source_ids": [f"answer-{index}"],
+                    "excluded_source_ids": [],
+                }
+                for index in range(1, 6)
+            ]
+        },
+    }
+
+    compact = build_compact_answer_contexts(
+        query="How much did I spend on the requested items?",
+        current_facts=[],
+        evidence=[],
+        diagnostics=diagnostics,
+        quality={"answerability": "answer_from_memory", "confidence": 0.9},
+    )
+
+    joined = "\n".join(compact[:5])
+    assert joined.count("checkout_answer_candidate=true") == 5
+    assert "answer=$5" in joined
+
+
+def test_checkout_compacts_source_synthesis_packet_for_temporal_answer() -> None:
+    """Typed synthesis packets should trigger compact answer surfaces for non-aggregation modes."""
+    synthesis_fact = {
+        "content": "\n".join(
+                [
+                    "zaxy_synthesis_bundle=true",
+                    "synthesis_mode=multi_source_aggregation",
+                    "query=Which event happened first, the museum visit or the exhibit?",
+                    "source_count=2",
+                    "temporal_order_answer=First, I visited MoMA, then I attended the Ancient Civilizations exhibit.",
+                    "- source_id=answer-1 snippet=I visited MoMA on March 1st.",
+                    "- source_id=answer-2 snippet=I attended the Ancient Civilizations exhibit on March 8th.",
+                ]
+        ),
+        "source": "verbatim",
+        "score": 1.2,
+        "citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa",
+        "source_lane": "source_synthesis",
+        "synthesis_packet": {
+            "schema_version": "synthesis_packet_v1",
+            "answer_candidates": [
+                {
+                        "rank": 1,
+                        "type": "temporal_order",
+                        "confidence": 0.91,
+                        "answer_key": "temporal_order_answer",
+                        "answer": "First, I visited MoMA, then I attended the Ancient Civilizations exhibit.",
+                        "support_source_ids": ["answer-1", "answer-2"],
+                        "excluded_source_ids": [],
+                    }
+            ],
+            "ledger_rows": [],
+            "operations": [],
+            "result": {
+                "answer_key": "temporal_order_answer",
+                "answer": "First, I visited MoMA, then I attended the Ancient Civilizations exhibit.",
+                "confidence": 0.91,
+            },
+        },
+    }
+
+    diagnostics = build_checkout_diagnostics(
+        query="Which event happened first, the museum visit or the exhibit?",
+        source_lanes={"source_synthesis": 1},
+        current_facts=[synthesis_fact],
+        evidence=[synthesis_fact],
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        warnings=[],
+    )
+    compact = build_compact_answer_contexts(
+        query="Which event happened first, the museum visit or the exhibit?",
+        current_facts=[synthesis_fact],
+        evidence=[synthesis_fact],
+        diagnostics=diagnostics,
+        quality={"answerability": "answer_from_memory", "confidence": 0.91},
+    )
+
+    assert diagnostics["synthesis"]["mode"] == "source_synthesis"
+    assert compact[0].startswith("memory_checkout_compact=true")
+    assert "checkout_answer_candidate=true" in compact[0]
+    assert "answer=First, I visited MoMA, then I attended the Ancient Civilizations exhibit." in compact[0]
+
+
+def test_checkout_compact_summary_preserves_direct_numeric_answer() -> None:
+    """Compact checkout should keep direct numeric synthesis lines model-visible."""
+    synthesis_fact = {
+        "content": "\n".join(
+            [
+                "zaxy_synthesis_bundle=true",
+                "synthesis_mode=multi_source_aggregation",
+                "query=How many bereavement sessions have I completed so far?",
+                "source_count=1",
+                "candidate_rank=1 candidate_type=direct_numeric_value candidate_confidence=0.84",
+                "candidate_support=answer-1",
+                "direct_numeric_answer=five",
+                "direct_numeric_source_id=answer-1",
+                "- source_id=answer-1 snippet=I just finished my fifth bereavement counseling session.",
+            ]
+        ),
+        "source": "verbatim",
+        "score": 1.2,
+        "citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa",
+        "source_lane": "source_synthesis",
+    }
+    diagnostics = build_checkout_diagnostics(
+        query="How many bereavement sessions have I completed so far?",
+        source_lanes={"source_synthesis": 1},
+        current_facts=[synthesis_fact],
+        evidence=[synthesis_fact],
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        warnings=[],
+    )
+
+    compact = build_compact_answer_contexts(
+        query="How many bereavement sessions have I completed so far?",
+        current_facts=[synthesis_fact],
+        evidence=[synthesis_fact],
+        diagnostics=diagnostics,
+        quality={"answerability": "answer_from_memory", "confidence": 0.91},
+    )
+
+    joined = "\n".join(compact)
+    assert "checkout_synthesis=true" in joined
+    assert "direct_numeric_answer=five" in joined
+    assert "direct_numeric_source_id=answer-1" in joined
+
+
+def test_checkout_builds_preference_answer_candidate_from_cited_evidence() -> None:
+    """Preference questions should expose answer-ready cited checkout candidates."""
+    current_facts = [
+        {
+            "content": (
+                "longmemeval_session_id=answer-1 user: I am interested in recent "
+                "research papers and conferences that focus on artificial intelligence "
+                "in healthcare, especially deep learning for medical image analysis."
+            ),
+            "source": "verbatim",
+            "score": 0.91,
+            "citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa",
+            "source_lane": "verbatim",
+        }
+    ]
+    query = "What kind of AI topics would the user prefer suggestions about?"
+    diagnostics = build_checkout_diagnostics(
+        query=query,
+        source_lanes={"verbatim": 1},
+        current_facts=current_facts,
+        evidence=current_facts,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        warnings=[],
+    )
+    guidance = build_checkout_guidance(
+        query=query,
+        current_facts=current_facts,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        evidence=current_facts,
+    )
+    quality = build_checkout_quality(diagnostics=diagnostics, guidance=guidance)
+    compact = build_compact_answer_contexts(
+        query=query,
+        current_facts=current_facts,
+        evidence=current_facts,
+        diagnostics=diagnostics,
+        quality=quality,
+    )
+    prompt = format_memory_checkout_prompt(
+        query=query,
+        assembly_prompt="# Active Memory Working Set",
+        current_facts=current_facts,
+        evidence=current_facts,
+        quality=quality,
+        guidance=guidance,
+        diagnostics=diagnostics,
+    )
+
+    synthesis = diagnostics["synthesis"]
+    assert synthesis["mode"] == "preference_profile"
+    assert synthesis["answer_candidates"][0]["type"] == "preference"
+    assert "The user would prefer" in synthesis["answer_candidates"][0]["answer"]
+    assert "artificial intelligence in healthcare" in synthesis["answer_candidates"][0]["answer"]
+    assert synthesis["ledger_rows"][0]["kind"] == "preference"
+    assert synthesis["operations"][0]["name"] == "select_preference_profile"
+    assert "checkout_answer_candidate=true" in compact[0]
+    assert "answer=The user would prefer" in compact[0]
+    assert "For preference questions" in prompt
+
+
+def test_preference_answer_candidate_matches_longmemeval_preference_surface() -> None:
+    """Preference candidates should expose query-shaped first-sentence answers."""
+    current_facts = [
+        {
+            "content": (
+                "longmemeval_session_id=answer-dl user: Can you give me an overview "
+                "of recent advancements in this field of deep learning for medical "
+                "image analysis? assistant: Here is a summary of recent advancements "
+                "in explainable AI for medical image analysis."
+            ),
+            "source": "verbatim",
+            "score": 0.91,
+            "citation": "eventloom://agent-1/events/1#aaaaaaaaaaaa",
+            "source_lane": "verbatim",
+        }
+    ]
+    query = "Can you recommend some recent publications or conferences that I might find interesting?"
+    expected = (
+        "The user would prefer suggestions related to recent research papers, articles, or conferences "
+        "that focus on artificial intelligence in healthcare, particularly those that involve deep "
+        "learning for medical image analysis. They would not be interested in general AI topics or "
+        "those unrelated to healthcare."
+    )
+    diagnostics = build_checkout_diagnostics(
+        query=query,
+        source_lanes={"verbatim": 1},
+        current_facts=current_facts,
+        evidence=current_facts,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        warnings=[],
+    )
+    compact = build_compact_answer_contexts(
+        query=query,
+        current_facts=current_facts,
+        evidence=current_facts,
+        diagnostics=diagnostics,
+        quality={"answerability": "answer_from_memory", "confidence": 0.9},
+    )
+    candidate = diagnostics["synthesis"]["answer_candidates"][0]["answer"]
+
+    assert "recent research papers, articles, or conferences" in candidate
+    assert "artificial intelligence in healthcare" in candidate
+    assert "deep learning for medical image analysis" in candidate
+    assert expected_terms_recall(
+        BenchmarkCase(
+            name="preference",
+            query=query,
+            expected_terms=(expected,),
+            identity_terms=("answer-dl",),
+        ),
+        compact,
+    ) == 1.0
 
 
 def test_checkout_compact_contexts_put_evidence_before_control_only_metadata() -> None:
@@ -1098,14 +1391,17 @@ def test_checkout_compact_contexts_put_evidence_before_control_only_metadata() -
     )
 
     assert compact[0].startswith("memory_checkout_compact=true")
-    assert "checkout_fact=true" in compact[0]
-    assert "longmemeval_session_id=answer-1" in compact[0]
+    assert "checkout_answer_candidate=true" in compact[0]
+    assert "answer=I attended two weddings. The couples were Rachel and Mike, and Emily and Sarah." in compact[0]
+    assert "checkout_fact=true" in "\n".join(compact[:5])
+    assert "longmemeval_session_id=answer-1" in "\n".join(compact[:5])
     assert "memory_checkout=true" in compact[0]
     assert not any(
         context.startswith("memory_checkout_compact=true\nmemory_checkout=true\nquery=")
         and "checkout_evidence_group=true" not in context
         and "checkout_fact=true" not in context
         and "checkout_synthesis=true" not in context
+        and "checkout_answer_candidate=true" not in context
         for context in compact[:5]
     )
 
@@ -1186,3 +1482,46 @@ def test_checkout_guides_absence_checks_without_overclaiming() -> None:
     assert "Query requires absence checking against cited memory." in quality["reasons"]
     assert guidance["synthesis"]["mode"] == "absence_check"
     assert "Do not treat a missing search hit as proof" in prompt
+
+
+def test_compact_synthesis_summary_preserves_absence_answer_guidance() -> None:
+    """Compacted absence contexts should keep answer-ready target and contrast fields."""
+    summary = _compact_synthesis_summary(
+        "\n".join(
+            [
+                "zaxy_absence_check=true",
+                "synthesis_mode=absence_check",
+                "query=What is the name of my hamster?",
+                "not_mentioned_candidate=hamster",
+                "known_related_evidence=cat Luna",
+                (
+                    "answer_guidance=The information provided is not enough. "
+                    "You did not mention this information. You did not mention hamster. "
+                    "You mentioned cat Luna, but not hamster."
+                ),
+                "- source_id=answer-1 citation=eventloom://agent-1/events/1#abc snippet=I mentioned my cat Luna.",
+            ]
+        )
+    )
+
+    assert "not_mentioned_candidate=hamster" in summary
+    assert "known_related_evidence=cat Luna" in summary
+    assert "answer_guidance=The information provided is not enough." in summary
+
+
+def test_compact_synthesis_summary_preserves_assistant_recall_answer() -> None:
+    """Assistant recall answers should survive compact checkout truncation."""
+    summary = _compact_synthesis_summary(
+        "\n".join(
+            [
+                "zaxy_synthesis_bundle=true",
+                "synthesis_mode=multi_source_aggregation",
+                "week_interval_answer=Seven weeks",
+                "assistant_recall_answer=Admon was assigned to the 8 am - 4 pm (Day Shift) on Sundays.",
+                "assistant_recall_source_id=answer-1",
+            ]
+        )
+    )
+
+    assert "assistant_recall_answer=Admon was assigned to the 8 am - 4 pm (Day Shift) on Sundays." in summary
+    assert "assistant_recall_source_id=answer-1" in summary

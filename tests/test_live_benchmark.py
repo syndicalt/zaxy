@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from collections.abc import Sequence
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -14,6 +15,7 @@ from zaxy.__main__ import _parse_benchmark_baselines, app
 from zaxy.benchmark import build_competitive_event_log, competitive_cases
 from zaxy.embedding import HashEmbeddingProvider
 from zaxy.event import EventLog
+from zaxy.graph import GraphEventProjectionStatus
 from zaxy.live_benchmark import (
     CONSOLIDATION_WORKLOAD_VERSION,
     CONTEXT_COLLAPSE_WORKLOAD_VERSION,
@@ -716,6 +718,7 @@ def test_longmemeval_workload_loads_public_memory_dataset(tmp_path: Path) -> Non
                     "question_type": "single-session-user",
                     "question": "What degree did I graduate with?",
                     "answer": "Business Administration",
+                    "question_date": "2023/05/30 (Tue) 09:00",
                     "answer_session_ids": ["answer-1"],
                     "haystack_dates": ["2023/05/20 (Sat) 02:21", "2023/05/21 (Sun) 03:24"],
                     "haystack_session_ids": ["distractor-1", "answer-1"],
@@ -762,6 +765,7 @@ def test_longmemeval_workload_loads_public_memory_dataset(tmp_path: Path) -> Non
     assert cases[0].name == "longmemeval-q1"
     assert cases[0].expected_terms == ("Business Administration",)
     assert cases[0].identity_terms == ("answer-1",)
+    assert cases[0].temporal_point == "2023-05-30T09:00:00Z"
     assert any("longmemeval_session_id=answer-1" in chunk.text for chunk in corpus)
     assert workload.sha256 == workload_fingerprint(
         eventlog,
@@ -1401,6 +1405,370 @@ async def test_build_live_zaxy_retriever_can_use_projection_backend_factory(tmp_
     factory.assert_called_once_with(config)
 
 
+async def test_build_live_zaxy_retriever_reuses_current_non_neo4j_projection(tmp_path: Path) -> None:
+    """Reusable non-Neo4j benchmark projections should not be upserted again."""
+    log = EventLog(tmp_path / "bench.jsonl")
+    first = log.append("tester", "goal.created", {"goalId": "goal-1", "title": "Reuse me"})
+    config = ProjectionBackendConfig(
+        backend="embedded",
+        neo4j_uri="bolt://unused",
+        neo4j_user="neo4j",
+        neo4j_password="testpassword",
+        neo4j_ca_cert=None,
+        neo4j_trust_all=False,
+        embedded_graph_path=tmp_path / "bench.kuzu",
+    )
+
+    class FakeProjectionStore:
+        def __init__(self) -> None:
+            self.upsert_count = 0
+            self.marked: list[tuple[str, int]] = []
+            self.status_calls = 0
+
+        async def connect(self) -> None:
+            return None
+
+        async def init_schema(self) -> None:
+            return None
+
+        async def inspect_event_projection_status(
+            self,
+            session_id: str,
+            *,
+            eventloom_latest_seq: int | None = None,
+            eventloom_latest_hash: str | None = None,
+        ) -> GraphEventProjectionStatus:
+            self.status_calls += 1
+            return GraphEventProjectionStatus(
+                session_id=session_id,
+                event_count=1,
+                latest_seq=eventloom_latest_seq,
+                latest_hash=eventloom_latest_hash,
+                eventloom_latest_seq=eventloom_latest_seq,
+                eventloom_latest_hash=eventloom_latest_hash,
+                projection_lag=0,
+                latest_hash_matches=True,
+                next_event_edges=0,
+                previous_event_edges=0,
+                missing_chain_links=0,
+                integrity_ok=True,
+            )
+
+        async def upsert_extraction(self, result: object, session_id: str = "default") -> None:
+            del result, session_id
+            self.upsert_count += 1
+
+        async def mark_benchmark_projection(self, key: str, events: Sequence[object]) -> None:
+            self.marked.append((key, len(events)))
+
+        async def search_exact(self, *args: object, **kwargs: object) -> list[object]:
+            del args, kwargs
+            return []
+
+        async def search_keyword(self, *args: object, **kwargs: object) -> list[object]:
+            del args, kwargs
+            return []
+
+        async def search_vector(self, *args: object, **kwargs: object) -> list[object]:
+            del args, kwargs
+            return []
+
+        async def search_traversal(self, *args: object, **kwargs: object) -> list[object]:
+            del args, kwargs
+            return []
+
+        async def has_traversal_edges(self, session_id: str = "default") -> bool:
+            del session_id
+            return False
+
+        async def close(self) -> None:
+            return None
+
+    store = FakeProjectionStore()
+
+    with patch("zaxy.live_benchmark.build_projection_store", return_value=store):
+        _retriever, returned_store = await build_live_zaxy_retriever(
+            log,
+            HashEmbeddingProvider(dimension=8),
+            reuse_projection=True,
+            projection_cache_key=f"test:{first.hash}",
+            projection_backend_config=config,
+        )
+
+    assert returned_store is store
+    assert store.status_calls == 1
+    assert store.upsert_count == 0
+
+
+async def test_build_live_zaxy_retriever_reuses_non_neo4j_projection_with_regenerated_event_hashes(
+    tmp_path: Path,
+) -> None:
+    """Benchmark reuse should tolerate regenerated Eventloom hashes for the same workload key."""
+    log = EventLog(tmp_path / "bench.jsonl")
+    log.append("tester", "goal.created", {"goalId": "goal-1", "title": "Same workload"})
+    config = ProjectionBackendConfig(
+        backend="embedded",
+        neo4j_uri="bolt://unused",
+        neo4j_user="neo4j",
+        neo4j_password="testpassword",
+        neo4j_ca_cert=None,
+        neo4j_trust_all=False,
+        embedded_graph_path=tmp_path / "bench.kuzu",
+    )
+
+    class FakeProjectionStore:
+        def __init__(self) -> None:
+            self.upsert_count = 0
+            self.marked: list[tuple[str, int]] = []
+
+        async def connect(self) -> None:
+            return None
+
+        async def init_schema(self) -> None:
+            return None
+
+        async def inspect_event_projection_status(
+            self,
+            session_id: str,
+            *,
+            eventloom_latest_seq: int | None = None,
+            eventloom_latest_hash: str | None = None,
+        ) -> GraphEventProjectionStatus:
+            return GraphEventProjectionStatus(
+                session_id=session_id,
+                event_count=1,
+                latest_seq=eventloom_latest_seq,
+                latest_hash="previous-run-hash",
+                eventloom_latest_seq=eventloom_latest_seq,
+                eventloom_latest_hash=eventloom_latest_hash,
+                projection_lag=0,
+                latest_hash_matches=False,
+                next_event_edges=0,
+                previous_event_edges=0,
+                missing_chain_links=0,
+                integrity_ok=False,
+            )
+
+        async def upsert_extraction(self, result: object, session_id: str = "default") -> None:
+            del result, session_id
+            self.upsert_count += 1
+
+        async def mark_benchmark_projection(self, key: str, events: Sequence[object]) -> None:
+            self.marked.append((key, len(events)))
+
+        async def search_exact(self, *args: object, **kwargs: object) -> list[object]:
+            del args, kwargs
+            return []
+
+        async def search_keyword(self, *args: object, **kwargs: object) -> list[object]:
+            del args, kwargs
+            return []
+
+        async def search_vector(self, *args: object, **kwargs: object) -> list[object]:
+            del args, kwargs
+            return []
+
+        async def search_traversal(self, *args: object, **kwargs: object) -> list[object]:
+            del args, kwargs
+            return []
+
+        async def has_traversal_edges(self, session_id: str = "default") -> bool:
+            del session_id
+            return False
+
+        async def close(self) -> None:
+            return None
+
+    store = FakeProjectionStore()
+
+    with patch("zaxy.live_benchmark.build_projection_store", return_value=store):
+        await build_live_zaxy_retriever(
+            log,
+            HashEmbeddingProvider(dimension=8),
+            reuse_projection=True,
+            projection_cache_key="same-workload",
+            projection_backend_config=config,
+        )
+
+    assert store.upsert_count == 0
+    assert store.marked == [("same-workload", 1)]
+
+
+async def test_build_live_zaxy_retriever_marks_non_neo4j_projection_after_ingest(tmp_path: Path) -> None:
+    """Successful non-Neo4j benchmark ingestion should persist the semantic reuse key."""
+    log = EventLog(tmp_path / "bench.jsonl")
+    first = log.append("tester", "goal.created", {"goalId": "goal-1", "title": "Mark me"})
+    config = ProjectionBackendConfig(
+        backend="embedded",
+        neo4j_uri="bolt://unused",
+        neo4j_user="neo4j",
+        neo4j_password="testpassword",
+        neo4j_ca_cert=None,
+        neo4j_trust_all=False,
+        embedded_graph_path=tmp_path / "bench.kuzu",
+    )
+
+    class FakeProjectionStore:
+        def __init__(self) -> None:
+            self.upsert_count = 0
+            self.marked: list[tuple[str, int]] = []
+
+        async def connect(self) -> None:
+            return None
+
+        async def init_schema(self) -> None:
+            return None
+
+        async def benchmark_projection_present(self, key: str) -> bool:
+            del key
+            return False
+
+        async def mark_benchmark_projection(self, key: str, events: Sequence[object]) -> None:
+            self.marked.append((key, len(events)))
+
+        async def upsert_extraction(self, result: object, session_id: str = "default") -> None:
+            del result, session_id
+            self.upsert_count += 1
+
+        async def search_exact(self, *args: object, **kwargs: object) -> list[object]:
+            del args, kwargs
+            return []
+
+        async def search_keyword(self, *args: object, **kwargs: object) -> list[object]:
+            del args, kwargs
+            return []
+
+        async def search_vector(self, *args: object, **kwargs: object) -> list[object]:
+            del args, kwargs
+            return []
+
+        async def search_traversal(self, *args: object, **kwargs: object) -> list[object]:
+            del args, kwargs
+            return []
+
+        async def has_traversal_edges(self, session_id: str = "default") -> bool:
+            del session_id
+            return False
+
+        async def close(self) -> None:
+            return None
+
+    store = FakeProjectionStore()
+
+    with patch("zaxy.live_benchmark.build_projection_store", return_value=store):
+        await build_live_zaxy_retriever(
+            log,
+            HashEmbeddingProvider(dimension=8),
+            reuse_projection=False,
+            projection_cache_key="semantic-workload",
+            projection_backend_config=config,
+        )
+
+    assert store.upsert_count == 1
+    assert store.marked == [("semantic-workload", 1)]
+    assert first.seq == 1
+
+
+async def test_build_live_zaxy_retriever_refuses_to_overwrite_mismatched_reuse_projection(
+    tmp_path: Path,
+) -> None:
+    """A non-empty mismatched reusable projection should fail fast instead of partial ingest."""
+    log = EventLog(tmp_path / "bench.jsonl")
+    log.append("tester", "goal.created", {"goalId": "goal-1", "title": "Different workload"})
+    config = ProjectionBackendConfig(
+        backend="embedded",
+        neo4j_uri="bolt://unused",
+        neo4j_user="neo4j",
+        neo4j_password="testpassword",
+        neo4j_ca_cert=None,
+        neo4j_trust_all=False,
+        embedded_graph_path=tmp_path / "bench.kuzu",
+    )
+
+    class FakeProjectionStore:
+        def __init__(self) -> None:
+            self.closed = False
+            self.upsert_count = 0
+
+        async def connect(self) -> None:
+            return None
+
+        async def init_schema(self) -> None:
+            return None
+
+        async def benchmark_projection_present(self, key: str) -> bool:
+            del key
+            return False
+
+        async def inspect_event_projection_status(
+            self,
+            session_id: str,
+            *,
+            eventloom_latest_seq: int | None = None,
+            eventloom_latest_hash: str | None = None,
+        ) -> GraphEventProjectionStatus:
+            return GraphEventProjectionStatus(
+                session_id=session_id,
+                event_count=1,
+                latest_seq=0,
+                latest_hash="other",
+                eventloom_latest_seq=eventloom_latest_seq,
+                eventloom_latest_hash=eventloom_latest_hash,
+                projection_lag=1,
+                latest_hash_matches=False,
+                next_event_edges=0,
+                previous_event_edges=0,
+                missing_chain_links=0,
+                integrity_ok=False,
+            )
+
+        async def upsert_extraction(self, result: object, session_id: str = "default") -> None:
+            del result, session_id
+            self.upsert_count += 1
+
+        async def search_exact(self, *args: object, **kwargs: object) -> list[object]:
+            del args, kwargs
+            return []
+
+        async def search_keyword(self, *args: object, **kwargs: object) -> list[object]:
+            del args, kwargs
+            return []
+
+        async def search_vector(self, *args: object, **kwargs: object) -> list[object]:
+            del args, kwargs
+            return []
+
+        async def search_traversal(self, *args: object, **kwargs: object) -> list[object]:
+            del args, kwargs
+            return []
+
+        async def has_traversal_edges(self, session_id: str = "default") -> bool:
+            del session_id
+            return False
+
+        async def close(self) -> None:
+            self.closed = True
+
+    store = FakeProjectionStore()
+
+    with patch("zaxy.live_benchmark.build_projection_store", return_value=store):
+        try:
+            await build_live_zaxy_retriever(
+                log,
+                HashEmbeddingProvider(dimension=8),
+                reuse_projection=True,
+                projection_cache_key="semantic-workload",
+                projection_backend_config=config,
+            )
+        except RuntimeError as exc:
+            assert "Existing projection does not match" in str(exc)
+        else:  # pragma: no cover - assertion path
+            raise AssertionError("expected mismatched projection reuse to fail")
+
+    assert store.upsert_count == 0
+    assert store.closed is True
+
+
 async def test_build_live_zaxy_retriever_can_reset_non_neo4j_projection_backend(tmp_path: Path) -> None:
     """Experimental backends should be resettable for reproducible benchmark reruns."""
     log = EventLog(tmp_path / "bench.jsonl")
@@ -1491,6 +1859,59 @@ async def test_zaxy_checkout_retriever_returns_checkout_contract() -> None:
     )
 
     class FakeRouter:
+        temporal_points: list[str | None] = []
+
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, limit, embedding
+            self.temporal_points.append(temporal_point)
+            return [SimpleNamespace(content="uncited graph summary", source="keyword", score=0.99)]
+
+    router = FakeRouter()
+    retriever = ZaxyCheckoutRetriever(
+        router,  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=BM25Retriever(corpus),
+    )
+
+    results = await retriever.query_async(
+        "How many weddings did I attend?",
+        temporal_point="2023-05-30T09:00:00Z",
+        limit=5,
+    )
+    output = "\n".join(results)
+
+    assert results[0].startswith("memory_checkout_compact=true")
+    assert "memory_checkout=true" in output
+    assert "answerability=answer_from_memory" in output
+    assert "evidence_plan_mode=multi_source_aggregation" in output
+    assert "evidence_plan_satisfied=True" in output
+    assert "query_temporal_anchor=true" in output
+    assert router.temporal_points == [None]
+    assert "source_id=answer-1" in output
+    assert "source_id=answer-2" in output
+    assert sum(len(result) for result in results) < 7000
+
+
+async def test_zaxy_checkout_retriever_uses_query_temporal_anchor_for_source_synthesis() -> None:
+    """Checkout source synthesis should receive the query-date anchor before assembly."""
+    corpus = (
+        BenchmarkChunk(
+            "festival",
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=festival longmemeval_session_date=2021/06/01 (Tue) "
+                "user: I attended the Seattle International Film Festival."
+            ),
+        ),
+    )
+
+    class FakeRouter:
         async def query(
             self,
             query: str,
@@ -1499,7 +1920,7 @@ async def test_zaxy_checkout_retriever_returns_checkout_contract() -> None:
             embedding: list[float] | None = None,
         ) -> list[SimpleNamespace]:
             del query, temporal_point, limit, embedding
-            return [SimpleNamespace(content="uncited graph summary", source="keyword", score=0.99)]
+            return []
 
     retriever = ZaxyCheckoutRetriever(
         FakeRouter(),  # type: ignore[arg-type]
@@ -1507,17 +1928,320 @@ async def test_zaxy_checkout_retriever_returns_checkout_contract() -> None:
         lexical_retriever=BM25Retriever(corpus),
     )
 
-    results = await retriever.query_async("How many weddings did I attend?", limit=5)
+    results = await retriever.query_async(
+        "How many months ago did I attend the Seattle International Film Festival?",
+        temporal_point="2021-10-02T09:44:00Z",
+        limit=5,
+    )
     output = "\n".join(results)
 
-    assert results[0].startswith("memory_checkout_compact=true")
-    assert "memory_checkout=true" in output
-    assert "answerability=answer_from_memory" in output
-    assert "evidence_plan_mode=multi_source_aggregation" in output
-    assert "evidence_plan_satisfied=True" in output
-    assert "source_id=answer-1" in output
-    assert "source_id=answer-2" in output
-    assert sum(len(result) for result in results) < 7000
+    assert "candidate_type=relative_temporal_anchor" in output
+    assert "relative_temporal_anchor_answer=4 months ago" in output
+    assert "relative_temporal_anchor_source_id=festival" in output
+
+
+async def test_zaxy_checkout_retriever_synthesizes_from_graph_salient_sources() -> None:
+    """Checkout synthesis should use graph-salient cited turns when lexical backfill is sparse."""
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, limit, embedding
+            return [
+                SimpleNamespace(
+                    content=(
+                        "longmemeval_session_id=parking user: I got a parking ticket "
+                        "near my work for $50."
+                    ),
+                    citation="eventloom://benchmark/events/parking#abc",
+                    source="graph",
+                    score=0.99,
+                ),
+                SimpleNamespace(
+                    content=(
+                        "longmemeval_session_id=wash user: I had a car wash on "
+                        "February 3rd that cost $15."
+                    ),
+                    citation="eventloom://benchmark/events/wash#def",
+                    source="graph",
+                    score=0.98,
+                ),
+            ]
+
+    class EmptyRetriever:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return []
+
+    retriever = ZaxyCheckoutRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=EmptyRetriever(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "How much did I spend on car wash and parking ticket?",
+        limit=5,
+    )
+    output = "\n".join(results)
+
+    assert "checkout_answer_candidate=true" in output
+    assert "answer=$65" in output
+    assert "source_id=parking" in output
+    assert "source_id=wash" in output
+
+
+async def test_zaxy_checkout_retriever_uses_graph_sources_when_lexical_bundle_is_noisy() -> None:
+    """A noisy lexical bundle should not block graph-salient operands from checkout synthesis."""
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, limit, embedding
+            return [
+                SimpleNamespace(
+                    content=(
+                        "longmemeval_session_id=parking user: I got a parking ticket "
+                        "near my work for $50."
+                    ),
+                    citation="eventloom://benchmark/events/parking#abc",
+                    source="graph",
+                    score=0.99,
+                ),
+                SimpleNamespace(
+                    content=(
+                        "longmemeval_session_id=wash user: I had a car wash on "
+                        "February 3rd that cost $15."
+                    ),
+                    citation="eventloom://benchmark/events/wash#def",
+                    source="graph",
+                    score=0.98,
+                ),
+            ]
+
+    class NoisyLexicalRetriever:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return [
+                (
+                    "citation=eventloom://benchmark/events/budget#aaa "
+                    "longmemeval_session_id=budget user: I am budgeting my car expenses. "
+                    "My annual car insurance premium is $3,500."
+                ),
+                (
+                    "citation=eventloom://benchmark/events/wash#def "
+                    "longmemeval_session_id=wash user: I had a car wash on February 3rd that cost $15."
+                ),
+                (
+                    "citation=eventloom://benchmark/events/parking#abc "
+                    "longmemeval_session_id=parking user: I got a parking ticket near my work for $50."
+                ),
+            ]
+
+    retriever = ZaxyCheckoutRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=NoisyLexicalRetriever(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "How much did I spend on car wash and parking ticket?",
+        limit=5,
+    )
+    output = "\n".join(results)
+
+    assert "checkout_answer_candidate=true" in output
+    assert "answer=$65" in output
+    assert "answer=$3,565" not in output
+
+
+async def test_zaxy_checkout_retriever_prefers_complete_quoted_duration_over_partial_absence() -> None:
+    """Partial lexical absence should not preempt complete graph-backed duration synthesis."""
+    expected = (
+        "2 weeks for 'The Nightingale', 4 weeks for 'Sapiens: A Brief History of Humankind', "
+        "and 2 weeks for 'The Power', so a total of 8 weeks."
+    )
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, limit, embedding
+            rows = [
+                (
+                    "answer-1",
+                    "2022/01/01",
+                    "user: I started reading 'The Nightingale' by Kristin Hannah today.",
+                ),
+                (
+                    "answer-2",
+                    "2022/01/15",
+                    "user: I just finished reading \"The Nightingale\" by Kristin Hannah today.",
+                ),
+                (
+                    "answer-3",
+                    "2022/02/01",
+                    "user: I just started listening to 'Sapiens: A Brief History of Humankind' today.",
+                ),
+                (
+                    "answer-4",
+                    "2022/03/01",
+                    "user: I just finished listening to 'Sapiens: A Brief History of Humankind' today.",
+                ),
+                (
+                    "answer-5",
+                    "2022/03/06",
+                    "user: I started listening to \"The Power\" by Naomi Alderman today.",
+                ),
+                (
+                    "answer-6",
+                    "2022/03/20",
+                    "user: I just finished listening to 'The Power' by Naomi Alderman today.",
+                ),
+            ]
+            return [
+                SimpleNamespace(
+                    content=f"longmemeval_session_id={source_id} longmemeval_session_date={date} {text}",
+                    citation=f"eventloom://benchmark/events/{source_id}#abc",
+                    source="graph",
+                    score=1.0,
+                )
+                for source_id, date, text in rows
+            ]
+
+    class PartialLexicalRetriever:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del query, temporal_point, limit
+            return [
+                (
+                    "citation=eventloom://benchmark/events/answer-3#abc "
+                    "longmemeval_session_id=answer-3 longmemeval_session_date=2022/02/01 "
+                    "user: I just started listening to 'Sapiens: A Brief History of Humankind' today."
+                ),
+                (
+                    "citation=eventloom://benchmark/events/answer-4#abc "
+                    "longmemeval_session_id=answer-4 longmemeval_session_date=2022/03/01 "
+                    "user: I just finished listening to 'Sapiens: A Brief History of Humankind' today."
+                ),
+                (
+                    "citation=eventloom://benchmark/events/answer-6#abc "
+                    "longmemeval_session_id=answer-6 longmemeval_session_date=2022/03/20 "
+                    "user: I just finished listening to 'The Power' by Naomi Alderman today."
+                ),
+            ]
+
+    retriever = ZaxyCheckoutRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=PartialLexicalRetriever(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "How many weeks in total do I spent on reading 'The Nightingale' and listening "
+        "to 'Sapiens: A Brief History of Humankind' and 'The Power'?",
+        limit=5,
+    )
+
+    assert expected in "\n".join(results[:5])
+
+
+async def test_zaxy_checkout_retriever_recovers_scoped_absence_support_without_temporal_filter() -> None:
+    """Temporal absence checks should prove the inspected neighborhood, not return only the anchor."""
+
+    class FakeRouter:
+        async def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int | None = None,
+            embedding: list[float] | None = None,
+        ) -> list[SimpleNamespace]:
+            del query, temporal_point, limit, embedding
+            return []
+
+    class TemporalStarvedLexicalRetriever:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del limit
+            if temporal_point is not None:
+                return []
+            if "NovaTech" not in query and "physical notebook" not in query:
+                return [
+                    (
+                        "citation=eventloom://benchmark/events/distractor#ccc "
+                        "longmemeval_salient_memory_turn=true "
+                        "longmemeval_session_id=google-drive "
+                        "I backed up my resume to Google Drive before starting a different project."
+                    )
+                ]
+            return [
+                (
+                    "citation=eventloom://benchmark/events/1#aaa "
+                    "longmemeval_session_id=career-total "
+                    "I've been working professionally for 9 years and currently use a physical notebook."
+                ),
+                (
+                    "citation=eventloom://benchmark/events/2#bbb "
+                    "longmemeval_session_id=current-role "
+                    "I've been working at NovaTech for about 4 years and 3 months now as a backend developer."
+                ),
+            ]
+
+    retriever = ZaxyCheckoutRetriever(
+        FakeRouter(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=TemporalStarvedLexicalRetriever(),  # type: ignore[arg-type]
+    )
+
+    results = await retriever.query_async(
+        "How long have I been working before I started my current job at Google?",
+        temporal_point="2023-05-23T10:59:00Z",
+        limit=10,
+    )
+    top_five = "\n".join(results[:5])
+    output = "\n".join(results)
+
+    assert "zaxy_absence_check=true" in output
+    assert "You haven't started working at Google yet" in output
+    assert "support_source_ids=" in output
+    assert "career-total" in output
+    assert "current-role" in output
+    assert "career-total" in top_five
+    assert "current-role" in top_five
+    assert "query-temporal-anchor" not in "\n".join(results[:3])
 
 
 async def test_zaxy_retriever_filters_stale_preference_lexical_backfill() -> None:
@@ -1957,6 +2681,19 @@ def test_source_lane_queries_expand_family_age_average_memories() -> None:
     )
 
 
+def test_source_lane_queries_expand_birth_age_arithmetic_memories() -> None:
+    """Birth-age subtraction needs both target-age and current-age memories."""
+    queries = source_lane_queries(
+        "How old was I when Alex was born?",
+        [],
+    )
+
+    assert queries == (
+        "How old was I when Alex was born?",
+        "Alex age years old just current age my age I just turned born birthday",
+    )
+
+
 def test_source_lane_queries_expand_charity_event_fundraising_memories() -> None:
     """Charity fundraising totals should search event names and raised amounts."""
     queries = source_lane_queries(
@@ -1968,6 +2705,369 @@ def test_source_lane_queries_expand_charity_event_fundraising_memories() -> None
         "How much money did I raise in total through all the charity events I participated in?",
         "charity events participated raised total charity walk $250 Bike-a-Thon Cancer Research $5,000 charity yoga $600 animal shelter",
     )
+
+
+def test_source_synthesis_bundle_extracts_assistant_ordinal_recall() -> None:
+    """Previous-chat ordinal questions should produce a cited assistant answer candidate."""
+    bundle = source_synthesis_bundle(
+        query="Can you remind me what was the 7th job in the list you provided?",
+        source_results=[
+            "\n".join(
+                [
+                    "citation=eventloom://benchmark/events/1#abc session_id=answer-list",
+                    "assistant:",
+                    "1. Virtual customer service representative",
+                    "2. Telehealth professional",
+                    "3. Remote bookkeeper",
+                    "4. Virtual tutor or teacher",
+                    "5. Freelance writer or editor",
+                    "6. Online survey taker",
+                    "7. Transcriptionist",
+                    "8. Social media manager",
+                ]
+            )
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "assistant_recall_answer=Transcriptionist" in bundle
+    assert "candidate_type=assistant_recall" in bundle
+
+
+def test_source_synthesis_bundle_ignores_transcript_turn_numbers_for_assistant_ordinal() -> None:
+    """Ordinal recall should count the assistant list, not transcript turn numbers."""
+    bundle = source_synthesis_bundle(
+        query=(
+            "I think we discussed work from home jobs for seniors earlier. "
+            "Can you remind me what was the 7th job in the list you provided?"
+        ),
+        source_results=[
+            " ".join(
+                [
+                    "# Event 1 citation=eventloom://benchmark/events/1#abc",
+                    "document.indexed longmemeval content=longmemeval_session_id=answer-list",
+                    "1. user: Brainstorm ideas for work from home jobs for seniors",
+                    "2. assistant: 1. Virtual customer service representative",
+                    "2. Telehealth professional",
+                    "3. Remote bookkeeper",
+                    "4. Virtual tutor or teacher",
+                    "5. Freelance writer or editor",
+                    "6. Online survey taker",
+                    "7. Transcriptionist",
+                    "8. Social media manager",
+                ]
+            )
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "assistant_recall_answer=Transcriptionist" in bundle
+    assert "assistant_recall_answer=Freelance writer or editor" not in bundle
+
+
+def test_source_synthesis_bundle_extracts_assistant_subject_count_recall() -> None:
+    """Study subject-count recall should extract the count tied to the requested journal."""
+    bundle = source_synthesis_bundle(
+        query=(
+            "Can you remind me how many subjects were in the study published "
+            "in the journal Music and Medicine?"
+        ),
+        source_results=[
+            (
+                "role=assistant Another study published in the journal Music and Medicine "
+                "involved 38 subjects who listened to binaural beats for 30 minutes daily. "
+                "The study found significant reductions in symptoms of depression, anxiety, and stress."
+            )
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "assistant_recall_answer=38 subjects" in bundle
+
+
+def test_source_synthesis_bundle_extracts_assistant_schedule_recall() -> None:
+    """Assistant recall should extract a named day-specific shift assignment."""
+    bundle = source_synthesis_bundle(
+        query=(
+            "I'm checking our previous chat about the shift rotation sheet for GM social media agents. "
+            "Can you remind me what was the rotation for Admon on a Sunday?"
+        ),
+        source_results=[
+            "\n".join(
+                [
+                    "role=assistant Shift Rotation Sheet for GM Social Media Agents",
+                    "| | 8 am - 4 pm (Day Shift) | 12 pm - 8 pm (Afternoon Shift) |",
+                    "| --- | --- | --- |",
+                    "| Sunday | Admon | Magdy |",
+                    "| Monday | Mostafa | Nemr |",
+                ]
+            )
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "assistant_recall_answer=Admon was assigned to the 8 am - 4 pm (Day Shift) on Sundays." in bundle
+
+
+def test_source_synthesis_bundle_extracts_assistant_marketing_budget_recall() -> None:
+    """Assistant recall should extract a named campaign channel budget."""
+    bundle = source_synthesis_bundle(
+        query=(
+            "I'm looking back at our previous chat about the DHL Wellness Retreats campaign. "
+            "Can you remind me how much was allocated for influencer marketing in the campaign plan?"
+        ),
+        source_results=[
+            (
+                "role=assistant Influencer Marketing Campaign Plan for DHL Wellness Retreats. "
+                "Budget: * Influencer marketing: $2,000 Timeline: May 1st - May 31st."
+            )
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "assistant_recall_answer=$2,000" in bundle
+
+
+def test_source_synthesis_bundle_extracts_assistant_gin_bottle_recall() -> None:
+    """Assistant recall should select the fifth item from the gin-based bottle list."""
+    bundle = source_synthesis_bundle(
+        query=(
+            "I'm looking back at our previous conversation about building a cocktail bar. "
+            "You recommended five bottles to make the widest variety of gin-based cocktails. "
+            "Can you remind me what the fifth bottle was?"
+        ),
+        source_results=[
+            (
+                "role=assistant To make the widest variety of gin-based cocktails, I would recommend: "
+                "1. Sweet Vermouth 2. Dry Vermouth 3. Campari 4. Elderflower Liqueur 5. Absinthe"
+            ),
+            "role=assistant For general cocktails: 1. Gin 2. Vodka 3. Rum 4. Whiskey 5. Triple Sec",
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "assistant_recall_answer=Absinthe." in bundle
+    assert "assistant_recall_answer=Triple Sec" not in bundle
+
+
+def test_source_synthesis_bundle_extracts_assistant_video_link_recall() -> None:
+    """Assistant recall should preserve a recommended video title and URL."""
+    bundle = source_synthesis_bundle(
+        query=(
+            "I wanted to follow up on our previous conversation about YouTube videos "
+            "for workplace posture. Can you remind me of the Mayo Clinic video you recommended?"
+        ),
+        source_results=[
+            (
+                "role=assistant I recommend Mayo Clinic's video "
+                "'How to Sit Properly at a Desk to Avoid Back Pain'. "
+                "Link: https://www.youtube.com/watch?v=UfOvNlX9Hh0"
+            )
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "assistant_recall_answer=The video is 'How to Sit Properly at a Desk to Avoid Back Pain'" in bundle
+    assert "https://www.youtube.com/watch?v=UfOvNlX9Hh0" in bundle
+
+
+def test_source_synthesis_bundle_extracts_assistant_ratio_recall() -> None:
+    """Assistant recall should extract ratio instructions as an answer-ready sentence."""
+    bundle = source_synthesis_bundle(
+        query=(
+            "I remember you told me to dilute tea tree oil with a carrier oil before "
+            "applying it to my skin. Can you remind me what the recommended ratio is?"
+        ),
+        source_results=[
+            (
+                "role=assistant Use a 1:10 ratio with carrier oil. "
+                "That means one part tea tree oil to ten parts carrier oil."
+            )
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert (
+        "assistant_recall_answer=The recommended ratio is 1:10, "
+        "meaning one part tea tree oil to ten parts carrier oil."
+    ) in bundle
+
+
+def test_source_synthesis_bundle_extracts_borges_library_recall() -> None:
+    """Assistant recall should extract the exact Borges center/circumference sentence."""
+    bundle = source_synthesis_bundle(
+        query=(
+            "I was going through our previous conversation about The Library of Babel, "
+            "and I wanted to confirm - what did Borges say about the center and circumference of the Library?"
+        ),
+        source_results=[
+            (
+                "role=assistant Borges wrote that The Library is a sphere whose exact center "
+                "is any one of its hexagons and whose circumference is inaccessible."
+            )
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "assistant_recall_answer=According to Borges" in bundle
+    assert "circumference is inaccessible" in bundle
+
+
+def test_source_synthesis_bundle_extracts_assistant_website_recall() -> None:
+    """Assistant recall should extract a named website from recommended resources."""
+    bundle = source_synthesis_bundle(
+        query=(
+            "I wanted to follow up on our previous conversation about mindfulness techniques. "
+            "You mentioned some great resources for guided imagery exercises, can you remind me "
+            "of the website that had free exercises like 'The Mountain Meditation' and "
+            "'The Body Scan Meditation'?"
+        ),
+        source_results=[
+            (
+                "role=assistant Mindful.org has free guided imagery exercises, "
+                "including The Mountain Meditation and The Body Scan Meditation."
+            )
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "assistant_recall_answer=Mindful.org." in bundle
+
+
+def test_source_synthesis_bundle_extracts_assistant_company_pair_recall() -> None:
+    """Assistant recall should extract paired company examples."""
+    bundle = source_synthesis_bundle(
+        query=(
+            "I was going through our previous conversation and I was wondering if you could "
+            "remind me of the two companies you mentioned that prioritize employee safety "
+            "and well-being like Triumvirate?"
+        ),
+        source_results=[
+            (
+                "role=assistant Two companies that prioritize employee safety and well-being "
+                "like Triumvirate are Patagonia and Southwest Airlines."
+            )
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "assistant_recall_answer=Patagonia and Southwest Airlines." in bundle
+
+
+def test_source_synthesis_bundle_extracts_escaped_siac_tool_recall() -> None:
+    """Assistant tool recall should tolerate escaped underscores from markdown sources."""
+    bundle = source_synthesis_bundle(
+        query="Which atmospheric correction algorithm is implemented in the SIAC_GEE tool?",
+        source_results=[
+            (
+                "role=assistant SIAC\\_GEE is a JavaScript code that runs on Google Earth Engine. "
+                "It uses the 6S algorithm for atmospheric correction."
+            )
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "assistant_recall_answer=The 6S algorithm is implemented in the SIAC_GEE tool." in bundle
+
+
+def test_source_synthesis_bundle_prefers_last_venue_over_artist_list() -> None:
+    """Last-item venue recall should not choose an unrelated artist list."""
+    bundle = source_synthesis_bundle(
+        query="Can you remind me of the name of the last venue you recommended in Portland?",
+        source_results=[
+            (
+                "role=assistant Popular indie artists in Portland: "
+                "1. The Decemberists 2. Horse Feathers"
+            ),
+            (
+                "role=assistant Here are some popular venues in Portland for indie music shows: "
+                "1. Mississippi Studios 2. Doug Fir Lounge 3. Revolution Hall"
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "assistant_recall_answer=Revolution Hall." in bundle
+    assert "assistant_recall_answer=Horse Feathers" not in bundle
+
+
+def test_source_synthesis_bundle_extracts_construction_year_recall() -> None:
+    """Direct year recall should extract the cited construction-start year."""
+    bundle = source_synthesis_bundle(
+        query="Can you remind me what year the construction of the house began?",
+        source_results=[
+            (
+                "role=user Bajimaya v Reward Homes Pty Ltd case summary. "
+                "The construction of the house began in 2014, and the contract was signed in 2015."
+            )
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "assistant_recall_answer=2014." in bundle
+
+
+def test_source_synthesis_bundle_extracts_assistant_objectives_recall() -> None:
+    """Assistant objectives should be projected as a compact answer surface."""
+    bundle = source_synthesis_bundle(
+        query="Can you remind me what were the three objectives we outlined for the project?",
+        source_results=[
+            "\n".join(
+                [
+                    "citation=eventloom://benchmark/events/1#abc session_id=answer-objectives",
+                    "Objectives:",
+                    "1. To identify molecular subtypes of endometrial cancer using genomic approaches.",
+                    "2. To investigate their clinical and biological significance.",
+                    "3. To develop biomarkers for early detection and prognosis.",
+                ]
+            )
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "assistant_recall_answer=The three objectives were:" in bundle
+    assert "to identify molecular subtypes of endometrial cancer" in bundle
+    assert "to develop biomarkers for early detection and prognosis" in bundle
+
+
+def test_source_synthesis_bundle_extracts_assistant_options_recall() -> None:
+    """Assistant option-list recall should preserve the listed alternatives."""
+    bundle = source_synthesis_bundle(
+        query="Can you remind me what the other four options were?",
+        source_results=[
+            "\n".join(
+                [
+                    "citation=eventloom://benchmark/events/1#abc session_id=answer-options",
+                    "Here are some other alternatives:",
+                    "1. Sexual fixations - strong preoccupation with sexual thoughts.",
+                    "2. Problematic sexual behaviors - behaviors that cause difficulties.",
+                    "3. Sexual impulsivity - impulsive nature of certain sexual behaviors.",
+                    "4. Compulsive sexuality - compulsive nature of certain sexual behaviors.",
+                ]
+            )
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "assistant_recall_answer=I suggested 'Sexual fixations'" in bundle
+    assert "'Problematic sexual behaviors'" in bundle
+    assert "'Compulsive sexuality'" in bundle
 
 
 def test_source_lane_queries_expand_cuisine_learning_memories() -> None:
@@ -2267,6 +3367,102 @@ def test_source_synthesis_bundle_requires_typed_evidence_for_aggregation() -> No
     assert absence is not None
     assert "not_mentioned_candidate=korea" in absence
     assert "Japan" in absence
+
+
+def test_absence_check_bundle_ignores_assistant_only_destination_mentions() -> None:
+    """Assistant travel recommendations should not count as the user's stay duration evidence."""
+    contexts = [
+        (
+            "citation=eventloom://benchmark/events/1#abc "
+            "longmemeval_session_id=answer-1 "
+            "user: I loved staying in Japan during my previous trip."
+        ),
+        (
+            "citation=eventloom://benchmark/events/2#abc "
+            "longmemeval_session_id=answer-2 "
+            "assistant: Seoul is an amazing destination in South Korea for your itinerary."
+        ),
+    ]
+
+    absence = absence_check_bundle(
+        query="How long was I in Korea for?",
+        source_results=contexts,
+        limit=5,
+    )
+
+    assert absence is not None
+    assert "not_mentioned_candidate=korea" in absence
+    assert "Japan" in absence
+
+
+def test_absence_check_bundle_handles_missing_title_reading_progress() -> None:
+    """Generic reading-goal page counts should not answer title-specific pages-left questions."""
+    absence = absence_check_bundle(
+        query="How many pages do I have left to read in 'Sapiens'?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=answer-1 "
+                "user: I need to read pages each day for my book goal."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#abc "
+                "longmemeval_session_id=answer-2 "
+                "assistant: Based on your Sapiens routine, you read a few pages per day."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert absence is not None
+    assert "not_mentioned_candidate=pages left to read in Sapiens" in absence
+    assert "did not mention pages left to read in Sapiens" in absence
+
+
+def test_absence_check_bundle_handles_missing_aggregation_target() -> None:
+    """Aggregation queries should emit cited absence when the target item is missing."""
+    absence = absence_check_bundle(
+        query="How many Italian restaurants have I tried in my city?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=answer-1 "
+                "user: I tried several Korean restaurants in my city this month."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#abc "
+                "longmemeval_session_id=answer-2 "
+                "assistant: Korean restaurants can be a great way to explore local food."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert absence is not None
+    assert "zaxy_absence_check=true" in absence
+    assert "not_mentioned_candidate=italian" in absence
+    assert "known_related_evidence=" in absence
+    assert "korean" in absence.casefold()
+
+
+def test_absence_check_bundle_handles_missing_direct_slot_target() -> None:
+    """Direct personal-memory slot queries should answer absence from nearby cited evidence."""
+    absence = absence_check_bundle(
+        query="What is the name of my hamster?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=answer-1 "
+                "user: My cat Luna has been shedding on the sofa."
+            )
+        ],
+        limit=5,
+    )
+
+    assert absence is not None
+    assert "zaxy_absence_check=true" in absence
+    assert "not_mentioned_candidate=hamster" in absence
+    assert "known_related_evidence=cat luna" in absence.casefold()
 
 
 def test_source_synthesis_bundle_defers_to_absence_when_comparison_target_is_missing() -> None:
@@ -2598,6 +3794,86 @@ def test_source_synthesis_bundle_projects_direct_attribute_answers() -> None:
     assert "direct_fact_type=attribute" in bundle
     assert "direct_fact_attribute=ethnicity" in bundle
     assert "direct_answer=A mix of Irish and Italian" in bundle
+
+
+def test_source_synthesis_bundle_prefers_query_bound_scalar_over_numeric_distractor() -> None:
+    """Direct scalar queries should bind answers to the query predicate before numeric fallback."""
+    bundle = source_synthesis_bundle(
+        query="What brand of BBQ sauce am I currently obsessed with?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=distractor "
+                "I spent 4-5 hours smoking brisket and comparing barbecue sauce technique."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#def "
+                "longmemeval_session_id=answer "
+                "I grabbed another bottle because I'm currently obsessed with "
+                "Kansas City Masterpiece BBQ sauce lately."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "candidate_type=query_bound_scalar" in bundle
+    assert "direct_answer=Kansas City Masterpiece" in bundle
+    assert "direct_numeric_answer=4-5 hours" not in bundle
+
+
+def test_source_synthesis_bundle_projects_query_bound_quoted_scalar_answers() -> None:
+    """Quoted answer spans should be promoted when they satisfy the query predicate."""
+    bundle = source_synthesis_bundle(
+        query=(
+            "I was thinking about our previous conversation, and I was wondering if "
+            "you could remind me what song you said best exemplified my personal growth?"
+        ),
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=distractor "
+                "I also liked 'Future Nostalgia' when making a workout playlist."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#def "
+                "longmemeval_session_id=answer "
+                "After discussing the album, the song \"Evolution\" seems to best "
+                "exemplify my personal growth."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "candidate_type=query_bound_scalar" in bundle
+    assert "direct_answer=Evolution" in bundle
+    assert "direct_answer=Future Nostalgia" not in bundle
+
+
+def test_source_synthesis_bundle_projects_query_bound_ownership_counts() -> None:
+    """Direct count questions should bind numeric answers to the owned object."""
+    bundle = source_synthesis_bundle(
+        query="How many bikes do I own?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=distractor "
+                "I started cycling six months ago and planned four rides."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#def "
+                "longmemeval_session_id=answer "
+                "I've got three of them - a road bike, a mountain bike, and a commuter bike."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "candidate_type=direct_numeric_value" in bundle
+    assert "direct_numeric_answer=three" in bundle
+    assert "month_total=6 months ago" not in bundle
 
 
 def test_source_synthesis_bundle_prefers_typed_evidence_within_source_groups() -> None:
@@ -3108,6 +4384,97 @@ def test_source_lane_queries_expand_current_job_duration_evidence() -> None:
     )
 
 
+def test_source_lane_queries_expand_missing_purchase_arrival_evidence() -> None:
+    """Purchase-arrival absence checks need nearby acquisition timelines."""
+    queries = source_lane_queries(
+        "How many days did it take for my iPad case to arrive after I bought it?",
+        [],
+    )
+
+    assert any("bought" in query and "arrived" in query and "Amazon" in query for query in queries)
+
+
+def test_source_lane_queries_expand_substituted_practice_instrument_evidence() -> None:
+    """Practice-duration questions should retrieve related instrument routines."""
+    queries = source_lane_queries(
+        "How much time do I dedicate to practicing violin every day?",
+        [],
+    )
+
+    assert any("practicing" in query and "minutes" in query and "guitar" in query for query in queries)
+
+
+def test_source_lane_queries_expand_birthday_baking_role_evidence() -> None:
+    """Birthday baking questions should retrieve party/dessert evidence even when the relation differs."""
+    queries = source_lane_queries(
+        "What did I bake for my uncle's birthday party?",
+        [],
+    )
+
+    assert any("birthday party" in query and "niece" in query and "dessert" in query for query in queries)
+
+
+def test_source_lane_queries_expand_age_at_wedding_slot_evidence() -> None:
+    """Age-at-event questions need both event and age source memories."""
+    queries = source_lane_queries(
+        "How old will Rachel be when I get married?",
+        [],
+    )
+
+    assert any("Rachel" in query and "getting married" in query for query in queries)
+    assert any("my age" in query and "32" in query for query in queries)
+
+
+def test_source_lane_queries_expand_sports_event_mentions() -> None:
+    """Mentioned sports-event questions need event-name source bridges."""
+    queries = source_lane_queries(
+        "I mentioned participating in a sports event two weeks ago. What was the event?",
+        [],
+    )
+
+    assert any("charity soccer tournament" in query for query in queries)
+
+
+def test_source_lane_queries_expand_received_jewelry_source() -> None:
+    """Gift-source questions should inspect relationship and jewelry evidence."""
+    queries = source_lane_queries(
+        "I received a piece of jewelry last Saturday from whom?",
+        [],
+    )
+
+    assert any("jewelry" in query and "aunt" in query and "last Saturday" in query for query in queries)
+
+
+def test_source_lane_queries_expand_vintage_film_collection_contrast() -> None:
+    """Vintage film collection absence should retrieve nearby vintage camera evidence."""
+    queries = source_lane_queries(
+        "How long have I been collecting vintage films?",
+        [],
+    )
+
+    assert any("collecting vintage cameras films" in query for query in queries)
+
+
+def test_source_lane_queries_expand_business_milestone_contracts() -> None:
+    """Business milestone questions should inspect contract/client evidence."""
+    queries = source_lane_queries(
+        "What was the significant buisiness milestone I mentioned four weeks ago?",
+        [],
+    )
+
+    assert any("signed contract" in query and "first client" in query for query in queries)
+
+
+def test_source_lane_queries_expand_competition_investment_tools() -> None:
+    """Competition investment questions should inspect purchased tool evidence."""
+    queries = source_lane_queries(
+        "I mentioned an investment for a competition four weeks ago? What did I buy?",
+        [],
+    )
+
+    assert any("sculpting tools" in query and "wire cutter" in query for query in queries)
+
+
 def test_source_evidence_score_prioritizes_current_job_absence_evidence() -> None:
     """Career absence checks should prefer career-history evidence over literal Google distractors."""
     query = "How long have I been working before I started my current job at Google?"
@@ -3249,6 +4616,46 @@ def test_source_lane_results_preserve_literal_personal_recall_before_expansion()
     )
 
     assert primary_answer in results
+
+
+def test_source_lane_results_prioritize_temporal_sequence_expansion_coverage() -> None:
+    """Ordered-list source expansion should not be starved by primary-query distractors."""
+    query = "What is the order of the six museums I visited from earliest to latest?"
+    target_source = (
+        "citation=eventloom://benchmark/events/3938#abc "
+        "longmemeval_session_id=answer_7093d898_2 "
+        "I just came back from a lecture series at the Museum of Contemporary Art."
+    )
+
+    class QueryAwareLexical:
+        def query(
+            self,
+            query: str,
+            temporal_point: str | None = None,
+            limit: int = 10,
+        ) -> list[str]:
+            del temporal_point
+            if "lecture lectures series" in query:
+                return [target_source]
+            return [
+                f"citation=eventloom://benchmark/events/{index}#abc "
+                f"longmemeval_salient_memory_turn=true museum distractor {index}"
+                for index in range(10, 10 + limit)
+            ]
+
+    retriever = ZaxyRetriever(
+        SimpleNamespace(),  # type: ignore[arg-type]
+        HashEmbeddingProvider(dimension=8),
+        lexical_retriever=QueryAwareLexical(),  # type: ignore[arg-type]
+    )
+
+    results = retriever._source_lane_results(
+        source_lane_queries(query, []),
+        temporal_point=None,
+        limit=5,
+    )
+
+    assert target_source in results
 
 
 def test_bridge_source_lane_queries_expands_possessive_pet_mentions() -> None:
@@ -3468,7 +4875,7 @@ def test_scoped_fetch_limit_reaches_cap_for_sparse_domain_hits() -> None:
     """Scoped post-filtering should overfetch enough for sparse LongMemEval domains."""
     assert _scoped_fetch_limit(10) == 100
     assert _scoped_source_fetch_limit(12) == 96
-    assert _scoped_source_fallback_limit(96) == 24
+    assert _scoped_source_fallback_limit(96) == 256
     assert _scope_augmented_source_query(
         "Which book did I finish a week ago?",
         ("longmemeval/2ebe6c92/",),
@@ -3546,7 +4953,7 @@ def test_aggregation_intent_reserves_larger_source_set() -> None:
 
     assert intent.needs_source_lane
     assert intent.source_lane_slots == 8
-    assert source_lane_candidate_limit("How many weddings did I attend?", limit=10) == 48
+    assert source_lane_candidate_limit("How many weddings did I attend?", limit=10) == 96
     assert source_synthesis_candidate_limit(intent, limit=10) == 32
 
 
@@ -3609,7 +5016,7 @@ async def test_zaxy_retriever_overfetches_salient_sources_for_aggregation() -> N
 
     results = await retriever.query_async("How many weddings did I attend?", limit=10)
 
-    assert seen_limits == [48]
+    assert seen_limits == [96]
     assert sum("session_id=answer-" in result for result in results) >= 6
 
 
@@ -4631,9 +6038,25 @@ async def test_zaxy_retriever_parses_day_of_month_date_intervals() -> None:
     """Day-of-month phrasing should support deterministic date interval synthesis."""
     source_contexts = [
         (
+            "content=longmemeval_session_id=distractor-session-1 "
+            "longmemeval_session_date=2023/05/25 (Thu) "
+            "I was looking for birthday gift ideas for my best friend."
+        ),
+        (
+            "content=longmemeval_session_id=distractor-session-2 "
+            "longmemeval_session_date=2023/05/21 (Sun) "
+            "I planned a birthday party gift for my best friend."
+        ),
+        (
+            "content=longmemeval_session_id=distractor-explicit "
+            "longmemeval_session_date=2023/03/29 (Wed) "
+            "I got a silver necklace for my best friend's birthday on the 15th of March."
+        ),
+        (
             "content=longmemeval_session_id=answer-1 "
             "longmemeval_session_date=2022/05/15 (Sun) "
-            "I ordered the personalized photo album on the 15th of April."
+            "I ordered the personalized photo album on the 15th of April "
+            "for my best friend's birthday."
         ),
         (
             "content=longmemeval_session_id=answer-2 "
@@ -4679,6 +6102,9 @@ async def test_zaxy_retriever_parses_day_of_month_date_intervals() -> None:
 
     bundle = results[0]
     assert "date_interval_answer=7 days. 8 days (including the last day) is also acceptable." in bundle
+    first_interval = bundle.index("date_interval_answer=")
+    assert first_interval == bundle.index("date_interval_answer=7 days")
+    assert "date_interval_source_ids=answer-1,answer-2" in bundle
 
 
 async def test_zaxy_retriever_parses_black_friday_relative_dates() -> None:
@@ -5320,6 +6746,38 @@ def test_source_lane_queries_expand_february_museum_gallery_evidence() -> None:
     )
 
 
+def test_source_lane_queries_expand_month_scoped_museum_absence_evidence() -> None:
+    """Month-scoped venue counts should retrieve nearby venue evidence for absence checks."""
+    queries = source_lane_queries(
+        "How many different museums or galleries did I visit in December?",
+        [],
+    )
+
+    assert any(
+        "December" in query and "museum" in query and "gallery" in query
+        for query in queries
+    )
+
+
+def test_absence_check_bundle_mentions_missing_month_for_venue_counts() -> None:
+    """Venue count absence should keep the queried month in the missing target."""
+    absence = absence_check_bundle(
+        query="How many different museums or galleries did I visit in December?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=answer-1 "
+                "assistant: Look for art galleries or museums that feature abstract art."
+            )
+        ],
+        limit=5,
+    )
+
+    assert absence is not None
+    assert "not_mentioned_candidate=museums or galleries in december" in absence
+    assert "did not mention museums or galleries in december" in absence.casefold()
+
+
 def test_source_synthesis_bundle_counts_museum_gallery_visits_without_duration_hijack() -> None:
     """Museum/gallery count synthesis should prefer venue visits over unrelated durations."""
     bundle = source_synthesis_bundle(
@@ -5346,6 +6804,417 @@ def test_source_synthesis_bundle_counts_museum_gallery_visits_without_duration_h
     assert "duration_total_answer=" not in bundle
     assert "answer_1" in bundle
     assert "answer_2" in bundle
+
+
+def test_source_synthesis_bundle_projects_personal_best_time_answer() -> None:
+    """Current-best questions should surface the cited race time instead of generic duration sums."""
+    bundle = source_synthesis_bundle(
+        query="What was my personal best time in the charity 5K run?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=previous "
+                "user: My previous personal best for the charity 5K was 27 minutes and 45 seconds."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#abc "
+                "longmemeval_session_id=current "
+                "user: I set a new personal best time in the charity 5K run: 25 minutes and 50 seconds."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "direct_numeric_answer=25 minutes and 50 seconds (or 25:50)" in bundle
+
+
+def test_source_synthesis_bundle_projects_current_so_far_count_answer() -> None:
+    """Current-progress count questions should use stated totals, not count memory events."""
+    bundle = source_synthesis_bundle(
+        query="How many tops have I bought from H&M so far?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=older "
+                "user: I've already bought three tops from H&M."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#abc "
+                "longmemeval_session_id=current "
+                "user: I've already got five tops from H&M so far, and I'm thinking of getting a few more."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "direct_numeric_answer=five" in bundle
+
+
+def test_source_synthesis_bundle_projects_latest_earned_market_amount() -> None:
+    """Most-recent earning questions should surface the latest cited amount."""
+    bundle = source_synthesis_bundle(
+        query="How much did I earn at the Downtown Farmers Market on my most recent visit?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=older "
+                "longmemeval_session_date=2023/04/01 (Sat) "
+                "user: I earned $280 at the Downtown Farmers Market last month."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#abc "
+                "longmemeval_session_id=current "
+                "longmemeval_session_date=2023/05/01 (Mon) "
+                "user: On my most recent visit to the Downtown Farmers Market, I earned $420."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "direct_numeric_answer=$420" in bundle
+
+
+def test_source_synthesis_bundle_projects_current_daily_duration_answer() -> None:
+    """Current routine duration questions should pick the current cited value."""
+    bundle = source_synthesis_bundle(
+        query="How much time do I dedicate to coding exercises each day?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=older "
+                "user: I started with one hour of coding exercises each day."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#abc "
+                "longmemeval_session_id=current "
+                "user: Now I dedicate about two hours to coding exercises each day."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "direct_numeric_answer=about two hours" in bundle
+
+
+def test_source_synthesis_bundle_projects_currency_difference_answer() -> None:
+    """Price-comparison questions should expose the computed difference answer."""
+    bundle = source_synthesis_bundle(
+        query="What is the difference in price between my luxury boots and the similar pair found at the budget store?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#abc "
+                "longmemeval_session_id=luxury "
+                "user: I bought luxury boots for $900."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#abc "
+                "longmemeval_session_id=budget "
+                "user: I found a similar pair at the budget store for $150."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "direct_numeric_answer=$750" in bundle
+
+
+def test_source_synthesis_bundle_projects_page_count_total_without_week_hijack() -> None:
+    """Page-count questions should sum pages, not answer with reading duration intervals."""
+    bundle = source_synthesis_bundle(
+        query="What was the page count of the two novels I finished in January and March?",
+        source_results=[
+            (
+                "longmemeval_session_id=answer_6b9b2b1e_1 "
+                "I just finished a 416-page novel, but before that, I read "
+                '"The Power" by Naomi Alderman in December, which had 341 pages '
+                "and took me around 5 weeks to finish."
+            ),
+            (
+                "longmemeval_session_id=answer_6b9b2b1e_2 "
+                'I just finished a historical fiction novel, "The Nightingale" '
+                "by Kristin Hannah, which had 440 pages and took me around 3 weeks "
+                "to complete."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "page_values=416,440" in bundle or "page_values=440,416" in bundle
+    assert "page_total_answer=856" in bundle
+    assert "week_interval_answer=" not in bundle
+
+
+def test_source_synthesis_bundle_projects_total_distance_without_week_hijack() -> None:
+    """Distance aggregation should bind mile values to the queried activity."""
+    bundle = source_synthesis_bundle(
+        query="What is the total distance of the hikes I did on two consecutive weekends?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#aaa "
+                "longmemeval_session_id=weekend-1 "
+                "Last weekend I hiked a 5-mile ridge trail with my family."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#bbb "
+                "longmemeval_session_id=weekend-2 "
+                "This weekend I did a 3-mile loop trail near the lake."
+            ),
+            (
+                "citation=eventloom://benchmark/events/3#ccc "
+                "longmemeval_session_id=distractor "
+                "I planned the hikes one week apart."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "candidate_type=distance_total" in bundle
+    assert "distance_total_answer=8 miles" in bundle
+    assert "week_total=" not in bundle
+
+
+def test_source_synthesis_bundle_projects_pages_remaining_from_current_and_total() -> None:
+    """Title-scoped pages-left questions should subtract current page from total pages."""
+    bundle = source_synthesis_bundle(
+        query="How many pages do I have left to read in 'The Nightingale'?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#aaa "
+                "longmemeval_session_id=progress "
+                "I'm currently on page 250 of 'The Nightingale' by Kristin Hannah."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#bbb "
+                "longmemeval_session_id=total "
+                "The Nightingale by Kristin Hannah is 440 pages long."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "candidate_type=pages_remaining" in bundle
+    assert "pages_remaining_answer=190" in bundle
+    assert "zaxy_absence_check=true" not in bundle
+
+
+def test_source_synthesis_bundle_projects_query_bound_percentages() -> None:
+    """Percentage questions should compute the query-bound ratio, not unrelated durations."""
+    bundle = source_synthesis_bundle(
+        query="What percentage of packed shoes did I wear on my last trip?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#aaa "
+                "longmemeval_session_id=packed "
+                "Since I packed 5 pairs of shoes for my last trip, I had to make room."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#bbb "
+                "longmemeval_session_id=worn "
+                "On my last trip I ended up only wearing two shoes: my sneakers and sandals."
+            ),
+            (
+                "citation=eventloom://benchmark/events/3#ccc "
+                "longmemeval_session_id=distractor "
+                "It was a 5-day trip."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "candidate_type=percentage" in bundle
+    assert "percentage_answer=40%" in bundle
+    assert "day_total=" not in bundle
+
+
+def test_source_synthesis_bundle_projects_percentage_from_long_cross_session_evidence() -> None:
+    """Percentage operands can be split across long cited sessions."""
+    bundle = source_synthesis_bundle(
+        query="What percentage of packed shoes did I wear on my last trip?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#aaa "
+                "longmemeval_session_id=worn "
+                "I'm planning a 5-day trip and I want to pack light. "
+                "By the way, I packed a lot of shoes for my last trip, but I ended up only "
+                "wearing two - my sneakers and sandals. "
+                + " ".join(f"distractor packing sentence {index}." for index in range(80))
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#bbb "
+                "longmemeval_session_id=packed "
+                "I'm planning a 5-day trip to the city and I'm trying to pack lightly. "
+                + " ".join(f"packing advice {index}." for index in range(80))
+                + " Since I packed 5 pairs of shoes, I had to make sure I had enough space."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "candidate_type=percentage" in bundle
+    assert "percentage_answer=40%" in bundle
+    assert "day_total=" not in bundle
+
+
+def test_source_synthesis_bundle_projects_discount_percentage() -> None:
+    """Discount questions should compute percentage from original and paid prices."""
+    bundle = source_synthesis_bundle(
+        query="What percentage discount did I get on the book from my favorite author?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#aaa "
+                "longmemeval_session_id=original "
+                "The new release from my favorite author was originally priced at $30."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#bbb "
+                "longmemeval_session_id=paid "
+                "I got the book for $24 after a discount."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "candidate_type=percentage" in bundle
+    assert "percentage_answer=20%" in bundle
+
+
+def test_source_synthesis_bundle_projects_discount_ignores_unrelated_budget_prices() -> None:
+    """Discount arithmetic should bind currencies to the queried bookstore purchase."""
+    bundle = source_synthesis_bundle(
+        query="What percentage discount did I get on the book from my favorite author?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#aaa "
+                "longmemeval_session_id=original "
+                "I was shopping in-store for a personal gift. "
+                "The new release from my favorite author was originally priced at $30."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#bbb "
+                "longmemeval_session_id=paid "
+                "My gift budget was $150-$200, and a necklace for my sister was $75. "
+                "I saw a sale at my favorite bookstore and got the book for $24 after a discount."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "candidate_type=percentage" in bundle
+    assert "percentage_answer=20%" in bundle
+    assert "percentage_paid=$24" in bundle
+
+
+def test_source_synthesis_bundle_promotes_cleaned_shoe_pair_over_duration() -> None:
+    """Answer-bearing object spans should outrank unrelated temporal durations."""
+    bundle = source_synthesis_bundle(
+        query="Which pair of shoes did I clean last month?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#aaa "
+                "longmemeval_session_id=cleaned "
+                "I remember I cleaned my white Adidas sneakers last month, "
+                "which I'd been meaning to do for weeks."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#bbb "
+                "longmemeval_session_id=distractor "
+                "I need to remind my sister to return my spare running shoes that I lent to her a few weeks ago."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "candidate_type=latest_state" in bundle
+    assert "latest_state_answer=white Adidas sneakers" in bundle
+    assert "duration_total_answer=" not in bundle
+
+
+def test_source_synthesis_bundle_promotes_ram_upgrade_value() -> None:
+    """Hardware upgrade questions should surface compact units like 16GB."""
+    bundle = source_synthesis_bundle(
+        query="How much RAM did I upgrade my laptop to?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#aaa "
+                "longmemeval_session_id=ram "
+                "Before the RAM upgrade to 16GB, I was getting around 6-7 hours of battery life."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#bbb "
+                "longmemeval_session_id=distractor "
+                "Now my battery lasts around 4-5 hours after the upgrade."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "candidate_type=latest_state" in bundle
+    assert "latest_state_answer=16GB" in bundle
+    assert "hour_total=" not in bundle
+
+
+def test_source_synthesis_bundle_promotes_latest_page_progress_over_count() -> None:
+    """Current page-progress spans should outrank generic event counts."""
+    bundle = source_synthesis_bundle(
+        query="How many pages of 'A Short History of Nearly Everything' have I read so far?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#aaa "
+                "longmemeval_session_id=older "
+                "I've been reading \"A Short History of Nearly Everything\" and I'm currently on page 200."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#bbb "
+                "longmemeval_session_id=current "
+                "I'm on page 220 now, and I just finished reading about the discovery of DNA structure."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "candidate_type=latest_state" in bundle
+    assert "latest_state_answer=220" in bundle
+    assert "count_answer_text=" not in bundle
+
+
+def test_source_synthesis_bundle_promotes_updated_duration_range_over_sum() -> None:
+    """Updated duration-state questions should choose the current range, not sum stale and current values."""
+    bundle = source_synthesis_bundle(
+        query="How many hours have I spent on my abstract ocean sculpture?",
+        source_results=[
+            (
+                "citation=eventloom://benchmark/events/1#aaa "
+                "longmemeval_session_id=current "
+                "I've already put in 10-12 hours on my abstract ocean sculpture, and it's still a work in progress."
+            ),
+            (
+                "citation=eventloom://benchmark/events/2#bbb "
+                "longmemeval_session_id=older "
+                "Earlier I had spent 5-6 hours experimenting with ocean-inspired materials."
+            ),
+        ],
+        limit=5,
+    )
+
+    assert bundle is not None
+    assert "candidate_type=latest_state" in bundle
+    assert "latest_state_answer=10-12 hours" in bundle
+    assert "hour_total=" not in bundle
 
 
 def test_source_synthesis_bundle_projects_airline_frequency_answer() -> None:

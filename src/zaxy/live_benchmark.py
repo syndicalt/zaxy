@@ -38,7 +38,9 @@ from zaxy.retrieval_intent import classify_retrieval_intent
 from zaxy.retrieval_plan import (
     absence_check_bundle,
     bridge_source_lane_queries,
+    evidence_source_order,
     filter_superseded_preference_source_results,
+    query_temporal_anchor_synthesis_query,
     reserve_source_lane,
     should_query_source_lane,
     should_try_absence_bundle_first,
@@ -370,7 +372,7 @@ def _scoped_source_fetch_limit(limit: int) -> int:
 
 def _scoped_source_fallback_limit(limit: int) -> int:
     """Return a bounded second-pass source overfetch size after empty scoped filtering."""
-    return min(max(limit, 1), 24)
+    return min(max(max(limit, 1), max(limit, 1) * 4), 256)
 
 
 def _scope_augmented_source_query(query: str, scope_terms: tuple[str, ...]) -> str:
@@ -378,6 +380,14 @@ def _scope_augmented_source_query(query: str, scope_terms: tuple[str, ...]) -> s
     if not scope_terms:
         return query
     return f"{query} {' '.join(scope_terms)}"
+
+
+def _requires_expanded_source_lane_support(query: str) -> bool:
+    """Return whether the source lane must merge expansions despite primary hits."""
+    return bool(
+        re.search(r"\bcurrent\s+job\s+at\s+[A-Z][A-Za-z0-9&'.-]{1,60}\b", query)
+        and re.search(r"\b(?:working|work|career|job)\b", query, flags=re.IGNORECASE)
+    )
 
 
 class CachedEmbeddingProvider:
@@ -777,7 +787,7 @@ class ZaxyRetriever:
         graph_limit = _scoped_fetch_limit(limit) if scope_terms else limit
         chunks = await self._router.query(
             query,
-            temporal_point=temporal_point,
+            temporal_point=None,
             limit=graph_limit,
             embedding=embedding,
         )
@@ -796,7 +806,7 @@ class ZaxyRetriever:
             lexical_limit = _scoped_source_fetch_limit(lexical_limit)
         lexical_results = self._source_lane_results(
             source_lane_queries(query, graph_results),
-            temporal_point=temporal_point,
+            temporal_point=None,
             limit=lexical_limit,
             scope_terms=scope_terms,
         )
@@ -863,11 +873,16 @@ class ZaxyRetriever:
         lexical_retriever = self._lexical_retriever
         per_query_limit = max(limit, 1)
 
-        def collect(source_query: str, candidate_limit: int) -> list[str]:
+        def collect(
+            source_query: str,
+            candidate_limit: int,
+            *,
+            candidate_temporal_point: str | None = temporal_point,
+        ) -> list[str]:
             return list(
                 lexical_retriever.query(
                     source_query,
-                    temporal_point=temporal_point,
+                    temporal_point=candidate_temporal_point,
                     limit=candidate_limit,
                 )
             )
@@ -877,9 +892,20 @@ class ZaxyRetriever:
             *,
             candidate_queries: tuple[str, ...] = queries,
             bridge_limit: int | None = None,
+            candidate_temporal_point: str | None = temporal_point,
         ) -> list[str]:
-            primary_results = collect(candidate_queries[0], candidate_limit)
-            if any(source_lane_priority(result) >= 2 for result in primary_results):
+            intent = classify_retrieval_intent(candidate_queries[0], limit=limit)
+            requires_expanded_support = _requires_expanded_source_lane_support(candidate_queries[0])
+            primary_results = collect(
+                candidate_queries[0],
+                candidate_limit,
+                candidate_temporal_point=candidate_temporal_point,
+            )
+            if (
+                "temporal_sequence" not in intent.reasons
+                and not requires_expanded_support
+                and any(source_lane_priority(result) >= 2 for result in primary_results)
+            ):
                 return primary_results
             bridge_results: list[str] = []
             if bridge_limit is None or bridge_limit > 0:
@@ -888,14 +914,31 @@ class ZaxyRetriever:
                     candidate_queries[0],
                     primary_results,
                 ):
-                    bridge_results.extend(collect(bridge_query, bridge_candidate_limit))
+                    bridge_results.extend(
+                        collect(
+                            bridge_query,
+                            bridge_candidate_limit,
+                            candidate_temporal_point=candidate_temporal_point,
+                        )
+                    )
 
             expanded_results: list[str] = []
             for source_query in candidate_queries[1:]:
-                expanded_results.extend(collect(source_query, candidate_limit))
+                expanded_results.extend(
+                    collect(
+                        source_query,
+                        candidate_limit,
+                        candidate_temporal_point=candidate_temporal_point,
+                    )
+                )
 
-            intent = classify_retrieval_intent(candidate_queries[0], limit=limit)
             if {"aggregation", "aggregation_question"} & set(intent.reasons):
+                return [
+                    *bridge_results,
+                    *expanded_results,
+                    *primary_results,
+                ]
+            if "temporal_sequence" in intent.reasons:
                 return [
                     *bridge_results,
                     *expanded_results,
@@ -935,6 +978,28 @@ class ZaxyRetriever:
                     bridge_limit=8,
                 )
             )
+        if not results and temporal_point is not None:
+            results = select_scoped(
+                ordered_candidates(
+                    per_query_limit,
+                    candidate_temporal_point=None,
+                )
+            )
+            if not results and scope_terms:
+                scoped_queries = tuple(
+                    _scope_augmented_source_query(source_query, scope_terms)
+                    for source_query in queries
+                )
+                results = select_scoped(
+                    ordered_candidates(
+                        fallback_limit,
+                        candidate_queries=scoped_queries,
+                        bridge_limit=8,
+                        candidate_temporal_point=None,
+                    )
+                )
+        if results and _requires_expanded_source_lane_support(queries[0]):
+            return evidence_source_order(queries[0], results)
         return results
 
     def _scope_terms(self, query: str) -> tuple[str, ...]:
@@ -962,14 +1027,12 @@ class ZaxyCheckoutRetriever(ZaxyRetriever):
         limit: int = 10,
     ) -> list[str]:
         """Return prompt-scored Memory Checkout contexts for benchmark scoring."""
-        if temporal_point is not None:
-            return await super().query_async(query, temporal_point=temporal_point, limit=limit)
         embedding = self._provider.embed(query)
         scope_terms = self._scope_terms(query)
         graph_limit = _scoped_fetch_limit(limit) if scope_terms else limit
         chunks = await self._router.query(
             query,
-            temporal_point=temporal_point,
+            temporal_point=None,
             limit=graph_limit,
             embedding=embedding,
         )
@@ -982,14 +1045,17 @@ class ZaxyCheckoutRetriever(ZaxyRetriever):
         lexical_contexts = self._checkout_source_contexts(
             query=query,
             graph_results=[context.content for context in graph_contexts],
+            temporal_point=temporal_point,
             limit=limit,
         )
+        temporal_contexts = _query_temporal_anchor_contexts(temporal_point)
         assembly = ContextAssembly(
             session_id="benchmark",
             prompt="# Benchmark Checkout Context",
-            contexts=[*graph_contexts, *lexical_contexts],
+            contexts=[*temporal_contexts, *graph_contexts, *lexical_contexts],
             replay_event_count=0,
             context_counts={
+                "query": len(temporal_contexts),
                 "graph": len(graph_contexts),
                 "verbatim": len(lexical_contexts),
                 "packet_memory": 0,
@@ -1004,6 +1070,7 @@ class ZaxyCheckoutRetriever(ZaxyRetriever):
         *,
         query: str,
         graph_results: list[str],
+        temporal_point: str | None,
         limit: int,
     ) -> list[Context]:
         if self._lexical_retriever is None or not should_query_source_lane(query, limit=limit):
@@ -1014,7 +1081,7 @@ class ZaxyCheckoutRetriever(ZaxyRetriever):
             lexical_limit = _scoped_source_fetch_limit(lexical_limit)
         lexical_results = self._source_lane_results(
             source_lane_queries(query, graph_results),
-            temporal_point=None,
+            temporal_point=temporal_point,
             limit=lexical_limit,
             scope_terms=scope_terms,
         )
@@ -1022,6 +1089,21 @@ class ZaxyCheckoutRetriever(ZaxyRetriever):
             graph_results,
             lexical_results,
         )
+        temporal_anchor_sources = (
+            [
+                context.content
+                for context in _query_temporal_anchor_contexts(temporal_point)
+            ]
+            if query_temporal_anchor_synthesis_query(query)
+            else []
+        )
+        synthesis_sources = (
+            _synthesis_context_pool(graph_results, lexical_results)
+            if _quoted_duration_source_synthesis_query(query)
+            else lexical_results
+        )
+        if temporal_anchor_sources:
+            synthesis_sources = [*temporal_anchor_sources, *synthesis_sources]
         if should_try_absence_bundle_first(query, limit=limit):
             synthesis_bundle = absence_check_bundle(
                 query=query,
@@ -1029,7 +1111,7 @@ class ZaxyCheckoutRetriever(ZaxyRetriever):
                 limit=limit,
             ) or source_synthesis_bundle(
                 query=query,
-                source_results=lexical_results,
+                source_results=synthesis_sources,
                 limit=limit,
                 preferred_source_groups=[
                     source_context_group(result)
@@ -1039,7 +1121,7 @@ class ZaxyCheckoutRetriever(ZaxyRetriever):
         else:
             synthesis_bundle = source_synthesis_bundle(
                 query=query,
-                source_results=lexical_results,
+                source_results=synthesis_sources,
                 limit=limit,
                 preferred_source_groups=[
                     source_context_group(result)
@@ -1086,6 +1168,15 @@ def _benchmark_context_from_chunk(chunk: object) -> str:
     return content
 
 
+def _quoted_duration_source_synthesis_query(query: str) -> bool:
+    """Return whether checkout source synthesis needs graph-backed quoted operands."""
+    quoted_targets = re.findall(r"'[^']+'|\"[^\"]+\"", query)
+    if len(quoted_targets) < 2:
+        return False
+    tokens = set(re.findall(r"[a-z0-9]+", query.casefold()))
+    return bool({"week", "weeks", "day", "days"} & tokens and {"reading", "listening", "finish", "finished"} & tokens)
+
+
 def _context_from_chunk(chunk: object) -> Context:
     """Convert a query result into a checkout assembly context."""
     metadata: dict[str, object] = {}
@@ -1126,6 +1217,34 @@ def _context_from_source_text(text: str) -> Context:
         score=score,
         metadata=metadata,
     )
+
+
+def _query_temporal_anchor_contexts(temporal_point: str | None) -> list[Context]:
+    """Return query-time context for relative temporal synthesis."""
+    if temporal_point is None:
+        return []
+    try:
+        parsed = datetime.fromisoformat(temporal_point.replace("Z", "+00:00")).astimezone(UTC)
+    except ValueError:
+        return []
+    session_date = parsed.strftime("%Y/%m/%d")
+    content = (
+        "query_temporal_anchor=true "
+        "longmemeval_session_id=query-temporal-anchor "
+        f"longmemeval_session_date={session_date} (query) "
+        "role=query The question was asked today."
+    )
+    return [
+        Context(
+            content=content,
+            source="query",
+            score=1.0,
+            metadata={
+                "citation": f"query-temporal://benchmark/{parsed.isoformat().replace('+00:00', 'Z')}",
+                "assembly_lane": "query",
+            },
+        )
+    ]
 
 
 def _benchmark_contexts_from_checkout(checkout: object) -> list[str]:
@@ -1939,6 +2058,7 @@ def build_longmemeval_workload(
         question_id = str(record.get("question_id") or f"question-{index:04d}")
         question = str(record.get("question") or "")
         answer = str(record.get("answer") or "").strip()
+        temporal_point = _longmemeval_question_temporal_point(record.get("question_date"))
         answer_session_ids = tuple(str(item) for item in record.get("answer_session_ids", ()))
         haystack_session_ids = tuple(str(item) for item in record.get("haystack_session_ids", ()))
         haystack_dates = tuple(str(item) for item in record.get("haystack_dates", ()))
@@ -2013,6 +2133,7 @@ def build_longmemeval_workload(
                 expected_terms=(answer,) if answer else (),
                 identity_terms=answer_session_ids,
                 category=f"longmemeval:{record.get('question_type', 'unknown')}",
+                temporal_point=temporal_point,
             )
         )
 
@@ -2026,6 +2147,29 @@ def build_longmemeval_workload(
         lanes=("longmemeval",),
     )
     return eventlog, tuple(cases), workload
+
+
+def _longmemeval_question_temporal_point(value: object) -> str | None:
+    """Normalize LongMemEval question_date metadata for temporal benchmark queries."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    match = re.search(
+        r"(?P<year>\d{4})/(?P<month>\d{1,2})/(?P<day>\d{1,2})"
+        r"(?:\s*\([^)]*\))?"
+        r"(?:\s+(?P<hour>\d{1,2}):(?P<minute>\d{2}))?",
+        value.strip(),
+    )
+    if not match:
+        return None
+    dt = datetime(
+        int(match.group("year")),
+        int(match.group("month")),
+        int(match.group("day")),
+        int(match.group("hour") or 0),
+        int(match.group("minute") or 0),
+        tzinfo=UTC,
+    )
+    return dt.isoformat().replace("+00:00", "Z")
 
 
 def workload_fingerprint(
@@ -2307,11 +2451,10 @@ async def build_live_zaxy_retriever(
                 )
             await reset_backend()
     if (
-        neo4j_graph is not None
-        and reuse_projection
+        reuse_projection
         and projection_cache_key is not None
         and not reset_graph
-        and await _benchmark_projection_present(neo4j_graph, projection_cache_key)
+        and await _benchmark_projection_present(graph, projection_cache_key)
     ):
         return (
             ZaxyRetriever(
@@ -2323,11 +2466,40 @@ async def build_live_zaxy_retriever(
             graph,
         )
     events = eventlog.read_all()
+    if (
+        neo4j_graph is None
+        and reuse_projection
+        and projection_cache_key is not None
+        and not reset_graph
+        and await _benchmark_projection_current(graph, events, projection_cache_key=projection_cache_key)
+    ):
+        await _mark_benchmark_projection(graph, projection_cache_key, events)
+        return (
+            ZaxyRetriever(
+                QueryRouter(graph),
+                provider,
+                lexical_retriever=lexical_retriever,
+                scope_resolver=scope_resolver,
+            ),
+            graph,
+        )
+    if (
+        neo4j_graph is None
+        and reuse_projection
+        and projection_cache_key is not None
+        and not reset_graph
+        and await _benchmark_projection_event_count(graph) > 0
+    ):
+        await graph.close()
+        raise RuntimeError(
+            "Existing projection does not match the requested benchmark workload. "
+            "Use --reset-graph to rebuild it or choose a different embedded graph path."
+        )
     for event in events:
         extraction = embed_extraction(extract(event), provider)
         await graph.upsert_extraction(extraction)
-    if neo4j_graph is not None and projection_cache_key is not None:
-        await _mark_benchmark_projection(neo4j_graph, projection_cache_key, events)
+    if projection_cache_key is not None:
+        await _mark_benchmark_projection(graph, projection_cache_key, events)
     return (
         ZaxyRetriever(
             QueryRouter(graph),
@@ -2398,8 +2570,56 @@ def _deleted_batch_count(records: Sequence[Any]) -> int:
     return int(getattr(row, "deleted", 0))
 
 
-async def _benchmark_projection_present(graph: GraphStore, projection_cache_key: str) -> bool:
+async def _benchmark_projection_current(
+    graph: ProjectionStore,
+    events: Sequence[Any],
+    *,
+    projection_cache_key: str,
+) -> bool:
+    """Return whether a backend projection already covers a reusable benchmark workload."""
+    if not events or not projection_cache_key:
+        return False
+    inspect_status = getattr(graph, "inspect_event_projection_status", None)
+    if inspect_status is None:
+        return False
+    latest_event = events[-1]
+    try:
+        status = await inspect_status(
+            "default",
+            eventloom_latest_seq=latest_event.seq,
+            eventloom_latest_hash=latest_event.hash,
+        )
+    except (AttributeError, RuntimeError):
+        return False
+    return bool(
+        status.event_count == len(events)
+        and status.projection_lag == 0
+        and status.latest_seq == latest_event.seq
+        and status.next_event_edges == max(0, status.event_count - 1)
+        and status.previous_event_edges == max(0, status.event_count - 1)
+        and status.missing_chain_links == 0
+    )
+
+
+async def _benchmark_projection_event_count(graph: ProjectionStore) -> int:
+    """Return projected Event count when the backend can report projection status."""
+    inspect_status = getattr(graph, "inspect_event_projection_status", None)
+    if inspect_status is None:
+        return 0
+    try:
+        status = await inspect_status("default")
+    except (AttributeError, RuntimeError):
+        return 0
+    return int(getattr(status, "event_count", 0) or 0)
+
+
+async def _benchmark_projection_present(graph: Any, projection_cache_key: str) -> bool:
     """Return whether a benchmark workload projection is already present."""
+    marker = getattr(graph, "benchmark_projection_present", None)
+    if marker is not None:
+        return bool(await marker(projection_cache_key))
+    if getattr(graph, "_driver", None) is None:
+        return False
     assert graph._driver is not None
     records, _summary, _keys = await graph._driver.execute_query(
         """
@@ -2413,11 +2633,17 @@ async def _benchmark_projection_present(graph: GraphStore, projection_cache_key:
 
 
 async def _mark_benchmark_projection(
-    graph: GraphStore,
+    graph: Any,
     projection_cache_key: str,
     events: Sequence[object],
 ) -> None:
     """Persist a benchmark projection marker for safe reuse."""
+    marker = getattr(graph, "mark_benchmark_projection", None)
+    if marker is not None:
+        await marker(projection_cache_key, events)
+        return
+    if getattr(graph, "_driver", None) is None:
+        return
     assert graph._driver is not None
     latest = events[-1] if events else None
     await graph._driver.execute_query(

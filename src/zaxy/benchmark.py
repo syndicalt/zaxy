@@ -228,6 +228,8 @@ def _expected_term_present(term: str, haystack: str) -> bool:
         return True
     if _acceptable_alternative_answer_present(normalized_term, normalized_haystack):
         return True
+    if _structured_scalar_answer_present(normalized_term, normalized_haystack):
+        return True
     if _compact_answer_surface_present(normalized_term, normalized_haystack):
         return True
     if _absence_answer_present(normalized_term, normalized_haystack):
@@ -244,6 +246,18 @@ def _expected_term_present(term: str, haystack: str) -> bool:
         return False
     haystack_tokens = set(_answer_tokens(normalized_haystack))
     return all(_answer_token_variants(token) & haystack_tokens for token in term_tokens)
+
+
+def _structured_scalar_answer_present(term: str, haystack: str) -> bool:
+    """Return whether a compact structured answer field satisfies a scalar answer."""
+    tokens = _answer_tokens(term)
+    if len(tokens) != 1:
+        return False
+    value = re.escape(tokens[0])
+    return bool(
+        re.search(rf"(?:^|\n)(?:[a-z0-9_]+_)?answer={value}(?:\n|$)", haystack)
+        or re.search(rf"(?:^|\n)answer_key=[a-z0-9_]+_answer\nanswer={value}(?:\n|$)", haystack)
+    )
 
 
 def _compact_answer_surface_present(term: str, haystack: str) -> bool:

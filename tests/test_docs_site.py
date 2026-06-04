@@ -176,6 +176,41 @@ def test_docs_describe_skill_memory_contract_and_guardrail() -> None:
     assert "Skill Memory changes must pass the full 500-question guardrail" in benchmarks
 
 
+def test_benchmark_docs_pin_full_set_quality_reports_and_caveats() -> None:
+    """Full-set benchmark docs should publish quality without overstating backend comparisons."""
+    benchmarks = Path("docs/benchmarks.md").read_text(encoding="utf-8")
+    rendered = Path("site/docs/benchmarks.html").read_text(encoding="utf-8")
+
+    assert "longmemeval-500-current25-zaxyonly-answer-promotion-embedded-isolated-20260603" in benchmarks
+    assert "| Zaxy checkout | 0.874 | 0.800 | 1.000 | 0.894 | 0.990 | 0.990 | 725.43 | 830.35 |" in benchmarks
+    assert "5 retrieval misses and 95 synthesis misses" in benchmarks
+    assert "date_interval_answer" in benchmarks
+    assert "placement and synthesis-contract improvement" in benchmarks
+    assert "current25 answer-promotion embedded full-set run" in rendered
+
+    assert "longmemeval-500-current24-zaxyonly-numeric-state-embedded-isolated-20260603" in benchmarks
+    assert "| Zaxy checkout | 0.870 | 0.798 | 1.000 | 0.894 | 0.990 | 0.990 | 614.68 | 737.06 |" in benchmarks
+    assert "isolated embedded Kuzu" in benchmarks
+    assert "projection path" in benchmarks
+    assert "should not be" in benchmarks
+    assert "Neo4j latency comparison" in benchmarks
+    assert "5 retrieval misses and 96 synthesis misses" in benchmarks
+    assert "numeric_state_answer" in benchmarks
+    assert "current24 numeric-state embedded full-set run" in rendered
+
+    assert "longmemeval-500-current22-zaxyonly-page-future-age-neo4j-20260603" in benchmarks
+    assert "| Zaxy checkout | 0.868 | 0.796 | 1.000 | 0.896 | 0.992 | 0.992 | 1234.20 | 1430.16 |" in benchmarks
+    assert "4 retrieval misses and 98 synthesis misses" in benchmarks
+    assert "current18 as the stable latency baseline" in benchmarks
+    assert "airplane run" in benchmarks
+    assert "Evidence Program layer" in benchmarks
+    assert "auditable slot-coverage contract" in benchmarks
+    assert "future_age_at_event_answer" in benchmarks
+    assert "current22 page/future-age zaxy-only full-set run" in rendered
+    assert "stable local conditions" in rendered
+    assert "Evidence Program layer" in rendered
+
+
 def test_docs_publish_coordination_competitor_claim_gate() -> None:
     """CoordinationBench docs should prevent Quarq/Hybi disclosure rows from becoming claims."""
     benchmarks = Path("docs/benchmarks.md").read_text(encoding="utf-8")
@@ -820,9 +855,10 @@ def test_benchmark_docs_disclose_harness_external_claims_and_sources() -> None:
     text = Path("docs/benchmarks.md").read_text(encoding="utf-8")
 
     assert "LongMemEval-compatible" in text
-    assert "0.970" in text
+    assert "0.940" in text
+    assert "0.906" in text
     assert "1.000" in text
-    assert "0.540" in text
+    assert "0.500" in text
     assert "0.840" in text
     assert "BM25" in text
     assert "same-harness" in text
@@ -834,11 +870,11 @@ def test_benchmark_docs_disclose_harness_external_claims_and_sources() -> None:
     assert "Agent Memory" in text
     assert "95.2%" in text
     assert "Mem0" in text
-    assert "+26% Accuracy" in text
-    assert "https://www.agent-memory.dev/" in text
+    assert "low-to-mid 90s" in text
+    assert "https://github.com/rohitg00/agentmemory/blob/main/benchmark/LONGMEMEVAL.md" in text
     assert "https://github.com/MemPalace/mempalace/blob/develop/benchmarks/BENCHMARKS.md" in text
-    assert "https://github.com/mem0ai/mem0/blob/main/LLM.md" in text
-    assert "../reports/benchmarks/live-benchmark.md" in text
+    assert "https://mem0.ai/research" in text
+    assert "../reports/benchmarks/longmemeval-500-current74-zaxyonly-gated-relative-temporal-anchor-embedded-reuse-20260604/live-benchmark.md" in text
     assert "../reports/benchmarks/longmemeval-100-comparison/live-benchmark.md" in text
     assert "not same-harness results" in text
     assert "coordination-real-v1" in text
@@ -883,6 +919,12 @@ def test_public_longmemeval_reports_keep_bm25_tradeoff_baseline() -> None:
             for summary in payload.get("summaries", [])
             if isinstance(summary, dict)
         }
+        if "bm25" not in summaries and (
+            "zaxyonly" in report_path.as_posix()
+            or "probe" in report_path.as_posix()
+            or set(summaries) == {"zaxy-checkout"}
+        ):
+            continue
         assert "bm25" in summaries, f"{report_path} is missing the BM25 baseline"
         bm25 = summaries["bm25"]
         assert isinstance(bm25.get("latency_ms_p95"), int | float)

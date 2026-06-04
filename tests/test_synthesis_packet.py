@@ -73,6 +73,106 @@ def test_synthesis_packet_parses_candidates_and_ledger_rows_once() -> None:
     ]
 
 
+def test_synthesis_packet_prefers_rendered_answer_text_surface() -> None:
+    """Fallback packet parsing should promote answer-ready text over bare scalars."""
+    packet = synthesis_packet_from_items(
+        [
+            {
+                "content": "\n".join(
+                    [
+                        "zaxy_synthesis_bundle=true",
+                        "candidate_rank=1 candidate_type=count candidate_confidence=0.82",
+                        "candidate_support=answer-1,answer-2,answer-3",
+                        "count_answer=4",
+                        "count_unit=events",
+                        "count_answer_text=I attended four movie festivals.",
+                    ]
+                )
+            }
+        ]
+    )
+
+    assert packet.answer_candidates == [
+        {
+            "rank": 1,
+            "type": "count",
+            "confidence": 0.82,
+            "answer_key": "count_answer_text",
+            "answer": "I attended four movie festivals.",
+            "support_source_ids": ["answer-1", "answer-2", "answer-3"],
+            "excluded_source_ids": [],
+        }
+    ]
+
+
+def test_synthesis_packet_prefers_direct_interval_over_relative_elapsed_answer() -> None:
+    """Before/since interval answers should outrank generic elapsed-time answers."""
+    packet = synthesis_packet_from_items(
+        [
+            {
+                "content": "\n".join(
+                    [
+                        "zaxy_synthesis_bundle=true",
+                        "candidate_rank=1 candidate_type=relative_week_interval candidate_confidence=0.0",
+                        "week_interval_answer=Two weeks",
+                        "relative_week_interval_answer=Three week",
+                    ]
+                )
+            }
+        ]
+    )
+
+    assert packet.answer_candidates[0]["answer_key"] == "week_interval_answer"
+    assert packet.answer_candidates[0]["answer"] == "Two weeks"
+
+
+def test_synthesis_packet_prefers_total_answer_over_auxiliary_difference() -> None:
+    """Aggregate bundle parsing should expose requested totals before diagnostics."""
+    packet = synthesis_packet_from_items(
+        [
+            {
+                "content": "\n".join(
+                    [
+                        "zaxy_synthesis_bundle=true",
+                        "candidate_rank=1 candidate_type=currency candidate_confidence=0.73",
+                        "candidate_support=answer-1,answer-2,answer-3",
+                        "currency_values=$500,$200,$20",
+                        "currency_total_answer=$720",
+                        "currency_difference_answer=$480",
+                    ]
+                )
+            }
+        ]
+    )
+
+    assert packet.answer_candidates[0]["answer_key"] == "currency_total_answer"
+    assert packet.answer_candidates[0]["answer"] == "$720"
+
+
+def test_synthesis_packet_prefers_total_answer_for_combined_duration_query() -> None:
+    """Combined-duration queries should expose total answers before interval diagnostics."""
+    packet = synthesis_packet_from_items(
+        [
+            {
+                "content": "\n".join(
+                    [
+                        "zaxy_synthesis_bundle=true",
+                        "query=How long did I take to finish two books combined?",
+                        "candidate_rank=1 candidate_type=duration candidate_confidence=0.81",
+                        "candidate_support=book-1,book-2",
+                        "duration_values=2.5 weeks,3 weeks",
+                        "duration_total_answer=5.5 weeks",
+                        "week_interval_answer=Three weeks",
+                    ]
+                )
+            }
+        ]
+    )
+
+    assert packet.answer_candidates[0]["answer_key"] == "duration_total_answer"
+    assert packet.answer_candidates[0]["answer"] == "5.5 weeks"
+
+
 def test_synthesis_packet_ignores_malformed_ledger_rows() -> None:
     """Bad rendered rows should not poison valid candidates."""
     packet = synthesis_packet_from_items([
@@ -90,6 +190,36 @@ def test_synthesis_packet_ignores_malformed_ledger_rows() -> None:
 
     assert packet.answer_candidates[0]["answer"] == "14 days"
     assert packet.ledger_rows == []
+
+
+def test_synthesis_packet_defaults_malformed_candidate_fields() -> None:
+    """Rendered candidate parsing should keep useful answers despite bad metadata."""
+    packet = synthesis_packet_from_items(
+        [
+            {
+                "content": "\n".join(
+                    [
+                        "zaxy_synthesis_bundle=true",
+                        "candidate_rank=not-a-number candidate_type=preference candidate_confidence=bad",
+                        "candidate_support=answer-1,,answer-2",
+                        "preference_answer=The user would prefer native-plant gardening ideas.",
+                    ]
+                )
+            }
+        ]
+    )
+
+    assert packet.answer_candidates == [
+        {
+            "rank": 1,
+            "type": "preference",
+            "confidence": 0.0,
+            "answer_key": "preference_answer",
+            "answer": "The user would prefer native-plant gardening ideas.",
+            "support_source_ids": ["answer-1", "answer-2"],
+            "excluded_source_ids": [],
+        }
+    ]
 
 
 def test_synthesis_packet_prefers_typed_candidates_and_merges_rendered_ledger_rows() -> None:
@@ -145,6 +275,107 @@ def test_synthesis_packet_prefers_typed_candidates_and_merges_rendered_ledger_ro
         }
     ]
     assert [row["fact_id"] for row in packet.ledger_rows] == ["typed:1", "rendered:1"]
+
+
+def test_synthesis_packet_keeps_additive_rendered_answer_candidate() -> None:
+    """Rendered answer surfaces should survive when typed packets omit that type."""
+    packet = synthesis_packet_from_items(
+        [
+            {
+                "content": "\n".join(
+                    [
+                        "zaxy_synthesis_bundle=true",
+                        "query=How many tops have I bought from H&M so far?",
+                        "candidate_rank=1 candidate_type=direct_numeric_value candidate_confidence=0.84",
+                        "candidate_support=answer-1",
+                        "direct_numeric_answer=five",
+                    ]
+                ),
+                "synthesis_packet": {
+                    "schema_version": "synthesis_packet_v1",
+                    "answer_candidates": [
+                        {
+                            "rank": 1,
+                            "type": "count",
+                            "confidence": 0.72,
+                            "answer_key": "count_answer",
+                            "answer": "3",
+                            "support_source_ids": ["answer-1", "answer-2", "answer-3"],
+                            "excluded_source_ids": [],
+                        }
+                    ],
+                    "ledger_rows": [],
+                },
+            }
+        ]
+    )
+
+    assert packet.answer_candidates == [
+        {
+            "rank": 1,
+            "type": "count",
+            "confidence": 0.72,
+            "answer_key": "count_answer",
+            "answer": "3",
+            "support_source_ids": ["answer-1", "answer-2", "answer-3"],
+            "excluded_source_ids": [],
+        },
+        {
+            "rank": 1,
+            "type": "direct_numeric_value",
+            "confidence": 0.84,
+            "answer_key": "direct_numeric_answer",
+            "answer": "five",
+            "support_source_ids": ["answer-1"],
+            "excluded_source_ids": [],
+        },
+    ]
+
+
+def test_synthesis_packet_does_not_promote_broad_direct_numeric_fallback() -> None:
+    """Broad aggregate calculations should not gain competing direct scalar fallbacks."""
+    packet = synthesis_packet_from_items(
+        [
+            {
+                "content": "\n".join(
+                    [
+                        "zaxy_synthesis_bundle=true",
+                        "query=What is the total number of comments on my Facebook Live session and YouTube video?",
+                        "candidate_rank=1 candidate_type=direct_numeric_value candidate_confidence=0.84",
+                        "candidate_support=answer-1",
+                        "direct_numeric_answer=21",
+                    ]
+                ),
+                "synthesis_packet": {
+                    "schema_version": "synthesis_packet_v1",
+                    "answer_candidates": [
+                        {
+                            "rank": 1,
+                            "type": "count",
+                            "confidence": 0.72,
+                            "answer_key": "count_answer",
+                            "answer": "33",
+                            "support_source_ids": ["answer-1", "answer-2"],
+                            "excluded_source_ids": [],
+                        }
+                    ],
+                    "ledger_rows": [],
+                },
+            }
+        ]
+    )
+
+    assert packet.answer_candidates == [
+        {
+            "rank": 1,
+            "type": "count",
+            "confidence": 0.72,
+            "answer_key": "count_answer",
+            "answer": "33",
+            "support_source_ids": ["answer-1", "answer-2"],
+            "excluded_source_ids": [],
+        }
+    ]
 
 
 def test_synthesis_packet_preserves_operation_and_result_metadata() -> None:
