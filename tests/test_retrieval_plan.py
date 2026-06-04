@@ -206,6 +206,72 @@ def test_preference_projection_uses_domain_surface_templates() -> None:
             "card and TripIt app.",
             "Suica card",
         ),
+        (
+            "What electric guitar advice would I prefer?",
+            "source_id=guitar-1 user: I prefer comparing Fender Stratocaster and "
+            "Gibson Les Paul electric guitars before upgrading.",
+            "Fender Stratocaster and Gibson Les Paul",
+        ),
+        (
+            "What creamer recipe would I prefer?",
+            "source_id=creamer-1 user: I prefer almond milk, vanilla extract, and "
+            "honey creamer recipes that reduce sugar and save money.",
+            "almond milk",
+        ),
+        (
+            "What allergy advice would I prefer?",
+            "source_id=allergy-1 user: I prefer advice that accounts for Luna, "
+            "her shedding, and my sneezing after a deep clean.",
+            "Luna",
+        ),
+        (
+            "What personal reflection prompts would I prefer?",
+            "source_id=school-1 user: I prefer reflections that mention my debate "
+            "team and advanced placement courses.",
+            "debate team",
+        ),
+        (
+            "What storage advice would I prefer?",
+            "source_id=nas-1 user: I prefer NAS suggestions because I rely on "
+            "external hard drives for home network storage.",
+            "NAS device",
+        ),
+        (
+            "What theme park suggestions would I prefer?",
+            "source_id=parks-1 user: I prefer Disneyland, Knott, Six Flags, and "
+            "Universal suggestions that include thrill rides and special events.",
+            "theme park suggestions",
+        ),
+        (
+            "What meal prep recipes would I prefer?",
+            "source_id=meal-1 user: I prefer quinoa and roasted vegetables in "
+            "healthy meal prep recipes.",
+            "quinoa and roasted vegetables",
+        ),
+        (
+            "What Denver suggestions would I prefer?",
+            "source_id=denver-1 user: I prefer Denver live music suggestions "
+            "connected to seeing Brandon Flowers.",
+            "Brandon Flowers",
+        ),
+        (
+            "What documentaries would I prefer?",
+            "source_id=docs-1 user: I prefer documentaries like Our Planet, Free "
+            "Solo, and Tiger King.",
+            "Our Planet",
+        ),
+        (
+            "What bike performance explanation would I prefer?",
+            "source_id=bike-1 user: I prefer explanations that mention my chain, "
+            "cassette, and Garmin bike computer.",
+            "Garmin bike computer",
+        ),
+        (
+            "What commute suggestions would I prefer?",
+            "source_id=commute-1 user: I prefer commute suggestions involving "
+            "podcasts or audiobooks beyond true crime.",
+            "podcasts or audiobooks",
+        ),
     ]
 
     for query, context, expected in cases:
