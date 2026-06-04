@@ -109,7 +109,7 @@ def test_context_assembly_policy_overfetches_source_candidates_for_aggregation()
             query="How many properties did I visit before making an offer?",
             limit=8,
         )
-        == 36
+        == 72
     )
 
 

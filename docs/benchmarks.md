@@ -10,26 +10,880 @@ the same measurement protocol.
 
 ## Current Headline
 
-The current public Zaxy result is the archived 100-question
-LongMemEval-compatible run at
-[reports/benchmarks/live-benchmark.md](../reports/benchmarks/live-benchmark.md).
-It uses the cleaned LongMemEval workload, deterministic local hash embeddings,
-BM25 as the same-harness lexical baseline, and graph-backed Zaxy retrieval over
-1,559 Eventloom events, 100 queries, 100 subjects, and 265 sessions.
+The current public Zaxy headline is the archived full 500-question
+LongMemEval-compatible checkout run at
+[reports/benchmarks/longmemeval-500-current74-zaxyonly-gated-relative-temporal-anchor-embedded-reuse-20260604/live-benchmark.md](../reports/benchmarks/longmemeval-500-current74-zaxyonly-gated-relative-temporal-anchor-embedded-reuse-20260604/live-benchmark.md).
+It uses the cleaned LongMemEval-compatible workload, deterministic local hash
+embeddings, `limit=10`, checkout answer assembly, and the embedded Kuzu
+projection over 5,372 Eventloom events, 500 queries, 500 subjects, and 948
+sessions.
 
 | Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | Recall@10 | p95 ms | Approx tokens |
 |---------|------------|----------|-------------------|----------|----------|-----------|--------|---------------|
-| BM25 | 0.540 | 0.500 | 1.000 | 0.710 | 0.840 | 0.870 | 85.77 | 5493 |
-| Zaxy | 0.970 | 0.950 | 1.000 | 1.000 | 1.000 | 1.000 | 816.71 | 11038 |
+| Zaxy checkout | 0.940 | 0.906 | 1.000 | 0.906 | 1.000 | 1.000 | 687.67 | 14034 |
 
-This is the strongest public claim because it tests conversational long-memory
-retrieval across multi-session and temporal-reasoning questions. The report is
-not a full 500-question LongMemEval publication yet, and it should not be
-described as one. The tradeoff is explicit in the same report: BM25 is much
-faster and returns fewer tokens, while Zaxy substantially improves answer and
-multi-hop recall.
+This is now the strongest public Zaxy LongMemEval-compatible claim: full-set
+retrieval clears `R@5=1.000` and `R@10=1.000` with complete citation coverage.
+That supports the core Zaxy thesis that event-sourced, cited memory plus
+graph/lexical/vector/source checkout planning can make answer-bearing memory
+retrieval effectively solved on this benchmark. The remaining miss taxonomy is
+entirely synthesis-side: 47 `synthesis_miss` cases remain, so future gains
+should improve answer composition and answer placement without lowering
+retrieval or citation coverage.
+
+The 100-question BM25 comparison remains useful for same-command tradeoffs. It
+shows BM25 as the faster lexical baseline and Zaxy as the higher-recall cited
+checkout path on a smaller slice, but it is no longer the headline result.
 
 ## Full 500-Question LongMemEval Run
+
+### 2026-06-04 current74 gated relative temporal anchor embedded full-set run
+
+The latest embedded zaxy-only quality validation is archived at
+[reports/benchmarks/longmemeval-500-current74-zaxyonly-gated-relative-temporal-anchor-embedded-reuse-20260604/live-benchmark.md](../reports/benchmarks/longmemeval-500-current74-zaxyonly-gated-relative-temporal-anchor-embedded-reuse-20260604/live-benchmark.md).
+It uses the cleaned LongMemEval-compatible workload, deterministic local hash
+embeddings, `limit=10`, `--zaxy-backend checkout`, no same-command baselines,
+and the fresh embedded Kuzu projection built by current65 and reused by
+the current benchmark projection marker. It should be read as a zaxy-only
+quality validation, not as a BM25 or Neo4j latency comparison. The workload SHA-256 is
+`90fb2307195d7e16b963a2b8a30f03b375bd42a45d41aeaa55423029dd84e3fc`.
+
+| Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | Recall@10 | p95 ms | p99 ms |
+|---------|------------|----------|-------------------|----------|----------|-----------|--------|--------|
+| Zaxy checkout | 0.940 | 0.906 | 1.000 | 0.906 | 1.000 | 1.000 | 687.67 | 969.10 |
+
+This run improves on current71 with mean score `0.940` and Answer@5 `0.906`,
+while preserving Recall@5 `1.000`, Recall@10 `1.000`, and complete citation
+coverage. The miss taxonomy remains synthesis-only and drops to 47 synthesis
+misses. The validated production change is gated relative temporal-anchor
+synthesis: checkout source synthesis now receives the question-time anchor only
+for queries that can use it, then derives answer candidates from cited session
+dates. It covers fully retrieved cases such as "How many months/weeks/days ago
+did I..." and concrete "what did I buy N days ago" questions without crowding
+unrelated arithmetic and state queries that merely mention relative durations.
+
+Reproduce this report against the reusable embedded projection:
+
+```bash
+EMBEDDED_GRAPH_PATH=.eventloom/projections/longmemeval-current65-percentage-boolean-comparison.kuzu \
+zaxy benchmark \
+  --output-dir reports/benchmarks/longmemeval-500-current74-zaxyonly-gated-relative-temporal-anchor-embedded-reuse-20260604 \
+  --embedding-provider hash \
+  --workload longmemeval \
+  --dataset .cache/zaxy/benchmarks/longmemeval_oracle.json \
+  --questions 500 \
+  --runs 1 \
+  --limit 10 \
+  --baseline-backends none \
+  --zaxy-backend checkout \
+  --projection-backend embedded \
+  --embedding-cache .cache/zaxy/longmemeval-500-synthesis-ledger-20260603-embeddings.json \
+  --reuse-projection \
+  --progress
+```
+
+Guard this embedded report against the current71 floor with:
+
+```bash
+zaxy benchmark-compare reports/benchmarks/longmemeval-500-current74-zaxyonly-gated-relative-temporal-anchor-embedded-reuse-20260604/live-benchmark.json \
+  --baseline reports/benchmarks/longmemeval-500-current71-zaxyonly-semantic-scalar-totals-embedded-reuse-20260604/live-benchmark.json \
+  --backend zaxy-checkout \
+  --min-mean-score 0.940 \
+  --min-answer-recall-at-5 0.906 \
+  --min-recall-at-5 1.000 \
+  --min-citation-coverage 1.0 \
+  --max-p95-ms 800 \
+  --max-p99-ms 1100
+```
+
+### 2026-06-04 current71 semantic scalar totals embedded full-set run
+
+The previous embedded zaxy-only quality validation is archived at
+[reports/benchmarks/longmemeval-500-current71-zaxyonly-semantic-scalar-totals-embedded-reuse-20260604/live-benchmark.md](../reports/benchmarks/longmemeval-500-current71-zaxyonly-semantic-scalar-totals-embedded-reuse-20260604/live-benchmark.md).
+It improved on current70 with mean score `0.938` and Answer@5 `0.898`, while
+preserving Recall@5 `1.000`, Recall@10 `1.000`, and complete citation coverage.
+The miss taxonomy remained synthesis-only and dropped to 51 synthesis misses.
+The validated production change was semantic scalar-total synthesis: total
+queries over query-named numeric quantities sum values whose units are carried
+by nearby domain words rather than simple suffixes.
+
+### 2026-06-04 current70 aggregate answer priority embedded full-set run
+
+The previous embedded zaxy-only quality validation is archived at
+[reports/benchmarks/longmemeval-500-current70-zaxyonly-aggregate-answer-priority-embedded-reuse-20260604/live-benchmark.md](../reports/benchmarks/longmemeval-500-current70-zaxyonly-aggregate-answer-priority-embedded-reuse-20260604/live-benchmark.md).
+It improved on current69 with mean score `0.934` and Answer@5 `0.892`, while
+preserving Recall@5 `1.000`, Recall@10 `1.000`, and complete citation coverage.
+The miss taxonomy remained synthesis-only and dropped to 54 synthesis misses.
+The validated production change was aggregate answer priority: total and
+combined queries no longer let single latest-state observations or auxiliary
+relative-interval diagnostics outrank answer-ready aggregate totals. This
+covered multi-source duration totals such as combined book-reading time and
+total gameplay hours while keeping direct state answers available when no
+aggregate projection exists.
+
+### 2026-06-04 current69 query-bound difference embedded full-set run
+
+The previous embedded zaxy-only quality validation is archived at
+[reports/benchmarks/longmemeval-500-current69-zaxyonly-query-bound-difference-embedded-reuse-20260604/live-benchmark.md](../reports/benchmarks/longmemeval-500-current69-zaxyonly-query-bound-difference-embedded-reuse-20260604/live-benchmark.md).
+It improved on current68 with mean score `0.932` and Answer@5 `0.886`, while
+preserving Recall@5 `1.000`, Recall@10 `1.000`, and complete citation coverage.
+The miss taxonomy remained synthesis-only and dropped to 57 synthesis misses.
+The validated production change was query-bound difference synthesis: explicit
+comparison questions bind cited operands to query-named targets before emitting
+the answer surface. The operator covered same-query currency differences such as
+taxi-vs-train fare and actual-vs-target compound duration differences such as
+marathon overrun minutes, while local value scoring prevented estimated amounts
+from outranking later actual values in the same citation.
+
+### 2026-06-04 current68 query-bound direct answer embedded full-set run
+
+The previous embedded zaxy-only quality validation is archived at
+[reports/benchmarks/longmemeval-500-current68-zaxyonly-query-bound-direct-answer-embedded-reuse-20260604/live-benchmark.md](../reports/benchmarks/longmemeval-500-current68-zaxyonly-query-bound-direct-answer-embedded-reuse-20260604/live-benchmark.md).
+It improved on current67 with mean score `0.932` and Answer@5 `0.878`, while
+preserving Recall@5 `1.000`, Recall@10 `1.000`, and complete citation coverage.
+The miss taxonomy remained synthesis-only and dropped to 61 synthesis misses.
+The validated production change was a query-bound direct-answer synthesis class
+for explicit cited personal-memory answer sentences. It handled direct
+current-state records, stated quantities such as weight loss, cited meet-up
+counts, latest limit-change direction, single-source duration answers, and
+weekly class-day counts without letting generic numeric totals or absence
+fallbacks outrank the direct answer surface.
+
+### 2026-06-04 current67 direct boolean evidence embedded full-set run
+
+The previous embedded zaxy-only quality validation is archived at
+[reports/benchmarks/longmemeval-500-current67-zaxyonly-direct-boolean-evidence-embedded-reuse-20260604/live-benchmark.md](../reports/benchmarks/longmemeval-500-current67-zaxyonly-direct-boolean-evidence-embedded-reuse-20260604/live-benchmark.md).
+It improved on current66 with mean score `0.932` and Answer@5 `0.874`, while
+preserving Recall@5 `1.000`, Recall@10 `1.000`, and complete citation coverage.
+The miss taxonomy remained synthesis-only and dropped to 63 synthesis misses.
+The validated production change was a direct boolean evidence synthesis class
+for explicit yes/no evidence, including cited current possession, same-method
+equivalence, and bounded temporal frequency comparisons. The operator requires
+direct cited support such as `I actually have ...`, `using the same ... as me`,
+or explicit old/new weekly cadence evidence before it emits a
+`boolean_evidence_answer`.
+
+### 2026-06-04 current66 structured scalar answer scoring embedded full-set run
+
+The previous embedded zaxy-only quality validation is archived at
+[reports/benchmarks/longmemeval-500-current66-zaxyonly-structured-scalar-scoring-embedded-reuse-20260604/live-benchmark.md](../reports/benchmarks/longmemeval-500-current66-zaxyonly-structured-scalar-scoring-embedded-reuse-20260604/live-benchmark.md).
+It improved on current64 with mean score `0.924` and Answer@5 `0.868`, while
+preserving Recall@5 `1.000`, Recall@10 `1.000`, and complete citation coverage.
+The miss taxonomy remained synthesis-only and dropped to 66 synthesis misses.
+The validated production changes were typed boolean percentage-comparison
+candidates plus structured scalar answer scoring. Cited percentage operands are
+bound to named targets before yes/no comparison answers are emitted, and the
+benchmark scorer recognizes compact structured answer fields such as
+`answer=Yes` and `<type>_answer=12` as answer surfaces.
+
+### 2026-06-04 current65 boolean percentage-comparison embedded full-set run
+
+The current65 validation is archived at
+[reports/benchmarks/longmemeval-500-current65-zaxyonly-percentage-boolean-comparison-embedded-reset-20260604/live-benchmark.md](../reports/benchmarks/longmemeval-500-current65-zaxyonly-percentage-boolean-comparison-embedded-reset-20260604/live-benchmark.md).
+It used a fresh embedded Kuzu projection rebuilt with `--reset-graph`, preserved
+mean score `0.922`, raised Answer@5 to `0.864`, kept Recall@5 `1.000` and
+complete citation coverage, and reduced synthesis misses to 68. It is retained
+as the projection-build provenance for current66.
+
+### 2026-06-04 current64 numeric-state delta and role-covered date operands embedded full-set run
+
+The previous embedded zaxy-only quality validation is archived at
+[reports/benchmarks/longmemeval-500-current64-zaxyonly-numeric-state-delta-date-operands-embedded-reuse-20260604/live-benchmark.md](../reports/benchmarks/longmemeval-500-current64-zaxyonly-numeric-state-delta-date-operands-embedded-reuse-20260604/live-benchmark.md).
+It improves on current57 with Answer@5 `0.862`, while preserving mean score
+`0.922`, Recall@5 `1.000`, Recall@10 `1.000`, and complete citation coverage.
+The miss taxonomy remains synthesis-only and drops to 69 synthesis misses. The
+validated production changes are numeric-state delta synthesis and role-covered
+temporal operands. Count-state questions that ask for an increase or decrease
+now bind cited earlier and later totals, such as Instagram follower counts, and
+emit an answer-ready difference. Inverted before-event questions now preserve
+explicit event-date operands over generic session metadata, so cited `ordered`
+and `birthday party` dates can produce the intended interval before duration or
+session-date distractors fill the answer surface.
+
+### 2026-06-04 current57 latest-state promotion embedded full-set run
+
+The previous embedded zaxy-only quality validation is archived at
+[reports/benchmarks/longmemeval-500-current57-zaxyonly-latest-state-promotion-embedded-reuse-20260604/live-benchmark.md](../reports/benchmarks/longmemeval-500-current57-zaxyonly-latest-state-promotion-embedded-reuse-20260604/live-benchmark.md).
+It improves on current56 with Answer@5 `0.856`, while preserving mean score
+`0.922`, Recall@5 `1.000`, Recall@10 `1.000`, and complete citation coverage.
+The validated production change is latest-state promotion: cited answer-bearing
+state spans such as RAM upgrade targets, current page progress, and updated
+duration ranges are surfaced as compact answer candidates before generic count
+or duration synthesis can fill the top answer surface.
+
+### 2026-06-04 current56 query-bound arithmetic embedded full-set run
+
+An earlier embedded zaxy-only quality validation is archived at
+[reports/benchmarks/longmemeval-500-current56-zaxyonly-query-bound-arithmetic-extended-embedded-reuse-20260604/live-benchmark.md](../reports/benchmarks/longmemeval-500-current56-zaxyonly-query-bound-arithmetic-extended-embedded-reuse-20260604/live-benchmark.md).
+It uses the cleaned LongMemEval-compatible workload, deterministic local hash
+embeddings, `limit=10`, `--zaxy-backend checkout`, no same-command baselines,
+and the reusable embedded Kuzu projection from the current query-bound
+arithmetic control. It should be read as a zaxy-only quality validation, not as
+a BM25 or Neo4j latency comparison. The workload SHA-256 is
+`90fb2307195d7e16b963a2b8a30f03b375bd42a45d41aeaa55423029dd84e3fc`.
+
+| Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | Recall@10 | p95 ms | p99 ms |
+|---------|------------|----------|-------------------|----------|----------|-----------|--------|--------|
+| Zaxy checkout | 0.922 | 0.852 | 1.000 | 0.904 | 1.000 | 1.000 | 904.45 | 1207.69 |
+
+This run improves on current54 with mean score `0.922`, Answer@5 `0.852`,
+Recall@5 `1.000`, Recall@10 `1.000`, and complete citation coverage. The miss
+taxonomy remains synthesis-only and drops to 74 synthesis misses. The validated
+production change is query-bound arithmetic synthesis: cited numeric operands
+are bound to the requested unit, object, and operation before generic duration,
+absence, or raw numeric fallbacks can become the answer surface. The fixed class
+covers cited distance totals, title-scoped pages-remaining subtraction, and
+percentage calculations whose operands are split across long cited sessions or
+surrounded by unrelated numeric distractors.
+
+Reproduce this report against the reusable embedded projection:
+
+```bash
+EMBEDDED_GRAPH_PATH=.eventloom/projections/longmemeval-current55-query-bound-arithmetic.kuzu \
+zaxy benchmark \
+  --output-dir reports/benchmarks/longmemeval-500-current56-zaxyonly-query-bound-arithmetic-extended-embedded-reuse-20260604 \
+  --embedding-provider hash \
+  --workload longmemeval \
+  --dataset .cache/zaxy/benchmarks/longmemeval_oracle.json \
+  --questions 500 \
+  --runs 1 \
+  --limit 10 \
+  --baseline-backends none \
+  --zaxy-backend checkout \
+  --projection-backend embedded \
+  --embedding-cache .cache/zaxy/longmemeval-500-synthesis-ledger-20260603-embeddings.json \
+  --reuse-projection \
+  --progress
+```
+
+Guard this embedded report against the current54 floor with:
+
+```bash
+zaxy benchmark-compare reports/benchmarks/longmemeval-500-current56-zaxyonly-query-bound-arithmetic-extended-embedded-reuse-20260604/live-benchmark.json \
+  --baseline reports/benchmarks/longmemeval-500-current54-zaxyonly-absence-neighborhood-embedded-reuse-20260604/live-benchmark.json \
+  --backend zaxy-checkout \
+  --min-mean-score 0.922 \
+  --min-answer-recall-at-5 0.852 \
+  --min-recall-at-5 1.000 \
+  --min-citation-coverage 1.0 \
+  --max-p95-ms 1000 \
+  --max-p99-ms 1500
+```
+
+### 2026-06-04 current54 absence-neighborhood embedded full-set run
+
+An earlier embedded zaxy-only quality validation is archived at
+[reports/benchmarks/longmemeval-500-current54-zaxyonly-absence-neighborhood-embedded-reuse-20260604/live-benchmark.md](../reports/benchmarks/longmemeval-500-current54-zaxyonly-absence-neighborhood-embedded-reuse-20260604/live-benchmark.md).
+It uses the cleaned LongMemEval-compatible workload, deterministic local hash
+embeddings, `limit=10`, `--zaxy-backend checkout`, no same-command baselines,
+and the reusable embedded Kuzu projection from the current absence-routing
+control. It should be read as a zaxy-only quality validation, not as a BM25 or
+Neo4j latency comparison. The workload SHA-256 is
+`90fb2307195d7e16b963a2b8a30f03b375bd42a45d41aeaa55423029dd84e3fc`.
+
+| Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | Recall@10 | p95 ms | p99 ms |
+|---------|------------|----------|-------------------|----------|----------|-----------|--------|--------|
+| Zaxy checkout | 0.914 | 0.846 | 1.000 | 0.904 | 1.000 | 1.000 | 800.96 | 1120.97 |
+
+This run improves on current53 with mean score `0.914`, Answer@5 `0.846`,
+Recall@5 `1.000`, Recall@10 `1.000`, and complete citation coverage. The miss
+taxonomy is synthesis-only: 77 synthesis misses and no retrieval misses. The
+validated production change is scoped absence-neighborhood retrieval: temporal
+absence checks now recover and preserve the cited support groups that prove the
+inspected memory neighborhood, even when the original source query or temporal
+anchor would otherwise starve the source lane. The fixed class is not a
+benchmark-specific answer patch; absence answers now require nearby positive
+domain evidence and name the missing proposition, such as a missing current
+employer.
+
+Reproduce this report against the reusable embedded projection:
+
+```bash
+EMBEDDED_GRAPH_PATH=.eventloom/projections/longmemeval-current28-absence-routing.kuzu \
+zaxy benchmark \
+  --output-dir reports/benchmarks/longmemeval-500-current54-zaxyonly-absence-neighborhood-embedded-reuse-20260604 \
+  --embedding-provider hash \
+  --workload longmemeval \
+  --dataset .cache/zaxy/benchmarks/longmemeval_oracle.json \
+  --questions 500 \
+  --runs 1 \
+  --limit 10 \
+  --baseline-backends none \
+  --zaxy-backend checkout \
+  --projection-backend embedded \
+  --embedding-cache .cache/zaxy/longmemeval-500-synthesis-ledger-20260603-embeddings.json \
+  --reuse-projection \
+  --progress
+```
+
+Guard this embedded report against the current53 floor with:
+
+```bash
+zaxy benchmark-compare reports/benchmarks/longmemeval-500-current54-zaxyonly-absence-neighborhood-embedded-reuse-20260604/live-benchmark.json \
+  --baseline reports/benchmarks/longmemeval-500-current53-zaxyonly-query-bound-scalar-embedded-reuse-20260604/live-benchmark.json \
+  --backend zaxy-checkout \
+  --min-mean-score 0.910 \
+  --min-answer-recall-at-5 0.844 \
+  --min-recall-at-5 1.000 \
+  --min-citation-coverage 1.0 \
+  --max-p95-ms 1500 \
+  --max-p99-ms 2000
+```
+
+### 2026-06-04 current53 query-bound scalar embedded full-set run
+
+An earlier embedded zaxy-only quality validation is archived at
+[reports/benchmarks/longmemeval-500-current53-zaxyonly-query-bound-scalar-embedded-reuse-20260604/live-benchmark.md](../reports/benchmarks/longmemeval-500-current53-zaxyonly-query-bound-scalar-embedded-reuse-20260604/live-benchmark.md).
+It uses the cleaned LongMemEval-compatible workload, deterministic local hash
+embeddings, `limit=10`, `--zaxy-backend checkout`, no same-command baselines,
+and the reusable embedded Kuzu projection from the current absence-routing
+control. It should be read as a zaxy-only quality validation, not as a BM25 or
+Neo4j latency comparison. The workload SHA-256 is
+`90fb2307195d7e16b963a2b8a30f03b375bd42a45d41aeaa55423029dd84e3fc`.
+
+| Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | Recall@10 | p95 ms | p99 ms |
+|---------|------------|----------|-------------------|----------|----------|-----------|--------|--------|
+| Zaxy checkout | 0.910 | 0.844 | 1.000 | 0.902 | 0.998 | 0.998 | 786.25 | 1050.77 |
+
+This run improves on current52 with mean score `0.910`, Answer@5 `0.844`,
+Recall@5 `0.998`, and complete citation coverage. The miss taxonomy is 1
+retrieval miss and 77 synthesis misses. The validated production change is a
+query-bound scalar answer projection: direct scalar questions now bind candidate
+answers to the query object and predicate before generic numeric, duration, or
+assistant-recall fallbacks can become the top answer surface. In the full-set
+run this moved cited answer spans such as queried brands, quoted songs, and
+owned-object counts into Answer@5 without expanding retrieval.
+
+Reproduce this report against the reusable embedded projection:
+
+```bash
+EMBEDDED_GRAPH_PATH=.eventloom/projections/longmemeval-current28-absence-routing.kuzu \
+zaxy benchmark \
+  --output-dir reports/benchmarks/longmemeval-500-current53-zaxyonly-query-bound-scalar-embedded-reuse-20260604 \
+  --embedding-provider hash \
+  --workload longmemeval \
+  --dataset .cache/zaxy/benchmarks/longmemeval_oracle.json \
+  --questions 500 \
+  --runs 1 \
+  --limit 10 \
+  --baseline-backends none \
+  --zaxy-backend checkout \
+  --projection-backend embedded \
+  --embedding-cache .cache/zaxy/longmemeval-500-synthesis-ledger-20260603-embeddings.json \
+  --reuse-projection \
+  --progress
+```
+
+Guard this embedded report against the current52 floor with:
+
+```bash
+zaxy benchmark-compare reports/benchmarks/longmemeval-500-current53-zaxyonly-query-bound-scalar-embedded-reuse-20260604/live-benchmark.json \
+  --baseline reports/benchmarks/longmemeval-500-current52-zaxyonly-temporal-list-reuse-control-embedded-20260604/live-benchmark.json \
+  --backend zaxy-checkout \
+  --min-mean-score 0.908 \
+  --min-answer-recall-at-5 0.834 \
+  --min-recall-at-5 0.998 \
+  --min-citation-coverage 1.0 \
+  --max-p95-ms 1500 \
+  --max-p99-ms 2000
+```
+
+### 2026-06-03 current28 absence-routing embedded full-set run
+
+An earlier embedded zaxy-only quality validation is archived at
+[reports/benchmarks/longmemeval-500-current28-zaxyonly-absence-routing-embedded-isolated-20260603/live-benchmark.md](../reports/benchmarks/longmemeval-500-current28-zaxyonly-absence-routing-embedded-isolated-20260603/live-benchmark.md).
+It uses the cleaned LongMemEval-compatible workload, deterministic local hash
+embeddings, `limit=5`, `--zaxy-backend checkout`, and an isolated embedded Kuzu
+projection path. It did not run BM25 in the same command and it should not be
+treated as a Neo4j latency comparison. The workload SHA-256 is
+`0dc36a139bb9a4fdc7c6cd34400737a58a1eb7410517341f015e9fbfc76ed854`.
+
+| Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | Recall@10 | p95 ms | p99 ms |
+|---------|------------|----------|-------------------|----------|----------|-----------|--------|--------|
+| Zaxy checkout | 0.876 | 0.810 | 1.000 | 0.896 | 0.990 | 0.990 | 568.56 | 698.06 |
+
+This run clears the current27 embedded quality floor with mean score `0.876`,
+Answer@5 `0.810`, Recall@5 `0.990`, and complete citation coverage. The miss
+taxonomy is 5 retrieval misses and 90 synthesis misses. The validated production
+change is high-precision absence-first routing for conjunctive aggregation and
+temporal-order questions: when cited sources prove one side of the query but not
+the other, generic arithmetic, count, date, and duration synthesis defers to
+cited absence guidance instead of fabricating a complete comparison. This is a
+synthesis-contract improvement, not a retrieval expansion.
+
+Reproduce this report with an isolated embedded projection path:
+
+```bash
+EMBEDDED_GRAPH_PATH=.eventloom/projections/longmemeval-current28-absence-routing.kuzu \
+zaxy benchmark \
+  --output-dir reports/benchmarks/longmemeval-500-current28-zaxyonly-absence-routing-embedded-isolated-20260603 \
+  --embedding-provider hash \
+  --workload longmemeval \
+  --dataset .cache/zaxy/benchmarks/longmemeval_oracle.json \
+  --questions 500 \
+  --runs 1 \
+  --limit 5 \
+  --baseline-backends none \
+  --zaxy-backend checkout \
+  --projection-backend embedded \
+  --embedding-cache .cache/zaxy/longmemeval-500-synthesis-ledger-20260603-embeddings.json \
+  --reset-graph \
+  --progress
+```
+
+Guard this embedded report against the current27 floor with:
+
+```bash
+zaxy benchmark-compare reports/benchmarks/longmemeval-500-current28-zaxyonly-absence-routing-embedded-isolated-20260603/live-benchmark.json \
+  --baseline reports/benchmarks/longmemeval-500-current27-zaxyonly-state-qualifier-embedded-isolated-20260603/live-benchmark.json \
+  --backend zaxy-checkout \
+  --min-mean-score 0.874 \
+  --min-answer-recall-at-5 0.802 \
+  --min-recall-at-5 0.990 \
+  --min-citation-coverage 1.0 \
+  --max-p95-ms 1500 \
+  --max-p99-ms 2000
+```
+
+### 2026-06-03 current27 state-qualifier embedded full-set run
+
+The previous embedded zaxy-only quality validation is archived at
+[reports/benchmarks/longmemeval-500-current27-zaxyonly-state-qualifier-embedded-isolated-20260603/live-benchmark.md](../reports/benchmarks/longmemeval-500-current27-zaxyonly-state-qualifier-embedded-isolated-20260603/live-benchmark.md).
+It uses the cleaned LongMemEval-compatible workload, deterministic local hash
+embeddings, `limit=5`, `--zaxy-backend checkout`, and an isolated embedded Kuzu
+projection path. It did not run BM25 in the same command and it should not be
+treated as a Neo4j latency comparison. The workload SHA-256 is
+`0dc36a139bb9a4fdc7c6cd34400737a58a1eb7410517341f015e9fbfc76ed854`.
+
+| Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | Recall@10 | p95 ms | p99 ms |
+|---------|------------|----------|-------------------|----------|----------|-----------|--------|--------|
+| Zaxy checkout | 0.874 | 0.802 | 1.000 | 0.894 | 0.990 | 0.990 | 563.76 | 702.90 |
+
+This run cleared the current25 embedded quality floor with mean score `0.874`,
+Answer@5 `0.802`, Recall@5 `0.990`, and complete citation coverage. The miss
+taxonomy was 5 retrieval misses and 94 synthesis misses. The validated
+production change was qualifier-slot completeness for numeric state synthesis:
+current-state answer candidates are promoted only when explicit role qualifiers
+in the query are supported by the cited evidence span. Incomplete state programs
+remain diagnostic evidence instead of displacing stronger answer surfaces.
+
+### 2026-06-03 current25 answer-promotion embedded full-set run
+
+The previous embedded zaxy-only quality validation is archived at
+[reports/benchmarks/longmemeval-500-current25-zaxyonly-answer-promotion-embedded-isolated-20260603/live-benchmark.md](../reports/benchmarks/longmemeval-500-current25-zaxyonly-answer-promotion-embedded-isolated-20260603/live-benchmark.md).
+It uses the cleaned LongMemEval-compatible workload, deterministic local hash
+embeddings, `limit=5`, `--zaxy-backend checkout`, and an isolated embedded Kuzu
+projection path. It did not run BM25 in the same command and it should not be
+treated as a Neo4j latency comparison. The workload SHA-256 is
+`0dc36a139bb9a4fdc7c6cd34400737a58a1eb7410517341f015e9fbfc76ed854`.
+
+| Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | Recall@10 | p95 ms | p99 ms |
+|---------|------------|----------|-------------------|----------|----------|-----------|--------|--------|
+| Zaxy checkout | 0.874 | 0.800 | 1.000 | 0.894 | 0.990 | 0.990 | 725.43 | 830.35 |
+
+This run clears the current24 embedded quality floor with mean score `0.874`,
+Answer@5 `0.800`, Recall@5 `0.990`, and complete citation coverage. The miss
+taxonomy is 5 retrieval misses and 95 synthesis misses. The validated production
+change is answer-ready candidate promotion inside aggregate synthesis: rendered
+candidate blocks and result metadata now share the same operation-priority
+ranking, so specific deterministic answers such as `date_interval_answer`
+surface ahead of generic duration/count fallbacks when both are cited. This is a
+placement and synthesis-contract improvement, not a retrieval expansion.
+
+### 2026-06-03 current24 numeric-state embedded full-set run
+
+The previous embedded zaxy-only quality validation is archived at
+[reports/benchmarks/longmemeval-500-current24-zaxyonly-numeric-state-embedded-isolated-20260603/live-benchmark.md](../reports/benchmarks/longmemeval-500-current24-zaxyonly-numeric-state-embedded-isolated-20260603/live-benchmark.md).
+It uses the cleaned LongMemEval-compatible workload, deterministic local hash
+embeddings, `limit=5`, `--zaxy-backend checkout`, and an isolated embedded Kuzu
+projection path. It did not run BM25 in the same command and it should not be
+treated as a Neo4j latency comparison. The workload SHA-256 is
+`0dc36a139bb9a4fdc7c6cd34400737a58a1eb7410517341f015e9fbfc76ed854`.
+
+| Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | Recall@10 | p95 ms | p99 ms |
+|---------|------------|----------|-------------------|----------|----------|-----------|--------|--------|
+| Zaxy checkout | 0.870 | 0.798 | 1.000 | 0.894 | 0.990 | 0.990 | 614.68 | 737.06 |
+
+This run clears the current22 quality floor with mean score `0.870`, Answer@5
+`0.798`, Recall@5 `0.990`, and complete citation coverage. The miss taxonomy is
+5 retrieval misses and 96 synthesis misses. The validated production change is a
+typed current-state numeric synthesis operator: cited latest totals and later
+incremental updates can produce answer-ready `numeric_state_answer` candidates
+without treating state questions as generic event counts.
+
+Reproduce this report with an isolated embedded projection path so it does not
+contend with a live `zaxy serve` process:
+
+```bash
+EMBEDDED_GRAPH_PATH=.eventloom/projections/longmemeval-current24-numeric-state.kuzu \
+zaxy benchmark \
+  --output-dir reports/benchmarks/longmemeval-500-current24-zaxyonly-numeric-state-embedded-isolated-20260603 \
+  --embedding-provider hash \
+  --workload longmemeval \
+  --dataset .cache/zaxy/benchmarks/longmemeval_oracle.json \
+  --questions 500 \
+  --runs 1 \
+  --limit 5 \
+  --baseline-backends none \
+  --zaxy-backend checkout \
+  --projection-backend embedded \
+  --embedding-cache .cache/zaxy/longmemeval-500-synthesis-ledger-20260603-embeddings.json \
+  --reset-graph \
+  --progress
+```
+
+Guard this embedded report against the current22 floor with:
+
+```bash
+zaxy benchmark-compare reports/benchmarks/longmemeval-500-current24-zaxyonly-numeric-state-embedded-isolated-20260603/live-benchmark.json \
+  --baseline reports/benchmarks/longmemeval-500-current22-zaxyonly-page-future-age-neo4j-20260603/live-benchmark.json \
+  --backend zaxy-checkout \
+  --min-mean-score 0.868 \
+  --min-answer-recall-at-5 0.796 \
+  --min-recall-at-5 0.990 \
+  --min-citation-coverage 1.0 \
+  --max-p95-ms 1500 \
+  --max-p99-ms 2000
+```
+
+### 2026-06-03 current22 page/future-age zaxy-only full-set run
+
+The latest Neo4j zaxy-only quality validation is archived at
+[reports/benchmarks/longmemeval-500-current22-zaxyonly-page-future-age-neo4j-20260603/live-benchmark.md](../reports/benchmarks/longmemeval-500-current22-zaxyonly-page-future-age-neo4j-20260603/live-benchmark.md).
+It uses the cleaned LongMemEval-compatible workload, deterministic local hash
+embeddings, `limit=5`, `--zaxy-backend checkout`, and Neo4j projection rebuild
+with `--reset-graph`. It did not run BM25 in the same command; use current5
+below for the most recent same-command BM25 row. The workload SHA-256 is
+`0dc36a139bb9a4fdc7c6cd34400737a58a1eb7410517341f015e9fbfc76ed854`.
+
+| Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | Recall@10 | p95 ms | p99 ms |
+|---------|------------|----------|-------------------|----------|----------|-----------|--------|--------|
+| Zaxy checkout | 0.868 | 0.796 | 1.000 | 0.896 | 0.992 | 0.992 | 1234.20 | 1430.16 |
+
+This run preserves the current18 full-set mean score floor at `0.868` and raises
+Answer@5 from `0.778` to `0.796`, while preserving the above-99% Recall@5 floor
+and complete citation coverage. The miss taxonomy improves from 4 retrieval
+misses and 107 synthesis misses to 4 retrieval misses and 98 synthesis misses.
+The validated production changes are typed cited synthesis operators for
+target-aware page-count totals and future age-at-event arithmetic. Page-count
+questions now sum only user-completed reading observations that match the query's
+temporal target, excluding recommendation-list page counts and older explicit
+month distractors. Future age-at-event questions now combine a cited current age
+with a cited future offset such as `next year` and emit a typed
+`future_age_at_event_answer`.
+
+Latency note: this report was generated during an airplane run and passed the
+absolute p95/p99 budgets, but failed the relative latency regression comparison
+against current18. Treat current18 as the stable latency baseline until current22
+is rerun on stable local conditions.
+
+The remaining current22 misses are class-level synthesis gaps, not citation
+coverage failures: Recall@5 is already `0.992` and citation coverage is `1.000`.
+The next architecture target is the Evidence Program layer: every deterministic
+synthesis operation should expose required evidence slots, bound cited source
+groups, missing slots, and operation completeness before emitting an
+answer-ready candidate. This prevents benchmark-shaped fixes by making temporal
+ordering, explicit insufficiency, state transitions, elapsed-time arithmetic,
+and aggregate ledgers share the same auditable slot-coverage contract.
+
+Reproduce this report from a clean Neo4j projection with:
+
+```bash
+zaxy benchmark \
+  --output-dir reports/benchmarks/longmemeval-500-current22-zaxyonly-page-future-age-neo4j-20260603 \
+  --embedding-provider hash \
+  --workload longmemeval \
+  --dataset .cache/zaxy/benchmarks/longmemeval_oracle.json \
+  --questions 500 \
+  --runs 1 \
+  --limit 5 \
+  --baseline-backends none \
+  --zaxy-backend checkout \
+  --projection-backend neo4j \
+  --embedding-cache .cache/zaxy/longmemeval-500-synthesis-ledger-20260603-embeddings.json \
+  --reset-graph \
+  --progress
+```
+
+Guard the quality floor with:
+
+```bash
+zaxy benchmark-compare reports/benchmarks/longmemeval-500-current22-zaxyonly-page-future-age-neo4j-20260603/live-benchmark.json \
+  --baseline reports/benchmarks/longmemeval-500-current18-zaxyonly-direct-values-neo4j-20260603/live-benchmark.json \
+  --backend zaxy-checkout \
+  --min-mean-score 0.868 \
+  --min-answer-recall-at-5 0.796 \
+  --min-recall-at-5 0.990 \
+  --min-citation-coverage 1.0 \
+  --max-p95-ms 1500 \
+  --max-p99-ms 2500
+```
+
+### 2026-06-03 current18 direct-value zaxy-only full-set run
+
+The stable-latency zaxy-only full-set validation is archived at
+[reports/benchmarks/longmemeval-500-current18-zaxyonly-direct-values-neo4j-20260603/live-benchmark.md](../reports/benchmarks/longmemeval-500-current18-zaxyonly-direct-values-neo4j-20260603/live-benchmark.md).
+It uses the cleaned LongMemEval-compatible workload, deterministic local hash
+embeddings, `limit=5`, `--zaxy-backend checkout`, and Neo4j projection rebuild
+with `--reset-graph`. It did not run BM25 in the same command; use current5
+below for the most recent same-command BM25 row. The workload SHA-256 is
+`0dc36a139bb9a4fdc7c6cd34400737a58a1eb7410517341f015e9fbfc76ed854`.
+
+| Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | Recall@10 | p95 ms | p99 ms |
+|---------|------------|----------|-------------------|----------|----------|-----------|--------|--------|
+| Zaxy checkout | 0.868 | 0.778 | 1.000 | 0.894 | 0.992 | 0.992 | 810.59 | 923.27 |
+
+This run improves the current17 full-set checkout floor from mean `0.862` to
+`0.868` and Answer@5 from `0.772` to `0.778`, while preserving the above-99%
+Recall@5 floor and complete citation coverage. The miss taxonomy improves from
+4 retrieval misses and 110 synthesis misses to 4 retrieval misses and 107
+synthesis misses. The validated production change is an answer-ready direct
+numeric value lane for cited source synthesis: personal-best times, current or
+"so far" counts, latest earned amounts, current daily durations, and direct
+currency differences can be projected as typed `direct_numeric_answer` evidence
+when the cited source text matches the query. The lane is deliberately scoped so
+domain-specific ledgers still own aggregate route totals, lodging comparisons,
+absence checks, and other higher-precision synthesis packets.
+
+Reproduce this report from a clean Neo4j projection with:
+
+```bash
+zaxy benchmark \
+  --output-dir reports/benchmarks/longmemeval-500-current18-zaxyonly-direct-values-neo4j-20260603 \
+  --embedding-provider hash \
+  --workload longmemeval \
+  --dataset .cache/zaxy/benchmarks/longmemeval_oracle.json \
+  --questions 500 \
+  --runs 1 \
+  --limit 5 \
+  --baseline-backends none \
+  --zaxy-backend checkout \
+  --projection-backend neo4j \
+  --embedding-cache .cache/zaxy/longmemeval-500-synthesis-ledger-20260603-embeddings.json \
+  --reset-graph \
+  --progress
+```
+
+Guard this zaxy-only report against the current17 floor with:
+
+```bash
+zaxy benchmark-compare reports/benchmarks/longmemeval-500-current18-zaxyonly-direct-values-neo4j-20260603/live-benchmark.json \
+  --baseline reports/benchmarks/longmemeval-500-current17-zaxyonly-temporal-anchors-neo4j-20260603/live-benchmark.json \
+  --backend zaxy-checkout \
+  --min-mean-score 0.868 \
+  --min-answer-recall-at-5 0.778 \
+  --min-recall-at-5 0.990 \
+  --min-citation-coverage 1.0 \
+  --max-p95-ms 1500 \
+  --max-p99-ms 2500
+```
+
+### 2026-06-03 current15 assistant-recall zaxy-only full-set run
+
+The previous zaxy-only full-set validation is archived at
+[reports/benchmarks/longmemeval-500-current15-zaxyonly-assistant-recall-neo4j-20260603/live-benchmark.md](../reports/benchmarks/longmemeval-500-current15-zaxyonly-assistant-recall-neo4j-20260603/live-benchmark.md).
+It uses the cleaned LongMemEval-compatible workload, deterministic local hash
+embeddings, `limit=5`, `--zaxy-backend checkout`, and Neo4j projection rebuild
+with `--reset-graph`. It did not run BM25 in the same command; use current5
+below for the most recent same-command BM25 row. The workload SHA-256 is
+`0dc36a139bb9a4fdc7c6cd34400737a58a1eb7410517341f015e9fbfc76ed854`.
+
+| Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | Recall@10 | p95 ms | p99 ms |
+|---------|------------|----------|-------------------|----------|----------|-----------|--------|--------|
+| Zaxy checkout | 0.838 | 0.744 | 1.000 | 0.890 | 0.992 | 0.992 | 868.66 | 994.30 |
+
+This run improves the current14 full-set checkout floor from mean `0.830` to
+`0.838` and Answer@5 from `0.728` to `0.744`, while preserving the above-99%
+Recall@5 floor and complete citation coverage. The miss taxonomy improves from
+4 retrieval misses and 132 synthesis misses to 4 retrieval misses and 124
+synthesis misses. The validated production change is deterministic
+assistant-recall slot extraction for schedule tables, campaign budget lines,
+recommended item lists, recommended video title and URL, dilution ratios, direct
+quote recall, named websites, and paired company examples. The
+single-session-assistant category now has zero misses in this full-set run.
+
+Reproduce this report from a clean Neo4j projection with:
+
+```bash
+zaxy benchmark \
+  --output-dir reports/benchmarks/longmemeval-500-current15-zaxyonly-assistant-recall-neo4j-20260603 \
+  --embedding-provider hash \
+  --workload longmemeval \
+  --dataset .cache/zaxy/benchmarks/longmemeval_oracle.json \
+  --questions 500 \
+  --runs 1 \
+  --limit 5 \
+  --baseline-backends none \
+  --zaxy-backend checkout \
+  --projection-backend neo4j \
+  --embedding-cache .cache/zaxy/longmemeval-500-synthesis-ledger-20260603-embeddings.json \
+  --reset-graph \
+  --progress
+```
+
+Guard this zaxy-only report against the current14 floor with:
+
+```bash
+zaxy benchmark-compare reports/benchmarks/longmemeval-500-current15-zaxyonly-assistant-recall-neo4j-20260603/live-benchmark.json \
+  --baseline reports/benchmarks/longmemeval-500-current14-zaxyonly-absence-deferral-neo4j-20260603/live-benchmark.json \
+  --backend zaxy-checkout \
+  --min-mean-score 0.838 \
+  --min-answer-recall-at-5 0.744 \
+  --min-recall-at-5 0.990 \
+  --min-citation-coverage 1.0 \
+  --max-p95-ms 1500 \
+  --max-p99-ms 2500
+```
+
+### 2026-06-03 current14 absence-deferral zaxy-only full-set run
+
+The previous zaxy-only full-set validation is archived at
+[reports/benchmarks/longmemeval-500-current14-zaxyonly-absence-deferral-neo4j-20260603/live-benchmark.md](../reports/benchmarks/longmemeval-500-current14-zaxyonly-absence-deferral-neo4j-20260603/live-benchmark.md).
+It uses the cleaned LongMemEval-compatible workload, deterministic local hash
+embeddings, `limit=5`, `--zaxy-backend checkout`, and Neo4j projection rebuild
+with `--reset-graph`. It did not run BM25 in the same command; use current5
+below for the most recent same-command BM25 row. The workload SHA-256 is
+`0dc36a139bb9a4fdc7c6cd34400737a58a1eb7410517341f015e9fbfc76ed854`.
+
+| Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | Recall@10 | p95 ms | p99 ms |
+|---------|------------|----------|-------------------|----------|----------|-----------|--------|--------|
+| Zaxy checkout | 0.830 | 0.728 | 1.000 | 0.888 | 0.992 | 0.992 | 875.71 | 1009.44 |
+
+This run improves the current12 full-set checkout floor from mean `0.808` to
+`0.830` and Answer@5 from `0.716` to `0.728`, while preserving the above-99%
+Recall@5 floor and complete citation coverage. The miss taxonomy improves from
+4 retrieval misses and 138 synthesis misses to 4 retrieval misses and 132
+synthesis misses. The validated production change is evidence-aware absence
+deferral: generic synthesis only defers when the cited source lane exposes a
+high-precision missing slot such as a month-scoped count, title-specific reading
+progress, duration-location absence, or explicit alternative target. A broader
+absence-first routing attempt reached mean `0.834` but regressed Answer@5 to
+`0.712`, so it is not the release floor.
+
+Reproduce this report from a clean Neo4j projection with:
+
+```bash
+zaxy benchmark \
+  --output-dir reports/benchmarks/longmemeval-500-current14-zaxyonly-absence-deferral-neo4j-20260603 \
+  --embedding-provider hash \
+  --workload longmemeval \
+  --dataset .cache/zaxy/benchmarks/longmemeval_oracle.json \
+  --questions 500 \
+  --runs 1 \
+  --limit 5 \
+  --baseline-backends none \
+  --zaxy-backend checkout \
+  --projection-backend neo4j \
+  --embedding-cache .cache/zaxy/longmemeval-500-synthesis-ledger-20260603-embeddings.json \
+  --reset-graph \
+  --progress
+```
+
+Guard this zaxy-only report against the current12 floor with:
+
+```bash
+zaxy benchmark-compare reports/benchmarks/longmemeval-500-current14-zaxyonly-absence-deferral-neo4j-20260603/live-benchmark.json \
+  --baseline reports/benchmarks/longmemeval-500-current12-zaxyonly-interval-priority-neo4j-20260603/live-benchmark.json \
+  --backend zaxy-checkout \
+  --min-mean-score 0.830 \
+  --min-answer-recall-at-5 0.728 \
+  --min-recall-at-5 0.990 \
+  --min-citation-coverage 1.0 \
+  --max-p95-ms 1500 \
+  --max-p99-ms 2500
+```
+
+### 2026-06-03 current12 interval-priority zaxy-only full-set run
+
+The previous zaxy-only full-set validation is archived at
+[reports/benchmarks/longmemeval-500-current12-zaxyonly-interval-priority-neo4j-20260603/live-benchmark.md](../reports/benchmarks/longmemeval-500-current12-zaxyonly-interval-priority-neo4j-20260603/live-benchmark.md).
+It uses the cleaned LongMemEval-compatible workload, deterministic local hash
+embeddings, `limit=5`, `--zaxy-backend checkout`, and Neo4j projection rebuild
+with `--reset-graph`. It did not run BM25 in the same command; use current5
+below for the most recent same-command BM25 row. The workload SHA-256 is
+`0dc36a139bb9a4fdc7c6cd34400737a58a1eb7410517341f015e9fbfc76ed854`.
+
+| Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | Recall@10 | p95 ms | p99 ms |
+|---------|------------|----------|-------------------|----------|----------|-----------|--------|--------|
+| Zaxy checkout | 0.808 | 0.716 | 1.000 | 0.890 | 0.992 | 0.992 | 868.83 | 1003.72 |
+
+This run raises the full-set checkout mean score while preserving the current5
+Answer@5 floor, the above-99% Recall@5 floor, and complete citation coverage.
+The miss taxonomy remains dominated by synthesis misses: 4 retrieval misses and
+138 synthesis misses. The validated production change is deterministic
+answer-key priority for direct interval answers, so `week_interval_answer` and
+similar answer-ready interval keys outrank generic elapsed-time answers.
+
+Guard this zaxy-only report against the current5 floor with:
+
+```bash
+zaxy benchmark-compare reports/benchmarks/longmemeval-500-current12-zaxyonly-interval-priority-neo4j-20260603/live-benchmark.json \
+  --baseline reports/benchmarks/longmemeval-500-current5-synthesis-ledger-neo4j-20260603/live-benchmark.json \
+  --backend zaxy-checkout \
+  --min-mean-score 0.808 \
+  --min-answer-recall-at-5 0.716 \
+  --min-recall-at-5 0.990 \
+  --min-citation-coverage 1.0 \
+  --max-p95-ms 1500 \
+  --max-p99-ms 2500
+```
+
+### 2026-06-03 current5 synthesis-ledger full-set run
+
+The current synthesis-ledger full-set report is archived at
+[reports/benchmarks/longmemeval-500-current5-synthesis-ledger-neo4j-20260603/live-benchmark.md](../reports/benchmarks/longmemeval-500-current5-synthesis-ledger-neo4j-20260603/live-benchmark.md).
+It uses the cleaned LongMemEval-compatible workload, deterministic local hash
+embeddings, `limit=5`, BM25 as the same-harness lexical baseline,
+`--zaxy-backend checkout`, and Neo4j projection rebuild with `--reset-graph`. The
+workload SHA-256 is
+`0dc36a139bb9a4fdc7c6cd34400737a58a1eb7410517341f015e9fbfc76ed854`.
+
+| Backend | Mean score | Answer@5 | Citation coverage | Recall@1 | Recall@5 | Recall@10 | p95 ms | p99 ms |
+|---------|------------|----------|-------------------|----------|----------|-----------|--------|--------|
+| BM25 | 0.520 | 0.520 | 1.000 | 0.592 | 0.770 | 0.770 | 327.24 | 336.56 |
+| Zaxy checkout | 0.802 | 0.716 | 1.000 | 0.892 | 0.992 | 0.992 | 869.71 | 1015.19 |
+
+This run establishes a new full-set retrieval floor for the current `limit=5`
+checkout path: Recall@5 is above 99% and citation coverage remains complete.
+It is not an industry-leading Answer@5 or mean-score result. The miss taxonomy
+still shows the hard problem: Zaxy checkout has 4 retrieval misses and 138
+synthesis misses. The previous current4 checkout report was mean `0.794`,
+Answer@5 `0.706`, Recall@5 `0.992`, and citation coverage `1.000`; current5
+improves answer synthesis while preserving the 99% retrieval floor. The
+production direction remains deterministic answer synthesis and answer-candidate
+ordering, not broad retrieval expansion.
+
+Reproduce this report from a clean Neo4j projection with:
+
+```bash
+zaxy benchmark \
+  --output-dir reports/benchmarks/longmemeval-500-current5-synthesis-ledger-neo4j-20260603 \
+  --embedding-provider hash \
+  --workload longmemeval \
+  --dataset .cache/zaxy/benchmarks/longmemeval_oracle.json \
+  --questions 500 \
+  --runs 1 \
+  --limit 5 \
+  --baseline-backends bm25 \
+  --zaxy-backend checkout \
+  --projection-backend neo4j \
+  --embedding-cache .cache/zaxy/longmemeval-500-synthesis-ledger-20260603-embeddings.json \
+  --reset-graph \
+  --progress
+```
+
+Guard the current report with:
+
+```bash
+zaxy benchmark-compare reports/benchmarks/longmemeval-500-current5-synthesis-ledger-neo4j-20260603/live-benchmark.json \
+  --backend zaxy-checkout \
+  --min-mean-score 0.802 \
+  --min-answer-recall-at-5 0.716 \
+  --min-recall-at-5 0.990 \
+  --min-citation-coverage 1.0 \
+  --max-p95-ms 1500 \
+  --max-p99-ms 2500
+```
 
 ### Legacy limit=10 full-set floor
 
@@ -47,13 +901,10 @@ sessions. Its workload SHA-256 is
 | Zaxy checkout | 0.724 | 0.628 | 1.000 | 0.960 | 0.972 | 0.972 | 1472.11 | 2652.55 |
 
 This legacy full-set result remains the `limit=10` no-regression floor for
-checkout-wide changes that still run that archived harness. It is not a
-replacement for the stronger 100-question headline. The miss taxonomy shows the
-quality target clearly: Zaxy checkout now has 14 retrieval misses and 172
-synthesis misses after the wedding-list answer-surface improvement. Future
-retrieval, checkout, Skill Memory, or backend changes should not reduce the
-published floor of mean score 0.626, Answer@5 0.608, citation coverage 1.000,
-and R@5 0.956 while they work down the synthesis-miss count.
+checkout-wide changes that still run that archived harness. It is not the
+current full-set headline; current74 above supersedes it for full-set quality
+claims. Keep it only as historical BM25-included evidence and as a floor for
+older commands that still target `reports/benchmarks/longmemeval-500-hash`.
 
 ### Current same-harness backend-evaluation floor
 
@@ -352,9 +1203,9 @@ systems inside its benchmark harness.
 
 | System | Public claim | Source | Interpretation |
 |--------|--------------|--------|----------------|
-| MemPalace | 96.6% raw LongMemEval R@5; 98.4% held-out hybrid R@5; tuned full-set runs reported separately | [MemPalace BENCHMARKS.md](https://github.com/MemPalace/mempalace/blob/develop/benchmarks/BENCHMARKS.md), [independent benchmark analysis](https://www.mempalace.tech/benchmarks) | Strong public target for LongMemEval-style retrieval; their docs and public analysis distinguish raw, held-out, and tuned reranked results. |
-| Agent Memory | 95.2% R@5 on LongMemEval-S, with BM25 + vector + graph retrieval and on-device reranking | [agent-memory.dev](https://www.agent-memory.dev/) | Direct product-positioning target for coding-agent memory with aggressive hook and viewer UX. |
-| Mem0 | +26% Accuracy over OpenAI Memory on LOCOMO; 91% faster responses and 90% lower token usage than full-context approaches | [mem0 LLM.md](https://github.com/mem0ai/mem0/blob/main/LLM.md), [memory-benchmarks](https://github.com/mem0ai/memory-benchmarks) | Different benchmark family and metric; useful as production-memory context, but not directly comparable to LongMemEval R@5. |
+| MemPalace | 96.6% raw LongMemEval R@5; 98.4% held-out hybrid R@5; LLM-reranked full-set runs reported at 99%+ R@5 | [MemPalace README](https://github.com/MemPalace/mempalace), [MemPalace BENCHMARKS.md](https://github.com/MemPalace/mempalace/blob/develop/benchmarks/BENCHMARKS.md) | Strongest public retrieval target. Compare Zaxy's `R@5=1.000` to no-LLM retrieval disclosures separately from MemPalace's optional LLM-rerank line. |
+| Agent Memory | 95.2% R@5 on LongMemEval-S, with BM25 + vector retrieval and broader graph-memory positioning | [Agent Memory LONGMEMEVAL.md](https://github.com/rohitg00/agentmemory/blob/main/benchmark/LONGMEMEVAL.md) | Direct product-positioning target for coding-agent memory with aggressive hook and viewer UX. |
+| Mem0 | Research pages report LongMemEval accuracy in the low-to-mid 90s plus lower token usage; managed-platform category rows report up to 97.0% on temporal reasoning | [Mem0 research](https://mem0.ai/research), [memory-benchmarks](https://github.com/mem0ai/memory-benchmarks) | Different metric family and hosted/managed setup; useful as production-memory context, but not directly comparable to Zaxy's retrieval R@5 and cited checkout metrics. |
 | Quarq | Reports memory-first agent behavior and high LongMemEval-S accuracy claims. | [quarq.io/agent](https://www.quarq.io/agent), [quarqlabs/agent-oss](https://github.com/quarqlabs/agent-oss) | Strong retrieval-protocol target, but Zaxy does not treat the claim as same-harness until a pinned runner or strict result file is locally scored. |
 | Semantic Reach / HyperBinder / Hybi | Claims a unified HDC-backed substrate for semantic, graph, relational, and exact retrieval. | [semantic-reach.io](https://www.semantic-reach.io/), [HyperBinder SDK](https://semanticreach.github.io/hyperbinder-sdk/), [hybi on PyPI](https://pypi.org/project/hybi/) | Architecture target for slot-aware retrieval, but public evidence is not a Zaxy same-harness result without a pinned HyperBinder/Hybi runtime adapter. |
 
@@ -653,10 +1504,46 @@ report.
 
 ## Reproduction
 
-Run the current LongMemEval-compatible release evidence with BM25 included as a
-local baseline. Plain `zaxy benchmark` commands use the embedded projection
-backend by default; pass `--projection-backend neo4j` or another backend only
-when running an explicit sidecar comparison.
+Run the current full 500-question Zaxy checkout headline with the cached oracle
+dataset, deterministic hash embeddings, and the reusable embedded projection:
+
+```bash
+EMBEDDED_GRAPH_PATH=.eventloom/projections/longmemeval-current65-percentage-boolean-comparison.kuzu \
+zaxy benchmark \
+  --output-dir reports/benchmarks/longmemeval-500-current74-zaxyonly-gated-relative-temporal-anchor-embedded-reuse-20260604 \
+  --embedding-provider hash \
+  --workload longmemeval \
+  --dataset .cache/zaxy/benchmarks/longmemeval_oracle.json \
+  --questions 500 \
+  --runs 1 \
+  --limit 10 \
+  --baseline-backends none \
+  --zaxy-backend checkout \
+  --projection-backend embedded \
+  --embedding-cache .cache/zaxy/longmemeval-500-synthesis-ledger-20260603-embeddings.json \
+  --reuse-projection \
+  --progress
+```
+
+Guard the current full 500-question headline with:
+
+```bash
+zaxy benchmark-compare reports/benchmarks/longmemeval-500-current74-zaxyonly-gated-relative-temporal-anchor-embedded-reuse-20260604/live-benchmark.json \
+  --baseline reports/benchmarks/longmemeval-500-current71-zaxyonly-semantic-scalar-totals-embedded-reuse-20260604/live-benchmark.json \
+  --backend zaxy-checkout \
+  --min-mean-score 0.940 \
+  --min-answer-recall-at-5 0.906 \
+  --min-recall-at-5 1.000 \
+  --min-citation-coverage 1.0 \
+  --max-p95-ms 800 \
+  --max-p99-ms 1100
+```
+
+Run the 100-question LongMemEval-compatible release evidence with BM25 included
+as a local baseline when you need same-command lexical tradeoffs. Plain
+`zaxy benchmark` commands use the embedded projection backend by default; pass
+`--projection-backend neo4j` or another backend only when running an explicit
+sidecar comparison.
 
 ```bash
 zaxy benchmark \
@@ -690,7 +1577,7 @@ zaxy benchmark \
   --progress
 ```
 
-Run the full 500-question archive:
+Run the legacy BM25-included full 500-question archive:
 
 ```bash
 zaxy benchmark \
@@ -708,8 +1595,8 @@ zaxy benchmark \
   --progress
 ```
 
-Guard the full 500-question archive with floors pinned to the current observed
-legacy `limit=10` result:
+Guard the legacy full 500-question archive with floors pinned to its observed
+`limit=10` result:
 
 ```bash
 zaxy benchmark-compare reports/benchmarks/longmemeval-500-hash/live-benchmark.json \

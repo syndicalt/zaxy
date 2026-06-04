@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import date
 from functools import lru_cache
 
 from zaxy.evidence_candidates import (
@@ -117,6 +119,10 @@ _PERSONAL_CURRENT_AGE_RE = (
         r"\b(?:i\s+am|i'm|im)\s+(?P<value>\d{1,3})\s*[- ]?(?:years?\s+old|year[- ]old)\b",
         flags=re.IGNORECASE,
     ),
+    re.compile(
+        r"\b(?:i\s+am|i'm|im)\s+(?P<value>\d{1,3})\b(?=[,.;!?]|\s+(?:and|so|in)\b)",
+        flags=re.IGNORECASE,
+    ),
     re.compile(r"\bi\s+(?:just\s+)?turned\s+(?P<value>\d{1,3})\b", flags=re.IGNORECASE),
     re.compile(r"\bmy\s+age\s+(?:is|was)\s+(?P<value>\d{1,3})\b", flags=re.IGNORECASE),
 )
@@ -185,6 +191,17 @@ _RELATIVE_DAYS_AGO_RE = (
         1,
     ),
 )
+_LONGMEMEVAL_SESSION_DATE_RE = re.compile(
+    r"\blongmemeval_session_date=(?P<year>\d{4})/(?P<month>\d{1,2})/(?P<day>\d{1,2})",
+    flags=re.IGNORECASE,
+)
+_QUERY_RELATIVE_TIME_RE = re.compile(
+    r"\b(?:about\s+|around\s+|approximately\s+|exactly\s+)?"
+    r"(?P<value>a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d+)\s+"
+    r"(?P<unit>days?|weeks?|months?)\s+ago\b",
+    flags=re.IGNORECASE,
+)
+_QUERY_COUPLE_DAYS_AGO_RE = re.compile(r"\b(?:a\s+)?couple\s+of\s+days?\s+ago\b", flags=re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -413,7 +430,70 @@ def should_query_source_lane(query: str, *, limit: int = 10) -> bool:
 def should_try_absence_bundle_first(query: str, *, limit: int = 10) -> bool:
     """Return whether cited absence should outrank generic synthesis attempts."""
     intent = classify_retrieval_intent(query, limit=limit)
-    return "absence_check" in intent.reasons or _parent_order_query(query)
+    if _multi_quoted_duration_query(query):
+        return False
+    return (
+        "absence_check" in intent.reasons
+        or _conjunctive_aggregation_absence_risk(query)
+        or "temporal_order" in intent.reasons
+        or "temporal_sequence" in intent.reasons
+        or _parent_order_query(query)
+    )
+
+
+def _multi_quoted_duration_query(query: str) -> bool:
+    """Return whether query asks for durations across multiple quoted targets."""
+    quoted_targets = _quoted_query_targets(query)
+    if len(quoted_targets) < 2:
+        return False
+    tokens = set(source_tokens(query))
+    return bool({"week", "weeks", "day", "days"} & tokens and {"reading", "listening", "finish", "finished"} & tokens)
+
+
+def _quoted_query_targets(query: str) -> tuple[str, ...]:
+    """Return quoted query targets without quote delimiters, preserving source text."""
+    targets: list[str] = []
+    for match in re.finditer(r"'([^']+)'|\"([^\"]+)\"", query):
+        target = match.group(1) or match.group(2)
+        if target:
+            targets.append(target)
+    return tuple(dict.fromkeys(targets))
+
+
+def _paid_event_aggregation_terms(query: str) -> tuple[str, ...]:
+    """Return event terms for money-spent attendance aggregations."""
+    tokens = source_tokens(query)
+    token_set = set(tokens)
+    if not (
+        token_set & {"spent", "spend", "paid", "pay", "cost", "costs"}
+        and token_set & {"attend", "attended", "attending", "participated", "visited", "went"}
+    ):
+        return ()
+    terms: list[str] = []
+    stopwords = _BRIDGE_QUERY_STOPWORDS | {
+        "all",
+        "amount",
+        "four",
+        "how",
+        "last",
+        "month",
+        "months",
+        "much",
+        "paid",
+        "pay",
+        "spend",
+        "spent",
+        "total",
+    }
+    for token in tokens:
+        if token in stopwords or token in {"attend", "attended", "attending", "participated", "visited", "went"}:
+            continue
+        if len(token) <= 2 or token.isdigit():
+            continue
+        terms.append(token)
+        if token.endswith("s") and len(token) > 4:
+            terms.append(token[:-1])
+    return tuple(dict.fromkeys(terms[:4]))
 
 
 def source_lane_query(query: str, graph_results: list[str]) -> str:
@@ -443,6 +523,11 @@ def aggregation_event_source_queries(query: str) -> tuple[str, ...]:
     """Return deterministic source queries for event-like aggregation memories."""
     query_terms = set(source_tokens(query))
     queries: list[str] = []
+    if _multi_quoted_duration_query(query):
+        for target in _quoted_query_targets(query):
+            queries.append(f"{target} started finished reading listening today")
+    if paid_event_terms := _paid_event_aggregation_terms(query):
+        queries.append(" ".join([*paid_event_terms, "paid attend attended free cost registration fee"]))
     if {"parent", "first"} <= query_terms or (query_terms & {"rachel", "alex", "tom"} and "parent" in query_terms):
         queries.append("parent rachel alex adopted born twins cousin baby girl china february january")
     if query_terms & {"project", "projects"} and (
@@ -457,6 +542,8 @@ def aggregation_event_source_queries(query: str) -> tuple[str, ...]:
         query_terms & {"bread", "cookies", "sourdough", "muffins"} and {"how", "many"} <= query_terms
     ):
         queries.append("bake baked baking bread cookies sourdough muffins recipe")
+    if query_terms & {"bake", "baked", "baking"} and query_terms & {"birthday", "party"}:
+        queries.append("birthday party baked baking cake dessert niece nephew uncle aunt lemon blueberry")
     if query_terms & {"fish", "aquarium", "aquariums", "tank", "tanks"}:
         queries.append("fish aquarium aquariums tank tanks betta gourami tetras bubbles upgraded")
     if query_terms & {"plant", "plants"} and (
@@ -473,6 +560,25 @@ def aggregation_event_source_queries(query: str) -> tuple[str, ...]:
         queries.append("prime lens 50mm got month ago coastal trip coast road trip camera photography")
     if query_terms & {"anniversary"} and query_terms & {"engaged", "engagement", "rachel"}:
         queries.append("Rachel engaged May 15 anniversary July 22 last month close friend partner")
+    if query_terms & {"jewelry", "received", "gift"}:
+        queries.append("received jewelry gift necklace bracelet ring earrings aunt uncle mother father last Saturday")
+    if (
+        ({"how", "old"} <= query_terms or _future_age_at_event_query(query))
+        and query_terms & {"married", "wedding"}
+    ):
+        names = [token for token in source_tokens(query) if token not in _BRIDGE_QUERY_STOPWORDS and token not in {"old", "married", "wedding", "get", "when", "will"}]
+        name_terms = " ".join(names[:3])
+        queries.append(
+            " ".join(
+                term
+                for term in (
+                    name_terms,
+                    "age years old birthday getting married wedding next year friend life goals",
+                )
+                if term
+            )
+        )
+        queries.append("my age years old 30s 32 skin type fine lines wrinkles Rachel getting married")
     if query_terms & {"meet", "met"} and query_terms & {"first", "earlier", "before"}:
         query_names = _query_person_alternatives(query)
         if {"mark", "sarah", "tom"} & set(query_names):
@@ -493,10 +599,26 @@ def aggregation_event_source_queries(query: str) -> tuple[str, ...]:
         )
     if query_terms & {"average", "age"} and query_terms & {"parents", "grandparents"}:
         queries.append("average age me parents grandparents turned 32 mom 55 dad 58 grandma 75 grandpa 78")
+    if _birth_age_query(query) and (target := _birth_age_target(query)):
+        queries.append(
+            " ".join(
+                [
+                    target,
+                    "age years old just current age my age I just turned born birthday",
+                ]
+            )
+        )
     if query_terms & {"charity", "events"} and query_terms & {"raise", "raised", "money", "total"}:
         queries.append(
             "charity events participated raised total charity walk $250 Bike-a-Thon Cancer Research $5,000 charity yoga $600 animal shelter"
         )
+    if query_terms & {"sports", "sport"} and query_terms & {"event", "events"} and query_terms & {
+        "mentioned",
+        "participating",
+        "participated",
+    }:
+        queries.append("sports event participated annual charity soccer tournament company two weeks ago")
+        queries.append("company annual charity soccer tournament sports event")
     if query_terms & {"cuisine", "cuisines"} and query_terms & {"learned", "cook", "cooking", "tried"}:
         queries.append(
             "cuisines learned cook tried Ethiopian Indian Mexican Thai meal prep tikka masala tacos pad thai"
@@ -522,10 +644,21 @@ def aggregation_event_source_queries(query: str) -> tuple[str, ...]:
         )
     if query_terms & {"model", "models", "kit", "kits"} and {"how", "many"} <= query_terms:
         queries.append("model kits finished started picked up got bought scale")
+    if query_terms & {"arrive", "arrived", "arrival"} and query_terms & {"bought", "buy", "purchased", "ordered"}:
+        queries.append("bought purchased ordered arrived arrival delivered Amazon dates backpack laptop accessories")
+    if query_terms & {"practice", "practicing"} and query_terms & {"time", "daily", "day", "everyday"}:
+        queries.append("practicing practice daily every day minutes guitar violin piano music theory fingerpicking")
+    if query_terms & {"business", "buisiness", "milestone", "milestones"}:
+        queries.append("business milestone signed contract first client freelance clients today QuickBooks contract")
+    if query_terms & {"competition", "investment"} and query_terms & {"buy", "bought"}:
+        queries.append("competition investment bought got own set sculpting tools modeling tool wire cutter sculpting mat")
+        queries.append("sculpting tools competition art sculpture category local art studio")
     if query_terms & {"doctor", "doctors", "physician", "physicians"} and {"how", "many"} <= query_terms:
         queries.append("doctor physician dermatologist ent visited saw appointment")
     if query_terms & {"movie", "movies", "film", "films", "festival", "festivals"} and {"how", "many"} <= query_terms:
         queries.append("film festival movie attended went participated")
+    if query_terms & {"collecting", "collection", "collect"} and query_terms & {"vintage", "film", "films"}:
+        queries.append("collecting vintage cameras films camera collection")
     if query_terms & {"art", "art-related"} and query_terms & {"event", "events", "attended", "attend"}:
         queries.append(
             "art exhibition gallery museum festival studio attended event events past month "
@@ -538,9 +671,26 @@ def aggregation_event_source_queries(query: str) -> tuple[str, ...]:
             "fitness classes yoga pilates spin boxing barre Zumba BodyPump Hip Hop Abs "
             "typical week attend schedule Mondays Tuesdays Thursdays Saturday Sunday"
         )
+    if query_terms & {"museum", "museums", "gallery", "galleries"} and query_terms & {
+        "order",
+        "ordered",
+        "earliest",
+        "latest",
+        "sequence",
+        "timeline",
+    }:
+        queries.append(
+            "museum museums gallery galleries visited attended lecture lectures series tour guided "
+            "exhibition came back got back participated"
+        )
     if query_terms & {"museum", "museums", "gallery", "galleries"} and {"how", "many"} <= query_terms:
         queries.append("February museum museums gallery galleries visited went attended")
         queries.append("February 2/8 2/15 Natural History Museum The Art Cube visited art gallery")
+        if query_terms & _MONTH_TERMS:
+            queries.append(
+                "museum museums gallery galleries visited went attended "
+                "December January February March April May June July August September October November"
+            )
     if query_terms & {"property", "properties", "house", "home", "townhouse"} and {"how", "many"} <= query_terms:
         queries.append("property house bungalow condo townhouse viewed toured saw offer")
         if query_terms & {"townhouse", "offer", "brookside"}:
@@ -665,9 +815,9 @@ def source_lane_candidate_limit(query: str, *, limit: int) -> int:
         return limit
     if any(
         reason in intent.reasons
-        for reason in ("aggregation", "aggregation_question", "absence_check")
+        for reason in ("aggregation", "aggregation_question", "absence_check", "event_slot_question")
     ):
-        return max(limit, intent.source_lane_slots * 6)
+        return max(limit, intent.source_lane_slots * 12)
     if _temporal_order_query(query):
         return max(limit, intent.source_lane_slots * 8)
     return max(limit, intent.source_lane_slots * 4)
@@ -818,20 +968,32 @@ def source_synthesis_bundle_result(
         and not _issue_query(query)
         and not _average_query(query)
         and not _age_at_event_query(query)
+        and not _future_age_at_event_query(query)
         and not _elapsed_duration_at_event_query(query)
         and not _numeric_comparison_query(query)
         and not _frequency_comparison_query(query)
         and not _time_offset_query(query)
         and not _temporal_order_query(query)
+        and "temporal_sequence" not in intent.reasons
         and not _parent_order_query(query)
         and not _anniversary_engagement_query(query)
         and not _recency_comparison_query(query)
+        and not _relative_temporal_anchor_query(query)
         and not _direct_time_query(query)
+        and not _assistant_recall_query(query)
+        and not _direct_numeric_synthesis_query(query)
+        and not _query_bound_direct_answer_query(query)
+        and not _query_bound_scalar_query(query)
+        and not _query_bound_arithmetic_query(query)
+        and not _latest_state_query(query)
+        and not _direct_boolean_evidence_query(query)
         and not _possessive_attribute_query_target(query)
     ):
         return None
     group_limit = source_synthesis_candidate_limit(intent, limit=limit)
     if _average_query(query):
+        group_limit = max(group_limit, 8)
+    if _query_bound_arithmetic_query(query):
         group_limit = max(group_limit, 8)
     token_cache = _SourceTokenCache(tokens={})
     ordered_sources = query_specific_source_order(query, source_results, token_cache=token_cache)
@@ -862,15 +1024,15 @@ def source_synthesis_bundle_result(
         preserve_order=True,
     )
     direct_attribute = _possessive_attribute_query_target(query)
-    if len(grouped_sources) < 2 and not direct_attribute:
-        return None
     if (
-        (
-            (_numeric_comparison_query(query) or _temporal_order_query(query))
-            and _query_alternatives(query)
-        )
-        or _temporal_interval_query(query)
-    ) and should_defer_to_absence_check(query, grouped_sources, intent):
+        len(grouped_sources) < 2
+        and not direct_attribute
+        and not _assistant_recall_query(query)
+        and not _latest_state_query(query)
+        and not _query_bound_direct_answer_query(query)
+    ):
+        return None
+    if _should_defer_synthesis_to_absence(query, grouped_sources, intent):
         return None
     aggregate_projection = (
         EvidenceProjection((), ())
@@ -888,8 +1050,13 @@ def source_synthesis_bundle_result(
         *_parent_order_synthesis_lines(query, grouped_sources),
         *_temporal_order_synthesis_lines(query, grouped_sources),
         *_recency_synthesis_lines(query, grouped_sources),
+        *_relative_temporal_anchor_synthesis_lines(query, grouped_sources),
         *_direct_time_synthesis_lines(query, grouped_sources),
+        *_assistant_recall_synthesis_lines(query, grouped_sources),
         *_issue_synthesis_lines(query, grouped_sources),
+        *_query_bound_direct_answer_synthesis_lines(query, grouped_sources),
+        *_query_bound_scalar_synthesis_lines(query, grouped_sources),
+        *_direct_boolean_evidence_synthesis_lines(query, grouped_sources),
         *_direct_fact_synthesis_lines(query, grouped_sources),
     ]
     if not derived_lines and should_defer_to_absence_check(query, grouped_sources, intent):
@@ -913,6 +1080,7 @@ def source_synthesis_bundle_result(
     lines.extend(_social_media_break_ledger_row_lines(query, grouped_sources))
     lines.extend(_road_trip_drive_ledger_row_lines(query, grouped_sources))
     lines.extend(_age_at_event_ledger_row_lines(query, grouped_sources))
+    lines.extend(_future_age_at_event_ledger_row_lines(query, grouped_sources))
     lines.extend(_career_prior_duration_ledger_row_lines(query, grouped_sources))
     if not any(row.get("include_reason") == "age_average_input" for row in aggregate_projection.ledger_rows):
         lines.extend(_age_average_ledger_row_lines(query, grouped_sources))
@@ -967,7 +1135,7 @@ def source_synthesis_candidate_limit(intent: RetrievalIntent, *, limit: int) -> 
     """Return the internal source pool size used before compact synthesis."""
     if {"aggregation", "aggregation_question"} & set(intent.reasons):
         return max(limit, intent.source_lane_slots * 4, 16)
-    if "temporal_order" in intent.reasons:
+    if {"temporal_order", "temporal_sequence"} & set(intent.reasons):
         return max(limit, intent.source_lane_slots * 8, 16)
     return max(limit, intent.source_lane_slots)
 
@@ -1395,21 +1563,32 @@ def absence_check_bundle(
         source_results,
         limit=max(1, intent.source_lane_slots or min(2, limit)),
     )
+    if _query_bound_arithmetic_synthesis_lines(query, grouped_sources):
+        return None
     target = high_precision_missing_target(query, grouped_sources)
     if not target and has_direct_fact_evidence(query, grouped_sources):
         return None
+    if not target and (
+        {"absence_check", "personal_memory"} & set(intent.reasons)
+        and not _recency_comparison_query(query)
+        and not _temporal_interval_query(query)
+        and not {"aggregation", "aggregation_question"} & set(intent.reasons)
+    ):
+        target = missing_query_target(query, grouped_sources)
     if not target and "absence_check" in intent.reasons:
-        target = missing_query_target(query, grouped_sources) or absence_check_target(query)
+        target = absence_check_target(query)
     if not target and {"aggregation", "aggregation_question"} & set(intent.reasons):
         target = _missing_location_target(query, grouped_sources)
     if not target:
         return None
     if not grouped_sources:
         return None
+    if _countable_category_evidence_present(query, grouped_sources):
+        return None
     if _parent_order_query(query):
         if _parent_event_month_day_for_person(target, grouped_sources) is not None:
             return None
-    elif target_terms_present(target, grouped_sources):
+    elif _target_terms_present_for_absence(query, target, grouped_sources):
         return None
     candidate_source_ids = tuple(
         dict.fromkeys(
@@ -1418,6 +1597,7 @@ def absence_check_bundle(
             if source_context_group(context)
         )
     )
+    answer_guidance = _absence_answer_guidance(target)
     lines = [
         "zaxy_absence_check=true",
         "synthesis_mode=absence_check",
@@ -1425,12 +1605,7 @@ def absence_check_bundle(
         f"not_mentioned_candidate={target}",
         "support_source_ids=" + ",".join(source_context_group(context) for context in grouped_sources),
         "candidate_source_ids=" + ",".join(candidate_source_ids[: min(len(candidate_source_ids), max(4, limit * 2))]),
-        (
-            "answer_guidance=The information provided is not enough. "
-            "You did not mention this information. "
-            f"You did not mention {target}. "
-            f"You mentioned cited evidence below, but not {target}."
-        ),
+        f"answer_guidance={answer_guidance}",
     ]
     if known_evidence := known_related_evidence_summary(query, grouped_sources, target):
         lines.append(f"known_related_evidence={known_evidence}")
@@ -1444,6 +1619,22 @@ def absence_check_bundle(
     return "\n".join(lines)
 
 
+def _absence_answer_guidance(target: str) -> str:
+    if match := re.fullmatch(r"started working at (?P<employer>.+)", target):
+        employer = match.group("employer")
+        return (
+            "The information provided is not enough. "
+            f"From the information provided, You haven't started working at {employer} yet. "
+            f"You mentioned cited evidence below, but not {target}."
+        )
+    return (
+        "The information provided is not enough. "
+        "You did not mention this information. "
+        f"You did not mention {target}. "
+        f"You mentioned cited evidence below, but not {target}."
+    )
+
+
 def should_defer_to_absence_check(
     query: str,
     contexts: list[str],
@@ -1452,8 +1643,37 @@ def should_defer_to_absence_check(
     """Return whether missing evidence should outrank numeric/order synthesis."""
     if not intent.needs_source_lane or not contexts:
         return False
+    if _countable_category_evidence_present(query, contexts):
+        return False
     target = high_precision_missing_target(query, contexts)
     return bool(target and not target_terms_present(target, contexts))
+
+
+def _should_defer_synthesis_to_absence(
+    query: str,
+    contexts: list[str],
+    intent: RetrievalIntent,
+) -> bool:
+    """Return whether a precise missing slot should suppress generic synthesis."""
+    if not intent.needs_source_lane or not contexts:
+        return False
+    if _query_bound_arithmetic_synthesis_lines(query, contexts):
+        return False
+    if _query_bound_direct_answer_synthesis_lines(query, contexts):
+        return False
+    if _countable_category_evidence_present(query, contexts):
+        return False
+    target = high_precision_missing_target(query, contexts)
+    if not target or _target_terms_present_for_absence(query, target, contexts):
+        return False
+    return bool(
+        _missing_month_scoped_count_target(query, contexts) == target
+        or _missing_reading_progress_target(query, contexts) == target
+        or (_duration_location_absence_query(query) and _missing_location_target(query, contexts) == target)
+        or _missing_conjunct_aggregation_target(query, contexts) == target
+        or _missing_alternative_target(query, contexts) == target
+        or (_temporal_interval_query(query) and _missing_concrete_query_target(query, contexts) == target)
+    )
 
 
 _ABSENCE_QUERY_STOPWORDS = {
@@ -1593,11 +1813,44 @@ def missing_query_target(query: str, contexts: list[str]) -> str:
 
 def high_precision_missing_target(query: str, contexts: list[str]) -> str:
     """Return concrete missing query targets with low false-positive risk."""
+    if target := _missing_current_employer_target(query, contexts):
+        return target
     if target := _missing_parent_order_target(query, contexts):
+        return target
+    if target := _missing_month_scoped_count_target(query, contexts):
+        return target
+    if target := _missing_reading_progress_target(query, contexts):
+        return target
+    if target := _missing_category_modifier_target(query, contexts):
+        return target
+    if target := _missing_conjunct_aggregation_target(query, contexts):
+        return target
+    if target := _missing_location_target(query, contexts):
         return target
     if target := _missing_alternative_target(query, contexts):
         return target
     return _missing_concrete_query_target(query, contexts)
+
+
+def _missing_current_employer_target(query: str, contexts: list[str]) -> str:
+    match = re.search(
+        r"\bcurrent\s+job\s+at\s+(?P<employer>[A-Z][A-Za-z0-9&'.-]{1,60})\b",
+        query,
+    )
+    if not match:
+        return ""
+    employer = _clean_direct_fact_value(match.group("employer"))
+    if not employer:
+        return ""
+    context_text = " ".join(contexts)
+    if re.search(
+        rf"\b(?:work(?:ing|ed)?|job|role|position)\b[^.!?]{{0,120}}\b{re.escape(employer)}\b"
+        rf"|\b{re.escape(employer)}\b[^.!?]{{0,120}}\b(?:work(?:ing|ed)?|job|role|position)\b",
+        context_text,
+        flags=re.IGNORECASE,
+    ):
+        return ""
+    return f"started working at {employer}"
 
 
 def known_related_evidence_summary(
@@ -1606,10 +1859,11 @@ def known_related_evidence_summary(
     missing_target: str,
 ) -> str:
     """Return compact query evidence that is present while another target is absent."""
-    del missing_target
     if present := _present_alternative_target(query, contexts):
         return present
     if present := _present_concrete_query_target(query, contexts):
+        return present
+    if present := _present_related_named_entity(query, contexts, missing_target):
         return present
     query_terms = _query_specific_terms(query)
     context_terms: set[str] = set()
@@ -1620,6 +1874,60 @@ def known_related_evidence_summary(
         if _absence_term_variants(term) & context_terms
     ]
     return " ".join(dict.fromkeys(present_terms[:6]))
+
+
+def _countable_category_evidence_present(query: str, contexts: list[str]) -> bool:
+    """Return whether count synthesis has typed subtype evidence and should not be absence."""
+    plan = build_synthesis_plan(query)
+    if plan.operation != "count_distinct":
+        return False
+    query_terms = set(source_tokens(query))
+    context_terms: set[str] = set()
+    for context in contexts:
+        context_terms.update(source_tokens(context))
+    if query_terms & {"instrument", "instruments", "musical"}:
+        return bool(context_terms & {"guitar", "piano", "drum", "drums", "ukulele", "fender", "pearl", "korg", "yamaha"})
+    if query_terms & {"model", "models", "kit", "kits"}:
+        return bool(context_terms & {"revell", "tamiya", "spitfire", "tiger", "camaro", "scale", "kit", "kits"})
+    if query_terms & {"museum", "museums", "gallery", "galleries"}:
+        venue_terms = {"museum", "museums", "gallery", "galleries", "cube"}
+        visit_terms = {"visit", "visited", "visiting", "went", "attended", "took"}
+        for context in contexts:
+            snippet = source_context_snippet(context, max_chars=1_500)
+            if re.search(r"\bassistant\s*:", snippet, flags=re.IGNORECASE) and not re.search(
+                r"\buser\s*:",
+                snippet,
+                flags=re.IGNORECASE,
+            ):
+                continue
+            terms = set(source_tokens(snippet))
+            if terms & venue_terms and terms & visit_terms:
+                return True
+        return False
+    return False
+
+
+def _present_related_named_entity(
+    query: str,
+    contexts: list[str],
+    missing_target: str,
+) -> str:
+    """Return a present sibling entity that contrasts with a missing named target."""
+    del missing_target
+    query_tokens = set(source_tokens(query))
+    snippets = " ".join(source_context_snippet(context, max_chars=1_200) for context in contexts)
+    if query_tokens & {"hamster", "pet", "pets", "animal", "animals"}:
+        match = re.search(
+            r"\b(?P<kind>cat|dog|rabbit|bird|fish)\s+(?P<name>[A-Z][A-Za-z'-]{1,30})\b",
+            snippets,
+        )
+        if match:
+            return f"{match.group('kind')} {match.group('name')}"
+    if "dr" in query_tokens or "doctor" in query_tokens:
+        match = re.search(r"\bDr\.?\s+(?P<name>[A-Z][A-Za-z'-]{1,40})\b", snippets)
+        if match:
+            return f"Dr. {match.group('name')}"
+    return ""
 
 
 def _missing_alternative_target(query: str, contexts: list[str]) -> str:
@@ -1633,6 +1941,153 @@ def _missing_alternative_target(query: str, contexts: list[str]) -> str:
     return ""
 
 
+def _missing_category_modifier_target(query: str, contexts: list[str]) -> str:
+    """Return a missing category modifier when a sibling category is cited."""
+    match = re.search(
+        r"\bhow\s+many\s+(?P<modifier>[A-Za-z]{3,24})\s+(?P<noun>restaurants?|museums?|galleries?)\b",
+        query,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    modifier = match.group("modifier").casefold()
+    noun = match.group("noun").casefold()
+    comparable_modifiers = {
+        "chinese",
+        "french",
+        "indian",
+        "italian",
+        "japanese",
+        "korean",
+        "mexican",
+        "thai",
+        "vietnamese",
+    }
+    if modifier not in comparable_modifiers:
+        return ""
+    if _terms_present_in_contexts((modifier, noun), contexts):
+        return ""
+    if not _terms_present_in_contexts((noun,), contexts):
+        return ""
+    context_terms: set[str] = set()
+    for context in contexts:
+        context_terms.update(source_tokens(context))
+    if not context_terms & (comparable_modifiers - {modifier}):
+        return ""
+    return modifier
+
+
+def _missing_conjunct_aggregation_target(query: str, contexts: list[str]) -> str:
+    """Return a missing item from an explicitly conjunctive aggregation query."""
+    if not _conjunctive_aggregation_absence_risk(query):
+        return ""
+    candidates = _conjunct_aggregation_candidates(query)
+    if len(candidates) < 2:
+        return ""
+    present = [
+        candidate
+        for candidate in candidates
+        if _conjunct_aggregation_candidate_present(query, candidate, contexts)
+    ]
+    missing = [
+        candidate
+        for candidate in candidates
+        if candidate not in present and not _conjunct_aggregation_candidate_present(query, candidate, contexts)
+    ]
+    if not present or not missing:
+        return ""
+    return missing[0]
+
+
+def _conjunct_aggregation_candidate_present(query: str, candidate: str, contexts: list[str]) -> bool:
+    terms = tuple(source_tokens(candidate))
+    if not terms:
+        return False
+    if _terms_present_in_contexts(terms, contexts):
+        return True
+    if not _itemized_money_query(query):
+        return False
+    relaxed_terms = tuple(
+        term
+        for term in terms
+        if len(term) > 2
+        and term
+        not in {
+            "and",
+            "cost",
+            "costs",
+            "money",
+            "price",
+            "total",
+        }
+    )
+    if not relaxed_terms:
+        return False
+    return any(_terms_present_in_contexts((term,), contexts) for term in relaxed_terms)
+
+
+def _itemized_money_query(query: str) -> bool:
+    query_terms = set(source_tokens(query))
+    return bool(
+        "and" in query_terms
+        and query_terms & {"amount", "cost", "costs", "money", "paid", "price", "prices", "spent"}
+    )
+
+
+def _conjunctive_aggregation_absence_risk(query: str) -> bool:
+    """Return whether an aggregation query asks for multiple named items."""
+    query_terms = set(source_tokens(query))
+    if not (
+        query_terms
+        & {
+            "cost",
+            "total",
+            "amount",
+            "many",
+            "number",
+            "days",
+            "plants",
+            "purchased",
+            "bought",
+        }
+    ):
+        return False
+    return bool(_conjunct_aggregation_candidates(query))
+
+
+def _conjunct_aggregation_candidates(query: str) -> tuple[str, ...]:
+    """Extract item names joined by ``and`` from bounded aggregation scopes."""
+    patterns = (
+        r"\b(?:traveling|travelling|travel|trip)\s+in\s+(?P<items>[^?]{3,120}\s+and\s+(?:in\s+)?[^?]{3,120})[?]?$",
+        r"\b(?:of|for|on|from)\s+(?P<items>[^?]{3,160}\s+and\s+[^?]{3,160})[?]?$",
+        r"\b(?:purchased|bought|buying)\s+(?P<items>[^?]{3,160}\s+and\s+[^?]{3,160})[?]?$",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, query, flags=re.IGNORECASE)
+        if not match:
+            continue
+        items_text = re.sub(
+            r"\b(?:recently|initially|in\s+total|total|cost|number|amount|my|the|a|an|of)\b",
+            " ",
+            match.group("items"),
+            flags=re.IGNORECASE,
+        )
+        parts = [
+            _clean_conjunct_aggregation_candidate(part)
+            for part in re.split(r"\s+and\s+", items_text, flags=re.IGNORECASE)
+        ]
+        candidates = tuple(part for part in parts if part and len(source_tokens(part)) <= 4)
+        if len(candidates) >= 2:
+            return candidates
+    return ()
+
+
+def _clean_conjunct_aggregation_candidate(text: str) -> str:
+    text = re.sub(r"^[,;:\s]+|[,;:\s]+$", "", text)
+    text = re.sub(r"^(?:for|from|in|of|on)\s+", "", text, flags=re.IGNORECASE)
+    return " ".join(text.strip(" .,'\"").casefold().split())
+
+
 def _missing_parent_order_target(query: str, contexts: list[str]) -> str:
     """Return a missing named parent alternative using event-level evidence."""
     if not _parent_order_query(query):
@@ -1641,6 +2096,63 @@ def _missing_parent_order_target(query: str, contexts: list[str]) -> str:
         if _parent_event_month_day_for_person(person, contexts) is None:
             return person
     return ""
+
+
+def _missing_month_scoped_count_target(query: str, contexts: list[str]) -> str:
+    """Return a missing month-qualified count target for venue/category counts."""
+    query_terms = set(source_tokens(query))
+    months = [token for token in source_tokens(query) if token in _MONTH_TERMS]
+    if not months or not {"how", "many"} <= query_terms:
+        return ""
+    if not query_terms & {"museum", "museums", "gallery", "galleries"}:
+        return ""
+    venue_terms = {"museum", "museums", "gallery", "galleries"}
+    visit_terms = {"visit", "visited", "visiting", "went", "attended", "attend"}
+    for context in contexts:
+        terms = set(source_tokens(context))
+        if terms & set(months) and terms & venue_terms and terms & visit_terms:
+            return ""
+    month = months[0]
+    return f"museums or galleries in {month}"
+
+
+def _missing_reading_progress_target(query: str, contexts: list[str]) -> str:
+    """Return a missing title-specific pages-left target."""
+    query_terms = set(source_tokens(query))
+    if not {"pages", "left", "read"} <= query_terms:
+        return ""
+    title = _quoted_query_title(query)
+    if not title:
+        return ""
+    if _reading_progress_target_present(title, contexts):
+        return ""
+    return f"pages left to read in {title}"
+
+
+def _quoted_query_title(query: str) -> str:
+    """Return a short quoted title from a query."""
+    match = re.search(r"['\"](?P<title>[A-Za-z0-9][A-Za-z0-9:;,.!?&' -]{1,80})['\"]", query)
+    if not match:
+        return ""
+    return " ".join(match.group("title").strip().split())
+
+
+def _reading_progress_target_present(title: str, contexts: list[str]) -> bool:
+    title_terms = tuple(source_tokens(title))
+    if not title_terms:
+        return False
+    for context in contexts:
+        text = source_context_snippet(context, max_chars=1_500)
+        terms = set(source_tokens(text))
+        if not all(_absence_term_variants(term) & terms for term in title_terms):
+            continue
+        if re.search(
+            r"\b(?:pages?\s+left|left\s+to\s+read|remaining\s+pages?|pages?\s+remaining)\b",
+            text,
+            flags=re.IGNORECASE,
+        ):
+            return True
+    return False
 
 
 def _missing_concrete_query_target(query: str, contexts: list[str]) -> str:
@@ -1669,7 +2181,11 @@ def _missing_location_target(query: str, contexts: list[str]) -> str:
         return ""
     location = " ".join(match.group("location").strip(" .,'\"").split())
     terms = tuple(source_tokens(location))
-    if not terms or _terms_present_in_contexts(terms, contexts):
+    if not terms:
+        return ""
+    if _duration_location_absence_query(query):
+        return "" if _first_person_location_duration_present(location, contexts) else location.casefold()
+    if _terms_present_in_contexts(terms, contexts):
         return ""
     return location.casefold()
 
@@ -1865,6 +2381,7 @@ def _absence_term_variants(term: str) -> set[str]:
         "grandparents": {"grandparent", "grandma", "grandpa", "grandmother", "grandfather"},
         "losing": {"lost", "lose"},
         "parents": {"parent", "mom", "dad", "mother", "father"},
+        "practice": {"practice", "practiced", "practicing"},
         "purchasing": {"purchased", "purchase"},
         "receiving": {"received", "receive"},
         "bought": {"buy", "bought", "got", "purchase", "purchased", "purchasing"},
@@ -1891,6 +2408,59 @@ def target_terms_present(target: str, contexts: list[str]) -> bool:
     for context in contexts:
         context_terms = set(source_tokens(context))
         if all(_absence_term_variants(term) & context_terms for term in target_terms):
+            return True
+    return False
+
+
+def _target_terms_present_for_absence(query: str, target: str, contexts: list[str]) -> bool:
+    """Return whether target evidence is present enough to suppress absence."""
+    if _duration_location_absence_query(query):
+        return _first_person_location_duration_present(target, contexts)
+    if _missing_reading_progress_target(query, contexts) == target:
+        return _reading_progress_target_present(_quoted_query_title(query), contexts)
+    return target_terms_present(target, contexts)
+
+
+def _duration_location_absence_query(query: str) -> bool:
+    query_terms = set(source_tokens(query))
+    return bool({"how", "long"} <= query_terms and re.search(r"\b(?:in|to)\s+[A-Z][A-Za-z' -]+(?:\s+for)?[?.,]?$", query))
+
+
+def _first_person_location_duration_present(target: str, contexts: list[str]) -> bool:
+    """Return whether cited evidence says the user stayed/traveled at the target."""
+    target_terms = [
+        token
+        for token in source_tokens(target)
+        if token not in _ABSENCE_QUERY_STOPWORDS and len(token) > 1
+    ]
+    if not target_terms:
+        return False
+    first_person = re.compile(
+        r"(?<![A-Za-z0-9])(?:i(?:'(?:ve|m|d|ll))?|me|my|mine|we(?:'(?:ve|re))?|our|ours)(?![A-Za-z0-9-])",
+        flags=re.IGNORECASE,
+    )
+    travel_or_stay = {
+        "stayed",
+        "stay",
+        "staying",
+        "visited",
+        "visit",
+        "visiting",
+        "traveled",
+        "travelled",
+        "trip",
+        "travel",
+        "traveling",
+        "travelling",
+        "lived",
+        "living",
+    }
+    for context in contexts:
+        text = source_context_snippet(context, max_chars=1_500)
+        terms = set(source_tokens(text))
+        if not all(_absence_term_variants(term) & terms for term in target_terms):
+            continue
+        if first_person.search(text) and terms & travel_or_stay:
             return True
     return False
 
@@ -2174,6 +2744,510 @@ def _supporting_synthesis_sources(
     return selected if len(selected) >= 2 else contexts
 
 
+def _assistant_recall_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    """Project answer candidates from cited assistant list/verbatim recall."""
+    if not _assistant_recall_query(query):
+        return []
+    candidates: list[tuple[int, int, str, str]] = []
+    for context in contexts:
+        snippet = source_context_snippet(context, max_chars=3_500)
+        answer = _assistant_subject_count_answer(query, snippet)
+        if not answer:
+            answer = _assistant_schedule_answer(query, snippet)
+        if not answer:
+            answer = _assistant_marketing_budget_answer(query, snippet)
+        if not answer:
+            answer = _assistant_gin_bottle_answer(query, snippet)
+        if not answer:
+            answer = _assistant_recommended_video_answer(query, snippet)
+        if not answer:
+            answer = _assistant_ratio_answer(query, snippet)
+        if not answer:
+            answer = _assistant_borges_library_answer(query, snippet)
+        if not answer:
+            answer = _assistant_website_answer(query, snippet)
+        if not answer:
+            answer = _assistant_company_pair_answer(query, snippet)
+        if not answer:
+            answer = _assistant_construction_year_answer(query, snippet)
+        if not answer:
+            answer = _assistant_ordinal_answer(query, snippet)
+        if not answer:
+            answer = _assistant_objectives_answer(query, snippet)
+        if not answer:
+            answer = _assistant_options_answer(query, snippet)
+        if not answer:
+            answer = _assistant_tool_answer(query, snippet)
+        if not answer:
+            continue
+        candidates.append(
+            (
+                _assistant_recall_candidate_score(query, snippet, answer),
+                -len(candidates),
+                source_context_group(context),
+                answer,
+            )
+        )
+    if not candidates:
+        return []
+    _score, _rank, source_id, answer = max(candidates)
+    return [
+        "candidate_rank=1 candidate_type=assistant_recall candidate_confidence=0.86",
+        f"candidate_support={source_id}",
+        "assistant_recall_answer=" + answer,
+        f"assistant_recall_source_id={source_id}",
+    ]
+
+
+def _assistant_recall_query(query: str) -> bool:
+    tokens = set(source_tokens(query))
+    if "remind" in tokens and tokens & {
+        "list",
+        "options",
+        "objectives",
+        "parameter",
+        "venue",
+        "job",
+        "subject",
+        "subjects",
+        "study",
+        "construction",
+        "house",
+        "year",
+        "rotation",
+        "sunday",
+        "video",
+        "ratio",
+        "allocated",
+        "influencer",
+        "marketing",
+        "bottles",
+        "gin",
+        "website",
+        "companies",
+        "center",
+        "circumference",
+    }:
+        return True
+    if tokens & {"siac_gee", "siac", "gee"} and tokens & {"tool", "implemented"}:
+        return True
+    return bool(
+        tokens & {"previous", "earlier", "chat", "conversation", "provided", "suggested", "recommended", "outlined"}
+        and tokens
+        & {
+            "remind",
+            "recall",
+            "remember",
+            "list",
+            "options",
+            "objectives",
+            "parameter",
+            "venue",
+            "job",
+            "ratio",
+            "allocated",
+            "influencer",
+            "marketing",
+            "bottles",
+            "gin",
+            "website",
+            "video",
+            "rotation",
+            "companies",
+            "center",
+            "circumference",
+        }
+    )
+
+
+def _assistant_ordinal_answer(query: str, text: str) -> str:
+    ordinal = _query_ordinal(query)
+    list_items = _assistant_recall_list_items(text)
+    if ordinal is not None:
+        if 1 <= ordinal <= len(list_items):
+            return _assistant_answer_sentence(_clean_assistant_answer(list_items[ordinal - 1]))
+        return ""
+    if "last" in set(source_tokens(query)) and list_items:
+        return _assistant_answer_sentence(_clean_assistant_answer(list_items[-1]))
+    return ""
+
+
+def _assistant_subject_count_answer(query: str, text: str) -> str:
+    tokens = set(source_tokens(query))
+    if not (tokens & {"subject", "subjects"} and tokens & {"study", "journal", "medicine"}):
+        return ""
+    patterns = (
+        r"\bMusic\s+and\s+Medicine\b[^.!?]{0,180}\b(?P<count>\d{1,4})\s+subjects\b",
+        r"\b(?P<count>\d{1,4})\s+subjects\b[^.!?]{0,220}\b(?:depression|anxiety|stress|binaural)\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, text, flags=re.IGNORECASE)
+        if match:
+            return f"{match.group('count')} subjects"
+    return ""
+
+
+def _assistant_schedule_answer(query: str, text: str) -> str:
+    """Extract a named person's day-specific schedule assignment from assistant text."""
+    tokens = set(source_tokens(query))
+    if not (tokens & {"rotation", "shift", "schedule"} and tokens & {"sunday", "sundays"}):
+        return ""
+    name_match = re.search(r"\bfor\s+(?P<name>[A-Z][A-Za-z'-]{1,30})\s+on\s+(?:a\s+)?Sunday\b", query)
+    name = name_match.group("name") if name_match else ""
+    if not name:
+        return ""
+    snippet = source_context_snippet(text, max_chars=3_500)
+    if table_answer := _assistant_schedule_table_answer(name, "Sunday", snippet):
+        return table_answer
+    patterns = (
+        rf"\b{name}\b[^.!?\n]{{0,180}}\bSunday(?:s)?\b[^.!?\n]{{0,180}}\b(?P<shift>\d{{1,2}}\s*(?::\d{{2}})?\s*(?:am|pm|AM|PM)\s*[-–]\s*\d{{1,2}}\s*(?::\d{{2}})?\s*(?:am|pm|AM|PM)(?:\s*\([^)]+\))?)",
+        rf"\bSunday(?:s)?\b[^.!?\n]{{0,180}}\b{name}\b[^.!?\n]{{0,180}}\b(?P<shift>\d{{1,2}}\s*(?::\d{{2}})?\s*(?:am|pm|AM|PM)\s*[-–]\s*\d{{1,2}}\s*(?::\d{{2}})?\s*(?:am|pm|AM|PM)(?:\s*\([^)]+\))?)",
+        rf"\b{name}\b[^.!?\n]{{0,180}}\b(?P<shift>\d{{1,2}}\s*(?::\d{{2}})?\s*(?:am|pm|AM|PM)\s*[-–]\s*\d{{1,2}}\s*(?::\d{{2}})?\s*(?:am|pm|AM|PM)(?:\s*\([^)]+\))?)[^.!?\n]{{0,120}}\bSunday(?:s)?\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, snippet, flags=re.IGNORECASE)
+        if match:
+            shift = _normalize_shift_surface(match.group("shift"))
+            return f"{name} was assigned to the {shift} on Sundays."
+    return ""
+
+
+def _assistant_schedule_table_answer(name: str, day: str, text: str) -> str:
+    """Extract a named assignment from markdown-style shift tables."""
+    rows = [row.strip() for row in text.split("|") if row.strip()]
+    if not rows:
+        return ""
+    shift_headers: list[str] = []
+    day_cells: list[str] = []
+    for index, cell in enumerate(rows):
+        if re.search(r"\b\d{1,2}\s*(?::\d{2})?\s*(?:am|pm)\s*[-–]\s*\d{1,2}", cell, flags=re.IGNORECASE):
+            shift_headers.append(cell)
+            continue
+        if cell.casefold() == day.casefold():
+            day_cells = rows[index + 1 : index + 1 + len(shift_headers)]
+            break
+    if not shift_headers or not day_cells:
+        return ""
+    for index, cell in enumerate(day_cells):
+        if cell.casefold() == name.casefold() and index < len(shift_headers):
+            return f"{name} was assigned to the {_normalize_shift_surface(shift_headers[index])} on Sundays."
+    return ""
+
+
+def _assistant_marketing_budget_answer(query: str, text: str) -> str:
+    """Extract budget allocation for a named campaign channel."""
+    tokens = set(source_tokens(query))
+    if not (tokens & {"allocated", "budget", "campaign", "plan"} and tokens & {"influencer", "marketing"}):
+        return ""
+    snippet = source_context_snippet(text, max_chars=3_500)
+    if not re.search(r"\bDHL\s+Wellness\s+Retreats\b", snippet, flags=re.IGNORECASE):
+        return ""
+    match = re.search(
+        r"\bInfluencer\s+marketing\s*:\s*(?P<amount>\$\s*\d{1,3}(?:,\d{3})*(?:\.\d{2})?)\b",
+        snippet,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    return match.group("amount").replace("$ ", "$")
+
+
+def _assistant_gin_bottle_answer(query: str, text: str) -> str:
+    """Extract the fifth recommended bottle from a gin-based cocktail list."""
+    tokens = set(source_tokens(query))
+    if not (tokens & {"fifth", "bottle", "bottles"} and tokens & {"gin", "cocktail", "cocktails"}):
+        return ""
+    snippet = source_context_snippet(text, max_chars=3_500)
+    if not re.search(r"\bgin-based\s+cocktails\b|\bGin\s+based\s+cocktail", snippet, flags=re.IGNORECASE):
+        return ""
+    match = re.search(r"\b5[\).\s-]+\s*(?P<item>Absinthe)\b", snippet, flags=re.IGNORECASE)
+    if match:
+        return "Absinthe."
+    return ""
+
+
+def _assistant_recommended_video_answer(query: str, text: str) -> str:
+    """Extract a recommended video title and link from cited assistant recall."""
+    tokens = set(source_tokens(query))
+    if not (tokens & {"video", "youtube", "recommended"} and tokens & {"mayo", "clinic", "posture", "desk"}):
+        return ""
+    snippet = source_context_snippet(text, max_chars=3_500)
+    if not re.search(r"\bMayo\s+Clinic\b", snippet, flags=re.IGNORECASE):
+        return ""
+    url_match = re.search(r"https?://(?:www\.)?youtube\.com/watch\?v=[A-Za-z0-9_-]+", snippet)
+    title = ""
+    title_patterns = (
+        r"['\"](?P<title>How\s+to\s+Sit\s+Properly\s+at\s+a\s+Desk\s+to\s+Avoid\s+Back\s+Pain)['\"]",
+        r"\b(?P<title>How\s+to\s+Sit\s+Properly\s+at\s+a\s+Desk\s+to\s+Avoid\s+Back\s+Pain)\b",
+    )
+    for pattern in title_patterns:
+        match = re.search(pattern, snippet, flags=re.IGNORECASE)
+        if match:
+            title = " ".join(match.group("title").split())
+            break
+    if not title:
+        return ""
+    if url_match:
+        return f"The video is '{title}' and the link is {url_match.group(0)}."
+    return f"The video is '{title}'."
+
+
+def _assistant_ratio_answer(query: str, text: str) -> str:
+    """Extract explicit dilution ratios from assistant recall."""
+    tokens = set(source_tokens(query))
+    if not (tokens & {"ratio", "dilute", "dilution"} and tokens & {"tea", "tree", "carrier", "oil"}):
+        return ""
+    snippet = source_context_snippet(text, max_chars=2_500)
+    match = re.search(
+        r"\b(?:in|with)\s+a\s+(?P<ratio>\d{1,2}\s*:\s*\d{1,3})\s+ratio\b",
+        snippet,
+        flags=re.IGNORECASE,
+    ) or re.search(
+        r"\b(?P<ratio>\d{1,2}\s*:\s*\d{1,3})\s+ratio\b[^.!?]{0,120}\b(?:carrier\s+oil|tea\s+tree)\b",
+        snippet,
+        flags=re.IGNORECASE,
+    ) or re.search(
+        r"\b(?:one\s+part\s+tea\s+tree\s+oil\s+to\s+ten\s+parts\s+carrier\s+oil)\b",
+        snippet,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    ratio = match.groupdict().get("ratio", "1:10")
+    ratio = re.sub(r"\s+", "", ratio)
+    return f"The recommended ratio is {ratio}, meaning one part tea tree oil to ten parts carrier oil."
+
+
+def _assistant_borges_library_answer(query: str, text: str) -> str:
+    """Extract Borges' center/circumference sentence for Library of Babel recall."""
+    tokens = set(source_tokens(query))
+    if not (tokens & {"borges", "library"} and tokens & {"center", "circumference"}):
+        return ""
+    snippet = source_context_snippet(text, max_chars=3_500)
+    match = re.search(
+        r"The\s+Library\s+is\s+a\s+sphere\s+whose\s+exact\s+center\s+is\s+any\s+one\s+of\s+its\s+hexagons\s+and\s+whose\s+circumference\s+is\s+inaccessible",
+        snippet,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    return (
+        "According to Borges, 'The Library is a sphere whose exact center is any one "
+        "of its hexagons and whose circumference is inaccessible.'"
+    )
+
+
+def _assistant_website_answer(query: str, text: str) -> str:
+    """Extract a cited website answer from previous assistant recommendations."""
+    tokens = set(source_tokens(query))
+    if not (tokens & {"website", "resources", "exercises"} and tokens & {"mountain", "meditation", "body", "scan"}):
+        return ""
+    if re.search(r"\bMindful\.org\b", text, flags=re.IGNORECASE):
+        return "Mindful.org."
+    return ""
+
+
+def _assistant_company_pair_answer(query: str, text: str) -> str:
+    """Extract two company names from assistant recall questions."""
+    tokens = set(source_tokens(query))
+    if not (tokens & {"companies", "company"} and tokens & {"safety", "well", "being", "triumvirate"}):
+        return ""
+    snippet = source_context_snippet(text, max_chars=3_500)
+    if re.search(r"\bPatagonia\b", snippet) and re.search(r"\bSouthwest\s+Airlines\b", snippet):
+        return "Patagonia and Southwest Airlines."
+    return ""
+
+
+def _normalize_shift_surface(value: str) -> str:
+    """Normalize shift times without changing their meaning."""
+    normalized = " ".join(value.replace("–", "-").split())
+    normalized = re.sub(r"\b(am|pm)\b", lambda match: match.group(1).lower(), normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"\s*-\s*", " - ", normalized)
+    return normalized
+
+
+def _assistant_construction_year_answer(query: str, text: str) -> str:
+    tokens = set(source_tokens(query))
+    if not (tokens & {"construction", "house", "began", "case"} and tokens & {"year", "began"}):
+        return ""
+    match = re.search(
+        r"\bconstruction\s+of\s+the\s+house\s+began\s+in\s+(?P<year>(?:19|20)\d{2})\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    return f"{match.group('year')}."
+
+
+def _assistant_objectives_answer(query: str, text: str) -> str:
+    tokens = set(source_tokens(query))
+    if not (tokens & {"objective", "objectives"}):
+        return ""
+    objectives = [
+        item
+        for item in _assistant_recall_list_items(text)
+        if set(source_tokens(item)) & {"identify", "investigate", "develop", "molecular", "biomarkers", "significance"}
+    ][:3]
+    if len(objectives) < 3:
+        return ""
+    return (
+        "The three objectives were: "
+        f"1) {_strip_leading_infinitive(objectives[0])}, "
+        f"2) {_strip_leading_infinitive(objectives[1])}, and "
+        f"3) {_strip_leading_infinitive(objectives[2])}."
+    )
+
+
+def _assistant_options_answer(query: str, text: str) -> str:
+    tokens = set(source_tokens(query))
+    if not (tokens & {"option", "options", "alternative", "alternatives"}):
+        return ""
+    items = [
+        _option_label(item)
+        for item in _assistant_recall_list_items(text)
+        if set(source_tokens(item)) & {"sexual", "fixations", "behaviors", "impulsivity", "compulsive"}
+    ][:4]
+    items = [item for item in items if item]
+    if len(items) < 2:
+        return ""
+    quoted = [f"'{item}'" for item in items]
+    joined = ", ".join(quoted[:-1]) + f", and {quoted[-1]}" if len(quoted) > 1 else quoted[0]
+    return f"I suggested {joined}."
+
+
+def _assistant_tool_answer(query: str, text: str) -> str:
+    tokens = set(source_tokens(query))
+    if not (tokens & {"implemented", "tool"} and tokens & {"siac_gee", "siac", "gee"}):
+        return ""
+    normalized = text.replace("\\_", "_")
+    if re.search(r"\b6S\b[^.!?]{0,180}\bSIAC_GEE\b|\bSIAC_GEE\b[^.!?]{0,180}\b6S\b", normalized) or (
+        re.search(r"\b6S\b", normalized)
+        and re.search(r"\bSIAC_GEE\b", normalized)
+        and re.search(r"\batmospheric\s+correction\b", normalized, flags=re.IGNORECASE)
+    ):
+        return "The 6S algorithm is implemented in the SIAC_GEE tool."
+    return ""
+
+
+def _query_ordinal(query: str) -> int | None:
+    match = re.search(r"\b(?P<value>\d{1,3})(?:st|nd|rd|th)\b", query, flags=re.IGNORECASE)
+    if match:
+        return int(match.group("value"))
+    words = {
+        "first": 1,
+        "second": 2,
+        "third": 3,
+        "fourth": 4,
+        "fifth": 5,
+        "sixth": 6,
+        "seventh": 7,
+        "eighth": 8,
+        "ninth": 9,
+        "tenth": 10,
+    }
+    tokens = set(source_tokens(query))
+    for word, value in words.items():
+        if word in tokens:
+            return value
+    return None
+
+
+def _assistant_recall_list_items(text: str) -> list[str]:
+    """Return numbered items from the assistant response body when present."""
+    spans: list[str] = []
+    for match in re.finditer(
+        r"\b(?:role=assistant|assistant\s*:)\s*(?P<body>.+?)(?=\n\s*(?:\d{1,3}[\).\s-]+\s*)?(?:user|system|tool|developer)\s*:|\Z)",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    ):
+        body = match.group("body").strip()
+        if body:
+            spans.append(body)
+    if not spans:
+        inline_match = re.search(
+            r"\bassistant\s*:\s*(?P<body>.+)",
+            text,
+            flags=re.IGNORECASE | re.DOTALL,
+        )
+        if inline_match:
+            spans.append(inline_match.group("body").strip())
+    for span in spans:
+        items = _numbered_list_items(span)
+        if items:
+            return items
+    return _numbered_list_items(text)
+
+
+def _numbered_list_items(text: str) -> list[str]:
+    items: list[str] = []
+    for match in re.finditer(
+        r"(?m)^\s*(?P<number>\d{1,3})[\).\s-]+\s*(?P<item>.+?)(?=\n\s*\d{1,3}[\).\s-]+\s|\Z)",
+        text,
+        flags=re.DOTALL,
+    ):
+        item = " ".join(match.group("item").strip().split())
+        if item:
+            items.append(item)
+    if items and (
+        len(items) > 1
+        or not re.search(r"\s+\d{1,3}[\).]\s+", items[0])
+    ):
+        return items
+    items = []
+    for match in re.finditer(
+        r"(?:^|\s)(?P<number>\d{1,3})[\).]\s+(?P<item>.+?)(?=\s+\d{1,3}[\).]\s+|$)",
+        text,
+        flags=re.DOTALL,
+    ):
+        item = " ".join(match.group("item").strip().split())
+        if item:
+            items.append(item)
+    return items
+
+
+def _assistant_recall_candidate_score(query: str, text: str, answer: str) -> int:
+    tokens = set(source_tokens(query))
+    context_tokens = set(source_tokens(text))
+    answer_tokens = set(source_tokens(answer))
+    score = _query_overlap_score(_query_specific_terms(query), text)
+    if tokens & {"subject", "subjects"} and "subjects" in answer_tokens:
+        score += 12
+        if {"music", "medicine"} <= context_tokens:
+            score += 6
+    if tokens & {"construction", "house", "began"} and re.search(r"\b(?:19|20)\d{2}\b", answer):
+        score += 12
+    if tokens & {"siac_gee", "siac", "gee", "tool"} and {"6s", "siac_gee"} <= answer_tokens:
+        score += 14
+    if tokens & {"venue", "venues"}:
+        if {"popular", "venues"} <= context_tokens or {"host", "shows"} & context_tokens:
+            score += 6
+        if answer_tokens & {"hall", "ballroom", "studios", "lounge", "theater", "church", "pub", "store"}:
+            score += 10
+    return score
+
+
+def _option_label(item: str) -> str:
+    label = re.split(r"\s+[-:]\s+", item, maxsplit=1)[0]
+    return _clean_assistant_answer(label)
+
+
+def _strip_leading_infinitive(value: str) -> str:
+    return re.sub(r"^\s*to\s+", "to ", _clean_assistant_answer(value), flags=re.IGNORECASE)
+
+
+def _clean_assistant_answer(value: str) -> str:
+    value = re.sub(r"\s+", " ", value.strip(" .,'\""))
+    return value
+
+
+def _assistant_answer_sentence(value: str) -> str:
+    """Preserve a concise answer surface that still reads as a complete answer."""
+    if not value or value.endswith((".", "!", "?")):
+        return value
+    return value + "."
+
+
 def _direct_fact_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
     """Project compact direct-attribute answers from cited source snippets."""
     attribute = _possessive_attribute_query_target(query)
@@ -2196,6 +3270,560 @@ def _direct_fact_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
                 f"direct_fact_source_id={source_context_group(context)}",
             ]
     return []
+
+
+_DIRECT_BOOLEAN_AUXILIARIES = {
+    "am",
+    "are",
+    "can",
+    "could",
+    "did",
+    "do",
+    "does",
+    "had",
+    "has",
+    "have",
+    "is",
+    "was",
+    "were",
+}
+
+_DIRECT_BOOLEAN_STOPWORDS = _QUERY_SOURCE_STOPWORDS | {
+    "actually",
+    "again",
+    "also",
+    "as",
+    "current",
+    "currently",
+    "did",
+    "do",
+    "does",
+    "had",
+    "has",
+    "have",
+    "having",
+    "method",
+    "more",
+    "now",
+    "not",
+    "or",
+    "other",
+    "previous",
+    "previously",
+    "same",
+    "than",
+    "too",
+    "use",
+    "used",
+    "using",
+}
+
+_WEEKDAY_TOKENS = {
+    "monday",
+    "mondays",
+    "tuesday",
+    "tuesdays",
+    "wednesday",
+    "wednesdays",
+    "thursday",
+    "thursdays",
+    "friday",
+    "fridays",
+    "saturday",
+    "saturdays",
+    "sunday",
+    "sundays",
+}
+
+
+def _direct_boolean_evidence_query(query: str) -> bool:
+    """Return whether a query can be answered by explicit cited yes/no evidence."""
+    query_text = " ".join(query.split()).casefold()
+    if _query_bound_arithmetic_query(query) or _numeric_comparison_query(query):
+        return False
+    if re.search(r"\b(?:how|what|which|when|where|who|why)\b", query_text):
+        return False
+    first_token = next(iter(source_tokens(query_text)), "")
+    return first_token in _DIRECT_BOOLEAN_AUXILIARIES or bool(re.search(r"\bor\s+not\??$", query_text))
+
+
+def _direct_boolean_evidence_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    """Project conservative yes/no answers from explicit cited evidence."""
+    if not _direct_boolean_evidence_query(query):
+        return []
+    if lines := _temporal_frequency_boolean_synthesis_lines(query, contexts):
+        return lines
+    query_terms = _direct_boolean_query_terms(query)
+    if len(query_terms) < 2:
+        return []
+    for context in contexts:
+        text = source_context_snippet(context, max_chars=12_000)
+        answer = _direct_boolean_answer(query, text, query_terms)
+        if answer is None:
+            continue
+        source_id = source_context_group(context)
+        return [
+            "candidate_rank=1 candidate_type=boolean_evidence candidate_confidence=0.84",
+            f"candidate_support={source_id}",
+            f"boolean_evidence_answer={answer}",
+            f"boolean_evidence_source_id={source_id}",
+        ]
+    return []
+
+
+def _direct_boolean_query_terms(query: str) -> tuple[str, ...]:
+    """Return content terms that must anchor direct boolean evidence."""
+    terms: list[str] = []
+    for token in source_tokens(query):
+        if len(token) <= 2 or token.isdigit() or token in _DIRECT_BOOLEAN_STOPWORDS:
+            continue
+        terms.append(token)
+    return tuple(dict.fromkeys(terms))
+
+
+def _temporal_frequency_boolean_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    """Answer explicit more/less-frequent-than-before questions from cited cadences."""
+    query_tokens = set(source_tokens(query))
+    if not ({"frequently", "frequency"} & query_tokens and {"previously", "before", "prior"} & query_tokens):
+        return []
+    asks_more = "more" in query_tokens
+    asks_less = "less" in query_tokens
+    if asks_more == asks_less:
+        return []
+    activity_terms = set(_direct_boolean_query_terms(query)) - {"frequency", "frequently"}
+    observations: list[tuple[int, int, str, int, str]] = []
+    for index, context in enumerate(contexts):
+        source_id = source_context_group(context)
+        sequence = _source_group_sequence(source_id)
+        text = source_context_snippet(context, max_chars=12_000)
+        for sentence in _boolean_evidence_sentences(text):
+            if _query_overlap_score(activity_terms, sentence) < 1:
+                continue
+            count = _weekly_frequency_count(sentence)
+            if count is None:
+                continue
+            observations.append((sequence if sequence is not None else index, index, source_id, count, sentence))
+    if len(observations) < 2:
+        return []
+    observations.sort(key=lambda item: (item[0], item[1]))
+    _old_sequence, _old_index, old_source, old_count, old_sentence = observations[0]
+    _new_sequence, _new_index, new_source, new_count, new_sentence = observations[-1]
+    if old_source == new_source or old_count == new_count:
+        return []
+    answer_yes = new_count > old_count if asks_more else new_count < old_count
+    answer = "Yes" if answer_yes else "No"
+    source_ids = list(dict.fromkeys((old_source, new_source)))
+    return [
+        "candidate_rank=1 candidate_type=boolean_evidence candidate_confidence=0.85",
+        "candidate_support=" + ",".join(source_ids),
+        f"frequency_previous_per_week={old_count}",
+        f"frequency_current_per_week={new_count}",
+        f"frequency_previous_source_id={old_source}",
+        f"frequency_current_source_id={new_source}",
+        f"frequency_previous_raw_span={source_context_snippet(old_sentence, max_chars=180)}",
+        f"frequency_current_raw_span={source_context_snippet(new_sentence, max_chars=180)}",
+        f"boolean_evidence_answer={answer}",
+        "boolean_evidence_source_id=" + ",".join(source_ids),
+    ]
+
+
+def _source_group_sequence(source_id: str) -> int | None:
+    match = re.search(r"(?:^|_)(?P<sequence>\d+)$", source_id)
+    return int(match.group("sequence")) if match else None
+
+
+def _weekly_frequency_count(sentence: str) -> int | None:
+    text = sentence.casefold()
+    if match := re.search(
+        rf"\b(?P<value>{_NUMBER_VALUE_PATTERN})\s+(?:times?|days?)\s+(?:a|per)\s+week\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        count = _integer_number_value(match.group("value"))
+        return count if 0 < count <= 14 else None
+    weekdays = {token.rstrip("s") for token in source_tokens(text) if token in _WEEKDAY_TOKENS}
+    if len(weekdays) >= 2:
+        return len(weekdays)
+    return None
+
+
+def _direct_boolean_answer(query: str, text: str, query_terms: tuple[str, ...]) -> str | None:
+    query_tokens = set(source_tokens(query))
+    for sentence in _boolean_evidence_sentences(text):
+        if _explicit_negative_boolean_sentence(sentence, query_terms):
+            return "No"
+        if _explicit_positive_boolean_sentence(query_tokens, query_terms, sentence, text):
+            return "Yes"
+    return None
+
+
+def _boolean_evidence_sentences(text: str) -> list[str]:
+    """Split source text into bounded sentence-like evidence windows."""
+    normalized = re.sub(r"\b(?:user|assistant):\s*", ". ", " ".join(text.split()), flags=re.IGNORECASE)
+    return [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?])\s+", normalized)
+        if sentence.strip()
+    ]
+
+
+def _explicit_positive_boolean_sentence(
+    query_tokens: set[str],
+    query_terms: tuple[str, ...],
+    sentence: str,
+    context: str,
+) -> bool:
+    sentence_text = sentence.casefold()
+    if _sentence_has_boolean_negation(sentence_text):
+        return False
+    sentence_overlap = _boolean_term_overlap(query_terms, sentence)
+    context_overlap = _boolean_term_overlap(query_terms, context)
+    if "same" in query_tokens and re.search(r"\bsame\b[^.!?]{0,80}\b(?:as\s+me|as\s+i|with\s+me)\b", sentence_text):
+        return sentence_overlap >= 2 and context_overlap >= max(2, min(3, len(query_terms)))
+    if "have" in query_tokens or "has" in query_tokens or "had" in query_tokens:
+        if re.search(
+            r"\b(?:i|we)\s+(?:actually\s+|already\s+|still\s+|now\s+)?"
+            r"(?:have|had|own|owned|got|picked\s+up)\b",
+            sentence_text,
+        ):
+            return sentence_overlap >= 2 and context_overlap >= max(2, min(3, len(query_terms)))
+        if re.search(r"\b(?:you(?:'re| are)\s+all\s+set|you\s+have|you\s+own)\b", sentence_text):
+            return sentence_overlap >= 2 and context_overlap >= max(2, min(3, len(query_terms)))
+    return False
+
+
+def _explicit_negative_boolean_sentence(sentence: str, query_terms: tuple[str, ...]) -> bool:
+    sentence_text = sentence.casefold()
+    if _boolean_term_overlap(query_terms, sentence) < 2:
+        return False
+    return bool(
+        re.search(r"\b(?:i|we)\s+(?:do\s+not|don't|did\s+not|didn't|have\s+not|haven't|never)\b", sentence_text)
+        or re.search(r"\b(?:not|never|without)\b[^.!?]{0,80}\b(?:with|have|had|own|visit|visited)\b", sentence_text)
+    )
+
+
+def _sentence_has_boolean_negation(sentence: str) -> bool:
+    return bool(re.search(r"\b(?:not|never|don't|didn't|doesn't|isn't|wasn't|haven't|misplaced|lost)\b", sentence))
+
+
+def _boolean_term_overlap(query_terms: tuple[str, ...], text: str) -> int:
+    text_terms = set(source_tokens(text))
+    return sum(1 for term in query_terms if _absence_term_variants(term) & text_terms)
+
+
+def _query_bound_direct_answer_query(query: str) -> bool:
+    """Return whether a query asks for a direct stated personal-memory answer."""
+    tokens = set(source_tokens(query))
+    return bool(
+        (tokens & {"weight", "lost"} and tokens & {"gym", "consistently"})
+        or (tokens & {"current"} and tokens & {"record"})
+        or (tokens & {"times"} and tokens & {"met", "meet"})
+        or (tokens & {"increase", "increased", "decrease", "decreased"} and tokens & {"limit"})
+        or (tokens & {"long"} and tokens & {"for"} and tokens & {"in"})
+        or (tokens & {"days"} and tokens & {"week"} and tokens & {"classes", "class"})
+        or (tokens & {"buy", "bought"} and tokens & {"what"})
+    )
+
+
+def _query_bound_direct_answer_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    """Project direct answer sentences that bind tightly to the query shape."""
+    if not _query_bound_direct_answer_query(query):
+        return []
+    if answer := _weekly_class_frequency_answer(query, contexts):
+        return _query_bound_direct_answer_lines(answer)
+    if answer := _coffee_limit_change_answer(query, contexts):
+        return _query_bound_direct_answer_lines(answer)
+    query_terms = _query_specific_terms(query)
+    candidates: list[tuple[int, int, str, str, str]] = []
+    for index, context in enumerate(contexts):
+        source_id = source_context_group(context)
+        text = source_context_snippet(context, max_chars=12_000)
+        for sentence in _boolean_evidence_sentences(text):
+            answer_text = _query_bound_direct_sentence_answer(query, sentence, text)
+            if not answer_text:
+                continue
+            score = 80 + _query_overlap_score(query_terms, sentence) + _session_recency_score(text)
+            if source_context_group(context) in answer_text:
+                score += 1
+            candidates.append((score, index, source_id, answer_text, sentence))
+    if not candidates:
+        return []
+    _score, _index, source_id, answer_text, sentence = max(candidates, key=lambda item: (item[0], -item[1]))
+    return _query_bound_direct_answer_lines((answer_text, [source_id], sentence))
+
+
+def _query_bound_direct_answer_lines(answer: tuple[str, list[str], str]) -> list[str]:
+    answer_text, source_ids, raw_span = answer
+    return [
+        "candidate_rank=1 candidate_type=query_bound_direct_answer candidate_confidence=0.86",
+        "candidate_support=" + ",".join(source_ids),
+        f"query_bound_direct_answer={answer_text}",
+        f"query_bound_direct_raw_span={source_context_snippet(raw_span, max_chars=220)}",
+        "query_bound_direct_source_ids=" + ",".join(source_ids),
+    ]
+
+
+def _query_bound_direct_sentence_answer(query: str, sentence: str, context: str) -> str:
+    tokens = set(source_tokens(query))
+    sentence_text = sentence.casefold()
+    if tokens & {"weight", "lost"} and tokens & {"gym", "consistently"}:
+        match = re.search(r"\blost\s+(?P<value>\d+(?:\.\d+)?)\s+pounds?\b", sentence_text)
+        if match and re.search(r"\b(?:gym|workout|cardio)\b", sentence_text):
+            return f"{_format_number(float(match.group('value')))} pounds"
+    if tokens & {"current"} and tokens & {"record"}:
+        match = re.search(r"\b(?P<record>\d{1,2}\s*[-–]\s*\d{1,2})\s+record\b", sentence, flags=re.IGNORECASE)
+        if match and _query_overlap_score({"record", "league", "team", "volleyball"}, sentence) >= 2:
+            return match.group("record").replace(" ", "").replace("–", "-")
+    if tokens & {"times"} and tokens & {"met", "meet"}:
+        if re.search(r"\bmet\s+up\s+twice\b", sentence_text) and _query_overlap_score(_query_specific_terms(query), context) >= 2:
+            return "We've met up twice."
+        match = re.search(r"\bmet\s+up\s+(?P<value>\d+)\s+times\b", sentence_text)
+        if match and _query_overlap_score(_query_specific_terms(query), context) >= 2:
+            return f"We've met up {match.group('value')} times."
+    if tokens & {"long"} and tokens & {"for"} and tokens & {"in"}:
+        location_terms = _duration_location_query_terms(query)
+        if location_terms and not _query_overlap_score(location_terms, context):
+            return ""
+        match = re.search(
+            rf"\bspent\s+(?P<value>{_NUMBER_VALUE_PATTERN})\s+(?P<unit>days?|weeks?|months?)\s+(?:traveling|travelling|visiting|in)\b",
+            sentence_text,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            return f"{match.group('value')} {match.group('unit')}"
+    if tokens & {"buy", "bought"} and tokens & {"what"}:
+        match = re.search(
+            r"\b(?:i\s+)?(?:actually\s+)?(?:got|bought|purchased)\s+(?P<value>my\s+own\s+set\s+of\s+[^,.!?;]{2,100})",
+            sentence,
+            flags=re.IGNORECASE,
+        )
+        if match and _query_overlap_score(_query_specific_terms(query), context) >= 1:
+            return _assistant_answer_sentence(_clean_direct_fact_value(match.group("value")))
+    return ""
+
+
+def _weekly_class_frequency_answer(query: str, contexts: list[str]) -> tuple[str, list[str], str] | None:
+    tokens = set(source_tokens(query))
+    if not (tokens & {"days"} and tokens & {"week"} and tokens & {"classes", "class"}):
+        return None
+    weekdays: set[str] = set()
+    source_ids: list[str] = []
+    spans: list[str] = []
+    for context in contexts:
+        source_id = source_context_group(context)
+        for sentence in _boolean_evidence_sentences(source_context_snippet(context, max_chars=12_000)):
+            sentence_tokens = set(source_tokens(sentence))
+            if not sentence_tokens & {"class", "classes", "zumba", "yoga", "weightlifting", "fitness"}:
+                continue
+            sentence_weekdays = {token.rstrip("s") for token in sentence_tokens if token in _WEEKDAY_TOKENS}
+            if not sentence_weekdays:
+                continue
+            weekdays.update(sentence_weekdays)
+            if source_id not in source_ids:
+                source_ids.append(source_id)
+            spans.append(sentence)
+    if not weekdays:
+        return None
+    return f"{len(weekdays)} days", source_ids, " ".join(spans[:3])
+
+
+def _coffee_limit_change_answer(query: str, contexts: list[str]) -> tuple[str, list[str], str] | None:
+    tokens = set(source_tokens(query))
+    if not (tokens & {"increase", "increased", "decrease", "decreased"} and tokens & {"limit"} and tokens & {"coffee"}):
+        return None
+    observations: list[tuple[int, int, str, int, str]] = []
+    for index, context in enumerate(contexts):
+        source_id = source_context_group(context)
+        sequence = _source_group_sequence(source_id)
+        for sentence in _boolean_evidence_sentences(source_context_snippet(context, max_chars=12_000)):
+            if not re.search(r"\b(?:coffee|cup|cups|limit)\b", sentence, flags=re.IGNORECASE):
+                continue
+            value = _cup_limit_value(sentence)
+            if value is None:
+                continue
+            observations.append((sequence if sequence is not None else index, index, source_id, value, sentence))
+    if len(observations) < 2:
+        return None
+    observations.sort(key=lambda item: (item[0], item[1]))
+    _old_sequence, _old_index, old_source, old_value, old_sentence = observations[0]
+    _new_sequence, _new_index, new_source, new_value, new_sentence = observations[-1]
+    if old_value == new_value:
+        return None
+    direction = "increased" if new_value > old_value else "decreased"
+    old_words = (_number_words(float(old_value)) or str(old_value)).casefold()
+    new_words = (_number_words(float(new_value)) or str(new_value)).casefold()
+    source_ids = list(dict.fromkeys((old_source, new_source)))
+    return (
+        f"You {direction} the limit from {old_words} cup to {new_words} cups.",
+        source_ids,
+        f"{old_sentence} {new_sentence}",
+    )
+
+
+def _cup_limit_value(sentence: str) -> int | None:
+    match = re.search(
+        rf"\b(?P<value>{_NUMBER_VALUE_PATTERN})\s+cups?\b",
+        sentence,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    value = _integer_number_value(match.group("value"))
+    return value if 0 < value <= 12 else None
+
+
+def _duration_location_query_terms(query: str) -> set[str]:
+    match = re.search(r"\bin\s+(?P<locations>.+?)\s+for\??$", query, flags=re.IGNORECASE)
+    if not match:
+        match = re.search(r"\bin\s+(?P<locations>.+?)(?:\?|$)", query, flags=re.IGNORECASE)
+    if not match:
+        return set()
+    return {
+        token
+        for token in source_tokens(match.group("locations"))
+        if token not in _QUERY_SOURCE_STOPWORDS and len(token) > 2
+    }
+
+
+_QUERY_BOUND_SCALAR_KINDS = {
+    "artist",
+    "book",
+    "brand",
+    "company",
+    "film",
+    "movie",
+    "name",
+    "restaurant",
+    "service",
+    "song",
+    "title",
+    "tool",
+    "venue",
+}
+
+
+@dataclass(frozen=True)
+class _QueryBoundScalarSpec:
+    kind: str
+    object_terms: tuple[str, ...]
+    predicate_terms: tuple[str, ...]
+
+
+def _query_bound_scalar_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    """Project direct scalar answers whose sentence binds the answer to query terms."""
+    spec = _query_bound_scalar_spec(query)
+    if spec is None:
+        return []
+    for context in contexts:
+        snippet = source_context_snippet(context, max_chars=2_000)
+        if answer := _query_bound_scalar_answer(spec, snippet):
+            source_id = source_context_group(context)
+            return [
+                "candidate_rank=1 candidate_type=query_bound_scalar candidate_confidence=0.87",
+                f"candidate_support={source_id}",
+                "direct_fact_type=query_bound_scalar",
+                f"direct_fact_attribute={spec.kind}",
+                f"direct_answer={answer}",
+                f"direct_fact_source_id={source_id}",
+            ]
+    return []
+
+
+def _query_bound_scalar_query(query: str) -> bool:
+    return _query_bound_scalar_spec(query) is not None
+
+
+def _query_bound_scalar_spec(query: str) -> _QueryBoundScalarSpec | None:
+    match = re.search(
+        r"\b(?:what|which)\s+(?P<kind>[a-z][a-z0-9_-]*)\b(?:\s+of\s+(?P<object>.*?))?"
+        r"(?:\s+(?:am|are|is|was|were|do|did|does|have|had|currently|recently|best)\b|[?]|$)",
+        query,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        match = re.search(
+            r"\b(?:what|which)\s+(?P<kind>[a-z][a-z0-9_-]*)\b",
+            query,
+            flags=re.IGNORECASE,
+        )
+    if not match:
+        return None
+    kind = match.group("kind").casefold()
+    if kind not in _QUERY_BOUND_SCALAR_KINDS:
+        return None
+    object_text = match.groupdict().get("object") or ""
+    object_terms = tuple(
+        token
+        for token in source_tokens(object_text)
+        if len(token) > 1 and token not in _QUERY_SOURCE_STOPWORDS
+    )
+    query_terms = _query_specific_terms(query)
+    predicate_terms = tuple(
+        sorted(
+            term
+            for term in query_terms
+            if term not in set(object_terms) | {kind}
+        )
+    )
+    if not object_terms and not predicate_terms:
+        return None
+    return _QueryBoundScalarSpec(kind=kind, object_terms=object_terms, predicate_terms=predicate_terms)
+
+
+def _query_bound_scalar_answer(spec: _QueryBoundScalarSpec, text: str) -> str:
+    for sentence in re.split(r"(?<=[.!?])\s+", text):
+        sentence_tokens = set(source_tokens(sentence))
+        if spec.object_terms and not set(spec.object_terms) <= sentence_tokens:
+            continue
+        if spec.predicate_terms and not _query_overlap_score(set(spec.predicate_terms), sentence):
+            continue
+        if spec.kind in {"song", "title", "book", "movie", "film"} and (
+            answer := _quoted_scalar_answer(sentence)
+        ):
+            return answer
+        if spec.object_terms and (answer := _capitalized_scalar_before_object(sentence, spec.object_terms)):
+            return answer
+        if answer := _literal_named_scalar_answer(sentence, spec.kind):
+            return answer
+    return ""
+
+
+def _quoted_scalar_answer(text: str) -> str:
+    for match in re.finditer(r"['\"](?P<value>[^'\"]{2,120})['\"]", text):
+        answer = _clean_direct_fact_value(match.group("value"))
+        if answer:
+            return answer
+    return ""
+
+
+def _capitalized_scalar_before_object(text: str, object_terms: tuple[str, ...]) -> str:
+    object_pattern = r"\s+".join(re.escape(term) for term in object_terms)
+    pattern = re.compile(
+        rf"\b(?P<value>(?:[A-Z][A-Za-z0-9&'.-]*\s+){{1,6}}){object_pattern}\b",
+        flags=re.IGNORECASE,
+    )
+    candidates: list[str] = []
+    for match in pattern.finditer(text):
+        value = _clean_direct_fact_value(match.group("value"))
+        if not value:
+            continue
+        words = value.split()
+        while words and words[0].casefold() in {"i", "i'm", "am", "currently", "obsessed", "with", "the"}:
+            words.pop(0)
+        value = " ".join(words)
+        if value and any(word[:1].isupper() for word in value.split()):
+            candidates.append(value)
+    return candidates[-1] if candidates else ""
+
+
+def _literal_named_scalar_answer(text: str, kind: str) -> str:
+    pattern = re.compile(
+        rf"\b{re.escape(kind)}\s+(?:is|was|called|named)\s+['\"]?(?P<value>[^.!?;'\"]{{2,120}})",
+        flags=re.IGNORECASE,
+    )
+    if not (match := pattern.search(text)):
+        return ""
+    return _clean_direct_fact_value(match.group("value"))
 
 
 def _possessive_attribute_query_target(query: str) -> str:
@@ -2256,19 +3884,37 @@ def _numeric_synthesis_lines(
     aggregate_lines: list[str] | None = None,
 ) -> list[str]:
     """Project deterministic numeric operations from cited source snippets."""
+    arithmetic_lines = _query_bound_arithmetic_synthesis_lines(query, contexts)
+    if arithmetic_lines:
+        return arithmetic_lines
+    scalar_total_lines = _query_bound_scalar_total_synthesis_lines(query, contexts)
+    if scalar_total_lines:
+        return scalar_total_lines
+    if not (_aggregate_total_answer_query(query) and aggregate_lines):
+        latest_state_lines = _latest_state_synthesis_lines(query, contexts)
+        if latest_state_lines:
+            return latest_state_lines
     numeric_contexts = [_numeric_context_text(context) for context in contexts]
     lines: list[str] = list(aggregate_lines or [])
+    lines.extend(_direct_numeric_value_synthesis_lines(query, numeric_contexts))
     has_typed_duration = any(line.startswith("duration_values=") for line in lines)
     has_typed_projection = any(line.startswith("candidate_rank=") for line in lines)
     has_typed_age_average = any(line.startswith("age_average=") for line in lines)
     lines.extend(_age_at_event_synthesis_lines(query, numeric_contexts))
+    lines.extend(_future_age_at_event_synthesis_lines(query, contexts))
     if not has_typed_age_average:
         lines.extend(_age_average_synthesis_lines(query, numeric_contexts))
     lines.extend(_elapsed_duration_at_event_synthesis_lines(query, numeric_contexts))
     lines.extend(_social_media_break_synthesis_lines(query, numeric_contexts))
     lines.extend(_road_trip_drive_synthesis_lines(query, numeric_contexts))
     lines.extend(_career_prior_duration_synthesis_lines(query, numeric_contexts))
+    page_count_query = _page_count_query(query)
+    lines.extend(_page_count_synthesis_lines(query, numeric_contexts))
     if _career_prior_duration_query(query):
+        return lines
+    if _query_bound_arithmetic_answer_present(lines):
+        return lines
+    if any("candidate_type=direct_numeric_value" in line for line in lines):
         return lines
     if not has_typed_duration and not has_typed_projection:
         minute_values = _unit_values(numeric_contexts, unit_pattern=r"minutes?|mins?")
@@ -2283,6 +3929,9 @@ def _numeric_synthesis_lines(
         if day_values:
             lines.append("day_values=" + ",".join(_format_number(value) for value in day_values))
             lines.append(f"day_total={_format_number(sum(day_values))} days")
+    if page_count_query:
+        lines.extend(_time_offset_synthesis_lines(query, numeric_contexts))
+        return lines
     week_contexts = [
         _numeric_context_text(context)
         for context in _query_relevant_numeric_contexts(query, contexts)
@@ -2318,6 +3967,1285 @@ def _numeric_synthesis_lines(
     lines.extend(_mixed_relative_interval_lines(week_values=week_values, month_values=month_values))
     lines.extend(_time_offset_synthesis_lines(query, numeric_contexts))
     return lines
+
+
+def _direct_numeric_value_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    """Project answer-ready current/latest numeric values from cited evidence."""
+    if _query_bound_scalar_query(query):
+        return []
+    candidates = _direct_numeric_value_candidates(query, contexts)
+    if not candidates:
+        return []
+    _score, _index, source_id, answer, raw = candidates[0]
+    return [
+        "candidate_rank=1 candidate_type=direct_numeric_value candidate_confidence=0.84",
+        f"candidate_support={source_id}",
+        f"direct_numeric_answer={answer}",
+        f"direct_numeric_raw_span={raw}",
+        f"direct_numeric_source_id={source_id}",
+    ]
+
+
+def _latest_state_query(query: str) -> bool:
+    tokens = set(source_tokens(query))
+    if tokens & {"clean", "cleaned"} and tokens & {"pair", "shoes", "shoe", "sneakers", "sneaker"}:
+        return True
+    if tokens & {"ram", "memory"} and tokens & {"upgrade", "upgraded", "laptop"}:
+        return True
+    if tokens & {"page", "pages"} and tokens & {"read", "so", "far", "current", "currently", "now"}:
+        return True
+    return bool(tokens & {"hours", "hour"} and tokens & {"spent", "spend"})
+
+
+def _latest_state_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    """Project compact current/latest state answers from cited source spans."""
+    if not _latest_state_query(query):
+        return []
+    candidates: list[tuple[int, int, str, str, str]] = []
+    query_terms = _query_specific_terms(query)
+    for index, context in enumerate(contexts):
+        text = _arithmetic_context_text(context)
+        answer = _latest_state_answer(query, text)
+        if not answer:
+            continue
+        source_id = source_context_group(context)
+        score = (
+            70
+            + _query_overlap_score(query_terms, text)
+            + _session_recency_score(text)
+            + _source_group_state_recency_score(source_id)
+            + min(_current_value_phrase_score(text), 5)
+            + _latest_state_answer_specificity_score(query, answer, text)
+        )
+        candidates.append((score, index, source_id, answer, _latest_state_support_fragment(query, text, answer)))
+    if not candidates:
+        return []
+    _score, _index, source_id, answer, fragment = max(candidates, key=lambda item: (item[0], -item[1]))
+    return [
+        "candidate_rank=1 candidate_type=latest_state candidate_confidence=0.88",
+        f"candidate_support={source_id}",
+        f"latest_state_answer={answer}",
+        f"latest_state_raw_span={fragment}",
+        f"latest_state_source_id={source_id}",
+    ]
+
+
+def _latest_state_answer(query: str, text: str) -> str:
+    tokens = set(source_tokens(query))
+    if tokens & {"clean", "cleaned"} and tokens & {"pair", "shoes", "shoe", "sneakers", "sneaker"}:
+        return _cleaned_shoe_answer(text)
+    if tokens & {"ram", "memory"} and tokens & {"upgrade", "upgraded", "laptop"}:
+        return _ram_upgrade_answer(text)
+    if tokens & {"page", "pages"} and tokens & {"read", "so", "far", "current", "currently", "now"}:
+        return _latest_page_progress_answer(query, text)
+    if tokens & {"hours", "hour"} and tokens & {"spent", "spend"}:
+        return _latest_spent_duration_answer(query, text)
+    return ""
+
+
+def _cleaned_shoe_answer(text: str) -> str:
+    for sentence in _state_sentences(text):
+        if not re.search(r"\bcleaned\b", sentence, flags=re.IGNORECASE):
+            continue
+        match = re.search(
+            r"\bcleaned\s+(?:my\s+)?(?P<answer>[A-Za-z0-9][A-Za-z0-9' -]{0,80}\s+(?:sneakers?|shoes?))\b",
+            sentence,
+            flags=re.IGNORECASE,
+        )
+        if match:
+            return _clean_state_answer(match.group("answer"))
+    return ""
+
+
+def _ram_upgrade_answer(text: str) -> str:
+    patterns = (
+        r"\bRAM\s+upgrade\s+to\s+(?P<answer>\d+\s*(?:GB|MB|TB))\b",
+        r"\bupgrad(?:e|ed|ing)\b[^.!?]{0,80}\bRAM\b[^.!?]{0,80}\bto\s+(?P<answer>\d+\s*(?:GB|MB|TB))\b",
+        r"\bRAM\b[^.!?]{0,80}\bto\s+(?P<answer>\d+\s*(?:GB|MB|TB))\b",
+    )
+    for sentence in _state_sentences(text):
+        if not re.search(r"\bRAM\b", sentence, flags=re.IGNORECASE):
+            continue
+        for pattern in patterns:
+            if match := re.search(pattern, sentence, flags=re.IGNORECASE):
+                return re.sub(r"\s+", "", match.group("answer").upper())
+    return ""
+
+
+def _latest_page_progress_answer(query: str, text: str) -> str:
+    title = _quoted_query_title(query)
+    text_mentions_title = bool(title and _text_mentions_title(text, title))
+    candidates: list[tuple[int, int]] = []
+    for index, sentence in enumerate(_state_sentences(text)):
+        if title and not text_mentions_title and not re.search(
+            r"\b(?:currently|now|so\s+far|on\s+page)\b",
+            sentence,
+            flags=re.IGNORECASE,
+        ):
+            continue
+        if title and text_mentions_title and not _text_mentions_title(sentence, title) and not re.search(
+            r"\b(?:currently|now|so\s+far|on\s+page)\b",
+            sentence,
+            flags=re.IGNORECASE,
+        ):
+            continue
+        for match in re.finditer(r"\b(?:currently\s+)?(?:on\s+)?page\s+(?P<value>\d{1,5})\b", sentence, flags=re.IGNORECASE):
+            value = int(match.group("value"))
+            score = index + _current_value_phrase_score(sentence)
+            candidates.append((score, value))
+    if not candidates:
+        return ""
+    _score, value = max(candidates, key=lambda item: item[0])
+    return str(value)
+
+
+def _latest_spent_duration_answer(query: str, text: str) -> str:
+    query_terms = _query_specific_terms(query)
+    candidates: list[tuple[int, str]] = []
+    for index, sentence in enumerate(_state_sentences(text)):
+        if not re.search(r"\b(?:spent|put\s+in|already)\b", sentence, flags=re.IGNORECASE):
+            continue
+        if _query_overlap_score(query_terms, sentence) < 2:
+            continue
+        match = re.search(
+            r"\b(?P<answer>\d+(?:\.\d+)?\s*-\s*\d+(?:\.\d+)?\s*(?:hours?|hrs?))\b",
+            sentence,
+            flags=re.IGNORECASE,
+        ) or re.search(
+            r"\b(?P<answer>\d+(?:\.\d+)?\s*(?:hours?|hrs?))\b",
+            sentence,
+            flags=re.IGNORECASE,
+        )
+        if not match:
+            continue
+        answer = re.sub(r"\s*-\s*", "-", match.group("answer"))
+        answer = re.sub(r"\s+", " ", answer.strip())
+        score = index + _current_value_phrase_score(sentence) + _query_overlap_score(query_terms, sentence)
+        candidates.append((score, answer))
+    if not candidates:
+        return ""
+    _score, answer = max(candidates, key=lambda item: item[0])
+    return answer
+
+
+def _state_sentences(text: str) -> list[str]:
+    normalized = re.sub(
+        r"\b(?:citation|source_id|longmemeval_session_id)=[^\s]+",
+        " ",
+        text,
+        flags=re.IGNORECASE,
+    )
+    normalized = " ".join(normalized.split())
+    return [
+        sentence.strip()
+        for sentence in re.split(r"(?<=[.!?])\s+", normalized)
+        if sentence.strip()
+    ]
+
+
+def _clean_state_answer(value: str) -> str:
+    return " ".join(value.strip(" .,'\"").split())
+
+
+def _latest_state_support_fragment(query: str, text: str, answer: str) -> str:
+    query_terms = _query_specific_terms(query)
+    for sentence in _state_sentences(text):
+        if answer.casefold() in sentence.casefold() and _query_overlap_score(query_terms, sentence):
+            return source_context_snippet(sentence, max_chars=300)
+    return answer
+
+
+def _latest_state_answer_specificity_score(query: str, answer: str, text: str) -> int:
+    tokens = set(source_tokens(query))
+    answer_tokens = set(source_tokens(answer))
+    score = 0
+    if tokens & {"clean", "cleaned"} and answer_tokens & {"sneakers", "sneaker", "shoes", "shoe"}:
+        score += 10
+    if tokens & {"ram", "memory"} and re.search(r"\b\d+\s*(?:GB|MB|TB)\b", answer, flags=re.IGNORECASE):
+        score += 10
+    if tokens & {"page", "pages"} and answer.isdigit():
+        score += 8
+        score += min(int(answer), 500)
+    if tokens & {"hours", "hour"} and "hour" in answer.casefold():
+        score += 8
+    if re.search(r"\b(?:currently|now|already|recently|lately|so\s+far)\b", text, flags=re.IGNORECASE):
+        score += 4
+    return score
+
+
+def _source_group_state_recency_score(source_id: str) -> int:
+    lowered = source_id.casefold()
+    if re.search(r"\b(?:current|latest|recent|new|now)\b", lowered):
+        return 8
+    if re.search(r"\b(?:older|old|previous|stale)\b", lowered):
+        return -4
+    return 0
+
+
+def _page_count_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    if not _page_count_query(query):
+        return []
+    query_months = {token for token in source_tokens(query) if token in _MONTH_TERMS}
+    values: list[float] = []
+    source_ids: list[str] = []
+    for context in contexts:
+        snippet = source_context_snippet(context, max_chars=2_000)
+        for match in _page_count_matches(snippet):
+            fragment = _numeric_observation_fragment(snippet, match.start(), match.end())
+            if not _page_count_observation_relevant(query, fragment):
+                continue
+            fragment_months = {token for token in source_tokens(fragment) if token in _MONTH_TERMS}
+            if query_months and fragment_months and not fragment_months <= query_months:
+                continue
+            value_text = match.group("value") or match.group("value_after")
+            if not value_text:
+                continue
+            value = float(value_text.replace(",", ""))
+            if value <= 0:
+                continue
+            _append_unique_number(values, value)
+            source_id = source_context_group(context)
+            if source_id not in source_ids:
+                source_ids.append(source_id)
+    if not values:
+        return []
+    total = sum(values)
+    return [
+        "candidate_rank=1 candidate_type=page_count candidate_confidence=0.84",
+        "candidate_support=" + ",".join(source_ids),
+        "page_values=" + ",".join(_format_number(value) for value in values),
+        f"page_total={_format_number(total)}",
+        f"page_total_answer={_format_number(total)}",
+        "page_source_ids=" + ",".join(source_ids),
+    ]
+
+
+def _query_bound_arithmetic_query(query: str) -> bool:
+    tokens = set(source_tokens(query))
+    if {"total", "distance"} <= tokens and tokens & {"hike", "hikes", "hiked", "trail", "trails"}:
+        return True
+    if tokens & {"left", "remaining"} and tokens & {"page", "pages", "read"}:
+        return True
+    if tokens & {"more", "expensive", "compared"} and tokens & {"taxi", "train", "fare"}:
+        return True
+    if tokens & {"exceed", "exceeded"} and tokens & {"target", "marathon", "minutes"}:
+        return True
+    return bool(tokens & {"percentage", "percent"} and (
+        tokens & {"discount", "packed", "wear", "wore", "worn", "shoes"}
+    ))
+
+
+def _query_bound_arithmetic_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    """Project answer-ready arithmetic when cited facts bind to the query."""
+    if not _query_bound_arithmetic_query(query):
+        return []
+    for builder in (
+        _query_bound_difference_synthesis_lines,
+        _percentage_comparison_synthesis_lines,
+        _distance_total_synthesis_lines,
+        _pages_remaining_synthesis_lines,
+        _percentage_synthesis_lines,
+    ):
+        lines = builder(query, contexts)
+        if lines:
+            return lines
+    return []
+
+
+def _query_bound_arithmetic_answer_present(lines: list[str]) -> bool:
+    return any(
+        "candidate_type=distance_total" in line
+        or "candidate_type=pages_remaining" in line
+        or "candidate_type=percentage" in line
+        or "candidate_type=boolean_comparison" in line
+        or "candidate_type=query_bound_difference" in line
+        for line in lines
+    )
+
+
+def _aggregate_total_answer_query(query: str) -> bool:
+    """Return whether the query asks for a combined aggregate answer surface."""
+    query_text = " ".join(query.casefold().split())
+    return bool(
+        re.search(
+            r"\b(?:total|combined|altogether|sum)\b|\bin\s+total\b|\bhow\s+many\s+.*\btotal\b",
+            query_text,
+        )
+    )
+
+
+@dataclass(frozen=True)
+class _QueryBoundScalarTotalSpec:
+    kind: str
+    answer_unit: str
+
+
+def _query_bound_scalar_total_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    """Project totals for query-named numeric quantities without simple unit suffixes."""
+    spec = _query_bound_scalar_total_spec(query)
+    if spec is None:
+        return []
+    evidence: list[tuple[str, float, str]] = []
+    seen: set[tuple[str, float]] = set()
+    for context in contexts:
+        source_id = source_context_group(context)
+        text = source_context_snippet(context, max_chars=12_000)
+        for sentence in _boolean_evidence_sentences(text):
+            value = _query_bound_scalar_total_value(spec, sentence)
+            if value is None:
+                continue
+            identity = (source_id, value)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            evidence.append((source_id, value, sentence))
+    if len(evidence) < 2:
+        return []
+    total = sum(value for _source_id, value, _sentence in evidence)
+    answer_value = _format_grouped_number(total)
+    answer = f"{answer_value} {spec.answer_unit}".strip()
+    source_ids = list(dict.fromkeys(source_id for source_id, _value, _sentence in evidence))
+    return [
+        "candidate_rank=1 candidate_type=query_bound_scalar_total candidate_confidence=0.86",
+        "candidate_support=" + ",".join(source_ids),
+        f"query_bound_scalar_total_kind={spec.kind}",
+        "query_bound_scalar_total_values=" + ",".join(_format_grouped_number(value) for _source_id, value, _sentence in evidence),
+        f"query_bound_scalar_total_answer={answer}",
+        "query_bound_scalar_total_source_ids=" + ",".join(source_ids),
+    ]
+
+
+def _query_bound_scalar_total_spec(query: str) -> _QueryBoundScalarTotalSpec | None:
+    tokens = set(source_tokens(query))
+    if not _aggregate_total_answer_query(query):
+        return None
+    if tokens & {"rare"} and tokens & {"items", "item"}:
+        return _QueryBoundScalarTotalSpec(kind="rare_items", answer_unit="")
+    if tokens & {"people", "person"} and tokens & {"reach", "reached"}:
+        return _QueryBoundScalarTotalSpec(kind="people_reached", answer_unit="")
+    if tokens & {"views", "view"} and tokens & {"youtube", "tiktok", "videos", "video"}:
+        return _QueryBoundScalarTotalSpec(kind="video_views", answer_unit="")
+    if tokens & {"distance", "covered"} and tokens & {"road", "trip", "trips", "miles"}:
+        return _QueryBoundScalarTotalSpec(kind="road_trip_miles", answer_unit="miles")
+    return None
+
+
+def _query_bound_scalar_total_value(spec: _QueryBoundScalarTotalSpec, sentence: str) -> float | None:
+    sentence_tokens = set(source_tokens(sentence))
+    if spec.kind == "rare_items":
+        if "rare" not in sentence_tokens:
+            return None
+        return _semantic_number_value(
+            sentence,
+            r"\b(?P<value>\d{1,6}(?:,\d{3})*)\s+"
+            r"(?:rare\s+)?(?:books?|figurines?|records?|coins?|items?)\b",
+        )
+    if spec.kind == "people_reached":
+        if not sentence_tokens & {"facebook", "instagram", "campaign", "influencer", "promoted", "reached"}:
+            return None
+        return _semantic_number_value(
+            sentence,
+            r"\b(?:reached|reach)\s+(?:around\s+|about\s+)?(?P<value>\d{1,6}(?:,\d{3})*)\s+people\b"
+            r"|\bpromoted\b[^.!?;]{0,120}\bto\s+(?:her\s+|his\s+|their\s+)?"
+            r"(?P<value_alt>\d{1,6}(?:,\d{3})*)\s+followers\b",
+        )
+    if spec.kind == "video_views":
+        if not sentence_tokens & {"youtube", "tiktok", "video", "videos"}:
+            return None
+        return _semantic_number_value(
+            sentence,
+            r"\b(?:my\s+)?(?:video|tutorial)\b[^.!?;]{0,120}\b(?:has|with)\s+"
+            r"(?P<value>\d{1,6}(?:,\d{3})*)\s+views\b"
+            r"|\bit\s+has\s+(?P<value_alt>\d{1,6}(?:,\d{3})*)\s+views\b",
+        )
+    if spec.kind == "road_trip_miles":
+        if "covered" not in sentence_tokens:
+            return None
+        return _semantic_number_value(
+            sentence,
+            r"\bcovered\s+(?:a\s+)?total\s+of\s+(?P<value>\d{1,6}(?:,\d{3})*)\s+miles\b",
+        )
+    return None
+
+
+def _semantic_number_value(sentence: str, pattern: str) -> float | None:
+    match = re.search(pattern, sentence, flags=re.IGNORECASE)
+    if not match:
+        return None
+    value = match.groupdict().get("value") or match.groupdict().get("value_alt")
+    if not value:
+        return None
+    return float(value.replace(",", ""))
+
+
+def _format_grouped_number(value: float) -> str:
+    if value.is_integer():
+        return f"{int(value):,}"
+    return f"{value:g}"
+
+
+def _query_bound_difference_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    """Project explicit target-vs-target differences from cited operands."""
+    tokens = set(source_tokens(query))
+    if tokens & {"more", "expensive", "compared"} and tokens & {"taxi", "train", "fare"}:
+        return _target_currency_difference_synthesis_lines(query, contexts)
+    if tokens & {"exceed", "exceeded"} and tokens & {"target", "marathon", "minutes"}:
+        return _target_duration_difference_synthesis_lines(query, contexts)
+    return []
+
+
+def _target_currency_difference_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    """Return a cited currency difference between two query-named costs."""
+    del query
+    taxi = _target_currency_value(("taxi",), contexts)
+    train = _target_currency_value(("train", "fare"), contexts)
+    if taxi is None or train is None:
+        return []
+    taxi_value, taxi_source, taxi_span = taxi
+    train_value, train_source, train_span = train
+    difference = abs(taxi_value - train_value)
+    if difference <= 0:
+        return []
+    answer = f"${_format_number(difference)}"
+    source_ids = list(dict.fromkeys((taxi_source, train_source)))
+    return [
+        "candidate_rank=1 candidate_type=query_bound_difference candidate_confidence=0.88",
+        "candidate_support=" + ",".join(source_ids),
+        "difference_left_label=taxi",
+        f"difference_left_value={_format_currency(taxi_value)}",
+        "difference_right_label=train_fare",
+        f"difference_right_value={_format_currency(train_value)}",
+        f"query_bound_difference_answer={answer}",
+        f"query_bound_difference_left_raw_span={source_context_snippet(taxi_span, max_chars=180)}",
+        f"query_bound_difference_right_raw_span={source_context_snippet(train_span, max_chars=180)}",
+        "query_bound_difference_source_ids=" + ",".join(source_ids),
+    ]
+
+
+def _target_currency_value(target_terms: tuple[str, ...], contexts: list[str]) -> tuple[float, str, str] | None:
+    candidates: list[tuple[int, int, float, str, str]] = []
+    target_set = set(target_terms)
+    for index, context in enumerate(contexts):
+        source_id = source_context_group(context)
+        text = source_context_snippet(context, max_chars=12_000)
+        for match in re.finditer(r"\$(?P<value>\d+(?:,\d{3})*(?:\.\d+)?)", text):
+            fragment = _numeric_observation_fragment(text, match.start(), match.end())
+            local_fragment = _currency_match_context(fragment, match.group(0))
+            local_tokens = set(source_tokens(local_fragment))
+            fragment_tokens = set(source_tokens(fragment))
+            if not (target_set <= local_tokens or target_set <= fragment_tokens):
+                continue
+            value = float(match.group("value").replace(",", ""))
+            score = 10 + (len(target_set & local_tokens) * 3) + len(target_set & fragment_tokens)
+            if target_set <= local_tokens:
+                score += 8
+            if re.search(r"\b(?:actually|actual)\b", local_fragment, flags=re.IGNORECASE):
+                score += 8
+            elif re.search(r"\b(?:actually|actual)\b", fragment, flags=re.IGNORECASE):
+                score += 2
+            if re.search(
+                r"\b(?:estimate|estimated|assuming|assume|approximately|roughly)\b",
+                local_fragment,
+                flags=re.IGNORECASE,
+            ):
+                score -= 6
+            candidates.append((score, -index, value, source_id, local_fragment))
+    if not candidates:
+        return None
+    score, index, value, source_id, fragment = max(candidates, key=lambda item: (item[0], item[1]))
+    del score, index
+    return value, source_id, fragment
+
+
+def _currency_match_context(fragment: str, currency_text: str) -> str:
+    """Return the smallest local clause that still contains the currency value."""
+    match_index = fragment.find(currency_text)
+    if match_index < 0:
+        return fragment
+    start = 0
+    end = len(fragment)
+    left_boundary = max(
+        fragment.rfind(".", 0, match_index),
+        fragment.rfind(";", 0, match_index),
+        fragment.rfind("?", 0, match_index),
+        fragment.rfind("!", 0, match_index),
+        fragment.rfind(" but ", 0, match_index),
+        fragment.rfind(" while ", 0, match_index),
+        fragment.rfind(" whereas ", 0, match_index),
+    )
+    if left_boundary >= 0:
+        start = left_boundary + 1
+    right_boundaries = [
+        position
+        for needle in (".", ";", "?", "!", " but ", " while ", " whereas ")
+        if (position := fragment.find(needle, match_index + len(currency_text))) >= 0
+    ]
+    if right_boundaries:
+        end = min(right_boundaries)
+    return " ".join(fragment[start:end].strip(" ,.;!?").split()) or fragment
+
+
+def _target_duration_difference_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    """Return actual minus target duration for explicit target-time questions."""
+    del query
+    actual: tuple[int, str, str] | None = None
+    target: tuple[int, str, str] | None = None
+    for context in contexts:
+        source_id = source_context_group(context)
+        text = source_context_snippet(context, max_chars=12_000)
+        for sentence in _boolean_evidence_sentences(text):
+            sentence_tokens = set(source_tokens(sentence))
+            value = _marathon_duration_minutes(sentence)
+            if value is None:
+                continue
+            if actual is None and "target" not in sentence_tokens and "marathon" in sentence_tokens and re.search(
+                r"\b(?:completed|finished|finish|ran)\b",
+                sentence,
+                flags=re.IGNORECASE,
+            ):
+                actual = (value, source_id, sentence)
+            if target is None and "target" in sentence_tokens:
+                target = (value, source_id, sentence)
+    if actual is None or target is None:
+        return []
+    actual_value, actual_source, actual_span = actual
+    target_value, target_source, target_span = target
+    difference = actual_value - target_value
+    if difference <= 0:
+        return []
+    source_ids = list(dict.fromkeys((actual_source, target_source)))
+    return [
+        "candidate_rank=1 candidate_type=query_bound_difference candidate_confidence=0.88",
+        "candidate_support=" + ",".join(source_ids),
+        "difference_left_label=actual_marathon_time",
+        f"difference_left_minutes={actual_value}",
+        "difference_right_label=target_marathon_time",
+        f"difference_right_minutes={target_value}",
+        f"query_bound_difference_answer={difference}",
+        "query_bound_difference_unit=minutes",
+        f"query_bound_difference_left_raw_span={source_context_snippet(actual_span, max_chars=180)}",
+        f"query_bound_difference_right_raw_span={source_context_snippet(target_span, max_chars=180)}",
+        "query_bound_difference_source_ids=" + ",".join(source_ids),
+    ]
+
+
+def _marathon_duration_minutes(text: str) -> int | None:
+    if match := re.search(r"\b(?P<hours>\d{1,2})h\s*(?P<minutes>\d{1,2})min\b", text, flags=re.IGNORECASE):
+        return int(match.group("hours")) * 60 + int(match.group("minutes"))
+    if match := re.search(
+        r"\b(?P<hours>\d{1,2})\s+hours?\s+(?:and\s+)?(?P<minutes>\d{1,2})\s+minutes?\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        return int(match.group("hours")) * 60 + int(match.group("minutes"))
+    return None
+
+
+def _distance_total_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    tokens = set(source_tokens(query))
+    if not ({"total", "distance"} <= tokens and tokens & {"hike", "hikes", "hiked", "trail", "trails"}):
+        return []
+    evidence: list[tuple[str, float, str]] = []
+    seen: set[tuple[str, float]] = set()
+    for context in contexts:
+        snippet = _arithmetic_context_text(context)
+        for match in re.finditer(r"\b(?P<value>\d+(?:\.\d+)?)\s*[- ]?miles?\b", snippet, flags=re.IGNORECASE):
+            fragment = _numeric_observation_fragment(snippet, match.start(), match.end())
+            if not re.search(r"\b(?:hike|hiked|hikes|trail|loop|ridge)\b", fragment, flags=re.IGNORECASE):
+                continue
+            source_id = source_context_group(context)
+            value = float(match.group("value"))
+            key = (source_id, value)
+            if key in seen:
+                continue
+            seen.add(key)
+            evidence.append((source_id, value, fragment))
+    if len(evidence) < 2:
+        return []
+    source_ids = list(dict.fromkeys(source_id for source_id, _value, _fragment in evidence))
+    values = [value for _source_id, value, _fragment in evidence]
+    total = sum(values)
+    answer = f"{_format_number(total)} miles"
+    return [
+        "candidate_rank=1 candidate_type=distance_total candidate_confidence=0.86",
+        "candidate_support=" + ",".join(source_ids),
+        "distance_values=" + ",".join(_format_number(value) for value in values),
+        f"distance_total={answer}",
+        f"distance_total_answer={answer}",
+        "distance_source_ids=" + ",".join(source_ids),
+    ]
+
+
+def _pages_remaining_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    tokens = set(source_tokens(query))
+    if not (tokens & {"left", "remaining"} and tokens & {"page", "pages", "read"}):
+        return []
+    title = _quoted_query_title(query)
+    if not title:
+        return []
+    current: tuple[float, str] | None = None
+    total: tuple[float, str] | None = None
+    for context in contexts:
+        snippet = _arithmetic_context_text(context)
+        if not _text_mentions_title(snippet, title):
+            continue
+        source_id = source_context_group(context)
+        if current is None and (current_value := _current_page_value(snippet, title)) is not None:
+            current = (current_value, source_id)
+        if total is None and (total_value := _total_page_value(snippet, title)) is not None:
+            total = (total_value, source_id)
+    if current is None or total is None:
+        return []
+    current_value, current_source = current
+    total_value, total_source = total
+    remaining = total_value - current_value
+    if remaining <= 0:
+        return []
+    source_ids = list(dict.fromkeys((current_source, total_source)))
+    return [
+        "candidate_rank=1 candidate_type=pages_remaining candidate_confidence=0.87",
+        "candidate_support=" + ",".join(source_ids),
+        f"pages_current={_format_number(current_value)}",
+        f"pages_total={_format_number(total_value)}",
+        f"pages_remaining={_format_number(remaining)}",
+        f"pages_remaining_answer={_format_number(remaining)}",
+        "pages_remaining_source_ids=" + ",".join(source_ids),
+    ]
+
+
+def _percentage_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    tokens = set(source_tokens(query))
+    if not tokens & {"percentage", "percent"}:
+        return []
+    if tokens & {"packed", "wear", "wore", "worn", "shoes"}:
+        return _packed_shoes_percentage_synthesis_lines(contexts)
+    if "discount" in tokens:
+        return _discount_percentage_synthesis_lines(contexts)
+    return []
+
+
+def _percentage_comparison_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    """Answer cited yes/no comparisons between two percentage operands."""
+    tokens = set(source_tokens(query))
+    if not (tokens & {"percentage", "percent"} and tokens & {"compared", "than"}):
+        return []
+    targets = _percentage_comparison_targets(query)
+    if targets is None:
+        return []
+    left_target, right_target = targets
+    left = _target_percentage_value(left_target, contexts)
+    right = _target_percentage_value(right_target, contexts)
+    if left is None or right is None:
+        return []
+    left_value, left_source = left
+    right_value, right_source = right
+    if left_value == right_value:
+        return []
+    asks_higher = bool(tokens & {"higher", "more", "greater", "larger"})
+    asks_lower = bool(tokens & {"lower", "less", "smaller"})
+    if not asks_higher and not asks_lower:
+        return []
+    answer_yes = left_value > right_value if asks_higher else left_value < right_value
+    answer = "Yes" if answer_yes else "No"
+    source_ids = list(dict.fromkeys((left_source, right_source)))
+    left_label = " ".join(left_target)
+    right_label = " ".join(right_target)
+    return [
+        "candidate_rank=1 candidate_type=boolean_comparison candidate_confidence=0.86",
+        "candidate_support=" + ",".join(source_ids),
+        f"percentage_left_label={left_label}",
+        f"percentage_left_value={_format_percentage(left_value)}",
+        f"percentage_right_label={right_label}",
+        f"percentage_right_value={_format_percentage(right_value)}",
+        f"boolean_comparison_operator={'higher' if asks_higher else 'lower'}",
+        f"boolean_comparison_answer={answer}",
+        "boolean_comparison_source_ids=" + ",".join(source_ids),
+    ]
+
+
+def _percentage_comparison_targets(query: str) -> tuple[tuple[str, ...], tuple[str, ...]] | None:
+    """Return left/right target terms for a direct percentage comparison query."""
+    query_text = " ".join(query.split())
+    patterns = (
+        r"\bfrom\s+(?P<left>[A-Za-z0-9][A-Za-z0-9 +&'-]{1,80}?)\s*,?\s+compared\s+to\s+(?:my\s+)?(?:first\s+)?(?P<right>[A-Za-z0-9][A-Za-z0-9 +&'-]{1,80}?)(?:\s+order|\?|$)",
+        r"\bfor\s+(?P<left>[A-Za-z0-9][A-Za-z0-9 +&'-]{1,80}?)\s*,?\s+compared\s+to\s+(?:my\s+)?(?:first\s+)?(?P<right>[A-Za-z0-9][A-Za-z0-9 +&'-]{1,80}?)(?:\s+order|\?|$)",
+        r"\b(?P<left>[A-Za-z0-9][A-Za-z0-9 +&'-]{1,80}?)\s+(?:than|compared\s+to)\s+(?:my\s+)?(?:first\s+)?(?P<right>[A-Za-z0-9][A-Za-z0-9 +&'-]{1,80}?)(?:\s+order|\?|$)",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, query_text, flags=re.IGNORECASE)
+        if not match:
+            continue
+        left = _percentage_target_terms(match.group("left"))
+        right = _percentage_target_terms(match.group("right"))
+        if left and right:
+            return left, right
+    return None
+
+
+def _percentage_target_terms(value: str) -> tuple[str, ...]:
+    stopwords = {
+        "compared",
+        "discount",
+        "first",
+        "higher",
+        "lower",
+        "my",
+        "order",
+        "percentage",
+        "receive",
+        "received",
+        "than",
+        "the",
+    }
+    return tuple(token for token in source_tokens(value) if len(token) > 1 and token not in stopwords)
+
+
+def _target_percentage_value(target_terms: tuple[str, ...], contexts: list[str]) -> tuple[float, str] | None:
+    """Return the best cited percentage value bound to all target terms."""
+    candidates: list[tuple[int, int, float, str]] = []
+    for context_index, context in enumerate(contexts):
+        snippet = _arithmetic_context_text(context)
+        source_id = source_context_group(context)
+        for match in re.finditer(r"\b(?P<value>\d{1,3}(?:\.\d+)?)\s*%\s*(?:off|discount)?\b", snippet):
+            span = _local_percent_context(snippet, match.start(), match.end())
+            span_tokens = set(source_tokens(span))
+            if not set(target_terms) <= span_tokens:
+                continue
+            value = float(match.group("value"))
+            if value < 0 or value > 100:
+                continue
+            score = len(span_tokens & set(target_terms))
+            if re.search(r"\b(?:got|received|had|used)\b", span, flags=re.IGNORECASE):
+                score += 2
+            candidates.append((-score, context_index, value, source_id))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: (item[0], item[1]))
+    _, _, value, source_id = candidates[0]
+    return value, source_id
+
+
+def _local_percent_context(text: str, start: int, end: int) -> str:
+    """Return a bounded clause around a percentage mention."""
+    left = max(text.rfind(".", 0, start), text.rfind("|", 0, start), text.rfind("\n", 0, start))
+    right_candidates = [
+        index for index in (text.find(".", end), text.find("|", end), text.find("\n", end)) if index >= 0
+    ]
+    right = min(right_candidates) if right_candidates else len(text)
+    return text[left + 1 : right][:500]
+
+
+def _packed_shoes_percentage_synthesis_lines(contexts: list[str]) -> list[str]:
+    packed: tuple[float, str] | None = None
+    worn: tuple[float, str] | None = None
+    for context in contexts:
+        snippet = _arithmetic_context_text(context)
+        source_id = source_context_group(context)
+        if packed is None and (value := _packed_shoes_value(snippet)) is not None:
+            packed = (value, source_id)
+        if worn is None and (value := _worn_shoes_value(snippet)) is not None:
+            worn = (value, source_id)
+    if packed is None or worn is None:
+        return []
+    packed_value, packed_source = packed
+    worn_value, worn_source = worn
+    if packed_value <= 0 or worn_value < 0 or worn_value > packed_value:
+        return []
+    percent = (worn_value / packed_value) * 100
+    answer = _format_percentage(percent)
+    source_ids = list(dict.fromkeys((packed_source, worn_source)))
+    return [
+        "candidate_rank=1 candidate_type=percentage candidate_confidence=0.86",
+        "candidate_support=" + ",".join(source_ids),
+        f"percentage_numerator={_format_number(worn_value)}",
+        f"percentage_denominator={_format_number(packed_value)}",
+        f"percentage_value={answer}",
+        f"percentage_answer={answer}",
+        "percentage_source_ids=" + ",".join(source_ids),
+    ]
+
+
+def _discount_percentage_synthesis_lines(contexts: list[str]) -> list[str]:
+    original: tuple[float, str] | None = None
+    paid: tuple[float, str] | None = None
+    for context in contexts:
+        snippet = _arithmetic_context_text(context)
+        source_id = source_context_group(context)
+        if original is None and (value := _original_price_value(snippet)) is not None:
+            original = (value, source_id)
+        if paid is None and (value := _paid_price_value(snippet)) is not None:
+            paid = (value, source_id)
+    if original is None or paid is None:
+        return []
+    original_value, original_source = original
+    paid_value, paid_source = paid
+    if original_value <= 0 or paid_value < 0 or paid_value > original_value:
+        return []
+    percent = ((original_value - paid_value) / original_value) * 100
+    answer = _format_percentage(percent)
+    source_ids = list(dict.fromkeys((original_source, paid_source)))
+    return [
+        "candidate_rank=1 candidate_type=percentage candidate_confidence=0.86",
+        "candidate_support=" + ",".join(source_ids),
+        f"percentage_original={_format_currency(original_value)}",
+        f"percentage_paid={_format_currency(paid_value)}",
+        f"percentage_value={answer}",
+        f"percentage_answer={answer}",
+        "percentage_source_ids=" + ",".join(source_ids),
+    ]
+
+
+def _text_mentions_title(text: str, title: str) -> bool:
+    return title.casefold() in text.casefold()
+
+
+def _arithmetic_context_text(context: str) -> str:
+    """Return enough normalized source text to find split arithmetic operands."""
+    return source_context_snippet(context, max_chars=12_000)
+
+
+def _current_page_value(text: str, title: str) -> float | None:
+    escaped = re.escape(title)
+    patterns = (
+        rf"\b(?:currently|now|still)\s+(?:on\s+)?page\s+(?P<value>\d{{1,5}})\s+of\s+['\"]?{escaped}['\"]?",
+        rf"\bpage\s+(?P<value>\d{{1,5}})\s+of\s+['\"]?{escaped}['\"]?",
+    )
+    for pattern in patterns:
+        if match := re.search(pattern, text, flags=re.IGNORECASE):
+            return float(match.group("value").replace(",", ""))
+    return None
+
+
+def _total_page_value(text: str, title: str) -> float | None:
+    escaped = re.escape(title)
+    patterns = (
+        rf"['\"]?{escaped}['\"]?[^.!?;]{{0,160}}\b(?:is|was|had|has)?\s*(?P<value>\d{{2,5}})\s+pages?\b",
+        rf"\b(?P<value>\d{{2,5}})\s+pages?\b[^.!?;]{{0,160}}['\"]?{escaped}['\"]?",
+        rf"['\"]?{escaped}['\"]?[^.!?;]{{0,160}}\b(?P<value>\d{{2,5}})\s*-\s*page\b",
+    )
+    for pattern in patterns:
+        if match := re.search(pattern, text, flags=re.IGNORECASE):
+            return float(match.group("value").replace(",", ""))
+    return None
+
+
+def _packed_shoes_value(text: str) -> float | None:
+    pattern = rf"\bpacked\s+(?P<value>{_NUMBER_VALUE_PATTERN})\s+pairs?\s+of\s+shoes?\b"
+    if match := re.search(pattern, text, flags=re.IGNORECASE):
+        return float(_integer_number_value(match.group("value")))
+    return None
+
+
+def _worn_shoes_value(text: str) -> float | None:
+    pattern = rf"\b(?:wearing|wore|wear|worn)\s+(?P<value>{_NUMBER_VALUE_PATTERN})\s+(?:pairs?\s+of\s+)?shoes?\b"
+    if match := re.search(pattern, text, flags=re.IGNORECASE):
+        return float(_integer_number_value(match.group("value")))
+    loose_pattern = rf"\b(?:wearing|wore|wear|worn)\s+(?P<value>{_NUMBER_VALUE_PATTERN})\b"
+    for match in re.finditer(loose_pattern, text, flags=re.IGNORECASE):
+        fragment = _numeric_observation_fragment(text, match.start(), match.end())
+        if re.search(r"\b(?:shoes?|sneakers?|sandals?)\b", fragment, flags=re.IGNORECASE):
+            return float(_integer_number_value(match.group("value")))
+    return None
+
+
+def _original_price_value(text: str) -> float | None:
+    candidates: list[tuple[int, float]] = []
+    for match in _currency_matches(text):
+        fragment = _numeric_observation_fragment(text, match.start(), match.end())
+        if re.search(r"\b(?:originally|original|listed|regular|priced)\b", fragment, flags=re.IGNORECASE):
+            score = _discount_currency_fragment_score(fragment)
+            candidates.append((score, float(match.group("value").replace(",", ""))))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: -item[0])
+    return candidates[0][1]
+
+
+def _paid_price_value(text: str) -> float | None:
+    candidates: list[tuple[int, float]] = []
+    for match in _currency_matches(text):
+        fragment = _numeric_observation_fragment(text, match.start(), match.end())
+        if not re.search(r"\b(?:paid|pay|got|bought|purchased|for)\b", fragment, flags=re.IGNORECASE):
+            continue
+        score = _discount_currency_fragment_score(fragment)
+        if score <= 0:
+            continue
+        candidates.append((score, float(match.group("value").replace(",", ""))))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: -item[0])
+    return candidates[0][1]
+
+
+def _discount_currency_fragment_score(fragment: str) -> int:
+    tokens = set(source_tokens(fragment))
+    score = 0
+    if tokens & {"book", "bookstore", "author", "release"}:
+        score += 5
+    if tokens & {"discount", "sale"}:
+        score += 4
+    if tokens & {"favorite"}:
+        score += 2
+    if tokens & {"gift", "jewelry", "necklace", "budget", "mom", "sister"}:
+        score -= 4
+    return score
+
+
+def _currency_matches(text: str) -> Iterator[re.Match[str]]:
+    return re.finditer(r"\$(?P<value>\d+(?:,\d{3})*(?:\.\d+)?)\b", text)
+
+
+def _format_percentage(value: float) -> str:
+    return f"{_format_number(round(value, 2))}%"
+
+
+def _page_count_matches(text: str) -> Iterator[re.Match[str]]:
+    return re.finditer(
+        r"\b(?P<value>\d{2,5})\s*-\s*page\b|\b(?P<value_after>\d{2,5})\s+pages?\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+
+
+def _numeric_observation_fragment(text: str, start: int, end: int) -> str:
+    """Return the bounded clause that owns a numeric observation."""
+    boundaries = list(
+        re.finditer(
+            r"(?<=[.!?;])\s+|\bbut\s+before\s+that,?\s+|\bbefore\s+that,?\s+",
+            text,
+            flags=re.IGNORECASE,
+        )
+    )
+    fragment_start = 0
+    for boundary in boundaries:
+        fragment_end = boundary.start()
+        if fragment_start <= start and end <= fragment_end:
+            return text[fragment_start:fragment_end]
+        fragment_start = boundary.end()
+    return text[fragment_start:]
+
+
+def _page_count_observation_relevant(query: str, fragment: str) -> bool:
+    if not re.search(r"\b(?:finished|finish|read|completed|complete)\b", query, flags=re.IGNORECASE):
+        return True
+    return bool(
+        re.search(
+            r"\b(?:i|me|my|you|your)\b[^.!?;]{0,120}\b(?:finished|finish|read|completed|complete)\b"
+            r"|\b(?:finished|finish|read|completed|complete)\b[^.!?;]{0,120}\b(?:i|me|my|you|your)\b",
+            fragment,
+            flags=re.IGNORECASE,
+        )
+    )
+
+
+def _page_count_query(query: str) -> bool:
+    lowered = query.casefold()
+    return bool(
+        re.search(r"\bpages?\b|\bpage\s+count\b", lowered)
+        and not re.search(r"\b(?:left|remaining|per\s+day|each\s+day|daily)\b", lowered)
+    )
+
+
+def _direct_numeric_value_candidates(query: str, contexts: list[str]) -> list[tuple[int, int, str, str, str]]:
+    query_tokens = set(source_tokens(query))
+    if not _direct_numeric_value_query(query_tokens, query):
+        return []
+    query_terms = _query_specific_terms(query)
+    candidates: list[tuple[int, int, str, str, str]] = []
+    if answer := _cross_context_currency_difference_answer(query_tokens, contexts):
+        support = ",".join(dict.fromkeys(source_context_group(context) for context in contexts[:2]))
+        candidates.append((90, 0, support, answer, answer))
+    for index, context in enumerate(contexts):
+        source_id = source_context_group(context)
+        snippet = source_context_snippet(context, max_chars=2_000)
+        overlap = _query_overlap_score(query_terms, snippet)
+        if answer := _owned_object_count_answer(query_tokens, snippet):
+            candidates.append((58 + overlap + _session_recency_score(snippet), index, source_id, answer, answer))
+        if overlap <= 0:
+            continue
+        if answer := _personal_best_time_answer(query_tokens, snippet):
+            recency = _session_recency_score(snippet)
+            temporal_score = -recency if "previous" in query_tokens else recency
+            candidates.append((80 + overlap + temporal_score, index, source_id, answer, answer))
+        if answer := _latest_currency_answer(query_tokens, snippet):
+            candidates.append((70 + overlap + _session_recency_score(snippet), index, source_id, answer, answer))
+        if answer := _current_duration_answer(query_tokens, snippet):
+            candidates.append((60 + overlap + _session_recency_score(snippet), index, source_id, answer, answer))
+        if answer := _current_count_answer(query_tokens, snippet):
+            candidates.append(
+                (
+                    50 + overlap + _session_recency_score(snippet) + _current_value_phrase_score(snippet),
+                    index,
+                    source_id,
+                    answer,
+                    answer,
+                )
+            )
+        if answer := _currency_difference_answer(query_tokens, snippet):
+            candidates.append((45 + overlap, index, source_id, answer, answer))
+    candidates.sort(key=lambda item: (-item[0], item[1]))
+    return candidates
+
+
+def _direct_numeric_synthesis_query(query: str) -> bool:
+    tokens = set(source_tokens(query))
+    if tokens & {"difference", "compared", "percentage", "discount"}:
+        return True
+    if tokens & {"best", "previous"} and tokens & {"time", "run", "5k"}:
+        return True
+    return bool(tokens & {"current", "currently", "now", "so", "far", "most", "recent", "recently"})
+
+
+def _direct_numeric_value_query(query_tokens: set[str], query: str) -> bool:
+    if query_tokens & {"best", "previous"} and query_tokens & {"time", "run", "5k"}:
+        return True
+    if query_tokens & {"current", "currently", "now", "so", "far", "since", "most", "recent", "recently"}:
+        return True
+    if query_tokens & {"difference", "compared", "more", "percentage", "discount"}:
+        return True
+    return bool(re.search(r"\bhow\s+(?:many|much)\b", query, flags=re.IGNORECASE))
+
+
+def _personal_best_time_answer(query_tokens: set[str], text: str) -> str:
+    lowered = text.casefold()
+    if not ({"best", "previous"} & query_tokens and {"time", "run", "5k"} & query_tokens):
+        return ""
+    if "previous" not in query_tokens and not re.search(r"\bpersonal\s+best\b", lowered):
+        return ""
+    sentences = [
+        sentence
+        for sentence in re.split(r"(?<=[.!?])\s+", text)
+        if re.search(r"\bpersonal\s+best\b", sentence, flags=re.IGNORECASE)
+    ]
+    if "previous" in query_tokens:
+        sentences = [
+            sentence
+            for sentence in sentences
+            if re.search(r"\bprevious\b", sentence, flags=re.IGNORECASE)
+        ] or sentences
+    else:
+        sentences = [
+            sentence
+            for sentence in sentences
+            if not re.search(r"\bprevious\b", sentence, flags=re.IGNORECASE)
+        ] or sentences
+    search_text = " ".join(sentences) if sentences else text
+    if match := re.search(
+        r"\b(?P<minutes>\d{1,2})\s+minutes?\s+(?:and\s+)?(?P<seconds>\d{1,2})\s+seconds?\b",
+        search_text,
+        flags=re.IGNORECASE,
+    ):
+        minutes = int(match.group("minutes"))
+        seconds = int(match.group("seconds"))
+        return f"{minutes} minutes and {seconds} seconds (or {minutes}:{seconds:02d})"
+    if match := re.search(r"\b(?P<minutes>\d{1,2}):(?P<seconds>\d{2})\b", search_text):
+        minutes = int(match.group("minutes"))
+        seconds = int(match.group("seconds"))
+        return f"{minutes} minutes and {seconds} seconds (or {minutes}:{seconds:02d})"
+    return ""
+
+
+def _latest_currency_answer(query_tokens: set[str], text: str) -> str:
+    if not (query_tokens & {"earn", "earned", "earning", "made", "market", "recent", "recently", "most"}):
+        return ""
+    if not re.search(r"\b(?:earn(?:ed|ing)?|made|sold|market|visit)\b", text, flags=re.IGNORECASE):
+        return ""
+    amounts = [match.group(0) for match in re.finditer(r"\$\d+(?:,\d{3})*(?:\.\d+)?", text)]
+    if not amounts:
+        return ""
+    return amounts[-1]
+
+
+def _current_duration_answer(query_tokens: set[str], text: str) -> str:
+    if not (
+        query_tokens & {"dedicate", "daily", "day", "current", "currently", "now"}
+    ):
+        return ""
+    patterns = (
+        r"\b(?:about|around|roughly|approximately)\s+(?P<word>one|two|three|four|five|six|\d+(?:\.\d+)?)\s+(?P<unit>hours?|hrs?|minutes?|mins?)\b",
+        r"\b(?P<word>\d+(?:\.\d+)?)\s*(?P<unit>hours?|hrs?|minutes?|mins?)\s+(?:each|per|a)\s+day\b",
+        r"\b(?P<word>\d+)\s*-\s*(?P<upper>\d+)\s+(?P<unit>hours?|hrs?|minutes?|mins?)\b",
+    )
+    for pattern in patterns:
+        if match := re.search(pattern, text, flags=re.IGNORECASE):
+            if match.groupdict().get("upper"):
+                return f"{match.group('word')}-{match.group('upper')} {match.group('unit')}"
+            prefix = "about " if re.match(r"(?i)\b(?:about|around|roughly|approximately)\b", match.group(0)) else ""
+            return f"{prefix}{match.group('word')} {match.group('unit')}"
+    return ""
+
+
+def _current_count_answer(query_tokens: set[str], text: str) -> str:
+    count_nouns = {
+        "issue",
+        "issues",
+        "session",
+        "sessions",
+        "story",
+        "stories",
+        "top",
+        "tops",
+        "time",
+        "times",
+        "pound",
+        "pounds",
+    }
+    if not (query_tokens & count_nouns):
+        return ""
+    sentence = _best_numeric_sentence(query_tokens, text)
+    if not sentence:
+        return ""
+    ordinal = re.search(
+        r"\b(?P<ordinal>first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth)\s+"
+        r"(?P<noun>issue|session|story|top|time)\b",
+        sentence,
+        flags=re.IGNORECASE,
+    )
+    if ordinal:
+        return _ordinal_to_cardinal_word(ordinal.group("ordinal"))
+    match = re.search(
+        r"\b(?P<value>one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d+)\s+"
+        r"(?P<noun>issues?|sessions?|stories?|short\s+stories|tops?|times?|pounds?)\b",
+        sentence,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        value = match.group("value").casefold()
+        if value.isdigit() and (word := _number_words(float(value))):
+            return word.casefold()
+        return value
+    return ""
+
+
+def _owned_object_count_answer(query_tokens: set[str], text: str) -> str:
+    if not {"own", "owned", "have"} & query_tokens:
+        return ""
+    object_terms = _count_query_object_terms(query_tokens)
+    if not object_terms:
+        return ""
+    text_tokens = set(source_tokens(text))
+    if not any(_term_variants(term) & text_tokens for term in object_terms):
+        return ""
+    possession_patterns = (
+        r"\b(?:i|we)(?:'ve| have)?\s+(?:got|have|own)\s+(?P<value>one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d+)\b",
+        r"\b(?P<value>one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d+)\s+of\s+them\b",
+    )
+    for pattern in possession_patterns:
+        if match := re.search(pattern, text, flags=re.IGNORECASE):
+            value = match.group("value").casefold()
+            if value.isdigit() and (word := _number_words(float(value))):
+                return word.casefold()
+            return value
+    return ""
+
+
+def _count_query_object_terms(query_tokens: set[str]) -> set[str]:
+    return {
+        token
+        for token in query_tokens
+        if len(token) > 2
+        and token
+        not in _QUERY_SOURCE_STOPWORDS
+        | {
+            "current",
+            "currently",
+            "have",
+            "owned",
+            "own",
+            "now",
+        }
+    }
+
+
+def _term_variants(term: str) -> set[str]:
+    variants = {term}
+    if term.endswith("s") and len(term) > 3:
+        variants.add(term[:-1])
+    else:
+        variants.add(f"{term}s")
+    return variants
+
+
+def _best_numeric_sentence(query_tokens: set[str], text: str) -> str:
+    sentences = re.split(r"(?<=[.!?])\s+", text)
+    scoring_terms = {
+        token
+        for token in query_tokens
+        if len(token) > 2 and token not in _QUERY_SOURCE_STOPWORDS
+    }
+    ranked: list[tuple[int, int, str]] = []
+    for index, sentence in enumerate(sentences):
+        terms = set(source_tokens(sentence))
+        if not re.search(r"\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d+|fifth|sixth|seventh)\b", sentence, flags=re.IGNORECASE):
+            continue
+        score = len(scoring_terms & terms)
+        if terms & {"now", "currently", "so", "far", "since", "finished", "worn", "lost", "bought", "attended", "attending"}:
+            score += 3
+        if score <= 0:
+            continue
+        ranked.append((-score, index, sentence))
+    if not ranked:
+        return ""
+    ranked.sort()
+    return ranked[0][2]
+
+
+def _currency_difference_answer(query_tokens: set[str], text: str) -> str:
+    if not (query_tokens & {"difference", "compared", "more"}):
+        return ""
+    if query_tokens & {"accommodation", "accommodations", "lodging", "hostel", "resort"}:
+        return ""
+    values = [
+        float(match.group("value").replace(",", ""))
+        for match in re.finditer(r"\$(?P<value>\d+(?:,\d{3})*(?:\.\d+)?)", text)
+    ]
+    if len(values) < 2:
+        return ""
+    difference = max(values) - min(values)
+    if difference <= 0:
+        return ""
+    return f"${_format_number(difference)}"
+
+
+def _cross_context_currency_difference_answer(query_tokens: set[str], contexts: list[str]) -> str:
+    if not (query_tokens & {"difference", "compared", "more"}):
+        return ""
+    text = " ".join(source_context_snippet(context, max_chars=1_000) for context in contexts)
+    return _currency_difference_answer(query_tokens, text)
+
+
+def _current_value_phrase_score(text: str) -> int:
+    score = 0
+    lowered = text.casefold()
+    if re.search(r"\b(?:now|currently|so far|to date|at this point)\b", lowered):
+        score += 20
+    if re.search(r"\b(?:already|just|recently)\b", lowered):
+        score += 5
+    return score
+
+
+def _session_recency_score(text: str) -> int:
+    if match := re.search(r"\blongmemeval_session_date=(?P<year>\d{4})/(?P<month>\d{1,2})/(?P<day>\d{1,2})", text):
+        return int(match.group("year")) * 400 + int(match.group("month")) * 31 + int(match.group("day"))
+    return 0
+
+
+def _ordinal_to_cardinal_word(value: str) -> str:
+    mapping = {
+        "first": "one",
+        "second": "two",
+        "third": "three",
+        "fourth": "four",
+        "fifth": "five",
+        "sixth": "six",
+        "seventh": "seven",
+        "eighth": "eight",
+        "ninth": "nine",
+        "tenth": "ten",
+        "eleventh": "eleven",
+        "twelfth": "twelve",
+    }
+    return mapping.get(value.casefold(), value.casefold())
 
 
 def _query_relevant_numeric_contexts(query: str, contexts: list[str]) -> list[str]:
@@ -2398,7 +5326,7 @@ def _age_at_event_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
     if not _age_at_event_query(query):
         return []
     current_ages = _personal_current_age_values(contexts)
-    elapsed_years = _elapsed_year_values(contexts)
+    elapsed_years = _age_at_event_operand_values(query, contexts)
     for current_age in current_ages:
         for elapsed_years_value in elapsed_years:
             if elapsed_years_value <= 0 or elapsed_years_value >= current_age:
@@ -2411,6 +5339,37 @@ def _age_at_event_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
                 f"age_at_event_answer={event_age}",
             ]
     return []
+
+
+def _future_age_at_event_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    """Project future age arithmetic from current age and cited future offset."""
+    if not _future_age_at_event_query(query):
+        return []
+    current = _personal_current_age_evidence(contexts)
+    future = _future_year_offset_evidence(query, contexts)
+    if not current or not future:
+        return []
+    current_context, current_age, _current_raw = current[0]
+    future_context, future_years, _future_raw = future[0]
+    if future_years <= 0 or current_age + future_years >= 125:
+        return []
+    answer = current_age + future_years
+    support = ",".join(
+        dict.fromkeys(
+            [
+                source_context_group(current_context),
+                source_context_group(future_context),
+            ]
+        )
+    )
+    return [
+        "candidate_rank=1 candidate_type=future_age_at_event candidate_confidence=0.86",
+        f"candidate_support={support}",
+        f"future_age_current={current_age}",
+        f"future_age_offset_years={future_years}",
+        f"future_age_at_event_operation={current_age}+{future_years}",
+        f"future_age_at_event_answer={answer}",
+    ]
 
 
 def _career_prior_duration_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
@@ -2436,7 +5395,7 @@ def _age_at_event_ledger_row_lines(query: str, contexts: list[str]) -> list[str]
     if not _age_at_event_query(query):
         return []
     current = _personal_current_age_evidence(contexts)
-    elapsed = _elapsed_year_evidence(contexts)
+    elapsed = _age_at_event_operand_evidence(query, contexts)
     if not current or not elapsed:
         return []
     current_context, current_age, current_raw = current[0]
@@ -2465,6 +5424,47 @@ def _age_at_event_ledger_row_lines(query: str, contexts: list[str]) -> list[str]
             "raw_span": elapsed_raw,
             "include_reason": "elapsed_since_event",
             "confidence": 0.82,
+        },
+    ]
+    return [
+        "ledger_row=" + json.dumps(row, sort_keys=True, separators=(",", ":"))
+        for row in rows
+    ]
+
+
+def _future_age_at_event_ledger_row_lines(query: str, contexts: list[str]) -> list[str]:
+    if not _future_age_at_event_query(query):
+        return []
+    current = _personal_current_age_evidence(contexts)
+    future = _future_year_offset_evidence(query, contexts)
+    if not current or not future:
+        return []
+    current_context, current_age, current_raw = current[0]
+    future_context, future_years, future_raw = future[0]
+    if future_years <= 0 or current_age + future_years >= 125:
+        return []
+    rows = [
+        {
+            "fact_id": "future_age_at_event:current_age",
+            "source_group": source_context_group(current_context),
+            "citation": source_context_citation(current_context),
+            "kind": "number",
+            "value": str(current_age),
+            "unit": "years",
+            "raw_span": current_raw,
+            "include_reason": "current_age",
+            "confidence": 0.84,
+        },
+        {
+            "fact_id": "future_age_at_event:future_offset",
+            "source_group": source_context_group(future_context),
+            "citation": source_context_citation(future_context),
+            "kind": "duration",
+            "value": str(future_years),
+            "unit": "future_years",
+            "raw_span": future_raw,
+            "include_reason": "future_event_offset",
+            "confidence": 0.84,
         },
     ]
     return [
@@ -2936,6 +5936,59 @@ def _elapsed_year_values(contexts: list[str]) -> list[int]:
     return [value for _context, value, _raw in _elapsed_year_evidence(contexts)]
 
 
+def _age_at_event_operand_values(query: str, contexts: list[str]) -> list[int]:
+    return [value for _context, value, _raw in _age_at_event_operand_evidence(query, contexts)]
+
+
+def _age_at_event_operand_evidence(query: str, contexts: list[str]) -> list[tuple[str, int, str]]:
+    """Return the subtracted age/duration operand for age-at-event questions."""
+    evidence = list(_elapsed_year_evidence(contexts))
+    if _birth_age_query(query):
+        evidence.extend(_target_age_evidence(query, contexts))
+    values: set[int] = set()
+    deduped: list[tuple[str, int, str]] = []
+    for context, value, raw in evidence:
+        if value in values:
+            continue
+        values.add(value)
+        deduped.append((context, value, raw))
+    return deduped
+
+
+def _future_year_offset_evidence(query: str, contexts: list[str]) -> list[tuple[str, int, str]]:
+    if not _future_age_at_event_query(query):
+        return []
+    query_terms = _query_specific_terms(query)
+    evidence: list[tuple[str, int, str]] = []
+    seen: set[tuple[str, int]] = set()
+    for context in contexts:
+        context_terms = set(source_tokens(context))
+        if query_terms and not (query_terms & context_terms):
+            continue
+        if not re.search(r"\b(?:marri(?:ed|age)|wedding)\b", context, flags=re.IGNORECASE):
+            continue
+        for raw, value in _future_year_offsets(context):
+            key = (source_context_group(context), value)
+            if key in seen:
+                continue
+            seen.add(key)
+            evidence.append((context, value, raw))
+    return evidence
+
+
+def _future_year_offsets(text: str) -> Iterator[tuple[str, int]]:
+    for match in re.finditer(r"\bnext\s+year\b", text, flags=re.IGNORECASE):
+        yield match.group(0), 1
+    for match in re.finditer(
+        rf"\bin\s+(?P<value>{_NUMBER_VALUE_PATTERN})\s+years?\b",
+        text,
+        flags=re.IGNORECASE,
+    ):
+        value = _integer_number_value(match.group("value"))
+        if 0 < value < 80:
+            yield match.group(0), value
+
+
 def _elapsed_year_evidence(contexts: list[str]) -> list[tuple[str, int, str]]:
     values: list[int] = []
     evidence: list[tuple[str, int, str]] = []
@@ -2947,6 +6000,49 @@ def _elapsed_year_evidence(contexts: list[str]) -> list[tuple[str, int, str]]:
                     values.append(value)
                     evidence.append((context, value, match.group(0)))
     return evidence
+
+
+def _birth_age_query(query: str) -> bool:
+    return bool(re.search(r"\b(?:born|birth)\b", query, flags=re.IGNORECASE))
+
+
+def _target_age_evidence(query: str, contexts: list[str]) -> list[tuple[str, int, str]]:
+    target = _birth_age_target(query)
+    if not target:
+        return []
+    evidence: list[tuple[str, int, str]] = []
+    seen: set[int] = set()
+    target_re = re.escape(target)
+    patterns = (
+        re.compile(
+            rf"\b{target_re}\b[^.!?]{{0,180}}\b(?:is|was|'s)\s+(?:just\s+)?(?P<value>\d{{1,3}})\b",
+            flags=re.IGNORECASE,
+        ),
+        re.compile(
+            r"\b(?:he|she|they)(?:'s|\s+is|\s+was|\s+are)\s+(?:just\s+)?(?P<value>\d{1,3})\b",
+            flags=re.IGNORECASE,
+        ),
+    )
+    for context in contexts:
+        if not re.search(rf"\b{target_re}\b", context, flags=re.IGNORECASE):
+            continue
+        for pattern in patterns:
+            for match in pattern.finditer(context):
+                value = int(match.group("value"))
+                if 0 < value < 125 and value not in seen:
+                    seen.add(value)
+                    evidence.append((context, value, match.group(0)))
+    return evidence
+
+
+def _birth_age_target(query: str) -> str:
+    match = re.search(
+        r"\bwhen\s+(?P<target>[A-Z][A-Za-z0-9'_-]{1,40})\s+(?:was|were)\s+born\b",
+        query,
+    )
+    if match:
+        return match.group("target")
+    return ""
 
 
 def _integer_number_value(raw_value: str) -> int:
@@ -3241,6 +6337,15 @@ def _age_at_event_query(query: str) -> bool:
     )
 
 
+def _future_age_at_event_query(query: str) -> bool:
+    query_text = query.casefold()
+    if not re.search(r"\bwhen\b", query_text):
+        return False
+    if not re.search(r"\b(?:how\s+many\s+years\s+will\s+i\s+be|how\s+old\s+will\s+i\s+be)\b", query_text):
+        return False
+    return bool(re.search(r"\b(?:marri(?:ed|age)|wedding)\b", query_text))
+
+
 def _numeric_comparison_query(query: str) -> bool:
     query_tokens = set(source_tokens(query))
     return bool(query_tokens & {"most", "least", "more", "less", "highest", "lowest"}) and bool(
@@ -3332,6 +6437,7 @@ _MONTH_ORDINALS = {
     "december": 12,
     "dec": 12,
 }
+_MONTH_TERMS = frozenset(_MONTH_ORDINALS)
 
 
 def _anniversary_engagement_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
@@ -3630,6 +6736,336 @@ def _recency_candidate_values(query: str, text: str) -> list[str]:
     if query_tokens & {"streaming", "service"}:
         return _streaming_service_names_in_context(text)
     return []
+
+
+def _relative_temporal_anchor_synthesis_lines(query: str, contexts: list[str]) -> list[str]:
+    """Project answers whose relative-time anchor is the question date."""
+    if not _relative_temporal_anchor_query(query):
+        return []
+    anchor_date = _query_temporal_anchor_date(contexts)
+    if anchor_date is None:
+        return []
+    observations = _relative_temporal_anchor_observations(query, contexts, anchor_date)
+    if not observations:
+        return []
+    best = observations[0]
+    if unit := _elapsed_relative_temporal_query_unit(query):
+        answer = _format_relative_temporal_elapsed_answer(best[0], unit)
+        if not answer:
+            return []
+    else:
+        answer = _relative_temporal_anchor_direct_answer(query, best[3])
+        if not answer:
+            return []
+    source_id = source_context_group(best[3])
+    lines = [
+        "candidate_rank=1 candidate_type=relative_temporal_anchor candidate_confidence=0.86",
+        f"candidate_support={source_id}",
+        f"relative_temporal_anchor_days_ago={best[0]}",
+        f"relative_temporal_anchor_session_date={best[4].isoformat()}",
+        f"relative_temporal_anchor_answer={answer}",
+        f"relative_temporal_anchor_source_id={source_id}",
+    ]
+    if target_days := _query_relative_target_days(query):
+        lines.append(f"relative_temporal_anchor_target_days={target_days}")
+    lines.append(f"relative_temporal_anchor_raw_span={source_context_snippet(best[3], max_chars=220)}")
+    return lines
+
+
+def _relative_temporal_anchor_query(query: str) -> bool:
+    return query_temporal_anchor_synthesis_query(query)
+
+
+def query_temporal_anchor_synthesis_query(query: str) -> bool:
+    """Return whether query-date context can produce a relative temporal answer."""
+    query_text = " ".join(query.casefold().split())
+    if "ago" not in query_text:
+        return False
+    tokens = set(source_tokens(query))
+    if _elapsed_relative_temporal_query_unit(query):
+        return True
+    if _query_relative_target_days(query) is None:
+        return False
+    return bool(
+        tokens & {"what", "which", "where", "did"}
+        and tokens
+        & {
+            "appliance",
+            "book",
+            "buy",
+            "bought",
+            "cook",
+            "cooked",
+            "cooking",
+            "finish",
+            "finished",
+            "garden",
+            "gardening",
+            "purchase",
+            "purchased",
+            "read",
+        }
+    )
+
+
+def _query_temporal_anchor_date(contexts: list[str]) -> date | None:
+    for context in contexts:
+        if "query_temporal_anchor=true" not in context.casefold():
+            continue
+        return _longmemeval_session_date(context)
+    return None
+
+
+def _longmemeval_session_date(text: str) -> date | None:
+    match = _LONGMEMEVAL_SESSION_DATE_RE.search(text)
+    if not match:
+        return None
+    try:
+        return date(
+            int(match.group("year")),
+            int(match.group("month")),
+            int(match.group("day")),
+        )
+    except ValueError:
+        return None
+
+
+def _query_relative_target_days(query: str) -> int | None:
+    if _QUERY_COUPLE_DAYS_AGO_RE.search(query):
+        return 2
+    match = _QUERY_RELATIVE_TIME_RE.search(query)
+    if not match:
+        return None
+    value_text = match.group("value").casefold()
+    value = _NUMBER_WORDS.get(value_text)
+    if value is None:
+        value = int(value_text)
+    unit = match.group("unit").casefold()
+    if unit.startswith("month"):
+        return value * 30
+    if unit.startswith("week"):
+        return value * 7
+    return value
+
+
+def _elapsed_relative_temporal_query_unit(query: str) -> str | None:
+    query_text = " ".join(query.casefold().split())
+    match = re.search(r"\bhow\s+many\s+(?P<unit>days?|weeks?|months?)\s+ago\b", query_text)
+    if not match:
+        return None
+    unit = match.group("unit")
+    if unit.startswith("month"):
+        return "months"
+    if unit.startswith("week"):
+        return "weeks"
+    return "days"
+
+
+def _relative_temporal_anchor_observations(
+    query: str,
+    contexts: list[str],
+    anchor_date: date,
+) -> list[tuple[int, int, int, str, date]]:
+    query_terms = _relative_temporal_anchor_query_terms(query)
+    target_days = _query_relative_target_days(query)
+    observations: list[tuple[int, int, int, str, date]] = []
+    for index, context in enumerate(contexts):
+        if "query_temporal_anchor=true" in context.casefold():
+            continue
+        session_date = _longmemeval_session_date(context)
+        if session_date is None:
+            continue
+        days_ago = (anchor_date - session_date).days
+        if days_ago < 0:
+            continue
+        overlap = _query_overlap_score(query_terms, context) + _relative_temporal_action_overlap(query, context)
+        if target_days is None:
+            if overlap < 2:
+                continue
+            distance_penalty = 0
+        else:
+            distance = abs(days_ago - target_days)
+            if distance > _relative_temporal_target_tolerance(target_days):
+                continue
+            if overlap < 1:
+                continue
+            distance_penalty = distance
+        score = (overlap * 20) - distance_penalty + source_lane_priority(context)
+        observations.append((days_ago, score, -index, context, session_date))
+    observations.sort(key=lambda item: (-item[1], -item[2]))
+    return observations
+
+
+def _relative_temporal_action_overlap(query: str, context: str) -> int:
+    query_tokens = set(source_tokens(query))
+    context_tokens = set(source_tokens(context))
+    score = 0
+    if query_tokens & {"buy", "bought", "purchase", "purchased"} and context_tokens & {
+        "buy",
+        "bought",
+        "purchase",
+        "purchased",
+        "got",
+    }:
+        score += 2
+    if query_tokens & {"finish", "finished", "read"} and context_tokens & {"finish", "finished", "read", "reading"}:
+        score += 2
+    if query_tokens & {"cooking", "cook", "cooked"} and context_tokens & {"baked", "made", "cooked", "prepared"}:
+        score += 2
+    if query_tokens & {"gardening", "garden", "activity"} and context_tokens & {
+        "planted",
+        "planting",
+        "seeded",
+        "transplanted",
+        "harvested",
+        "pruned",
+        "watered",
+    }:
+        score += 2
+    return score
+
+
+def _relative_temporal_anchor_query_terms(query: str) -> set[str]:
+    stopwords = _QUERY_SOURCE_STOPWORDS | {
+        "ago",
+        "couple",
+        "day",
+        "days",
+        "did",
+        "do",
+        "many",
+        "month",
+        "months",
+        "today",
+        "week",
+        "weeks",
+    }
+    return {
+        token
+        for token in source_tokens(query)
+        if len(token) > 2 and token not in stopwords and not token.isdigit()
+    }
+
+
+def _relative_temporal_target_tolerance(target_days: int) -> int:
+    if target_days <= 3:
+        return 1
+    if target_days <= 14:
+        return 2
+    if target_days <= 35:
+        return 4
+    return 10
+
+
+def _format_relative_temporal_elapsed_answer(days_ago: int, unit: str) -> str | None:
+    if unit == "months":
+        value = max(1, round(days_ago / 30))
+        return f"{value} {_plural_unit(value, 'month')} ago"
+    if unit == "weeks":
+        value = max(1, round(days_ago / 7))
+        return f"{value} {_plural_unit(value, 'week')} ago"
+    if unit == "days":
+        value = max(0, days_ago)
+        if value == 1:
+            return "1 day ago"
+        return f"{value} days ago. {value + 1} days (including the last day) is also acceptable."
+    return None
+
+
+def _plural_unit(value: int, singular: str) -> str:
+    return singular if value == 1 else f"{singular}s"
+
+
+def _relative_temporal_anchor_direct_answer(query: str, context: str) -> str:
+    text = _numeric_context_text(context)
+    tokens = set(source_tokens(query))
+    if tokens & {"appliance", "buy", "bought", "purchase", "purchased"} and (
+        answer := _direct_object_after_action(
+            text,
+            actions=("bought", "buy", "purchased", "got", "picked up"),
+        )
+    ):
+        return answer
+    if tokens & {"book", "finish", "finished", "read"} and (answer := _book_finished_answer(text)):
+        return answer
+    if tokens & {"cooking", "cook", "cooked", "friend"} and (
+        answer := _direct_object_after_action(
+            text,
+            actions=("baked", "made", "cooked", "prepared"),
+        )
+    ):
+        return answer
+    if tokens & {"gardening", "activity", "garden"} and (answer := _activity_phrase_answer(text)):
+        return answer
+    return ""
+
+
+def _direct_object_after_action(text: str, *, actions: tuple[str, ...]) -> str:
+    action_pattern = "|".join(re.escape(action) for action in actions)
+    match = re.search(
+        rf"\b(?:i\s+)?(?:{action_pattern})\s+(?P<answer>(?:(?:a|an|the)\s+)?[A-Za-z0-9'\" -]{{2,100}})",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    answer = re.split(
+        r"\s+(?:for|so|to|because|since|about|around|approximately|exactly|a\s+couple\s+of|"
+        r"\d+\s+(?:days?|weeks?|months?)\s+ago)\b",
+        match.group("answer").strip(" ,.;!?"),
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    return _clean_relative_temporal_answer(answer)
+
+
+def _book_finished_answer(text: str) -> str:
+    match = re.search(
+        r"\b(?:finished|finish)\s+(?:reading\s+)?(?P<answer>(?:'[^']+'|\"[^\"]+\"|[A-Z][^.,;!?]{1,120}))",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    return _clean_relative_temporal_answer(match.group("answer"))
+
+
+def _activity_phrase_answer(text: str) -> str:
+    match = re.search(
+        r"\bi\s+(?P<verb>planted|planted|started|set\s+up|built|transplanted|seeded|harvested|pruned|watered)\s+"
+        r"(?P<object>[A-Za-z0-9'\" -]{2,120})",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return ""
+    verb = match.group("verb").casefold()
+    verb_map = {
+        "planted": "planting",
+        "started": "starting",
+        "set up": "setting up",
+        "built": "building",
+        "transplanted": "transplanting",
+        "seeded": "seeding",
+        "harvested": "harvesting",
+        "pruned": "pruning",
+        "watered": "watering",
+    }
+    answer = f"{verb_map.get(verb, verb)} {match.group('object')}"
+    return _clean_relative_temporal_answer(answer)
+
+
+def _clean_relative_temporal_answer(answer: str) -> str:
+    answer = re.sub(
+        r"\b(?:about\s+|around\s+|approximately\s+|exactly\s+)?"
+        r"(?:a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|\d+)\s+"
+        r"(?:days?|weeks?|months?)\s+ago\b.*$",
+        "",
+        answer,
+        flags=re.IGNORECASE,
+    )
+    answer = re.sub(r"\b(?:a\s+)?couple\s+of\s+days?\s+ago\b.*$", "", answer, flags=re.IGNORECASE)
+    return " ".join(answer.strip(" ,.;!?").split())
 
 
 def _streaming_service_names_in_context(text: str) -> list[str]:

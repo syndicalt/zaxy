@@ -6,14 +6,17 @@ and prompt formatting so every interface exposes the same trust contract.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from zaxy.evidence import build_evidence_set, evaluate_evidence_policy
+from zaxy.evidence_candidates import candidate_type_priority, checkout_candidate_projection
 from zaxy.purpose import PurposeProfile, purpose_ontology_lens, purpose_profile
 from zaxy.retrieval_intent import classify_retrieval_intent
 from zaxy.synthesis_packet import synthesis_packet_from_items
 
 _COMPACT_CONTEXT_LIMIT = 8
+_COMPACT_ANSWER_CANDIDATE_LIMIT = 5
 _COMPACT_SNIPPET_LIMIT = 500
 
 
@@ -446,6 +449,7 @@ def build_compact_answer_contexts(
     """Build a compact model-facing checkout surface for answer synthesis."""
     contract = _compact_contract(query=query, diagnostics=diagnostics, quality=quality)
     support_items = [
+        *_compact_answer_candidate_items(diagnostics),
         *_compact_synthesis_items(current_facts, evidence),
     ]
     support_items.extend(_compact_fact_items(current_facts, used=len(support_items) + 1))
@@ -475,6 +479,17 @@ def _checkout_synthesis_diagnostics(
         mode = "multi_source_aggregation"
     elif "absence_check" in reasons:
         mode = "absence_check"
+    elif "preference_profile" in reasons:
+        mode = "preference_profile"
+    synthesis_packet = synthesis_packet_from_items([*current_facts, *evidence])
+    has_synthesis_packet = bool(
+        synthesis_packet.answer_candidates
+        or synthesis_packet.ledger_rows
+        or synthesis_packet.operations
+        or synthesis_packet.result
+    )
+    if mode is None and has_synthesis_packet:
+        mode = "source_synthesis"
     if mode is None:
         return None
     citations = {
@@ -491,17 +506,44 @@ def _checkout_synthesis_diagnostics(
         "source_lanes": source_lanes,
         "evidence_groups": evidence_groups,
     }
-    synthesis_packet = synthesis_packet_from_items([*current_facts, *evidence])
-    answer_candidates = synthesis_packet.answer_candidates
+    candidate_projection = checkout_candidate_projection(
+        query,
+        [
+            str(item.get("content", ""))
+            for item in [*current_facts, *evidence]
+            if item.get("content") and item.get("citation")
+        ],
+        limit=max(1, len(current_facts)),
+    )
+    answer_candidates = _merge_answer_candidates(
+        [
+            *synthesis_packet.answer_candidates,
+            *candidate_projection.answer_candidates,
+        ]
+    )
     if answer_candidates:
         diagnostics["answer_candidates"] = answer_candidates
-    ledger_rows = synthesis_packet.ledger_rows
+    ledger_rows = _merge_dict_rows(
+        [
+            *synthesis_packet.ledger_rows,
+            *candidate_projection.ledger_rows,
+        ],
+        identity_keys=("fact_id", "source_group", "kind", "value", "label"),
+    )
     if ledger_rows:
         diagnostics["ledger_rows"] = ledger_rows
-    if synthesis_packet.operations:
-        diagnostics["operations"] = synthesis_packet.operations
-    if synthesis_packet.result:
-        diagnostics["result"] = synthesis_packet.result
+    operations = _merge_dict_rows(
+        [
+            *synthesis_packet.operations,
+            *candidate_projection.operations,
+        ],
+        identity_keys=("name", "answer_key", "kind"),
+    )
+    if operations:
+        diagnostics["operations"] = operations
+    result = synthesis_packet.result or candidate_projection.result
+    if result:
+        diagnostics["result"] = result
     return diagnostics
 
 
@@ -545,7 +587,113 @@ def _checkout_synthesis_guidance(
                 "Do not treat a missing search hit as proof that the user never mentioned something."
             ],
         }
+    if "preference_profile" in reasons:
+        return {
+            "mode": "preference_profile",
+            "evidence_needed": "Use cited user-preference evidence and preserve the distinction between positive preferences and generic non-preferences.",
+            "steps": [
+                "Extract the user's concrete preference signals from cited memory.",
+                "Answer in preference-profile form: what the user would prefer and what they may not prefer.",
+                "Do not invent new preferences beyond cited evidence; refresh memory if the profile is underspecified.",
+            ],
+            "trust": [
+                "For preference questions, use cited remembered behavior and stated interests as the support for the preference profile."
+            ],
+            "ignore": [
+                "Do not convert broad assistant suggestions into user preferences unless cited user context supports them."
+            ],
+        }
     return None
+
+
+def _merge_answer_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Merge packet/projection candidates and prefer answer-ready surfaces."""
+    ranked: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for candidate in sorted(_drop_dominated_aggregate_candidates(candidates), key=_answer_candidate_sort_key):
+        answer = candidate.get("answer")
+        if not isinstance(answer, str) or not answer:
+            continue
+        identity = (str(candidate.get("type", "")), " ".join(answer.casefold().split()))
+        if identity in seen:
+            continue
+        seen.add(identity)
+        payload = dict(candidate)
+        payload["rank"] = len(ranked) + 1
+        ranked.append(payload)
+    return ranked
+
+
+def _drop_dominated_aggregate_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    kept: list[dict[str, Any]] = []
+    for candidate in candidates:
+        if _aggregate_candidate_key(candidate) is None:
+            kept.append(candidate)
+            continue
+        support_count = len(_text_list(candidate.get("support_source_ids")))
+        dominated = any(
+            other is not candidate
+            and _aggregate_candidate_key(other) == _aggregate_candidate_key(candidate)
+            and len(_text_list(other.get("support_source_ids"))) > support_count
+            for other in candidates
+        )
+        if not dominated:
+            kept.append(candidate)
+    return kept
+
+
+def _aggregate_candidate_key(candidate: dict[str, Any]) -> tuple[str, str] | None:
+    answer_key = str(candidate.get("answer_key") or "")
+    if answer_key.endswith("_total_answer") or answer_key in {"count_answer", "count_answer_text"}:
+        return str(candidate.get("type", "")), answer_key
+    return None
+
+
+def _answer_candidate_sort_key(candidate: dict[str, Any]) -> tuple[int, float, int, int, int, str]:
+    confidence = candidate.get("confidence")
+    confidence_value = float(confidence) if isinstance(confidence, int | float) and not isinstance(confidence, bool) else 0.0
+    answer = candidate.get("answer")
+    answer_text = answer if isinstance(answer, str) else ""
+    answer_key = str(candidate.get("answer_key") or "")
+    support_count = len(_text_list(candidate.get("support_source_ids")))
+    return (
+        candidate_type_priority(candidate),
+        -confidence_value,
+        -_answer_surface_score(answer_text, answer_key),
+        -support_count,
+        len(answer_text),
+        answer_text,
+    )
+
+
+def _answer_surface_score(answer: str, answer_key: str) -> int:
+    """Rank candidates by usefulness as a first-pass model answer."""
+    if not answer:
+        return 0
+    score = 0
+    if answer_key.endswith("_text") or answer_key.endswith("_answer"):
+        score += 2
+    if re.search(r"[A-Za-z]", answer):
+        score += 2
+    if re.search(r"\b(?:I|The user|You|First|Then|Finally|Yes|No)\b", answer):
+        score += 2
+    if len(answer.split()) >= 4:
+        score += 1
+    return score
+
+
+def _merge_dict_rows(rows: list[dict[str, Any]], *, identity_keys: tuple[str, ...]) -> list[dict[str, Any]]:
+    deduped: list[dict[str, Any]] = []
+    seen: set[tuple[str, ...]] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        identity = tuple(str(row.get(key, "")) for key in identity_keys)
+        if identity in seen:
+            continue
+        seen.add(identity)
+        deduped.append(row)
+    return deduped
 
 
 def _compact_synthesis_items(
@@ -572,6 +720,37 @@ def _compact_synthesis_items(
                     f"citation={item.get('citation')}",
                     f"source_lane={item.get('source_lane')}",
                     summary,
+                ]
+            )
+        )
+    return items
+
+
+def _compact_answer_candidate_items(diagnostics: dict[str, Any]) -> list[str]:
+    synthesis = diagnostics.get("synthesis")
+    if not isinstance(synthesis, dict):
+        return []
+    candidates = synthesis.get("answer_candidates")
+    if not isinstance(candidates, list):
+        return []
+    items: list[str] = []
+    for candidate in candidates[:_COMPACT_ANSWER_CANDIDATE_LIMIT]:
+        if not isinstance(candidate, dict):
+            continue
+        answer = candidate.get("answer")
+        if not isinstance(answer, str) or not answer:
+            continue
+        items.append(
+            "\n".join(
+                [
+                    "checkout_answer_candidate=true",
+                    f"candidate_type={candidate.get('type')}",
+                    f"candidate_rank={candidate.get('rank')}",
+                    f"candidate_confidence={candidate.get('confidence')}",
+                    f"answer_key={candidate.get('answer_key')}",
+                    f"answer={_trim_text(answer, _COMPACT_SNIPPET_LIMIT)}",
+                    "support_source_ids=" + ",".join(_text_list(candidate.get("support_source_ids"))),
+                    "excluded_source_ids=" + ",".join(_text_list(candidate.get("excluded_source_ids"))),
                 ]
             )
         )
@@ -631,8 +810,16 @@ def _compact_synthesis_summary(content: str) -> str:
                 "day_",
                 "month_",
                 "date_interval_",
+                "direct_numeric_",
+                "future_age_",
+                "age_",
+                "page_",
                 "issue_",
                 "not_mentioned_",
+                "known_related_evidence=",
+                "answer_guidance=",
+                "assistant_recall_",
+                "quoted_target_duration_",
             )
         ):
             lines.append(_trim_text(line, _COMPACT_SNIPPET_LIMIT))

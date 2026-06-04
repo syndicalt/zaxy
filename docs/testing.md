@@ -358,22 +358,23 @@ zaxy benchmark-compare reports/benchmarks/live-benchmark.json \
   --max-p99-ms 750
 ```
 
-For the full 100-question LongMemEval-compatible run, use the same quality
-floors and set latency budgets from the release environment. The current beta
-floor report is archived at `reports/benchmarks/live-benchmark.json`: mean
-score 0.950, Answer@5 0.950, citation coverage 1.000, and R@1/R@5/R@10 0.990.
-The current same-harness BM25 comparison is archived at
+For the current full 500-question LongMemEval-compatible headline, use the
+current74 quality floors and set latency budgets from the archived report. The
+current headline report is
+`reports/benchmarks/longmemeval-500-current74-zaxyonly-gated-relative-temporal-anchor-embedded-reuse-20260604/live-benchmark.json`:
+mean score 0.940, Answer@5 0.906, citation coverage 1.000,
+R@1/R@5/R@10 0.906/1.000/1.000, p95 687.67 ms, and p99 969.10 ms.
+The current same-harness BM25 comparison remains archived at
 `reports/benchmarks/longmemeval-100-comparison/live-benchmark.json`: BM25 R@5
 0.840 versus Zaxy checkout R@5 0.990 on the same 100-question slice. See
 [benchmarks.md](benchmarks.md) for public copy rules and external disclosure
 links for MemPalace, Mem0, and Agent Memory.
 
-The legacy `limit=10` full 500-question LongMemEval-compatible archive is
-`reports/benchmarks/longmemeval-500-hash/live-benchmark.json`. Its Zaxy checkout
-floor remains mean score 0.626, Answer@5 0.608, citation coverage 1.000, and
-R@5 0.956. The current archived report clears that floor at mean score 0.724,
-Answer@5 0.628, citation coverage 1.000, R@5 0.972, p95 1472.11 ms, and p99
-2652.55 ms.
+The legacy BM25-included `limit=10` full 500-question LongMemEval-compatible
+archive is `reports/benchmarks/longmemeval-500-hash/live-benchmark.json`. Its
+Zaxy checkout floor remains mean score 0.626, Answer@5 0.608, citation coverage
+1.000, and R@5 0.956. Keep it as historical BM25-included evidence, not as the
+current public headline.
 
 The current same-harness `limit=5` backend-evaluation archive is
 `reports/benchmarks/longmemeval-500-neo4j-current-checkout/live-benchmark.json`.
@@ -383,6 +384,22 @@ checkout floor is mean score 0.714, Answer@5 0.626, citation coverage 1.000,
 R@5 0.958, p95 1089.53 ms, and p99 2456.86 ms. Use the floor matching the
 candidate harness; projection-backend work should use the current same-harness
 control unless it also reruns the legacy `limit=10` harness.
+
+Guard the current headline report with the current74 floors:
+
+```bash
+zaxy benchmark-compare reports/benchmarks/longmemeval-500-current74-zaxyonly-gated-relative-temporal-anchor-embedded-reuse-20260604/live-benchmark.json \
+  --backend zaxy-checkout \
+  --min-mean-score 0.940 \
+  --min-answer-recall-at-5 0.906 \
+  --min-recall-at-5 1.000 \
+  --min-citation-coverage 1.0 \
+  --max-p95-ms 800 \
+  --max-p99-ms 1100
+```
+
+Guard projection-backend comparisons against the same-harness backend-control
+archive:
 
 ```bash
 zaxy benchmark-compare reports/benchmarks/longmemeval-500-neo4j-current-checkout/live-benchmark.json \

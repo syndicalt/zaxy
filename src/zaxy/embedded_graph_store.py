@@ -160,6 +160,17 @@ class EmbeddedGraphStore:
         )
         conn.execute(
             """
+            CREATE NODE TABLE IF NOT EXISTS BenchmarkProjection(
+                key STRING,
+                event_count INT64,
+                latest_seq INT64,
+                latest_hash STRING,
+                PRIMARY KEY(key)
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE REL TABLE IF NOT EXISTS RELATES(
                 FROM Entity TO Entity,
                 session_id STRING,
@@ -211,6 +222,46 @@ class EmbeddedGraphStore:
         self._clear_all_caches()
         await self.connect()
         await self.init_schema()
+
+    async def benchmark_projection_present(self, key: str) -> bool:
+        """Return whether this embedded projection is marked for a benchmark workload."""
+        if not key:
+            return False
+        conn = self._require_connection()
+        try:
+            rows = conn.execute(
+                """
+                MATCH (p:BenchmarkProjection {key: $key})
+                RETURN p.key
+                LIMIT 1
+                """,
+                {"key": key},
+            ).get_all()
+        except RuntimeError as exc:
+            if not _is_missing_projection_table_error(exc):
+                raise
+            return False
+        return bool(rows)
+
+    async def mark_benchmark_projection(self, key: str, events: Sequence[object]) -> None:
+        """Persist a semantic benchmark projection marker for reuse."""
+        if not key:
+            return
+        latest = events[-1] if events else None
+        self._require_connection().execute(
+            """
+            MERGE (p:BenchmarkProjection {key: $key})
+            SET p.event_count = $event_count,
+                p.latest_seq = $latest_seq,
+                p.latest_hash = $latest_hash
+            """,
+            {
+                "key": key,
+                "event_count": len(events),
+                "latest_seq": getattr(latest, "seq", None),
+                "latest_hash": getattr(latest, "hash", None),
+            },
+        )
 
     async def begin_bulk_projection(self) -> None:
         """Begin an explicit Kuzu write transaction for bulk Eventloom replay."""

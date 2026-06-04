@@ -8,19 +8,26 @@ from zaxy import synthesis
 from zaxy.synthesis import (
     AverageValuesOperation,
     DifferenceBetweenOperation,
+    EvidenceLedger,
+    EvidenceLedgerRow,
     ListItemsOperation,
     SumValuesOperation,
+    SynthesisPlan,
     TemporalIntervalOperation,
     build_age_average_ledger,
     build_count_ledger,
     build_currency_ledger,
     build_date_ledger,
     build_duration_ledger,
+    build_numeric_state_ledger,
     build_synthesis_plan,
+    build_temporal_sequence_ledger,
     render_count_result,
     render_currency_result,
     render_date_interval_result,
     render_duration_result,
+    render_numeric_state_result,
+    render_temporal_sequence_result,
     synthesis_operation_for_plan,
 )
 
@@ -108,9 +115,71 @@ def test_list_operation_preserves_count_list_contract() -> None:
         "rank": 1,
         "type": "count",
         "confidence": 0.75,
-        "answer_key": "count_answer",
-        "answer": "2",
+        "answer_key": "count_answer_text",
+        "answer": "I attended two movie festivals.",
         "support_source_ids": ["answer-1", "answer-2"],
+        "excluded_source_ids": [],
+    }
+
+
+def test_count_candidate_prefers_longmemeval_answer_text() -> None:
+    """Count synthesis should expose the answer-ready sentence as the primary candidate."""
+    query = "How many weddings have I attended in this year?"
+    ledger = build_count_ledger(
+        query,
+        [
+            "longmemeval_session_id=answer-1 I attended Rachel and Mike's wedding.",
+            "longmemeval_session_id=answer-2 I attended Emily and Sarah's wedding.",
+            "longmemeval_session_id=answer-3 I attended Jen and Tom's wedding.",
+        ],
+    )
+
+    result = render_count_result(ledger, query, rank=1)
+
+    assert "count_answer=3" in result.lines
+    assert "count_answer_text=I attended three weddings. The couples were Rachel and Mike, Emily and Sarah, and Jen and Tom." in result.lines
+    assert result.answer_candidate == {
+        "rank": 1,
+        "type": "count",
+        "confidence": 0.77,
+        "answer_key": "count_answer_text",
+        "answer": "I attended three weddings. The couples were Rachel and Mike, Emily and Sarah, and Jen and Tom.",
+        "support_source_ids": ["answer-1", "answer-2", "answer-3"],
+        "excluded_source_ids": [],
+    }
+
+
+def test_count_candidate_lists_kitchen_repair_and_replacement_items() -> None:
+    """Kitchen repair/replacement queries should expose labeled item evidence."""
+    query = "How many kitchen items did I replace or fix?"
+    ledger = build_count_ledger(
+        query,
+        [
+            "longmemeval_session_id=answer-1 I just replaced my old kitchen faucet with a new Moen one last Sunday.",
+            "longmemeval_session_id=answer-2 my kitchen has been feeling so much more functional lately, especially with my new kitchen mat in front of the sink.",
+            "longmemeval_session_id=answer-3 I just got rid of the old toaster and replaced it with a toaster oven that can do so much more.",
+            "longmemeval_session_id=answer-4 I donated my old coffee maker to Goodwill and I'm really enjoying the upgrade.",
+            "longmemeval_session_id=answer-5 I finally fixed the kitchen shelves last weekend.",
+        ],
+    )
+
+    result = render_count_result(ledger, query, rank=1)
+
+    assert "count_answer=5" in result.lines
+    assert (
+        "count_answer_text=I replaced or fixed five items: "
+        "the kitchen faucet, the kitchen mat, the toaster, the coffee maker, and the kitchen shelves."
+    ) in result.lines
+    assert result.answer_candidate == {
+        "rank": 1,
+        "type": "count",
+        "confidence": 0.93,
+        "answer_key": "count_answer_text",
+        "answer": (
+            "I replaced or fixed five items: "
+            "the kitchen faucet, the kitchen mat, the toaster, the coffee maker, and the kitchen shelves."
+        ),
+        "support_source_ids": ["answer-1", "answer-2", "answer-3", "answer-4", "answer-5"],
         "excluded_source_ids": [],
     }
 
@@ -425,6 +494,16 @@ def test_build_synthesis_plan_classifies_currency_difference() -> None:
     assert "comparison" in plan.reasons
 
 
+def test_build_synthesis_plan_classifies_savings_as_currency_difference() -> None:
+    """Savings queries should produce a deterministic currency difference plan."""
+    plan = build_synthesis_plan("How much did I save on the designer handbag?")
+
+    assert plan.answer_type == "difference"
+    assert plan.operation == "difference_between"
+    assert plan.required_kinds == ("currency",)
+    assert "comparison" in plan.reasons
+
+
 def test_build_synthesis_plan_does_not_treat_duration_spent_as_currency() -> None:
     """Duration uses of 'spent' should not open the currency synthesis lane."""
     plan = build_synthesis_plan(
@@ -434,6 +513,16 @@ def test_build_synthesis_plan_does_not_treat_duration_spent_as_currency() -> Non
     assert plan.answer_type == "sum"
     assert plan.operation == "sum_values"
     assert plan.required_kinds == ("duration",)
+
+
+def test_build_synthesis_plan_prefers_count_subject_over_time_modifier() -> None:
+    """Incidental time modifiers should not turn count-subject queries into duration sums."""
+    plan = build_synthesis_plan("How many pieces of writing had I completed three weeks ago?")
+
+    assert plan.answer_type == "count"
+    assert plan.operation == "count_distinct"
+    assert plan.required_kinds == ("event",)
+    assert plan.reasons == ("count",)
 
 
 def test_count_ledger_counts_distinct_relevant_sources() -> None:
@@ -471,6 +560,28 @@ def test_count_ledger_counts_distinct_relevant_sources() -> None:
         "duplicate_identity",
         "query_focus_mismatch",
     }
+
+
+def test_count_ledger_counts_writing_pieces_with_time_modifier() -> None:
+    """Writing-piece count queries should use completed items, not the modifier duration."""
+    query = "How many pieces of writing had I completed three weeks ago?"
+    ledger = build_count_ledger(
+        query,
+        [
+            "session_id=essay user: I completed the personal essay three weeks ago.",
+            "session_id=story user: I finished a short story three weeks ago.",
+            "session_id=duration user: I spent three weeks thinking about a future poem.",
+        ],
+    )
+
+    result = render_count_result(ledger, query=query, rank=1)
+
+    assert [(row.source_group, row.label) for row in ledger.included(kind="event")] == [
+        ("essay", "personal essay"),
+        ("story", "short story"),
+    ]
+    assert "count_answer=2" in result.lines
+    assert "duration" in ",".join(result.excluded_source_groups)
 
 
 def test_count_ledger_requires_query_action_for_event_counts() -> None:
@@ -785,6 +896,245 @@ def test_count_ledger_extracts_current_musical_instruments_with_durations() -> N
     assert any("5-piece Pearl Export drum set for an unspecified amount of time" in line for line in result.lines)
 
 
+def test_count_ledger_sums_rollercoaster_ride_occurrences() -> None:
+    """Rollercoaster count synthesis should count ride occurrences, not sessions."""
+    query = "How many times did I ride rollercoasters from July to October?"
+    ledger = build_count_ledger(
+        query,
+        [
+            "session_id=july user: In July I rode Mako, Kraken, and Manta rollercoasters.",
+            "session_id=august user: In August I rode Revenge of the Mummy three times.",
+            "session_id=september user: In September I rode Space Mountain: Ghost Galaxy three times.",
+            "session_id=october user: In October I rode the Xcelerator rollercoaster.",
+        ],
+    )
+
+    result = render_count_result(ledger, query, rank=1)
+
+    assert "count_answer=10" in result.lines
+    assert "count_answer_text=I rode rollercoasters 10 times." in result.lines
+
+
+def test_count_ledger_sums_aquarium_fish_inventory() -> None:
+    """Aquarium inventory synthesis should sum species counts and singular fish."""
+    query = "How many fish are there in total in both of my aquariums?"
+    ledger = build_count_ledger(
+        query,
+        [
+            (
+                "session_id=community user: My new 20-gallon tank currently has "
+                "10 neon tetras, 5 golden honey gouramis, and a small pleco catfish."
+            ),
+            (
+                "session_id=betta user: I also upgraded my old 10-gallon tank, "
+                "which has my betta fish, Bubbles."
+            ),
+        ],
+    )
+
+    result = render_count_result(ledger, query, rank=1)
+
+    assert "count_answer=17" in result.lines
+    assert "count_answer_text=There are 17 fish in my aquariums." in result.lines
+
+
+def test_numeric_state_ledger_uses_latest_stated_total() -> None:
+    """Current count-state queries should prefer cited latest totals over event counts."""
+    ledger = build_numeric_state_ledger(
+        "How many different species of birds have I seen in my local park?",
+        [
+            (
+                "longmemeval_session_id=birds_1 "
+                "user: I've managed to spot 27 different species so far in my local park."
+            ),
+            (
+                "longmemeval_session_id=birds_2 "
+                "user: I just saw a Northern Flicker, which brings my total species count to 32."
+            ),
+        ],
+    )
+
+    result = render_numeric_state_result(ledger, rank=1)
+
+    assert [(row.source_group, row.value, row.include_reason) for row in ledger.included(kind="numeric_state")] == [
+        ("birds_1", "27", "stated_total"),
+        ("birds_2", "32", "stated_total"),
+    ]
+    assert "numeric_state_answer=32" in result.lines
+    assert "numeric_state_operation=latest_total(32)" in result.lines
+    assert result.answer_candidate is not None
+    assert result.answer_candidate["type"] == "numeric_state"
+
+
+def test_numeric_state_ledger_applies_increment_after_prior_total() -> None:
+    """State updates should carry forward a prior total when a later source adds items."""
+    ledger = build_numeric_state_ledger(
+        "How many pre-1920 American coins do I have in my collection?",
+        [
+            (
+                "longmemeval_session_id=coins_1 "
+                "user: I have a total of 37 pre-1920 American coins in that collection."
+            ),
+            (
+                "longmemeval_session_id=coins_2 "
+                "user: I just added a new coin to my collection of pre-1920 American coins - a 1915-S Barber quarter."
+            ),
+        ],
+    )
+
+    result = render_numeric_state_result(ledger, rank=1)
+
+    assert [(row.source_group, row.value, row.include_reason) for row in ledger.included(kind="numeric_state")] == [
+        ("coins_1", "37", "stated_total"),
+        ("coins_2", "1", "incremental_update"),
+    ]
+    assert "numeric_state_answer=38" in result.lines
+    assert "numeric_state_operation=37+1" in result.lines
+
+
+def test_numeric_state_ledger_extracts_now_at_current_totals() -> None:
+    """Current-state ledgers should understand common milestone phrasing."""
+    ledger = build_numeric_state_ledger(
+        "How many Instagram followers do I currently have?",
+        [
+            (
+                "longmemeval_session_id=followers_1 "
+                "user: I just reached 500 followers last week."
+            ),
+            (
+                "longmemeval_session_id=followers_2 "
+                "user: I just checked and I'm now at 600 followers, which is a nice milestone."
+            ),
+        ],
+    )
+
+    result = render_numeric_state_result(ledger, rank=1)
+
+    assert [(row.source_group, row.value, row.include_reason) for row in ledger.included(kind="numeric_state")] == [
+        ("followers_1", "500", "stated_total"),
+        ("followers_2", "600", "stated_total"),
+    ]
+    assert "numeric_state_answer=600" in result.lines
+    assert "numeric_state_operation=latest_total(600)" in result.lines
+
+
+def test_numeric_state_result_answers_count_increase_between_totals() -> None:
+    """Increase queries should subtract earlier count-state totals from later totals."""
+    query = "What was the approximate increase in Instagram followers I experienced in two weeks?"
+    ledger = build_numeric_state_ledger(
+        query,
+        [
+            (
+                "longmemeval_session_id=followers_1 "
+                "user: I started the year with 250 followers on Instagram, by the way."
+            ),
+            (
+                "longmemeval_session_id=followers_2 "
+                "user: After two weeks of posting regularly, I had around 350 followers on Instagram."
+            ),
+        ],
+    )
+
+    result = render_numeric_state_result(ledger, query=query, rank=1)
+
+    assert [(row.source_group, row.value, row.include_reason) for row in ledger.included(kind="numeric_state")] == [
+        ("followers_1", "250", "stated_total"),
+        ("followers_2", "350", "stated_total"),
+    ]
+    assert "numeric_state_operation=350-250" in result.lines
+    assert "numeric_state_difference_answer=100" in result.lines
+    assert result.answer_candidate is not None
+    assert result.answer_candidate["answer_key"] == "numeric_state_difference_answer"
+    assert result.answer_candidate["answer"] == "100"
+
+
+def test_numeric_state_ledger_extracts_current_team_size_words() -> None:
+    """Team-lead state questions should parse word-number team-size totals."""
+    ledger = build_numeric_state_ledger(
+        "How many engineers do I currently lead?",
+        [
+            (
+                "longmemeval_session_id=team_1 "
+                "user: In my new role as Senior Software Engineer, I lead a team of 4 engineers."
+            ),
+            (
+                "longmemeval_session_id=team_2 "
+                "user: I now lead a team of five engineers, and they are working well together."
+            ),
+        ],
+    )
+
+    result = render_numeric_state_result(ledger, rank=1)
+
+    assert [(row.source_group, row.value, row.include_reason) for row in ledger.included(kind="numeric_state")] == [
+        ("team_1", "4", "stated_total"),
+        ("team_2", "5", "stated_total"),
+    ]
+    assert "numeric_state_answer=5" in result.lines
+
+
+def test_numeric_state_result_answers_initial_and_current_state() -> None:
+    """Dual-state questions should expose both earliest and latest cited totals."""
+    query = "How many engineers did I lead when I started, and how many do I lead now?"
+    ledger = build_numeric_state_ledger(
+        query,
+        [
+            "longmemeval_session_id=team_1 user: I lead a team of 4 engineers in my new role.",
+            "longmemeval_session_id=team_2 user: I now lead a team of five engineers.",
+        ],
+    )
+
+    result = render_numeric_state_result(ledger, query=query, rank=1)
+
+    assert "numeric_state_initial_answer=4 engineers" in result.lines
+    assert "numeric_state_current_answer=5 engineers" in result.lines
+    assert "numeric_state_transition_answer=Initially, I led 4 engineers. Now, I lead 5 engineers." in result.lines
+    assert result.answer_candidate is not None
+    assert result.answer_candidate["answer_key"] == "numeric_state_transition_answer"
+    assert result.answer_candidate["answer"] == "Initially, I led 4 engineers. Now, I lead 5 engineers."
+    assert result.answer_candidate["support_source_ids"] == ["team_1", "team_2"]
+
+
+def test_numeric_state_ledger_requires_role_qualifier_slot() -> None:
+    """State totals should not answer when a required role qualifier is unsupported."""
+    query = "How many engineers do I lead when I started my new role as Software Engineer Manager?"
+    ledger = build_numeric_state_ledger(
+        query,
+        [
+            (
+                "longmemeval_session_id=team_1 "
+                "user: I lead a team of 4 engineers in my new role as Senior Software Engineer."
+            ),
+            (
+                "longmemeval_session_id=team_2 "
+                "user: I now lead a team of five engineers in my Senior Software Engineer role."
+            ),
+        ],
+    )
+
+    assert ledger.included(kind="numeric_state") == ()
+    assert {row.exclude_reason for row in ledger.excluded(kind="numeric_state")} == {
+        "missing_required_state_qualifier"
+    }
+    result = render_numeric_state_result(ledger, query=query, rank=1)
+    assert result.lines == ()
+    assert result.answer_candidate is None
+
+
+def test_numeric_state_ledger_defers_for_plain_event_counts() -> None:
+    """Plain event-count questions should stay on the count ledger."""
+    ledger = build_numeric_state_ledger(
+        "How many weddings have I attended this year?",
+        [
+            "longmemeval_session_id=wedding_1 user: I attended Rachel and Mike's wedding.",
+            "longmemeval_session_id=wedding_2 user: I attended Emily and Sarah's wedding.",
+        ],
+    )
+
+    assert ledger.included(kind="numeric_state") == ()
+    assert render_numeric_state_result(ledger, rank=1).lines == ()
+
+
 def test_count_ledger_counts_participatory_film_festival_memories() -> None:
     """Festival memories can be attendance evidence through volunteered/participated wording."""
     ledger = build_count_ledger(
@@ -1015,6 +1365,69 @@ def test_date_ledger_preserves_lower_relevance_cross_source_anchor() -> None:
     assert "date_interval_source_ids=answer-1,answer-2" in result.lines
 
 
+def test_date_ledger_scores_explicit_dates_from_local_event_spans() -> None:
+    """Explicit date rows should carry local event context, not the whole source text."""
+    ledger = build_date_ledger(
+        "How many days passed between my hiking trip and my pottery class?",
+        [
+            (
+                "content=longmemeval_session_id=answer-1 "
+                "longmemeval_session_date=2023/03/20 (Mon) "
+                "user: I went to a concert on February 1st. "
+                "I went on a hiking trip on March 1st."
+            ),
+            (
+                "content=longmemeval_session_id=answer-2 "
+                "longmemeval_session_date=2023/03/20 (Mon) "
+                "user: I attended my pottery class on March 15th."
+            ),
+        ],
+    )
+
+    rows = ledger.included(kind="date")
+    excluded = ledger.excluded(kind="date")
+
+    assert [(row.value, row.relevance) for row in rows] == [
+        ("2023-03-01", 2),
+        ("2023-03-15", 2),
+    ]
+    assert [(row.value, row.relevance, row.exclude_reason) for row in excluded] == [
+        ("2023-02-01", 0, "query_focus_mismatch")
+    ]
+    assert "concert" in excluded[0].context
+    assert "hiking trip" not in excluded[0].context
+
+
+def test_date_interval_prefers_role_covered_anchors_over_incidental_dates() -> None:
+    """Between-A-and-B queries should choose anchors covering both named roles."""
+    ledger = build_date_ledger(
+        "How many days passed between my hiking trip and my pottery class?",
+        [
+            (
+                "content=longmemeval_session_id=answer-1 "
+                "longmemeval_session_date=2023/03/20 (Mon) "
+                "user: I went to a concert on February 1st. "
+                "I went on a hiking trip on March 1st."
+            ),
+            (
+                "content=longmemeval_session_id=answer-2 "
+                "longmemeval_session_date=2023/03/20 (Mon) "
+                "user: I attended my pottery class on March 15th."
+            ),
+        ],
+    )
+
+    result = render_date_interval_result(ledger, rank=1)
+
+    assert "date_interval_days=14" in result.lines
+    assert (
+        "date_interval_answer=14 days. 15 days (including the last day) is also acceptable."
+        in result.lines
+    )
+    assert "date_interval_source_ids=answer-1,answer-2" in result.lines
+    assert "date_interval_days=44" not in result.lines[:6]
+
+
 def test_date_ledger_parses_black_friday_relative_dates() -> None:
     """Named holiday-relative dates should stay available in the date ledger."""
     ledger = build_date_ledger(
@@ -1063,6 +1476,447 @@ def test_date_interval_result_projects_week_answers_for_week_queries() -> None:
     assert "date_interval_days=7" in result.lines
     assert "date_interval_weeks=1 weeks" in result.lines
     assert "date_interval_week_answer=One week" in result.lines
+
+
+def test_date_ledger_uses_cited_session_dates_as_event_anchors() -> None:
+    """Session metadata can anchor answer events when the cited source text matches the query."""
+    ledger = build_date_ledger(
+        "How many days passed between my visit to MoMA and the Ancient Civilizations exhibit?",
+        [
+            (
+                "content=longmemeval_session_id=answer-1 "
+                "longmemeval_session_date=2023/01/08 (Sun) "
+                "user: I just got back from a guided tour at the Museum of Modern Art focused on modern art movements."
+            ),
+            (
+                "content=longmemeval_session_id=answer-2 "
+                "longmemeval_session_date=2023/01/15 (Sun) "
+                "user: I attended the Ancient Civilizations exhibit at the Metropolitan Museum of Art today."
+            ),
+        ],
+    )
+
+    result = render_date_interval_result(ledger, rank=1)
+
+    assert [(row.source_group, row.value, row.include_reason) for row in ledger.included(kind="date")] == [
+        ("answer-1", "2023-01-08", "session_date_anchor"),
+        ("answer-2", "2023-01-15", "session_date_anchor"),
+    ]
+    assert "date_interval_days=7" in result.lines
+    assert "date_interval_source_ids=answer-1,answer-2" in result.lines
+
+
+def test_date_ledger_offsets_relative_session_date_anchors() -> None:
+    """Relative source phrasing should adjust typed session-date anchors."""
+    ledger = build_date_ledger(
+        "How many days ago did I attend a baking class when I made my friend's birthday cake?",
+        [
+            (
+                "content=longmemeval_session_id=answer-1 "
+                "longmemeval_session_date=2022/03/21 (Mon) "
+                "user: I took an amazing baking class at a local culinary school yesterday."
+            ),
+            (
+                "content=longmemeval_session_id=answer-2 "
+                "longmemeval_session_date=2022/04/10 (Sun) "
+                "user: I just baked a chocolate cake for my friend's birthday party today."
+            ),
+        ],
+    )
+
+    result = render_date_interval_result(ledger, rank=1)
+
+    assert [(row.source_group, row.value, row.include_reason) for row in ledger.included(kind="date")] == [
+        ("answer-1", "2022-03-20", "relative_session_date_anchor"),
+        ("answer-2", "2022-04-10", "session_date_anchor"),
+    ]
+    assert "date_interval_days=21" in result.lines
+
+
+def test_date_ledger_uses_query_temporal_anchor_for_days_ago_questions() -> None:
+    """Days-ago synthesis should compare cited event dates to the query-time anchor."""
+    ledger = build_date_ledger(
+        "How many days ago did I meet Emma?",
+        [
+            (
+                "query_temporal_anchor=true "
+                "longmemeval_session_id=query-temporal-anchor "
+                "longmemeval_session_date=2023/04/20 (Thu) "
+                "role=query The question was asked today."
+            ),
+            (
+                "longmemeval_session_id=answer-emma "
+                "longmemeval_session_date=2023/04/11 (Tue) "
+                "role=user I caught up with Emma over lunch today."
+            ),
+        ],
+    )
+
+    result = render_date_interval_result(ledger, rank=1)
+
+    assert [(row.source_group, row.value, row.include_reason) for row in ledger.included(kind="date")] == [
+        ("query-temporal-anchor", "2023-04-20", "query_temporal_anchor"),
+        ("answer-emma", "2023-04-11", "session_date_anchor"),
+    ]
+    assert "date_interval_answer=9 days. 10 days (including the last day) is also acceptable." in result.lines
+    assert result.answer_candidate is not None
+    assert result.answer_candidate["answer"].startswith("9 days")
+
+
+def test_date_interval_prefers_cited_event_pair_over_query_anchor_for_before_queries() -> None:
+    """Before/after event-pair queries should not bind the query date as an operand."""
+    ledger = build_date_ledger(
+        "How many days before my best friend's birthday party did I order her gift?",
+        [
+            (
+                "query_temporal_anchor=true "
+                "longmemeval_session_id=query-temporal-anchor "
+                "longmemeval_session_date=2022/05/15 (Sun) "
+                "role=query The question was asked today."
+            ),
+            (
+                "content=longmemeval_session_id=answer-1 "
+                "longmemeval_session_date=2022/05/15 (Sun) "
+                "assistant: Recently, I can suggest personalized birthday party gift options "
+                "for your best friend."
+            ),
+            (
+                "content=longmemeval_session_id=answer-1 "
+                "longmemeval_session_date=2022/05/15 (Sun) "
+                "user: I ordered the personalized photo album on the 15th of April "
+                "for my best friend's birthday."
+            ),
+            (
+                "content=longmemeval_session_id=answer-2 "
+                "longmemeval_session_date=2022/05/15 (Sun) "
+                "user: I celebrated my best friend's birthday party on the 22nd of April."
+            ),
+        ],
+    )
+
+    result = render_date_interval_result(ledger, rank=1)
+
+    assert "date_interval_days=7" in result.lines[:8]
+    assert "date_interval_source_ids=answer-1,answer-2" in result.lines
+    assert all(
+        not (row.source_group == "answer-1" and row.value == "2022-05-15" and not row.exclude_reason)
+        for row in ledger.rows
+    )
+    assert "date_interval_days=23" not in result.lines[:8]
+
+
+def test_temporal_sequence_uses_just_as_session_date_anchor() -> None:
+    """Recent first-person event phrasing should anchor sequence order to session dates."""
+    ledger = build_temporal_sequence_ledger(
+        (
+            "Which three events happened in the order from first to last: the day I "
+            "helped my friend prepare the nursery, the day I helped my cousin pick "
+            "out stuff for her baby shower, and the day I ordered a phone case?"
+        ),
+        [
+            (
+                "content=longmemeval_session_id=answer-2 "
+                "longmemeval_session_date=2023/02/10 (Fri) "
+                "user: I just helped my cousin pick out some stuff for her baby shower."
+            ),
+            (
+                "content=longmemeval_session_id=answer-1 "
+                "longmemeval_session_date=2023/02/05 (Sun) "
+                "user: I just helped my friend prepare a nursery."
+            ),
+            (
+                "content=longmemeval_session_id=answer-3 "
+                "longmemeval_session_date=2023/02/25 (Sat) "
+                "user: I ordered a customized phone case for my friend's birthday today."
+            ),
+        ],
+    )
+
+    result = render_temporal_sequence_result(ledger, rank=1)
+
+    assert [(row.source_group, row.include_reason) for row in ledger.included(kind="temporal_event")] == [
+        ("answer-1", "session_date_anchor"),
+        ("answer-2", "session_date_anchor"),
+        ("answer-3", "session_date_anchor"),
+    ]
+    assert (
+        "temporal_sequence_answer=First, I helped my friend prepare the nursery. "
+        "Then, I helped my cousin pick out stuff for her baby shower. "
+        "Lastly, I ordered a phone case."
+    ) in result.lines
+
+
+def test_temporal_sequence_extracts_common_action_verbs_from_quoted_events() -> None:
+    """Temporal order questions should cover routine action verbs, not only travel verbs."""
+    ledger = build_temporal_sequence_ledger(
+        (
+            "What is the order of the three events: 'I signed up for the rewards "
+            "program at ShopRite', 'I used a Buy One Get One Free coupon on Luvs "
+            "diapers at Walmart', and 'I redeemed $12 cashback for a $10 Amazon "
+            "gift card from Ibotta'?"
+        ),
+        [
+            (
+                "content=longmemeval_session_id=answer-3 "
+                "longmemeval_session_date=2023/03/20 (Mon) "
+                "user: I signed up for their rewards program today while shopping at ShopRite."
+            ),
+            (
+                "content=longmemeval_session_id=answer-1 "
+                "longmemeval_session_date=2023/03/05 (Sun) "
+                "user: I used a Buy One Get One Free coupon on Luvs diapers at Walmart today."
+            ),
+            (
+                "content=longmemeval_session_id=answer-2 "
+                "longmemeval_session_date=2023/03/12 (Sun) "
+                "user: I redeemed $12 cashback for a $10 Amazon gift card from Ibotta today."
+            ),
+        ],
+    )
+
+    result = render_temporal_sequence_result(ledger, rank=1)
+
+    assert [row.source_group for row in ledger.included(kind="temporal_event")] == [
+        "answer-1",
+        "answer-2",
+        "answer-3",
+    ]
+    assert (
+        "temporal_sequence_answer=First, I used a Buy One Get One Free coupon on Luvs diapers at Walmart. "
+        "Then, I redeemed $12 cashback for a $10 Amazon gift card from Ibotta. "
+        "Lastly, I signed up for the rewards program at ShopRite."
+    ) in result.lines
+
+
+def test_date_ledger_does_not_promote_unrelated_session_dates() -> None:
+    """Session metadata should not become date evidence without query-specific event overlap."""
+    ledger = build_date_ledger(
+        "How many days passed between my visit to MoMA and the Ancient Civilizations exhibit?",
+        [
+            (
+                "content=longmemeval_session_id=distractor-1 "
+                "longmemeval_session_date=2023/01/01 (Sun) "
+                "user: I asked for general museum gift shop recommendations today."
+            ),
+            (
+                "content=longmemeval_session_id=answer-1 "
+                "longmemeval_session_date=2023/01/08 (Sun) "
+                "user: I just got back from a guided tour at the Museum of Modern Art focused on modern art movements."
+            ),
+        ],
+    )
+
+    assert [(row.source_group, row.value) for row in ledger.included(kind="date")] == [
+        ("answer-1", "2023-01-08")
+    ]
+
+
+def test_temporal_sequence_orders_relative_events_from_earliest_to_latest() -> None:
+    """Sequence synthesis should order cited event rows, not just select the first event."""
+    ledger = build_temporal_sequence_ledger(
+        "What is the order of the three trips I took in the past three months, from earliest to latest?",
+        [
+            (
+                "content=longmemeval_session_id=answer-trip-3 "
+                "user: I just got back from a solo camping trip to Yosemite National Park today."
+            ),
+            (
+                "content=longmemeval_session_id=answer-trip-1 "
+                "user: I went on a day hike to Muir Woods about two months ago."
+            ),
+            (
+                "content=longmemeval_session_id=answer-trip-2 "
+                "user: I got back from a road trip with friends to Big Sur and Monterey last month."
+            ),
+        ],
+    )
+
+    result = render_temporal_sequence_result(ledger, rank=1)
+
+    assert [(row.source_group, row.label, row.include_reason) for row in ledger.included(kind="temporal_event")] == [
+        ("answer-trip-1", "day hike to Muir Woods", "relative_time_anchor"),
+        ("answer-trip-2", "road trip with friends to Big Sur and Monterey", "relative_time_anchor"),
+        ("answer-trip-3", "solo camping trip to Yosemite National Park", "relative_time_anchor"),
+    ]
+    assert (
+        "temporal_sequence_answer=First, day hike to Muir Woods. "
+        "Then, road trip with friends to Big Sur and Monterey. "
+        "Lastly, solo camping trip to Yosemite National Park."
+    ) in result.lines
+    assert result.support_source_groups == ("answer-trip-1", "answer-trip-2", "answer-trip-3")
+    assert result.answer_candidate is not None
+    assert result.answer_candidate["type"] == "temporal_sequence"
+
+
+def test_temporal_sequence_uses_provenance_order_for_equal_vague_dates() -> None:
+    """Equal/vague temporal anchors should use source provenance order as a deterministic tie-breaker."""
+    ledger = build_temporal_sequence_ledger(
+        (
+            "Which three events happened in the order from first to last: helping prepare the nursery, "
+            "helping pick out baby shower stuff, and ordering a customized phone case?"
+        ),
+        [
+            (
+                "content=longmemeval_session_id=answer-family_2 "
+                "longmemeval_session_date=2023/04/03 (Mon) "
+                "user: I just helped my cousin pick out some stuff for her baby shower today."
+            ),
+            (
+                "content=longmemeval_session_id=answer-family_1 "
+                "longmemeval_session_date=2023/04/03 (Mon) "
+                "user: I just helped my friend prepare the nursery today."
+            ),
+            (
+                "content=longmemeval_session_id=answer-family_3 "
+                "longmemeval_session_date=2023/04/03 (Mon) "
+                "user: I ordered a customized phone case for my friend's birthday today."
+            ),
+        ],
+    )
+
+    result = render_temporal_sequence_result(ledger, rank=1)
+
+    assert [row.source_group for row in ledger.included(kind="temporal_event")] == [
+        "answer-family_1",
+        "answer-family_2",
+        "answer-family_3",
+    ]
+    assert (
+        "temporal_sequence_answer=First, I helped my friend prepare the nursery. "
+        "Then, I helped my cousin pick out some stuff for her baby shower. "
+        "Lastly, I ordered a customized phone case for my friend's birthday."
+    ) in result.lines
+
+
+def test_temporal_sequence_defers_without_enough_event_slots() -> None:
+    """Sequence synthesis should not invent an ordered list from one cited event."""
+    ledger = build_temporal_sequence_ledger(
+        "What is the order of the three sports events I watched in January?",
+        [
+            (
+                "content=longmemeval_session_id=answer-sports_1 "
+                "longmemeval_session_date=2023/01/04 (Wed) "
+                "user: I watched an NBA game at Staples Center today."
+            ),
+        ],
+    )
+
+    result = render_temporal_sequence_result(ledger, rank=1)
+
+    assert len(ledger.included(kind="temporal_event")) == 1
+    assert result.lines == ()
+
+
+def test_temporal_sequence_answer_preserves_all_included_list_items() -> None:
+    """Temporal list answers should not silently drop cited ledger items above five."""
+    labels = (
+        "Science Museum",
+        "Museum of Contemporary Art",
+        "Metropolitan Museum of Art",
+        "Museum of History",
+        "Modern Art Museum",
+        "Natural History Museum",
+    )
+    plan = SynthesisPlan(
+        answer_type="list",
+        operation="temporal_sequence",
+        subject_terms=("museum",),
+        required_kinds=("temporal_event",),
+        required_source_groups=1,
+        reasons=("temporal_sequence", "list_answer"),
+    )
+    rows = tuple(
+        EvidenceLedgerRow(
+            fact_id=f"temporal_sequence:{index}",
+            source_group=f"answer-{index + 1}",
+            citation=f"eventloom://agent/events/{index + 1}#hash{index + 1}",
+            kind="temporal_event",
+            value=str(index + 1),
+            unit="order",
+            label=label,
+            raw_span=f"I visited the {label}.",
+            context=f"I visited the {label}.",
+            normalized_identity=f"temporal_event={label.casefold()}",
+            relevance=3,
+            include_reason="explicit_temporal_order",
+            confidence=0.9,
+        )
+        for index, label in enumerate(labels)
+    )
+
+    result = render_temporal_sequence_result(EvidenceLedger(plan=plan, rows=rows), rank=1)
+
+    assert result.answer_candidate is not None
+    assert "Natural History Museum" in result.answer_candidate["answer"]
+    assert result.support_source_groups == (
+        "answer-1",
+        "answer-2",
+        "answer-3",
+        "answer-4",
+        "answer-5",
+        "answer-6",
+    )
+
+
+def test_temporal_sequence_uses_venue_entity_labels_for_museum_order_queries() -> None:
+    """Ordered venue-list synthesis should expose the venue entity, not adjacent event details."""
+    ledger = build_temporal_sequence_ledger(
+        "What is the order of the six museums I visited from earliest to latest?",
+        [
+            (
+                "content=longmemeval_session_id=answer-museum-2 "
+                "longmemeval_session_date=2023/01/22 (Sun) "
+                "user: Speaking of feminist art, I just came back from a lecture series "
+                "at the Museum of Contemporary Art, where Dr. Maria Rodriguez spoke "
+                "about the role of feminist art in the 1970s."
+            ),
+            (
+                "content=longmemeval_session_id=answer-museum-1 "
+                "longmemeval_session_date=2023/01/15 (Sun) "
+                "user: I visited the Science Museum's Space Exploration exhibition today."
+            ),
+        ],
+    )
+
+    result = render_temporal_sequence_result(ledger, rank=1)
+
+    assert [row.label for row in ledger.included(kind="temporal_event")] == [
+        "Science Museum",
+        "Museum of Contemporary Art",
+    ]
+    assert (
+        "temporal_sequence_answer=First, Science Museum. Then, Museum of Contemporary Art."
+    ) in result.lines
+
+
+def test_temporal_sequence_ignores_query_echo_and_normalizes_museum_possessives() -> None:
+    """Checkout/query metadata should not become evidence for ordered venue lists."""
+    ledger = build_temporal_sequence_ledger(
+        "What is the order of the museums I visited from earliest to latest?",
+        [
+            (
+                "query=What is the order of the museums I visited from earliest to latest? "
+                "content=longmemeval_session_id=answer-met "
+                "longmemeval_session_date=2023/02/10 (Fri) "
+                "user: I saw it in person today at the Metropolitan Museum of Art's "
+                "\"Ancient Egyptian Artifacts\" exhibition."
+            ),
+            (
+                "content=longmemeval_session_id=answer-history "
+                "longmemeval_session_date=2023/02/15 (Wed) "
+                "user: I participated in a behind-the-scenes tour of the Museum of History's "
+                "conservation lab today."
+            ),
+        ],
+    )
+
+    result = render_temporal_sequence_result(ledger, rank=1)
+
+    assert [row.label for row in ledger.included(kind="temporal_event")] == [
+        "Metropolitan Museum of Art",
+        "Museum of History",
+    ]
+    assert "from earliest to latest" not in result.answer_candidate["answer"]  # type: ignore[index]
 
 
 def test_currency_ledger_deduplicates_repeated_items_with_exclusions() -> None:
@@ -1173,6 +2027,262 @@ def test_currency_ledger_excludes_planned_purchase_for_spent_queries() -> None:
 
     assert "currency_total_answer=$120" in result.lines
     assert "distractor" in ",".join(result.excluded_source_groups)
+
+
+def test_currency_ledger_excludes_price_filter_ranges_for_spend_totals() -> None:
+    """Spent-total synthesis should ignore assistant search filters and price-range examples."""
+    ledger = build_currency_ledger(
+        "How much total money did I spend on attending workshops?",
+        [
+            "session_id=paid-1 user: I paid $500 to attend a digital marketing workshop.",
+            "session_id=paid-2 user: I paid $200 to attend a writing workshop.",
+            (
+                "session_id=assistant-filter **Google Search:** Use specific search terms like "
+                "\"2-day writing workshops near me under $500\" or filter by cost ranges "
+                "such as $100-$500 and $500-$1000."
+            ),
+        ],
+    )
+
+    result = render_currency_result(ledger, rank=1)
+
+    assert [(row.source_group, row.value) for row in ledger.included(kind="currency")] == [
+        ("paid-1", "500.0"),
+        ("paid-2", "200.0"),
+    ]
+    assert {row.value for row in ledger.excluded(kind="currency")} >= {"100.0", "500.0", "1000.0"}
+    assert "currency_total_answer=$700" in result.lines
+    assert "currency_total_answer=$1,700" not in result.lines
+
+
+def test_currency_ledger_requires_itemized_targets_for_conjunctive_cost_queries() -> None:
+    """Itemized cost queries should not include unrelated amounts from the same owner/session."""
+    ledger = build_currency_ledger(
+        "What is the total cost of Lola's vet visit and flea medication?",
+        [
+            (
+                "session_id=vet user: I just took Lola to the vet last week and "
+                "got a discounted consultation fee of $50 as a first-time customer."
+            ),
+            (
+                "session_id=supplies user: I also got her flea and tick prevention "
+                "medication, it was $25 for a 3-month supply. I got Lola a bag of "
+                "cat food from Petco, it was $35. Her carrier was $80 when I bought it last year."
+            ),
+        ],
+    )
+
+    result = render_currency_result(ledger, rank=1)
+
+    assert [(row.source_group, row.value) for row in ledger.included(kind="currency")] == [
+        ("vet", "50.0"),
+        ("supplies", "25.0"),
+    ]
+    assert {row.value for row in ledger.excluded(kind="currency")} >= {"35.0", "80.0"}
+    assert "currency_total_answer=$75" in result.lines
+    assert "currency_total_answer=$190" not in result.lines
+
+
+def test_currency_ledger_filters_itemized_targets_within_one_source_group() -> None:
+    """Itemized spend queries should use requested item slots even when evidence shares one source."""
+    ledger = build_currency_ledger(
+        "How much did I spend on car wash and parking ticket?",
+        [
+            (
+                "session_id=car-budget user: I'm trying to keep track of my car expenses. "
+                "My annual insurance premium is $3,500, and my mechanic quoted $200 for a tune-up. "
+                "This week I paid $50 for a car wash and $15 for a parking ticket."
+            ),
+        ],
+    )
+
+    result = render_currency_result(ledger, rank=1)
+
+    assert [(row.source_group, row.value) for row in ledger.included(kind="currency")] == [
+        ("car-budget", "50.0"),
+        ("car-budget", "15.0"),
+    ]
+    assert {row.value for row in ledger.excluded(kind="currency")} >= {"3500.0", "200.0"}
+    assert "currency_total_answer=$65" in result.lines
+    assert "currency_total_answer=$3,765" not in result.lines
+
+
+def test_currency_ledger_requires_head_terms_for_multiword_item_slots() -> None:
+    """A broad category token like car should not satisfy a specific car-wash slot."""
+    ledger = build_currency_ledger(
+        "How much did I spend on car wash and parking ticket?",
+        [
+            "session_id=budget user: I am budgeting my car expenses. My annual car insurance premium is $3,500.",
+            "session_id=wash user: I had a car wash on February 3rd that cost $15.",
+            "session_id=ticket user: I also got a parking ticket near my work for $50.",
+        ],
+    )
+
+    result = render_currency_result(ledger, rank=1)
+
+    assert [(row.source_group, row.value) for row in ledger.included(kind="currency")] == [
+        ("wash", "15.0"),
+        ("ticket", "50.0"),
+    ]
+    assert "budget" in ",".join(result.excluded_source_groups)
+    assert "currency_total_answer=$65" in result.lines
+    assert "currency_total_answer=$3,565" not in result.lines
+
+
+def test_currency_ledger_requires_substantive_item_slot_matches() -> None:
+    """Generic adjectives like new should not make unrelated items satisfy itemized slots."""
+    ledger = build_currency_ledger(
+        "What is the total cost of the new food bowl, measuring cup, dental chews, and flea and tick collar I got for Max?",
+        [
+            (
+                "session_id=chews user: the dental chews - I started using a new one "
+                "to help with his teeth, and the chews are $10 a pack."
+            ),
+            (
+                "session_id=bed user: I also got a new dog bed for Max recently, "
+                "it was around $40, but that was a one-time expense."
+            ),
+            (
+                "session_id=bowl-cup user: I just got him a new stainless steel food bowl "
+                "from Amazon for $15, and a measuring cup from the pet store down the street for $5."
+            ),
+            (
+                "session_id=collar user: I forgot to mention that I also got a flea and tick "
+                "collar for Max recently, which was $20."
+            ),
+        ],
+    )
+
+    result = render_currency_result(ledger, rank=1)
+
+    assert [(row.source_group, row.value) for row in ledger.included(kind="currency")] == [
+        ("chews", "10.0"),
+        ("bowl-cup", "15.0"),
+        ("bowl-cup", "5.0"),
+        ("collar", "20.0"),
+    ]
+    assert "bed" in ",".join(result.excluded_source_groups)
+    assert "currency_total_answer=$50" in result.lines
+    assert "currency_total_answer=$90" not in result.lines
+
+
+def test_currency_ledger_excludes_generic_category_amounts_for_recipient_gift_slots() -> None:
+    """Recipient-scoped gift totals should not include broad category spend amounts."""
+    ledger = build_currency_ledger(
+        "What is the total amount I spent on gifts for my coworker and brother?",
+        [
+            (
+                "session_id=gifts user: I spent $500 on holiday gifts. "
+                "I bought a coffee mug for my coworker for $60. "
+                "I bought headphones for my brother for $140."
+            ),
+        ],
+    )
+
+    result = render_currency_result(ledger, rank=1)
+
+    assert [(row.source_group, row.value) for row in ledger.included(kind="currency")] == [
+        ("gifts", "60.0"),
+        ("gifts", "140.0"),
+    ]
+    assert {row.value for row in ledger.excluded(kind="currency")} >= {"500.0"}
+    assert "currency_total_answer=$200" in result.lines
+    assert "currency_total_answer=$700" not in result.lines
+
+
+def test_currency_ledger_uses_local_anaphora_for_recipient_gift_slots() -> None:
+    """Recipient-scoped gift totals should include local pronoun evidence and exclude broad category totals."""
+    ledger = build_currency_ledger(
+        "What is the total amount I spent on gifts for my coworker and brother?",
+        [
+            (
+                "session_id=coworker user: I was at a baby shower recently and made sure "
+                "to get a gift receipt, just in case my coworker wanted to exchange anything. "
+                "I purchased her a set of adorable baby clothes and toys from Buy Buy Baby, totaling $100."
+            ),
+            (
+                "session_id=brother user: I know I spent a total of $500 on gifts recently, "
+                "but I'm having trouble breaking it down. By the way, I did get my brother "
+                "a really nice graduation gift in May - a $100 gift card to his favorite electronics store."
+            ),
+        ],
+    )
+
+    result = render_currency_result(ledger, rank=1)
+
+    assert [(row.source_group, row.value) for row in ledger.included(kind="currency")] == [
+        ("coworker", "100.0"),
+        ("brother", "100.0"),
+    ]
+    assert {row.value for row in ledger.excluded(kind="currency")} >= {"500.0"}
+    assert "currency_total_answer=$200" in result.lines
+    assert "currency_total_answer=$600" not in result.lines
+
+
+def test_currency_ledger_promotes_unit_price_for_each_item_queries() -> None:
+    """Each-item price queries should answer with the unit amount, not aggregate spend."""
+    ledger = build_currency_ledger(
+        "How much did I spend on each coffee mug for my coworkers?",
+        [
+            (
+                "session_id=mugs user: I spent $60 on coffee mugs for my coworkers, "
+                "buying 5 mugs at $12 each. I also bought snacks for $20."
+            ),
+        ],
+    )
+
+    result = render_currency_result(ledger, rank=1)
+
+    assert [(row.source_group, row.value) for row in ledger.included(kind="currency")] == [
+        ("mugs", "12.0"),
+    ]
+    assert {row.value for row in ledger.excluded(kind="currency")} >= {"60.0", "20.0"}
+    assert "currency_total_answer=$12" in result.lines
+    assert "currency_total_answer=$72" not in result.lines
+
+
+def test_currency_ledger_sums_floor_values_for_minimum_sale_queries() -> None:
+    """Minimum sale-value queries should treat worth and at-least value as realized floor operands."""
+    ledger = build_currency_ledger(
+        "What is the minimum amount I could get if I sold the vintage diamond necklace and the antique vanity?",
+        [
+            (
+                "session_id=necklace user: I'm thinking of selling my vintage diamond necklace, "
+                "which is worth $5,000."
+            ),
+            (
+                "session_id=vanity user: I bought the antique vanity for $150 and put in some work "
+                "to restore it, so I'm confident it's worth at least that amount now."
+            ),
+        ],
+    )
+
+    result = render_currency_result(ledger, rank=1)
+
+    assert [(row.source_group, row.value) for row in ledger.included(kind="currency")] == [
+        ("necklace", "5000.0"),
+        ("vanity", "150.0"),
+    ]
+    assert "currency_total_answer=$5,150" in result.lines
+
+
+def test_currency_ledger_promotes_difference_for_savings_queries() -> None:
+    """Savings queries should answer with reference price minus paid price."""
+    ledger = build_currency_ledger(
+        "How much did I save on the designer handbag?",
+        [
+            "session_id=paid user: I bought a designer handbag at TK Maxx for $200.",
+            "session_id=reference user: The same designer handbag normally retails for $500.",
+        ],
+    )
+
+    result = render_currency_result(ledger, rank=1)
+
+    assert "currency_values=$500,$200" in result.lines
+    assert "currency_difference_answer=$300" in result.lines
+    assert result.answer_candidate is not None
+    assert result.answer_candidate["answer_key"] == "currency_difference_answer"
+    assert result.answer_candidate["answer"] == "$300"
 
 
 def test_currency_result_projects_max_label_answer_for_store_queries() -> None:
@@ -1308,6 +2418,58 @@ def test_currency_ledger_deduplicates_labeled_source_value_echoes() -> None:
     assert "currency_total_answer=$1,200" not in result.lines
 
 
+def test_currency_ledger_filters_rewards_for_earned_market_totals() -> None:
+    """Earned-money queries should total sale proceeds, not spend rewards or thresholds."""
+    ledger = build_currency_ledger(
+        "How much money did I earn in total from markets?",
+        [
+            "session_id=market-1 user: I sold pottery at the winter market and earned $225.",
+            "session_id=market-2 user: I made $120 selling prints at a neighborhood market.",
+            "session_id=market-3 user: I sold jam at the spring market for $150.",
+            (
+                "session_id=distractor-1 user: The market loyalty card gives a $50 reward "
+                "after customers spend $120."
+            ),
+            (
+                "session_id=distractor-2 user: I priced the candles at $7.50 each "
+                "for the next craft market."
+            ),
+        ],
+    )
+
+    result = render_currency_result(ledger, rank=1)
+
+    assert "currency_values=$225,$150,$120" in result.lines
+    assert "currency_total_answer=$495" in result.lines
+    assert "distractor-1" in ",".join(result.excluded_source_groups)
+    assert "distractor-2" in ",".join(result.excluded_source_groups)
+
+
+def test_currency_ledger_multiplies_realized_unit_price_sales() -> None:
+    """Earned-money totals should use sale quantity times unit price when the sale happened."""
+    ledger = build_currency_ledger(
+        "What is the total amount of money I earned from selling my products at the markets?",
+        [
+            "session_id=market-1 user: I sold 15 jars of homemade jam at the market for $225 total.",
+            "session_id=market-2 user: I sold 12 bunches of herbs at the farmers' market and made $120.",
+            (
+                "session_id=market-3 user: I just sold 20 potted herb plants at the "
+                "Summer Solstice Market for $7.50 each, and it was a great day."
+            ),
+        ],
+    )
+
+    result = render_currency_result(ledger, rank=1)
+
+    assert [(row.source_group, row.value) for row in ledger.included(kind="currency")] == [
+        ("market-1", "225.0"),
+        ("market-2", "120.0"),
+        ("market-3", "150.0"),
+    ]
+    assert "currency_values=$225,$150,$120" in result.lines
+    assert "currency_total_answer=$495" in result.lines
+
+
 def test_duration_ledger_normalizes_mixed_units() -> None:
     """Duration evidence should normalize minute and hour values into one ledger."""
     ledger = build_duration_ledger(
@@ -1346,6 +2508,37 @@ def test_duration_ledger_parses_word_number_plural_hours() -> None:
     assert "duration_total_answer=15 hours" in result.lines
 
 
+def test_duration_ledger_parses_fractional_word_durations() -> None:
+    """Prose fractions like two and a half weeks should be typed duration values."""
+    ledger = build_duration_ledger(
+        "How long did I take to finish 'The Seven Husbands of Evelyn Hugo' and 'The Nightingale' combined?",
+        [
+            (
+                "session_id=evelyn user: I just finished \"The Seven Husbands of Evelyn Hugo\", "
+                "which took me two and a half weeks to finish."
+            ),
+            (
+                "session_id=nightingale user: I recently finished \"The Nightingale\" by Kristin Hannah, "
+                "which took me three weeks to finish."
+            ),
+            (
+                "session_id=distractor user: I've been getting into audiobooks lately and have "
+                "managed to finish three in the last six weeks, which is great for me."
+            ),
+        ],
+    )
+
+    result = render_duration_result(ledger, rank=1)
+
+    assert [(row.source_group, row.label, row.value) for row in ledger.included(kind="duration")] == [
+        ("evelyn", "2.5 weeks", "25200.0"),
+        ("nightingale", "3 weeks", "30240.0"),
+    ]
+    assert "duration_values=2.5 weeks,3 weeks" in result.lines
+    assert "duration_total_answer=5.5 weeks" in result.lines
+    assert "distractor" in ",".join(result.excluded_source_groups)
+
+
 def test_duration_result_answers_in_days_for_day_queries() -> None:
     """Day-count queries should project day totals from mixed week/day evidence."""
     ledger = build_duration_ledger(
@@ -1363,6 +2556,81 @@ def test_duration_result_answers_in_days_for_day_queries() -> None:
     assert "duration_total_answer=17 days" in result.lines
     assert "duration_source_ids=answer-1,answer-2" in result.lines
     assert "distractor" in ",".join(result.excluded_source_groups)
+
+
+def test_duration_ledger_filters_itinerary_lengths_for_actual_travel_totals() -> None:
+    """Travel day totals should use actual trip durations, not advice or planning spans."""
+    ledger = build_duration_ledger(
+        "How many days did I spend traveling in Hawaii and New York City in total?",
+        [
+            "session_id=hawaii user: I got back from a 10-day island-hopping trip to Hawaii.",
+            "session_id=nyc user: I took a solo trip to New York City for five days.",
+            "session_id=advice user: I asked for a 4-day itinerary for New York City.",
+            "session_id=planning user: I was planning a 3-day Hawaii weekend option.",
+        ],
+    )
+
+    result = render_duration_result(ledger, rank=1)
+
+    assert "duration_values=10 days,5 days" in result.lines
+    assert "duration_total_answer=15 days" in result.lines
+    assert "advice" in ",".join(result.excluded_source_groups)
+    assert "planning" in ",".join(result.excluded_source_groups)
+
+
+def test_duration_ledger_uses_session_trip_context_for_local_planning_wording() -> None:
+    """Trip durations can be expressed later as planning inflexibility inside the same cited session."""
+    ledger = build_duration_ledger(
+        "How many days did I spend in total traveling in Hawaii and in New York City?",
+        [
+            (
+                "session_id=nyc user: I recently got back from a solo trip to New York City "
+                "for five days and I was able to save a lot by staying at a hostel."
+            ),
+            (
+                "session_id=hawaii user: By the way, I just got back from an amazing "
+                "island-hopping trip to Hawaii with my family. Later I said that with my family, "
+                "we had to plan everything out for the 10-day so far in advance."
+            ),
+        ],
+    )
+
+    result = render_duration_result(ledger, rank=1)
+
+    assert [(row.source_group, row.label) for row in ledger.included(kind="duration")] == [
+        ("nyc", "5 days"),
+        ("hawaii", "10 days"),
+    ]
+    assert "duration_total_answer=15 days" in result.lines
+
+
+def test_duration_ledger_binds_trip_duration_across_same_source_group() -> None:
+    """Completed-trip destination evidence can bind a duration mentioned in another turn from the same session."""
+    ledger = build_duration_ledger(
+        "How many days did I spend in total traveling in Hawaii and in New York City?",
+        [
+            (
+                "session_id=nyc user: I recently got back from a solo trip to New York City "
+                "for five days and I was able to save a lot by staying at a hostel."
+            ),
+            (
+                "session_id=hawaii user: By the way, I just got back from an amazing "
+                "island-hopping trip to Hawaii with my family."
+            ),
+            (
+                "session_id=hawaii user: With my family, we had to plan everything out "
+                "for the 10-day so far in advance, and it was hard to make changes on the fly."
+            ),
+        ],
+    )
+
+    result = render_duration_result(ledger, rank=1)
+
+    assert [(row.source_group, row.label) for row in ledger.included(kind="duration")] == [
+        ("nyc", "5 days"),
+        ("hawaii", "10 days"),
+    ]
+    assert "duration_total_answer=15 days" in result.lines
 
 
 def test_duration_ledger_deduplicates_json_echoes() -> None:

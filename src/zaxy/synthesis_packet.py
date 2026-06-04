@@ -52,8 +52,15 @@ def synthesis_packet_from_items(items: list[dict[str, Any]]) -> SynthesisPacket:
     fallback = _packet_from_rendered_content(items)
     if packet is None:
         return fallback
+    aggregate_total_query = _aggregate_total_query_text(_query_text_from_items(items))
     return SynthesisPacket(
-        answer_candidates=packet.answer_candidates or fallback.answer_candidates,
+        answer_candidates=_dedupe_candidates(
+            [
+                *packet.answer_candidates,
+                *_additive_fallback_candidates(packet.answer_candidates, fallback.answer_candidates),
+            ],
+            aggregate_total_query=aggregate_total_query,
+        ),
         ledger_rows=_dedupe_ledger_rows([*packet.ledger_rows, *fallback.ledger_rows]),
         operations=packet.operations or fallback.operations,
         result=packet.result or fallback.result,
@@ -155,14 +162,12 @@ def _packet_from_rendered_content(items: list[dict[str, Any]]) -> SynthesisPacke
 
 def _candidate_from_content(content: str) -> dict[str, Any] | None:
     fields: dict[str, str] = {}
-    answer_key: str | None = None
     for line in content.splitlines():
         for match in _SYNTHESIS_KV_RE.finditer(line):
             key = match.group("key")
             value = match.group("value")
             fields[key] = value
-            if answer_key is None and key.endswith("_answer") and not key.endswith("_answer_text"):
-                answer_key = key
+    answer_key = _preferred_answer_key(fields, content=content)
     answer = _line_value(content, answer_key) if answer_key else None
     if answer is None:
         answer = fields.get(answer_key or "")
@@ -170,6 +175,8 @@ def _candidate_from_content(content: str) -> dict[str, Any] | None:
         return None
     rank = _parse_candidate_int(fields.get("candidate_rank"), default=1)
     candidate_type = fields.get("candidate_type") or _answer_candidate_type(answer_key)
+    if answer_key == "direct_numeric_answer" and not _direct_numeric_fallback_allowed(content):
+        return None
     confidence = _parse_candidate_float(fields.get("candidate_confidence"))
     return {
         "rank": rank,
@@ -180,6 +187,90 @@ def _candidate_from_content(content: str) -> dict[str, Any] | None:
         "support_source_ids": _split_csv(fields.get("candidate_support")),
         "excluded_source_ids": _split_csv(_first_field_suffix(fields, "_excluded_source_ids")),
     }
+
+
+def _direct_numeric_fallback_allowed(content: str) -> bool:
+    """Allow direct scalar fallback only for update-state, not broad aggregate, queries."""
+    query = _line_value(content, "query") or content
+    lowered = query.casefold()
+    if re.search(r"\b(?:currently|so far|since|each day|daily|finished|collection|followers?)\b", lowered):
+        return True
+    return bool(re.search(r"\b(?:sessions?|issues?|tops?|stories?)\b", lowered) and not re.search(
+        r"\btotal\b",
+        lowered,
+    ))
+
+
+def _preferred_answer_key(fields: dict[str, str], *, content: str = "") -> str | None:
+    keys = [
+        key
+        for key in fields
+        if key.endswith("_answer") or key.endswith("_answer_text")
+    ]
+    if not keys:
+        return None
+    if _aggregate_total_query_text(_line_value(content, "query") or ""):
+        total_keys = [key for key in keys if key.endswith("_total_answer")]
+        if total_keys:
+            total_keys.sort(key=_answer_key_sort_key)
+            return total_keys[0]
+    keys.sort(key=_answer_key_sort_key)
+    return keys[0]
+
+
+def _query_text_from_items(items: list[dict[str, Any]]) -> str:
+    for item in items:
+        content = item.get("content")
+        if isinstance(content, str):
+            query = _line_value(content, "query")
+            if query:
+                return query
+    return ""
+
+
+def _aggregate_total_query_text(query: str) -> bool:
+    query_text = " ".join(query.casefold().split())
+    return bool(re.search(r"\b(?:total|combined|altogether|sum)\b|\bin\s+total\b", query_text))
+
+
+def _answer_key_sort_key(key: str) -> tuple[int, str]:
+    if key in {
+        "latest_state_answer",
+        "query_bound_direct_answer",
+        "query_bound_difference_answer",
+        "query_bound_scalar_total_answer",
+        "relative_temporal_anchor_answer",
+    }:
+        return 0, key
+    if key.endswith("_answer_text"):
+        return 1, key
+    if key in {
+        "day_interval_answer",
+        "week_interval_answer",
+        "month_interval_answer",
+        "year_interval_answer",
+    }:
+        return 2, key
+    if key.endswith("_total_answer"):
+        return 3, key
+    if key in {
+        "future_age_at_event_answer",
+        "page_total_answer",
+        "distance_total_answer",
+        "pages_remaining_answer",
+        "percentage_answer",
+        "boolean_comparison_answer",
+        "boolean_evidence_answer",
+        "property_outcome_answer",
+        "instrument_ownership_answer",
+        "temporal_order_answer",
+        "recency_answer",
+        "direct_answer",
+    }:
+        return 4, key
+    if key == "assistant_recall_answer":
+        return 5, key
+    return 6, key
 
 
 def _clean_candidates(raw_candidates: Any) -> list[dict[str, Any]]:
@@ -197,6 +288,30 @@ def _clean_candidates(raw_candidates: Any) -> list[dict[str, Any]]:
         if cleaned:
             candidates.append(cleaned)
     return _dedupe_candidates(candidates)
+
+
+def _additive_fallback_candidates(
+    typed_candidates: list[dict[str, Any]],
+    fallback_candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Keep rendered answer surfaces that add a distinct candidate type/key."""
+    typed_identities = {
+        (
+            str(candidate.get("type", "")),
+            str(candidate.get("answer_key", "")),
+        )
+        for candidate in typed_candidates
+    }
+    additive: list[dict[str, Any]] = []
+    for candidate in fallback_candidates:
+        identity = (
+            str(candidate.get("type", "")),
+            str(candidate.get("answer_key", "")),
+        )
+        if identity in typed_identities:
+            continue
+        additive.append(candidate)
+    return additive
 
 
 def _clean_ledger_rows(raw_rows: Any) -> list[dict[str, Any]]:
@@ -238,7 +353,11 @@ def _clean_ledger_row(row: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _dedupe_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _dedupe_candidates(
+    candidates: list[dict[str, Any]],
+    *,
+    aggregate_total_query: bool = False,
+) -> list[dict[str, Any]]:
     deduped: list[dict[str, Any]] = []
     seen: set[tuple[int, str, str]] = set()
     for candidate in candidates:
@@ -254,10 +373,19 @@ def _dedupe_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]
     deduped.sort(
         key=lambda candidate: (
             _parse_candidate_int(candidate.get("rank"), default=1),
+            _aggregate_total_candidate_sort_key(candidate, aggregate_total_query=aggregate_total_query),
+            _answer_key_sort_key(str(candidate.get("answer_key", ""))),
             str(candidate.get("type")),
         )
     )
     return deduped
+
+
+def _aggregate_total_candidate_sort_key(candidate: dict[str, Any], *, aggregate_total_query: bool) -> int:
+    if not aggregate_total_query:
+        return 0
+    answer_key = str(candidate.get("answer_key", ""))
+    return 0 if answer_key.endswith("_total_answer") else 1
 
 
 def _dedupe_ledger_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -81,6 +81,37 @@ def test_score_retrieval_accepts_semantic_answer_surface_forms() -> None:
     assert distributed_location.score == 1.0
 
 
+def test_score_retrieval_accepts_structured_scalar_answer_fields() -> None:
+    """One-token expected answers should match compact structured answer fields."""
+    yes_case = BenchmarkCase(
+        name="boolean-answer",
+        query="Did I receive a higher percentage discount?",
+        expected_terms=("Yes.",),
+    )
+    numeric_case = BenchmarkCase(
+        name="numeric-answer",
+        query="How many minutes did I exceed the target?",
+        expected_terms=("12",),
+    )
+
+    yes_score = score_retrieval(
+        yes_case,
+        [
+            "memory_checkout_compact=true\n"
+            "checkout_answer_candidate=true\n"
+            "answer_key=boolean_comparison_answer\n"
+            "answer=Yes"
+        ],
+    )
+    numeric_score = score_retrieval(
+        numeric_case,
+        ["zaxy_synthesis_bundle=true\ncandidate_type=duration\nminutes_answer=12"],
+    )
+
+    assert yes_score.score == 1.0
+    assert numeric_score.score == 1.0
+
+
 def test_score_retrieval_accepts_inflected_action_answer_surface_forms() -> None:
     """Action answers should match cited evidence across ordinary inflections."""
     case = BenchmarkCase(

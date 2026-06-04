@@ -1,0 +1,33 @@
+# Live Retrieval Benchmark
+
+- Generated: `2026-06-03T23:40:03Z`
+- Embedding provider: `hash:1536`
+- Workload: `longmemeval-cleaned-v1`
+- Workload SHA-256: `0dc36a139bb9a4fdc7c6cd34400737a58a1eb7410517341f015e9fbfc76ed854`
+- Events: `5372`
+- Queries: `500`
+- Subjects: `500`
+- Sessions: `948`
+- Lanes: `longmemeval`
+
+| Backend | Mean score | Identity recall | Source recall | Citation coverage | Answer@5 | Recall@1 | Recall@5 | Recall@10 | p50 ms | p95 ms | p99 ms | Returned bytes | Approx tokens |
+|---------|------------|-----------------|---------------|-------------------|----------|----------|----------|-----------|--------|--------|--------|----------------|---------------|
+| zaxy-checkout | 0.874 | 0.950 |  | 1.000 | 0.802 | 0.894 | 0.990 | 0.990 | 323.43 | 563.76 | 702.90 | 33844 | 8458 |
+
+## Category summaries
+
+| Backend | Category | Queries | Mean score | Misses | Source recall | Citation coverage | Answer@5 | Recall@1 | Recall@5 | Recall@10 |
+|---------|----------|---------|------------|--------|---------------|-------------------|----------|----------|----------|-----------|
+| zaxy-checkout | longmemeval:knowledge-update | 78 | 0.897 | 8 |  | 1.000 | 0.833 | 0.936 | 1.000 | 1.000 |
+| zaxy-checkout | longmemeval:multi-session | 133 | 0.752 | 33 |  | 1.000 | 0.617 | 0.955 | 0.985 | 0.985 |
+| zaxy-checkout | longmemeval:single-session-assistant | 56 | 1.000 | 0 |  | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| zaxy-checkout | longmemeval:single-session-preference | 30 | 0.900 | 3 |  | 1.000 | 0.900 | 1.000 | 1.000 | 1.000 |
+| zaxy-checkout | longmemeval:single-session-user | 70 | 0.957 | 3 |  | 1.000 | 0.943 | 0.900 | 0.971 | 0.971 |
+| zaxy-checkout | longmemeval:temporal-reasoning | 133 | 0.880 | 16 |  | 1.000 | 0.789 | 0.737 | 0.993 | 0.993 |
+
+## Miss taxonomy
+
+| Backend | Miss category | Count |
+|---------|---------------|-------|
+| zaxy-checkout | retrieval_miss | 5 |
+| zaxy-checkout | synthesis_miss | 94 |

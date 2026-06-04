@@ -2157,6 +2157,28 @@ async def test_embedded_store_reset_rebuilds_projection_artifact(tmp_path: Path)
 
 
 @pytest.mark.asyncio
+async def test_embedded_store_benchmark_projection_marker_round_trips(tmp_path: Path) -> None:
+    """Embedded benchmark projections should carry semantic reuse markers."""
+    store = EmbeddedGraphStore(tmp_path / "embedded.kuzu")
+    await store.connect()
+    await store.init_schema()
+
+    assert await store.benchmark_projection_present("longmemeval-key") is False
+
+    await store.mark_benchmark_projection(
+        "longmemeval-key",
+        [
+            type("Event", (), {"seq": 1, "hash": "hash-1"})(),
+            type("Event", (), {"seq": 2, "hash": "hash-2"})(),
+        ],
+    )
+
+    assert await store.benchmark_projection_present("longmemeval-key") is True
+    assert await store.benchmark_projection_present("other-key") is False
+    await store.close()
+
+
+@pytest.mark.asyncio
 async def test_embedded_store_retires_source_projections_and_relationships(tmp_path: Path) -> None:
     store = EmbeddedGraphStore(tmp_path / "embedded.kuzu")
     await store.connect()

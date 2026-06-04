@@ -56,6 +56,7 @@ def classify_retrieval_intent(query: str, *, limit: int) -> RetrievalIntent:
         "what",
         "when",
         "where",
+        "whom",
         "which",
         "who",
     }
@@ -88,6 +89,25 @@ def classify_retrieval_intent(query: str, *, limit: int) -> RetrievalIntent:
         "never",
         "whether",
     }
+    preference_terms = {
+        "appreciate",
+        "interested",
+        "like",
+        "prefer",
+        "preferred",
+        "preference",
+        "preferences",
+        "recommend",
+        "recommendation",
+        "recommendations",
+        "reason",
+        "suggest",
+        "suggestion",
+        "suggestions",
+        "advice",
+        "ideas",
+        "tips",
+    }
     operational_memory_terms = {
         "checkpoint",
         "decision",
@@ -111,6 +131,19 @@ def classify_retrieval_intent(query: str, *, limit: int) -> RetrievalIntent:
         "happened",
         "which",
     }
+    temporal_sequence_terms = {
+        "activities",
+        "airlines",
+        "earliest",
+        "events",
+        "latest",
+        "order",
+        "ordered",
+        "sequence",
+        "sports",
+        "timeline",
+        "trips",
+    }
 
     needs_source = False
     slots = 0
@@ -131,10 +164,29 @@ def classify_retrieval_intent(query: str, *, limit: int) -> RetrievalIntent:
         needs_source = True
         slots = max(slots, aggregation_slots)
         reasons.append("aggregation_question")
+    if tokens & {"total", "sum"} and tokens & {"amount", "cost", "costs", "money", "paid", "price", "prices", "spent"}:
+        needs_source = True
+        slots = max(slots, aggregation_slots)
+        reasons.append("aggregation_question")
+    if {"how", "old"} <= tokens and tokens & {"married", "wedding"}:
+        needs_source = True
+        slots = max(slots, aggregation_slots)
+        reasons.append("event_slot_question")
+    if tokens & personal_terms and tokens & {"gift", "jewelry", "received"}:
+        needs_source = True
+        slots = max(slots, aggregation_slots)
+        reasons.append("event_slot_question")
     if tokens & personal_terms and len(tokens & absence_terms) >= 2:
         needs_source = True
         slots = max(slots, max(2, min(4, limit // 2)))
         reasons.append("absence_check")
+    if tokens & {"user", *personal_terms} and (
+        tokens & preference_terms
+        or (tokens & {"what", "do"} and tokens & {"should", "think"})
+    ):
+        needs_source = True
+        slots = max(slots, max(3, min(limit, 6)))
+        reasons.append("preference_profile")
     if tokens & operational_memory_terms and tokens & operational_query_terms:
         needs_source = True
         slots = max(slots, 1)
@@ -147,6 +199,10 @@ def classify_retrieval_intent(query: str, *, limit: int) -> RetrievalIntent:
         needs_source = True
         slots = max(slots, max(2, min(4, limit // 2)))
         reasons.append("temporal_order")
+    if tokens & {"order", "ordered", "sequence", "timeline"} and tokens & temporal_sequence_terms:
+        needs_source = True
+        slots = max(slots, max(4, min(limit, 8)))
+        reasons.append("temporal_sequence")
 
     if limit <= 0 or not needs_source:
         return RetrievalIntent(False, 0, ())

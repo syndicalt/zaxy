@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from typer.main import get_command
 from typer.testing import CliRunner
 
@@ -310,8 +311,9 @@ def test_replay_cli_rejects_invalid_sequence_window(tmp_path: Path) -> None:
     assert "from_seq must be <= to_seq" in result.output
 
 
-def test_status_command_reports_embedded_projection_without_neo4j(tmp_path: Path) -> None:
+def test_status_command_reports_embedded_projection_without_neo4j(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Top-level status should support the no-sidecar embedded projection path."""
+    monkeypatch.chdir(tmp_path)
     runner = CliRunner()
 
     result = runner.invoke(
@@ -334,8 +336,11 @@ def test_status_command_reports_embedded_projection_without_neo4j(tmp_path: Path
 @patch("zaxy.__main__.LocalPgGraphRuntime")
 def test_status_command_can_check_pggraph_projection_backend(
     mock_runtime_cls: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """Top-level status should support pgGraph runtime posture checks."""
+    monkeypatch.chdir(tmp_path)
     runtime = MagicMock()
     runtime.check.return_value.status = "warning"
     runtime.check.return_value.message = "pgGraph is not reachable; Docker is unavailable"
@@ -381,8 +386,9 @@ def test_status_command_uses_repo_local_profile_for_bare_init(monkeypatch, tmp_p
     assert "Neo4j:" not in result.output
 
 
-def test_status_command_reports_memory_activation_remediation(tmp_path: Path) -> None:
+def test_status_command_reports_memory_activation_remediation(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Top-level status should surface stale checkout posture with a runnable fix."""
+    monkeypatch.chdir(tmp_path)
     now = datetime(2026, 5, 20, 12, 0, tzinfo=UTC)
     log = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl")
     checkout = log.append(
