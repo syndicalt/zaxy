@@ -71,6 +71,7 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     assert "<title>Zaxy - event-sourced memory for agent work</title>" in html
     assert 'name="description"' in html
     assert 'property="og:image"' in html
+    assert "https://docs.zaxy.io/assets/zaxy-v1.1-header.png" in html
     assert "Event-sourced memory for agent work" in html
     assert "purpose-conditioned checkout" in html
     assert "Worker sessions" in html
@@ -85,8 +86,9 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     assert "Eventloom source of truth" in html
     assert "Pathlight" in html
     assert "embedded Kuzu" in html
-    assert "PyPI 1.0.2" in html
+    assert "PyPI 1.1.0" in html
     assert "purpose-v1 passed" in html
+    assert "StateRecoveryBench gate passed" in html
     assert "Quarq/Hybi claims blocked" in html
     assert "external verification requested" in html
     assert "public-derived purpose holdout" in html
@@ -119,6 +121,7 @@ def test_v05_docs_render_to_static_site() -> None:
     for path in (
         "site/docs/v1-roadmap.html",
         "site/docs/announcements/zaxy-v1.0-x-article.html",
+        "site/docs/announcements/zaxy-v1.1-x-article.html",
         "site/docs/media/zaxy-collaborate-demo.html",
         "site/docs/mcp-quickstart.html",
         "site/docs/coordinate-quickstart.html",
@@ -145,6 +148,26 @@ def test_v10_release_media_assets_are_published() -> None:
     assert "External verification request" in x_article
     assert "zaxy doctor --beta-readiness" in x_article
     assert "zaxy-collaborate-demo.mp4" in demo
+
+
+def test_v11_release_article_and_graph_image_are_published() -> None:
+    """The v1.1 release should publish the article, rendered page, and social image."""
+    x_article = Path("docs/announcements/zaxy-v1.1-x-article.md").read_text(encoding="utf-8")
+    rendered = Path("site/docs/announcements/zaxy-v1.1-x-article.html").read_text(encoding="utf-8")
+    homepage = Path("site/index.html").read_text(encoding="utf-8")
+
+    for path in (
+        "docs/assets/zaxy-v1.1-header.png",
+        "site/assets/zaxy-v1.1-header.png",
+    ):
+        assert Path(path).exists(), path
+        assert Path(path).stat().st_size > 0, path
+
+    assert "accepted-state recovery for agent memory" in x_article
+    assert "StateRecoveryBench, MemoryFabric checkout lane" in x_article
+    assert "citation coverage" in x_article
+    assert "../../assets/zaxy-v1.1-header.png" in rendered
+    assert "https://docs.zaxy.io/assets/zaxy-v1.1-header.png" in homepage
 
 
 def test_mcp_docs_show_memory_checkout_consumption_contract() -> None:
