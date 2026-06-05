@@ -47,6 +47,7 @@ Inspect the current observer posture:
 zaxy hook-status --eventloom-path .eventloom
 zaxy hook-status --json
 zaxy hook-status --eventloom-path .eventloom --json
+zaxy hook-status --eventloom-path .eventloom --require-capture-running
 zaxy capture-soak --eventloom-path .eventloom --session-id my-project-default
 zaxy hook-event heartbeat --eventloom-path .eventloom --session-id my-project-default --source manual
 ```
@@ -61,10 +62,12 @@ For Codex, install detection and live capture are separate signals:
 managed `zaxy capture start` watcher means this session is actively importing
 new observations. If Codex capture is configured but the watcher is stopped,
 `hook-status` reports a warning and prints the managed command needed to resume
-it. `zaxy activate codex` now attempts that managed start automatically when
-capture is configured; if the watcher cannot be started or the config is
-missing, the activation packet marks capture as degraded so the model does not
-mistake a resumed session for an actively captured one.
+it. Add `--require-capture-running` to make that condition a failing guardrail
+for release checks, local launchers, or CI scripts that should stop before an
+uncaptured session continues. `zaxy activate codex` now attempts that managed
+start automatically when capture is configured; if the watcher cannot be started
+or the config is missing, the activation packet marks capture as degraded so the
+model does not mistake a resumed session for an actively captured one.
 The same report includes a capture readiness summary. In JSON output, inspect
 `capture_readiness.status`, `active_observation_types`, and
 `missing_observation_types` to decide whether automatic capture is healthy or
@@ -113,6 +116,7 @@ Supported triggers are:
 | Trigger | Event Type | Purpose |
 |---------|------------|---------|
 | `session-start` | `hook.session_started` | Mark the start of a client session. |
+| `resume` | `hook.resumed` | Mark a resumed or rehydrated client session and request a fresh checkout reminder. |
 | `stop` | `hook.stop` | Record a normal response/session checkpoint. |
 | `precompact` | `hook.precompact` | Record that context compaction is about to happen. |
 | `checkpoint` | `hook.checkpoint` | Record a manual or periodic save/checkpoint. |

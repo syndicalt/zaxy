@@ -69,6 +69,20 @@ def test_build_session_genesis_event_contains_profile_and_write_instructions(tmp
                     "required_tool": "memory_checkout",
                     "before": ["roadmap", "implementation", "release", "review", "resume", "high_context_question"],
                     "reason": "Keep model work grounded in fresh, cited Zaxy memory.",
+                    "session_start_command": "zaxy activate codex --session-id <session_id> --current-task '<task>'",
+                    "launch_command": "zaxy activate codex --session-id <session_id> --current-task '<task>' --launch",
+                    "resume_command": (
+                        "zaxy hook-event resume --eventloom-path <eventloom_path> "
+                        "--session-id <session_id> --source codex --summary '<task>'"
+                    ),
+                    "checkout_fallback_command": (
+                        "zaxy memory checkout '<task>' --eventloom-path <eventloom_path> --session-id <session_id>"
+                    ),
+                    "mcp_tools_status": "runtime_unverified",
+                    "fail_closed": True,
+                    "blocker": (
+                        "If activation packet or fresh checkout is absent, pause substantial work and run the CLI fallback."
+                    ),
                 },
             },
         },

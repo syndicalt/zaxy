@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 from zaxy.config import Settings
 from zaxy.doctor import run_doctor
@@ -34,6 +36,7 @@ def test_run_doctor_reports_local_setup_ok(tmp_path: Path, monkeypatch) -> None:
         "cli_install": "ok",
         "mcp_defaults": "ok",
         "codex_mcp_scope": "ok",
+        "agent_instructions": "warning",
         "hooks": "ok",
         "hook_installation": "warning",
         "hook_activity": "warning",
@@ -160,6 +163,53 @@ def test_run_doctor_reports_hook_adapter_guidance(tmp_path: Path) -> None:
     assert "--output .claude/settings.local.json" in check["action"]
 
 
+def test_run_doctor_warns_when_agent_activation_instructions_missing(tmp_path: Path) -> None:
+    """Doctor should detect when the model-visible activation fallback is absent."""
+    settings = Settings(
+        _env_file=None,
+        eventloom_path=str(tmp_path / ".eventloom"),
+        eventloom_thread="zaxy-default",
+        zaxy_env="development",
+    )
+    (tmp_path / "AGENTS.md").write_text("# Existing Rules\n\nUse tests.\n", encoding="utf-8")
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    check = next(check for check in report["checks"] if check["name"] == "agent_instructions")
+    assert check["status"] == "warning"
+    assert check["message"] == "AGENTS.md is present but missing the Zaxy Memory Activation block"
+    assert "zaxy init" in check["action"]
+
+
+def test_run_doctor_reports_agent_activation_instructions_ok(tmp_path: Path) -> None:
+    """Doctor should pass the model-visible activation fallback installed by init."""
+    settings = Settings(
+        _env_file=None,
+        eventloom_path=str(tmp_path / ".eventloom"),
+        eventloom_thread="zaxy-default",
+        zaxy_env="development",
+    )
+    (tmp_path / "AGENTS.md").write_text(
+        "\n".join(
+            [
+                "# Existing Rules",
+                "",
+                "<!-- zaxy-memory-activation:start -->",
+                "## Zaxy Memory Activation",
+                "<!-- zaxy-memory-activation:end -->",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    check = next(check for check in report["checks"] if check["name"] == "agent_instructions")
+    assert check["status"] == "ok"
+    assert check["message"] == "AGENTS.md contains marker-managed Zaxy Memory Activation instructions"
+
+
 def test_run_doctor_reports_hook_installation_ok_for_claude_settings(tmp_path: Path) -> None:
     """Doctor should detect installed Claude hook config in the workspace."""
     settings = Settings(
@@ -236,6 +286,42 @@ def test_run_doctor_warns_when_hooks_installed_but_no_activity(tmp_path: Path) -
     assert check["status"] == "warning"
     assert "No hook lifecycle events observed" in check["message"]
     assert "zaxy hook-event heartbeat" in check["action"]
+
+
+@patch("zaxy.hooks._iter_process_cmdlines")
+def test_run_doctor_hard_warns_when_codex_capture_configured_but_not_running(
+    mock_processes: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Doctor should make configured-but-stopped Codex capture impossible to miss."""
+    settings = Settings(
+        _env_file=None,
+        eventloom_path=str(tmp_path / ".eventloom"),
+        eventloom_thread="zaxy-default",
+        zaxy_env="development",
+    )
+    capture_config = tmp_path / ".codex" / "zaxy-capture.json"
+    capture_config.parent.mkdir()
+    capture_config.write_text(
+        json.dumps(
+            {
+                "capture": "local-session-jsonl",
+                "client": "codex",
+                "workspace": str(tmp_path),
+                "eventloom_path": str(tmp_path / ".eventloom"),
+                "session_id": "zaxy-default",
+            }
+        ),
+        encoding="utf-8",
+    )
+    mock_processes.return_value = []
+
+    report = run_doctor(settings=settings, workspace_root=tmp_path)
+
+    check = next(check for check in report["checks"] if check["name"] == "capture_health")
+    assert check["status"] == "warning"
+    assert check["message"] == "Codex capture is configured, but the managed watcher is not running"
+    assert f"zaxy capture start --workspace {tmp_path}" in check["action"]
 
 
 def test_run_doctor_reports_recent_hook_activity(tmp_path: Path) -> None:
@@ -375,7 +461,7 @@ def test_run_doctor_reports_capture_health_with_managed_codex_action(tmp_path: P
 
     check = next(check for check in report["checks"] if check["name"] == "capture_health")
     assert check["status"] == "warning"
-    assert check["message"] == "automatic capture is incomplete: 0 of 4 high-value lanes are active"
+    assert check["message"] == "Codex capture is configured, but the managed watcher is not running"
     assert f"zaxy capture start --workspace {tmp_path}" in check["action"]
     assert check["details"]["actions"] == [
         "Wire hooks or adapter sinks for: command.completed, file.edit.applied, tool.call.completed, transcript.turn.",

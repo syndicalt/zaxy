@@ -3360,6 +3360,48 @@ def test_hook_event_command_appends_eventloom_event(tmp_path: Path) -> None:
     assert events[1].payload["recommended_tool"] == "memory_checkout"
 
 
+def test_hook_event_resume_suggests_fresh_checkout_reminder(tmp_path: Path) -> None:
+    """Resume hooks should reintroduce checkout guidance even after recent memory use."""
+    runner = CliRunner()
+    EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").append(
+        "memory.checkout.completed",
+        actor="zaxy-memory",
+        payload={"activity": "checkout", "source": "test"},
+        thread="agent-1",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "hook-event",
+            "resume",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent-1",
+            "--source",
+            "codex",
+            "--summary",
+            "resume after Codex update",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Recorded hook resume as hook.resumed" in result.output
+    assert "Suggested memory reminder" in result.output
+    events = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").read_all()
+    assert [event.type for event in events] == [
+        "memory.checkout.completed",
+        "hook.resumed",
+        "memory.reminder.suggested",
+    ]
+    assert events[1].payload["trigger"] == "resume"
+    assert events[1].payload["summary"] == "resume after Codex update"
+    assert events[2].payload["trigger"] == "resume"
+    assert events[2].payload["query"] == "resume after Codex update"
+    assert events[2].payload["reasons"] == ["context_boundary"]
+
+
 def test_hook_event_checkpoint_carries_summary_and_reason(tmp_path: Path) -> None:
     """checkpoint hooks should carry retrieval-useful checkpoint metadata."""
     runner = CliRunner()
@@ -4366,6 +4408,30 @@ def test_hook_status_warns_when_codex_capture_configured_but_not_running(
     assert payload["capture_readiness"]["actions"] == [
         f"Start managed deterministic Codex capture: zaxy capture start --workspace {tmp_path}."
     ]
+
+    gated = runner.invoke(
+        app,
+        [
+            "hook-status",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--workspace-root",
+            str(tmp_path),
+            "--require-capture-running",
+            "--json",
+        ],
+    )
+
+    assert gated.exit_code == 1
+    gated_payload = json.loads(gated.output)
+    assert gated_payload["capture_runtime_guardrail"] == {
+        "status": "fail",
+        "required": True,
+        "configured": True,
+        "running": False,
+        "message": "Codex capture config is installed, but the managed watcher is not running",
+        "action": f"zaxy capture start --workspace {tmp_path}",
+    }
 
 
 @patch("zaxy.hooks._iter_process_cmdlines")
@@ -5471,6 +5537,24 @@ def test_init_command_defaults_to_local_embedded_codex_onboarding(mock_run_onboa
     assert kwargs["local_profile_output"] == tmp_path / ".env.local"
     assert kwargs["capture_mode"] == "deterministic"
     assert kwargs["capture_action"] == "none"
+    assert kwargs["agent_instructions"] is True
+
+
+@patch("zaxy.__main__.run_onboarding")
+def test_init_command_can_skip_agent_instruction_install(
+    mock_run_onboarding: AsyncMock,
+    tmp_path: Path,
+) -> None:
+    """Users should be able to opt out of AGENTS.md activation block writes."""
+    result_obj = MagicMock()
+    result_obj.status = "ok"
+    mock_run_onboarding.return_value = result_obj
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["init", str(tmp_path), "--no-agent-instructions"])
+
+    assert result.exit_code == 0
+    assert mock_run_onboarding.await_args.kwargs["agent_instructions"] is False
 
 
 @patch("zaxy.__main__.run_onboarding")

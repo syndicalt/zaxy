@@ -2,6 +2,23 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 1.1.1 - 2026-06-05
+
+- Hardened Codex activation persistence across session starts, `/resume`,
+  compaction, MCP tool reloads, and capture watcher restarts.
+- Added model-visible `AGENTS.md` Zaxy Memory Activation instructions during
+  `zaxy init`, with a marker-managed block and `--no-agent-instructions`
+  opt-out.
+- Made managed Codex capture startup part of `zaxy activate codex`, with
+  degraded activation packets when capture is missing or cannot start.
+- Added `zaxy hook-event resume`, fresh-checkout reminders for resumed sessions,
+  and `zaxy hook-status --require-capture-running` as a failing capture guardrail.
+- Surfaced runtime-unverified MCP tool availability with CLI checkout fallbacks,
+  and retried embedded Kuzu checkout lock failures with session-local projection
+  fallback diagnostics.
+- Extended `zaxy doctor` to hard-warn on configured-but-stopped Codex capture and
+  missing model-visible activation instructions.
+
 ## 1.1.0 - 2026-06-05
 
 - Promoted StateRecoveryBench as an official benchmark lane for partial-cue

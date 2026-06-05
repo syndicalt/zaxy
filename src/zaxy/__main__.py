@@ -2064,6 +2064,11 @@ def hook_status(
         min=0.0,
         help="Fail when latest checkout current facts per 1k prompt tokens is below this floor",
     ),
+    require_capture_running: bool = typer.Option(
+        False,
+        "--require-capture-running",
+        help="Fail when installed Codex capture config does not have a running watcher",
+    ),
     now: str | None = typer.Option(None, help="Override current time for deterministic status checks"),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
@@ -2092,6 +2097,13 @@ def hook_status(
     )
     if token_guardrail is not None:
         report["checkout_token_guardrail"] = token_guardrail
+    capture_guardrail = _capture_runtime_guardrail(
+        report,
+        required=require_capture_running,
+        workspace_root=workspace_root,
+    )
+    if capture_guardrail is not None:
+        report["capture_runtime_guardrail"] = capture_guardrail
     if json_output:
         typer.echo(json.dumps(report, indent=2, sort_keys=True))
     else:
@@ -2100,10 +2112,58 @@ def hook_status(
             typer.echo(_format_activation_guardrail(guardrail))
         if token_guardrail is not None:
             typer.echo(_format_checkout_token_guardrail(token_guardrail))
+        if capture_guardrail is not None:
+            typer.echo(_format_capture_runtime_guardrail(capture_guardrail))
     if (guardrail is not None and guardrail["status"] != "ok") or (
         token_guardrail is not None and token_guardrail["status"] != "ok"
+    ) or (
+        capture_guardrail is not None and capture_guardrail["status"] != "ok"
     ):
         raise typer.Exit(1)
+
+
+def _capture_runtime_guardrail(
+    report: dict[str, object],
+    *,
+    required: bool,
+    workspace_root: Path,
+) -> dict[str, object] | None:
+    if not required:
+        return None
+    clients = report.get("clients")
+    codex = clients.get("codex") if isinstance(clients, dict) else None
+    if not isinstance(codex, dict) or not codex.get("installed", False):
+        return {
+            "status": "ok",
+            "required": True,
+            "configured": False,
+            "running": False,
+            "message": "Codex capture config is not installed; no configured watcher is required",
+        }
+    runtime = codex.get("runtime")
+    running = bool(runtime.get("running", False)) if isinstance(runtime, dict) else False
+    status = "ok" if running else "fail"
+    return {
+        "status": status,
+        "required": True,
+        "configured": True,
+        "running": running,
+        "message": (
+            "Codex capture watcher is running"
+            if running
+            else "Codex capture config is installed, but the managed watcher is not running"
+        ),
+        "action": None if running else f"zaxy capture start --workspace {workspace_root}",
+    }
+
+
+def _format_capture_runtime_guardrail(guardrail: dict[str, object]) -> str:
+    status = str(guardrail["status"]).upper()
+    message = str(guardrail["message"])
+    action = guardrail.get("action")
+    if action:
+        return f"Capture runtime guardrail: {status} ({message}; action: {action})"
+    return f"Capture runtime guardrail: {status} ({message})"
 
 
 def _activation_guardrail(report: dict[str, object], *, threshold: float | None) -> dict[str, object] | None:
@@ -2282,7 +2342,7 @@ def capture_soak(
 
 @app.command("hook-event")
 def hook_event(
-    trigger: str = typer.Argument(..., help="Hook trigger: session-start, stop, precompact, checkpoint, heartbeat, command, file-edit, tool-call, or transcript-turn"),  # noqa: B008
+    trigger: str = typer.Argument(..., help="Hook trigger: session-start, resume, stop, precompact, checkpoint, heartbeat, command, file-edit, tool-call, or transcript-turn"),  # noqa: B008
     eventloom_path: str = typer.Option(".eventloom", help="Eventloom directory for hook events"),
     session_id: str = typer.Option("default", help="Session ID to append hook events into"),
     source: str = typer.Option("generic", help="Client or adapter that emitted the hook"),
@@ -2872,6 +2932,11 @@ def init(
     packet_capture: bool = typer.Option(False, "--packet-capture", help="Include packet analyzer/projector activation steps"),  # noqa: B008
     packet_upstream_base_url: str = typer.Option("https://api.openai.com/v1", help="Packet analyzer upstream OpenAI-compatible base URL"),  # noqa: B008
     packet_port: int = typer.Option(8787, "--packet-port", min=1, max=65535, help="Local packet analyzer port"),  # noqa: B008
+    agent_instructions: bool = typer.Option(
+        True,
+        "--agent-instructions/--no-agent-instructions",
+        help="Install bounded Zaxy activation instructions into AGENTS.md",
+    ),
     zaxy_executable: str | None = typer.Option(None, help="Executable path MCP clients should invoke"),  # noqa: B008
     force: bool = typer.Option(False, "--force", help="Overwrite generated output files"),  # noqa: B008
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),  # noqa: B008
@@ -2921,6 +2986,7 @@ def init(
             packet_upstream_base_url=packet_upstream_base_url,
             packet_port=packet_port,
             capture_action=capture_action,
+            agent_instructions=agent_instructions,
             zaxy_executable=zaxy_executable,
             force=force,
         )

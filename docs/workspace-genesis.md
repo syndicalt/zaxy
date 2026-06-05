@@ -11,6 +11,19 @@ The command inspects lightweight filesystem signals and appends a
 `session.genesis` event. The event records the root path, workspace type,
 confidence, matched signals, instructions profile, session ID, and write
 instructions.
+The `write_instructions.memory_activation` block is intentionally operational:
+it records `memory_checkout` as required before roadmap, implementation, release,
+review, resume, and high-context work, plus concrete command templates for
+`zaxy activate codex`, `zaxy activate codex --launch`, `zaxy hook-event resume`,
+and the CLI `zaxy memory checkout` fallback. It also marks MCP memory tools as
+`runtime_unverified` and sets `fail_closed=true`, so agents that can still read
+genesis after `/resume`, compaction, or MCP reload have a durable blocker instead
+of a vague preference.
+`zaxy init` also mirrors the operational part of this policy into a
+marker-managed `Zaxy Memory Activation` block in `AGENTS.md` by default. That
+block is the model-visible fallback for Codex sessions that resume after MCP tool
+reloads or context compaction. Use `--no-agent-instructions` to skip that write
+when a repository manages agent instructions another way.
 
 The first profile is intentionally conservative. Codebase workspaces are
 detected from signals such as `pyproject.toml`, `package.json`, `go.mod`,
