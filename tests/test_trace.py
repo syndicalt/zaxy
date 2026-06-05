@@ -158,6 +158,57 @@ class TestSpan:
             args = mock_span.end.await_args.kwargs
             assert "boom" in args["error"]
 
+    @patch("zaxy.trace.AsyncPathlight")
+    async def test_span_degrades_to_noop_when_trace_creation_fails(self, mock_cls: MagicMock) -> None:
+        """Collector failures during trace creation should not block work."""
+        with patch("zaxy.trace._HAS_PATHLIGHT", True):
+            t = MemoryTracer()
+            mock_cls.return_value.trace = AsyncMock(side_effect=RuntimeError("collector down"))
+            await t.connect()
+
+            async with t.span("test_op", metadata={"k": "v"}) as result:
+                result["output"] = {"ok": True}
+
+            assert result == {"output": {"ok": True}}
+            mock_cls.return_value.trace.assert_awaited_once_with(
+                "zaxy-memory",
+                metadata={"k": "v"},
+            )
+
+    @patch("zaxy.trace.AsyncPathlight")
+    async def test_span_degrades_to_noop_when_span_creation_fails(self, mock_cls: MagicMock) -> None:
+        """Collector failures during span creation should not block work."""
+        with patch("zaxy.trace._HAS_PATHLIGHT", True):
+            t = MemoryTracer()
+            mock_trace = MagicMock()
+            mock_trace.span.side_effect = RuntimeError("collector down")
+            mock_cls.return_value.trace.return_value = mock_trace
+            await t.connect()
+
+            async with t.span("test_op") as result:
+                result["output"] = {"ok": True}
+
+            assert result == {"output": {"ok": True}}
+
+    @patch("zaxy.trace.AsyncPathlight")
+    async def test_span_degrades_when_trace_close_fails(self, mock_cls: MagicMock) -> None:
+        """Collector failures during span close should not leak to callers."""
+        with patch("zaxy.trace._HAS_PATHLIGHT", True):
+            t = MemoryTracer()
+            mock_trace = MagicMock()
+            mock_trace.end = AsyncMock(side_effect=RuntimeError("collector down"))
+            mock_span = MagicMock()
+            mock_span.end = AsyncMock()
+            mock_trace.span.return_value = mock_span
+            mock_cls.return_value.trace.return_value = mock_trace
+            await t.connect()
+
+            async with t.span("test_op") as result:
+                result["output"] = {"ok": True}
+
+            mock_span.end.assert_awaited_once_with(output={"ok": True}, error=None)
+            mock_trace.end.assert_awaited_once()
+
     async def test_disabled_span_yields_empty_dict(self) -> None:
         """When disabled, span should yield an empty dict and skip tracing."""
         t = MemoryTracer(disabled=True)

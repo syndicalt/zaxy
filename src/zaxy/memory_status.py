@@ -12,6 +12,7 @@ from zaxy.event import Event, EventLog
 from zaxy.security import eventlog_path, validate_session_id
 
 _REQUIRED_ZAXY_EVENT_FIELDS = frozenset({"seq", "timestamp", "type", "actor", "payload", "hash"})
+_EVENTLOOM_V1_SHAPE_FIELDS = frozenset({"id", "type", "actorId", "threadId", "payload", "integrity"})
 
 
 @dataclass(frozen=True)
@@ -335,9 +336,11 @@ def _eventlog_skip_reason(path: Path) -> str | None:
         return "first non-empty line is not valid JSON"
     if not isinstance(record, dict):
         return "first non-empty line is not a JSON object"
+    if _EVENTLOOM_V1_SHAPE_FIELDS.issubset(record):
+        return None
     missing = sorted(_REQUIRED_ZAXY_EVENT_FIELDS - set(record))
     if missing:
-        return f"missing required Zaxy event fields: {', '.join(missing)}"
+        return f"missing required Eventloom event fields: {', '.join(missing)}"
     return None
 
 
@@ -348,8 +351,8 @@ def _validation_error_reason(exc: ValidationError) -> str:
         if error.get("type") == "missing" and error.get("loc")
     )
     if missing:
-        return f"invalid Zaxy event log; missing fields after preflight: {', '.join(missing)}"
-    return "invalid Zaxy event log; event validation failed"
+        return f"invalid Eventloom event log; missing fields after preflight: {', '.join(missing)}"
+    return "invalid Eventloom event log; event validation failed"
 
 
 def _skipped_log(path: Path, reason: str) -> SkippedLog:

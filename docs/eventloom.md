@@ -5,11 +5,20 @@ logs where each line is a validated event. The graph can be rebuilt from these
 logs, which means graph projection bugs are recoverable and memory history is
 auditable.
 
-An event has a type, actor, payload, sequence number, timestamp, hash, previous
-hash, and optional security classification metadata. The exact Python model is
-in `src/zaxy/event.py`. The hash chain makes the log tamper-evident: replay can
-detect missing, reordered, or edited records. A corrupt projection should be
-fixed by replaying the log rather than patching the projection backend directly.
+Zaxy targets the current Eventloom v1 JSONL envelope used by
+`@eventloom/runtime@1.0.0`: `id`, `type`, `actorId`, `threadId`,
+`parentEventId`, `causedBy`, `timestamp`, `payload`, and nested
+`integrity.hash` / `integrity.previousHash` values with `sha256:` prefixes. The
+Python `EventLog` adapter normalizes those records to Zaxy's existing `Event`
+API (`seq`, `actor`, `thread`, `hash`, `prev_hash`) so the graph, checkout, and
+MCP layers keep a stable internal contract. Older Zaxy logs with top-level
+`seq`, `actor`, `thread`, `hash`, and `prev_hash` remain replayable; new
+dot-delimited event types are written as Eventloom v1 envelopes. One-segment
+legacy/test event types continue to use the legacy envelope because Eventloom v1
+requires lowercase dot-delimited event names. The hash chain makes the log
+tamper-evident: replay can detect missing, reordered, or edited records. A
+corrupt projection should be fixed by replaying the log rather than patching the
+projection backend directly.
 
 Typed event names matter. Zaxy's extractor uses deterministic handlers for
 known events such as `goal.created`, `task.proposed`, and related lifecycle

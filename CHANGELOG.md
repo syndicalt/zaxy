@@ -2,6 +2,22 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 1.1.2 - 2026-06-05
+
+- Updated the Eventloom adapter for `@eventloom/runtime@1.0.0` v1 JSONL
+  envelopes with `id`, `actorId`, `threadId`, `parentEventId`, `causedBy`, and
+  nested `integrity.hash` / `integrity.previousHash` fields.
+- Preserved Zaxy's internal `Event` API and legacy top-level Zaxy log replay so
+  existing graph, checkout, MCP, and recovery paths continue to work.
+- Promoted native Eventloom v1 logs from skipped foreign JSONL to first-class
+  read-only memory status/log inputs, while keeping malformed v1-looking logs
+  diagnostic and non-fatal.
+- Made optional Pathlight tracing degrade to no-op when the collector is
+  unavailable so MCP startup and memory operations are not blocked by
+  observability.
+- Documented the v1 envelope boundary, legacy fallback behavior, and
+  dot-delimited event-type requirement.
+
 ## 1.1.1 - 2026-06-05
 
 - Hardened Codex activation persistence across session starts, `/resume`,

@@ -87,12 +87,17 @@ class MemoryTracer:
             yield {}
             return
 
-        trace = self._client.trace("zaxy-memory", metadata=metadata or {})
-        if inspect.isawaitable(trace):
-            trace = await trace
-        sp = trace.span(name, type=span_type, input=metadata)
-        if inspect.isawaitable(sp):
-            sp = await sp
+        try:
+            trace = self._client.trace("zaxy-memory", metadata=metadata or {})
+            if inspect.isawaitable(trace):
+                trace = await trace
+            sp = trace.span(name, type=span_type, input=metadata)
+            if inspect.isawaitable(sp):
+                sp = await sp
+        except Exception:
+            yield {}
+            return
+
         result: dict[str, Any] = {}
         try:
             yield result
@@ -100,11 +105,14 @@ class MemoryTracer:
             result["error"] = str(exc)
             raise
         finally:
-            await sp.end(
-                output=result.get("output"),
-                error=result.get("error"),
-            )
-            await trace.end()
+            try:
+                await sp.end(
+                    output=result.get("output"),
+                    error=result.get("error"),
+                )
+                await trace.end()
+            except Exception:
+                return
 
     async def trace_append(
         self,

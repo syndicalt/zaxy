@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 from zaxy.capabilities import (
@@ -53,26 +52,15 @@ def test_capabilities_manifest_guides_periodic_memory_refresh(tmp_path: Path) ->
     assert "Do not treat session-start memory as sufficient" in manifest["prompt"]
 
 
-def test_capabilities_manifest_ignores_native_eventloom_log(tmp_path: Path) -> None:
-    """Capabilities should tolerate native Eventloom event logs next to Zaxy logs."""
+def test_capabilities_manifest_accepts_eventloom_v1_logs(tmp_path: Path) -> None:
+    """Capabilities should tolerate Eventloom v1 logs next to the active session."""
     eventloom = tmp_path / ".eventloom"
     eventloom.mkdir()
-    (eventloom / "events.jsonl").write_text(
-        json.dumps(
-            {
-                "id": "evt_demo_goal",
-                "type": "goal.created",
-                "actorId": "user",
-                "threadId": "thread_main",
-                "payload": {"title": "Native Eventloom event"},
-                "integrity": {
-                    "hash": "sha256:abc123",
-                    "previousHash": None,
-                },
-            }
-        )
-        + "\n",
-        encoding="utf-8",
+    EventLog(eventloom / "events.jsonl").append(
+        "goal.created",
+        actor="user",
+        payload={"title": "Native Eventloom event"},
+        thread="thread_main",
     )
     EventLog(eventloom / "agent.jsonl").append(
         "task.completed",
@@ -89,7 +77,7 @@ def test_capabilities_manifest_ignores_native_eventloom_log(tmp_path: Path) -> N
 
     assert manifest["status"]["eventloom"]["latest_seq"] == 1
     assert manifest["status"]["eventloom"]["integrity_ok"] is True
-    assert manifest["status"]["eventloom"]["skipped_log_count"] == 1
+    assert manifest["status"]["eventloom"]["skipped_log_count"] == 0
 
 
 def test_format_memory_capabilities_is_prompt_ready_and_concise(tmp_path: Path) -> None:

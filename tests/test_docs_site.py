@@ -86,7 +86,7 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     assert "Eventloom source of truth" in html
     assert "Pathlight" in html
     assert "embedded Kuzu" in html
-    assert "PyPI 1.1.1" in html
+    assert "PyPI 1.1.2" in html
     assert "purpose-v1 passed" in html
     assert "StateRecoveryBench gate passed" in html
     assert "Quarq/Hybi claims blocked" in html

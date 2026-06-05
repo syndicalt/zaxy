@@ -58,10 +58,33 @@ def test_inspect_memory_status_accepts_single_log_file(tmp_path: Path) -> None:
     assert status.sessions[0].latest_type == "task.completed"
 
 
-def test_inspect_memory_status_skips_native_eventloom_jsonl(tmp_path: Path) -> None:
-    """Directory status should not parse native Eventloom files as Zaxy logs."""
+def test_inspect_memory_status_accepts_eventloom_v1_jsonl(tmp_path: Path) -> None:
+    """Directory status should parse native Eventloom v1 files as memory logs."""
     eventloom = tmp_path / ".eventloom"
     _write_native_eventloom_log(eventloom / "events.jsonl")
+    EventLog(eventloom / "agent.jsonl").append(
+        "task.completed",
+        actor="assistant",
+        payload={"summary": "Captured Zaxy session memory."},
+        thread="agent",
+    )
+
+    status = inspect_memory_status(eventloom)
+
+    assert status.session_count == 2
+    assert status.total_events == 2
+    assert {session.session_id for session in status.sessions} == {"agent", "events"}
+    native = next(session for session in status.sessions if session.session_id == "events")
+    assert native.latest_type == "goal.created"
+    assert native.latest_actor == "user"
+    assert native.integrity_ok is True
+    assert status.skipped_logs == []
+
+
+def test_inspect_memory_status_skips_malformed_eventloom_jsonl(tmp_path: Path) -> None:
+    """Malformed v1-looking Eventloom files should be skipped with diagnostics."""
+    eventloom = tmp_path / ".eventloom"
+    _write_malformed_native_eventloom_log(eventloom / "events.jsonl")
     EventLog(eventloom / "agent.jsonl").append(
         "task.completed",
         actor="assistant",
@@ -76,10 +99,7 @@ def test_inspect_memory_status_skips_native_eventloom_jsonl(tmp_path: Path) -> N
     assert status.sessions[0].session_id == "agent"
     assert len(status.skipped_logs) == 1
     assert status.skipped_logs[0].path.endswith(".eventloom/events.jsonl")
-    assert "missing required Zaxy event fields:" in status.skipped_logs[0].reason
-    assert "seq" in status.skipped_logs[0].reason
-    assert "actor" in status.skipped_logs[0].reason
-    assert "hash" in status.skipped_logs[0].reason
+    assert "invalid Eventloom event log" in status.skipped_logs[0].reason
     assert "Skipped logs:" in format_memory_status(status)
 
 
@@ -106,8 +126,8 @@ def test_inspect_memory_log_orders_recent_events_across_sessions(tmp_path: Path)
     assert log.entries[0].integrity_ok is True
 
 
-def test_inspect_memory_log_skips_native_eventloom_jsonl(tmp_path: Path) -> None:
-    """Directory log scans should ignore non-Zaxy JSONL instead of raising."""
+def test_inspect_memory_log_includes_eventloom_v1_jsonl(tmp_path: Path) -> None:
+    """Directory log scans should include Eventloom v1 JSONL."""
     eventloom = tmp_path / ".eventloom"
     _write_native_eventloom_log(eventloom / "events.jsonl")
     EventLog(eventloom / "agent.jsonl").append(
@@ -119,10 +139,11 @@ def test_inspect_memory_log_skips_native_eventloom_jsonl(tmp_path: Path) -> None
 
     memory_log = inspect_memory_log(eventloom, limit=10)
 
-    assert len(memory_log.entries) == 1
+    assert len(memory_log.entries) == 2
     assert memory_log.entries[0].session_id == "agent"
-    assert len(memory_log.skipped_logs) == 1
-    assert memory_log.skipped_logs[0].path.endswith(".eventloom/events.jsonl")
+    assert memory_log.entries[1].session_id == "events"
+    assert memory_log.entries[1].summary == "Native Eventloom event"
+    assert memory_log.skipped_logs == []
 
 
 def test_inspect_memory_log_filters_session_and_limit(tmp_path: Path) -> None:
@@ -231,6 +252,15 @@ def test_inspect_memory_diff_rejects_invalid_ranges(tmp_path: Path) -> None:
 
 
 def _write_native_eventloom_log(path: Path) -> None:
+    EventLog(path).append(
+        "goal.created",
+        actor="user",
+        payload={"title": "Native Eventloom event"},
+        thread="thread_main",
+    )
+
+
+def _write_malformed_native_eventloom_log(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         json.dumps(
