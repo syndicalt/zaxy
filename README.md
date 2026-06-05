@@ -91,6 +91,7 @@ See [LLM Packet Analyzer](docs/packet-analyzer.md).
 - Public static site: `site/index.html`
 - Zaxy 1.0.0 release: `docs/announcements/zaxy-v1.0.md`
 - Zaxy 1.0.0 X article draft: `docs/announcements/zaxy-v1.0-x-article.md`
+- Zaxy 1.1.0 X article draft: `docs/announcements/zaxy-v1.1-x-article.md`
 - Zaxy Coordinate/Collaborate demo media: `docs/media/zaxy-collaborate-demo.md`
 - Zaxy Coordinate announcement: `docs/announcements/zaxy-coordinate.md`
 - Zaxy 0.4.0 archive: `docs/announcements/zaxy-0.4.0.md`
