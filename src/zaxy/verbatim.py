@@ -198,6 +198,7 @@ def _chunk_from_event(event: Event) -> VerbatimChunk | None:
             "event_type": event.type,
             "event_thread": event.thread,
             "event_timestamp": event.timestamp,
+            **_authority_metadata(event.payload),
         },
     )
 
@@ -210,6 +211,24 @@ def _payload_text(payload: dict[str, Any]) -> str:
     if not payload:
         return ""
     return json.dumps(payload, sort_keys=True, ensure_ascii=False)
+
+
+def _authority_metadata(payload: dict[str, Any]) -> dict[str, Any]:
+    metadata: dict[str, Any] = {}
+    for key in (
+        "authority",
+        "authority_scope",
+        "coordination_status",
+        "finding_status",
+        "promoted",
+        "stale",
+        "status",
+        "superseded_by",
+    ):
+        value = payload.get(key)
+        if isinstance(value, str | int | float | bool) and value not in ("", None):
+            metadata[key] = value
+    return metadata
 
 
 def _text(value: object) -> str | None:

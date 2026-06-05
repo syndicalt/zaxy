@@ -2206,6 +2206,7 @@ def build_memory_checkout(
     )
     selection = select_checkout_evidence(
         query=query,
+        purpose=profile,
         evidence_plan=build_evidence_plan(query, limit=10),
         current_facts=candidate_current_facts,
         evidence=candidate_evidence,
@@ -2240,6 +2241,8 @@ def build_memory_checkout(
         retention=retention,
         warnings=warnings,
     )
+    if selection.accepted_state is not None:
+        diagnostics = {**diagnostics, "accepted_state": _accepted_state_diagnostics(selection.accepted_state)}
     skills = _checkout_skills(ranked_contexts, query)
     if skills:
         diagnostics = {**diagnostics, "skills": {"count": len(skills), "items": skills}}
@@ -2418,6 +2421,7 @@ _CHECKOUT_METADATA_FIELDS = (
     "claim_value",
     "coordination_status",
     "finding_status",
+    "promoted",
     "status",
     "authority",
     "authority_scope",
@@ -2487,20 +2491,39 @@ def _empty_purpose_policy(profile: PurposeProfile) -> dict[str, Any]:
     }
 
 
+def _accepted_state_diagnostics(selection: dict[str, Any]) -> dict[str, Any]:
+    """Return bounded accepted-state selection diagnostics for checkout clients."""
+    selected_citations = selection.get("selected_citations")
+    return {
+        "mode": str(selection.get("mode") or "coordinate_accepted_state"),
+        "selected_count": int(selection.get("selected_count") or 0),
+        "diagnostic_count": int(selection.get("diagnostic_count") or 0),
+        "selected_citations": [
+            citation
+            for citation in selected_citations
+            if isinstance(citation, str)
+        ][:10]
+        if isinstance(selected_citations, list)
+        else [],
+    }
+
+
 def _purpose_suppression_reason(profile: PurposeProfile, item: dict[str, Any]) -> str | None:
     suppress = set(profile.suppress)
     status = _checkout_policy_status(item)
     authority = _checkout_policy_text(item.get("authority") or item.get("authority_scope"))
     if "worker_local_pending" in suppress and (
-        status == "pending" or authority in {"worker-local", "worker_local", "pending"}
+        status == "pending"
+        or authority in {"worker", "worker-local", "worker_local", "pending"}
+        or (authority.startswith("worker") and item.get("promoted") is False)
     ):
         return "worker_local_pending"
     if "pending_unreviewed_claim" in suppress and status == "pending":
         return "pending_unreviewed_claim"
-    if "rejected_finding" in suppress and status == "rejected":
+    if "rejected_finding" in suppress and status in {"rejected", "unsupported"}:
         return "rejected_finding"
     if "stale_unpromoted_finding" in suppress and (
-        bool(item.get("stale")) or status == "stale"
+        bool(item.get("stale")) or status in {"stale", "superseded", "deprecated"}
     ) and authority not in {"accepted", "parent-accepted", "parent_accepted", "promoted"}:
         return "stale_unpromoted_finding"
     if "low_trust_inference" in suppress and _low_trust_inferred_item(item):

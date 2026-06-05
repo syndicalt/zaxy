@@ -546,6 +546,48 @@ ecosystem. Avoid fake apples-to-apples claims. Keep competitor comparisons tied
 to reproducible adapter contracts, public disclosures, or clearly labeled
 limitations.
 
+## v1.1: Accepted-State Recovery and Benchmark Guardrails
+
+**Theme:** Make Zaxy's accepted-state memory thesis falsifiable under stale,
+distracting, incomplete, and no-safe-answer histories.
+
+**Implementation status:** in progress on the 1.1.0 release line.
+
+### Ship
+
+- Promote StateRecoveryBench as an official benchmark lane with a canonical
+  tracked workload, report schema, Markdown report, guardrail checker, and
+  release-check wiring.
+- Add `zaxy state-recovery-benchmark` as the public command. Keep
+  `zaxy experimental state-recovery` as a research/debug path.
+- Use `memory_fabric_checkout` as the production guardrail baseline. Treat
+  associative projection rows as diagnostic research baselines only.
+- Resolve Coordinate accepted state from parent mission replay so checkout and
+  proof packets agree on accepted findings, diagnostic rows, review refs,
+  promotion refs, and worker source refs.
+- Update public docs, API inventory, migration notes, testing guidance,
+  changelog, and benchmark docs without broadening product claims beyond the
+  measured lane.
+
+### Gates
+
+- `python scripts/check-state-recovery-benchmark.py
+  reports/benchmarks/state-recovery-v1/state-recovery-benchmark.json --workload
+  reports/benchmarks/state-recovery-v1/state-recovery-workload.json
+  --require-git-tracked-inputs`
+- `zaxy state-recovery-benchmark --output-dir /tmp/zaxy-state-recovery
+  --workload reports/benchmarks/state-recovery-v1/state-recovery-workload.json`
+- Focused tests for StateRecoveryBench, Coordinate accepted-state resolution,
+  Memory Checkout coordinate suppression, CLI behavior, ruff, mypy, and release
+  smoke.
+
+### Explicit Non-Goals
+
+- Do not promote astro-associative projection to core product behavior in 1.1.
+- Do not claim StateRecoveryBench replaces LongMemEval or CoordinationBench.
+- Do not tune behavior to benchmark labels; only authority, review, promotion,
+  provenance, stale, and citation metadata may determine accepted state.
+
 ## Primary Risks
 
 | Risk | Mitigation |

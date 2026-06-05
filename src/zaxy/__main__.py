@@ -117,11 +117,13 @@ coordinate_worker_app = typer.Typer(help="Manage worker sessions for a mission")
 coordinate_template_app = typer.Typer(help="Inspect and apply Coordinate mission templates")
 coordinate_benchmark_adapter_app = typer.Typer(help="Validate and export CoordinationBench adapter contracts")
 trace_app = typer.Typer(help="Export neutral trace correlations from Eventloom")
+experimental_app = typer.Typer(help="Run isolated experimental memory research commands")
 app.add_typer(memory_app, name="memory")
 memory_app.add_typer(memory_purpose_app, name="purpose")
 app.add_typer(capture_app, name="capture")
 app.add_typer(coordinate_app, name="coordinate")
 app.add_typer(trace_app, name="trace")
+app.add_typer(experimental_app, name="experimental")
 coordinate_app.add_typer(coordinate_worker_app, name="worker")
 coordinate_app.add_typer(coordinate_template_app, name="template")
 coordinate_app.add_typer(coordinate_benchmark_adapter_app, name="benchmark-adapter")
@@ -900,6 +902,107 @@ def coordinate_benchmark(
     typer.echo(f"CoordinationBench report written to {output_dir}")
     typer.echo(f"accepted_finding_precision={report.metrics.accepted_finding_precision}")
     typer.echo(f"conflict_recall={report.metrics.conflict_recall}")
+
+
+@experimental_app.command("pattern-completion")
+def experimental_pattern_completion(
+    output_dir: Path = typer.Option(..., "--output-dir", help="Directory for experimental reports"),  # noqa: B008
+    workload: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--workload",
+        help="Frozen PatternCompletionBench workload JSON to replay instead of generating the seed workload",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Run the isolated associative pattern-completion benchmark."""
+    from zaxy.associative_memory import run_pattern_completion_benchmark
+
+    report = run_pattern_completion_benchmark(output_dir, workload_path=workload)
+    payload = report.to_dict()
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+        return
+    typer.echo(f"PatternCompletionBench report written to {output_dir}")
+    typer.echo(f"associative_latent_state_recall={report.metrics.latent_state_recall}")
+    typer.echo(f"direct_lexical_latent_state_recall={report.baselines['direct_lexical'].latent_state_recall}")
+
+
+@experimental_app.command("state-recovery")
+def experimental_state_recovery(
+    output_dir: Path = typer.Option(..., "--output-dir", help="Directory for StateRecoveryBench reports"),  # noqa: B008
+    workload: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--workload",
+        help="Frozen StateRecoveryBench workload JSON to replay instead of generating the seed workload",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Run StateRecoveryBench against experimental baselines."""
+    _run_state_recovery_benchmark_command(
+        output_dir=output_dir,
+        workload=workload,
+        json_output=json_output,
+        fail_on_guardrail=False,
+    )
+
+
+@app.command("state-recovery-benchmark")
+def state_recovery_benchmark(
+    output_dir: Path = typer.Option(  # noqa: B008
+        Path("reports/benchmarks/state-recovery-v1"),
+        "--output-dir",
+        help="Directory for official StateRecoveryBench reports",
+    ),
+    workload: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--workload",
+        help="Frozen StateRecoveryBench workload JSON to replay instead of generating the seed workload",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+    allow_failures: bool = typer.Option(
+        False,
+        "--allow-failures",
+        help="Write the report without failing the process when production guardrails fail",
+    ),
+) -> None:
+    """Run the official StateRecoveryBench production guardrail lane."""
+    _run_state_recovery_benchmark_command(
+        output_dir=output_dir,
+        workload=workload,
+        json_output=json_output,
+        fail_on_guardrail=not allow_failures,
+    )
+
+
+def _run_state_recovery_benchmark_command(
+    *,
+    output_dir: Path,
+    workload: Path | None,
+    json_output: bool,
+    fail_on_guardrail: bool,
+) -> None:
+    from zaxy.associative_memory import run_state_recovery_benchmark
+
+    report = run_state_recovery_benchmark(output_dir, workload_path=workload)
+    payload = report.to_dict()
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(f"StateRecoveryBench report written to {output_dir}")
+        typer.echo(f"status={report.status}")
+        typer.echo(f"production_baseline={report.production_baseline}")
+        for name, metrics in report.baselines.items():
+            typer.echo(
+                f"{name}: state_accuracy={metrics.state_accuracy:.3f} "
+                f"minimal_evidence_recall={metrics.minimal_evidence_recall:.3f} "
+                f"stale_rejection={metrics.stale_rejection:.3f} "
+                f"distractor_resistance={metrics.distractor_resistance:.3f} "
+                f"abstention_accuracy={metrics.abstention_accuracy:.3f} "
+                f"token_cost={metrics.token_cost} latency_ms={metrics.latency_ms:.3f} "
+                f"citation_coverage={metrics.citation_coverage:.3f}"
+            )
+    if fail_on_guardrail and report.status != "pass":
+        raise typer.Exit(1)
 
 
 @coordinate_app.command("adapter-template")

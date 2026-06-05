@@ -210,14 +210,19 @@
             <td>Provider-neutral Eventloom-derived trace export.</td>
           </tr>
           <tr>
-            <td><code>zaxy benchmark-inventory</code>, <code>zaxy benchmark-compare</code></td>
+            <td><code>zaxy benchmark-inventory</code>, <code>zaxy benchmark-compare</code>, <code>zaxy state-recovery-benchmark</code></td>
             <td><code>Beta</code></td>
-            <td>Benchmark report inventory and guardrail checks.</td>
+            <td>Benchmark report inventory, guardrail checks, and accepted-state recovery benchmark lane.</td>
           </tr>
           <tr>
             <td>Backend candidate options such as <code>PROJECTION_BACKEND=pggraph</code> or <code>latticedb</code></td>
             <td><code>Experimental</code></td>
             <td>Candidate backends stay behind explicit configuration.</td>
+          </tr>
+          <tr>
+            <td><code>zaxy experimental pattern-completion</code>, <code>zaxy experimental state-recovery</code></td>
+            <td><code>Experimental</code></td>
+            <td>Research commands for associative projection diagnostics; do not use for production claims.</td>
           </tr>
         </tbody>
       </table>
@@ -342,6 +347,16 @@
             <td><code>reports/benchmarks/coordination-real-v1/coordination-benchmark.json</code></td>
             <td><code>Beta</code></td>
             <td>Coordinate benchmark smoke artifact.</td>
+          </tr>
+          <tr>
+            <td><code>reports/benchmarks/state-recovery-v1/state-recovery-benchmark.json</code></td>
+            <td><code>Beta</code></td>
+            <td>StateRecoveryBench accepted-state recovery guardrail artifact.</td>
+          </tr>
+          <tr>
+            <td><code>reports/benchmarks/state-recovery-v1/state-recovery-workload.json</code></td>
+            <td><code>Beta</code></td>
+            <td>Canonical StateRecoveryBench workload; fingerprint checked by <code>scripts/check-state-recovery-benchmark.py</code>.</td>
           </tr>
           <tr>
             <td><code>reports/benchmarks/*-diagnostics.*</code></td>

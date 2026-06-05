@@ -209,6 +209,13 @@ zaxy benchmark --output-dir reports/benchmarks/longmemeval-100-comparison \
 # reports/benchmarks/longmemeval-500-current74-zaxyonly-gated-relative-temporal-anchor-embedded-reuse-20260604/
 # Mean 0.940, Answer@5 0.906, citation coverage 1.000, R@1/R@5/R@10 0.906/1.000/1.000.
 
+# StateRecoveryBench accepted-state recovery guardrail:
+zaxy state-recovery-benchmark --output-dir reports/benchmarks/state-recovery-v1 \
+  --workload reports/benchmarks/state-recovery-v1/state-recovery-workload.json
+# Production baseline: memory_fabric_checkout. State accuracy 0.818,
+# minimal evidence recall 0.909, stale rejection 1.000, distractor resistance
+# 0.818, abstention accuracy 1.000, citation coverage 1.000.
+
 # Production deployment preflight
 scripts/validate-deployment.sh --root .
 

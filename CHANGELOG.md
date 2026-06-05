@@ -2,6 +2,36 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 1.1.0 - 2026-06-05
+
+- Promoted StateRecoveryBench as an official benchmark lane for partial-cue
+  accepted-state recovery under stale, distracting, incomplete, and
+  no-safe-answer event histories.
+- Added the `zaxy state-recovery-benchmark` release command, a canonical
+  tracked workload/report artifact, and a release guardrail checker for the
+  production `memory_fabric_checkout` baseline.
+- Added report schema metadata, workload fingerprints, case/baseline counts,
+  production-baseline thresholds, Markdown guardrails, and release-check wiring
+  for StateRecoveryBench.
+- Added replay-derived Coordinate accepted-state resolution so Coordinate
+  checkout and proof packets share the same parent-promoted state, diagnostic
+  row classification, review refs, promotion refs, and worker source refs.
+- Kept associative projection rows diagnostic and experimental; 1.1.0 product
+  claims are gated on MemoryFabric checkout, Eventloom citations, and explicit
+  Coordinate authority metadata.
+
+## 1.0.4 - 2026-06-05
+
+- Fixed authority metadata propagation for generic Eventloom rows so
+  `authority_scope`, `status`, `stale`, `promoted`, and `superseded_by` survive
+  through verbatim source recall and generic graph checkout lanes.
+- Hardened Coordinate-purpose Memory Checkout suppression so worker-scoped
+  unpromoted rows, unsupported or rejected rows, and superseded or deprecated
+  stale rows stay out of current facts and cited evidence while remaining
+  auditable in provenance.
+- Preserved the existing Memory Checkout contract and release posture; this is
+  a patch release, not the accepted-state StateRecoveryBench feature release.
+
 ## 1.0.3 - 2026-06-04
 
 - Promoted the current74 full 500-question LongMemEval-compatible report as the

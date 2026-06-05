@@ -93,6 +93,30 @@ def test_verbatim_index_retrieves_packet_projection_as_memory(tmp_path) -> None:
     assert hits[0].metadata["model"] == "gpt-test"
 
 
+def test_verbatim_index_preserves_generic_event_authority_metadata(tmp_path) -> None:
+    """Generic Eventloom source recall should expose authority metadata to checkout policy."""
+    log = EventLog(tmp_path / "agent.jsonl")
+    log.append(
+        "decision.accepted",
+        actor="worker",
+        payload={
+            "summary": "Worker-local accepted-looking diagnosis should stay diagnostic.",
+            "authority_scope": "worker",
+            "status": "accepted",
+            "promoted": False,
+            "superseded_by": "agent:4",
+        },
+        thread="agent",
+    )
+
+    hits = VerbatimIndex.from_event_logs([log]).query("worker local diagnosis", limit=1)
+
+    assert hits[0].metadata["authority_scope"] == "worker"
+    assert hits[0].metadata["status"] == "accepted"
+    assert hits[0].metadata["promoted"] is False
+    assert hits[0].metadata["superseded_by"] == "agent:4"
+
+
 def test_verbatim_index_prefers_exact_identity_terms(tmp_path) -> None:
     """Rare identifiers should outrank broad lexical overlap."""
     log = EventLog(tmp_path / "agent.jsonl")

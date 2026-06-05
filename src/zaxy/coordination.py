@@ -221,6 +221,24 @@ class CoordinationBrief:
 
 
 @dataclass(frozen=True)
+class CoordinationAcceptedStateResolution:
+    """Replay-derived accepted-state classification for Coordinate surfaces."""
+
+    accepted_findings: list[FindingState]
+    accepted_finding_ids: list[str]
+    diagnostic_pending_ids: list[str]
+    conflict_ids: list[str]
+    stale_ids: list[str]
+    rejected_ids: list[str]
+    deferred_ids: list[str]
+    review_event_refs: list[dict[str, Any]]
+    promotion_event_refs: list[dict[str, Any]]
+    worker_source_event_refs: list[dict[str, Any]]
+    non_authoritative_rows: list[dict[str, Any]]
+    excluded_row_reasons: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
 class CoordinationCheckout:
     """Accepted mission state suitable for prompt injection."""
 
@@ -875,23 +893,27 @@ class CoordinationManager:
 
     def checkout(self, mission_id: str, *, include_diagnostics: bool = False) -> CoordinationCheckout:
         """Return accepted parent mission state for model prompt context."""
-        brief = self.brief(mission_id)
-        pending = brief.pending_findings if include_diagnostics else []
-        conflicted = brief.conflicted_findings if include_diagnostics else []
-        stale = brief.stale_findings if include_diagnostics else []
-        conflicts = brief.conflicts if include_diagnostics else []
+        mission_sid = validate_session_id(mission_id)
+        parent_events = self.session_manager.replay(mission_sid).events
+        brief = self.brief(mission_sid)
+        resolution = _resolve_accepted_state(brief, parent_events)
+        resolved_brief = _brief_with_accepted_state(brief, resolution.accepted_findings)
+        pending = resolved_brief.pending_findings if include_diagnostics else []
+        conflicted = resolved_brief.conflicted_findings if include_diagnostics else []
+        stale = resolved_brief.stale_findings if include_diagnostics else []
+        conflicts = resolved_brief.conflicts if include_diagnostics else []
         return CoordinationCheckout(
-            mission_id=brief.mission_id,
-            objective=brief.objective,
-            accepted_findings=brief.accepted_findings,
+            mission_id=resolved_brief.mission_id,
+            objective=resolved_brief.objective,
+            accepted_findings=resolution.accepted_findings,
             pending_findings=pending,
             conflicted_findings=conflicted,
             stale_findings=stale,
             conflicts=conflicts,
-            excluded_pending_count=0 if include_diagnostics else len(brief.pending_findings),
-            excluded_conflict_count=0 if include_diagnostics else len(brief.conflicts),
-            excluded_stale_count=0 if include_diagnostics else len(brief.stale_findings),
-            prompt=_checkout_prompt(brief, include_diagnostics=include_diagnostics),
+            excluded_pending_count=0 if include_diagnostics else len(resolved_brief.pending_findings),
+            excluded_conflict_count=0 if include_diagnostics else len(resolved_brief.conflicts),
+            excluded_stale_count=0 if include_diagnostics else len(resolved_brief.stale_findings),
+            prompt=_checkout_prompt(resolved_brief, include_diagnostics=include_diagnostics),
             purpose=coordinate_purpose_profile().to_dict(),
         )
 
@@ -908,13 +930,19 @@ class CoordinationManager:
         parent_events = self.session_manager.replay(mission_sid).events
         handoff_event_ref = _handoff_event_ref(parent_events, handoff_id, decision_scope=decision_scope)
         brief = self.brief(mission_sid)
-        all_accepted_ids = [finding.finding_id for finding in brief.accepted_findings]
+        ledger_rows = _artifact_ledger_rows(synthesis_artifact)
+        resolution = _resolve_accepted_state(brief, parent_events, synthesis_artifact=synthesis_artifact)
+        all_accepted_ids = resolution.accepted_finding_ids
         accepted_ids = _artifact_supported_accepted_ids(
             synthesis_artifact,
             accepted_ids=all_accepted_ids,
         )
-        pending_ids = [finding.finding_id for finding in brief.pending_findings]
-        ledger_rows = _artifact_ledger_rows(synthesis_artifact)
+        accepted_findings_by_id = {finding.finding_id: finding for finding in resolution.accepted_findings}
+        accepted_findings = [
+            accepted_findings_by_id[finding_id]
+            for finding_id in accepted_ids
+            if finding_id in accepted_findings_by_id
+        ]
         return CoordinationProofPacket(
             mission_id=mission_sid,
             artifact_id=str(synthesis_artifact.get("artifact_id") or ""),
@@ -924,20 +952,20 @@ class CoordinationManager:
             accepted_finding_ids=accepted_ids,
             promotion_event_refs=_promotion_event_refs(parent_events, accepted_ids),
             review_event_refs=_review_event_refs(parent_events, accepted_ids),
-            worker_source_event_refs=_worker_source_event_refs(brief.accepted_findings),
+            worker_source_event_refs=_worker_source_event_refs(accepted_findings),
             handoff_event_ref=handoff_event_ref,
-            diagnostic_pending_ids=pending_ids,
-            conflict_ids=[_conflict_id(conflict) for conflict in brief.conflicts],
-            excluded_row_reasons=_excluded_row_reasons(ledger_rows),
+            diagnostic_pending_ids=resolution.diagnostic_pending_ids,
+            conflict_ids=resolution.conflict_ids,
+            excluded_row_reasons=resolution.excluded_row_reasons,
             non_authoritative_rows=_non_authoritative_rows(
                 ledger_rows,
                 supported_accepted_ids=set(accepted_ids),
                 all_accepted_ids=set(all_accepted_ids),
-                pending_ids=set(pending_ids),
+                pending_ids=set(resolution.diagnostic_pending_ids),
                 conflicted_ids={finding.finding_id for finding in brief.conflicted_findings},
-                stale_ids={finding.finding_id for finding in brief.stale_findings},
-                rejected_ids={finding.finding_id for finding in brief.rejected_findings},
-                deferred_ids={finding.finding_id for finding in brief.deferred_findings},
+                stale_ids=set(resolution.stale_ids),
+                rejected_ids=set(resolution.rejected_ids),
+                deferred_ids=set(resolution.deferred_ids),
             ),
         )
 
@@ -1402,6 +1430,88 @@ def _worker_source_event_refs(findings: list[FindingState]) -> list[dict[str, An
             }
         )
     return refs
+
+
+def _resolve_accepted_state(
+    brief: CoordinationBrief,
+    parent_events: list[Event],
+    *,
+    synthesis_artifact: dict[str, Any] | None = None,
+) -> CoordinationAcceptedStateResolution:
+    """Resolve answerable accepted state from parent replay, not retrieved text."""
+    promoted_ids = _promoted_finding_ids(parent_events)
+    accepted_findings = [
+        finding
+        for finding in brief.accepted_findings
+        if finding.finding_id in promoted_ids
+        and not finding.stale
+        and finding.status == "accepted"
+        and finding.finding_id not in {item.finding_id for item in brief.rejected_findings}
+        and finding.finding_id not in {item.finding_id for item in brief.deferred_findings}
+    ]
+    accepted_ids = [finding.finding_id for finding in accepted_findings]
+    ledger_rows = _artifact_ledger_rows(synthesis_artifact or {})
+    return CoordinationAcceptedStateResolution(
+        accepted_findings=accepted_findings,
+        accepted_finding_ids=accepted_ids,
+        diagnostic_pending_ids=[finding.finding_id for finding in brief.pending_findings],
+        conflict_ids=[_conflict_id(conflict) for conflict in brief.conflicts],
+        stale_ids=[finding.finding_id for finding in brief.stale_findings],
+        rejected_ids=[finding.finding_id for finding in brief.rejected_findings],
+        deferred_ids=[finding.finding_id for finding in brief.deferred_findings],
+        review_event_refs=_review_event_refs(parent_events, accepted_ids),
+        promotion_event_refs=_promotion_event_refs(parent_events, accepted_ids),
+        worker_source_event_refs=_worker_source_event_refs(accepted_findings),
+        excluded_row_reasons=_excluded_row_reasons(ledger_rows),
+        non_authoritative_rows=_non_authoritative_rows(
+            ledger_rows,
+            supported_accepted_ids=set(_artifact_supported_accepted_ids(synthesis_artifact or {}, accepted_ids=accepted_ids)),
+            all_accepted_ids=set(accepted_ids),
+            pending_ids={finding.finding_id for finding in brief.pending_findings},
+            conflicted_ids={finding.finding_id for finding in brief.conflicted_findings},
+            stale_ids={finding.finding_id for finding in brief.stale_findings},
+            rejected_ids={finding.finding_id for finding in brief.rejected_findings},
+            deferred_ids={finding.finding_id for finding in brief.deferred_findings},
+        ),
+    )
+
+
+def _brief_with_accepted_state(
+    brief: CoordinationBrief,
+    accepted_findings: list[FindingState],
+) -> CoordinationBrief:
+    accepted_ids = {finding.finding_id for finding in accepted_findings}
+    pending_findings = [
+        finding
+        for finding in brief.pending_findings
+        if finding.finding_id not in accepted_ids
+    ]
+    stale_findings = [
+        finding
+        for finding in brief.stale_findings
+        if finding.finding_id not in accepted_ids
+    ]
+    return CoordinationBrief(
+        mission_id=brief.mission_id,
+        objective=brief.objective,
+        workers=brief.workers,
+        accepted_findings=accepted_findings,
+        pending_findings=pending_findings,
+        rejected_findings=brief.rejected_findings,
+        deferred_findings=brief.deferred_findings,
+        conflicted_findings=brief.conflicted_findings,
+        stale_findings=stale_findings,
+        conflicts=brief.conflicts,
+    )
+
+
+def _promoted_finding_ids(events: list[Event]) -> set[str]:
+    return {
+        finding_id
+        for event in events
+        if event.type == "coordination.finding.promoted"
+        if (finding_id := str(event.payload.get("finding_id") or ""))
+    }
 
 
 def _artifact_ledger_rows(synthesis_artifact: dict[str, Any]) -> list[dict[str, Any]]:

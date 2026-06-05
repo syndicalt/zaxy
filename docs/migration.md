@@ -88,6 +88,25 @@ Required actions:
 - Use `zaxy replay --from-seq` and `--to-seq` for bounded inspection of long
   sessions rather than splitting or rewriting logs.
 
+## From 1.0 to 1.1
+
+1.1 adds StateRecoveryBench and replay-derived Coordinate accepted-state
+resolution. This is additive for existing memory users, but Coordinate clients
+should treat parent-promoted accepted state as the only answerable mission state
+by default.
+
+Required actions:
+
+- Use `zaxy state-recovery-benchmark` for accepted-state recovery claims.
+  `zaxy experimental state-recovery` remains a research/debug command.
+- Keep benchmark claims scoped to the production `memory_fabric_checkout`
+  baseline. Associative projection rows are diagnostic only.
+- If a client consumes Coordinate proof packets, expect `accepted_finding_ids`,
+  review refs, promotion refs, worker source refs, and non-authoritative row
+  labels to come from one replay-derived resolver.
+- Preserve review and promotion events in the parent mission session; worker
+  findings alone are diagnostic until promoted.
+
 ## From 0.8 to 0.9
 
 0.9 is the API freeze candidate. The main migration task is to compare your

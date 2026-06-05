@@ -68,8 +68,9 @@ treated as public release-candidate surfaces. Internal helper functions in
 | `zaxy coordinate ...` | `Beta` | Coordinate mission, worker, finding, approval, handoff, audit, and benchmark commands. |
 | `zaxy integration-template`, `zaxy integrations`, `zaxy ide-config`, `zaxy local-profile` | `Beta` | Integration discovery and config rendering. |
 | `zaxy trace export` | `Beta` | Provider-neutral Eventloom-derived trace export. |
-| `zaxy benchmark-inventory`, `zaxy benchmark-compare` | `Beta` | Benchmark report inventory and guardrail checks. |
+| `zaxy benchmark-inventory`, `zaxy benchmark-compare`, `zaxy state-recovery-benchmark` | `Beta` | Benchmark report inventory, guardrail checks, and accepted-state recovery benchmark lane. |
 | Backend candidate options such as `PROJECTION_BACKEND=pggraph` or `latticedb` | `Experimental` | Candidate backends stay behind explicit configuration. |
+| `zaxy experimental pattern-completion`, `zaxy experimental state-recovery` | `Experimental` | Research commands for associative projection diagnostics; do not use for production claims. |
 
 ## Durable Eventloom Events
 
@@ -115,6 +116,8 @@ fingerprints, and git-tracked Eventloom/query inputs.
 | `reports/backend-shootout/longmemeval-40-backend-shootout.json` | `Beta` | Medium-scale performance report. |
 | `reports/backend-shootout/longmemeval-100-backend-shootout.json` | `Beta` | Scale guardrail report. |
 | `reports/benchmarks/coordination-real-v1/coordination-benchmark.json` | `Beta` | Coordinate benchmark smoke artifact. |
+| `reports/benchmarks/state-recovery-v1/state-recovery-benchmark.json` | `Beta` | StateRecoveryBench accepted-state recovery guardrail artifact. |
+| `reports/benchmarks/state-recovery-v1/state-recovery-workload.json` | `Beta` | Canonical StateRecoveryBench workload; fingerprint checked by `scripts/check-state-recovery-benchmark.py`. |
 | `reports/benchmarks/*-diagnostics.*` | `Internal` | Local diagnostics are ignored unless promoted to tracked evidence. |
 | Competitor adapter disclosures | `Experimental` | Disclosure-only until run against the same harness and inputs. |
 

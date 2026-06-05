@@ -793,20 +793,27 @@ def _prompt_visible_properties(properties: dict[str, Any], *, limit: int = 3) ->
 
 def _diagnostic_metadata(entity: GraphEntity) -> dict[str, Any] | None:
     """Return bounded structured properties needed by downstream diagnostics."""
-    if entity.entity_type not in {"skill_version", "skill_outcome"}:
+    if entity.entity_type not in {"event", "skill_version", "skill_outcome"}:
         return None
     allowed_keys = {
         "applicability",
+        "authority",
+        "authority_scope",
         "contradiction_reason",
+        "coordination_status",
         "evidence",
         "failure_modes",
         "feedback",
+        "finding_status",
         "procedure",
+        "promoted",
         "rollback",
         "skill_id",
+        "stale",
         "status",
         "success_score",
         "summary",
+        "superseded_by",
         "task",
         "version",
     }
