@@ -96,8 +96,18 @@ Codex with that activation packet as the initial prompt via the supported Codex
 - Session genesis now persists a `write_instructions.memory_activation` policy
   for codebase and generic workspaces. The policy names `memory_checkout` as the
   required tool before roadmap, implementation, release, review, resume, and
-  high-context questions, so the checkout rule is recorded in Eventloom during
-  `zaxy init` instead of living only in docs.
+  high-context questions, includes the activation launcher, resume hook, and CLI
+  checkout fallback commands, marks MCP tool availability as runtime-unverified,
+  and records a fail-closed blocker when no fresh checkout is present. This keeps
+  the checkout rule in Eventloom during `zaxy init` instead of living only in
+  docs.
+- Codex onboarding next steps now prefer `zaxy activate codex --launch` as the
+  session entrypoint and also print the resume boundary and CLI checkout fallback
+  commands for sessions recovering after `/resume`, Codex update, or MCP churn.
+- `zaxy init` now installs a marker-managed `Zaxy Memory Activation` block in
+  `AGENTS.md` by default, with `--no-agent-instructions` as the escape hatch. The
+  block gives Codex a model-visible fail-closed activation rule even when MCP
+  tools are absent after a resume or tool reload.
 - Zaxy emits `memory.reminder.suggested` as the auditable warning/proposal event
   when memory activation appears missing for risky work, and `zaxy hook-status`
   surfaces the latest reminder under `memory_activation.latest_reminder`.

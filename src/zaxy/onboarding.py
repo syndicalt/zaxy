@@ -141,6 +141,7 @@ async def run_onboarding(
     packet_upstream_base_url: str = "https://api.openai.com/v1",
     packet_port: int = 8787,
     capture_action: str = "none",
+    agent_instructions: bool = True,
     zaxy_executable: str | Path | None = None,
     force: bool = False,
     fabric_factory: Callable[[str], MemoryFabric] = MemoryFabric,
@@ -238,6 +239,21 @@ async def run_onboarding(
                 steps.append(OnboardingStep("hook_config", "ok", f"{hook_client} hook config written", str(written)))
             else:
                 steps.append(OnboardingStep("hook_config", "preview", f"{hook_client} hook config rendered"))
+
+    if agent_instructions:
+        written = write_agent_activation_instructions(
+            root,
+            eventloom_path=eventloom,
+            session_id=sid,
+        )
+        steps.append(
+            OnboardingStep(
+                "agent_instructions",
+                "ok",
+                "Model-visible Zaxy activation instructions installed",
+                str(written),
+            )
+        )
 
     if infra_action != "none":
         settings = _onboarding_settings(
@@ -464,6 +480,19 @@ def _build_next_steps(
         next_steps.append(f"Run this Codex MCP install command: {mcp_install_command}")
         next_steps.append("Restart Codex so it loads the Zaxy MCP server.")
         next_steps.append(
+            "Start Codex through the activation launcher: "
+            f"zaxy activate codex --session-id {session_id} --current-task \"<task>\" --launch"
+        )
+        next_steps.append(
+            "After Codex resume or update, emit the resume boundary: "
+            f"zaxy hook-event resume --eventloom-path {eventloom} --session-id {session_id} "
+            '--source codex --summary "<task>"'
+        )
+        next_steps.append(
+            "If Zaxy MCP tools are absent, use the CLI checkout fallback before substantial work: "
+            f"zaxy memory checkout \"<task>\" --eventloom-path {eventloom} --session-id {session_id}"
+        )
+        next_steps.append(
             f"Start managed deterministic Codex capture: zaxy capture start --workspace {workspace}"
         )
         backend = projection_backend.casefold().strip()
@@ -504,6 +533,51 @@ def _build_next_steps(
         else:
             next_steps.append(f"Run zaxy init {workspace} --infra start if you want Zaxy to start local Neo4j now.")
     return next_steps
+
+
+AGENT_ACTIVATION_BEGIN = "<!-- zaxy-memory-activation:start -->"
+AGENT_ACTIVATION_END = "<!-- zaxy-memory-activation:end -->"
+
+
+def write_agent_activation_instructions(
+    workspace: str | Path,
+    *,
+    eventloom_path: str | Path,
+    session_id: str,
+) -> Path:
+    """Install a bounded model-visible activation block into AGENTS.md."""
+    root = Path(workspace)
+    target = root / "AGENTS.md"
+    block = _render_agent_activation_block(eventloom_path=Path(eventloom_path), session_id=session_id)
+    existing = target.read_text(encoding="utf-8") if target.exists() else ""
+    if AGENT_ACTIVATION_BEGIN in existing and AGENT_ACTIVATION_END in existing:
+        before, rest = existing.split(AGENT_ACTIVATION_BEGIN, 1)
+        _, after = rest.split(AGENT_ACTIVATION_END, 1)
+        content = before.rstrip() + "\n\n" + block + after
+    elif existing.strip():
+        content = existing.rstrip() + "\n\n" + block + "\n"
+    else:
+        content = "# Agent Instructions\n\n" + block + "\n"
+    target.write_text(content, encoding="utf-8")
+    return target
+
+
+def _render_agent_activation_block(*, eventloom_path: Path, session_id: str) -> str:
+    eventloom = str(eventloom_path)
+    return "\n".join(
+        [
+            AGENT_ACTIVATION_BEGIN,
+            "## Zaxy Memory Activation",
+            "",
+            "Before roadmap, implementation, release, review, resume, or high-context work:",
+            f"- Start Codex through Zaxy when opening a new session: `zaxy activate codex --session-id {session_id} --current-task \"<task>\" --launch`.",
+            f"- After `/resume`, Codex update, or MCP/tool reload, record the boundary: `zaxy hook-event resume --eventloom-path {eventloom} --session-id {session_id} --source codex --summary \"<task>\"`.",
+            f"- If Zaxy MCP tools are unavailable, run CLI checkout before substantial work: `zaxy memory checkout \"<task>\" --eventloom-path {eventloom} --session-id {session_id}`.",
+            "- If no fresh activation packet or cited checkout is available, treat memory as degraded and pause substantial work until checkout succeeds.",
+            "- Do not rely only on ordinary Codex summaries when Zaxy activation is missing.",
+            AGENT_ACTIVATION_END,
+        ]
+    )
 
 
 def _build_capture_summary(*, workspace: Path, doctor: dict[str, Any]) -> dict[str, Any]:

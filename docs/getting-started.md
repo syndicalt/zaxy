@@ -124,13 +124,15 @@ zaxy doctor --json
 ```
 
 The doctor command verifies Eventloom writeability, local embedding/reranker
-construction, static viewer generation, MCP default-session posture, observer
-hook coverage, capture health, optional LLM packet memory projection, Neo4j
-configuration posture, and production-mode warnings. `capture_health` summarizes
-whether the high-value automatic lanes are active and includes the managed
+construction, static viewer generation, MCP default-session posture,
+model-visible `AGENTS.md` activation instructions, observer hook coverage,
+capture health, optional LLM packet memory projection, Neo4j configuration
+posture, and production-mode warnings. `capture_health` summarizes whether the
+high-value automatic lanes are active and includes the managed
 `zaxy capture start --workspace ...` action when Codex capture is configured but
-idle. It does not start Docker or require a live Neo4j connection; use
-`zaxy status` when you want a live graph connectivity test.
+idle. `agent_instructions` warns when the marker-managed `Zaxy Memory Activation`
+block is missing. It does not start Docker or require a live Neo4j connection;
+use `zaxy status` when you want a live graph connectivity test.
 
 Before meaningful Codex work, emit the session-start activation packet:
 
@@ -138,13 +140,28 @@ Before meaningful Codex work, emit the session-start activation packet:
 zaxy activate codex --session-id my-project-default --current-task "ship the next change"
 ```
 
-`activate codex` prints a prompt-ready Memory Bootstrap packet and records that
-the activation handoff was shown. The packet includes the active capability
-manifest, the recommended first `memory_checkout` call, deterministic capture
-status, and the trust policy for what to prefer, ignore, and record. `memory
-bootstrap` remains available when you only want the raw bootstrap packet,
-`memory capabilities` exposes the fuller manifest, and `memory checkout` loads
-the cited working state before real work begins.
+`activate codex` prints a prompt-ready Memory Bootstrap packet, records that
+the activation handoff was shown, and starts the managed Codex capture watcher
+when `.codex/zaxy-capture.json` is configured. If capture cannot be started, the
+packet marks the session as degraded and prints the setup or `zaxy capture
+start` action instead of implying that automatic capture is healthy. Use
+`--no-ensure-capture` only when another supervisor is already managing capture.
+The packet includes the active capability manifest, the recommended first
+`memory_checkout` call, deterministic capture status, MCP-tool availability as
+runtime-unverified, a CLI checkout fallback for resumed sessions where MCP tools
+are missing, and the trust policy for what to prefer, ignore, and record.
+For launcher or CI flows that must fail closed when Codex capture is configured
+but stopped, run `zaxy hook-status --require-capture-running` before substantial
+work. Resume-aware clients should also emit `zaxy hook-event resume`, which
+records `hook.resumed` and appends a fresh checkout reminder even when memory was
+used recently.
+`zaxy init` persists the same activation contract into
+`session.genesis.payload.write_instructions.memory_activation`: the activation
+launcher command, resume hook command, CLI checkout fallback, runtime-unverified
+MCP-tool status, and a fail-closed blocker when no fresh checkout is present.
+`memory bootstrap` remains available when you only want the raw bootstrap
+packet, `memory capabilities` exposes the fuller manifest, and `memory checkout`
+loads the cited working state before real work begins.
 
 To start Codex with that activation packet as the initial prompt:
 
@@ -153,12 +170,27 @@ zaxy activate codex --session-id my-project-default --current-task "ship the nex
 ```
 
 Use `--dry-run` to inspect the exact `codex --cd ... <prompt>` command without
-starting Codex.
+starting Codex or managed capture.
+
+If a long-running `zaxy serve` process already owns the default embedded Kuzu
+projection, CLI checkout retries with a per-process isolated projection under
+`.eventloom/projections/checkout-<session>-<pid>.kuzu` and reports
+`diagnostics.projection_fallback`. This keeps memory activation from silently
+falling back to ordinary repo context after a resume or MCP process churn.
 
 For a single first-run flow, use `zaxy init`. The happy path is deterministic
 capture: local profile writing, MCP config rendering, observer hook config,
 workspace genesis, hook heartbeat, doctor, and hook status. It does not proxy
 model traffic and does not require a provider API key.
+For Codex onboarding, the printed next steps include the MCP install command,
+the `zaxy activate codex --launch` session-start path, the `hook-event resume`
+boundary command, the CLI checkout fallback for missing MCP tools, and the
+managed capture start command.
+By default, `zaxy init` also installs a bounded `Zaxy Memory Activation` block in
+`AGENTS.md`. The block is marker-managed, so rerunning init replaces only the
+Zaxy section while preserving unrelated repo instructions. Pass
+`--no-agent-instructions` when you need init to avoid writing model-visible repo
+instructions.
 
 ```bash
 zaxy init . \

@@ -65,6 +65,19 @@ def build_memory_capabilities(
                 "message": packet_status["message"],
                 "details": packet_status["details"],
             },
+            "mcp_tools": {
+                "status": "runtime_unverified",
+                "message": (
+                    "Activation cannot prove the current model context has Zaxy MCP tools after "
+                    "resume, compaction, or MCP process reload. If memory_* tools are absent, use "
+                    "the CLI checkout fallback before substantial work."
+                ),
+                "fallback_command": (
+                    f"zaxy memory checkout "
+                    f"{(current_task or 'current task, project direction, and recent decisions')!r} "
+                    f"--eventloom-path {str(base)} --session-id {sid}"
+                ),
+            },
             "graph": {
                 "status": "available_through_memory_checkout",
                 "message": "Use memory_checkout or memory_query for Neo4j-backed temporal retrieval.",
@@ -80,6 +93,7 @@ def format_memory_capabilities(manifest: dict[str, Any]) -> str:
     next_call = manifest["recommended_next_call"]
     eventloom = manifest["status"]["eventloom"]
     packet = manifest["status"]["packet_memory"]
+    mcp_tools = manifest["status"]["mcp_tools"]
     lines = [
         "# Zaxy Memory Contract",
         f"Session: {manifest['session_id']}",
@@ -100,16 +114,19 @@ def format_memory_capabilities(manifest: dict[str, Any]) -> str:
             "- when exact source is needed: memory_verbatim",
             "- when retrieved context was used: memory_feedback",
             "- if memory.reminder.suggested appears: follow its memory_checkout call before answering",
+            "- if MCP memory tools are absent: run the CLI checkout fallback before substantial work",
             "",
             (
                 f"Recommended next call: {next_call['tool']}("
                 f"query={next_call['arguments']['query']!r}, session_id={manifest['session_id']!r})"
             ),
+            f"CLI fallback: {mcp_tools['fallback_command']}",
             (
                 "Status: "
                 f"eventloom latest={eventloom['latest_seq'] or '-'} "
                 f"integrity={_status_label(eventloom['integrity_ok'])}; "
-                f"packet_memory={packet['status']}"
+                f"packet_memory={packet['status']}; "
+                f"mcp_tools={mcp_tools['status']}"
             ),
         ]
     )
@@ -189,6 +206,7 @@ def format_memory_bootstrap(bootstrap: dict[str, Any]) -> str:
             f"- Record: {bootstrap['trust_policy']['record']}",
             "",
             "Call memory_checkout before answering roadmap or implementation questions.",
+            "If MCP memory tools are absent after resume, run the CLI fallback printed by memory_capabilities.",
             "Call memory_feedback when cited checkout context was used.",
         ]
     )

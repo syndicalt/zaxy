@@ -1881,6 +1881,8 @@ def test_memory_capabilities_json_output(tmp_path: Path) -> None:
     assert payload["current_task"] == "make zaxy invisible"
     assert payload["recommended_next_call"]["tool"] == "memory_checkout"
     assert payload["status"]["eventloom"]["latest_seq"] == 1
+    assert payload["status"]["mcp_tools"]["status"] == "runtime_unverified"
+    assert "zaxy memory checkout" in payload["status"]["mcp_tools"]["fallback_command"]
 
 
 def test_memory_capabilities_text_output(tmp_path: Path) -> None:
@@ -1903,6 +1905,8 @@ def test_memory_capabilities_text_output(tmp_path: Path) -> None:
     assert "# Zaxy Memory Contract" in result.output
     assert "Session: agent" in result.output
     assert "memory_checkout" in result.output
+    assert "CLI fallback: zaxy memory checkout" in result.output
+    assert "mcp_tools=runtime_unverified" in result.output
 
 
 def test_memory_bootstrap_json_output(tmp_path: Path) -> None:
@@ -1933,6 +1937,7 @@ def test_memory_bootstrap_json_output(tmp_path: Path) -> None:
     assert payload["startup_sequence"][1]["tool"] == "memory_checkout"
     assert payload["startup_sequence"][1]["arguments"]["query"] == "ship the next sprint"
     assert payload["capture"]["configured"] is False
+    assert payload["capabilities"]["status"]["mcp_tools"]["status"] == "runtime_unverified"
 
 
 def test_memory_bootstrap_text_output(tmp_path: Path) -> None:
@@ -1957,6 +1962,7 @@ def test_memory_bootstrap_text_output(tmp_path: Path) -> None:
     assert "# Zaxy Session Bootstrap" in result.output
     assert "1. memory_capabilities" in result.output
     assert "2. memory_checkout" in result.output
+    assert "If MCP memory tools are absent after resume" in result.output
     events = EventLog(tmp_path / ".eventloom" / "agent.jsonl").read_all()
     assert events[-1].type == "memory.bootstrap.shown"
     assert events[-1].payload["source"] == "cli"
@@ -2022,11 +2028,32 @@ def test_activate_codex_json_output(tmp_path: Path) -> None:
 
 
 @patch("zaxy.__main__.subprocess.run")
+@patch("zaxy.capture_manager.subprocess.Popen")
 def test_activate_codex_launches_codex_with_injected_prompt(
+    mock_popen: MagicMock,
     mock_run: MagicMock,
     tmp_path: Path,
 ) -> None:
-    """--launch should start Codex with activation context as the initial prompt."""
+    """--launch should start capture and Codex with activation context as the initial prompt."""
+    config = tmp_path / ".codex" / "zaxy-capture.json"
+    config.parent.mkdir()
+    config.write_text(
+        json.dumps(
+            {
+                "capture": "local-session-jsonl",
+                "client": "codex",
+                "codex_home": str(tmp_path / ".codex-home"),
+                "eventloom_path": str(tmp_path / ".eventloom"),
+                "session_id": "agent",
+                "source": "codex-local",
+                "workspace": str(tmp_path),
+            }
+        ),
+        encoding="utf-8",
+    )
+    process = MagicMock()
+    process.pid = 321
+    mock_popen.return_value = process
     mock_run.return_value.returncode = 0
     runner = CliRunner()
 
@@ -2054,6 +2081,37 @@ def test_activate_codex_launches_codex_with_injected_prompt(
     assert command[:3] == ["codex-test", "--cd", str(tmp_path.resolve())]
     assert "# Zaxy Session Bootstrap" in command[-1]
     assert "memory_checkout" in command[-1]
+    capture_command = mock_popen.call_args.args[0]
+    assert capture_command[:3] == [sys.executable, "-m", "zaxy"]
+    assert "codex-capture" in capture_command
+    assert "--watch" in capture_command
+
+
+def test_activate_codex_reports_capture_degraded_when_config_missing(tmp_path: Path) -> None:
+    """Activation should make missing managed capture visible instead of looking fully healthy."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "activate",
+            "codex",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent",
+            "--workspace-root",
+            str(tmp_path),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["capture_start"]["status"] == "degraded"
+    assert payload["capture_start"]["reason"] == "not_configured"
+    assert "zaxy init" in payload["capture_start"]["action"]
+    assert "Capture action: degraded" in payload["injection_text"]
 
 
 def test_activate_codex_dry_run_prints_launch_command(tmp_path: Path) -> None:
@@ -2211,6 +2269,70 @@ def test_memory_checkout_uses_repo_local_embedded_profile(
     kwargs = mock_fabric_cls.call_args.kwargs
     assert kwargs["projection_backend"] == "embedded"
     assert kwargs["embedded_graph_path"] == embedded_path
+
+
+@patch("os.getpid", return_value=4321)
+@patch("zaxy.__main__.MemoryFabric")
+def test_memory_checkout_retries_locked_embedded_projection_with_isolated_path(
+    mock_fabric_cls: MagicMock,
+    _mock_getpid: MagicMock,
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    """Checkout should not fail closed-loop memory use when the shared Kuzu projection is locked."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    eventloom_path = workspace / ".eventloom"
+    embedded_path = eventloom_path / "projections" / "embedded.kuzu"
+    (workspace / ".env.local").write_text(
+        "PROJECTION_BACKEND=embedded\n"
+        f"EMBEDDED_GRAPH_PATH={embedded_path}\n",
+        encoding="utf-8",
+    )
+    locked = AsyncMock()
+    locked.connect.side_effect = RuntimeError(f"Could not set lock on file : {embedded_path}")
+    checkout = MagicMock()
+    checkout.to_dict.return_value = {
+        "session_id": "agent-1",
+        "query": "current project direction",
+        "prompt": "# Memory Checkout\nUse cited memory.",
+        "diagnostics": {},
+    }
+    fallback = AsyncMock()
+    fallback.checkout_memory.return_value = checkout
+    mock_fabric_cls.side_effect = [locked, fallback]
+    monkeypatch.chdir(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "checkout",
+            "current project direction",
+            "--eventloom-path",
+            str(eventloom_path),
+            "--session-id",
+            "agent-1",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["diagnostics"]["projection_fallback"] == {
+        "status": "used",
+        "reason": "embedded_projection_locked",
+        "original_path": str(embedded_path),
+        "fallback_path": str(eventloom_path / "projections" / "checkout-agent-1-4321.kuzu"),
+    }
+    assert mock_fabric_cls.call_args_list[1].kwargs["embedded_graph_path"] == (
+        eventloom_path / "projections" / "checkout-agent-1-4321.kuzu"
+    )
+    locked.close.assert_awaited_once()
+    fallback.connect.assert_awaited_once()
+    fallback.checkout_memory.assert_awaited_once()
+    fallback.close.assert_awaited_once()
 
 
 def test_packet_analyzer_cli_help_exposes_observe_only_gateway() -> None:
@@ -3238,6 +3360,48 @@ def test_hook_event_command_appends_eventloom_event(tmp_path: Path) -> None:
     assert events[1].payload["recommended_tool"] == "memory_checkout"
 
 
+def test_hook_event_resume_suggests_fresh_checkout_reminder(tmp_path: Path) -> None:
+    """Resume hooks should reintroduce checkout guidance even after recent memory use."""
+    runner = CliRunner()
+    EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").append(
+        "memory.checkout.completed",
+        actor="zaxy-memory",
+        payload={"activity": "checkout", "source": "test"},
+        thread="agent-1",
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "hook-event",
+            "resume",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--session-id",
+            "agent-1",
+            "--source",
+            "codex",
+            "--summary",
+            "resume after Codex update",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Recorded hook resume as hook.resumed" in result.output
+    assert "Suggested memory reminder" in result.output
+    events = EventLog(tmp_path / ".eventloom" / "agent-1.jsonl").read_all()
+    assert [event.type for event in events] == [
+        "memory.checkout.completed",
+        "hook.resumed",
+        "memory.reminder.suggested",
+    ]
+    assert events[1].payload["trigger"] == "resume"
+    assert events[1].payload["summary"] == "resume after Codex update"
+    assert events[2].payload["trigger"] == "resume"
+    assert events[2].payload["query"] == "resume after Codex update"
+    assert events[2].payload["reasons"] == ["context_boundary"]
+
+
 def test_hook_event_checkpoint_carries_summary_and_reason(tmp_path: Path) -> None:
     """checkpoint hooks should carry retrieval-useful checkpoint metadata."""
     runner = CliRunner()
@@ -4244,6 +4408,30 @@ def test_hook_status_warns_when_codex_capture_configured_but_not_running(
     assert payload["capture_readiness"]["actions"] == [
         f"Start managed deterministic Codex capture: zaxy capture start --workspace {tmp_path}."
     ]
+
+    gated = runner.invoke(
+        app,
+        [
+            "hook-status",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--workspace-root",
+            str(tmp_path),
+            "--require-capture-running",
+            "--json",
+        ],
+    )
+
+    assert gated.exit_code == 1
+    gated_payload = json.loads(gated.output)
+    assert gated_payload["capture_runtime_guardrail"] == {
+        "status": "fail",
+        "required": True,
+        "configured": True,
+        "running": False,
+        "message": "Codex capture config is installed, but the managed watcher is not running",
+        "action": f"zaxy capture start --workspace {tmp_path}",
+    }
 
 
 @patch("zaxy.hooks._iter_process_cmdlines")
@@ -5349,6 +5537,24 @@ def test_init_command_defaults_to_local_embedded_codex_onboarding(mock_run_onboa
     assert kwargs["local_profile_output"] == tmp_path / ".env.local"
     assert kwargs["capture_mode"] == "deterministic"
     assert kwargs["capture_action"] == "none"
+    assert kwargs["agent_instructions"] is True
+
+
+@patch("zaxy.__main__.run_onboarding")
+def test_init_command_can_skip_agent_instruction_install(
+    mock_run_onboarding: AsyncMock,
+    tmp_path: Path,
+) -> None:
+    """Users should be able to opt out of AGENTS.md activation block writes."""
+    result_obj = MagicMock()
+    result_obj.status = "ok"
+    mock_run_onboarding.return_value = result_obj
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["init", str(tmp_path), "--no-agent-instructions"])
+
+    assert result.exit_code == 0
+    assert mock_run_onboarding.await_args.kwargs["agent_instructions"] is False
 
 
 @patch("zaxy.__main__.run_onboarding")

@@ -21,6 +21,9 @@ from zaxy.runtime import LocalEmbeddedGraphRuntime, LocalPgGraphRuntime
 from zaxy.security import eventlog_path
 from zaxy.viewer import write_viewer_html
 
+AGENT_ACTIVATION_BEGIN = "<!-- zaxy-memory-activation:start -->"
+AGENT_ACTIVATION_END = "<!-- zaxy-memory-activation:end -->"
+
 
 def run_doctor(
     *,
@@ -39,6 +42,7 @@ def run_doctor(
         _check_cli_install(zaxy_executable),
         _check_mcp_defaults(active),
         _check_codex_mcp_scope(root),
+        _check_agent_instructions(root),
         _check_hooks(active),
         _check_hook_installation(hook_status),
         _check_hook_activity(active, hook_status),
@@ -216,6 +220,33 @@ def _check_codex_mcp_scope(workspace_root: Path) -> dict[str, Any]:
     }
 
 
+def _check_agent_instructions(workspace_root: Path) -> dict[str, str]:
+    agents = workspace_root / "AGENTS.md"
+    if not agents.exists():
+        return {
+            "name": "agent_instructions",
+            "status": "warning",
+            "message": "No AGENTS.md activation instructions found",
+            "action": f"Run zaxy init {workspace_root} to install the marker-managed Zaxy Memory Activation block.",
+        }
+    text = agents.read_text(encoding="utf-8", errors="replace")
+    if AGENT_ACTIVATION_BEGIN in text and AGENT_ACTIVATION_END in text:
+        return {
+            "name": "agent_instructions",
+            "status": "ok",
+            "message": "AGENTS.md contains marker-managed Zaxy Memory Activation instructions",
+        }
+    return {
+        "name": "agent_instructions",
+        "status": "warning",
+        "message": "AGENTS.md is present but missing the Zaxy Memory Activation block",
+        "action": (
+            f"Run zaxy init {workspace_root} to add the marker-managed activation block, "
+            "or pass --no-agent-instructions if another instruction system owns this."
+        ),
+    }
+
+
 def _check_hooks(settings: Settings) -> dict[str, str]:
     try:
         render_hook_config(
@@ -325,6 +356,15 @@ def _check_observation_coverage(hook_status: dict[str, Any]) -> dict[str, str]:
 def _check_capture_health(hook_status: dict[str, Any]) -> dict[str, Any]:
     readiness = hook_status.get("capture_readiness", {})
     status = str(readiness.get("status", "warning"))
+    clients = hook_status.get("clients", {})
+    codex = clients.get("codex") if isinstance(clients, dict) else None
+    codex_runtime = codex.get("runtime") if isinstance(codex, dict) else None
+    codex_configured_stopped = (
+        isinstance(codex, dict)
+        and bool(codex.get("installed", False))
+        and isinstance(codex_runtime, dict)
+        and not bool(codex_runtime.get("running", False))
+    )
     message = str(readiness.get("message", "0 of 4 high-value automatic capture lanes are active")).replace(
         "high-value automatic capture lanes",
         "high-value lanes",
@@ -340,7 +380,11 @@ def _check_capture_health(hook_status: dict[str, Any]) -> dict[str, Any]:
     check = {
         "name": "capture_health",
         "status": "warning",
-        "message": f"automatic capture is incomplete: {message}",
+        "message": (
+            "Codex capture is configured, but the managed watcher is not running"
+            if codex_configured_stopped
+            else f"automatic capture is incomplete: {message}"
+        ),
         "details": readiness,
     }
     if actions:

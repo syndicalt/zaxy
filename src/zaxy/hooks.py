@@ -84,6 +84,7 @@ def render_hook_config(
         [
             "# Zaxy observer hook commands",
             _hook_command("session-start", eventloom_path=eventloom_path, session_id=session_id, source=hook_source),
+            _hook_command("resume", eventloom_path=eventloom_path, session_id=session_id, source=hook_source),
             _hook_command("stop", eventloom_path=eventloom_path, session_id=session_id, source=hook_source),
             _hook_command("precompact", eventloom_path=eventloom_path, session_id=session_id, source=hook_source),
             "# Optional first-class observation sinks for richer automatic capture",
@@ -142,6 +143,7 @@ def hook_event_type(trigger: str) -> str:
     event_types = {
         "session-start": "hook.session_started",
         "start": "hook.session_started",
+        "resume": "hook.resumed",
         "stop": "hook.stop",
         "precompact": "hook.precompact",
         "checkpoint": "hook.checkpoint",
@@ -150,7 +152,9 @@ def hook_event_type(trigger: str) -> str:
     try:
         return event_types[normalized]
     except KeyError as exc:
-        raise ValueError("hook trigger must be one of: session-start, stop, precompact, checkpoint, heartbeat") from exc
+        raise ValueError(
+            "hook trigger must be one of: session-start, resume, stop, precompact, checkpoint, heartbeat"
+        ) from exc
 
 
 def build_hook_payload(

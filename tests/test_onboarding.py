@@ -17,6 +17,7 @@ from zaxy.onboarding import (
     apply_onboarding_preset,
     format_onboarding_result,
     run_onboarding,
+    write_agent_activation_instructions,
 )
 
 
@@ -169,6 +170,7 @@ async def test_run_onboarding_writes_requested_configs_and_registers_session(tmp
         "local_profile",
         "mcp_config",
         "hook_config",
+        "agent_instructions",
         "session_genesis",
         "heartbeat",
         "doctor",
@@ -179,6 +181,10 @@ async def test_run_onboarding_writes_requested_configs_and_registers_session(tmp
     assert mcp_config["env"]["EVENTLOOM_THREAD"] == "demo-default"
     assert "zaxy hook-event stop" in hook_output.read_text(encoding="utf-8")
     assert "RERANKER_PROVIDER=lexical" in local_profile_output.read_text(encoding="utf-8")
+    agents = (workspace / "AGENTS.md").read_text(encoding="utf-8")
+    assert "<!-- zaxy-memory-activation:start -->" in agents
+    assert "zaxy activate codex --session-id demo-default" in agents
+    assert f"zaxy memory checkout \"<task>\" --eventloom-path {eventloom_path}" in agents
     fabric.ensure_session_initialized.assert_awaited_once_with(workspace, session_id="demo-default")
     fabric.close.assert_awaited_once()
     events = EventLog(eventloom_path / "demo-default.jsonl").read_all()
@@ -310,7 +316,58 @@ async def test_run_onboarding_renders_codex_install_command_and_local_capture_co
     assert not (workspace / "zaxy-mcp.json").exists()
     assert (workspace / ".codex" / "zaxy-capture.json").is_file()
     assert not (workspace / ".codex" / "hooks.json").exists()
+    agents = (workspace / "AGENTS.md").read_text(encoding="utf-8")
+    assert "Zaxy Memory Activation" in agents
+    assert "zaxy hook-event resume" in agents
+    assert (
+        'Start Codex through the activation launcher: zaxy activate codex --session-id demo-default '
+        '--current-task "<task>" --launch'
+    ) in result.next_steps
+    assert (
+        f"After Codex resume or update, emit the resume boundary: zaxy hook-event resume "
+        f"--eventloom-path {eventloom_path} --session-id demo-default --source codex --summary \"<task>\""
+    ) in result.next_steps
+    assert (
+        f"If Zaxy MCP tools are absent, use the CLI checkout fallback before substantial work: "
+        f"zaxy memory checkout \"<task>\" --eventloom-path {eventloom_path} --session-id demo-default"
+    ) in result.next_steps
     assert any("Start managed deterministic Codex capture: zaxy capture start" in step for step in result.next_steps)
+
+
+def test_write_agent_activation_instructions_replaces_only_managed_block(tmp_path: Path) -> None:
+    """Agent instructions should stay model-visible without rewriting unrelated AGENTS content."""
+    agents = tmp_path / "AGENTS.md"
+    agents.write_text(
+        "\n".join(
+            [
+                "# Existing Rules",
+                "",
+                "Keep this line.",
+                "",
+                "<!-- zaxy-memory-activation:start -->",
+                "old generated block",
+                "<!-- zaxy-memory-activation:end -->",
+                "",
+                "Keep this tail.",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    written = write_agent_activation_instructions(
+        tmp_path,
+        eventloom_path=tmp_path / ".eventloom",
+        session_id="demo-default",
+    )
+
+    text = written.read_text(encoding="utf-8")
+    assert text.count("<!-- zaxy-memory-activation:start -->") == 1
+    assert "old generated block" not in text
+    assert "Keep this line." in text
+    assert "Keep this tail." in text
+    assert "zaxy activate codex --session-id demo-default" in text
+    assert f"zaxy memory checkout \"<task>\" --eventloom-path {tmp_path / '.eventloom'}" in text
 
 
 @pytest.mark.asyncio
@@ -415,7 +472,7 @@ async def test_run_onboarding_can_start_managed_codex_capture(
             "source": "codex-local",
         },
         "doctor_status": "warning",
-        "doctor_message": "automatic capture is incomplete: 0 of 4 high-value lanes are active",
+        "doctor_message": "Codex capture is configured, but the managed watcher is not running",
     }
     mock_start_capture.assert_called_once_with(workspace=workspace.resolve())
     mock_inspect_capture.assert_called_once_with(workspace=workspace.resolve())
