@@ -138,13 +138,19 @@ Before meaningful Codex work, emit the session-start activation packet:
 zaxy activate codex --session-id my-project-default --current-task "ship the next change"
 ```
 
-`activate codex` prints a prompt-ready Memory Bootstrap packet and records that
-the activation handoff was shown. The packet includes the active capability
-manifest, the recommended first `memory_checkout` call, deterministic capture
-status, and the trust policy for what to prefer, ignore, and record. `memory
-bootstrap` remains available when you only want the raw bootstrap packet,
-`memory capabilities` exposes the fuller manifest, and `memory checkout` loads
-the cited working state before real work begins.
+`activate codex` prints a prompt-ready Memory Bootstrap packet, records that
+the activation handoff was shown, and starts the managed Codex capture watcher
+when `.codex/zaxy-capture.json` is configured. If capture cannot be started, the
+packet marks the session as degraded and prints the setup or `zaxy capture
+start` action instead of implying that automatic capture is healthy. Use
+`--no-ensure-capture` only when another supervisor is already managing capture.
+The packet includes the active capability manifest, the recommended first
+`memory_checkout` call, deterministic capture status, MCP-tool availability as
+runtime-unverified, a CLI checkout fallback for resumed sessions where MCP tools
+are missing, and the trust policy for what to prefer, ignore, and record.
+`memory bootstrap` remains available when you only want the raw bootstrap
+packet, `memory capabilities` exposes the fuller manifest, and `memory checkout`
+loads the cited working state before real work begins.
 
 To start Codex with that activation packet as the initial prompt:
 
@@ -153,7 +159,13 @@ zaxy activate codex --session-id my-project-default --current-task "ship the nex
 ```
 
 Use `--dry-run` to inspect the exact `codex --cd ... <prompt>` command without
-starting Codex.
+starting Codex or managed capture.
+
+If a long-running `zaxy serve` process already owns the default embedded Kuzu
+projection, CLI checkout retries with a per-process isolated projection under
+`.eventloom/projections/checkout-<session>-<pid>.kuzu` and reports
+`diagnostics.projection_fallback`. This keeps memory activation from silently
+falling back to ordinary repo context after a resume or MCP process churn.
 
 For a single first-run flow, use `zaxy init`. The happy path is deterministic
 capture: local profile writing, MCP config rendering, observer hook config,

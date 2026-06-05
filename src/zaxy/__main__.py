@@ -1561,7 +1561,7 @@ def memory_checkout(
     """Checkout current, cited memory state for an agent turn."""
     import asyncio
 
-    async def _checkout() -> dict[str, object]:
+    async def _checkout_with_path(embedded_graph_path: Path) -> dict[str, object]:
         settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
         fabric = MemoryFabric(
             eventloom_path=str(eventloom_path),
@@ -1578,11 +1578,11 @@ def memory_checkout(
                 neo4j_password=neo4j_password,
             ),
             pggraph_dsn=settings.pggraph_dsn,
-            embedded_graph_path=Path(settings.embedded_graph_path),
+            embedded_graph_path=embedded_graph_path,
             latticedb_path=Path(settings.latticedb_path),
         )
-        await fabric.connect()
         try:
+            await fabric.connect()
             checkout = await fabric.checkout_memory(
                 query,
                 session_id=session_id,
@@ -1593,7 +1593,33 @@ def memory_checkout(
             )
             return cast(dict[str, object], checkout.to_dict())
         finally:
-            await fabric.close()
+            with suppress(Exception):
+                await fabric.close()
+
+    async def _checkout() -> dict[str, object]:
+        settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
+        embedded_graph_path = Path(settings.embedded_graph_path)
+        try:
+            return await _checkout_with_path(embedded_graph_path)
+        except RuntimeError as exc:
+            if not _is_embedded_projection_lock_error(exc):
+                raise
+            fallback_path = _checkout_fallback_embedded_graph_path(
+                eventloom_path=eventloom_path,
+                session_id=session_id,
+            )
+            payload = await _checkout_with_path(fallback_path)
+            diagnostics = payload.get("diagnostics")
+            if not isinstance(diagnostics, dict):
+                diagnostics = {}
+                payload["diagnostics"] = diagnostics
+            diagnostics["projection_fallback"] = {
+                "status": "used",
+                "reason": "embedded_projection_locked",
+                "original_path": str(embedded_graph_path),
+                "fallback_path": str(fallback_path),
+            }
+            return payload
 
     payload = asyncio.run(_checkout())
     from zaxy.memory_persistence import record_memory_activity
@@ -1609,6 +1635,14 @@ def memory_checkout(
     if json_output:
         typer.echo(json.dumps(payload, indent=2, sort_keys=True))
     else:
+        diagnostics = payload.get("diagnostics")
+        if isinstance(diagnostics, dict) and isinstance(diagnostics.get("projection_fallback"), dict):
+            fallback = diagnostics["projection_fallback"]
+            typer.echo(
+                "Zaxy checkout warning: embedded projection was locked; "
+                f"used isolated projection {fallback.get('fallback_path')}",
+                err=True,
+            )
         typer.echo(payload["prompt"])
 
 
@@ -1727,6 +1761,7 @@ def activate(
     workspace_root: Path = typer.Option(Path("."), help="Workspace root for capture/status discovery"),  # noqa: B008
     launch: bool = typer.Option(False, "--launch", help="Start the agent client with activation context"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print the launch command without starting the client"),
+    ensure_capture: bool = typer.Option(True, "--ensure-capture/--no-ensure-capture", help="Start managed Codex capture when configured"),
     codex_executable: str = typer.Option("codex", help="Codex executable for --launch"),
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
@@ -1736,6 +1771,16 @@ def activate(
         raise typer.BadParameter("activate currently supports: codex", param_hint="client")
     from zaxy.capabilities import build_memory_bootstrap
 
+    capture_start: dict[str, object] = (
+        _ensure_codex_capture(workspace_root=workspace_root)
+        if ensure_capture and not dry_run
+        else {
+            "status": "skipped",
+            "reason": "disabled" if not ensure_capture else "dry_run",
+            "message": "Managed Codex capture was not started for this activation.",
+            "action": "Run zaxy capture start --workspace . before substantial work.",
+        }
+    )
     bootstrap = build_memory_bootstrap(
         eventloom_path=eventloom_path,
         session_id=session_id,
@@ -1751,13 +1796,14 @@ def activate(
         source="activate-codex",
         query=current_task,
     )
-    packet = {
+    packet: dict[str, object] = {
         "client": normalized_client,
         "mode": "session_start_injection",
         "session_id": session_id,
         "workspace": str(workspace_root.resolve()),
         "bootstrap": bootstrap,
-        "injection_text": bootstrap["prompt"],
+        "capture_start": capture_start,
+        "injection_text": _activation_injection_text(str(bootstrap["prompt"]), capture_start),
         "next_step": "Start Codex with this activation packet in session-start context, then run memory_checkout.",
     }
     if launch:
@@ -2194,6 +2240,19 @@ def _checkout_activity_metadata(payload: dict[str, object]) -> dict[str, object]
     if isinstance(token_efficiency, dict):
         return {"token_efficiency": token_efficiency}
     return {}
+
+
+def _is_embedded_projection_lock_error(exc: RuntimeError) -> bool:
+    message = str(exc)
+    return "Could not set lock on file" in message and ".kuzu" in message
+
+
+def _checkout_fallback_embedded_graph_path(*, eventloom_path: Path, session_id: str) -> Path:
+    from zaxy.security import validate_session_id
+
+    base = eventloom_path if eventloom_path.suffix != ".jsonl" else eventloom_path.parent
+    sid = validate_session_id(session_id)
+    return base / "projections" / f"checkout-{sid}-{os.getpid()}.kuzu"
 
 
 @app.command("capture-soak")
@@ -4250,9 +4309,66 @@ def _format_activation_packet(packet: dict[str, object]) -> str:
             "",
             injection_text,
             "",
+            f"Capture action: {cast(dict[str, object], packet['capture_start']).get('status', 'unknown')}",
+            str(cast(dict[str, object], packet["capture_start"]).get("message", "")),
+            "",
             str(packet["next_step"]),
         ]
     )
+
+
+def _activation_injection_text(bootstrap_prompt: str, capture_start: dict[str, object]) -> str:
+    status = str(capture_start.get("status", "unknown"))
+    message = str(capture_start.get("message", ""))
+    action = capture_start.get("action")
+    lines = [
+        bootstrap_prompt,
+        "",
+        f"Capture action: {status}",
+        f"- status: {status}",
+        f"- message: {message}",
+    ]
+    if action:
+        lines.append(f"- action: {action}")
+    if status in {"degraded", "skipped"}:
+        lines.extend(
+            [
+                "",
+                "Degraded memory state: do not assume this Codex session is being captured until the action is completed.",
+            ]
+        )
+    return "\n".join(lines)
+
+
+def _ensure_codex_capture(*, workspace_root: Path) -> dict[str, object]:
+    from zaxy.capture_manager import start_codex_capture
+
+    try:
+        result = start_codex_capture(workspace=workspace_root)
+    except FileNotFoundError as exc:
+        return {
+            "status": "degraded",
+            "reason": "not_configured",
+            "message": "Managed Codex capture is not configured for this workspace.",
+            "error": str(exc),
+            "action": "Run zaxy init --preset local-codex or zaxy init --capture start, then restart activation.",
+        }
+    except (OSError, ValueError) as exc:
+        return {
+            "status": "degraded",
+            "reason": "start_failed",
+            "message": "Managed Codex capture could not be started.",
+            "error": str(exc),
+            "action": f"Run zaxy capture start --workspace {workspace_root.resolve()} before substantial work.",
+        }
+    status = "started" if result.get("started") else "running"
+    return {
+        "status": status,
+        "reason": "started" if result.get("started") else "already_running",
+        "message": str(result.get("message", "Managed Codex capture is available.")),
+        "pid": result.get("pid"),
+        "state_file": result.get("state_file"),
+    }
 
 
 def _codex_activation_command(executable: str, workspace: Path, prompt: str) -> list[str]:
