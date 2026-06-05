@@ -22,6 +22,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,10 @@ from typing import Any
 from pydantic import BaseModel, Field, field_validator
 
 from zaxy.security import secure_payload, validate_event_text, validate_payload
+
+_EVENTLOOM_V1_TYPE_RE = re.compile(r"^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)+$")
+_EVENTLOOM_V1_HASH_RE = re.compile(r"^sha256:[a-f0-9]{64}$")
+_ZAXY_SECURITY_PAYLOAD_KEY = "__zaxy_security"
 
 
 class EventSecurity(BaseModel):
@@ -60,6 +65,19 @@ class Event(BaseModel):
     )
     prev_hash: str | None = Field(default=None, description="Hash of previous event.")
     hash: str = Field(..., min_length=64, max_length=64, description="SHA-256 of this event.")
+    id: str | None = Field(default=None, description="Eventloom v1 event id, when present.")
+    parent_event_id: str | None = Field(
+        default=None,
+        description="Eventloom v1 parentEventId, when present.",
+    )
+    caused_by: list[str] = Field(
+        default_factory=list,
+        description="Eventloom v1 causedBy ids, when present.",
+    )
+    envelope_version: str = Field(
+        default="zaxy.legacy",
+        description="Normalized source envelope version.",
+    )
 
     @field_validator("timestamp")
     @classmethod
@@ -89,8 +107,29 @@ class Event(BaseModel):
 
     def verify(self) -> bool:
         """Verify that the stored hash matches the canonical content."""
-        expected = hashlib.sha256(self.canonical()).hexdigest()
+        if self.envelope_version == "eventloom.v1":
+            expected = _strip_sha256_prefix(
+                _eventloom_v1_hash(self.to_eventloom_v1_unsigned(), _with_sha256_prefix(self.prev_hash))
+            )
+        else:
+            expected = hashlib.sha256(self.canonical()).hexdigest()
         return self.hash == expected
+
+    def to_eventloom_v1_unsigned(self) -> dict[str, Any]:
+        """Return this event as an unsigned Eventloom v1 envelope."""
+        payload = dict(self.payload)
+        if self.security is not None:
+            payload[_ZAXY_SECURITY_PAYLOAD_KEY] = self.security.model_dump()
+        return {
+            "id": self.id or _eventloom_v1_event_id(self.seq, self.type, self.actor, self.timestamp),
+            "type": self.type,
+            "actorId": self.actor,
+            "threadId": self.thread,
+            "parentEventId": self.parent_event_id,
+            "causedBy": list(self.caused_by),
+            "timestamp": self.timestamp,
+            "payload": payload,
+        }
 
 
 class IntegrityReport(BaseModel):
@@ -146,7 +185,7 @@ class EventLog:
                     line = line.strip()
                     if not line:
                         continue
-                    events.append(Event.model_validate_json(line))
+                    events.append(_event_from_json_line(line, seq_hint=len(events) + 1))
             finally:
                 self._unlock(fh.fileno())
         return events
@@ -193,9 +232,10 @@ class EventLog:
                 seq = 1
                 prev_hash: str | None = None
                 if lines:
-                    last = Event.model_validate_json(lines[-1])
+                    last = _event_from_json_line(lines[-1], seq_hint=len(lines))
                     seq = last.seq + 1
                     prev_hash = last.hash
+                write_v1 = _should_write_eventloom_v1(lines, items)
 
                 batch: list[Event] = []
                 for item in items:
@@ -208,13 +248,17 @@ class EventLog:
                         payload=validate_payload(raw_payload) if raw_payload is not None else None,
                         thread=validate_event_text(item.get("thread", "default"), "thread"),
                         timestamp=item.get("timestamp") if isinstance(item.get("timestamp"), datetime) else None,
+                        envelope_version="eventloom.v1" if write_v1 else "zaxy.legacy",
                     )
                     batch.append(event)
                     seq = event.seq + 1
                     prev_hash = event.hash
 
                 fh.seek(0, os.SEEK_END)
-                fh.writelines(event.model_dump_json() + "\n" for event in batch)
+                if write_v1:
+                    fh.writelines(_eventloom_v1_json(event) + "\n" for event in batch)
+                else:
+                    fh.writelines(event.model_dump_json() + "\n" for event in batch)
                 fh.flush()
                 os.fsync(fh.fileno())
             finally:
@@ -232,9 +276,14 @@ class EventLog:
         payload: dict[str, Any] | None,
         thread: str,
         timestamp: datetime | None,
+        envelope_version: str = "zaxy.legacy",
     ) -> Event:
         ts = (timestamp or datetime.now(UTC)).isoformat().replace("+00:00", "Z")
         secured = secure_payload(payload or {})
+        security = {
+            "sensitivity": secured.sensitivity,
+            "redacted_paths": secured.redacted_paths,
+        }
         raw = {
             "seq": seq,
             "timestamp": ts,
@@ -242,15 +291,21 @@ class EventLog:
             "actor": actor,
             "thread": thread,
             "payload": secured.payload,
-            "security": {
-                "sensitivity": secured.sensitivity,
-                "redacted_paths": secured.redacted_paths,
-            },
+            "security": security,
             "prev_hash": prev_hash,
             "hash": "0" * 64,
+            "envelope_version": envelope_version,
         }
         tmp = Event.model_validate(raw)
-        raw["hash"] = hashlib.sha256(tmp.canonical()).hexdigest()
+        if envelope_version == "eventloom.v1":
+            event_id = _eventloom_v1_event_id(seq, event_type, actor, ts)
+            raw["id"] = event_id
+            tmp = Event.model_validate(raw)
+            raw["hash"] = _strip_sha256_prefix(
+                _eventloom_v1_hash(tmp.to_eventloom_v1_unsigned(), _with_sha256_prefix(prev_hash))
+            )
+        else:
+            raw["hash"] = hashlib.sha256(tmp.canonical()).hexdigest()
         return Event.model_validate(raw)
 
     # ------------------------------------------------------------------
@@ -346,3 +401,115 @@ class EventLog:
             "last_actor": events[-1].actor if events else None,
             "last_timestamp": events[-1].timestamp if events else None,
         }
+
+
+def _event_from_json_line(line: str, *, seq_hint: int) -> Event:
+    record = json.loads(line)
+    if not isinstance(record, dict):
+        return Event.model_validate(record)
+    if _is_eventloom_v1_record(record):
+        return _event_from_eventloom_v1(record, seq_hint=seq_hint)
+    return Event.model_validate(record)
+
+
+def _is_eventloom_v1_record(record: dict[str, Any]) -> bool:
+    return {
+        "id",
+        "type",
+        "actorId",
+        "threadId",
+        "timestamp",
+        "payload",
+        "integrity",
+    }.issubset(record)
+
+
+def _event_from_eventloom_v1(record: dict[str, Any], *, seq_hint: int) -> Event:
+    integrity = record.get("integrity")
+    if not isinstance(integrity, dict):
+        raise ValueError("Eventloom v1 event is missing integrity metadata")
+    payload = record.get("payload")
+    if not isinstance(payload, dict):
+        raise ValueError("Eventloom v1 event payload must be an object")
+
+    payload_copy = dict(payload)
+    security: dict[str, Any] | None = None
+    raw_security = payload_copy.pop(_ZAXY_SECURITY_PAYLOAD_KEY, None)
+    if isinstance(raw_security, dict):
+        security = raw_security
+
+    event = Event.model_validate(
+        {
+            "seq": seq_hint,
+            "timestamp": record["timestamp"],
+            "type": record["type"],
+            "actor": record["actorId"],
+            "thread": record["threadId"],
+            "payload": payload_copy,
+            "security": security,
+            "prev_hash": _strip_sha256_prefix(integrity.get("previousHash")),
+            "hash": _strip_sha256_prefix(integrity.get("hash")),
+            "id": record["id"],
+            "parent_event_id": record.get("parentEventId"),
+            "caused_by": record.get("causedBy") or [],
+            "envelope_version": "eventloom.v1",
+        }
+    )
+    return event
+
+
+def _should_write_eventloom_v1(lines: list[str], items: list[dict[str, Any]]) -> bool:
+    if lines:
+        try:
+            first = json.loads(next(line for line in lines if line.strip()))
+        except (StopIteration, json.JSONDecodeError):
+            return False
+        if not isinstance(first, dict) or not _is_eventloom_v1_record(first):
+            return False
+    return all(_EVENTLOOM_V1_TYPE_RE.fullmatch(str(item.get("event_type", ""))) for item in items)
+
+
+def _eventloom_v1_json(event: Event) -> str:
+    envelope = event.to_eventloom_v1_unsigned()
+    envelope["integrity"] = {
+        "hash": _with_sha256_prefix(event.hash),
+        "previousHash": _with_sha256_prefix(event.prev_hash),
+    }
+    return json.dumps(envelope, separators=(",", ":"))
+
+
+def _eventloom_v1_event_id(seq: int, event_type: str, actor: str, timestamp: str) -> str:
+    seed = json.dumps(
+        {"actor": actor, "seq": seq, "timestamp": timestamp, "type": event_type},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()[:16]
+    return f"evt_zaxy_{seq:012d}_{digest}"
+
+
+def _eventloom_v1_hash(unsigned_event: dict[str, Any], previous_hash: str | None) -> str:
+    canonical = json.dumps(
+        {"event": unsigned_event, "previousHash": previous_hash},
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return f"sha256:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}"
+
+
+def _strip_sha256_prefix(value: Any) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError("hash value must be a string or None")
+    if value.startswith("sha256:"):
+        return value.removeprefix("sha256:")
+    return value
+
+
+def _with_sha256_prefix(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if _EVENTLOOM_V1_HASH_RE.fullmatch(value):
+        return value
+    return f"sha256:{value}"
