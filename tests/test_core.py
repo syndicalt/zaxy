@@ -2850,9 +2850,80 @@ class TestContextAssembly:
             "stale_unpromoted_finding": 1,
             "worker_local_pending": 1,
         }
+        assert checkout.diagnostics["accepted_state"] == {
+            "diagnostic_count": 0,
+            "mode": "coordinate_accepted_state",
+            "selected_citations": ["eventloom://auth-main/events/8#hhhhhhhhhhhh"],
+            "selected_count": 1,
+        }
         assert "database pool caused auth failures" not in checkout.prompt
         assert "stale worker rows" not in checkout.prompt
         assert "UI refresh" not in checkout.prompt
+
+    def test_memory_checkout_keeps_bridge_evidence_for_accepted_state(self) -> None:
+        """Accepted-state checkout should retain current bridge evidence that supports promoted state."""
+        assembly = ContextAssembly(
+            session_id="auth-main",
+            prompt="# Active Memory Working Set\n- Parent state and cited logs were retrieved.",
+            contexts=[
+                Context(
+                    content="Parent-accepted diagnosis: jwks-cache-refresh-regression caused the auth incident.",
+                    source="verbatim",
+                    score=0.95,
+                    metadata={
+                        "citation": "eventloom://auth-main/events/4#dddddddddddd",
+                        "authority_scope": "parent",
+                        "status": "current",
+                        "promoted": True,
+                    },
+                    valid_from="2026-05-10T12:00:00Z",
+                    valid_to=None,
+                ),
+                Context(
+                    content="Auth edge logs show JWKS cache refresh regression after key rotation.",
+                    source="verbatim",
+                    score=0.9,
+                    metadata={
+                        "citation": "eventloom://auth-main/events/3#cccccccccccc",
+                        "authority_scope": "observation",
+                        "status": "current",
+                    },
+                    valid_from="2026-05-10T12:01:00Z",
+                    valid_to=None,
+                ),
+                Context(
+                    content="Current but unrelated observation: dashboard route caching improved.",
+                    source="verbatim",
+                    score=0.89,
+                    metadata={
+                        "citation": "eventloom://auth-main/events/5#eeeeeeeeeeee",
+                        "authority_scope": "observation",
+                        "status": "current",
+                    },
+                    valid_from="2026-05-10T12:02:00Z",
+                    valid_to=None,
+                ),
+            ],
+            working_set={"items": []},
+            context_counts={"verbatim": 3},
+            replay_event_count=5,
+            compacted=False,
+            warnings=[],
+            assembly_policy={},
+        )
+
+        checkout = build_memory_checkout(
+            query="Which accepted auth diagnosis should the responder trust?",
+            assembly=assembly,
+            purpose="coordinate",
+        )
+
+        assert [fact["citation"] for fact in checkout.current_facts] == [
+            "eventloom://auth-main/events/4#dddddddddddd",
+            "eventloom://auth-main/events/3#cccccccccccc",
+        ]
+        assert checkout.diagnostics["accepted_state"]["diagnostic_count"] == 1
+        assert "dashboard route caching" not in checkout.prompt
 
     def test_checkout_memory_reports_inferred_context_dependency(self) -> None:
         """build_memory_checkout() should expose inferred-path reliance to the model."""

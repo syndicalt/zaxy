@@ -185,6 +185,81 @@ def test_coordination_proof_packet_scopes_and_labels_authority(tmp_path: Path) -
     }
 
 
+def test_coordination_checkout_and_proof_share_accepted_state_resolution(tmp_path: Path) -> None:
+    """Checkout and proof packets should agree on replay-backed accepted state."""
+    manager = CoordinationManager(eventloom_path=tmp_path / ".eventloom")
+    manager.start_mission("release-rc1", objective="Ship release", actor="lead")
+    for worker_id in ("api", "docs", "pending", "stale"):
+        manager.create_worker("release-rc1", worker_id, actor="lead")
+    accepted_used = manager.report_finding(
+        "release-rc1",
+        "api",
+        summary="Accepted API cause is expired JWKS cache.",
+        actor="api-agent",
+    )
+    accepted_unused = manager.report_finding(
+        "release-rc1",
+        "docs",
+        summary="Accepted docs update is ready.",
+        actor="docs-agent",
+    )
+    pending = manager.report_finding(
+        "release-rc1",
+        "pending",
+        summary="Pending dashboard diagnosis is not accepted.",
+        actor="pending-agent",
+    )
+    stale = manager.report_finding(
+        "release-rc1",
+        "stale",
+        summary="Stale release gate result should remain diagnostic.",
+        actor="stale-agent",
+        evidence=[{"kind": "file", "reference": "old-report.json", "stale": True}],
+    )
+    for finding in (accepted_used, accepted_unused, stale):
+        manager.review_finding("release-rc1", finding.finding_id, status="accepted", actor="lead")
+        manager.promote_finding("release-rc1", finding.finding_id, actor="lead")
+    artifact = {
+        "artifact_id": "sha256:accepted-state",
+        "query": "Summarize accepted release state.",
+        "answer_candidates": [
+            {
+                "answer": "Accepted cause is expired JWKS cache.",
+                "support_source_ids": [accepted_used.finding_id, pending.finding_id, stale.finding_id],
+            }
+        ],
+        "ledger_rows": [
+            {"source_group": accepted_used.finding_id, "include_reason": "accepted_parent_state"},
+            {"source_group": accepted_unused.finding_id, "include_reason": "unused_accepted_state"},
+            {"source_group": pending.finding_id, "include_reason": "diagnostic_pending"},
+            {"source_group": stale.finding_id, "include_reason": "diagnostic_stale"},
+        ],
+    }
+
+    checkout = manager.checkout("release-rc1", include_diagnostics=True).to_dict()
+    packet = manager.proof_packet("release-rc1", artifact).to_dict()
+
+    assert [finding["finding_id"] for finding in checkout["accepted_findings"]] == [
+        accepted_used.finding_id,
+        accepted_unused.finding_id,
+    ]
+    assert [finding["finding_id"] for finding in checkout["stale_findings"]] == [stale.finding_id]
+    assert packet["accepted_finding_ids"] == [accepted_used.finding_id]
+    assert packet["worker_source_event_refs"] == [
+        {
+            "worker_id": "api",
+            "finding_id": accepted_used.finding_id,
+            "seq": accepted_used.event.seq,
+            "hash": accepted_used.event.hash,
+        }
+    ]
+    assert {row["source_group"]: row["status"] for row in packet["non_authoritative_rows"]} == {
+        accepted_unused.finding_id: "accepted_not_used",
+        pending.finding_id: "pending",
+        stale.finding_id: "stale",
+    }
+
+
 def test_coordination_proof_packet_links_handoff_event_ref(tmp_path: Path) -> None:
     """Handoff-scoped proof packets should bind to a concrete handoff event."""
     manager = CoordinationManager(eventloom_path=tmp_path / ".eventloom")

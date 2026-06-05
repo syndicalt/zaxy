@@ -312,6 +312,35 @@
       <p>External validation is optional post-release evidence, not a v1.0 release blocker. Start with one or two users who can run the first-run path and one example when available. Capture where they get stuck, and turn that into docs, doctor checks, or CLI improvements.</p>
       <h3 id="competitive-awareness">Competitive Awareness</h3>
       <p>Track Mem0, Zep, Letta, MemPalace, Agent Memory, ActiveGraph, and the MCP ecosystem. Avoid fake apples-to-apples claims. Keep competitor comparisons tied to reproducible adapter contracts, public disclosures, or clearly labeled limitations.</p>
+      <h2 id="v11-accepted-state-recovery-and-benchmark-guardrails">v1.1: Accepted-State Recovery and Benchmark Guardrails</h2>
+      <p><strong>Theme:</strong> Make Zaxy&#x27;s accepted-state memory thesis falsifiable under stale, distracting, incomplete, and no-safe-answer histories.</p>
+      <p><strong>Implementation status:</strong> in progress on the 1.1.0 release line.</p>
+      <h3 id="ship">Ship</h3>
+      <ul>
+        <li>Promote StateRecoveryBench as an official benchmark lane with a canonical tracked workload, report schema, Markdown report, guardrail checker, and release-check wiring.</li>
+        <li>Add <code>zaxy state-recovery-benchmark</code> as the public command. Keep <code>zaxy experimental state-recovery</code> as a research/debug path.</li>
+        <li>Use <code>memory_fabric_checkout</code> as the production guardrail baseline. Treat associative projection rows as diagnostic research baselines only.</li>
+        <li>Resolve Coordinate accepted state from parent mission replay so checkout and proof packets agree on accepted findings, diagnostic rows, review refs, promotion refs, and worker source refs.</li>
+        <li>Update public docs, API inventory, migration notes, testing guidance, changelog, and benchmark docs without broadening product claims beyond the measured lane.</li>
+      </ul>
+      <h3 id="gates">Gates</h3>
+      <ul>
+        <li>`python scripts/check-state-recovery-benchmark.py reports/benchmarks/state-recovery-v1/state-recovery-benchmark.json --workload reports/benchmarks/state-recovery-v1/state-recovery-workload.json</li>
+      </ul>
+      <p>--require-git-tracked-inputs`</p>
+      <ul>
+        <li>`zaxy state-recovery-benchmark --output-dir /tmp/zaxy-state-recovery</li>
+      </ul>
+      <p>--workload reports/benchmarks/state-recovery-v1/state-recovery-workload.json`</p>
+      <ul>
+        <li>Focused tests for StateRecoveryBench, Coordinate accepted-state resolution, Memory Checkout coordinate suppression, CLI behavior, ruff, mypy, and release smoke.</li>
+      </ul>
+      <h3 id="explicit-non-goals">Explicit Non-Goals</h3>
+      <ul>
+        <li>Do not promote astro-associative projection to core product behavior in 1.1.</li>
+        <li>Do not claim StateRecoveryBench replaces LongMemEval or CoordinationBench.</li>
+        <li>Do not tune behavior to benchmark labels; only authority, review, promotion, provenance, stale, and citation metadata may determine accepted state.</li>
+      </ul>
       <h2 id="primary-risks">Primary Risks</h2>
       <table>
         <thead>

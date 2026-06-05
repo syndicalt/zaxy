@@ -52,6 +52,7 @@ class CheckoutEvidenceSelection:
 
     current_facts: list[dict[str, Any]]
     evidence: list[dict[str, Any]]
+    accepted_state: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -272,18 +273,27 @@ _EVIDENCE_POLICY_REQUIREMENTS: dict[str, tuple[EvidencePolicyRequirement, ...]] 
 def select_checkout_evidence(
     *,
     query: str | None,
+    purpose: PurposeProfile | dict[str, Any] | str | None = None,
     evidence_plan: EvidencePlan | dict[str, object] | None,
     current_facts: list[dict[str, Any]],
     evidence: list[dict[str, Any]],
 ) -> CheckoutEvidenceSelection:
     """Select and order checkout facts/evidence for the query's evidence plan."""
-    del query
     deduped_current = _dedupe_items(current_facts)
     deduped_evidence = _dedupe_items([item for item in evidence if _citation(item)])
+    accepted_state = (
+        _select_accepted_state(query=query, current_facts=deduped_current, evidence=deduped_evidence)
+        if purpose_profile(purpose).profile == "coordinate"
+        else None
+    )
+    if accepted_state is not None:
+        deduped_current = accepted_state["current_facts"]
+        deduped_evidence = accepted_state["evidence"]
     if not _should_promote_cited_sources(evidence_plan):
         return CheckoutEvidenceSelection(
             current_facts=deduped_current,
             evidence=deduped_evidence,
+            accepted_state=accepted_state,
         )
     promoted_evidence = _promote_evidence_groups(
         deduped_evidence,
@@ -301,6 +311,7 @@ def select_checkout_evidence(
     return CheckoutEvidenceSelection(
         current_facts=promoted_current,
         evidence=promoted_evidence,
+        accepted_state=accepted_state,
     )
 
 
@@ -480,6 +491,140 @@ def _promote_evidence_groups(
         promoted_citations.extend(_text_list(group.get("citations")))
     citation_rank = {citation: index for index, citation in enumerate(promoted_citations)}
     return sorted(evidence, key=lambda item: _evidence_selection_key(item, citation_rank))
+
+
+def _select_accepted_state(
+    *,
+    query: str | None,
+    current_facts: list[dict[str, Any]],
+    evidence: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Select answerable Coordinate state while leaving diagnostics auditable elsewhere."""
+    candidates = _dedupe_items([*current_facts, *evidence])
+    authoritative = [
+        item
+        for item in candidates
+        if _accepted_state_role(item) == "authoritative"
+    ]
+    if not authoritative:
+        return None
+    query_terms = _accepted_state_terms(query or "")
+    accepted_terms = {
+        term
+        for item in authoritative
+        for term in _accepted_state_terms(evidence_content(item))
+    }
+    selected_authority = sorted(
+        authoritative,
+        key=lambda item: _accepted_state_selection_key(item, query_terms),
+    )
+    selected_keys = {_item_key(item) for item in selected_authority}
+    bridge_rows = [
+        item
+        for item in candidates
+        if _accepted_state_role(item) == "bridge"
+        and _item_key(item) not in selected_keys
+        and _bridge_supports_accepted_state(item, query_terms=query_terms, accepted_terms=accepted_terms)
+    ]
+    selected = [*selected_authority, *sorted(bridge_rows, key=lambda item: -_float_metric(item.get("score")))]
+    selected = _dedupe_items(selected)
+    selected_citations = {
+        citation
+        for item in selected
+        if (citation := _citation(item)) is not None
+    }
+    return {
+        "mode": "coordinate_accepted_state",
+        "selected_count": len(selected),
+        "diagnostic_count": len(candidates) - len(selected),
+        "selected_citations": sorted(selected_citations),
+        "current_facts": selected,
+        "evidence": [item for item in selected if _citation(item)],
+    }
+
+
+def _accepted_state_role(item: dict[str, Any]) -> str | None:
+    if _is_non_answerable_coordinate_row(item):
+        return None
+    authority = _normalized_policy_text(item.get("authority") or item.get("authority_scope"))
+    status = _normalized_policy_text(
+        item.get("coordination_status") or item.get("finding_status") or item.get("status")
+    )
+    text = evidence_content(item).casefold()
+    if authority in {"observation", "source", "evidence"}:
+        return "bridge"
+    if (
+        item.get("promoted") is True
+        or authority in {
+            "accepted",
+            "mission-parent",
+            "parent",
+            "parent-accepted",
+            "parent_accepted",
+            "parent_accepted_state",
+            "promoted",
+        }
+        or status in {"accepted", "promoted"}
+        or status == "current"
+        and any(marker in text for marker in ("accepted", "current", "parent", "policy", "root cause", "diagnosis"))
+    ):
+        return "authoritative"
+    if status == "current":
+        return "bridge"
+    return None
+
+
+def _is_non_answerable_coordinate_row(item: dict[str, Any]) -> bool:
+    authority = _normalized_policy_text(item.get("authority") or item.get("authority_scope"))
+    status = _normalized_policy_text(
+        item.get("coordination_status") or item.get("finding_status") or item.get("status")
+    )
+    return (
+        item.get("stale") is True
+        or status in {"deprecated", "rejected", "stale", "superseded", "unsupported"}
+        or (authority.startswith("worker") and item.get("promoted") is not True)
+    )
+
+
+def _accepted_state_selection_key(
+    item: dict[str, Any],
+    query_terms: set[str],
+) -> tuple[int, int, int, float]:
+    authority = _normalized_policy_text(item.get("authority") or item.get("authority_scope"))
+    status = _normalized_policy_text(
+        item.get("coordination_status") or item.get("finding_status") or item.get("status")
+    )
+    text_terms = _accepted_state_terms(evidence_content(item))
+    return (
+        0 if item.get("promoted") is True else 1,
+        0 if authority in {"parent", "parent-accepted", "parent_accepted", "parent_accepted_state", "mission-parent"} else 1,
+        0 if status in {"accepted", "current", "promoted"} else 1,
+        -float(len(query_terms & text_terms)) - _float_metric(item.get("score")),
+    )
+
+
+def _bridge_supports_accepted_state(
+    item: dict[str, Any],
+    *,
+    query_terms: set[str],
+    accepted_terms: set[str],
+) -> bool:
+    text_terms = _accepted_state_terms(evidence_content(item))
+    if len(text_terms & accepted_terms) >= 2:
+        return True
+    return bool(query_terms and len(text_terms & query_terms) >= 2)
+
+
+def _accepted_state_terms(text: str) -> set[str]:
+    return {
+        token
+        for token in re.findall(r"[a-z0-9]+", text.casefold())
+        if len(token) > 2 and token not in {"accepted", "current", "event", "events", "source", "state"}
+    }
+
+
+def _normalized_policy_text(value: Any) -> str:
+    return str(value or "").strip().casefold().replace(" ", "-")
 
 
 def _evidence_selection_key(

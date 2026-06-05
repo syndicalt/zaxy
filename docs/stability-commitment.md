@@ -25,6 +25,8 @@ The commitment covers these public surfaces:
 - ProjectionStore behavior required for exact, keyword, vector, traversal,
   invalidation, projection status, and inferred-edge diagnostics.
 - Benchmark artifact schemas used by release gates.
+  StateRecoveryBench report/workload schemas are beta benchmark artifacts; the
+  associative projection research commands remain experimental.
 
 ## Data Model Commitment
 

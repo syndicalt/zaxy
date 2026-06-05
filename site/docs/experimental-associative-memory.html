@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Experimental Associative Memory Projection - Zaxy Docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=Inter:wght@400;550;650;750;850&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../index.html">Overview</a>
+      <a href="../docs/coordinate-roadmap.html">Coordinate</a>
+      <a href="../docs/memory-is-purpose-zaxy-analysis.html">Purpose</a>
+      <a href="../docs/benchmarks.html">Benchmarks</a>
+      <a href="getting-started.html">Start</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="experimental-associative-memory-projection">Experimental Associative Memory Projection</h1>
+      <p>This branch explores whether a neuron-astrocyte-inspired associative projection can help Zaxy recover latent agent state from partial event-history cues.</p>
+      <p>The experiment is based on:</p>
+      <ul>
+        <li>Kozachkov, Slotine, and Krotov, <em>Neuron-Astrocyte Associative Memory</em>: &lt;https://arxiv.org/abs/2311.08135&gt;</li>
+        <li>The authors&#x27; NAAM reference repository: &lt;https://github.com/kozleo/naam&gt;</li>
+      </ul>
+      <h2 id="scope">Scope</h2>
+      <p>This is not a production checkout feature and does not change Zaxy core. Eventloom remains the immutable source of truth. The associative projection is a derived, replayable, discardable layer that can only propose candidates after resolving them back to cited Eventloom event refs.</p>
+      <p>The target is not LongMemEval answer synthesis. Zaxy already has strong LongMemEval-compatible results. The target is partial-cue pattern completion:</p>
+      <ul>
+        <li>recover a hidden root cause from scattered symptoms;</li>
+        <li>recover an unstated coordination constraint from indirect handoff failures;</li>
+        <li>surface distributed state that is not directly named in the user&#x27;s query;</li>
+        <li>preserve citations for every recalled pattern.</li>
+      </ul>
+      <h2 id="current-baseline">Current Baseline</h2>
+      <p>The first implementation is intentionally small and dependency-free:</p>
+      <ul>
+        <li><code>src/zaxy/associative_memory.py</code></li>
+        <li><code>zaxy experimental pattern-completion</code></li>
+        <li><code>tests/test_associative_memory.py</code></li>
+      </ul>
+      <p>It uses a deterministic token projection:</p>
+      <ol>
+        <li>Tokenize Eventloom events into event packets.</li>
+        <li>Seed active process terms from direct lexical matches.</li>
+        <li>Reinforce terms through shared event packets over a few iterations.</li>
+        <li>Rank final candidate events by direct and associative support.</li>
+        <li>Score candidates only after Eventloom refs and hashes are present.</li>
+      </ol>
+      <p>This approximates the useful software lesson from the paper without importing the research model directly: a slower higher-order process layer can propagate weak cues across multiple local events.</p>
+      <h2 id="run">Run</h2>
+      <pre><code class="language-bash">zaxy experimental pattern-completion --output-dir reports/benchmarks/pattern-completion-smoke</code></pre>
+      <p>For machine-readable output:</p>
+      <pre><code class="language-bash">zaxy experimental pattern-completion --output-dir reports/benchmarks/pattern-completion-smoke --json</code></pre>
+      <p>The command writes:</p>
+      <ul>
+        <li><code>pattern-completion-workload.json</code></li>
+        <li><code>pattern-completion-benchmark.json</code></li>
+        <li><code>pattern-completion-benchmark.md</code></li>
+        <li>one Eventloom JSONL file per case</li>
+      </ul>
+      <h2 id="staterecoverybench">StateRecoveryBench</h2>
+      <p>StateRecoveryBench is the broader falsification harness for this branch. It uses adversarial event histories for hidden causes, release constraints, stale runtime state, release-fixture drift, user quality bars, coordination metric gaps, generated authority-shaped negatives, incomplete authority metadata, bridge-evidence requirements, and no-safe-answer abstention cases.</p>
+      <p>Run it with:</p>
+      <pre><code class="language-bash">zaxy experimental state-recovery --output-dir reports/benchmarks/state-recovery-smoke</code></pre>
+      <p>For machine-readable output:</p>
+      <pre><code class="language-bash">zaxy experimental state-recovery --output-dir reports/benchmarks/state-recovery-smoke --json</code></pre>
+      <p>The built-in baselines are:</p>
+      <ul>
+        <li><code>direct_lexical</code>: direct query-token overlap.</li>
+        <li><code>hash_vector</code>: deterministic hashed token-vector cosine similarity.</li>
+        <li><code>graph_traversal</code>: lexical seed plus shared-term traversal.</li>
+        <li><code>zaxy_core_proxy</code>: deterministic source-aware proxy for current Zaxy retrieval posture; this is not a full <code>MemoryFabric</code> checkout run.</li>
+        <li><code>memory_fabric_checkout</code>: appends each case through <code>MemoryFabric</code>, runs the model-facing Memory Checkout contract with the <code>coordinate</code> purpose profile, and scores selected cited checkout facts/evidence.</li>
+        <li><code>associative_projection</code>: the derived process-term propagation baseline.</li>
+        <li><code>authority_resolved_associative</code>: associative projection followed by explicit current/promoted/non-rejected authority filtering.</li>
+      </ul>
+      <p>Current official StateRecoveryBench scores over the expanded 33-case workload are tracked in <code>reports/benchmarks/state-recovery-v1/state-recovery-benchmark.md</code>:</p>
+      <table>
+        <thead>
+          <tr>
+            <th>baseline</th>
+            <th>state accuracy</th>
+            <th>minimal evidence recall</th>
+            <th>stale rejection</th>
+            <th>distractor resistance</th>
+            <th>abstention accuracy</th>
+            <th>token cost</th>
+            <th>latency ms</th>
+            <th>citation coverage</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>associative_projection</td>
+            <td>1.000</td>
+            <td>0.803</td>
+            <td>0.485</td>
+            <td>0.212</td>
+            <td>0.848</td>
+            <td>56</td>
+            <td>0.328</td>
+            <td>1.000</td>
+          </tr>
+          <tr>
+            <td>authority_resolved_associative</td>
+            <td>1.000</td>
+            <td>0.985</td>
+            <td>1.000</td>
+            <td>0.909</td>
+            <td>1.000</td>
+            <td>28</td>
+            <td>0.348</td>
+            <td>1.000</td>
+          </tr>
+          <tr>
+            <td>direct_lexical</td>
+            <td>0.697</td>
+            <td>0.606</td>
+            <td>0.394</td>
+            <td>0.121</td>
+            <td>0.848</td>
+            <td>69</td>
+            <td>0.049</td>
+            <td>1.000</td>
+          </tr>
+          <tr>
+            <td>graph_traversal</td>
+            <td>0.818</td>
+            <td>0.742</td>
+            <td>0.515</td>
+            <td>0.061</td>
+            <td>0.848</td>
+            <td>71</td>
+            <td>0.064</td>
+            <td>1.000</td>
+          </tr>
+          <tr>
+            <td>hash_vector</td>
+            <td>0.697</td>
+            <td>0.606</td>
+            <td>0.394</td>
+            <td>0.121</td>
+            <td>0.848</td>
+            <td>69</td>
+            <td>0.037</td>
+            <td>1.000</td>
+          </tr>
+          <tr>
+            <td>memory_fabric_checkout</td>
+            <td>0.818</td>
+            <td>0.909</td>
+            <td>1.000</td>
+            <td>0.818</td>
+            <td>1.000</td>
+            <td>34</td>
+            <td>436.638</td>
+            <td>1.000</td>
+          </tr>
+          <tr>
+            <td>zaxy_core_proxy</td>
+            <td>0.697</td>
+            <td>0.652</td>
+            <td>0.424</td>
+            <td>0.091</td>
+            <td>0.848</td>
+            <td>71</td>
+            <td>0.045</td>
+            <td>1.000</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>The first StateRecoveryBench run showed that associative propagation recovered latent state but pulled in nearby symptom/distractor observations. The expanded workload makes that failure mode explicit: raw association is strong at latent state recovery, but weak at authority, stale-row rejection, and abstention.</p>
+      <p>The authority-resolved baseline keeps broad propagation for recall, then resolves from the associative support set using explicit current/promoted/non- rejected authority metadata and current observation bridge rows. This preserves latent state recall, improves minimal evidence recall, rejects stale rows, handles no-safe-answer cases, and cuts the average token budget roughly in half. It is still branch-local research code, not a production checkout policy.</p>
+      <p>The MemoryFabric checkout-backed run is the important product signal. It is not the proxy: every case is appended through <code>MemoryFabric</code>, projected through the embedded graph backend, assembled through Memory Checkout, filtered by the <code>coordinate</code> purpose profile, and scored only from selected cited checkout facts/evidence. That full path clears the 1.1 production guardrails for state accuracy, minimal evidence recall, stale rejection, distractor resistance, abstention accuracy, and citation coverage. The guardrail is deliberately scoped to accepted-state recovery under this 33-case workload; it does not replace LongMemEval or CoordinationBench.</p>
+      <p>This run also found and fixed a real metadata propagation gap. Generic Eventloom rows now preserve authority metadata such as <code>authority_scope</code>, <code>status</code>, <code>stale</code>, <code>promoted</code>, and <code>superseded_by</code> through verbatim and graph checkout lanes, so purpose policies can suppress stale, rejected, unsupported, and worker-local rows consistently.</p>
+      <p>The non-perfect distractor score is useful. The remaining misses are old hand-authored cases where distractors lack enough authority metadata to reject them, or where a bridge event is not cleanly distinguishable from nearby support. That argues for authority/provenance metadata as the real Zaxy thesis, not for adding a heavier neural associative model just because the direction is interesting.</p>
+      <h2 id="metrics">Metrics</h2>
+      <ul>
+        <li><code>latent_state_recall</code>: whether expected latent-state terms are recovered.</li>
+        <li><code>evidence_recall</code>: whether expected support events are retrieved.</li>
+        <li><code>citation_coverage</code>: whether returned evidence has Eventloom hashes.</li>
+        <li><code>injected_tokens</code>: approximate support-term count.</li>
+        <li><code>latency_ms</code>: projection completion latency.</li>
+      </ul>
+      <p>The same harness reports a direct lexical baseline. The experiment only earns attention if the associative projection beats direct lexical retrieval on partial-cue state recovery while keeping citation coverage at <code>1.0</code>.</p>
+      <p>StateRecoveryBench adds:</p>
+      <ul>
+        <li><code>state_accuracy</code>: exact all-terms latent-state recovery.</li>
+        <li><code>minimal_evidence_recall</code>: required proof events returned.</li>
+        <li><code>stale_rejection</code>: stale/superseded events avoided.</li>
+        <li><code>distractor_resistance</code>: distractor events avoided.</li>
+        <li><code>abstention_accuracy</code>: no-answer cases return no evidence instead of a plausible but unsupported answer.</li>
+        <li><code>token_cost</code>: retrieved/support term budget.</li>
+        <li><code>latency_ms</code>: baseline runtime.</li>
+        <li><code>citation_coverage</code>: returned evidence has Eventloom hashes.</li>
+      </ul>
+      <h2 id="next-research-gate">Next Research Gate</h2>
+      <p>The current branch is a baseline. The next useful gate is not a heavier Modern Hopfield or NAAM-like implementation yet. The next gate is an accepted-state checkout resolver that can choose the promoted state packet from a broad Memory Checkout result while keeping the broader evidence auditable in provenance.</p>
+      <p>Only if that benchmark shows a remaining class of failures that event-sourced authority/provenance cannot solve should Zaxy consider learned/tensor process state.</p>
+    </article>
+  </main>
+</body>
+</html>

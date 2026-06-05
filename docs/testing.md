@@ -385,6 +385,26 @@ R@5 0.958, p95 1089.53 ms, and p99 2456.86 ms. Use the floor matching the
 candidate harness; projection-backend work should use the current same-harness
 control unless it also reruns the legacy `limit=10` harness.
 
+For accepted-state recovery, use StateRecoveryBench. It is a separate lane from
+LongMemEval and CoordinationBench: LongMemEval measures answer-bearing memory
+retrieval/synthesis, CoordinationBench measures multi-agent workflow quality,
+and StateRecoveryBench measures whether cited checkout state resists stale,
+distracting, incomplete, and no-safe-answer event histories.
+
+```bash
+zaxy state-recovery-benchmark \
+  --output-dir /tmp/zaxy-state-recovery \
+  --workload reports/benchmarks/state-recovery-v1/state-recovery-workload.json
+
+python scripts/check-state-recovery-benchmark.py \
+  /tmp/zaxy-state-recovery/state-recovery-benchmark.json \
+  --workload /tmp/zaxy-state-recovery/state-recovery-workload.json
+```
+
+The tracked `reports/benchmarks/state-recovery-v1` artifact uses the production
+`memory_fabric_checkout` row for guardrails. Associative projection rows are
+diagnostic and must not be used as public product claims.
+
 Guard the current headline report with the current74 floors:
 
 ```bash

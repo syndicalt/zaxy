@@ -2206,6 +2206,7 @@ def build_memory_checkout(
     )
     selection = select_checkout_evidence(
         query=query,
+        purpose=profile,
         evidence_plan=build_evidence_plan(query, limit=10),
         current_facts=candidate_current_facts,
         evidence=candidate_evidence,
@@ -2240,6 +2241,8 @@ def build_memory_checkout(
         retention=retention,
         warnings=warnings,
     )
+    if selection.accepted_state is not None:
+        diagnostics = {**diagnostics, "accepted_state": _accepted_state_diagnostics(selection.accepted_state)}
     skills = _checkout_skills(ranked_contexts, query)
     if skills:
         diagnostics = {**diagnostics, "skills": {"count": len(skills), "items": skills}}
@@ -2485,6 +2488,23 @@ def _empty_purpose_policy(profile: PurposeProfile) -> dict[str, Any]:
         "suppressed_examples": [],
         "retain": list(profile.retain),
         "suppress": list(profile.suppress),
+    }
+
+
+def _accepted_state_diagnostics(selection: dict[str, Any]) -> dict[str, Any]:
+    """Return bounded accepted-state selection diagnostics for checkout clients."""
+    selected_citations = selection.get("selected_citations")
+    return {
+        "mode": str(selection.get("mode") or "coordinate_accepted_state"),
+        "selected_count": int(selection.get("selected_count") or 0),
+        "diagnostic_count": int(selection.get("diagnostic_count") or 0),
+        "selected_citations": [
+            citation
+            for citation in selected_citations
+            if isinstance(citation, str)
+        ][:10]
+        if isinstance(selected_citations, list)
+        else [],
     }
 
 

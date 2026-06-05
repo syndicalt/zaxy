@@ -35,6 +35,49 @@ The 100-question BM25 comparison remains useful for same-command tradeoffs. It
 shows BM25 as the faster lexical baseline and Zaxy as the higher-recall cited
 checkout path on a smaller slice, but it is no longer the headline result.
 
+## StateRecoveryBench
+
+StateRecoveryBench is the official Zaxy benchmark lane for partial-cue
+accepted-state recovery. It uses adversarial Eventloom histories with stale
+rows, authority-shaped distractors, incomplete bridge evidence, and
+no-safe-answer cases. The production claim is limited to
+`memory_fabric_checkout`, which appends each case through `MemoryFabric`, runs
+Memory Checkout with the `coordinate` purpose profile, and scores only cited
+checkout facts/evidence.
+
+The current tracked report is
+[reports/benchmarks/state-recovery-v1/state-recovery-benchmark.md](../reports/benchmarks/state-recovery-v1/state-recovery-benchmark.md).
+It uses workload fingerprint
+`916201f70da9d058aee80a31f8cf59d92dad59f5fd645f3dfbd3a1b23e7dddad`
+over 33 cases.
+
+| Baseline | State accuracy | Minimal evidence recall | Stale rejection | Distractor resistance | Abstention accuracy | Citation coverage |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| memory_fabric_checkout | 0.818 | 0.909 | 1.000 | 0.818 | 1.000 | 1.000 |
+
+Release guardrails require the production baseline to clear state accuracy
+`0.818`, minimal evidence recall `0.900`, stale rejection `1.000`, distractor
+resistance `0.800`, abstention accuracy `1.000`, and citation coverage `1.000`.
+Associative projection rows in the report are diagnostic research baselines,
+not product claims.
+
+Run the official lane with:
+
+```bash
+zaxy state-recovery-benchmark \
+  --output-dir reports/benchmarks/state-recovery-v1 \
+  --workload reports/benchmarks/state-recovery-v1/state-recovery-workload.json
+```
+
+Validate a tracked or generated report with:
+
+```bash
+python scripts/check-state-recovery-benchmark.py \
+  reports/benchmarks/state-recovery-v1/state-recovery-benchmark.json \
+  --workload reports/benchmarks/state-recovery-v1/state-recovery-workload.json \
+  --require-git-tracked-inputs
+```
+
 ## Full 500-Question LongMemEval Run
 
 ### 2026-06-04 current74 gated relative temporal anchor embedded full-set run

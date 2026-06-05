@@ -1,6 +1,6 @@
 # Release Validation Checklist
 
-Use this checklist before cutting a v1.0 release. It records the command-level
+Use this checklist before cutting a v1.x release. It records the command-level
 evidence required by the roadmap and keeps optional external validation separate
 from local automation.
 
@@ -21,6 +21,12 @@ from local automation.
   `pytest tests/test_examples_v05.py::test_coordinate_three_worker_example_runs --no-cov -q`
 - [ ] Benchmark guardrails pass.
   Command: `scripts/benchmark-guardrails.sh`
+- [ ] StateRecoveryBench accepted-state guardrails pass.
+  Command:
+  `zaxy state-recovery-benchmark --output-dir /tmp/zaxy-state-recovery --workload reports/benchmarks/state-recovery-v1/state-recovery-workload.json`
+- [ ] Tracked StateRecoveryBench artifact validates.
+  Command:
+  `python scripts/check-state-recovery-benchmark.py reports/benchmarks/state-recovery-v1/state-recovery-benchmark.json --workload reports/benchmarks/state-recovery-v1/state-recovery-workload.json --require-git-tracked-inputs`
 - [ ] Docs validation passes.
   Command:
   `python scripts/build-site-docs.py --check && scripts/validate-docs.sh --root .`
@@ -55,7 +61,8 @@ The release gate may only skip an environment-specific smoke with an explicit
 
 ## Artifact Review
 
-- Confirm `CHANGELOG.md` covers every release band from 0.4 through 1.0.
+- Confirm `CHANGELOG.md` covers every release band from 0.4 through the target
+  release.
 - Confirm `docs/migration.md` covers upgrades from 0.4 through the release
   candidate.
 - Confirm `docs/announcements/zaxy-v1.0.md` includes positioning, examples,
@@ -63,6 +70,9 @@ The release gate may only skip an environment-specific smoke with an explicit
   validation.
 - Confirm benchmark claims link to tracked report artifacts and disclose
   baselines, latency, citation coverage, and limitations.
+- Confirm StateRecoveryBench claims are scoped to the production
+  `memory_fabric_checkout` baseline; associative projection rows remain
+  diagnostic research baselines.
 - Confirm no public docs recommend internal surfaces from `docs/api-inventory.md`.
 - Confirm any attached external validation report uses
   `docs/examples/external-validation-report.example.json` as the source contract

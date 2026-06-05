@@ -71,6 +71,15 @@
         <li>Use <code>zaxy trace export</code> when a run needs replay-derived mission, checkout, model-call, tool-call, review, promotion, or handoff correlation without a tracing vendor.</li>
         <li>Use <code>zaxy replay --from-seq</code> and <code>--to-seq</code> for bounded inspection of long sessions rather than splitting or rewriting logs.</li>
       </ul>
+      <h2 id="from-10-to-11">From 1.0 to 1.1</h2>
+      <p>1.1 adds StateRecoveryBench and replay-derived Coordinate accepted-state resolution. This is additive for existing memory users, but Coordinate clients should treat parent-promoted accepted state as the only answerable mission state by default.</p>
+      <p>Required actions:</p>
+      <ul>
+        <li>Use <code>zaxy state-recovery-benchmark</code> for accepted-state recovery claims. <code>zaxy experimental state-recovery</code> remains a research/debug command.</li>
+        <li>Keep benchmark claims scoped to the production <code>memory_fabric_checkout</code> baseline. Associative projection rows are diagnostic only.</li>
+        <li>If a client consumes Coordinate proof packets, expect <code>accepted_finding_ids</code>, review refs, promotion refs, worker source refs, and non-authoritative row labels to come from one replay-derived resolver.</li>
+        <li>Preserve review and promotion events in the parent mission session; worker findings alone are diagnostic until promoted.</li>
+      </ul>
       <h2 id="from-08-to-09">From 0.8 to 0.9</h2>
       <p>0.9 is the API freeze candidate. The main migration task is to compare your client usage with <code>docs/api-inventory.md</code> and remove dependencies on surfaces marked <code>Internal</code>. Surfaces marked <code>Experimental</code> can remain in prototypes, but they should not be required for a production 1.0 rollout.</p>
       <p>Required actions:</p>
