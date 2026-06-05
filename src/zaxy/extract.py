@@ -2727,6 +2727,19 @@ def _fallback_payload_summary(payload: dict[str, Any]) -> str | None:
 def _retention_properties(payload: dict[str, Any]) -> dict[str, Any] | None:
     """Return safe retrieval-retention metadata from an event payload."""
     properties: dict[str, Any] = {}
+    for key in (
+        "authority",
+        "authority_scope",
+        "coordination_status",
+        "finding_status",
+        "promoted",
+        "stale",
+        "status",
+        "superseded_by",
+    ):
+        value = payload.get(key)
+        if isinstance(value, str | int | float | bool) and value not in ("", None):
+            properties[key] = value
     if expires_at := _optional_text(payload.get("expires_at")):
         properties["expires_at"] = expires_at
     if last_reinforced_at := _optional_text(payload.get("last_reinforced_at")):

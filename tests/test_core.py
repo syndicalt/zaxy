@@ -2771,6 +2771,89 @@ class TestContextAssembly:
         assert "UI refresh handling" not in checkout.prompt
         assert "Purpose policy suppressed non-matching retrieved rows before projection." in checkout.quality["reasons"]
 
+    def test_memory_checkout_suppresses_worker_and_stale_generic_event_metadata(self) -> None:
+        """Coordinate purpose should suppress generic graph rows carrying authority metadata."""
+        assembly = ContextAssembly(
+            session_id="auth-main",
+            prompt="# Active Memory Working Set\n- Accepted, worker-local, and stale rows were retrieved.",
+            contexts=[
+                Context(
+                    content="Parent accepted state: expired JWKS cache caused auth failures.",
+                    source="keyword",
+                    score=0.91,
+                    metadata={
+                        "citation": "eventloom://auth-main/events/8#hhhhhhhhhhhh",
+                        "authority_scope": "parent-accepted",
+                        "status": "accepted",
+                    },
+                    valid_from="2026-05-10T12:00:00Z",
+                    valid_to=None,
+                ),
+                Context(
+                    content="Worker accepted-looking state: database pool caused auth failures.",
+                    source="keyword",
+                    score=0.99,
+                    metadata={
+                        "citation": "eventloom://auth-main/events/9#iiiiiiiiiiii",
+                        "authority_scope": "worker",
+                        "status": "accepted",
+                        "promoted": False,
+                    },
+                    valid_from="2026-05-10T12:05:00Z",
+                    valid_to=None,
+                ),
+                Context(
+                    content="Deprecated policy: stale worker rows could be promoted directly.",
+                    source="keyword",
+                    score=0.98,
+                    metadata={
+                        "citation": "eventloom://auth-main/events/10#jjjjjjjjjjjj",
+                        "authority_scope": "policy",
+                        "status": "superseded",
+                        "superseded_by": "auth-main:8",
+                    },
+                    valid_from="2026-05-10T12:06:00Z",
+                    valid_to=None,
+                ),
+                Context(
+                    content="Unsupported observation: auth failures might be caused by UI refresh.",
+                    source="keyword",
+                    score=0.97,
+                    metadata={
+                        "citation": "eventloom://auth-main/events/11#kkkkkkkkkkkk",
+                        "authority_scope": "observation",
+                        "status": "unsupported",
+                    },
+                    valid_from="2026-05-10T12:07:00Z",
+                    valid_to=None,
+                ),
+            ],
+            working_set={"items": []},
+            context_counts={"graph": 4},
+            replay_event_count=11,
+            compacted=False,
+            warnings=[],
+            assembly_policy={},
+        )
+
+        checkout = build_memory_checkout(
+            query="current accepted coordination state",
+            assembly=assembly,
+            purpose="coordinate",
+        )
+
+        assert [fact["content"] for fact in checkout.current_facts] == [
+            "Parent accepted state: expired JWKS cache caused auth failures."
+        ]
+        assert checkout.diagnostics["purpose_policy"]["suppressed_reasons"] == {
+            "rejected_finding": 1,
+            "stale_unpromoted_finding": 1,
+            "worker_local_pending": 1,
+        }
+        assert "database pool caused auth failures" not in checkout.prompt
+        assert "stale worker rows" not in checkout.prompt
+        assert "UI refresh" not in checkout.prompt
+
     def test_checkout_memory_reports_inferred_context_dependency(self) -> None:
         """build_memory_checkout() should expose inferred-path reliance to the model."""
         assembly = ContextAssembly(

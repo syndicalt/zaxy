@@ -336,6 +336,7 @@ def test_changelog_covers_release_candidate_path_from_04_to_10() -> None:
     changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
 
     for heading in (
+        "## 1.0.4 - 2026-06-05",
         "## 1.0.3 - 2026-06-04",
         "## 1.0.2 - 2026-06-02",
         "## 1.0.1 - 2026-05-31",

@@ -2418,6 +2418,7 @@ _CHECKOUT_METADATA_FIELDS = (
     "claim_value",
     "coordination_status",
     "finding_status",
+    "promoted",
     "status",
     "authority",
     "authority_scope",
@@ -2492,15 +2493,17 @@ def _purpose_suppression_reason(profile: PurposeProfile, item: dict[str, Any]) -
     status = _checkout_policy_status(item)
     authority = _checkout_policy_text(item.get("authority") or item.get("authority_scope"))
     if "worker_local_pending" in suppress and (
-        status == "pending" or authority in {"worker-local", "worker_local", "pending"}
+        status == "pending"
+        or authority in {"worker", "worker-local", "worker_local", "pending"}
+        or (authority.startswith("worker") and item.get("promoted") is False)
     ):
         return "worker_local_pending"
     if "pending_unreviewed_claim" in suppress and status == "pending":
         return "pending_unreviewed_claim"
-    if "rejected_finding" in suppress and status == "rejected":
+    if "rejected_finding" in suppress and status in {"rejected", "unsupported"}:
         return "rejected_finding"
     if "stale_unpromoted_finding" in suppress and (
-        bool(item.get("stale")) or status == "stale"
+        bool(item.get("stale")) or status in {"stale", "superseded", "deprecated"}
     ) and authority not in {"accepted", "parent-accepted", "parent_accepted", "promoted"}:
         return "stale_unpromoted_finding"
     if "low_trust_inference" in suppress and _low_trust_inferred_item(item):

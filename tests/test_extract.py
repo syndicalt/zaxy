@@ -78,6 +78,29 @@ class TestRegistry:
         result = extract(ev)
         assert len(result.entities) == 1
         assert result.entities[0].entity_type == "event"
+
+    def test_unknown_event_preserves_authority_metadata(self) -> None:
+        """Generic event projection should keep checkout-policy metadata structured."""
+        ev = _make_event(
+            "decision.accepted",
+            {
+                "summary": "Worker-local accepted-looking row should stay diagnostic.",
+                "authority_scope": "worker",
+                "status": "accepted",
+                "promoted": False,
+                "stale": True,
+                "superseded_by": "mission:4",
+            },
+        )
+
+        result = extract(ev)
+
+        assert result.entities[0].properties is not None
+        assert result.entities[0].properties["authority_scope"] == "worker"
+        assert result.entities[0].properties["status"] == "accepted"
+        assert result.entities[0].properties["promoted"] is False
+        assert result.entities[0].properties["stale"] is True
+        assert result.entities[0].properties["superseded_by"] == "mission:4"
         assert result.edges == []
 
     def test_fallback_entity_name_includes_seq(self) -> None:

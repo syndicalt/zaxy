@@ -2,6 +2,18 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 1.0.4 - 2026-06-05
+
+- Fixed authority metadata propagation for generic Eventloom rows so
+  `authority_scope`, `status`, `stale`, `promoted`, and `superseded_by` survive
+  through verbatim source recall and generic graph checkout lanes.
+- Hardened Coordinate-purpose Memory Checkout suppression so worker-scoped
+  unpromoted rows, unsupported or rejected rows, and superseded or deprecated
+  stale rows stay out of current facts and cited evidence while remaining
+  auditable in provenance.
+- Preserved the existing Memory Checkout contract and release posture; this is
+  a patch release, not the accepted-state StateRecoveryBench feature release.
+
 ## 1.0.3 - 2026-06-04
 
 - Promoted the current74 full 500-question LongMemEval-compatible report as the
