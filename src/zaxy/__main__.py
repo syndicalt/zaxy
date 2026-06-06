@@ -4219,6 +4219,424 @@ def _load_external_results(path: Path | None) -> tuple[Any, ...]:
     return tuple(results)
 
 
+@app.command("harvey-lab-benchmark")
+def harvey_lab_benchmark(
+    zaxy_results: Path = typer.Option(  # noqa: B008
+        ...,
+        "--zaxy-results",
+        help="Harvey memory-ablation normalized-result JSON containing Zaxy rows",
+    ),
+    output_dir: Path = typer.Option(  # noqa: B008
+        Path("reports/benchmarks/harvey-lab-memory-ablation"),
+        "--output-dir",
+        help="Directory for Harvey LAB benchmark JSON and Markdown reports",
+    ),
+) -> None:
+    """Compare externally run Zaxy Harvey LAB rows with article-scored systems."""
+    from zaxy.harvey_lab_benchmark import (
+        build_harvey_lab_report,
+        load_harvey_zaxy_results,
+        report_to_markdown,
+        write_harvey_lab_report,
+    )
+
+    try:
+        zaxy_rows = load_harvey_zaxy_results(zaxy_results)
+        report = build_harvey_lab_report(
+            zaxy_rows,
+            result_provenance={
+                "source": "harvey-lab-benchmark",
+                "zaxy_results_json_path": str(zaxy_results.resolve()),
+            },
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    written = write_harvey_lab_report(report, output_dir)
+    typer.echo(report_to_markdown(report))
+    typer.echo(f"Harvey LAB external memory benchmark: {report.status}")
+    typer.echo(f"Wrote JSON report: {written.json_path}")
+    typer.echo(f"Wrote Markdown report: {written.markdown_path}")
+
+
+@app.command("harvey-lab-import")
+def harvey_lab_import(
+    roots: list[Path] = typer.Argument(  # noqa: B008
+        ...,
+        help="External Harvey worktree, result directory, or normalized-result.json path",
+    ),
+    output_dir: Path = typer.Option(  # noqa: B008
+        Path("reports/benchmarks/harvey-lab-memory-ablation"),
+        "--output-dir",
+        help="Directory for Harvey LAB benchmark JSON and Markdown reports",
+    ),
+    allow_baseline_only: bool = typer.Option(
+        False,
+        "--allow-baseline-only",
+        help="Write a partial handoff report when only Harvey-native baseline comparison reports are present",
+    ),
+) -> None:
+    """Import external Harvey normalized-result.json files and write Zaxy comparisons."""
+    from zaxy.harvey_lab_benchmark import (
+        build_harvey_lab_report,
+        build_harvey_result_provenance,
+        import_harvey_zaxy_results,
+        report_to_markdown,
+        write_harvey_lab_report,
+    )
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    provenance_roots = [*roots, output_dir]
+    try:
+        try:
+            zaxy_rows = import_harvey_zaxy_results(roots)
+        except ValueError:
+            provenance = build_harvey_result_provenance(
+                provenance_roots,
+                source="harvey-lab-import",
+            )
+            if not allow_baseline_only or not provenance.get("external_baseline_report_paths"):
+                raise
+            zaxy_rows = ()
+            baseline_only = True
+        else:
+            provenance = build_harvey_result_provenance(
+                provenance_roots,
+                source="harvey-lab-import",
+            )
+            baseline_only = False
+        report = build_harvey_lab_report(
+            zaxy_rows,
+            result_provenance=provenance,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    written = write_harvey_lab_report(report, output_dir)
+    typer.echo(report_to_markdown(report))
+    typer.echo(f"Imported Zaxy Harvey LAB normalized results: {len(zaxy_rows)}")
+    if baseline_only:
+        typer.echo("Baseline-only handoff report: no Zaxy normalized results were imported.")
+    typer.echo(f"Harvey LAB external memory benchmark: {report.status}")
+    typer.echo(f"Wrote JSON report: {written.json_path}")
+    typer.echo(f"Wrote Markdown report: {written.markdown_path}")
+
+
+@app.command("harvey-lab-index")
+def harvey_lab_index(
+    normalized_corpus_root: Path = typer.Option(  # noqa: B008
+        ...,
+        "--normalized-corpus-root",
+        help="Harvey normalized text corpus root, typically .ingestion/corpora/<hash>/txt",
+    ),
+    output_dir: Path = typer.Option(  # noqa: B008
+        Path(".ingestion/indexes/zaxy"),
+        "--output-dir",
+        help="Directory for the Zaxy Eventloom index and manifest",
+    ),
+    source_map: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--source-map",
+        help="Optional Harvey source-map.json for original source path citations",
+    ),
+    max_lines: int = typer.Option(80, "--max-lines", min=1, help="Lines per indexed document chunk"),
+) -> None:
+    """Build an Eventloom-backed Zaxy memory index for Harvey LAB tools."""
+    from zaxy.harvey_lab_benchmark import build_harvey_zaxy_memory_index
+
+    try:
+        manifest = build_harvey_zaxy_memory_index(
+            normalized_corpus_root,
+            output_dir,
+            source_map_path=source_map,
+            max_lines=max_lines,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(manifest, indent=2, sort_keys=True))
+    typer.echo(f"Wrote Harvey LAB Zaxy manifest: {output_dir / 'manifest.json'}")
+
+
+@app.command("harvey-lab-adapter-kit")
+def harvey_lab_adapter_kit(
+    output_dir: Path = typer.Option(  # noqa: B008
+        Path("reports/benchmarks/harvey-lab-adapter-kit"),
+        "--output-dir",
+        help="Directory for Harvey LAB Zaxy adapter shim files",
+    ),
+) -> None:
+    """Export a Harvey-compatible Zaxy memory adapter kit."""
+    from zaxy.harvey_lab_benchmark import export_harvey_adapter_kit
+
+    written = export_harvey_adapter_kit(output_dir)
+    typer.echo(json.dumps(written, indent=2, sort_keys=True))
+
+
+@app.command("harvey-lab-doctor")
+def harvey_lab_doctor(
+    harvey_worktree: Path = typer.Argument(  # noqa: B008
+        ...,
+        help="External Harvey worktree to validate",
+    ),
+) -> None:
+    """Validate that a Harvey checkout matches the external article suite."""
+    from zaxy.harvey_lab_benchmark import check_harvey_external_suite
+
+    status = check_harvey_external_suite(harvey_worktree)
+    typer.echo(json.dumps(status, indent=2, sort_keys=True))
+    if status["status"] != "valid":
+        raise typer.Exit(1)
+
+
+@app.command("harvey-lab-preflight")
+def harvey_lab_preflight(
+    harvey_worktree: Path = typer.Argument(  # noqa: B008
+        ...,
+        help="External Harvey worktree to normalize and index before model runs",
+    ),
+    max_lines: int = typer.Option(80, "--max-lines", min=1, help="Lines per indexed document chunk"),
+    task_filter: str | None = typer.Option(
+        None,
+        "--task-filter",
+        help="Optional Harvey task id, slug, or Zaxy run id for single-task preflight",
+    ),
+) -> None:
+    """Normalize and Zaxy-index pinned Harvey LAB tasks without scoring."""
+    from zaxy.harvey_lab_benchmark import build_harvey_external_index_preflight
+
+    try:
+        status = build_harvey_external_index_preflight(
+            harvey_worktree,
+            max_lines=max_lines,
+            task_filter=task_filter,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(status, indent=2, sort_keys=True))
+    if status["status"] != "ready_for_external_runs":
+        raise typer.Exit(1)
+
+
+@app.command("harvey-lab-status")
+def harvey_lab_status(
+    harvey_worktree: Path = typer.Argument(  # noqa: B008
+        ...,
+        help="External Harvey worktree to scan for Zaxy run artifacts",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Report per-task readiness for the external Harvey Zaxy run pipeline."""
+    from zaxy.harvey_lab_benchmark import build_harvey_external_run_status
+
+    _ = json_output
+    status = build_harvey_external_run_status(harvey_worktree)
+    typer.echo(json.dumps(status, indent=2, sort_keys=True))
+    if status["status"] != "complete":
+        raise typer.Exit(1)
+
+
+@app.command("harvey-lab-ready")
+def harvey_lab_ready(
+    harvey_worktree: Path = typer.Argument(  # noqa: B008
+        ...,
+        help="External Harvey worktree to check before launching model-backed Zaxy runs",
+    ),
+    generator: str = typer.Option(
+        "HARVEY_GENERATOR_MODEL",
+        "--generator",
+        help="Generator model planned for Harvey harness runs",
+    ),
+    judge: str = typer.Option(
+        "HARVEY_JUDGE_MODEL",
+        "--judge",
+        help="Judge model planned for Harvey evaluation runs",
+    ),
+    task_filter: str | None = typer.Option(
+        None,
+        "--task-filter",
+        help="Optional task id, slug, or run id for filtered external runs",
+    ),
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Check external Harvey run prerequisites without launching model calls."""
+    from zaxy.harvey_lab_benchmark import build_harvey_external_run_readiness
+
+    _ = json_output
+    readiness = build_harvey_external_run_readiness(
+        harvey_worktree,
+        generator=generator,
+        judge=judge,
+        task_filter=task_filter,
+    )
+    typer.echo(json.dumps(readiness, indent=2, sort_keys=True))
+    if readiness["status"] != "ready_for_external_runs":
+        raise typer.Exit(1)
+
+
+@app.command("harvey-lab-plan")
+def harvey_lab_plan(
+    output_dir: Path = typer.Option(  # noqa: B008
+        Path("reports/benchmarks/harvey-lab-memory-ablation"),
+        "--output-dir",
+        help="Directory for the external Harvey run manifest",
+    ),
+    generator: str = typer.Option(
+        "HARVEY_GENERATOR_MODEL",
+        "--generator",
+        help="Generator model to record in the external Harvey plan",
+    ),
+    judge: str = typer.Option(
+        "HARVEY_JUDGE_MODEL",
+        "--judge",
+        help="Judge model to record in the external Harvey plan",
+    ),
+    reasoning_effort: str | None = typer.Option(  # noqa: B008
+        "low",
+        "--reasoning-effort",
+        help="Generator reasoning effort to record; use empty string for none",
+    ),
+) -> None:
+    """Write a reproducible external Harvey LAB run manifest."""
+    from zaxy.harvey_lab_benchmark import (
+        build_harvey_external_run_manifest,
+        write_harvey_external_run_manifest,
+    )
+
+    manifest = build_harvey_external_run_manifest(
+        generator=generator,
+        judge=judge,
+        reasoning_effort=reasoning_effort or None,
+    )
+    written = write_harvey_external_run_manifest(manifest, output_dir)
+    typer.echo(f"Wrote Harvey LAB external run JSON: {written.json_path}")
+    typer.echo(f"Wrote Harvey LAB external run Markdown: {written.markdown_path}")
+    typer.echo(f"Wrote Harvey LAB external run script: {written.script_path}")
+
+
+@app.command("harvey-lab-normalize-run")
+def harvey_lab_normalize_run(
+    harvey_worktree: Path = typer.Option(  # noqa: B008
+        ...,
+        "--harvey-worktree",
+        help="External Harvey worktree containing results/<run-id>",
+    ),
+    run_id: str = typer.Option(..., "--run-id", help="Harvey run id to normalize"),
+    task_id: str = typer.Option(..., "--task-id", help="Harvey task id for the run"),
+    manifest: Path = typer.Option(  # noqa: B008
+        ...,
+        "--manifest",
+        help="Zaxy Harvey memory manifest used for the run",
+    ),
+    output: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--output",
+        help="Optional output path; defaults to .ingestion/runs/<run-id>/normalized-result.json",
+    ),
+    judge_model: str | None = typer.Option(
+        None,
+        "--judge-model",
+        help="Override judge model if scores.json does not record it",
+    ),
+    judge_reasoning_effort: str | None = typer.Option(  # noqa: B008
+        None,
+        "--judge-reasoning-effort",
+        help="Judge reasoning effort to record",
+    ),
+) -> None:
+    """Write Harvey normalized-result.json from one external Zaxy run."""
+    from zaxy.harvey_lab_benchmark import build_harvey_normalized_result_from_run
+
+    try:
+        normalized = build_harvey_normalized_result_from_run(
+            harvey_worktree,
+            run_id=run_id,
+            task_id=task_id,
+            manifest_path=manifest,
+            judge_model=judge_model,
+            judge_reasoning_effort=judge_reasoning_effort,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    output_path = output or harvey_worktree / ".ingestion" / "runs" / run_id / "normalized-result.json"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(normalized, indent=2, sort_keys=True), encoding="utf-8")
+    typer.echo(f"Wrote Harvey LAB normalized result: {output_path}")
+
+
+@app.command("harvey-lab-gate")
+def harvey_lab_gate(
+    report_path: Path = typer.Argument(..., help="harvey-lab-benchmark.json report"),  # noqa: B008
+) -> None:
+    """Gate public Harvey LAB claims on complete external Zaxy results."""
+    from zaxy.harvey_lab_benchmark import (
+        check_harvey_lab_completion,
+        load_harvey_lab_report,
+    )
+
+    try:
+        report = load_harvey_lab_report(report_path)
+        gate = check_harvey_lab_completion(report)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(gate, indent=2, sort_keys=True))
+    if gate["status"] != "passed":
+        raise typer.Exit(1)
+
+
+@app.command("harvey-lab-validate")
+def harvey_lab_validate(
+    report_path: Path = typer.Argument(..., help="harvey-lab-benchmark.json report"),  # noqa: B008
+    require_complete: bool = typer.Option(
+        False,
+        "--require-complete",
+        help="Require all ten article tasks in addition to evidence validation",
+    ),
+) -> None:
+    """Validate Harvey LAB report evidence and local artifact availability."""
+    from zaxy.harvey_lab_benchmark import (
+        load_harvey_lab_report,
+        validate_harvey_lab_report,
+    )
+
+    try:
+        report = load_harvey_lab_report(report_path)
+        validation = validate_harvey_lab_report(
+            report,
+            require_complete=require_complete,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(validation, indent=2, sort_keys=True))
+    if validation["status"] != "valid":
+        raise typer.Exit(1)
+
+
+@app.command("harvey-lab-publish")
+def harvey_lab_publish(
+    report_path: Path = typer.Argument(..., help="harvey-lab-benchmark.json report"),  # noqa: B008
+    output: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--output",
+        help="Optional Markdown output path for publishable comparative statistics",
+    ),
+) -> None:
+    """Render publishable Harvey LAB statistics after the strict gate passes."""
+    from zaxy.harvey_lab_benchmark import (
+        load_harvey_lab_report,
+        render_harvey_publication_markdown,
+    )
+
+    try:
+        report = load_harvey_lab_report(report_path)
+        markdown = render_harvey_publication_markdown(report)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if output is None:
+        typer.echo(markdown)
+        return
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(markdown, encoding="utf-8")
+    typer.echo(f"Wrote Harvey LAB publishable statistics: {output}")
+
+
 @app.command("benchmark-inventory")
 def benchmark_inventory(
     output_dir: Path = typer.Option(  # noqa: B008

@@ -1,38 +1,54 @@
 # Zaxy
 
-**Coordinator Memory for Agent Teams.**
+**Production memory for agent teams that need receipts.**
 
-Zaxy gives agent teams auditable, replayable, and coordinated memory: parent
-missions, isolated worker sessions, cited findings, conflict review, approval
-packets, and accepted merge-back into one durable project history. Under the
-hood, it uses an Eventloom append-only source of truth and an embedded Kuzu graph
-projection instead of flattening project memory into markdown files and vector
-chunks.
+Zaxy turns agent context into an auditable project memory fabric. It captures
+parent missions, worker sessions, tool observations, cited findings, conflict
+review, approval packets, and accepted merge-back into one durable history that
+can be queried, replayed, and inspected.
+
+Under the hood, Zaxy uses Eventloom append-only JSONL as the source of truth and
+an embedded Kuzu graph projection for local reasoning. It is built for agents
+that need to remember what happened, cite where it came from, and avoid turning
+project state into a pile of markdown files and vector chunks.
 
 The embedded Kuzu graph projection is the default local runtime.
 
 The plain install uses embedded Kuzu. Install `zaxy-memory[neo4j]` only for the
 optional Neo4j sidecar, and `zaxy-memory[pathlight]` only for Pathlight tracing.
 
+## Why It Matters
+
+- **Auditable memory**: every accepted fact can point back to Eventloom history.
+- **Agent-team coordination**: parent and worker sessions stay isolated until
+  findings are reviewed and merged.
+- **Local-first runtime**: the default path uses embedded Kuzu, no Neo4j sidecar.
+- **MCP-native integration**: Codex, Claude Code, Cursor, VS Code, Hermes Agent,
+  LangGraph, CrewAI, and AutoGen can use the same memory interface.
+- **External benchmark evidence**: on the full Harvey LAB legal-agent memory
+  benchmark, Zaxy scored `0.788` mean criterion pass rate across `10/10` tasks,
+  `+0.184` vs regular/no-memory, `+0.081` vs the article-best task rows, and
+  won `9/10` task comparisons. See
+  [Benchmarks](docs/benchmarks.md#completed-2026-06-06-result); the published
+  stats artifact is `reports/benchmarks/harvey-lab-memory-ablation/publishable-statistics.md`.
+
 ## Quick Start
 
-### Five-minute local smoke test
+### Install, init, verify
 
 ```bash
-# Install the Zaxy CLI before generating MCP config. The distribution is
-# zaxy-memory; the import package and console command remain zaxy.
 pipx install zaxy-memory
-# or: pip install zaxy-memory
-
-# Initialize local memory, Codex MCP guidance, deterministic capture config,
-# profile, genesis, heartbeat, and no-sidecar embedded graph posture.
 zaxy init
-
-# Prove the local Eventloom log and model bootstrap are readable.
 zaxy memory log --eventloom-path .eventloom --limit 5
 zaxy memory bootstrap --eventloom-path .eventloom
 zaxy doctor --eventloom-path .eventloom
 ```
+
+The PyPI distribution is `zaxy-memory`; the import package and console command
+are still `zaxy`. Bare `zaxy init` sets up the local embedded graph posture,
+repo-local profile, deterministic capture config, genesis event, heartbeat, and
+MCP guidance. It does not start a background watcher unless you pass
+`--capture start`.
 
 Run the single-agent memory example:
 
@@ -41,11 +57,7 @@ python examples/single_agent_memory.py
 ```
 
 Your local data lives under `.eventloom/` as one append-only JSONL file per
-session. Bare `zaxy init` now expands to the local embedded Codex path: it
-prints the Codex MCP install command, writes `.codex/zaxy-capture.json`, writes
-`.env.local`, checks the repo-local embedded graph posture, and ends with
-copyable local verification commands. It does not start a background watcher
-unless you pass `--capture start`.
+session.
 
 For Claude Code instead of Codex:
 
@@ -209,6 +221,51 @@ zaxy benchmark --output-dir reports/benchmarks/longmemeval-100-comparison \
 # Current full-set LongMemEval-compatible checkout evidence:
 # reports/benchmarks/longmemeval-500-current74-zaxyonly-gated-relative-temporal-anchor-embedded-reuse-20260604/
 # Mean 0.940, Answer@5 0.906, citation coverage 1.000, R@1/R@5/R@10 0.906/1.000/1.000.
+
+# Harvey LAB external memory-ablation comparison
+# Consumes externally generated Harvey normalized-result artifacts for Zaxy;
+# does not reuse LongMemEval statistics as legal-agent benchmark evidence.
+# Current full external Harvey LAB evidence:
+# reports/benchmarks/harvey-lab-memory-ablation/publishable-statistics.md
+# reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-benchmark.json
+# 10/10 tasks, mean criterion pass rate 0.788, +0.184 vs regular/no-memory,
+# +0.081 vs article-best task rows, 9/10 wins vs article-best rows.
+zaxy harvey-lab-doctor path/to/harvey-worktree
+zaxy harvey-lab-adapter-kit --output-dir reports/benchmarks/harvey-lab-adapter-kit
+zaxy harvey-lab-index --normalized-corpus-root path/to/.ingestion/corpora/HASH/txt \
+  --source-map path/to/.ingestion/corpora/HASH/source-map.json \
+  --output-dir path/to/.ingestion/indexes/HASH/zaxy
+zaxy harvey-lab-preflight path/to/harvey-worktree
+zaxy harvey-lab-preflight path/to/harvey-worktree \
+  --task-filter corporate-ma__draft-acquisition-due-diligence
+zaxy harvey-lab-ready path/to/harvey-worktree \
+  --generator openai-compatible/gpt-5.5 --judge gpt-5.4-mini --json
+zaxy harvey-lab-ready path/to/harvey-worktree \
+  --generator openai-compatible/gpt-5.5 --judge gpt-5.4-mini \
+  --task-filter corporate-ma__draft-acquisition-due-diligence --json
+zaxy harvey-lab-plan --output-dir reports/benchmarks/harvey-lab-memory-ablation
+reports/benchmarks/harvey-lab-memory-ablation/run-harvey-lab-zaxy.sh path/to/harvey-worktree
+# Full runs validate, gate, and write publishable-statistics.md after import.
+# Optional third arg or HARVEY_TASK_FILTER can run one task id, slug, or run id;
+# filtered reruns import and validate partial evidence without publishing:
+reports/benchmarks/harvey-lab-memory-ablation/run-harvey-lab-zaxy.sh path/to/harvey-worktree \
+  reports/benchmarks/harvey-lab-memory-ablation corporate-ma__draft-acquisition-due-diligence
+zaxy harvey-lab-normalize-run --harvey-worktree path/to/harvey-worktree \
+  --run-id zaxy-TASK-SLUG --task-id practice-area/task-slug \
+  --manifest path/to/.ingestion/indexes/HASH/zaxy/manifest.json
+zaxy harvey-lab-status path/to/harvey-worktree
+zaxy harvey-lab-status path/to/harvey-worktree --json
+# Optional before Zaxy judged rows exist: capture Harvey-native baseline report provenance.
+zaxy harvey-lab-import path/to/harvey-worktree --allow-baseline-only \
+  --output-dir reports/benchmarks/harvey-lab-memory-ablation
+zaxy harvey-lab-import path/to/harvey-worktree \
+  --output-dir reports/benchmarks/harvey-lab-memory-ablation
+zaxy harvey-lab-benchmark --zaxy-results path/to/zaxy-normalized-results.json \
+  --output-dir reports/benchmarks/harvey-lab-memory-ablation
+zaxy harvey-lab-validate reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-benchmark.json
+zaxy harvey-lab-gate reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-benchmark.json
+zaxy harvey-lab-publish reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-benchmark.json \
+  --output reports/benchmarks/harvey-lab-memory-ablation/publishable-statistics.md
 
 # StateRecoveryBench accepted-state recovery guardrail:
 zaxy state-recovery-benchmark --output-dir reports/benchmarks/state-recovery-v1 \

@@ -529,10 +529,10 @@ def test_install_docs_offer_zero_surprise_first_run_path() -> None:
     site = Path("site/index.html").read_text(encoding="utf-8")
 
     combined = "\n".join([readme, getting_started, site])
-    assert "Five-minute local smoke test" in combined
+    assert "Install, init, verify" in combined
     assert "pipx install zaxy-memory" in combined
     assert "zaxy init" in combined
-    assert "Bare `zaxy init` now expands to the local embedded Codex path" in combined
+    assert "Bare `zaxy init` sets up the local embedded graph posture" in combined
     assert "zaxy init --capture start" in combined
     assert "zaxy init . --domain my-project --preset local-codex --capture start --infra check" not in combined
     assert "zaxy init . --domain my-project --preset local-embedded-codex --capture start" not in combined

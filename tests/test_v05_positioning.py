@@ -9,9 +9,9 @@ def test_readme_leads_with_coordinator_memory_positioning() -> None:
     """README should lead with the v0.5 ownable product thesis."""
     text = Path("README.md").read_text(encoding="utf-8")
 
-    assert text.startswith("# Zaxy\n\n**Coordinator Memory for Agent Teams.**")
-    assert "auditable, replayable, and coordinated memory" in text
-    assert "Eventloom append-only source of truth" in text
+    assert text.startswith("# Zaxy\n\n**Production memory for agent teams that need receipts.**")
+    assert "auditable project memory fabric" in text
+    assert "Eventloom append-only JSONL as the source of truth" in text
     assert "embedded Kuzu graph projection" in text
     intro = "\n".join(text.splitlines()[:10])
     assert "temporal knowledge graph fabric" not in intro

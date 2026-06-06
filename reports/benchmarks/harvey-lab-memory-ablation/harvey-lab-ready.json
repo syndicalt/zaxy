@@ -1,0 +1,69 @@
+{
+  "article_url": "https://rushilchugh.substack.com/p/what-agent-memory-actually-fixes",
+  "blocking_reasons": [
+    "results_already_complete"
+  ],
+  "dotenv_path": "/tmp/harvey-labs-ablations-and-benchmarks/.env",
+  "evidence_audit": {
+    "expected_task_count": 10,
+    "import_ready_count": 10,
+    "index_ready_count": 10,
+    "memory_evidence_ready_count": 10,
+    "normalized_result_ready_count": 10,
+    "run_artifacts_ready_count": 10
+  },
+  "expected_task_count": 10,
+  "harvey_git_commit": "29748828133dff83ad2263af353fb035504f8f77",
+  "host_document_reader": {
+    "executable": "/home/cheapseatsecon/Projects/Personal/zaxy/reports/benchmarks/harvey-lab-memory-ablation/podman-docker-shim/pandoc",
+    "message": "pandoc executable is available for Harvey docx scoring.",
+    "pandoc_status": "present",
+    "reader": "pandoc",
+    "required_by": "Harvey LAB evaluator docx scoring",
+    "status": "ready"
+  },
+  "index_ready_count": 10,
+  "message": "Harvey external Zaxy run prerequisites are incomplete; do not start or publish comparative scoring yet.",
+  "missing_credentials": [],
+  "model_requirements": {
+    "generator": {
+      "accepted_credentials": [
+        "OPENAI_API_KEY"
+      ],
+      "credential_status": "present",
+      "endpoint": null,
+      "missing_credentials": [],
+      "model": "gpt-5.5",
+      "provider": "openai"
+    },
+    "judge": {
+      "accepted_credentials": [
+        "OPENAI_API_KEY"
+      ],
+      "credential_status": "present",
+      "endpoint": null,
+      "missing_credentials": [],
+      "model": "gpt-5.4-mini",
+      "provider": "openai"
+    }
+  },
+  "normalized_ready_count": 10,
+  "ready_task_count": 10,
+  "resolved_task_id": null,
+  "run_ready_count": 10,
+  "sandbox_runtime": {
+    "executable": "/home/cheapseatsecon/Projects/Personal/zaxy/reports/benchmarks/harvey-lab-memory-ablation/podman-docker-shim/podman",
+    "message": "podman info succeeded.",
+    "podman_status": "present",
+    "required_by": "Harvey LAB harness sandbox",
+    "runtime": "podman",
+    "status": "ready"
+  },
+  "schema_version": "zaxy.harvey-lab-run-readiness.v1",
+  "source_url": "https://github.com/rushilchugh01/harvey-labs-ablations-and-benchmarks",
+  "status": "not_ready",
+  "suite_valid": true,
+  "task_filter": "",
+  "unresolved_models": [],
+  "worktree": "/tmp/harvey-labs-ablations-and-benchmarks"
+}
