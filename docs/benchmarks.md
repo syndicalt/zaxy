@@ -35,6 +35,391 @@ The 100-question BM25 comparison remains useful for same-command tradeoffs. It
 shows BM25 as the faster lexical baseline and Zaxy as the higher-recall cited
 checkout path on a smaller slice, but it is no longer the headline result.
 
+## Harvey LAB External Memory-Ablation Lane
+
+Zaxy now has a dedicated report path for Rushil Chugh's Harvey LAB
+memory-ablation article, "What Agent Memory Actually Fixes (and What It
+Doesn't)." This is intentionally separate from LongMemEval. LongMemEval is a
+memory retrieval and checkout benchmark; Harvey LAB is a downstream legal-agent
+work-product benchmark where a generator uses tools, writes deliverables, and a
+judge scores rubric criteria.
+
+### Completed 2026-06-06 Result
+
+The full external Harvey LAB run is published in the repo under
+[reports/benchmarks/harvey-lab-memory-ablation/](../reports/benchmarks/harvey-lab-memory-ablation/).
+Use the following artifacts when citing or auditing the result:
+
+- Public stats:
+  [publishable-statistics.md](../reports/benchmarks/harvey-lab-memory-ablation/publishable-statistics.md)
+- Full Markdown report:
+  [harvey-lab-benchmark.md](../reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-benchmark.md)
+- Machine-readable report:
+  [harvey-lab-benchmark.json](../reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-benchmark.json)
+- External run plan:
+  [harvey-lab-external-run.md](../reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-external-run.md)
+  and
+  [harvey-lab-external-run.json](../reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-external-run.json)
+- Launch/readiness/status evidence:
+  [harvey-lab-ready.json](../reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-ready.json)
+  and
+  [harvey-lab-status.json](../reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-status.json)
+
+The run used the external Harvey checkout at commit
+`29748828133dff83ad2263af353fb035504f8f77`, `gpt-5.5` as generator,
+`gpt-5.4-mini` as judge, generator reasoning effort `low`, and temperature
+`0.0`. Zaxy completed all ten pinned article tasks through Harvey's harness and
+judge. The public metric is criterion pass rate, not binary Harvey all-pass
+success.
+
+| System | Tasks | Mean criterion pass rate | Delta vs regular | Delta vs article best | Wins vs article best |
+|--------|------:|--------------------------:|-----------------:|----------------------:|---------------------:|
+| Zaxy | 10 | 0.788 | +0.184 | +0.081 | 9 |
+
+Runtime and memory-use evidence from the same run:
+
+| Mean total seconds | Total tokens | Memory search calls | Memory read calls |
+|-------------------:|-------------:|--------------------:|------------------:|
+| 138.786 | 5,951,174 | 30 | 10 |
+
+Task-level comparison against the article's published regular/no-memory row
+and article-best task row:
+
+| Task | Regular | Article best | Zaxy | Delta vs best |
+|------|--------:|--------------|------:|--------------:|
+| FTC noncompete | 0.807 | Graphiti 0.790 | 0.895 | +0.105 |
+| Change-of-control | 0.667 | GBrain keyword 0.737 | 0.860 | +0.123 |
+| Acquisition diligence | 0.469 | raw-rg 0.641 | 0.797 | +0.156 |
+| Data-room red flags | 0.520 | LightRAG 0.600 | 0.660 | +0.060 |
+| Privacy program | 0.532 | ActiveGraph 0.661 | 0.790 | +0.129 |
+| Litigation timeline | 0.652 | GBrain keyword 0.758 | 0.894 | +0.136 |
+| Relevance / privilege | 0.701 | GBrain keyword 0.791 | 0.687 | -0.104 |
+| Attorney production review | 0.583 | GBrain Gemma / LightRAG 0.708 | 0.750 | +0.042 |
+| Privilege log | 0.402 | GBrain keyword 0.598 | 0.634 | +0.036 |
+| Subpoena comparison | 0.702 | raw-rg 0.790 | 0.912 | +0.122 |
+
+The one miss is relevance / privilege: Zaxy scored `0.687` versus GBrain
+keyword at `0.791`. The regular/no-memory score on that task was `0.701`.
+
+Interpret the comparison carefully. Zaxy is the only row in this report with a
+same-harness external run across all ten pinned Harvey LAB tasks. The
+article-relative framework scorecard uses the article's published regular,
+article-best, and task-winner rows. Harvey-native non-Zaxy comparison artifacts
+are included as partial context where present, but the full ten-task comparison
+against other systems is the article-published score matrix.
+
+The command consumes Harvey memory-ablation `normalized-result.json` artifacts
+for Zaxy and compares them against the article-published task-winner matrix,
+an article scorecard, and framework-fit interpretation:
+
+```bash
+zaxy harvey-lab-doctor path/to/harvey-worktree
+
+zaxy harvey-lab-adapter-kit \
+  --output-dir reports/benchmarks/harvey-lab-adapter-kit
+
+zaxy harvey-lab-index \
+  --normalized-corpus-root path/to/.ingestion/corpora/HASH/txt \
+  --source-map path/to/.ingestion/corpora/HASH/source-map.json \
+  --output-dir path/to/.ingestion/indexes/HASH/zaxy
+
+zaxy harvey-lab-preflight path/to/harvey-worktree
+
+zaxy harvey-lab-ready path/to/harvey-worktree \
+  --generator openai-compatible/gpt-5.5 \
+  --judge gpt-5.4-mini \
+  --json
+
+zaxy harvey-lab-plan \
+  --output-dir reports/benchmarks/harvey-lab-memory-ablation
+
+zaxy harvey-lab-normalize-run \
+  --harvey-worktree path/to/harvey-worktree \
+  --run-id zaxy-TASK-SLUG \
+  --task-id practice-area/task-slug \
+  --manifest path/to/.ingestion/indexes/HASH/zaxy/manifest.json
+
+zaxy harvey-lab-status path/to/harvey-worktree
+
+zaxy harvey-lab-import path/to/harvey-worktree \
+  --output-dir reports/benchmarks/harvey-lab-memory-ablation
+
+zaxy harvey-lab-benchmark \
+  --zaxy-results path/to/zaxy-normalized-results.json \
+  --output-dir reports/benchmarks/harvey-lab-memory-ablation
+
+zaxy harvey-lab-validate \
+  reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-benchmark.json
+
+zaxy harvey-lab-gate \
+  reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-benchmark.json
+
+zaxy harvey-lab-publish \
+  reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-benchmark.json \
+  --output reports/benchmarks/harvey-lab-memory-ablation/publishable-statistics.md
+```
+
+`harvey-lab-doctor` is the preflight for the external suite checkout. It checks
+that the worktree contains the ten pinned article tasks plus the Harvey
+`harness.run`, `evaluation.run_eval`, and `scripts/memory_ablation/*` command
+surface used by the generated plan. It also compares each pinned task's
+document count and rubric criterion count against the article matrix embedded
+in Zaxy, so a moved, regenerated, or partial Harvey checkout cannot silently
+feed stale comparison rows. Run it before treating any imported rows as Harvey
+LAB evidence.
+
+`harvey-lab-index` is the Zaxy-side memory adapter surface. It indexes Harvey's
+normalized text corpus into an Eventloom JSONL file, writes Harvey's expected
+three-file ingestion contract (`manifest.json`, `artifact-summary.json`, and
+`smoke-result.json`), and exposes Python-callable `harvey_memory_search` /
+`harvey_memory_read` helpers that return the same source-grounded JSON shape
+expected by Harvey memory tooling. When a Harvey `source-map.json` is supplied,
+search and read results display the original source paths while retaining the
+normalized storage path in metadata.
+
+`harvey-lab-preflight` is the non-scoring external-suite preparation step. It
+validates the Harvey checkout, calls Harvey's own `prepare_normalized_corpus`
+helper for each of the ten pinned article tasks, builds Zaxy indexes under the
+external worktree's `.ingestion/indexes/.../zaxy` directories, and records
+smoke-search evidence per task. It does not run the agent, judge answers, or
+write `normalized-result.json`; use it to prove the external corpus and adapter
+path are ready before spending model calls. Pass `--task-filter` with a Harvey
+task ID, generated slug, or generated run ID to prepare only one task for a
+scoped external rerun; unknown filters fail closed instead of indexing the full
+suite.
+
+`harvey-lab-ready` is the launch gate for the actual external model run. It
+combines the doctor result, run-status counts, index readiness, unresolved model
+placeholders, provider credential checks, and Harvey's required Podman sandbox
+runtime. Credential and runtime checks use the current process environment plus
+the external Harvey worktree's `.env` file, matching Harvey's own runtime
+loading behavior. A `not_ready` result means the generated run script should
+not be launched yet; it still does not generate any scored Zaxy rows. Pass
+`--task-filter` with a Harvey task ID, generated slug, or generated run ID when
+resuming one external task; in that mode readiness scopes index and completion
+counts to the filtered task while the unfiltered command continues to require
+the full ten-task suite. `harvey-lab-ready --json` and `harvey-lab-status
+--json` are accepted for automation; both commands emit JSON by default.
+
+`harvey-lab-adapter-kit` writes a small Harvey-compatible shim named
+`raw_rg_memory.py`. In an external Harvey worktree, copy that shim to
+`scripts/memory_ablation/raw_rg_memory.py` or apply an equivalent branch-local
+import patch, set `HARVEY_MEMORY_MANIFEST` to the Zaxy manifest, and run
+Harvey's normal `harness.run` and `evaluation.run_eval` flow. Then run
+`zaxy harvey-lab-normalize-run` from the Zaxy environment to materialize the
+Harvey `normalized-result.json` contract under `.ingestion/runs/{run_id}/`.
+The Zaxy repository does not ship judged legal-agent scores by itself; it only
+ships the adapter, report contract, and comparison renderer. That separation is
+what keeps this lane external.
+
+`harvey-lab-status` scans the external worktree for each generated task run ID
+and reports whether the index files, Harvey `results/{run_id}` artifacts, and
+`.ingestion/runs/{run_id}/normalized-result.json` exist. It also loads each
+normalized result through Zaxy's Harvey loader and checks that the row matches
+the expected task ID and generated run ID. The run artifacts are only considered
+ready when Harvey metrics report memory search calls and the transcript contains
+`memory_search` or `memory_read` tool evidence. It exits nonzero until all ten
+pinned tasks are import-ready, giving a pre-import checklist before the stricter
+publication gate. The JSON payload includes an `evidence_audit` count summary
+for ready indexes, run artifacts, normalized results, memory-evidence-bearing
+runs, and import-ready tasks; `harvey-lab-ready` includes the same audit while
+also checking model credentials, sandbox runtime, and task filters. When
+`--task-filter` is used, the readiness audit is scoped to that one task so
+single-task reruns do not display misleading full-suite evidence counts.
+
+`harvey-lab-plan` writes `harvey-lab-external-run.json` and Markdown with the
+ten task IDs, index commands, harness commands, judge commands, normalize
+commands, validate commands, and expected normalized result paths. It also
+writes an executable `run-harvey-lab-zaxy.sh` script. Run that script from a
+machine with the Harvey checkout dependencies, Podman sandbox runtime, and
+model credentials to perform the actual external suite execution; the script
+validates the checkout, runs `harvey-lab-preflight` to prepare the external
+normalized corpora and required Zaxy index artifacts, runs `harvey-lab-ready`
+to fail early on credentials, missing Podman, or remaining launch blockers,
+installs the Zaxy adapter shim into the Harvey worktree, refreshes each pinned
+task corpus and index deterministically, runs the Harvey harness and judge,
+normalizes each result into Zaxy's evidence contract, validates the artifacts,
+checks import readiness, imports the report rows, and refreshes Harvey-native
+comparison artifacts with
+`scripts/memory_ablation/collect_results.py --dedupe-latest --output .ingestion/reports/comparison-zaxy.json`
+before import. For
+full unfiltered runs it then executes `harvey-lab-validate --require-complete`,
+`harvey-lab-gate`, and `harvey-lab-publish` to write
+`publishable-statistics.md`. Filtered runs still import and run partial
+validation, but intentionally skip the full publish gate until all ten tasks are
+complete.
+The generated script writes `harvey-lab-ready.json` and
+`harvey-lab-status.json` under the output directory and copies the
+`harvey-lab-external-run.json` manifest that generated the script beside them,
+so a failed launch gate or partial rerun leaves machine-readable evidence of
+the exact run plan, external checkout, credential status, index readiness, run
+artifacts, and normalized-result counts. `harvey-lab-import` scans the output
+directory as provenance too, so those audit artifacts are carried into
+`harvey-lab-benchmark.json` and the Markdown report instead of remaining loose
+side files.
+The script accepts an optional third argument, or `HARVEY_TASK_FILTER`, to run a
+single task by Harvey task ID, generated slug, or generated run ID. That keeps
+failed external runs resumable without editing the manifest or discarding
+already judged task artifacts.
+When the script installs the Zaxy adapter shim, it backs up any existing
+`scripts/memory_ablation/raw_rg_memory.py` file and restores it on exit; if no
+file existed, the Zaxy shim is removed on exit. The generated artifacts under
+`.ingestion` and `results` remain as benchmark evidence, but the external
+checkout's adapter code is not left overwritten.
+The generated run commands pin explicit `--run-id` values so the normalizer and
+Harvey's `scripts/memory_ablation/validate_result.py` can find the corresponding
+`results/{run_id}` and `.ingestion/runs/{run_id}` artifacts. Harvey's own
+`scripts/memory_ablation/collect_results.py --worktree ... --dedupe-latest`
+can still be run after normalization to produce Harvey-native comparison JSON;
+write it under `.ingestion/reports/comparison*.json` so `harvey-lab-import`
+records the artifact as reviewable external baseline/comparison provenance.
+Zaxy's public comparison uses `harvey-lab-import` over the same external
+worktree. `harvey-lab-gate` fails until the Zaxy report contains externally
+judged rows for all ten article tasks. Treat a blocked gate as a hard stop for
+public comparative claims, even if partial task rows look strong.
+
+`harvey-lab-import` is the preferred handoff once an external Harvey worktree
+has produced judged Zaxy rows. It discovers `.ingestion/runs/*/normalized-result.json`
+files, validates that every row is a Zaxy row for one of the ten article tasks,
+selects the latest artifact per task when reruns are present, records result
+provenance (`roots`, `normalized_result_paths`, and a Harvey git commit when
+the root is a checkout), and writes the same JSON/Markdown report as
+`harvey-lab-benchmark`. Before judged Zaxy rows exist, pass
+`--allow-baseline-only` to write a partial handoff report that records
+Harvey-native `.ingestion/reports/comparison*.json` baseline artifacts without
+counting them as Zaxy evidence or unlocking `harvey-lab-gate`. When those
+artifacts contain `aggregate.frameworks`, the Markdown/JSON report also includes
+a separate external-baseline aggregate table for the other scored systems, with
+deltas normalized against the raw-rg row in each source comparison artifact.
+Case-insensitive `zaxy` rows in Harvey collector aggregates are ignored there;
+Zaxy's row must come from reviewable `normalized-result.json` artifacts instead
+of a self-comparison aggregate. For public gating, at least one cited Harvey
+comparison artifact must include non-Zaxy scored aggregate rows plus non-Zaxy
+underlying rows in `normalized_results` whose framework names overlap those
+aggregate rows and whose task IDs are exactly the ten pinned article tasks. The
+gate recomputes run counts and mean final scores from those underlying rows
+before trusting the aggregate, and recomputes mean total seconds when the
+aggregate reports latency and the result rows carry timing. Those
+underlying non-Zaxy rows must also carry the same generator, judge,
+reasoning-effort, and temperature metadata as the Zaxy rows, matching the
+article's fixed-model comparison setup. A hand-written aggregate table, a
+Zaxy-only collector artifact, a model-mismatched comparison artifact, or a
+mismatched result bundle cannot establish an external-system rank by itself.
+Use `harvey-lab-benchmark --zaxy-results` when the
+external runner has already collated those rows into a single JSON file; that
+path records the collated JSON file as provenance for review, but it is not
+enough for public claims by itself. `harvey-lab-gate` blocks complete-looking
+reports that lack external result provenance or that lack underlying
+`normalized-result.json` artifact paths for the scored tasks. The gate expects
+those artifact paths to exist locally when the report is checked, so copy or
+mount the external Harvey `.ingestion/runs` directory with the report if it is
+reviewed outside the original worktree. It also reloads those artifacts and
+checks that their task IDs, run IDs, and scores match the Zaxy rows summarized
+by the report. For the final public gate, provenance must also include the
+Harvey git commit so the exact external suite checkout is identified.
+
+`harvey-lab-validate` checks the report schema, completed-row metadata,
+memory-tool usage, reviewable run paths, local availability of
+`normalized-result.json` artifacts, existence of the referenced answer,
+transcript, judge, and metrics files, transcript-level evidence that
+`memory_search` or `memory_read` actually ran, a single fixed Zaxy
+generator/judge pair plus fixed reasoning-effort and temperature settings across
+the scored rows, agreement between each Zaxy row's recorded Harvey commit and
+the report's `harvey_git_commit`, and agreement between each report row and its
+cited normalized artifact for score, model, generation settings, corpus, usage,
+and memory-tool metadata. The cited Harvey `scores.json` artifact must agree
+with the normalized row's final score, and the cited Harvey `metrics.json`
+artifact must agree with the normalized row's `memory_search_calls` and
+`memory_read_calls`, so published scores and memory-tool totals cannot be
+edited independently of external run artifacts. By default it accepts partial
+reports when the completed rows are reviewable; pass `--require-complete` to
+require all ten article tasks.
+`harvey-lab-gate` is the stricter public-claim gate and always requires
+completion. Both commands return an `evidence_audit` object in JSON with
+artifact counts and booleans for judge-score agreement, metrics agreement,
+transcript memory-tool evidence, and external comparison recomputation from
+non-Zaxy rows. Audit booleans are conservative: Zaxy artifact checks are only
+true when normalized-result artifacts exist and the corresponding score,
+metrics, or transcript checks pass; external-comparison recomputation is only
+true when cited comparison artifacts exist and pass the non-Zaxy row
+recomputation checks. For complete public claims, the strict gate also requires
+the generated external run manifest, readiness JSON, and status JSON artifacts,
+so a complete report can be traced back to the launch gate and external
+worktree status used for the run. The manifest must cover all ten article
+tasks, readiness must be `ready_for_external_runs` for the full ten-task suite,
+and status must be `complete` with all ten tasks import-ready.
+
+`harvey-lab-publish` renders the final public comparison Markdown only after
+`harvey-lab-gate` would pass. It emits Zaxy's mean criterion pass rate, deltas
+against regular no-memory and article-best rows, external-position rank/deltas,
+mean runtime, total tokens, memory-tool call counts, the fixed Zaxy run
+configuration, task-level comparisons, article-relative framework scorecard
+rows, Framework Fit, provenance counts, and an evidence-audit table naming the
+artifact checks that make the comparison external: normalized-result reloads,
+judge-score agreement, metrics agreement, transcript memory-tool evidence, and
+external aggregate recomputation from non-Zaxy result rows.
+If the report is partial or the external artifacts are not reviewable, the
+command fails instead of producing a publishable statistics file.
+The strict public gate also requires at least one non-Zaxy external scored
+system in `external_comparison_scorecard`, so a complete Zaxy-only import cannot
+claim a rank or delta against other scored systems without reviewable Harvey
+comparison artifact provenance.
+
+Reports also include a `Zaxy vs External Scored Systems` leaderboard backed by
+`external_comparison_scorecard` in JSON. That table combines Harvey-native
+comparison aggregate rows with a Zaxy row, ranks all rows with numeric mean
+scores, carries mean runtime seconds from Harvey-native comparison artifacts
+and Zaxy normalized results when available, and keeps Zaxy as
+`pending external Zaxy normalized results` until the external judged rows exist.
+This is the table to use when relating Zaxy to the other scored systems from
+Harvey comparison artifacts; the article-relative framework scorecard remains a
+separate task-winner summary.
+
+The report's `framework_scorecard` is deliberately conservative. It includes
+the regular no-memory baseline across all ten article tasks, the article's best
+observed row per task, and each named framework only where the article published
+that framework as a task winner. Those rows are not hidden full-framework
+averages. Zaxy's row is the only same-harness full ten-task row once all ten
+external normalized results are supplied.
+
+The built-in external suite contract is pinned to the ten article tasks from
+the public Harvey LAB fork:
+
+| Task | Harvey task path | Shape | Article best | Regular no-memory |
+|------|------------------|-------|--------------|-------------------|
+| FTC noncompete | `corporate-governance/assess-impact-of-ftc-noncompete-ban-on-existing-employment-agreements` | Compact legal-risk synthesis | Graphiti `0.790` | `0.807` |
+| Change-of-control | `corporate-ma/analyze-change-of-control-provisions-across-targets-material-contracts` | Sparse clause hunt | GBrain keyword `0.737` | `0.667` |
+| Acquisition diligence | `corporate-ma/draft-acquisition-due-diligence` | Broad diligence sweep | raw-rg `0.641` | `0.469` |
+| Data-room red flags | `corporate-ma/review-data-room-red-flag-review` | Red-flag spotting | LightRAG `0.600` | `0.520` |
+| Privacy program | `data-privacy-cybersecurity/compare-privacy-program-documentation-against-applicable-data-protection-regulations` | Compliance mapping | ActiveGraph `0.661` | `0.532` |
+| Litigation timeline | `litigation-dispute-resolution/build-litigation-case-timeline` | Event reconstruction | GBrain keyword `0.758` | `0.652` |
+| Relevance / privilege | `litigation-dispute-resolution/categorize-document-production-set-by-relevance-and-privilege` | Document-by-document coding | GBrain keyword `0.791` | `0.701` |
+| Attorney production review | `litigation-dispute-resolution/review-document-production-set-for-attorney` | Production-set classification | GBrain Gemma / LightRAG `0.708` | `0.583` |
+| Privilege log | `litigation-dispute-resolution/review-privilege-log-clawback-review` | Large log-heavy classification | GBrain keyword `0.598` | `0.402` |
+| Subpoena comparison | `white-collar-defense-investigations/compare-document-production-set-against-subpoena-request-categories` | Request matching | raw-rg `0.790` | `0.702` |
+
+The loader rejects unknown task IDs such as LongMemEval case names and requires
+Harvey-style normalized result fields (`schema_version`, `run_id`,
+`framework`, `task_id`, `corpus_hash`, `models`, `paths`, `scores`, `timing`,
+`usage`, and `tooling`). This prevents internal synthetic benchmark rows from
+being presented as external Harvey LAB evidence. The report status is `partial`
+until all ten article tasks have Zaxy rows and `complete` only when every task
+is covered.
+
+Interpretation rules:
+
+- Report Zaxy criterion pass rate, not Harvey all-pass success, unless a future
+  report explicitly adds all-pass rows.
+- Keep article-published rows and same-harness Zaxy rows separate in prose.
+- Keep Zaxy rows on one fixed generator, judge, reasoning-effort, and
+  temperature configuration before reporting a single average.
+- Keep Zaxy rows on the same Harvey checkout commit recorded in provenance.
+- Treat the framework scorecard for article systems as task-winner coverage,
+  not a full per-framework leaderboard.
+- Treat raw-rg as a retrieval/search baseline, not as no-memory.
+- Do not claim Zaxy has beaten the suite until the report status is `complete`
+  and all ten Zaxy rows are externally generated through the Harvey harness.
+
 ## StateRecoveryBench
 
 StateRecoveryBench is the official Zaxy benchmark lane for partial-cue

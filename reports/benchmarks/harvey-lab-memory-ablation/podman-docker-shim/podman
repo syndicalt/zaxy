@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Benchmark-environment compatibility shim.
+# Harvey LAB's harness shells out to `podman`; this machine has Docker but no
+# passwordless sudo path to install Podman. Keep this shim local to the external
+# benchmark artifacts and do not use it as Zaxy production runtime code.
+
+if [[ $# -eq 0 ]]; then
+  exec docker
+fi
+
+subcommand="$1"
+shift
+
+case "$subcommand" in
+  info)
+    exec docker info "$@"
+    ;;
+  image)
+    exec docker image "$@"
+    ;;
+  pull)
+    exec docker pull "$@"
+    ;;
+  tag)
+    exec docker tag "$@"
+    ;;
+  build)
+    exec docker build "$@"
+    ;;
+  rm)
+    exec docker rm "$@"
+    ;;
+  exec)
+    exec docker exec "$@"
+    ;;
+  run)
+    args=("run")
+    if [[ "${DOCKER_AS_PODMAN_INSERT_USER:-1}" != "0" ]]; then
+      args+=("--user=$(id -u):$(id -g)")
+    fi
+    args+=("$@")
+    exec docker "${args[@]}"
+    ;;
+  *)
+    exec docker "$subcommand" "$@"
+    ;;
+esac

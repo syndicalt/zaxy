@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+IMAGE="${HARVEY_PANDOC_DOCKER_IMAGE:-lab-sandbox:latest}"
+WORKDIR="$(pwd)"
+
+exec docker run --rm \
+  --network=none \
+  --user "$(id -u):$(id -g)" \
+  -v "$WORKDIR:$WORKDIR" \
+  -v /tmp:/tmp \
+  -w "$WORKDIR" \
+  "$IMAGE" pandoc "$@"
