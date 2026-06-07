@@ -2233,6 +2233,8 @@ def test_memory_causal_and_consolidation_help_commands_are_registered() -> None:
 
     successors = runner.invoke(app, ["memory", "causal", "successors", "--help"])
     propose = runner.invoke(app, ["memory", "consolidation", "propose", "--help"])
+    propose_from_log = runner.invoke(app, ["memory", "consolidation", "propose-from-log", "--help"])
+    status = runner.invoke(app, ["memory", "consolidation", "status", "--help"])
 
     assert successors.exit_code == 0
     assert "ENTITY_NAME" in successors.output
@@ -2240,6 +2242,11 @@ def test_memory_causal_and_consolidation_help_commands_are_registered() -> None:
     assert propose.exit_code == 0
     assert "--source-event" in propose.output
     assert "--candidate-type" in propose.output
+    assert propose_from_log.exit_code == 0
+    assert "--window-size" in propose_from_log.output
+    assert "--purpose" in propose_from_log.output
+    assert status.exit_code == 0
+    assert "--session-id" in status.output
 
 
 @patch("zaxy.__main__._memory_fabric")
@@ -2417,6 +2424,125 @@ def test_memory_consolidation_propose_rejects_invalid_source_event(tmp_path: Pat
 
     assert result.exit_code != 0
     assert "source event must be formatted as SEQ:HASH" in result.output
+
+
+@patch("zaxy.__main__._memory_fabric")
+def test_memory_consolidation_propose_from_log_json_delegates_to_fabric(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """memory consolidation propose-from-log should delegate segment proposal to MemoryFabric."""
+    expected = {
+        "session_id": "agent",
+        "segment_count": 2,
+        "candidate_count": 3,
+        "events": [{"candidate_id": "consolidation:claim:" + ("a" * 24)}],
+    }
+    fabric = AsyncMock()
+    fabric.propose_consolidation_candidates.return_value = expected
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "consolidation",
+            "propose-from-log",
+            "--session-id",
+            "agent",
+            "--actor",
+            "review-bot",
+            "--purpose",
+            "release audit",
+            "--window-size",
+            "4",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == expected
+    fabric.connect.assert_awaited_once()
+    fabric.propose_consolidation_candidates.assert_awaited_once_with(
+        session_id="agent",
+        actor="review-bot",
+        purpose="release audit",
+        window_size=4,
+    )
+    fabric.close.assert_awaited_once()
+
+
+@patch("zaxy.__main__._memory_fabric")
+def test_memory_consolidation_propose_from_log_text_reports_segments(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Text output should make clear candidates came from reviewed log segments."""
+    fabric = AsyncMock()
+    fabric.propose_consolidation_candidates.return_value = {
+        "session_id": "agent",
+        "segment_count": 2,
+        "candidate_count": 3,
+    }
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "consolidation",
+            "propose-from-log",
+            "--session-id",
+            "agent",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Created 3 non-authoritative consolidation candidates from 2 log segments for agent." in result.output
+
+
+@patch("zaxy.__main__._memory_fabric")
+def test_memory_consolidation_status_json_delegates_to_fabric(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """memory consolidation status should read review-gated status through MemoryFabric."""
+    expected = {
+        "session_id": "agent",
+        "pending_count": 2,
+        "accepted_count": 1,
+        "rejected_count": 0,
+    }
+    fabric = AsyncMock()
+    fabric.consolidation_status.return_value = expected
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "consolidation",
+            "status",
+            "--session-id",
+            "agent",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == expected
+    fabric.connect.assert_awaited_once()
+    fabric.consolidation_status.assert_awaited_once_with(session_id="agent")
+    fabric.close.assert_awaited_once()
 
 
 @patch("zaxy.__main__._memory_fabric")

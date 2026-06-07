@@ -193,7 +193,7 @@ class TestToolSchema:
 
     def test_tools_list_length(self) -> None:
         """Should expose the memory and context lifecycle tools."""
-        assert len(TOOLS) == 33
+        assert len(TOOLS) == 35
 
     def test_tool_names(self) -> None:
         """Tool names should match the expected contract."""
@@ -205,6 +205,8 @@ class TestToolSchema:
             "memory_causal_predecessors",
             "memory_consolidation_candidate",
             "memory_consolidation_review",
+            "memory_consolidation_propose_from_log",
+            "memory_consolidation_status",
             "memory_verbatim",
             "memory_feedback",
             "memory_synthesis_artifact",
@@ -449,6 +451,16 @@ class TestToolSchema:
         assert candidate.inputSchema["properties"]["confidence"]["maximum"] == 1
         assert candidate.inputSchema["properties"]["actor"]["default"] == "zaxy-consolidation"
 
+        propose_from_log = tools["memory_consolidation_propose_from_log"]
+        assert propose_from_log.inputSchema["required"] == ["session_id"]
+        assert propose_from_log.inputSchema["properties"]["actor"]["default"] == "zaxy-consolidation"
+        assert propose_from_log.inputSchema["properties"]["window_size"]["minimum"] == 1
+        assert propose_from_log.inputSchema["properties"]["window_size"]["maximum"] == 200
+        assert "purpose" in propose_from_log.inputSchema["properties"]
+
+        status = tools["memory_consolidation_status"]
+        assert status.inputSchema["required"] == ["session_id"]
+
         review = tools["memory_consolidation_review"]
         assert review.inputSchema["required"] == ["candidate_id", "status", "rationale"]
         assert (
@@ -685,6 +697,74 @@ class TestCausalAndConsolidationTools:
             1,
         )
 
+    async def test_consolidation_propose_from_log_uses_configured_fabric_path(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_consolidation_propose_from_log should use the server's configured fabric path."""
+        expected = {
+            "session_id": "agent-1",
+            "segments_considered": 2,
+            "candidates_created": 3,
+        }
+        fabric = AsyncMock()
+        fabric.propose_consolidation_candidates.return_value = expected
+
+        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric) as fabric_cls:
+            response = await server.handle_memory_consolidation_propose_from_log({
+                "session_id": "agent-1",
+                "actor": "assistant",
+                "purpose": "release audit",
+                "window_size": 5,
+            })
+
+        assert json_loads(response[0].text) == expected
+        fabric_cls.assert_called_once()
+        assert fabric_cls.call_args.kwargs["eventloom_path"] == server._eventloom_path
+        fabric.connect.assert_awaited_once()
+        fabric.propose_consolidation_candidates.assert_awaited_once_with(
+            session_id="agent-1",
+            actor="assistant",
+            purpose="release audit",
+            window_size=5,
+        )
+        fabric.close.assert_awaited_once()
+
+    async def test_consolidation_status_uses_configured_fabric_path(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_consolidation_status should read candidate review state through MemoryFabric."""
+        expected = {"session_id": "agent-1", "pending": 2, "accepted": 1}
+        fabric = AsyncMock()
+        fabric.consolidation_status.return_value = expected
+
+        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric) as fabric_cls:
+            response = await server.handle_memory_consolidation_status({"session_id": "agent-1"})
+
+        assert json_loads(response[0].text) == expected
+        fabric_cls.assert_called_once()
+        assert fabric_cls.call_args.kwargs["eventloom_path"] == server._eventloom_path
+        fabric.connect.assert_awaited_once()
+        fabric.consolidation_status.assert_awaited_once_with(session_id="agent-1")
+        fabric.close.assert_awaited_once()
+
+    async def test_consolidation_propose_from_log_rejects_invalid_window_before_fabric(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """window_size should stay bounded at the MCP handler boundary."""
+        with (
+            patch("zaxy.mcp_server.MemoryFabric") as fabric_cls,
+            pytest.raises(ValueError, match="window_size must be between 1 and 200"),
+        ):
+            await server.handle_memory_consolidation_propose_from_log({
+                "session_id": "agent-1",
+                "window_size": 0,
+            })
+
+        fabric_cls.assert_not_called()
+
     async def test_consolidation_candidate_leaves_source_event_validation_to_builder(
         self,
         server: ZaxyMCPServer,
@@ -787,6 +867,8 @@ class TestCausalAndConsolidationTools:
         ("handler_name", "arguments"),
         [
             ("handle_memory_causal_successors", {"entity_name": "Plan", "session_id": "agent-2"}),
+            ("handle_memory_consolidation_propose_from_log", {"session_id": "agent-2"}),
+            ("handle_memory_consolidation_status", {"session_id": "agent-2"}),
             (
                 "handle_memory_consolidation_review",
                 {
@@ -818,6 +900,8 @@ class TestCausalAndConsolidationTools:
             ("memory_causal_successors", "handle_memory_causal_successors"),
             ("memory_causal_predecessors", "handle_memory_causal_predecessors"),
             ("memory_consolidation_candidate", "handle_memory_consolidation_candidate"),
+            ("memory_consolidation_propose_from_log", "handle_memory_consolidation_propose_from_log"),
+            ("memory_consolidation_status", "handle_memory_consolidation_status"),
             ("memory_consolidation_review", "handle_memory_consolidation_review"),
         ],
     )

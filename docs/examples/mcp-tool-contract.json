@@ -1,217 +1,153 @@
 {
-  "tool_count": 33,
+  "tool_count": 35,
   "tools": [
     {
+      "name": "memory_append",
       "description": "Append a typed event to the agent's persistent memory log.",
       "input_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "actor": {
-            "description": "Actor that emitted the event",
-            "type": "string"
-          },
-          "event_type": {
-            "description": "Event type, e.g. 'goal.created'",
-            "type": "string"
-          },
-          "payload": {
-            "description": "Structured payload",
-            "type": "object"
-          },
-          "session_id": {
-            "description": "Session ID for multi-agent sharding",
-            "type": "string"
-          },
-          "thread": {
-            "description": "Logical thread / session ID (legacy, use session_id)",
-            "type": "string"
-          }
-        },
+        "type": "object",
         "required": [
           "event_type",
           "actor",
           "payload"
         ],
-        "type": "object"
-      },
-      "name": "memory_append"
-    },
-    {
-      "description": "Query the temporal knowledge graph for relevant context.",
-      "input_schema": {
-        "additionalProperties": false,
         "properties": {
-          "cursor": {
-            "description": "Opaque cursor from a prior paged memory_query call",
-            "type": "string"
+          "event_type": {
+            "type": "string",
+            "description": "Event type, e.g. 'goal.created'"
           },
-          "limit": {
-            "default": 10,
-            "description": "Max results",
-            "type": "integer"
+          "actor": {
+            "type": "string",
+            "description": "Actor that emitted the event"
           },
-          "paged": {
-            "description": "Return contexts with pagination metadata",
-            "type": "boolean"
+          "payload": {
+            "type": "object",
+            "description": "Structured payload"
           },
-          "query": {
-            "description": "Natural language query",
-            "type": "string"
+          "thread": {
+            "type": "string",
+            "description": "Logical thread / session ID (legacy, use session_id)"
           },
           "session_id": {
-            "description": "Session ID for scoped retrieval",
-            "type": "string"
-          },
-          "session_ids": {
-            "description": "Local-only explicit cross-session query scope",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "temporal_filter": {
-            "description": "ISO-8601 point-in-time filter",
-            "type": "string"
+            "type": "string",
+            "description": "Session ID for multi-agent sharding"
           }
         },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memory_query",
+      "description": "Query the temporal knowledge graph for relevant context.",
+      "input_schema": {
+        "type": "object",
         "required": [
           "query"
         ],
-        "type": "object"
-      },
-      "name": "memory_query"
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Natural language query"
+          },
+          "temporal_filter": {
+            "type": "string",
+            "description": "ISO-8601 point-in-time filter"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max results",
+            "default": 10
+          },
+          "session_id": {
+            "type": "string",
+            "description": "Session ID for scoped retrieval"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque cursor from a prior paged memory_query call"
+          },
+          "paged": {
+            "type": "boolean",
+            "description": "Return contexts with pagination metadata"
+          },
+          "session_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Local-only explicit cross-session query scope"
+          }
+        },
+        "additionalProperties": false
+      }
     },
     {
+      "name": "memory_causal_successors",
       "description": "Read directed causal effects of an entity from graph-backed memory.",
       "input_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "depth": {
-            "default": 2,
-            "description": "Traversal depth",
-            "minimum": 1,
-            "type": "integer"
-          },
-          "entity_name": {
-            "description": "Entity name to start causal traversal from",
-            "type": "string"
-          },
-          "relation_type": {
-            "description": "Optional causal relation taxonomy label",
-            "type": "string"
-          },
-          "session_id": {
-            "description": "Session ID for scoped causal retrieval",
-            "type": "string"
-          }
-        },
+        "type": "object",
         "required": [
           "entity_name"
         ],
-        "type": "object"
-      },
-      "name": "memory_causal_successors"
+        "properties": {
+          "entity_name": {
+            "type": "string",
+            "description": "Entity name to start causal traversal from"
+          },
+          "relation_type": {
+            "type": "string",
+            "description": "Optional causal relation taxonomy label"
+          },
+          "depth": {
+            "type": "integer",
+            "description": "Traversal depth",
+            "default": 2,
+            "minimum": 1
+          },
+          "session_id": {
+            "type": "string",
+            "description": "Session ID for scoped causal retrieval"
+          }
+        },
+        "additionalProperties": false
+      }
     },
     {
+      "name": "memory_causal_predecessors",
       "description": "Read directed causal causes of an entity from graph-backed memory.",
       "input_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "depth": {
-            "default": 2,
-            "description": "Traversal depth",
-            "minimum": 1,
-            "type": "integer"
-          },
-          "entity_name": {
-            "description": "Entity name to start causal traversal from",
-            "type": "string"
-          },
-          "relation_type": {
-            "description": "Optional causal relation taxonomy label",
-            "type": "string"
-          },
-          "session_id": {
-            "description": "Session ID for scoped causal retrieval",
-            "type": "string"
-          }
-        },
+        "type": "object",
         "required": [
           "entity_name"
         ],
-        "type": "object"
-      },
-      "name": "memory_causal_predecessors"
-    },
-    {
-      "description": "Append a cited, review-pending consolidation candidate event.",
-      "input_schema": {
-        "additionalProperties": false,
         "properties": {
-          "actor": {
-            "default": "zaxy-consolidation",
-            "description": "Actor recording the candidate",
-            "type": "string"
+          "entity_name": {
+            "type": "string",
+            "description": "Entity name to start causal traversal from"
           },
-          "candidate_type": {
-            "description": "Consolidation candidate type",
-            "enum": [
-              "episode",
-              "claim",
-              "procedure"
-            ],
-            "type": "string"
+          "relation_type": {
+            "type": "string",
+            "description": "Optional causal relation taxonomy label"
           },
-          "confidence": {
-            "description": "Candidate confidence from 0.0 to 1.0",
-            "maximum": 1,
-            "minimum": 0,
-            "type": "number"
-          },
-          "method": {
-            "description": "Consolidation method identifier",
-            "type": "string"
-          },
-          "purpose": {
-            "description": "Optional consolidation purpose",
-            "type": "string"
+          "depth": {
+            "type": "integer",
+            "description": "Traversal depth",
+            "default": 2,
+            "minimum": 1
           },
           "session_id": {
-            "description": "Session ID for multi-agent sharding",
-            "type": "string"
-          },
-          "source_events": {
-            "description": "Cited Eventloom source events",
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "hash": {
-                  "pattern": "^[0-9a-f]{64}$",
-                  "type": "string"
-                },
-                "seq": {
-                  "minimum": 1,
-                  "type": "integer"
-                }
-              },
-              "required": [
-                "seq",
-                "hash"
-              ],
-              "type": "object"
-            },
-            "minItems": 1,
-            "type": "array"
-          },
-          "summary": {
-            "description": "Candidate summary",
-            "type": "string"
-          },
-          "title": {
-            "description": "Candidate title",
-            "type": "string"
+            "type": "string",
+            "description": "Session ID for scoped causal retrieval"
           }
         },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memory_consolidation_candidate",
+      "description": "Append a cited, review-pending consolidation candidate event.",
+      "input_schema": {
+        "type": "object",
         "required": [
           "candidate_type",
           "title",
@@ -220,120 +156,252 @@
           "confidence",
           "method"
         ],
-        "type": "object"
-      },
-      "name": "memory_consolidation_candidate"
-    },
-    {
-      "description": "Append a consolidation candidate review event without promoting authority.",
-      "input_schema": {
-        "additionalProperties": false,
         "properties": {
-          "actor": {
-            "default": "zaxy-reviewer",
-            "description": "Actor recording the review",
-            "type": "string"
+          "candidate_type": {
+            "type": "string",
+            "enum": [
+              "episode",
+              "claim",
+              "procedure"
+            ],
+            "description": "Consolidation candidate type"
           },
-          "candidate_id": {
-            "description": "Consolidation candidate ID",
-            "pattern": "^consolidation:(episode|claim|procedure):[0-9a-f]{24}$",
-            "type": "string"
+          "title": {
+            "type": "string",
+            "description": "Candidate title"
           },
-          "rationale": {
-            "description": "Review rationale",
-            "type": "string"
+          "summary": {
+            "type": "string",
+            "description": "Candidate summary"
+          },
+          "source_events": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "seq",
+                "hash"
+              ],
+              "properties": {
+                "seq": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "hash": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              },
+              "additionalProperties": false
+            },
+            "description": "Cited Eventloom source events"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Candidate confidence from 0.0 to 1.0"
+          },
+          "method": {
+            "type": "string",
+            "description": "Consolidation method identifier"
+          },
+          "purpose": {
+            "type": "string",
+            "description": "Optional consolidation purpose"
           },
           "session_id": {
-            "description": "Session ID for multi-agent sharding",
-            "type": "string"
+            "type": "string",
+            "description": "Session ID for multi-agent sharding"
+          },
+          "actor": {
+            "type": "string",
+            "description": "Actor recording the candidate",
+            "default": "zaxy-consolidation"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memory_consolidation_propose_from_log",
+      "description": "Create non-authoritative consolidation candidates from Eventloom log segments.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "session_id"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "Session ID to replay for proposal windows"
+          },
+          "actor": {
+            "type": "string",
+            "description": "Actor recording generated candidates",
+            "default": "zaxy-consolidation"
+          },
+          "purpose": {
+            "type": "string",
+            "description": "Optional consolidation purpose"
+          },
+          "window_size": {
+            "type": "integer",
+            "description": "Number of source events per proposal window",
+            "default": 5,
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memory_consolidation_status",
+      "description": "Read review-gated consolidation candidate status.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "session_id"
+        ],
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "Session ID to inspect"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memory_consolidation_review",
+      "description": "Append a consolidation candidate review event without promoting authority.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "candidate_id",
+          "status",
+          "rationale"
+        ],
+        "properties": {
+          "candidate_id": {
+            "type": "string",
+            "pattern": "^consolidation:(episode|claim|procedure):[0-9a-f]{24}$",
+            "description": "Consolidation candidate ID"
           },
           "status": {
-            "description": "Review lifecycle status",
+            "type": "string",
             "enum": [
               "accepted",
               "rejected",
               "deferred",
               "conflicted"
             ],
-            "type": "string"
-          }
-        },
-        "required": [
-          "candidate_id",
-          "status",
-          "rationale"
-        ],
-        "type": "object"
-      },
-      "name": "memory_consolidation_review"
-    },
-    {
-      "description": "Retrieve exact Eventloom source chunks with citations.",
-      "input_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "limit": {
-            "default": 10,
-            "description": "Max results",
-            "type": "integer"
+            "description": "Review lifecycle status"
           },
-          "query": {
-            "description": "Natural language query",
-            "type": "string"
+          "rationale": {
+            "type": "string",
+            "description": "Review rationale"
           },
           "session_id": {
-            "description": "Session ID for source recall",
-            "type": "string"
+            "type": "string",
+            "description": "Session ID for multi-agent sharding"
+          },
+          "actor": {
+            "type": "string",
+            "description": "Actor recording the review",
+            "default": "zaxy-reviewer"
           }
         },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memory_verbatim",
+      "description": "Retrieve exact Eventloom source chunks with citations.",
+      "input_schema": {
+        "type": "object",
         "required": [
           "query"
         ],
-        "type": "object"
-      },
-      "name": "memory_verbatim"
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Natural language query"
+          },
+          "session_id": {
+            "type": "string",
+            "description": "Session ID for source recall"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max results",
+            "default": 10
+          }
+        },
+        "additionalProperties": false
+      }
     },
     {
+      "name": "memory_feedback",
       "description": "After using retrieved context, record whether a memory item was useful, stale, corrected, or reinforced.",
       "input_schema": {
-        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "entity_name",
+          "entity_type",
+          "feedback"
+        ],
         "properties": {
-          "actor": {
-            "default": "zaxy",
-            "description": "Actor recording feedback",
-            "type": "string"
-          },
-          "citation": {
-            "description": "Eventloom citation for the retrieved context",
-            "type": "string"
-          },
           "entity_name": {
-            "description": "Retrieved graph entity name",
-            "type": "string"
+            "type": "string",
+            "description": "Retrieved graph entity name"
           },
           "entity_type": {
-            "description": "Retrieved graph entity type",
-            "type": "string"
+            "type": "string",
+            "description": "Retrieved graph entity type"
           },
           "feedback": {
-            "description": "Retrieval outcome to record",
+            "type": "string",
             "enum": [
               "used",
               "helpful",
               "irrelevant"
             ],
-            "type": "string"
+            "description": "Retrieval outcome to record"
           },
-          "importance": {
-            "description": "Optional 0..1 reinforcement importance for positive feedback",
-            "type": "number"
+          "actor": {
+            "type": "string",
+            "description": "Actor recording feedback",
+            "default": "zaxy"
           },
-          "outcome": {
-            "description": "Optional action outcome, e.g. supported_handoff or avoided_failed_path",
-            "type": "string"
+          "session_id": {
+            "type": "string",
+            "description": "Session ID for multi-agent sharding"
+          },
+          "query": {
+            "type": "string",
+            "description": "Query that returned the context"
+          },
+          "source": {
+            "type": "string",
+            "description": "Retrieval source",
+            "default": "mcp"
+          },
+          "score": {
+            "type": "number",
+            "description": "Original retrieval score"
+          },
+          "citation": {
+            "type": "string",
+            "description": "Eventloom citation for the retrieved context"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Short rationale for the feedback"
           },
           "purpose": {
-            "description": "Optional purpose profile or preset that made this memory useful",
             "oneOf": [
               {
                 "type": "string"
@@ -341,59 +409,40 @@
               {
                 "type": "object"
               }
-            ]
-          },
-          "query": {
-            "description": "Query that returned the context",
-            "type": "string"
-          },
-          "reason": {
-            "description": "Short rationale for the feedback",
-            "type": "string"
-          },
-          "score": {
-            "description": "Original retrieval score",
-            "type": "number"
-          },
-          "session_id": {
-            "description": "Session ID for multi-agent sharding",
-            "type": "string"
-          },
-          "source": {
-            "default": "mcp",
-            "description": "Retrieval source",
-            "type": "string"
-          }
-        },
-        "required": [
-          "entity_name",
-          "entity_type",
-          "feedback"
-        ],
-        "type": "object"
-      },
-      "name": "memory_feedback"
-    },
-    {
-      "description": "Persist Memory Checkout answer candidates as synthesis artifacts and optional outcome feedback.",
-      "input_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "actor": {
-            "default": "zaxy",
-            "description": "Actor recording the artifact",
-            "type": "string"
-          },
-          "candidate": {
-            "description": "Optional selected answer candidate from checkout diagnostics",
-            "type": "object"
-          },
-          "checkout": {
-            "description": "Memory Checkout response payload containing diagnostics.synthesis.answer_candidates",
-            "type": "object"
+            ],
+            "description": "Optional purpose profile or preset that made this memory useful"
           },
           "outcome": {
-            "description": "Optional outcome to record for the selected answer candidate",
+            "type": "string",
+            "description": "Optional action outcome, e.g. supported_handoff or avoided_failed_path"
+          },
+          "importance": {
+            "type": "number",
+            "description": "Optional 0..1 reinforcement importance for positive feedback"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memory_synthesis_artifact",
+      "description": "Persist Memory Checkout answer candidates as synthesis artifacts and optional outcome feedback.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "checkout"
+        ],
+        "properties": {
+          "checkout": {
+            "type": "object",
+            "description": "Memory Checkout response payload containing diagnostics.synthesis.answer_candidates"
+          },
+          "candidate": {
+            "type": "object",
+            "description": "Optional selected answer candidate from checkout diagnostics"
+          },
+          "outcome": {
+            "type": "string",
             "enum": [
               "used",
               "helpful",
@@ -401,72 +450,78 @@
               "corrected",
               "excluded"
             ],
-            "type": "string"
+            "description": "Optional outcome to record for the selected answer candidate"
           },
           "reason": {
-            "description": "Short rationale for candidate outcome feedback",
-            "type": "string"
+            "type": "string",
+            "description": "Short rationale for candidate outcome feedback"
+          },
+          "actor": {
+            "type": "string",
+            "description": "Actor recording the artifact",
+            "default": "zaxy"
           }
         },
-        "required": [
-          "checkout"
-        ],
-        "type": "object"
-      },
-      "name": "memory_synthesis_artifact"
+        "additionalProperties": false
+      }
     },
     {
+      "name": "memory_synthesis_evidence",
       "description": "Record feedback for one Memory Checkout synthesis ledger row.",
       "input_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "actor": {
-            "default": "zaxy",
-            "description": "Actor recording the evidence feedback",
-            "type": "string"
-          },
-          "candidate": {
-            "description": "Optional answer candidate associated with the ledger row",
-            "type": "object"
-          },
-          "checkout": {
-            "description": "Memory Checkout response payload containing diagnostics.synthesis.ledger_rows",
-            "type": "object"
-          },
-          "outcome": {
-            "description": "Evidence-row outcome to record",
-            "enum": [
-              "used",
-              "helpful",
-              "excluded"
-            ],
-            "type": "string"
-          },
-          "reason": {
-            "description": "Short rationale for evidence-row feedback",
-            "type": "string"
-          },
-          "row": {
-            "description": "One ledger row from diagnostics.synthesis.ledger_rows",
-            "type": "object"
-          }
-        },
+        "type": "object",
         "required": [
           "checkout",
           "row",
           "outcome"
         ],
-        "type": "object"
-      },
-      "name": "memory_synthesis_evidence"
+        "properties": {
+          "checkout": {
+            "type": "object",
+            "description": "Memory Checkout response payload containing diagnostics.synthesis.ledger_rows"
+          },
+          "row": {
+            "type": "object",
+            "description": "One ledger row from diagnostics.synthesis.ledger_rows"
+          },
+          "candidate": {
+            "type": "object",
+            "description": "Optional answer candidate associated with the ledger row"
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "used",
+              "helpful",
+              "excluded"
+            ],
+            "description": "Evidence-row outcome to record"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Short rationale for evidence-row feedback"
+          },
+          "actor": {
+            "type": "string",
+            "description": "Actor recording the evidence feedback",
+            "default": "zaxy"
+          }
+        },
+        "additionalProperties": false
+      }
     },
     {
+      "name": "memory_skill",
       "description": "Append a typed skill lifecycle event and project it into Skill Memory.",
       "input_schema": {
-        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "action",
+          "skill_id"
+        ],
         "properties": {
           "action": {
-            "description": "Skill lifecycle action to record.",
+            "type": "string",
             "enum": [
               "proposed",
               "validated",
@@ -476,126 +531,123 @@
               "applied",
               "outcome_recorded"
             ],
-            "type": "string"
-          },
-          "actor": {
-            "default": "zaxy",
-            "description": "Actor recording the skill event",
-            "type": "string"
-          },
-          "applicability": {
-            "description": "Situations where the skill applies",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "citations": {
-            "description": "Eventloom citations supporting the skill",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "evidence": {
-            "description": "Outcome evidence such as commands or citations",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "feedback": {
-            "description": "Outcome feedback label",
-            "type": "string"
-          },
-          "name": {
-            "description": "Human-readable skill name",
-            "type": "string"
-          },
-          "procedure": {
-            "description": "Ordered procedural steps",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "reason": {
-            "description": "Reason for status changes",
-            "type": "string"
-          },
-          "session_id": {
-            "description": "Session ID for multi-agent sharding",
-            "type": "string"
+            "description": "Skill lifecycle action to record."
           },
           "skill_id": {
-            "description": "Stable skill identifier",
-            "type": "string"
-          },
-          "success_score": {
-            "description": "Outcome score from 0 to 1",
-            "type": "number"
-          },
-          "summary": {
-            "description": "Short skill summary",
-            "type": "string"
-          },
-          "supersedes_version": {
-            "description": "Version replaced by this event",
-            "type": "string"
-          },
-          "task": {
-            "description": "Task where the skill was applied",
-            "type": "string"
+            "type": "string",
+            "description": "Stable skill identifier"
           },
           "version": {
-            "default": "1",
+            "type": "string",
             "description": "Skill version",
-            "type": "string"
-          }
-        },
-        "required": [
-          "action",
-          "skill_id"
-        ],
-        "type": "object"
-      },
-      "name": "memory_skill"
-    },
-    {
-      "description": "Replay events from a session starting at a sequence number.",
-      "input_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "admin_token": {
-            "description": "Admin token if configured",
-            "type": "string"
+            "default": "1"
           },
-          "from_seq": {
-            "default": 1,
-            "description": "Start sequence",
-            "type": "integer"
+          "name": {
+            "type": "string",
+            "description": "Human-readable skill name"
+          },
+          "summary": {
+            "type": "string",
+            "description": "Short skill summary"
+          },
+          "procedure": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ordered procedural steps"
+          },
+          "applicability": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Situations where the skill applies"
+          },
+          "citations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Eventloom citations supporting the skill"
+          },
+          "task": {
+            "type": "string",
+            "description": "Task where the skill was applied"
+          },
+          "success_score": {
+            "type": "number",
+            "description": "Outcome score from 0 to 1"
+          },
+          "feedback": {
+            "type": "string",
+            "description": "Outcome feedback label"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Outcome evidence such as commands or citations"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason for status changes"
+          },
+          "supersedes_version": {
+            "type": "string",
+            "description": "Version replaced by this event"
+          },
+          "actor": {
+            "type": "string",
+            "description": "Actor recording the skill event",
+            "default": "zaxy"
           },
           "session_id": {
-            "description": "Session / thread ID",
-            "type": "string"
+            "type": "string",
+            "description": "Session ID for multi-agent sharding"
           }
         },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memory_replay",
+      "description": "Replay events from a session starting at a sequence number.",
+      "input_schema": {
+        "type": "object",
         "required": [
           "session_id"
         ],
-        "type": "object"
-      },
-      "name": "memory_replay"
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "Session / thread ID"
+          },
+          "from_seq": {
+            "type": "integer",
+            "description": "Start sequence",
+            "default": 1
+          },
+          "admin_token": {
+            "type": "string",
+            "description": "Admin token if configured"
+          }
+        },
+        "additionalProperties": false
+      }
     },
     {
+      "name": "memory_invalidate",
       "description": "Mark a fact as invalid at a given time (bi-temporal update).",
       "input_schema": {
-        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "entity_name",
+          "entity_type",
+          "invalid_at"
+        ],
         "properties": {
-          "admin_token": {
-            "description": "Admin token if configured",
-            "type": "string"
-          },
           "entity_name": {
             "type": "string"
           },
@@ -603,70 +655,85 @@
             "type": "string"
           },
           "invalid_at": {
-            "description": "ISO-8601 timestamp",
-            "type": "string"
+            "type": "string",
+            "description": "ISO-8601 timestamp"
+          },
+          "admin_token": {
+            "type": "string",
+            "description": "Admin token if configured"
           }
         },
-        "required": [
-          "entity_name",
-          "entity_type",
-          "invalid_at"
-        ],
-        "type": "object"
-      },
-      "name": "memory_invalidate"
+        "additionalProperties": false
+      }
     },
     {
+      "name": "memory_capabilities",
       "description": "Describe Zaxy's active memory capabilities and ambient usage loop for this session.",
       "input_schema": {
-        "additionalProperties": false,
+        "type": "object",
+        "required": [],
         "properties": {
-          "current_task": {
-            "description": "Current task or question to seed checkout guidance",
-            "type": "string"
-          },
           "session_id": {
             "type": "string"
+          },
+          "current_task": {
+            "type": "string",
+            "description": "Current task or question to seed checkout guidance"
           }
         },
-        "required": [],
-        "type": "object"
-      },
-      "name": "memory_capabilities"
+        "additionalProperties": false
+      }
     },
     {
+      "name": "memory_bootstrap",
       "description": "At session start, return compact Zaxy memory guidance and the recommended first checkout call.",
       "input_schema": {
-        "additionalProperties": false,
+        "type": "object",
+        "required": [],
         "properties": {
+          "session_id": {
+            "type": "string"
+          },
           "current_task": {
-            "description": "Current task or question to seed checkout guidance",
+            "type": "string",
+            "description": "Current task or question to seed checkout guidance"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memory_checkout",
+      "description": "Before substantial work, checkout current, cited, prompt-ready memory state for a session.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {
             "type": "string"
           },
           "session_id": {
             "type": "string"
-          }
-        },
-        "required": [],
-        "type": "object"
-      },
-      "name": "memory_bootstrap"
-    },
-    {
-      "description": "Before substantial work, checkout current, cited, prompt-ready memory state for a session.",
-      "input_schema": {
-        "additionalProperties": false,
-        "properties": {
+          },
+          "ref": {
+            "type": "string",
+            "description": "Memory ref to checkout, e.g. HEAD or refs/heads/main"
+          },
+          "replay_from_seq": {
+            "type": "integer",
+            "default": 1
+          },
           "limit": {
-            "default": 10,
-            "type": "integer"
+            "type": "integer",
+            "default": 10
           },
           "max_recent_events": {
-            "default": 20,
-            "type": "integer"
+            "type": "integer",
+            "default": 20
           },
           "purpose": {
-            "description": "Purpose profile name or object used to condition checkout guidance.",
             "oneOf": [
               {
                 "type": "string"
@@ -674,113 +741,94 @@
               {
                 "type": "object"
               }
-            ]
-          },
-          "query": {
-            "type": "string"
-          },
-          "ref": {
-            "description": "Memory ref to checkout, e.g. HEAD or refs/heads/main",
-            "type": "string"
-          },
-          "replay_from_seq": {
-            "default": 1,
-            "type": "integer"
-          },
-          "session_id": {
-            "type": "string"
+            ],
+            "description": "Purpose profile name or object used to condition checkout guidance."
           }
         },
-        "required": [
-          "query"
-        ],
-        "type": "object"
-      },
-      "name": "memory_checkout"
+        "additionalProperties": false
+      }
     },
     {
+      "name": "context_assemble",
       "description": "Assemble replay plus ranked retrieval into a prompt-ready context bundle.",
       "input_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "limit": {
-            "default": 10,
-            "type": "integer"
-          },
-          "max_recent_events": {
-            "default": 20,
-            "type": "integer"
-          },
-          "query": {
-            "type": "string"
-          },
-          "replay_from_seq": {
-            "default": 1,
-            "type": "integer"
-          },
-          "session_id": {
-            "type": "string"
-          }
-        },
+        "type": "object",
         "required": [
           "query"
         ],
-        "type": "object"
-      },
-      "name": "context_assemble"
-    },
-    {
-      "description": "Persist a completed turn and return compact context for the next turn.",
-      "input_schema": {
-        "additionalProperties": false,
         "properties": {
-          "content": {
-            "type": "string"
-          },
-          "limit": {
-            "default": 10,
-            "type": "integer"
-          },
-          "max_recent_events": {
-            "default": 20,
-            "type": "integer"
-          },
           "query": {
-            "type": "string"
-          },
-          "role": {
             "type": "string"
           },
           "session_id": {
             "type": "string"
           },
-          "source": {
-            "default": "mcp",
-            "type": "string"
+          "replay_from_seq": {
+            "type": "integer",
+            "default": 1
+          },
+          "limit": {
+            "type": "integer",
+            "default": 10
+          },
+          "max_recent_events": {
+            "type": "integer",
+            "default": 20
           }
         },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "context_after_turn",
+      "description": "Persist a completed turn and return compact context for the next turn.",
+      "input_schema": {
+        "type": "object",
         "required": [
           "role",
           "content"
         ],
-        "type": "object"
-      },
-      "name": "context_after_turn"
-    },
-    {
-      "description": "Finalize a subagent session and return its handoff bundle.",
-      "input_schema": {
-        "additionalProperties": false,
         "properties": {
-          "limit": {
-            "default": 10,
-            "type": "integer"
+          "role": {
+            "type": "string"
           },
-          "parent_session_id": {
+          "content": {
             "type": "string"
           },
           "query": {
-            "default": "subagent handoff",
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "default": "mcp"
+          },
+          "session_id": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "default": 10
+          },
+          "max_recent_events": {
+            "type": "integer",
+            "default": 20
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "subagent_cleanup",
+      "description": "Finalize a subagent session and return its handoff bundle.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "parent_session_id",
+          "subagent_session_id",
+          "summary"
+        ],
+        "properties": {
+          "parent_session_id": {
             "type": "string"
           },
           "subagent_session_id": {
@@ -788,403 +836,405 @@
           },
           "summary": {
             "type": "string"
+          },
+          "query": {
+            "type": "string",
+            "default": "subagent handoff"
+          },
+          "limit": {
+            "type": "integer",
+            "default": 10
           }
         },
-        "required": [
-          "parent_session_id",
-          "subagent_session_id",
-          "summary"
-        ],
-        "type": "object"
-      },
-      "name": "subagent_cleanup"
+        "additionalProperties": false
+      }
     },
     {
+      "name": "coordination_start",
       "description": "Start a parent coordination mission session.",
       "input_schema": {
-        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mission_id",
+          "objective"
+        ],
         "properties": {
-          "actor": {
-            "default": "coordinator",
-            "type": "string"
-          },
           "mission_id": {
             "type": "string"
           },
           "objective": {
             "type": "string"
+          },
+          "actor": {
+            "type": "string",
+            "default": "coordinator"
           }
         },
-        "required": [
-          "mission_id",
-          "objective"
-        ],
-        "type": "object"
-      },
-      "name": "coordination_start"
+        "additionalProperties": false
+      }
     },
     {
+      "name": "coordination_worker_create",
       "description": "Register a worker session under a parent mission.",
       "input_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "actor": {
-            "default": "coordinator",
-            "type": "string"
-          },
-          "mission_id": {
-            "type": "string"
-          },
-          "worker_id": {
-            "type": "string"
-          }
-        },
+        "type": "object",
         "required": [
           "mission_id",
           "worker_id"
         ],
-        "type": "object"
-      },
-      "name": "coordination_worker_create"
-    },
-    {
-      "description": "Assign scoped work to a coordination worker.",
-      "input_schema": {
-        "additionalProperties": false,
         "properties": {
-          "actor": {
-            "default": "coordinator",
-            "type": "string"
-          },
-          "assignment": {
-            "type": "string"
-          },
           "mission_id": {
             "type": "string"
           },
           "worker_id": {
             "type": "string"
+          },
+          "actor": {
+            "type": "string",
+            "default": "coordinator"
           }
         },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "coordination_assign",
+      "description": "Assign scoped work to a coordination worker.",
+      "input_schema": {
+        "type": "object",
         "required": [
           "mission_id",
           "worker_id",
           "assignment"
         ],
-        "type": "object"
-      },
-      "name": "coordination_assign"
+        "properties": {
+          "mission_id": {
+            "type": "string"
+          },
+          "worker_id": {
+            "type": "string"
+          },
+          "assignment": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string",
+            "default": "coordinator"
+          }
+        },
+        "additionalProperties": false
+      }
     },
     {
+      "name": "coordination_report_finding",
       "description": "Record a worker-local coordination finding with evidence; it is not trusted parent state until reviewed and promoted.",
       "input_schema": {
-        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mission_id",
+          "worker_id",
+          "summary"
+        ],
         "properties": {
-          "actor": {
-            "default": "worker",
+          "mission_id": {
             "type": "string"
+          },
+          "worker_id": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "actor": {
+            "type": "string",
+            "default": "worker"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "confidence": {
+            "type": "number"
           },
           "claim_key": {
             "type": "string"
           },
           "claim_value": {
             "type": "string"
-          },
-          "confidence": {
-            "type": "number"
-          },
-          "evidence": {
-            "items": {
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "mission_id": {
-            "type": "string"
-          },
-          "summary": {
-            "type": "string"
-          },
-          "worker_id": {
-            "type": "string"
           }
         },
-        "required": [
-          "mission_id",
-          "worker_id",
-          "summary"
-        ],
-        "type": "object"
-      },
-      "name": "coordination_report_finding"
+        "additionalProperties": false
+      }
     },
     {
+      "name": "coordination_merge_brief",
       "description": "Return a replay-backed coordination brief for a mission.",
       "input_schema": {
-        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mission_id"
+        ],
         "properties": {
           "mission_id": {
             "type": "string"
           }
         },
-        "required": [
-          "mission_id"
-        ],
-        "type": "object"
-      },
-      "name": "coordination_merge_brief"
+        "additionalProperties": false
+      }
     },
     {
+      "name": "coordination_checkout",
       "description": "Return accepted coordination state for prompt injection, with optional diagnostics for pending or conflicted findings.",
       "input_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "include_diagnostics": {
-            "default": false,
-            "type": "boolean"
-          },
-          "mission_id": {
-            "type": "string"
-          }
-        },
+        "type": "object",
         "required": [
           "mission_id"
         ],
-        "type": "object"
-      },
-      "name": "coordination_checkout"
+        "properties": {
+          "mission_id": {
+            "type": "string"
+          },
+          "include_diagnostics": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "additionalProperties": false
+      }
     },
     {
+      "name": "coordination_performance_ledger",
       "description": "Return worker-level coordination outcome metrics for a mission.",
       "input_schema": {
-        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mission_id"
+        ],
         "properties": {
           "mission_id": {
             "type": "string"
           }
         },
-        "required": [
-          "mission_id"
-        ],
-        "type": "object"
-      },
-      "name": "coordination_performance_ledger"
+        "additionalProperties": false
+      }
     },
     {
+      "name": "coordination_approval_packet",
       "description": "Return a portable pending/conflicted finding packet for a remote reviewer.",
       "input_schema": {
-        "additionalProperties": false,
-        "properties": {
-          "mission_id": {
-            "type": "string"
-          }
-        },
+        "type": "object",
         "required": [
           "mission_id"
         ],
-        "type": "object"
-      },
-      "name": "coordination_approval_packet"
-    },
-    {
-      "description": "Apply remote approval decisions to a coordination mission.",
-      "input_schema": {
-        "additionalProperties": false,
         "properties": {
-          "actor": {
-            "default": "coordinator",
-            "type": "string"
-          },
-          "decisions": {
-            "items": {
-              "type": "object"
-            },
-            "type": "array"
-          },
           "mission_id": {
             "type": "string"
           }
         },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "coordination_apply_approval",
+      "description": "Apply remote approval decisions to a coordination mission.",
+      "input_schema": {
+        "type": "object",
         "required": [
           "mission_id",
           "decisions"
         ],
-        "type": "object"
-      },
-      "name": "coordination_apply_approval"
-    },
-    {
-      "description": "Review a worker finding as accepted, rejected, deferred, or conflicted.",
-      "input_schema": {
-        "additionalProperties": false,
         "properties": {
-          "actor": {
-            "default": "coordinator",
-            "type": "string"
-          },
-          "finding_id": {
-            "type": "string"
-          },
           "mission_id": {
             "type": "string"
           },
-          "rationale": {
-            "type": "string"
+          "decisions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
           },
-          "status": {
-            "enum": [
-              "accepted",
-              "rejected",
-              "deferred",
-              "conflicted"
-            ],
-            "type": "string"
+          "actor": {
+            "type": "string",
+            "default": "coordinator"
           }
         },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "coordination_review_finding",
+      "description": "Review a worker finding as accepted, rejected, deferred, or conflicted.",
+      "input_schema": {
+        "type": "object",
         "required": [
           "mission_id",
           "finding_id",
           "status"
         ],
-        "type": "object"
-      },
-      "name": "coordination_review_finding"
-    },
-    {
-      "description": "Promote an accepted finding into the parent mission history.",
-      "input_schema": {
-        "additionalProperties": false,
         "properties": {
-          "actor": {
-            "default": "coordinator",
+          "mission_id": {
             "type": "string"
           },
           "finding_id": {
             "type": "string"
           },
-          "mission_id": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "accepted",
+              "rejected",
+              "deferred",
+              "conflicted"
+            ]
+          },
+          "rationale": {
             "type": "string"
+          },
+          "actor": {
+            "type": "string",
+            "default": "coordinator"
           }
         },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "coordination_promote",
+      "description": "Promote an accepted finding into the parent mission history.",
+      "input_schema": {
+        "type": "object",
         "required": [
           "mission_id",
           "finding_id"
         ],
-        "type": "object"
-      },
-      "name": "coordination_promote"
-    },
-    {
-      "description": "Create a final coordination handoff event for a mission.",
-      "input_schema": {
-        "additionalProperties": false,
         "properties": {
-          "actor": {
-            "default": "coordinator",
-            "type": "string"
-          },
           "mission_id": {
             "type": "string"
           },
-          "next_steps": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "risks": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "summary": {
+          "finding_id": {
             "type": "string"
+          },
+          "actor": {
+            "type": "string",
+            "default": "coordinator"
           }
         },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "coordination_handoff",
+      "description": "Create a final coordination handoff event for a mission.",
+      "input_schema": {
+        "type": "object",
         "required": [
           "mission_id",
           "summary"
         ],
-        "type": "object"
-      },
-      "name": "coordination_handoff"
-    },
-    {
-      "description": "Persist a Coordinate synthesis proof packet for a mission-scoped Memory Checkout. Handoff-scoped packets require handoff_id and return handoff_event_ref with the cited handoff seq/hash.",
-      "input_schema": {
-        "additionalProperties": false,
         "properties": {
-          "actor": {
-            "default": "coordinator",
-            "type": "string"
-          },
-          "candidate": {
-            "description": "Optional selected answer candidate from checkout diagnostics",
-            "type": "object"
-          },
-          "checkout": {
-            "description": "Memory Checkout payload scoped to the same mission_id",
-            "type": "object"
-          },
-          "decision_scope": {
-            "default": "brief",
-            "type": "string"
-          },
-          "handoff_id": {
-            "description": "Required when decision_scope is handoff; binds proof to a handoff event.",
-            "type": "string"
-          },
           "mission_id": {
             "type": "string"
           },
+          "summary": {
+            "type": "string"
+          },
+          "next_steps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "risks": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "actor": {
+            "type": "string",
+            "default": "coordinator"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "coordination_record_synthesis_artifact",
+      "description": "Persist a Coordinate synthesis proof packet for a mission-scoped Memory Checkout. Handoff-scoped packets require handoff_id and return handoff_event_ref with the cited handoff seq/hash.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "mission_id",
+          "checkout"
+        ],
+        "properties": {
+          "mission_id": {
+            "type": "string"
+          },
+          "checkout": {
+            "type": "object",
+            "description": "Memory Checkout payload scoped to the same mission_id"
+          },
+          "decision_scope": {
+            "type": "string",
+            "default": "brief"
+          },
+          "handoff_id": {
+            "type": "string",
+            "description": "Required when decision_scope is handoff; binds proof to a handoff event."
+          },
+          "candidate": {
+            "type": "object",
+            "description": "Optional selected answer candidate from checkout diagnostics"
+          },
           "outcome": {
+            "type": "string",
             "enum": [
               "used",
               "helpful",
               "rejected",
               "corrected",
               "excluded"
-            ],
-            "type": "string"
+            ]
           },
           "reason": {
             "type": "string"
+          },
+          "actor": {
+            "type": "string",
+            "default": "coordinator"
           }
         },
-        "required": [
-          "mission_id",
-          "checkout"
-        ],
-        "type": "object"
-      },
-      "name": "coordination_record_synthesis_artifact"
+        "additionalProperties": false
+      }
     },
     {
+      "name": "coordination_proof_trace",
       "description": "Replay a Coordinate proof packet chain by artifact_id, handoff_id, or proof_seq.",
       "input_schema": {
-        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mission_id"
+        ],
         "properties": {
+          "mission_id": {
+            "type": "string"
+          },
           "artifact_id": {
             "type": "string"
           },
           "handoff_id": {
             "type": "string"
           },
-          "mission_id": {
-            "type": "string"
-          },
           "proof_seq": {
-            "minimum": 1,
-            "type": "integer"
+            "type": "integer",
+            "minimum": 1
           }
         },
-        "required": [
-          "mission_id"
-        ],
-        "type": "object"
-      },
-      "name": "coordination_proof_trace"
+        "additionalProperties": false
+      }
     }
   ]
 }

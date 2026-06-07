@@ -9,6 +9,8 @@ Tools exposed:
 - memory_causal_successors: Read causal effects from the graph.
 - memory_causal_predecessors: Read causal causes from the graph.
 - memory_consolidation_candidate: Append a cited consolidation candidate.
+- memory_consolidation_propose_from_log: Create review-pending candidates from log segments.
+- memory_consolidation_status: Read review-gated consolidation status.
 - memory_consolidation_review: Append a consolidation review.
 - memory_feedback: Record retrieval feedback for a graph entity.
 - memory_synthesis_artifact: Persist checkout synthesis answer candidates and feedback.
@@ -51,6 +53,7 @@ from zaxy.context import Context, ContextAssemblyPolicy, context_counts
 from zaxy.core import (
     ContextAssembly,
     MemoryCheckout,
+    MemoryFabric,
     build_memory_checkout,
 )
 from zaxy.extract import extract
@@ -231,6 +234,43 @@ TOOLS = [
                     "description": "Actor recording the candidate",
                     "default": "zaxy-consolidation",
                 },
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_consolidation_propose_from_log",
+        description="Create non-authoritative consolidation candidates from Eventloom log segments.",
+        inputSchema={
+            "type": "object",
+            "required": ["session_id"],
+            "properties": {
+                "session_id": {"type": "string", "description": "Session ID to replay for proposal windows"},
+                "actor": {
+                    "type": "string",
+                    "description": "Actor recording generated candidates",
+                    "default": "zaxy-consolidation",
+                },
+                "purpose": {"type": "string", "description": "Optional consolidation purpose"},
+                "window_size": {
+                    "type": "integer",
+                    "description": "Number of source events per proposal window",
+                    "default": 5,
+                    "minimum": 1,
+                    "maximum": 200,
+                },
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_consolidation_status",
+        description="Read review-gated consolidation candidate status.",
+        inputSchema={
+            "type": "object",
+            "required": ["session_id"],
+            "properties": {
+                "session_id": {"type": "string", "description": "Session ID to inspect"},
             },
             "additionalProperties": False,
         },
@@ -798,6 +838,7 @@ class ZaxyMCPServer:
         settings = get_settings()
         self._settings = settings
         backend = projection_backend or settings.projection_backend
+        self._projection_backend = backend
         self._admin_token = settings.mcp_admin_token
         self._default_session_id = validate_session_id(default_session_id or settings.eventloom_thread)
         self._lifecycle_capture_enabled = settings.mcp_lifecycle_capture_enabled
@@ -810,6 +851,9 @@ class ZaxyMCPServer:
         self._neo4j_uri = neo4j_uri or settings.neo4j_uri
         self._neo4j_user = neo4j_user or settings.neo4j_user
         self._neo4j_password = neo4j_password or settings.neo4j_password
+        self._neo4j_ca_cert = settings.neo4j_ca_cert
+        self._neo4j_trust_all = settings.neo4j_trust_all
+        self._pggraph_dsn = pggraph_dsn or settings.pggraph_dsn
         resolved_embedded_graph_path = (
             Path(embedded_graph_path)
             if embedded_graph_path is not None
@@ -818,6 +862,7 @@ class ZaxyMCPServer:
             else Path(settings.embedded_graph_path)
         )
         self._embedded_graph_path = resolved_embedded_graph_path
+        self._latticedb_path = Path(latticedb_path or settings.latticedb_path)
         self.local_projection_runtime = self._build_local_projection_runtime(
             settings,
             projection_backend=backend,
@@ -837,9 +882,9 @@ class ZaxyMCPServer:
                 neo4j_password=self._neo4j_password,
                 neo4j_ca_cert=settings.neo4j_ca_cert,
                 neo4j_trust_all=settings.neo4j_trust_all,
-                pggraph_dsn=pggraph_dsn or settings.pggraph_dsn,
+                pggraph_dsn=self._pggraph_dsn,
                 embedded_graph_path=resolved_embedded_graph_path,
-                latticedb_path=Path(latticedb_path or settings.latticedb_path),
+                latticedb_path=self._latticedb_path,
                 embedding_dimension=settings.embedding_dimension,
             )
         )
@@ -1121,6 +1166,38 @@ class ZaxyMCPServer:
         event = await self._append_project_and_trace_event(event_input, session_id=session_id)
         return [TextContent(type="text", text=json.dumps({"seq": event.seq, "hash": event.hash}))]
 
+    async def handle_memory_consolidation_propose_from_log(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_consolidation_propose_from_log tool calls."""
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
+        actor = _optional_strict_text(arguments.get("actor"), "actor") or "zaxy-consolidation"
+        purpose = _optional_strict_text(arguments.get("purpose"), "purpose")
+        window_size = _validate_consolidation_window_size(arguments.get("window_size", 5))
+        fabric = self._memory_fabric()
+        try:
+            await fabric.connect()
+            result = await fabric.propose_consolidation_candidates(
+                session_id=session_id,
+                actor=actor,
+                purpose=purpose,
+                window_size=window_size,
+            )
+        finally:
+            with suppress(Exception):
+                await fabric.close()
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    async def handle_memory_consolidation_status(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_consolidation_status tool calls."""
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
+        fabric = self._memory_fabric()
+        try:
+            await fabric.connect()
+            result = await fabric.consolidation_status(session_id=session_id)
+        finally:
+            with suppress(Exception):
+                await fabric.close()
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
     async def handle_memory_consolidation_review(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle memory_consolidation_review tool calls."""
         session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
@@ -1145,6 +1222,20 @@ class ZaxyMCPServer:
         await self.graph.upsert_extraction(extraction, session_id=session_id)
         await self.tracer.trace_append(event_type, actor, event.seq)
         return event
+
+    def _memory_fabric(self) -> MemoryFabric:
+        return MemoryFabric(
+            eventloom_path=self._eventloom_path,
+            neo4j_uri=self._neo4j_uri,
+            neo4j_user=self._neo4j_user,
+            neo4j_password=self._neo4j_password,
+            neo4j_ca_cert=self._neo4j_ca_cert,
+            neo4j_trust_all=self._neo4j_trust_all,
+            projection_backend=self._projection_backend,
+            pggraph_dsn=self._pggraph_dsn,
+            embedded_graph_path=self._embedded_graph_path,
+            latticedb_path=self._latticedb_path,
+        )
 
     async def handle_coordination_start(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle coordination_start tool calls."""
@@ -2571,6 +2662,14 @@ def _optional_strict_text(value: object, field: str) -> str | None:
     return text or None
 
 
+def _validate_consolidation_window_size(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError("window_size must be an integer")
+    if value < 1 or value > 200:
+        raise ValueError("window_size must be between 1 and 200")
+    return value
+
+
 def _purpose_payload(value: object) -> dict[str, Any] | None:
     if value is None:
         return None
@@ -2641,6 +2740,10 @@ async def _dispatch_tool_call(
         return await active_server.handle_memory_causal_predecessors(arguments)
     if name == "memory_consolidation_candidate":
         return await active_server.handle_memory_consolidation_candidate(arguments)
+    if name == "memory_consolidation_propose_from_log":
+        return await active_server.handle_memory_consolidation_propose_from_log(arguments)
+    if name == "memory_consolidation_status":
+        return await active_server.handle_memory_consolidation_status(arguments)
     if name == "memory_consolidation_review":
         return await active_server.handle_memory_consolidation_review(arguments)
     if name == "memory_verbatim":

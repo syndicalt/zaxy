@@ -181,17 +181,20 @@
         </tbody>
       </table>
       <p>Interpretation: Harvey LAB is external downstream work-product evidence. The metric is criterion pass rate, not binary task pass/fail.</p>
-      <h2 id="zaxy-20-alpha-causal-lane">Zaxy 2.0 Alpha Causal Lane</h2>
-      <p>Zaxy 2.0 alpha.1 includes a project-defined internal guardrail lane for causal projection and consolidation scaffolding. This lane is not external validation, is not part of the headline LongMemEval-compatible checkout claim, and must not be reported as a public benchmark number unless a future release explicitly publishes a full report with its own claim boundary.</p>
+      <h2 id="zaxy-20-alpha-causal-and-consolidation-lane">Zaxy 2.0 Alpha Causal And Consolidation Lane</h2>
+      <p>Zaxy 2.0 alpha includes a project-defined internal guardrail lane for causal projection and review-gated consolidation. This lane is not external validation, is not part of the headline LongMemEval-compatible checkout claim, and must not be reported as a public benchmark number unless a future release explicitly publishes a full report with its own claim boundary.</p>
       <p>The alpha lane checks behavior that is specific to the causal and consolidation contracts:</p>
       <ul>
         <li>causal predecessor and successor queries preserve expected endpoint and relation matching;</li>
         <li>causal results retain Eventloom citation coverage and expose review and authority metadata;</li>
+        <li>alpha.2 consolidation segment selection is deterministic and event-sourced from replayed Eventloom ranges, with stable session-scoped segment identity;</li>
         <li>authority-boundary preservation keeps inferred causal edges and consolidation candidates non-authoritative unless a separate gate promotes them;</li>
         <li>stale or distractor-supported causal paths do not outrank cited target paths;</li>
-        <li>consolidation candidate scoring verifies source-event fidelity and rejects candidates that omit required source references or imply authority promotion.</li>
+        <li>consolidation candidate scoring verifies source-event fidelity and rejects candidates that omit required source references or imply authority promotion;</li>
+        <li>generated episode, claim, and procedure candidates remain review material, not authoritative memory, even when a review disposition is <code>accepted</code>;</li>
+        <li>stale, conflicted, rejected, superseded, and <code>valid_to</code>-closed consolidation candidates are diagnosed so checkout and status surfaces do not present them as current authoritative memory.</li>
       </ul>
-      <p>Use this lane as an engineering regression guardrail for the alpha causal surface. Do not combine it with the headline 500 metrics, Harvey LAB evidence, or external-validation language.</p>
+      <p>Use this lane as an engineering regression guardrail for the alpha causal and consolidation surface. The consolidation guardrail is internal and project-defined: it measures source-event fidelity, review gating, stale rejection, and authority-boundary preservation. Do not combine it with the headline 500 metrics, Harvey LAB evidence, or external-validation language.</p>
       <h2 id="claim-boundaries">Claim Boundaries</h2>
       <ul>
         <li>Use <strong>LongMemEval-compatible checkout</strong> for the headline 500 diagnostic.</li>

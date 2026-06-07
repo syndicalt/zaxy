@@ -1839,6 +1839,52 @@ async def _append_consolidation_event(event: dict[str, Any], *, eventloom_path: 
             await fabric.close()
 
 
+async def _propose_consolidation_from_log(
+    *,
+    session_id: str,
+    actor: str,
+    purpose: str | None,
+    window_size: int,
+    eventloom_path: Path,
+) -> dict[str, Any]:
+    settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
+    fabric = _memory_fabric(
+        eventloom_path=str(eventloom_path),
+        projection_backend=_resolve_cli_projection_backend(None, settings),
+        pggraph_dsn=settings.pggraph_dsn,
+        embedded_graph_path=Path(settings.embedded_graph_path),
+        latticedb_path=Path(settings.latticedb_path),
+    )
+    try:
+        await fabric.connect()
+        return await fabric.propose_consolidation_candidates(
+            session_id=session_id,
+            actor=actor,
+            purpose=purpose,
+            window_size=window_size,
+        )
+    finally:
+        with suppress(Exception):
+            await fabric.close()
+
+
+async def _read_consolidation_status(*, session_id: str, eventloom_path: Path) -> dict[str, Any]:
+    settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
+    fabric = _memory_fabric(
+        eventloom_path=str(eventloom_path),
+        projection_backend=_resolve_cli_projection_backend(None, settings),
+        pggraph_dsn=settings.pggraph_dsn,
+        embedded_graph_path=Path(settings.embedded_graph_path),
+        latticedb_path=Path(settings.latticedb_path),
+    )
+    try:
+        await fabric.connect()
+        return await fabric.consolidation_status(session_id=session_id)
+    finally:
+        with suppress(Exception):
+            await fabric.close()
+
+
 @memory_consolidation_app.command("propose")
 def memory_consolidation_propose(
     candidate_type: str = typer.Option(..., help="Candidate type: episode, claim, or procedure"),
@@ -1879,6 +1925,64 @@ def memory_consolidation_propose(
         typer.echo(json.dumps(event, indent=2, sort_keys=True))
     else:
         typer.echo(f"Created {event['payload']['candidate_id']} ({event['payload']['review_status']})")
+
+
+@memory_consolidation_app.command("propose-from-log")
+def memory_consolidation_propose_from_log(
+    session_id: str = typer.Option("default", help="Session ID to replay for proposal windows"),
+    actor: str = typer.Option("zaxy-consolidation", help="Actor writing candidate events"),
+    purpose: str | None = typer.Option(None, help="Optional consolidation purpose"),
+    window_size: int = typer.Option(5, min=1, max=200, help="Number of source events per proposal window"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Create review-pending consolidation candidates from Eventloom log segments."""
+    import asyncio
+
+    result = asyncio.run(
+        _propose_consolidation_from_log(
+            session_id=session_id,
+            actor=actor,
+            purpose=purpose,
+            window_size=window_size,
+            eventloom_path=eventloom_path,
+        )
+    )
+    if json_output:
+        typer.echo(json.dumps(result, indent=2, sort_keys=True))
+    else:
+        candidates_created = int(result.get("candidate_count", 0))
+        segments_considered = int(result.get("segment_count", 0))
+        typer.echo(
+            "Created "
+            f"{candidates_created} non-authoritative consolidation candidates from "
+            f"{segments_considered} log segments for {session_id}."
+        )
+
+
+@memory_consolidation_app.command("status")
+def memory_consolidation_status(
+    session_id: str = typer.Option("default", help="Session ID to inspect"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Show review-gated consolidation candidate status."""
+    import asyncio
+
+    result = asyncio.run(_read_consolidation_status(session_id=session_id, eventloom_path=eventloom_path))
+    if json_output:
+        typer.echo(json.dumps(result, indent=2, sort_keys=True))
+    else:
+        pending = int(result.get("pending_count", 0))
+        accepted = int(result.get("accepted_count", 0))
+        rejected = int(result.get("rejected_count", 0))
+        deferred = int(result.get("deferred_count", 0))
+        conflicted = int(result.get("conflicted_count", 0))
+        typer.echo(
+            f"Consolidation status for {session_id}: "
+            f"pending={pending}, accepted={accepted}, rejected={rejected}, "
+            f"deferred={deferred}, conflicted={conflicted}"
+        )
 
 
 @memory_consolidation_app.command("review")

@@ -156,8 +156,24 @@ def build_checkout_guidance(
         ignore.append(
             "Do not treat consolidation candidates as authoritative memory without a separate promotion event."
         )
+        ignore.append(
+            "Accepted consolidation reviews are dispositions only; they are not authority promotion."
+        )
     if consolidation_candidates["pending_count"]:
         ignore.append("Review-pending consolidation candidates still require disposition.")
+    if any(
+        consolidation_candidates.get(key, 0)
+        for key in (
+            "stale_count",
+            "conflicted_count",
+            "rejected_count",
+            "superseded_count",
+            "valid_to_count",
+        )
+    ):
+        ignore.append(
+            "Stale, conflicted, rejected, or superseded consolidation candidates are not current authoritative memory."
+        )
     synthesis = _checkout_synthesis_guidance(
         query=query,
         current_facts=current_facts,
@@ -474,6 +490,11 @@ def format_memory_checkout_prompt(
             f"candidates={consolidation_candidates.get('candidate_count', 0)}, "
             f"pending={consolidation_candidates.get('pending_count', 0)}, "
             f"accepted={consolidation_candidates.get('accepted_count', 0)}, "
+            f"rejected={consolidation_candidates.get('rejected_count', 0)}, "
+            f"conflicted={consolidation_candidates.get('conflicted_count', 0)}, "
+            f"stale={consolidation_candidates.get('stale_count', 0)}, "
+            f"superseded={consolidation_candidates.get('superseded_count', 0)}, "
+            f"valid_to={consolidation_candidates.get('valid_to_count', 0)}, "
             f"authority={consolidation_candidates.get('authority_status', 'non_authoritative')}"
         )
         candidate_types = _text_list(consolidation_candidates.get("candidate_types"))
@@ -1321,24 +1342,42 @@ def _consolidation_candidate_diagnostics(items: list[dict[str, Any]]) -> dict[st
             "candidate_types": [],
             "pending_count": 0,
             "accepted_count": 0,
+            "rejected_count": 0,
+            "conflicted_count": 0,
+            "stale_count": 0,
+            "superseded_count": 0,
+            "valid_to_count": 0,
             "authority_status": "non_authoritative",
         }
     metadata_values = [_metadata(item) for item in candidates]
+    review_statuses = [
+        _review_status(item, metadata)
+        for item, metadata in zip(candidates, metadata_values, strict=True)
+    ]
     return {
         "candidate_count": len(candidates),
         "candidate_types": _unique_texts(
             _candidate_type(item, metadata)
             for item, metadata in zip(candidates, metadata_values, strict=True)
         ),
-        "pending_count": sum(
+        "pending_count": sum(1 for status in review_statuses if status == "pending"),
+        "accepted_count": sum(1 for status in review_statuses if status == "accepted"),
+        "rejected_count": sum(1 for status in review_statuses if status == "rejected"),
+        "conflicted_count": sum(1 for status in review_statuses if status == "conflicted"),
+        "stale_count": sum(
             1
-            for item, metadata in zip(candidates, metadata_values, strict=True)
-            if _review_status(item, metadata) == "pending"
+            for item, metadata, status in zip(candidates, metadata_values, review_statuses, strict=True)
+            if status == "stale" or _bool_field(item, metadata, "stale")
         ),
-        "accepted_count": sum(
+        "superseded_count": sum(
             1
             for item, metadata in zip(candidates, metadata_values, strict=True)
-            if _review_status(item, metadata) == "accepted"
+            if _item_text_field(item, metadata, "superseded_by")
+        ),
+        "valid_to_count": sum(
+            1
+            for item, metadata in zip(candidates, metadata_values, strict=True)
+            if _item_text_field(item, metadata, "valid_to")
         ),
         "authority_status": "non_authoritative",
     }
@@ -1384,6 +1423,14 @@ def _item_text_field(item: dict[str, Any], metadata: dict[str, Any], key: str) -
             if text:
                 return text
     return ""
+
+
+def _bool_field(item: dict[str, Any], metadata: dict[str, Any], key: str) -> bool:
+    for source in (item, metadata):
+        value = source.get(key)
+        if isinstance(value, bool):
+            return value
+    return False
 
 
 def _average_metric(items: list[dict[str, Any]], key: str) -> float:

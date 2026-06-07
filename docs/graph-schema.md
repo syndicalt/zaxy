@@ -159,18 +159,29 @@ summary proposal over one or more Eventloom source events. Projection creates a
 source-event citations, confidence, method, review status, and
 `authority_status=non_authoritative`.
 
-Candidates are review-pending and non-authoritative in alpha.1. They may help
-an operator or model inspect possible compaction targets, but they do not
-replace the original Eventloom records and should not be treated as current
-facts unless a separate authority gate promotes supported state.
+Alpha.2 adds deterministic segment selection and generated proposal creation on
+top of this scaffold. Segment selection is event-sourced: Zaxy replays bounded
+Eventloom ranges, derives stable segment ids from session id and source event
+sequence windows, and emits candidates whose source events retain sequence and
+hash citations. The same Eventloom inputs produce the same proposal identities;
+no proposal is selected or shaped to fit a benchmark case.
+
+Generated episode, claim, and procedure candidates are review-pending and
+non-authoritative. They may help an operator or model inspect possible
+compaction targets, but they do not replace the original Eventloom records and
+should not be treated as current facts unless a separate authority gate promotes
+supported state. Stale, conflicted, rejected, superseded, or `valid_to`-closed
+candidates remain auditable graph state, not current authoritative memory.
 
 `consolidation.candidate.reviewed` records a review disposition such as
 `accepted`, `rejected`, `deferred`, or `conflicted`, plus rationale and
 candidate id. Review events are also replayable Eventloom records and project
 as `consolidation_review` entities linked to the candidate. A review
-disposition does not automatically promote authority; promotion remains an
-explicit separate workflow so alpha consolidation cannot silently collapse
-source memory into authoritative state.
+disposition, including `accepted`, does not automatically promote authority;
+promotion remains an explicit separate workflow so alpha consolidation cannot
+silently collapse source memory into authoritative state. Accepted review means
+the proposal passed a review disposition, not that its summary became canonical
+truth.
 
 Example Eventloom payload:
 

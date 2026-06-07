@@ -101,7 +101,9 @@ action. Skill updates are never implicit checkout side effects.
 
 ## Alpha Causal And Consolidation Tools
 
-Zaxy 2.0 alpha.1 exposes a narrow causal and consolidation MCP surface:
+Zaxy 2.0 alpha.1 exposes a narrow causal and consolidation MCP surface.
+Alpha.2 extends consolidation with deterministic proposal generation from
+Eventloom history while keeping the same non-authoritative review boundary:
 
 `memory_causal_successors(entity_name, relation_type?, depth?, session_id?)`
 reads graph-backed causal effects that start at `entity_name`. When
@@ -123,19 +125,40 @@ candidate type must be `episode`, `claim`, or `procedure`; `source_events` must
 cite Eventloom events with sequence and hash; and the returned event reference
 is the durable audit handle for the candidate.
 
+`memory_consolidation_propose_from_log(session_id?, actor?, purpose?, limit?,
+max_events?, window_size?)` replays Eventloom history for the selected session,
+selects deterministic event segments, and appends generated episode, claim, or
+procedure candidates through the same `consolidation.candidate.created`
+contract. It is a proposal tool, not an authority tool. It must not mark
+generated summaries as current facts, bypass review, or promote accepted-looking
+content into authoritative memory. Its output should be presented as cited
+review material with Eventloom source-event sequence and hash coverage.
+
 `memory_consolidation_review(candidate_id, status, rationale, session_id?,
 actor?)` appends a `consolidation.candidate.reviewed` event. Review status is a
 lifecycle disposition, not an authority promotion. Valid review statuses are
-`accepted`, `rejected`, `deferred`, and `conflicted`.
+`accepted`, `rejected`, `deferred`, and `conflicted`. An `accepted` review
+means the candidate received that disposition; it does not make the generated
+episode, claim, or procedure authoritative without a separate promotion event.
+
+`memory_consolidation_status(session_id?)` reports proposal and review counts
+for the selected session, including pending, accepted, rejected, conflicted,
+stale, superseded, and `valid_to`-closed candidates when those states are
+projected. Use this for review queues and diagnostics, not as evidence of
+external validation.
 
 The trust contract is intentionally conservative. Causal edges and
 consolidation candidates are proposed, cited, non-authoritative memory surfaces
-in alpha.1. They should be used as diagnostics and operator review material,
-not as hidden facts. Memory Checkout keeps this boundary visible by reporting
+in alpha. They should be used as diagnostics and operator review material, not
+as hidden facts. Memory Checkout keeps this boundary visible by reporting
 causal context and consolidation candidates in diagnostics and prompt guidance
-separate from deterministic current facts. Clients should preserve that
-separation in their own prompts and UI, especially when a candidate is pending,
-when a causal edge is inferred, or when citations do not cover the claim.
+separate from deterministic current facts. Checkout diagnostics include
+candidate counts by type and review/staleness state so clients can distinguish
+pending, accepted, rejected, conflicted, stale, superseded, and closed
+candidates. Clients should preserve that separation in their own prompts and
+UI, especially when a candidate is pending, stale, conflicted, rejected, or
+superseded, when a causal edge is inferred, or when citations do not cover the
+claim.
 
 `memory_replay(session_id, from_seq?)` rebuilds session history from the
 Eventloom log. This is useful for handoffs, audits, and debugging. In remote SSE
@@ -244,6 +267,18 @@ fixture when changing the tool response.
     "warning_count": 0,
     "feedback_recommended": true,
     "feedback_tool": "memory_feedback",
+    "consolidation_candidates": {
+      "candidate_count": 1,
+      "candidate_types": ["episode"],
+      "pending_count": 1,
+      "accepted_count": 0,
+      "rejected_count": 0,
+      "conflicted_count": 0,
+      "stale_count": 0,
+      "superseded_count": 0,
+      "valid_to_count": 0,
+      "authority_status": "non_authoritative"
+    },
     "skills": {
       "count": 1,
       "items": [

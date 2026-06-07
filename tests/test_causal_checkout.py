@@ -60,6 +60,11 @@ def test_checkout_diagnostics_summarize_causal_and_consolidation_context() -> No
         "candidate_types": ["episode"],
         "pending_count": 1,
         "accepted_count": 0,
+        "rejected_count": 0,
+        "conflicted_count": 0,
+        "stale_count": 0,
+        "superseded_count": 0,
+        "valid_to_count": 0,
         "authority_status": "non_authoritative",
     }
     assert diagnostics["inferred_context"]["context_count"] == 1
@@ -248,6 +253,11 @@ def test_checkout_reads_flattened_consolidation_candidate_metadata() -> None:
         "candidate_types": ["episode"],
         "pending_count": 1,
         "accepted_count": 0,
+        "rejected_count": 0,
+        "conflicted_count": 0,
+        "stale_count": 0,
+        "superseded_count": 0,
+        "valid_to_count": 0,
         "authority_status": "non_authoritative",
     }
     assert (
@@ -255,3 +265,110 @@ def test_checkout_reads_flattened_consolidation_candidate_metadata() -> None:
         in guidance["ignore"]
     )
     assert "Review-pending consolidation candidates still require disposition." in guidance["ignore"]
+
+
+def test_checkout_diagnostics_count_consolidation_review_and_stale_states() -> None:
+    """Alpha.2 checkout should expose review-gated candidate disposition counts."""
+    current_facts = [
+        {
+            "content": "pending episode candidate.",
+            "entity_name": "consolidation:episode:" + "a" * 24,
+            "entity_type": "consolidation_candidate",
+            "candidate_type": "episode",
+            "review_status": "pending",
+            "authority_status": "non_authoritative",
+            "citation": "eventloom://agent-1/events/55#aaaaaaaaaaaa",
+        },
+        {
+            "content": "accepted claim candidate.",
+            "entity_name": "consolidation:claim:" + "b" * 24,
+            "entity_type": "consolidation_candidate",
+            "candidate_type": "claim",
+            "review_status": "accepted",
+            "authority_status": "non_authoritative",
+            "citation": "eventloom://agent-1/events/56#bbbbbbbbbbbb",
+        },
+        {
+            "content": "conflicted procedure candidate.",
+            "entity_name": "consolidation:procedure:" + "c" * 24,
+            "entity_type": "consolidation_candidate",
+            "candidate_type": "procedure",
+            "metadata": {
+                "review_status": "conflicted",
+                "authority_status": "non_authoritative",
+                "stale": True,
+            },
+            "citation": "eventloom://agent-1/events/57#cccccccccccc",
+        },
+        {
+            "content": "rejected episode candidate.",
+            "entity_name": "consolidation:episode:" + "d" * 24,
+            "entity_type": "consolidation_candidate",
+            "candidate_type": "episode",
+            "review_status": "rejected",
+            "authority_status": "non_authoritative",
+            "valid_to": "2026-06-07T12:00:00Z",
+            "citation": "eventloom://agent-1/events/58#dddddddddddd",
+        },
+        {
+            "content": "superseded claim candidate.",
+            "entity_name": "consolidation:claim:" + "e" * 24,
+            "entity_type": "consolidation_candidate",
+            "candidate_type": "claim",
+            "review_status": "accepted",
+            "authority_status": "non_authoritative",
+            "superseded_by": "consolidation:claim:" + "f" * 24,
+            "citation": "eventloom://agent-1/events/59#eeeeeeeeeeee",
+        },
+    ]
+
+    diagnostics = build_checkout_diagnostics(
+        source_lanes={"graph": 5},
+        current_facts=current_facts,
+        evidence=current_facts,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        warnings=[],
+    )
+    guidance = build_checkout_guidance(
+        query="Which consolidation candidates need review?",
+        current_facts=current_facts,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        evidence=current_facts,
+    )
+    quality = build_checkout_quality(diagnostics=diagnostics, guidance=guidance)
+    prompt = format_memory_checkout_prompt(
+        query="Which consolidation candidates need review?",
+        assembly_prompt="# Active Memory Working Set",
+        current_facts=current_facts,
+        evidence=current_facts,
+        quality=quality,
+        guidance=guidance,
+        diagnostics=diagnostics,
+    )
+
+    assert diagnostics["consolidation_candidates"] == {
+        "candidate_count": 5,
+        "candidate_types": ["episode", "claim", "procedure"],
+        "pending_count": 1,
+        "accepted_count": 2,
+        "rejected_count": 1,
+        "conflicted_count": 1,
+        "stale_count": 1,
+        "superseded_count": 1,
+        "valid_to_count": 1,
+        "authority_status": "non_authoritative",
+    }
+    assert (
+        "Accepted consolidation reviews are dispositions only; they are not authority promotion."
+        in guidance["ignore"]
+    )
+    assert (
+        "Stale, conflicted, rejected, or superseded consolidation candidates are not current authoritative memory."
+        in guidance["ignore"]
+    )
+    assert "Consolidation candidates: candidates=5, pending=1, accepted=2" in prompt
+    assert "rejected=1" in prompt
+    assert "conflicted=1" in prompt
+    assert "stale=1" in prompt
+    assert "superseded=1" in prompt
+    assert "valid_to=1" in prompt

@@ -1274,6 +1274,148 @@ class MemoryFabric:
         """
         return cast(ReplayResult, self.session_manager.replay(session_id, from_seq=from_seq))
 
+    async def propose_consolidation_candidates(
+        self,
+        *,
+        session_id: str = "default",
+        actor: str = "zaxy-consolidation",
+        purpose: str | None = None,
+        window_size: int = 8,
+    ) -> dict[str, Any]:
+        """Append cited, review-pending consolidation candidates for a session log."""
+        from zaxy.consolidation_pipeline import (
+            generate_consolidation_proposals,
+            select_consolidation_segments,
+        )
+
+        sid = validate_session_id(session_id)
+        eventlog = self.session_manager.get(sid).eventlog
+        segments = select_consolidation_segments(
+            eventlog.read_all(),
+            session_id=sid,
+            window_size=window_size,
+        )
+        proposals = generate_consolidation_proposals(segments, purpose=purpose)
+
+        appended: list[dict[str, Any]] = []
+        skipped_existing: list[str] = []
+        existing_candidate_ids = _consolidation_candidate_ids(eventlog.read_all())
+        for proposal in proposals:
+            event_spec = proposal.to_candidate_event(actor=actor)
+            payload = event_spec["payload"]
+            candidate_id = payload["candidate_id"]
+            if candidate_id in existing_candidate_ids:
+                skipped_existing.append(candidate_id)
+                continue
+            event = eventlog.append(
+                event_spec["event_type"],
+                actor=event_spec["actor"],
+                payload=validate_payload(payload),
+                thread=sid,
+            )
+            await self._project_event(event, session_id=sid)
+            appended.append(
+                {
+                    "event_type": event.type,
+                    "seq": event.seq,
+                    "hash": event.hash,
+                    "candidate_id": candidate_id,
+                    "candidate_type": payload["candidate_type"],
+                }
+            )
+            existing_candidate_ids.add(candidate_id)
+
+        return {
+            "session_id": sid,
+            "segment_count": len(segments),
+            "candidate_count": len(appended),
+            "skipped_existing_count": len(skipped_existing),
+            "skipped_existing_candidate_ids": skipped_existing,
+            "events": appended,
+        }
+
+    async def consolidation_status(self, *, session_id: str = "default") -> dict[str, Any]:
+        """Summarize consolidation candidate and review state from Eventloom replay."""
+        sid = validate_session_id(session_id)
+        replay = await self.replay(session_id=sid)
+
+        candidates: dict[str, dict[str, Any]] = {}
+        review_count = 0
+        duplicate_candidate_count = 0
+        for event in replay.events:
+            if event.type == "consolidation.candidate.created":
+                candidate_id = event.payload.get("candidate_id")
+                if isinstance(candidate_id, str) and candidate_id:
+                    if candidate_id in candidates:
+                        duplicate_candidate_count += 1
+                        continue
+                    candidates[candidate_id] = {
+                        "candidate_id": candidate_id,
+                        "candidate_type": event.payload.get("candidate_type"),
+                        "review_status": event.payload.get("review_status", "pending"),
+                        "authority_status": "non_authoritative",
+                        "created_seq": event.seq,
+                        "created_hash": event.hash,
+                    }
+                    if event.payload.get("stale") is True:
+                        candidates[candidate_id]["stale"] = True
+                    superseded_by = event.payload.get("superseded_by")
+                    if isinstance(superseded_by, str) and superseded_by:
+                        candidates[candidate_id]["superseded_by"] = superseded_by
+                    valid_to = event.payload.get("valid_to")
+                    if isinstance(valid_to, str) and valid_to:
+                        candidates[candidate_id]["valid_to"] = valid_to
+            elif event.type == "consolidation.candidate.reviewed":
+                candidate_id = event.payload.get("candidate_id")
+                if isinstance(candidate_id, str) and candidate_id in candidates:
+                    review_count += 1
+                    candidates[candidate_id]["review_status"] = event.payload.get(
+                        "status",
+                        candidates[candidate_id]["review_status"],
+                    )
+                    candidates[candidate_id]["authority_status"] = "non_authoritative"
+                    candidates[candidate_id]["reviewed_seq"] = event.seq
+                    candidates[candidate_id]["reviewed_hash"] = event.hash
+
+        review_status_counts: dict[str, int] = {}
+        authority_status_counts: dict[str, int] = {}
+        type_counts: dict[str, int] = {}
+        stale_count = 0
+        superseded_count = 0
+        valid_to_count = 0
+        for candidate in candidates.values():
+            _increment_count(review_status_counts, str(candidate.get("review_status", "unknown")))
+            _increment_count(
+                authority_status_counts,
+                str(candidate.get("authority_status", "unknown")),
+            )
+            _increment_count(type_counts, str(candidate.get("candidate_type", "unknown")))
+            if candidate.get("stale") is True or candidate.get("review_status") == "stale":
+                stale_count += 1
+            if isinstance(candidate.get("superseded_by"), str) and candidate.get("superseded_by"):
+                superseded_count += 1
+            if isinstance(candidate.get("valid_to"), str) and candidate.get("valid_to"):
+                valid_to_count += 1
+
+        return {
+            "session_id": sid,
+            "candidate_count": len(candidates),
+            "review_count": review_count,
+            "duplicate_candidate_count": duplicate_candidate_count,
+            "pending_count": review_status_counts.get("pending", 0),
+            "accepted_count": review_status_counts.get("accepted", 0),
+            "rejected_count": review_status_counts.get("rejected", 0),
+            "deferred_count": review_status_counts.get("deferred", 0),
+            "conflicted_count": review_status_counts.get("conflicted", 0),
+            "stale_count": stale_count,
+            "superseded_count": superseded_count,
+            "valid_to_count": valid_to_count,
+            "review_status_counts": dict(sorted(review_status_counts.items())),
+            "authority_status_counts": dict(sorted(authority_status_counts.items())),
+            "candidate_type_counts": dict(sorted(type_counts.items())),
+            "candidates": sorted(candidates.values(), key=lambda item: item["created_seq"]),
+        }
+
     async def assemble_context(
         self,
         query: str,
@@ -3192,6 +3334,24 @@ def _eventlog_file_signature(eventlog: EventLog) -> tuple[int, int]:
     except FileNotFoundError:
         return (0, 0)
     return (stat.st_mtime_ns, stat.st_size)
+
+
+def _consolidation_candidate_ids(events: list[Any]) -> set[str]:
+    candidate_ids: set[str] = set()
+    for event in events:
+        if getattr(event, "type", None) != "consolidation.candidate.created":
+            continue
+        payload = getattr(event, "payload", {})
+        if not isinstance(payload, dict):
+            continue
+        candidate_id = payload.get("candidate_id")
+        if isinstance(candidate_id, str) and candidate_id:
+            candidate_ids.add(candidate_id)
+    return candidate_ids
+
+
+def _increment_count(counts: dict[str, int], key: str) -> None:
+    counts[key] = counts.get(key, 0) + 1
 
 
 def _tokens(value: str) -> set[str]:
