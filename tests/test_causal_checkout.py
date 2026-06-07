@@ -128,15 +128,50 @@ def test_checkout_guidance_marks_causal_and_pending_consolidation_non_authoritat
         in guidance["trust"]
     )
     assert (
-        "Do not treat review-pending consolidation candidates as authoritative memory."
+        "Do not treat consolidation candidates as authoritative memory without a separate promotion event."
         in guidance["ignore"]
     )
+    assert "Review-pending consolidation candidates still require disposition." in guidance["ignore"]
     assert "Causal context: contexts=1, edges=1, average_trust=0.91" in prompt
     assert "authority=non_authoritative" in prompt
     assert "relations=causal_caused" in prompt
     assert "methods=explicit_outcome_citation_v1" in prompt
     assert "Consolidation candidates: candidates=1, pending=1, accepted=0" in prompt
     assert "types=episode" in prompt
+
+
+def test_checkout_guidance_marks_accepted_consolidation_candidate_non_authoritative() -> None:
+    """Accepted review status is still not authority promotion in alpha.1."""
+    current_facts = [
+        {
+            "content": "accepted consolidation candidate summarizes an episode.",
+            "entity_name": "consolidation:episode:" + "a" * 24,
+            "entity_type": "consolidation_candidate",
+            "citation": "eventloom://agent-1/events/55#bbbbbbbbbbbb",
+            "metadata": {
+                "candidate_type": "episode",
+                "review_status": "accepted",
+                "authority_status": "non_authoritative",
+            },
+        },
+    ]
+
+    guidance = build_checkout_guidance(
+        query="What should I remember?",
+        current_facts=current_facts,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        evidence=current_facts,
+    )
+
+    assert (
+        "Use consolidation candidates as cited summaries that still require review."
+        in guidance["trust"]
+    )
+    assert (
+        "Do not treat consolidation candidates as authoritative memory without a separate promotion event."
+        in guidance["ignore"]
+    )
+    assert "Review-pending consolidation candidates still require disposition." not in guidance["ignore"]
 
 
 def test_checkout_ignores_unsupported_causal_relation_types() -> None:
@@ -216,6 +251,7 @@ def test_checkout_reads_flattened_consolidation_candidate_metadata() -> None:
         "authority_status": "non_authoritative",
     }
     assert (
-        "Do not treat review-pending consolidation candidates as authoritative memory."
+        "Do not treat consolidation candidates as authoritative memory without a separate promotion event."
         in guidance["ignore"]
     )
+    assert "Review-pending consolidation candidates still require disposition." in guidance["ignore"]

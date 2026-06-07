@@ -85,6 +85,7 @@ from zaxy.security import (
     validate_payload,
     validate_query,
     validate_session_id,
+    validate_traversal_depth,
 )
 from zaxy.session import SessionManager
 from zaxy.synthesis_artifact import (
@@ -425,16 +426,19 @@ class MemoryFabric:
         temporal_point: str | None,
         session_id: str,
     ) -> list[CausalQueryResult]:
+        safe_entity_name = validate_query(entity_name)
+        safe_depth = validate_traversal_depth(depth)
+        safe_session_id = validate_session_id(session_id)
         graph_relation_type = (
             causal_relation_to_graph_relation(relation_type) if relation_type is not None else None
         )
         neighbors = await self.graph.search_causal_neighbors(
-            entity_name,
+            safe_entity_name,
             direction=direction,
             relation_type=graph_relation_type,
-            depth=depth,
+            depth=safe_depth,
             temporal_point=temporal_point,
-            session_id=session_id,
+            session_id=safe_session_id,
         )
         results: list[CausalQueryResult] = []
         for entity in neighbors:

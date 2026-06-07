@@ -370,6 +370,21 @@ async def test_memory_fabric_causal_queries_reject_invalid_relation_type() -> No
         await fabric.query_causal_predecessors("effect", relation_type="not-causal")
 
 
+@pytest.mark.asyncio
+async def test_memory_fabric_causal_queries_validate_public_inputs_before_graph() -> None:
+    store = _DirectionalCausalStore()
+    fabric = _fabric_with_graph(store)
+
+    with pytest.raises(ValueError, match="query"):
+        await fabric.query_causal_successors("", session_id="agent-1")
+    with pytest.raises(ValueError, match="depth"):
+        await fabric.query_causal_successors("cause", depth=0, session_id="agent-1")
+    with pytest.raises(ValueError, match="session_id"):
+        await fabric.query_causal_successors("cause", session_id="bad/session")
+
+    assert store.calls == []
+
+
 def test_build_causal_edge_event_requires_cited_source_event() -> None:
     edge = CausalEdge(
         source={"name": "command:pytest", "entity_type": "command"},

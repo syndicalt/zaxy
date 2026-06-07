@@ -153,8 +153,11 @@ def build_checkout_guidance(
     consolidation_candidates = _consolidation_candidate_diagnostics(current_facts)
     if consolidation_candidates["candidate_count"]:
         trust.append("Use consolidation candidates as cited summaries that still require review.")
+        ignore.append(
+            "Do not treat consolidation candidates as authoritative memory without a separate promotion event."
+        )
     if consolidation_candidates["pending_count"]:
-        ignore.append("Do not treat review-pending consolidation candidates as authoritative memory.")
+        ignore.append("Review-pending consolidation candidates still require disposition.")
     synthesis = _checkout_synthesis_guidance(
         query=query,
         current_facts=current_facts,
