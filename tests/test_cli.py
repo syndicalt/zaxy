@@ -2242,7 +2242,7 @@ def test_memory_causal_and_consolidation_help_commands_are_registered() -> None:
     assert "--candidate-type" in propose.output
 
 
-@patch("zaxy.__main__.MemoryFabric")
+@patch("zaxy.__main__._memory_fabric")
 def test_memory_causal_successors_json_queries_fabric(
     mock_fabric_cls: MagicMock,
     tmp_path: Path,
@@ -2252,7 +2252,7 @@ def test_memory_causal_successors_json_queries_fabric(
     causal_result.to_dict.return_value = {
         "source": {"name": "Plan", "entity_type": "task"},
         "target": {"name": "Implementation", "entity_type": "task"},
-        "relation_type": "enables",
+        "relation_type": "enabled",
         "citation": "eventloom://agent/events/3#abc",
     }
     fabric = AsyncMock()
@@ -2270,7 +2270,7 @@ def test_memory_causal_successors_json_queries_fabric(
             "--entity-type",
             "task",
             "--relation-type",
-            "enables",
+            "enabled",
             "--session-id",
             "agent",
             "--depth",
@@ -2291,14 +2291,41 @@ def test_memory_causal_successors_json_queries_fabric(
     fabric.connect.assert_awaited_once()
     fabric.query_causal_successors.assert_awaited_once_with(
         "Plan",
-        relation_type="enables",
+        relation_type="enabled",
         depth=3,
         session_id="agent",
     )
     fabric.close.assert_awaited_once()
 
 
-@patch("zaxy.__main__.MemoryFabric")
+@patch("zaxy.__main__._memory_fabric")
+def test_memory_causal_successors_rejects_invalid_relation_before_fabric(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """--relation-type should reject labels outside the causal taxonomy at the CLI boundary."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "causal",
+            "successors",
+            "Plan",
+            "--relation-type",
+            "enables",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "causal relation_type must be one of:" in result.output
+    mock_fabric_cls.assert_not_called()
+
+
+@patch("zaxy.__main__._memory_fabric")
 def test_memory_consolidation_propose_appends_candidate_event(
     mock_fabric_cls: MagicMock,
     tmp_path: Path,
@@ -2392,7 +2419,7 @@ def test_memory_consolidation_propose_rejects_invalid_source_event(tmp_path: Pat
     assert "source event must be formatted as SEQ:HASH" in result.output
 
 
-@patch("zaxy.__main__.MemoryFabric")
+@patch("zaxy.__main__._memory_fabric")
 def test_memory_consolidation_review_appends_review_event(
     mock_fabric_cls: MagicMock,
     tmp_path: Path,

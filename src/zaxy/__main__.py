@@ -1650,36 +1650,6 @@ def memory_checkout(
         typer.echo(payload["prompt"])
 
 
-def _cli_memory_fabric(
-    *,
-    eventloom_path: Path,
-    neo4j_uri: str | None = None,
-    neo4j_user: str | None = None,
-    neo4j_password: str | None = None,
-    neo4j_ca_cert: str | None = None,
-    neo4j_trust_all: bool | None = None,
-) -> Any:
-    settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
-    return MemoryFabric(
-        eventloom_path=str(eventloom_path),
-        neo4j_uri=neo4j_uri,
-        neo4j_user=neo4j_user,
-        neo4j_password=neo4j_password,
-        neo4j_ca_cert=neo4j_ca_cert,
-        neo4j_trust_all=neo4j_trust_all,
-        projection_backend=_resolve_cli_projection_backend(
-            None,
-            settings,
-            neo4j_uri=neo4j_uri,
-            neo4j_user=neo4j_user,
-            neo4j_password=neo4j_password,
-        ),
-        pggraph_dsn=settings.pggraph_dsn,
-        embedded_graph_path=Path(settings.embedded_graph_path),
-        latticedb_path=Path(settings.latticedb_path),
-    )
-
-
 def _parse_source_event(value: str) -> dict[str, object]:
     seq_text, separator, event_hash = value.partition(":")
     if separator != ":" or not seq_text or not event_hash:
@@ -1693,6 +1663,18 @@ def _parse_source_event(value: str) -> dict[str, object]:
     if len(event_hash) != 64 or any(char not in "0123456789abcdef" for char in event_hash):
         raise typer.BadParameter("source event hash must be exactly 64 lowercase hex characters")
     return {"seq": seq, "hash": event_hash}
+
+
+def _validate_causal_relation_type_option(value: str | None) -> str | None:
+    if value is None:
+        return None
+    from zaxy.causal import causal_relation_to_graph_relation
+
+    try:
+        causal_relation_to_graph_relation(value)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    return value
 
 
 def _format_causal_results_text(
@@ -1734,7 +1716,14 @@ async def _query_causal_memory(
     depth: int,
     eventloom_path: Path,
 ) -> list[dict[str, object]]:
-    fabric = _cli_memory_fabric(eventloom_path=eventloom_path)
+    settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
+    fabric = _memory_fabric(
+        eventloom_path=str(eventloom_path),
+        projection_backend=_resolve_cli_projection_backend(None, settings),
+        pggraph_dsn=settings.pggraph_dsn,
+        embedded_graph_path=Path(settings.embedded_graph_path),
+        latticedb_path=Path(settings.latticedb_path),
+    )
     try:
         await fabric.connect()
         if direction == "successors":
@@ -1761,7 +1750,11 @@ async def _query_causal_memory(
 def memory_causal_successors(
     entity_name: str = typer.Argument(..., help="Entity name to inspect"),  # noqa: B008
     entity_type: str | None = typer.Option(None, help="Entity type label for output context"),
-    relation_type: str | None = typer.Option(None, help="Causal relation type to filter"),
+    relation_type: str | None = typer.Option(
+        None,
+        callback=_validate_causal_relation_type_option,
+        help="Causal relation type to filter",
+    ),
     session_id: str = typer.Option("default", help="Session ID to query"),
     depth: int = typer.Option(2, min=1, help="Traversal depth"),
     eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
@@ -1795,7 +1788,11 @@ def memory_causal_successors(
 def memory_causal_predecessors(
     entity_name: str = typer.Argument(..., help="Entity name to inspect"),  # noqa: B008
     entity_type: str | None = typer.Option(None, help="Entity type label for output context"),
-    relation_type: str | None = typer.Option(None, help="Causal relation type to filter"),
+    relation_type: str | None = typer.Option(
+        None,
+        callback=_validate_causal_relation_type_option,
+        help="Causal relation type to filter",
+    ),
     session_id: str = typer.Option("default", help="Session ID to query"),
     depth: int = typer.Option(2, min=1, help="Traversal depth"),
     eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
@@ -1826,7 +1823,14 @@ def memory_causal_predecessors(
 
 
 async def _append_consolidation_event(event: dict[str, Any], *, eventloom_path: Path) -> None:
-    fabric = _cli_memory_fabric(eventloom_path=eventloom_path)
+    settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
+    fabric = _memory_fabric(
+        eventloom_path=str(eventloom_path),
+        projection_backend=_resolve_cli_projection_backend(None, settings),
+        pggraph_dsn=settings.pggraph_dsn,
+        embedded_graph_path=Path(settings.embedded_graph_path),
+        latticedb_path=Path(settings.latticedb_path),
+    )
     try:
         await fabric.connect()
         await fabric.append(**event)
