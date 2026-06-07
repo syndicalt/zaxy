@@ -38,7 +38,7 @@ first. The benchmark lane should stay architecture-driven:
 
 ## Public Benchmark Posture
 
-The current Zaxy public benchmark hub is [benchmarks.md](benchmarks.md). Zaxy's
+The current Zaxy public benchmark hub is [benchmarks.md](../benchmarks.md). Zaxy's
 same-harness evidence now leads with the full 500-question current74 checkout
 archive: mean score 0.940, Answer@5 0.906, citation coverage 1.000,
 R@1/R@5/R@10 of 0.906/1.000/1.000, p95 687.67 ms, and p99 969.10 ms on
@@ -127,6 +127,6 @@ comparison; a stronger claim requires a pinned GBrain runner.
 - Keep claims reproducible: every comparison should publish workload hashes,
   retrieval settings, and exact scoring rules.
 
-Related pages: [benchmark-review.md](benchmark-review.md),
-[benchmarks.md](benchmarks.md), [integrations.md](integrations.md), and
-[architecture.md](architecture.md).
+Related pages: [archived benchmark-review.md](benchmark-review.md),
+[benchmarks.md](../benchmarks.md), [integrations.md](../integrations.md), and
+[architecture.md](../architecture.md).

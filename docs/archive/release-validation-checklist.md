@@ -118,7 +118,7 @@ The release gate may only skip an environment-specific smoke with an explicit
   proves `commands` match the selected `validation_path`,
   and passes `scripts/check-external-validation.py`.
 
-Related references: [external-validation.md](external-validation.md),
+Related references: [external-validation.md](../external-validation.md),
 [v10-gate-audit.md](v10-gate-audit.md), [v09-gate-audit.md](v09-gate-audit.md),
-[testing.md](testing.md), [runbook.md](runbook.md), [benchmarks.md](benchmarks.md),
-and [README.md](../README.md).
+[testing.md](../testing.md), [runbook.md](../runbook.md), [benchmarks.md](../benchmarks.md),
+and [README.md](../../README.md).

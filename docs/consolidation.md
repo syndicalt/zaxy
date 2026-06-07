@@ -188,7 +188,7 @@ source-backed context from degraded compacted context.
 ## References
 
 - [Retrieval](retrieval.md)
-- [Benchmark review](benchmark-review.md)
+- [Archived benchmark review](archive/benchmark-review.md)
 - [Architecture](architecture.md)
 - [Testing](testing.md)
 - [README](../README.md)

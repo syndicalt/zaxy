@@ -100,6 +100,6 @@ Required evidence:
   `python examples/coordinate_three_worker_project.py`;
 - result, friction, and whether docs or code changed in response.
 
-Related references: [v1-roadmap.md](v1-roadmap.md), [testing.md](testing.md),
-[first-run-validation.md](first-run-validation.md), [coordinate-quickstart.md](coordinate-quickstart.md),
-and [README.md](../README.md).
+Related references: [v1-roadmap.md](v1-roadmap.md), [testing.md](../testing.md),
+[first-run-validation.md](../first-run-validation.md), [coordinate-quickstart.md](../coordinate-quickstart.md),
+and [README.md](../../README.md).

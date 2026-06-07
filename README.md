@@ -29,8 +29,12 @@ optional Neo4j sidecar, and `zaxy-memory[pathlight]` only for Pathlight tracing.
   benchmark, Zaxy scored `0.788` mean criterion pass rate across `10/10` tasks,
   `+0.184` vs regular/no-memory, `+0.081` vs the article-best task rows, and
   won `9/10` task comparisons. See
-  [Benchmarks](docs/benchmarks.md#completed-2026-06-06-result); the published
+  [Benchmarks](docs/benchmarks.md#harvey-lab); the published
   stats artifact is `reports/benchmarks/harvey-lab-memory-ablation/publishable-statistics.md`.
+- **Headline 500 evidence**: the current LongMemEval-compatible checkout
+  diagnostic is a full 500-question run with mean `0.956`, Answer@5 `0.910`,
+  Recall@5 `1.000`, and citation coverage `1.000`. See
+  [Benchmarks](docs/benchmarks.md#headline-500).
 
 ## Quick Start
 
@@ -101,19 +105,9 @@ See [LLM Packet Analyzer](docs/packet-analyzer.md).
 ## Public Site and Documentation
 
 - Public static site: `site/index.html`
-- Zaxy 1.0.0 release: `docs/announcements/zaxy-v1.0.md`
-- Zaxy 1.0.0 X article draft: `docs/announcements/zaxy-v1.0-x-article.md`
-- Zaxy 1.1.0 X article draft: `docs/announcements/zaxy-v1.1-x-article.md`
-- Zaxy Coordinate/Collaborate demo media: `docs/media/zaxy-collaborate-demo.md`
-- Zaxy Coordinate announcement: `docs/announcements/zaxy-coordinate.md`
-- Zaxy 0.4.0 archive: `docs/announcements/zaxy-0.4.0.md`
-- Coordinate roadmap: `docs/coordinate-roadmap.md`
 - Why Zaxy: `docs/why-zaxy.md`
 - Getting started: `docs/getting-started.md`
-- First-run validation: `docs/first-run-validation.md`
-- Public external verification request: `docs/external-validation.md`
 - MCP quickstart: `docs/mcp-quickstart.md`
-- Coordinate quickstart: `docs/coordinate-quickstart.md`
 - Architecture: `docs/architecture.md`
 - Configuration: `docs/configuration.md`
 - MCP interface: `docs/mcp.md`
@@ -121,18 +115,15 @@ See [LLM Packet Analyzer](docs/packet-analyzer.md).
 - Graph schema: `docs/graph-schema.md`
 - Retrieval: `docs/retrieval.md`
 - Benchmarks: `docs/benchmarks.md`
-- Benchmark contributions: `docs/benchmark-contributions.md`
 - LLM packet analyzer: `docs/packet-analyzer.md`
 - Embeddings: `docs/embeddings.md`
 - Security: `docs/security.md`
 - Operations and deployment: `docs/operations.md`, `docs/deployment.md`, `docs/runbook.md`
 - Python API: `docs/api.md`
-- API inventory: `docs/api-inventory.md`
 - Stability commitment: `docs/stability-commitment.md`
 - Migration guide: `docs/migration.md`
-- v0.9 gate audit: `docs/v09-gate-audit.md`
-- v1.0 gate audit: `docs/v10-gate-audit.md`
-- Release validation checklist: `docs/release-validation-checklist.md`
+- Archived benchmark iteration notes, release drafts, and research notes live
+  under `docs/archive/`, `docs/announcements/`, and `docs/research/`.
 - Contributing: `CONTRIBUTING.md`
 
 ## Key Features
@@ -195,32 +186,16 @@ pytest -m integration --no-cov
 ruff check src tests
 mypy src
 
-# Competitive retrieval benchmark harness
-pytest tests/test_competitive_benchmarks.py --benchmark-only --no-cov
+# Current full-set LongMemEval-compatible checkout evidence:
+# reports/benchmarks/longmemeval-500-publish-20260607/
+# Mean 0.956, Answer@5 0.910, citation coverage 1.000, R@1/R@5/R@10 0.960/1.000/1.000.
 
-# Frozen live benchmark: markdown vs BM25 vs vector vs markdown+vector vs embedded Zaxy
-# Uses deterministic hash embeddings and embedded projection by default.
-scripts/live-benchmark.sh --workload frozen --runs 1 --reset-graph
-
-# Representative benchmark suite: temporal memory + docs + transcripts + mixed context
-scripts/live-benchmark.sh --workload suite --subjects 100 --documents 250 --sessions 50 --runs 1 --reset-graph
-
-# LongMemEval-compatible memory benchmark and BM25 comparison
-# Plain benchmark commands use the embedded projection backend by default.
-zaxy benchmark --embedding-provider hash --workload longmemeval \
-  --dataset .cache/zaxy/benchmarks/longmemeval_oracle.json \
-  --questions 100 --runs 1 --limit 10 --zaxy-backend checkout \
-  --baseline-backends bm25 --embedding-cache .cache/zaxy/longmemeval-embeddings.json
-zaxy benchmark --output-dir reports/benchmarks/longmemeval-100-comparison \
+# Stage the next full 500 only after docs/report cleanup is complete.
+zaxy benchmark --output-dir reports/benchmarks/longmemeval-500-next \
   --embedding-provider hash --workload longmemeval \
   --dataset .cache/zaxy/benchmarks/longmemeval_oracle.json \
-  --questions 100 --runs 1 --limit 5 --baseline-backends bm25 \
-  --zaxy-backend checkout --reuse-projection \
-  --embedding-cache .cache/zaxy/longmemeval-embeddings.json
-
-# Current full-set LongMemEval-compatible checkout evidence:
-# reports/benchmarks/longmemeval-500-current74-zaxyonly-gated-relative-temporal-anchor-embedded-reuse-20260604/
-# Mean 0.940, Answer@5 0.906, citation coverage 1.000, R@1/R@5/R@10 0.906/1.000/1.000.
+  --runs 1 --limit 5 --baseline-backends bm25 \
+  --projection-backend embedded --zaxy-backend checkout
 
 # Harvey LAB external memory-ablation comparison
 # Consumes externally generated Harvey normalized-result artifacts for Zaxy;
@@ -230,49 +205,6 @@ zaxy benchmark --output-dir reports/benchmarks/longmemeval-100-comparison \
 # reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-benchmark.json
 # 10/10 tasks, mean criterion pass rate 0.788, +0.184 vs regular/no-memory,
 # +0.081 vs article-best task rows, 9/10 wins vs article-best rows.
-zaxy harvey-lab-doctor path/to/harvey-worktree
-zaxy harvey-lab-adapter-kit --output-dir reports/benchmarks/harvey-lab-adapter-kit
-zaxy harvey-lab-index --normalized-corpus-root path/to/.ingestion/corpora/HASH/txt \
-  --source-map path/to/.ingestion/corpora/HASH/source-map.json \
-  --output-dir path/to/.ingestion/indexes/HASH/zaxy
-zaxy harvey-lab-preflight path/to/harvey-worktree
-zaxy harvey-lab-preflight path/to/harvey-worktree \
-  --task-filter corporate-ma__draft-acquisition-due-diligence
-zaxy harvey-lab-ready path/to/harvey-worktree \
-  --generator openai-compatible/gpt-5.5 --judge gpt-5.4-mini --json
-zaxy harvey-lab-ready path/to/harvey-worktree \
-  --generator openai-compatible/gpt-5.5 --judge gpt-5.4-mini \
-  --task-filter corporate-ma__draft-acquisition-due-diligence --json
-zaxy harvey-lab-plan --output-dir reports/benchmarks/harvey-lab-memory-ablation
-reports/benchmarks/harvey-lab-memory-ablation/run-harvey-lab-zaxy.sh path/to/harvey-worktree
-# Full runs validate, gate, and write publishable-statistics.md after import.
-# Optional third arg or HARVEY_TASK_FILTER can run one task id, slug, or run id;
-# filtered reruns import and validate partial evidence without publishing:
-reports/benchmarks/harvey-lab-memory-ablation/run-harvey-lab-zaxy.sh path/to/harvey-worktree \
-  reports/benchmarks/harvey-lab-memory-ablation corporate-ma__draft-acquisition-due-diligence
-zaxy harvey-lab-normalize-run --harvey-worktree path/to/harvey-worktree \
-  --run-id zaxy-TASK-SLUG --task-id practice-area/task-slug \
-  --manifest path/to/.ingestion/indexes/HASH/zaxy/manifest.json
-zaxy harvey-lab-status path/to/harvey-worktree
-zaxy harvey-lab-status path/to/harvey-worktree --json
-# Optional before Zaxy judged rows exist: capture Harvey-native baseline report provenance.
-zaxy harvey-lab-import path/to/harvey-worktree --allow-baseline-only \
-  --output-dir reports/benchmarks/harvey-lab-memory-ablation
-zaxy harvey-lab-import path/to/harvey-worktree \
-  --output-dir reports/benchmarks/harvey-lab-memory-ablation
-zaxy harvey-lab-benchmark --zaxy-results path/to/zaxy-normalized-results.json \
-  --output-dir reports/benchmarks/harvey-lab-memory-ablation
-zaxy harvey-lab-validate reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-benchmark.json
-zaxy harvey-lab-gate reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-benchmark.json
-zaxy harvey-lab-publish reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-benchmark.json \
-  --output reports/benchmarks/harvey-lab-memory-ablation/publishable-statistics.md
-
-# StateRecoveryBench accepted-state recovery guardrail:
-zaxy state-recovery-benchmark --output-dir reports/benchmarks/state-recovery-v1 \
-  --workload reports/benchmarks/state-recovery-v1/state-recovery-workload.json
-# Production baseline: memory_fabric_checkout. State accuracy 0.818,
-# minimal evidence recall 0.909, stale rejection 1.000, distractor resistance
-# 0.818, abstention accuracy 1.000, citation coverage 1.000.
 
 # Production deployment preflight
 scripts/validate-deployment.sh --root .

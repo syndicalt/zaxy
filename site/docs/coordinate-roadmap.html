@@ -15,7 +15,7 @@
     <div class="nav-links">
       <a href="../index.html">Overview</a>
       <a href="../docs/coordinate-roadmap.html">Coordinate</a>
-      <a href="../docs/memory-is-purpose-zaxy-analysis.html">Purpose</a>
+      <a href="../docs/why-zaxy.html">Why Zaxy</a>
       <a href="../docs/benchmarks.html">Benchmarks</a>
       <a href="getting-started.html">Start</a>
       <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
@@ -43,8 +43,7 @@
         <li><code>zaxy coordinate audit-report</code> generates a read-only mission audit report in Markdown or JSON from Eventloom replay, citing session, sequence, and hash metadata for mission, worker, assignment, finding, review, promotion, conflict, and handoff events.</li>
         <li>Approval packets and review exports include explicit next-action guidance for pending, conflicted, stale, and evidence-poor findings so reviewers do not have to infer whether to add evidence, resolve conflicts, refresh stale sources, or proceed with a normal review decision.</li>
         <li>Dashboard human review controls are available behind explicit opt-in. The dashboard remains read-only by default, but <code>--enable-coordinate-review</code> enables single-finding review/promote actions and JSON approval packet application through the same Eventloom-backed coordination review path.</li>
-        <li>CoordinationBench now reports same-harness local baselines for flat transcript concatenation, markdown notes, and BM25 over worker logs.</li>
-        <li>The <code>coordination-real-v1</code> report is published at <code>reports/benchmarks/coordination-real-v1/coordination-benchmark.md</code> with Zaxy metrics, local baselines, disclosure-only adapter status, limitations, and reproduction commands from the tracked workload in <code>benchmarks/coordination-real-v1/coordination-workload.json</code>.</li>
+        <li>CoordinationBench remains an internal design and regression lane for the coordination product direction. Its older reports are archived development history, not current public benchmark claims.</li>
         <li>CoordinationBench includes a competitor adapter disclosure contract. Until a pinned adapter and workload replay contract is configured, generated entries are reported as <code>not_run</code> with <code>disclosure_only</code> claim status rather than fake scores. Pinned external result files can be ingested with <code>--competitor-result NAME=PATH</code>, but Zaxy recomputes public metrics locally from case outputs and rejects fingerprint mismatches, duplicate case outputs, and adapter manifest mismatches. Completed same-harness result ingests now carry a result fingerprint, generated time, case count, and adapter manifest in JSON, with the key provenance surfaced in the Markdown report.</li>
         <li>CoordinationBench can execute pinned same-harness competitor runner manifests with <code>--competitor-runner NAME=PATH</code>. The runner contract writes the frozen workload, executes a manifest <code>run_command</code> argv list without a shell, requires the adapter to write the standard result file, and still recomputes all public metrics locally through the same strict scorer. Duplicate adapter names across result ingestion and runner execution are rejected.</li>
         <li>Each benchmark run now writes a <code>competitor-runner-manifests/</code> manifest pack. These JSON templates are bound to the frozen workload fingerprint and include the exact result path each adapter must write, but they are marked <code>template: true</code> and contain a placeholder <code>run_command</code>; Zaxy refuses to execute unfinalized templates, preventing placeholder manifests from turning into public same-harness claims.</li>
@@ -265,7 +264,7 @@ zaxy coordinate audit-report --mission auth-main</code></pre>
       <p><code>zaxy coordinate ledger</code> and <code>coordination_performance_ledger</code> now expose the replay-backed first pass: accepted, promoted, rejected, deferred, conflicted, pending, missing-evidence, duplicate, test-backed, and explicitly stale metrics per worker. Stale/superseded claims are detected from deterministic evidence metadata and surfaced in briefs, diagnostic checkout, approval packets, and the ledger. Source-state drift is detected when evidence for the same source reference carries incompatible <code>source_sha256</code> values. Semantic drift detection now has opt-in local lexical and hosted HTTP adapters, but no semantic provider is enabled by default.</p>
       <p>This gives teams a practical reason to keep Zaxy in the loop: it can tell which agents, prompts, and workflows produce useful work.</p>
       <h2 id="coordinationbench">CoordinationBench</h2>
-      <p>CoordinationBench is the public benchmark for the new product direction. It should test whether a memory/coordinator system can turn parallel worker outputs into one reliable project history.</p>
+      <p>CoordinationBench is an internal benchmark design for the coordination product direction. The active public benchmark surface is maintained in <a href="benchmarks.html">benchmarks.md</a>; older CoordinationBench reports are archived development history.</p>
       <h3 id="workload-shape">Workload Shape</h3>
       <p>Each benchmark case should include:</p>
       <ul>

@@ -163,7 +163,7 @@ Required evidence:
 - whether the validation supports the v1.0 positioning as Coordinator Memory
   for Agent Teams.
 
-Use [external-validation.md](external-validation.md) and the External validation
+Use [external-validation.md](../external-validation.md) and the External validation
 GitHub issue template to collect the report when evidence exists.
 Machine-checkable reports should start from
 `docs/examples/external-validation-report.example.json`, use the
@@ -209,7 +209,7 @@ prove `commands` match the selected `validation_path`,
 and pass `scripts/check-external-validation.py` before the optional evidence
 row is updated.
 
-Related references: [external-validation.md](external-validation.md),
+Related references: [external-validation.md](../external-validation.md),
 [release-validation-checklist.md](release-validation-checklist.md),
 [v09-gate-audit.md](v09-gate-audit.md), [v1-roadmap.md](v1-roadmap.md),
-[testing.md](testing.md), [runbook.md](runbook.md), and [README.md](../README.md).
+[testing.md](../testing.md), [runbook.md](../runbook.md), and [README.md](../../README.md).

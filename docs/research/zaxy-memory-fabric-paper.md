@@ -19,14 +19,14 @@ a raw context dump.
 This paper summarizes the theory, mathematics, implementation lessons,
 benchmarks, failure modes, and research directions that emerged while building
 Zaxy through the 1.1.2 release. The strongest internal same-harness result is
-the current74 full 500-question LongMemEval-compatible checkout run: mean score
-0.940, Answer@5 0.906, citation coverage 1.000, Recall@1/5/10 of
-0.906/1.000/1.000, p95 latency 687.67 ms, and p99 latency 969.10 ms over 5,372
+the publish 20260607 full 500-question LongMemEval-compatible checkout run: mean score
+0.956, Answer@5 0.910, citation coverage 1.000, Recall@1/5/10 of
+0.960/1.000/1.000, p95 latency 1,966.65 ms, and p99 latency 2,495.07 ms over 5,372
 Eventloom events, 948 sessions, and a frozen workload hash
 `90fb2307195d7e16b963a2b8a30f03b375bd42a45d41aeaa55423029dd84e3fc`.
 The important interpretation is not simply that retrieval is strong. It is that
 within Zaxy's event-sourced adaptation of this workload, retrieval and citation
-reached a plateau: 47 `synthesis_miss` cases remained and no retrieval-miss
+reached a plateau: 45 `synthesis_miss` cases remained and no retrieval-miss
 class was observed. That shifted the research agenda from "find more context"
 to "compose, rank, verify, and cite the right answer from already-retrieved
 evidence." External legal-agent evidence from the Harvey LAB memory-ablation
@@ -523,7 +523,7 @@ checkout diagnostics that warn on uncited context.
 
 ### 5.4 The Retrieval Plateau Was Real
 
-The current74 LongMemEval-compatible run hit Recall@5 1.000, Recall@10 1.000,
+The publish 20260607 LongMemEval-compatible run hit Recall@5 1.000, Recall@10 1.000,
 and citation coverage 1.000 within Zaxy's event-sourced checkout adaptation.
 The remaining 47 misses were `synthesis_miss`, not retrieval misses. This
 changed the roadmap. Adding more retrievers would mostly increase prompt load
@@ -565,9 +565,9 @@ explicitly marked as external evidence or article-relative disclosure. The
 LongMemEval-compatible numbers evaluate Zaxy's event-sourced memory checkout
 adaptation, not official LongMemEval end-to-end assistant accuracy.
 
-### 6.1 LongMemEval-Compatible Current74
+### 6.1 LongMemEval-Compatible Publish Run
 
-The current public Zaxy headline is the current74 full 500-question
+The current public Zaxy headline is the publish 20260607 full 500-question
 LongMemEval-compatible checkout run.
 
 Protocol boundary. The cleaned LongMemEval-compatible dataset is transformed
@@ -575,9 +575,9 @@ into Eventloom-backed memory events and queried through Zaxy's checkout
 protocol. The report measures whether the memory fabric retrieves and cites
 answer-bearing identities and answer surfaces. It does not replay the official
 LongMemEval assistant-interaction protocol, and should not be compared directly
-to published LongMemEval end-to-end answer accuracy. In this paper, "current74"
-is the internal archived run label for the gated relative-temporal-anchor
-embedded Kuzu report, not a separate benchmark version.
+to published LongMemEval end-to-end answer accuracy. In this paper, "publish
+20260607" is the frozen report label for the 2026-06-07 full 500-question
+checkout run, not a separate benchmark version.
 
 | Metric | Value |
 | --- | ---: |
@@ -587,21 +587,21 @@ embedded Kuzu report, not a separate benchmark version.
 | Subjects | 500 |
 | Embedding provider | `hash:1536` |
 | Projection backend | embedded Kuzu |
-| Mean score | 0.940 |
-| Answer@1 | 0.696 |
-| Answer@5 | 0.906 |
-| Answer@10 | 0.932 |
+| Mean score | 0.956 |
+| Answer@1 | 0.714 |
+| Answer@5 | 0.910 |
+| Answer@10 | 0.950 |
 | Citation coverage | 1.000 |
-| Recall@1 | 0.906 |
+| Recall@1 | 0.960 |
 | Recall@5 | 1.000 |
 | Recall@10 | 1.000 |
-| Mean identity recall | 0.9682 |
-| Mean latency | 413.765 ms |
-| p50 latency | 358.434 ms |
-| p95 latency | 687.671 ms |
-| p99 latency | 969.099 ms |
-| Mean approximate tokens | 14,033.496 |
-| Miss taxonomy | 47 `synthesis_miss` |
+| Mean identity recall | 0.980 |
+| Mean latency | 991.62 ms |
+| p50 latency | 881.01 ms |
+| p95 latency | 1,966.65 ms |
+| p99 latency | 2,495.07 ms |
+| Mean approximate tokens | 10,192.11 |
+| Miss taxonomy | 45 `synthesis_miss` |
 
 Category summaries show the remaining weak areas are not uniform. Multi-session
 queries had mean score 0.9023 and Answer@5 0.8421; knowledge-update queries
@@ -756,7 +756,7 @@ not become hidden dependencies of the control path.
 
 ### Plateau: Retrieval Saturation
 
-The current74 plateau is the clearest empirical result. Once Recall@5 and
+The publish 20260607 plateau is the clearest empirical result. Once Recall@5 and
 citation coverage reached 1.000, further broad retrieval would mostly increase
 the cognitive load on the model. The work shifted to structured synthesis.
 
@@ -815,7 +815,7 @@ packets. Operations such as count, sum, difference, average, argmax, absence,
 temporal interval, and graph path explanation should be pure functions over
 ledger rows.
 
-This directly targets the current74 miss taxonomy: 47 synthesis misses with no
+This directly targets the publish 20260607 miss taxonomy: 45 synthesis misses with no
 retrieval-miss class.
 
 ### 9.2 Two-Phase Evidence Assembly
@@ -945,9 +945,9 @@ Internal Zaxy artifacts:
 
 - Zaxy architecture: `docs/architecture.md`.
 - Zaxy retrieval design and benchmark interpretation: `docs/retrieval.md`.
-- Zaxy benchmark hub and current74 report: `docs/benchmarks.md`.
-- Current74 LongMemEval-compatible report:
-  `reports/benchmarks/longmemeval-500-current74-zaxyonly-gated-relative-temporal-anchor-embedded-reuse-20260604/live-benchmark.json`.
+- Zaxy benchmark hub and publish 20260607 report: `docs/benchmarks.md`.
+- Publish 20260607 LongMemEval-compatible report:
+  `reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json`.
 - StateRecoveryBench report:
   `reports/benchmarks/state-recovery-v1/state-recovery-benchmark.json`.
 - CoordinationBench report:
@@ -959,9 +959,9 @@ Internal Zaxy artifacts:
 - Harvey LAB publishable statistics:
   `reports/benchmarks/harvey-lab-memory-ablation/publishable-statistics.md`.
 - Eventloom contract: `docs/eventloom.md`.
-- Synthesis research note: `docs/synthesis-context-research.md`.
-- Experimental associative memory note: `docs/experimental-associative-memory.md`.
-- Competitive positioning: `docs/competitive-positioning.md`.
+- Synthesis research note: `docs/archive/synthesis-context-research.md`.
+- Experimental associative memory note: `docs/archive/experimental-associative-memory.md`.
+- Competitive positioning: `docs/archive/competitive-positioning.md`.
 - Release history and version context: `CHANGELOG.md`.
 
 External references:

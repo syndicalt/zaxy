@@ -37,9 +37,9 @@ LongMemEval-compatible 500-question run:
 
 | Metric | Score |
 |--------|-------|
-| Mean | 0.940 |
-| Answer@5 | 0.906 |
-| Recall@1 | 0.906 |
+| Mean | 0.956 |
+| Answer@5 | 0.910 |
+| Recall@1 | 0.960 |
 | Recall@5 | 1.000 |
 | Recall@10 | 1.000 |
 | Citation coverage | 1.000 |

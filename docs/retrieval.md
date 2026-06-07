@@ -169,19 +169,12 @@ live retrieval run. It emits the four MemPalace-comparable lanes, frozen
 versions, fingerprints, event/query counts, product claims, and required metrics
 without requiring a graph sidecar or provider quota.
 
-The current public LongMemEval-compatible evidence is summarized in
-[benchmarks.md](benchmarks.md). The current full 500-question checkout headline
-is current74: mean score 0.940, Answer@5 0.906, citation coverage 1.000, and
-R@1/R@5/R@10 0.906/1.000/1.000. The archived same-harness BM25 comparison
-still shows the lexical tradeoff on a 100-question slice: BM25 R@5 0.840
-versus Zaxy checkout R@5 0.990. The older BM25-included `limit=10` full
-500-question hash run remains historical floor evidence, not the current
-headline. The current backend-evaluation floor is the same-harness `limit=5`
-Neo4j checkout control with workload SHA-256
-`0dc36a139bb9a4fdc7c6cd34400737a58a1eb7410517341f015e9fbfc76ed854`: mean
-score 0.714, Answer@5 0.626, citation coverage 1.000, and R@5 0.958. External
-MemPalace, Mem0, and Agent Memory numbers should be described as external
-disclosures until those systems run through the same Zaxy harness.
+The current public benchmark evidence is summarized in
+[benchmarks.md](benchmarks.md). Treat that page as the source of truth for
+retrieval-quality claims: the active public surface is the headline
+500-question LongMemEval-compatible checkout diagnostic plus the Harvey LAB
+external memory-ablation report. Older BM25 slices, backend comparisons, and
+suite/debug runs are archived development history, not current public claims.
 
 The next retrieval-quality work should close the practical ergonomics gap with
 QMD-style search sidecars: richer assembly lifecycle hooks, stronger local

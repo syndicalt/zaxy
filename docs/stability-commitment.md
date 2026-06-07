@@ -81,5 +81,5 @@ The v1.0 stability commitment does not cover:
 
 Related references: [api-inventory.md](api-inventory.md),
 [migration.md](migration.md), [agent-events.md](agent-events.md),
-[release-validation-checklist.md](release-validation-checklist.md), and
+[release-validation-checklist.md](archive/release-validation-checklist.md), and
 [README.md](../README.md).

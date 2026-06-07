@@ -61,13 +61,9 @@ The first production slice is implemented:
   dashboard remains read-only by default, but `--enable-coordinate-review`
   enables single-finding review/promote actions and JSON approval packet
   application through the same Eventloom-backed coordination review path.
-- CoordinationBench now reports same-harness local baselines for flat transcript
-  concatenation, markdown notes, and BM25 over worker logs.
-- The `coordination-real-v1` report is published at
-  `reports/benchmarks/coordination-real-v1/coordination-benchmark.md` with
-  Zaxy metrics, local baselines, disclosure-only adapter status, limitations,
-  and reproduction commands from the tracked workload in
-  `benchmarks/coordination-real-v1/coordination-workload.json`.
+- CoordinationBench remains an internal design and regression lane for the
+  coordination product direction. Its older reports are archived development
+  history, not current public benchmark claims.
 - CoordinationBench includes a competitor adapter disclosure contract. Until a
   pinned adapter and workload replay contract is configured, generated entries
   are reported as `not_run` with
@@ -397,9 +393,10 @@ agents, prompts, and workflows produce useful work.
 
 ## CoordinationBench
 
-CoordinationBench is the public benchmark for the new product direction. It
-should test whether a memory/coordinator system can turn parallel worker outputs
-into one reliable project history.
+CoordinationBench is an internal benchmark design for the coordination product
+direction. The active public benchmark surface is maintained in
+[benchmarks.md](benchmarks.md); older CoordinationBench reports are archived
+development history.
 
 ### Workload Shape
 

@@ -423,12 +423,10 @@ PATHLIGHT_ACCESS_TOKEN_FILE=/run/secrets/pathlight_access_token
 
 - Performance benchmark regression test:
   `pytest tests/test_competitive_benchmarks.py --benchmark-only --no-cov`
-- Frozen live retrieval benchmark:
-  `scripts/live-benchmark.sh --workload frozen --runs 1 --reset-graph`
-- Representative retrieval benchmark suite:
-  `scripts/live-benchmark.sh --workload suite --subjects 100 --documents 250 --sessions 50 --runs 1 --reset-graph`
-- Benchmark guardrail check:
-  `zaxy benchmark-compare reports/benchmarks/live-benchmark.json --baseline reports/benchmarks/baseline-live-benchmark.json --max-p95-ms 500 --max-p99-ms 750`
+- Review the active benchmark hub:
+  `docs/benchmarks.md`
+- Re-run the benchmark report guard only against the current headline 500 or
+  Harvey LAB artifacts listed in that hub.
 - Capacity planning review
 - Security audit (dependency updates, key rotation)
 
