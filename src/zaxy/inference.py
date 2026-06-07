@@ -119,14 +119,14 @@ def _outcome_explained_causal_edge(event: Event) -> dict[str, Any] | None:
     """Build a causal edge from an explicit, cited outcome explanation."""
     from zaxy.causal import CAUSAL_RELATION_TYPES, build_causal_edge_event
 
-    source = _entity_ref(event.payload.get("cause"))
-    target = _entity_ref(event.payload.get("effect"))
+    source = _causal_entity_ref(event.payload.get("cause"))
+    target = _causal_entity_ref(event.payload.get("effect"))
     relation_type = _text(event.payload.get("relation_type"))
     confidence = _confidence(event.payload.get("confidence"))
     evidence_value = event.payload.get("evidence")
     if not isinstance(evidence_value, dict):
         return None
-    source_event_seq = _positive_int(evidence_value.get("source_event_seq"))
+    source_event_seq = _causal_positive_int(evidence_value.get("source_event_seq"))
     source_event_hash = _event_hash(evidence_value.get("source_event_hash"))
     if not (
         source
@@ -172,6 +172,29 @@ def _confidence(value: object) -> float | None:
     if not 0.0 <= confidence <= 1.0:
         return None
     return confidence
+
+
+def _causal_positive_int(value: object) -> int | None:
+    if not isinstance(value, int) or isinstance(value, bool):
+        return None
+    return value if value > 0 else None
+
+
+def _causal_entity_ref(value: object) -> dict[str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    name = _strict_text(value.get("name"))
+    entity_type = _strict_text(value.get("entity_type"))
+    if not name or not entity_type:
+        return None
+    return {"name": name, "entity_type": entity_type}
+
+
+def _strict_text(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    return text or None
 
 
 def _positive_int(value: object) -> int | None:

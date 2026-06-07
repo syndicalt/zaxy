@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from zaxy.event import Event
 from zaxy.inference import build_inferred_edge_events
 
@@ -241,6 +243,70 @@ def test_outcome_explained_event_with_malformed_entity_refs_generates_nothing() 
             {
                 "cause": {"name": "command:pytest"},
                 "effect": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "confidence": 0.92,
+                "evidence": {
+                    "source_event_seq": 9,
+                    "source_event_hash": "f" * 64,
+                },
+            },
+        )
+    )
+
+    assert generated == []
+
+
+def test_outcome_explained_event_with_string_source_event_seq_generates_nothing() -> None:
+    generated = build_inferred_edge_events(
+        _outcome_event(
+            "outcome.explained",
+            {
+                "cause": {"name": "command:pytest", "entity_type": "command"},
+                "effect": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "confidence": 0.92,
+                "evidence": {
+                    "source_event_seq": "9",
+                    "source_event_hash": "f" * 64,
+                },
+            },
+        )
+    )
+
+    assert generated == []
+
+
+@pytest.mark.parametrize(
+    ("cause", "effect"),
+    [
+        (
+            {"name": 123, "entity_type": "command"},
+            {"name": "test failure", "entity_type": "outcome"},
+        ),
+        (
+            {"name": "command:pytest", "entity_type": 123},
+            {"name": "test failure", "entity_type": "outcome"},
+        ),
+        (
+            {"name": "command:pytest", "entity_type": "command"},
+            {"name": 123, "entity_type": "outcome"},
+        ),
+        (
+            {"name": "command:pytest", "entity_type": "command"},
+            {"name": "test failure", "entity_type": 123},
+        ),
+    ],
+)
+def test_outcome_explained_event_with_non_string_entity_ref_fields_generates_nothing(
+    cause: dict[str, object],
+    effect: dict[str, object],
+) -> None:
+    generated = build_inferred_edge_events(
+        _outcome_event(
+            "outcome.explained",
+            {
+                "cause": cause,
+                "effect": effect,
                 "relation_type": "caused",
                 "confidence": 0.92,
                 "evidence": {
