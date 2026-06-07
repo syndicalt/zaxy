@@ -256,7 +256,7 @@ def test_docs_publish_coordination_competitor_claim_gate() -> None:
     assert "--require-competitor-claim quarq" in benchmarks
     assert "--require-competitor-claim hybi" in benchmarks
     assert "disclosure-only for those systems" in benchmarks
-    assert "public-claim gate is now implemented for Quarq" in roadmap
+    assert "Quarq and Semantic Reach/Hybi remain small-project disclosure rows" in roadmap
     assert report["competitor_claim_gate"]["status"] == "blocked"
     assert set(report["competitor_claim_gate"]["blocked_adapters"]) == {"quarq", "hybi"}
     assert report["competitor_adapters"]["quarq"]["claim_status"] == "disclosure_only"
@@ -599,6 +599,10 @@ def test_research_paper_is_rendered_and_linked_from_public_site() -> None:
     assert "Zaxy: Event-Sourced Memory Fabric" in paper
     assert "Harvey LAB memory-ablation suite" in paper
     assert "mean criterion pass rate 0.788" in paper
+    assert "MathJax" in paper
+    assert 'class="math-block"' in paper
+    assert r"\mathcal{E}_s = \langle e_1, e_2, \ldots, e_n \rangle" in paper
+    assert r"e_i = \bigl(i, t_i, \tau_i, a_i, p_i, h_i, h_{i-1}\bigr)" in paper
 
 
 def test_why_zaxy_doc_explains_markdown_vector_tradeoffs() -> None:

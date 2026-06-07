@@ -8,6 +8,19 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=Inter:wght@400;550;650;750;850&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="../../style.css" />
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\(', '\\)']],
+        displayMath: [['\\[', '\\]'], ['$$', '$$']],
+        processEscapes: true
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      }
+    };
+  </script>
+  <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>
 </head>
 <body class="doc-page">
   <nav class="nav" aria-label="Documentation">
@@ -69,31 +82,60 @@
       <p>This section gives the mathematical shape of Zaxy&#x27;s memory fabric. The notation is intentionally implementation-adjacent: each term corresponds to a concrete system component.</p>
       <h3 id="31-event-log">3.1 Event Log</h3>
       <p>Let a session-scoped Eventloom log be an ordered sequence</p>
-      <p>\[ \mathcal{E}_s = \langle e_1, e_2, \ldots, e_n \rangle . \]</p>
+      <div class="math-block">\[
+\mathcal{E}_s = \langle e_1, e_2, \ldots, e_n \rangle .
+\]</div>
       <p>where each event is</p>
-      <p>\[ e_i = \bigl(i, t_i, \tau_i, a_i, p_i, h_i, h_{i-1}\bigr) \]</p>
+      <div class="math-block">\[
+e_i = \bigl(i, t_i, \tau_i, a_i, p_i, h_i, h_{i-1}\bigr)
+\]</div>
       <p>with sequence number \(i\), timestamp \(t_i\), type \(\tau_i\), actor \(a_i\), payload \(p_i\), hash \(h_i\), and previous hash \(h_{i-1}\). Hash-chain integrity is:</p>
-      <p>\[ h_i = \operatorname{Hash}\!\left(i, t_i, \tau_i, a_i, p_i, h_{i-1}\right) \]</p>
+      <div class="math-block">\[
+h_i = \operatorname{Hash}\!\left(i, t_i, \tau_i, a_i, p_i, h_{i-1}\right)
+\]</div>
       <p>for a canonical serialization and collision-resistant cryptographic hash \(\operatorname{Hash}\). A valid log satisfies:</p>
-      <p>\[ \forall i \in \{2,\ldots,n\},\qquad \operatorname{prev}(e_i) = h(e_{i-1}). \]</p>
+      <div class="math-block">\[
+\forall i \in \{2,\ldots,n\},\qquad
+\operatorname{prev}(e_i) = h(e_{i-1}).
+\]</div>
       <p>In addition, each \(h(e_i)\) must recompute from the sealed event fields and \(\operatorname{prev}(e_i)\). This gives Zaxy a concrete audit invariant: missing, reordered, or edited rows are detectable without trusting the graph projection.</p>
       <h3 id="32-extraction">3.2 Extraction</h3>
       <p>Extraction maps events into entities and edges:</p>
-      <p>\[ \mathcal{X}(e_i) = \bigl(\mathcal{V}_i, \mathcal{R}_i\bigr) \]</p>
+      <div class="math-block">\[
+\mathcal{X}(e_i) = \bigl(\mathcal{V}_i, \mathcal{R}_i\bigr)
+\]</div>
       <p>where \(\mathcal{V}_i\) is a set of extracted entities and \(\mathcal{R}_i\) a set of extracted relationships. For typed events, Zaxy uses deterministic extractors:</p>
-      <p>\[ \mathcal{X}(e_i) = \mathcal{X}_{\tau_i}(p_i). \]</p>
+      <div class="math-block">\[
+\mathcal{X}(e_i) = \mathcal{X}_{\tau_i}(p_i).
+\]</div>
       <p>The extractor registry is deliberately schema-disciplined. Adding a new public event type requires deciding its payload contract and writing extractor tests. LLM extraction can be useful for unstructured events, but Zaxy&#x27;s default posture is deterministic because reproducibility and replay matter more than maximal recall at ingestion time.</p>
       <h3 id="33-temporal-projection">3.3 Temporal Projection</h3>
       <p>The graph projection is a derived view:</p>
-      <p>\[ \mathcal{G}_t = \mathcal{P}\!\left(\mathcal{E}_{\leq t}\right) \]</p>
+      <div class="math-block">\[
+\mathcal{G}_t = \mathcal{P}\!\left(\mathcal{E}_{\leq t}\right)
+\]</div>
       <p>where \(\mathcal{P}\) is a projection function over replayed events. Each projected fact has an event provenance pointer:</p>
-      <p>\[ \pi(f) = \bigl(s, i, h_i\bigr) \]</p>
+      <div class="math-block">\[
+\pi(f) = \bigl(s, i, h_i\bigr)
+\]</div>
       <p>and a validity interval:</p>
-      <p>\[ \operatorname{valid}(f) = [v_{\mathrm{from}}, v_{\mathrm{to}}) \]</p>
+      <div class="math-block">\[
+\operatorname{valid}(f) = [v_{\mathrm{from}}, v_{\mathrm{to}})
+\]</div>
       <p>Current-state retrieval is:</p>
-      <p>\[ \mathcal{F}_{\mathrm{now}}(q) = \left\{f \in \mathcal{G} \mid v_{\mathrm{from}}(f) \leq t_{\mathrm{now}} &lt; v_{\mathrm{to}}(f) \right\}. \]</p>
+      <div class="math-block">\[
+\mathcal{F}_{\mathrm{now}}(q) =
+\left\{f \in \mathcal{G} \mid
+v_{\mathrm{from}}(f) \leq t_{\mathrm{now}} &lt; v_{\mathrm{to}}(f)
+\right\}.
+\]</div>
       <p>As-of retrieval is:</p>
-      <p>\[ \mathcal{F}_{\theta}(q) = \left\{f \in \mathcal{G} \mid v_{\mathrm{from}}(f) \leq \theta &lt; v_{\mathrm{to}}(f) \right\}. \]</p>
+      <div class="math-block">\[
+\mathcal{F}_{\theta}(q) =
+\left\{f \in \mathcal{G} \mid
+v_{\mathrm{from}}(f) \leq \theta &lt; v_{\mathrm{to}}(f)
+\right\}.
+\]</div>
       <p>This separates two notions that flat memory often confuses: what was stored in the log and what was valid in the world at query time.</p>
       <h3 id="34-hybrid-retrieval">3.4 Hybrid Retrieval</h3>
       <p>For query \(q\), Zaxy computes candidates from multiple lanes:</p>
@@ -106,22 +148,50 @@
         <li>active working-set projection \(\mathcal{C}_W(q)\)</li>
       </ul>
       <p>The candidate pool is:</p>
-      <p>\[ \mathcal{C}(q) = \mathcal{C}_E(q) \cup \mathcal{C}_K(q) \cup \mathcal{C}_V(q) \cup \mathcal{C}_T(q) \cup \mathcal{C}_S(q) \cup \mathcal{C}_W(q). \]</p>
+      <div class="math-block">\[
+\mathcal{C}(q) =
+\mathcal{C}_E(q) \cup
+\mathcal{C}_K(q) \cup
+\mathcal{C}_V(q) \cup
+\mathcal{C}_T(q) \cup
+\mathcal{C}_S(q) \cup
+\mathcal{C}_W(q).
+\]</div>
       <p>Each candidate \(c\) receives lane-specific scores \(s_l(c, q)\) and a fused score:</p>
-      <p>\[ S(c, q) = \sum_{\ell \in \mathcal{L}} w_\ell\,\hat{s}_\ell(c, q) + \Delta_{\mathrm{time}}(c, q) + \Delta_{\mathrm{purpose}}(c, q) + \Delta_{\mathrm{retention}}(c, q). \]</p>
+      <div class="math-block">\[
+S(c, q) =
+\sum_{\ell \in \mathcal{L}} w_\ell\,\hat{s}_\ell(c, q)
++ \Delta_{\mathrm{time}}(c, q)
++ \Delta_{\mathrm{purpose}}(c, q)
++ \Delta_{\mathrm{retention}}(c, q).
+\]</div>
       <p>where \(w_\ell\) are lane weights, \(\hat{s}_\ell\) denotes a normalized lane score, and the deltas represent temporal proximity, purpose-conditioned policy, and retention/reinforcement effects. When lane scores are incommensurable or only ordinally meaningful, Zaxy uses rank-based fusion such as reciprocal-rank fusion:</p>
-      <p>\[ S_{\mathrm{RRF}}(c, q) = \sum_{\ell \in \mathcal{L}_c} \frac{1}{k + \operatorname{rank}_{\ell}(c, q)} , \]</p>
+      <div class="math-block">\[
+S_{\mathrm{RRF}}(c, q) =
+\sum_{\ell \in \mathcal{L}_c}
+\frac{1}{k + \operatorname{rank}_{\ell}(c, q)} ,
+\]</div>
       <p>where \(\mathcal{L}_c\) is the set of lanes that returned \(c\) and \(k\) is a stability constant. This is the practical form that made lexical BM25 and graph retrieval cooperate in early identity-recall runs.</p>
       <p>Zaxy then applies diversity-aware selection. A simplified MMR objective for selecting the next candidate is:</p>
-      <p>\[ c^\star = \arg\max_{c \in \mathcal{C}(q) \setminus \mathcal{A}} \left[ \lambda S(c, q)</p>
-      <ul>
-        <li>(1-\lambda)\max_{a \in \mathcal{A}}\operatorname{sim}(c, a)</li>
-      </ul>
-      <p>\right], \]</p>
+      <div class="math-block">\[
+c^\star =
+\arg\max_{c \in \mathcal{C}(q) \setminus \mathcal{A}}
+\left[
+\lambda S(c, q)
+- (1-\lambda)\max_{a \in \mathcal{A}}\operatorname{sim}(c, a)
+\right],
+\]</div>
       <p>where \(\mathcal{A}\) is the already selected set. This prevents repeated near-identical rows from filling the context budget while leaving room for adjacent evidence.</p>
       <h3 id="35-memory-checkout">3.5 Memory Checkout</h3>
       <p>Memory Checkout is the model-facing projection:</p>
-      <p>\[ \mathcal{M}(q, p, B) = \operatorname{Pack}_B\!\left( \operatorname{Filter}_{p}\!\left( \operatorname{Rank}\!\left(\mathcal{C}(q)\right) \right) \right) \]</p>
+      <div class="math-block">\[
+\mathcal{M}(q, p, B) =
+\operatorname{Pack}_B\!\left(
+  \operatorname{Filter}_{p}\!\left(
+    \operatorname{Rank}\!\left(\mathcal{C}(q)\right)
+  \right)
+\right)
+\]</div>
       <p>where \(p\) is a purpose profile and \(B\) is a prompt budget. The checkout packet contains:</p>
       <ul>
         <li>current facts</li>
@@ -134,17 +204,35 @@
         <li>synthesis candidates and diagnostics when available</li>
       </ul>
       <p>Checkout quality can be modeled as:</p>
-      <p>\[ Q(\mathcal{M}) = \alpha A(\mathcal{M}) + \beta\,\operatorname{Cit}(\mathcal{M}) + \gamma\,\operatorname{Rec}(\mathcal{M})</p>
-      <ul>
-        <li>\delta\,\operatorname{Warn}(\mathcal{M})</li>
-      </ul>
-      <p>\]</p>
+      <div class="math-block">\[
+Q(\mathcal{M}) =
+\alpha A(\mathcal{M})
++ \beta\,\operatorname{Cit}(\mathcal{M})
++ \gamma\,\operatorname{Rec}(\mathcal{M})
+- \delta\,\operatorname{Warn}(\mathcal{M})
+\]</div>
       <p>where \(A\) is answerability, \(Cit\) citation coverage, \(Rec\) evidence recall, and \(Warn\) warning severity. Zaxy uses explicit diagnostics rather than hiding low-confidence states: missing citations, superseded-only context, warnings, and degraded projection paths are surfaced to the model.</p>
       <h3 id="36-authority-filtering">3.6 Authority Filtering</h3>
       <p>For multi-agent coordination, not all retrieved evidence is equal. Let a row \(r\) have authority metadata:</p>
-      <p>\[ \operatorname{auth}(r) = \bigl(\operatorname{scope}(r), \operatorname{status}(r), \operatorname{promoted}(r), \operatorname{stale}(r), \operatorname{superseded\_by}(r)\bigr). \]</p>
+      <div class="math-block">\[
+\operatorname{auth}(r) =
+\bigl(\operatorname{scope}(r), \operatorname{status}(r),
+\operatorname{promoted}(r), \operatorname{stale}(r),
+\operatorname{superseded\_by}(r)\bigr).
+\]</div>
       <p>For coordinate-purpose checkout, a row is allowed into accepted parent state only if:</p>
-      <p>\[ \operatorname{allow}(r) = \left(\operatorname{scope}(r) \in \{\mathrm{parent}, \mathrm{accepted}\}\right) \land \left(\operatorname{status}(r) \notin \{\mathrm{rejected}, \mathrm{deferred}, \mathrm{unsupported}\}\right) \land \neg \operatorname{stale}(r) \land \operatorname{superseded\_by}(r) = \varnothing . \]</p>
+      <div class="math-block">\[
+\operatorname{allow}(r) =
+\left(\operatorname{scope}(r) \in
+\{\mathrm{parent}, \mathrm{accepted}\}\right)
+\land
+\left(\operatorname{status}(r) \notin
+\{\mathrm{rejected}, \mathrm{deferred}, \mathrm{unsupported}\}\right)
+\land
+\neg \operatorname{stale}(r)
+\land
+\operatorname{superseded\_by}(r) = \varnothing .
+\]</div>
       <p>This is why raw associative retrieval is insufficient. A broad memory mechanism can propose the right neighborhood, but accepted state requires policy over authority, freshness, and provenance.</p>
       <h2 id="4-architecture">4. Architecture</h2>
       <p>Zaxy&#x27;s architecture has four primary layers.</p>

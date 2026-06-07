@@ -60,6 +60,7 @@ def render_page(source: Path) -> RenderedPage:
     target = rendered_target(source)
     title = document_title(markdown, source)
     body = render_markdown(markdown, source=source)
+    math_head = mathjax_head(markdown)
     rel_to_root = relative_prefix(target)
     index_link = relative_link(target, SITE_ROOT / "index.html")
     docs_link = relative_link(target, SITE_ROOT / "docs" / "getting-started.html")
@@ -72,7 +73,7 @@ def render_page(source: Path) -> RenderedPage:
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=Inter:wght@400;550;650;750;850&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="{rel_to_root}style.css" />
+  <link rel="stylesheet" href="{rel_to_root}style.css" />{math_head}
 </head>
 <body class="doc-page">
   <nav class="nav" aria-label="Documentation">
@@ -95,6 +96,25 @@ def render_page(source: Path) -> RenderedPage:
 </html>
 """
     return RenderedPage(source=source, target=target, html=html_text)
+
+
+def mathjax_head(markdown: str) -> str:
+    if not any(delimiter in markdown for delimiter in (r"\[", "$$")):
+        return ""
+    return """
+  <script>
+    window.MathJax = {
+      tex: {
+        inlineMath: [['\\\\(', '\\\\)']],
+        displayMath: [['\\\\[', '\\\\]'], ['$$', '$$']],
+        processEscapes: true
+      },
+      options: {
+        skipHtmlTags: ['script', 'noscript', 'style', 'textarea', 'pre', 'code']
+      }
+    };
+  </script>
+  <script async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js"></script>"""
 
 
 def document_title(markdown: str, source: Path) -> str:
@@ -183,6 +203,15 @@ def render_markdown(markdown: str, *, source: Path) -> str:
             close_blockquote()
             i += 1
             continue
+        math_block = maybe_math_block(lines, i)
+        if math_block is not None:
+            close_paragraph()
+            close_list()
+            close_blockquote()
+            html_math, consumed = math_block
+            out.append(html_math)
+            i += consumed
+            continue
         table = maybe_table(lines, i, source=source)
         if table is not None:
             close_paragraph()
@@ -236,6 +265,30 @@ def render_markdown(markdown: str, *, source: Path) -> str:
         code = html.escape("\n".join(code_lines))
         out.append(f"      <pre><code>{code}</code></pre>")
     return "\n".join(out)
+
+
+def maybe_math_block(lines: list[str], index: int) -> tuple[str, int] | None:
+    stripped = lines[index].strip()
+    if stripped == r"\[":
+        math_lines: list[str] = []
+        i = index + 1
+        while i < len(lines):
+            if lines[i].strip() == r"\]":
+                body = html.escape("\n".join(math_lines))
+                return f'      <div class="math-block">\\[\n{body}\n\\]</div>', i - index + 1
+            math_lines.append(lines[i])
+            i += 1
+        return None
+    if stripped == "$$":
+        math_lines = []
+        i = index + 1
+        while i < len(lines):
+            if lines[i].strip() == "$$":
+                body = html.escape("\n".join(math_lines))
+                return f'      <div class="math-block">$$\n{body}\n$$</div>', i - index + 1
+            math_lines.append(lines[i])
+            i += 1
+    return None
 
 
 def normalize_list_continuations(lines: list[str]) -> list[str]:
