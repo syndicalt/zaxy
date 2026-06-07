@@ -99,6 +99,44 @@ records outcomes for a reusable procedure. The helper accepts `version`, `name`,
 `feedback`, `evidence`, `reason`, and `supersedes_version` as relevant to the
 action. Skill updates are never implicit checkout side effects.
 
+## Alpha Causal And Consolidation Tools
+
+Zaxy 2.0 alpha.1 exposes a narrow causal and consolidation MCP surface:
+
+`memory_causal_successors(entity_name, relation_type?, depth?, session_id?)`
+reads graph-backed causal effects that start at `entity_name`. When
+`relation_type` is provided, it must use the causal taxonomy value such as
+`caused`, `enabled`, `blocked`, `prevented`, `regressed`, `fixed`, or
+`explained`; the server maps that to the corresponding `causal_...` graph
+relation label. Results include endpoint references, relation labels,
+confidence, method, citation, review status, authority status, evidence, and
+path length when available.
+
+`memory_causal_predecessors(entity_name, relation_type?, depth?, session_id?)`
+uses the same contract in the incoming causal direction, returning cited causes
+that lead to `entity_name`.
+
+`memory_consolidation_candidate(candidate_type, title, summary, source_events,
+confidence, method, purpose?, session_id?, actor?)` appends a cited
+`consolidation.candidate.created` event and immediately projects it. The
+candidate type must be `episode`, `claim`, or `procedure`; `source_events` must
+cite Eventloom events with sequence and hash; and the returned event reference
+is the durable audit handle for the candidate.
+
+`memory_consolidation_review(candidate_id, status, rationale, session_id?,
+actor?)` appends a `consolidation.candidate.reviewed` event. Review status is a
+lifecycle disposition, not an authority promotion. Valid review statuses are
+`accepted`, `rejected`, `deferred`, and `conflicted`.
+
+The trust contract is intentionally conservative. Causal edges and
+consolidation candidates are proposed, cited, non-authoritative memory surfaces
+in alpha.1. They should be used as diagnostics and operator review material,
+not as hidden facts. Memory Checkout keeps this boundary visible by reporting
+causal context and consolidation candidates in diagnostics and prompt guidance
+separate from deterministic current facts. Clients should preserve that
+separation in their own prompts and UI, especially when a candidate is pending,
+when a causal edge is inferred, or when citations do not cover the claim.
+
 `memory_replay(session_id, from_seq?)` rebuilds session history from the
 Eventloom log. This is useful for handoffs, audits, and debugging. In remote SSE
 mode, the authenticated session scope is enforced so a client cannot replay a

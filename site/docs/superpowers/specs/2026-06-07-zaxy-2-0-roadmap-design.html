@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zaxy 2.0 Roadmap Design - Zaxy Docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=Inter:wght@400;550;650;750;850&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../../../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../../../index.html">Overview</a>
+      <a href="../../../docs/coordinate-roadmap.html">Coordinate</a>
+      <a href="../../../docs/why-zaxy.html">Why Zaxy</a>
+      <a href="../../../docs/benchmarks.html">Benchmarks</a>
+      <a href="../../getting-started.html">Start</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="zaxy-20-roadmap-design">Zaxy 2.0 Roadmap Design</h1>
+      <h2 id="purpose">Purpose</h2>
+      <p>Zaxy 2.0 is the causal and consolidated cognitive-substrate release. The existing 1.x line remains the stable, benchmark-winning event-sourced memory fabric. Zaxy 2.0 adds rebuildable intelligence projections on top of that core: causal structure, reviewable consolidation, metacognitive state, procedural memory, and reasoning-loop primitives.</p>
+      <p>The release must not trade away the published 1.x strengths. Existing checkout quality, recall, citation coverage, and latency remain regression gates for all 2.0 work.</p>
+      <h2 id="release-lines">Release Lines</h2>
+      <p>The versioning split is:</p>
+      <ul>
+        <li><code>1.1.x</code>: stable published baseline, patch releases only.</li>
+        <li><code>1.2.x</code>: optional adoption and hardening release for existing concepts.</li>
+        <li><code>2.0.0-alpha.*</code>: experimental cognitive-substrate features behind explicit gates.</li>
+        <li><code>2.0.0-beta.*</code>: integrated but still pre-release reasoning and metacognitive features.</li>
+        <li><code>2.0.0-rc.*</code>: frozen release candidates with benchmark and regression evidence.</li>
+        <li><code>2.0.0</code>: public cognitive-substrate release.</li>
+      </ul>
+      <p>The 1.x tree protects the proven product. The 2.0 tree carries architecture that changes what Zaxy can do, while still depending on the 1.x event-sourced core as the source of truth.</p>
+      <h2 id="core-boundary">Core Boundary</h2>
+      <p>Eventloom remains the immutable source of truth. Causal and consolidation layers are discardable projections that can be rebuilt from the log. They may propose, cite, rank, and explain higher-order memory, but they do not become trusted state unless they pass the existing review and authority path.</p>
+      <p>Generated abstractions must always carry:</p>
+      <ul>
+        <li>source Eventloom event references;</li>
+        <li>citation paths;</li>
+        <li>confidence;</li>
+        <li>extraction or inference method;</li>
+        <li>projection version;</li>
+        <li>review status;</li>
+        <li>authority status;</li>
+        <li>stale or supersession diagnostics when applicable.</li>
+      </ul>
+      <p>Memory Checkout may expose causal and consolidated context, but it must clearly distinguish accepted state from inferred or review-pending context.</p>
+      <h2 id="increment-plan">Increment Plan</h2>
+      <h3 id="200-alpha1-causal-projection-and-consolidation-scaffold">2.0.0-alpha.1: Causal Projection and Consolidation Scaffold</h3>
+      <p>This is the first 2.0 architecture slice.</p>
+      <p>Scope:</p>
+      <ul>
+        <li>Add a rebuildable causal graph projection from Eventloom events.</li>
+        <li>Add typed causal edge schema with provenance, confidence, method, and source event references.</li>
+        <li>Add causal read APIs for predecessor, successor, path, and outcome-explanation queries.</li>
+        <li>Add Memory Checkout diagnostics for causal context.</li>
+        <li>Add consolidation candidate objects for episodes, claims, and procedures.</li>
+        <li>Add a review-gated promotion path for consolidation candidates.</li>
+        <li>Keep promotion conservative: no automatic promotion to authoritative memory.</li>
+        <li>Add benchmark and regression gates that prove no regression against the frozen 1.x checkout behavior.</li>
+      </ul>
+      <p>Non-scope:</p>
+      <ul>
+        <li>Learned retrieval policy.</li>
+        <li>Automatic belief revision.</li>
+        <li>Autonomous consolidation-to-authority.</li>
+        <li>Broad synthesis rewrites.</li>
+        <li>Benchmark-specific tuning.</li>
+      </ul>
+      <h3 id="200-alpha2-review-gated-consolidation-mvp">2.0.0-alpha.2: Review-Gated Consolidation MVP</h3>
+      <p>This release turns the scaffold into a usable consolidation layer.</p>
+      <p>Scope:</p>
+      <ul>
+        <li>Cluster related event segments into reviewable episodes.</li>
+        <li>Synthesize cited candidate claims from episodes.</li>
+        <li>Synthesize cited candidate procedures from successful or failed workflows.</li>
+        <li>Preserve source event backpointers for every abstraction.</li>
+        <li>Track review status, authority status, confidence, scope, and purpose.</li>
+        <li>Add consolidation-specific diagnostics to checkout and status surfaces.</li>
+        <li>Add rejection, stale, supersession, and conflict behavior for generated abstractions.</li>
+      </ul>
+      <p>Non-scope:</p>
+      <ul>
+        <li>Fully autonomous long-term learning.</li>
+        <li>Silent authority promotion.</li>
+        <li>Cross-project global procedure sharing.</li>
+      </ul>
+      <h3 id="200-beta1-reasoning-loop-memory-primitives">2.0.0-beta.1: Reasoning-Loop Memory Primitives</h3>
+      <p>This release makes memory callable during planning, execution, and reflection rather than only before generation.</p>
+      <p>Scope:</p>
+      <ul>
+        <li>Expose primitives such as causal predecessor lookup, causal successor lookup, explain-outcome, propose-belief-update, get-claim-confidence, and retrieve similar procedures.</li>
+        <li>Make primitive calls observable and replayable.</li>
+        <li>Apply purpose profiles differently for planning, execution, review, and reflection.</li>
+        <li>Keep updates as proposals unless existing authority gates accept them.</li>
+      </ul>
+      <h3 id="200-beta2-metacognitive-and-procedural-hardening">2.0.0-beta.2: Metacognitive and Procedural Hardening</h3>
+      <p>This release strengthens the agent-facing intelligence layer.</p>
+      <p>Scope:</p>
+      <ul>
+        <li>Track known unknowns.</li>
+        <li>Track conflicting evidence clusters.</li>
+        <li>Track confidence trajectories over time.</li>
+        <li>Add query surfaces for high-uncertainty claims and re-verification needs.</li>
+        <li>Promote procedural memory as a first-class retrieval lane for planning.</li>
+        <li>Add rollback and contradiction diagnostics for procedural memory.</li>
+      </ul>
+      <h3 id="200-rc1-benchmark-freeze">2.0.0-rc.1: Benchmark Freeze</h3>
+      <p>This release candidate freezes behavior and evidence for publication.</p>
+      <p>Scope:</p>
+      <ul>
+        <li>Freeze benchmark config.</li>
+        <li>Run the full LongMemEval-compatible 500-question checkout benchmark.</li>
+        <li>Run Harvey/LAB external-anchor checks where available.</li>
+        <li>Run StateRecoveryBench, CoordinationBench, and PurposeBench.</li>
+        <li>Add 2.0-specific causal, consolidation, procedural, and metacognitive lanes.</li>
+        <li>Publish benchmark artifacts with workload hashes and config.</li>
+        <li>Block release on regression against 1.x public numbers unless the regression is explicitly justified and accepted.</li>
+      </ul>
+      <h2 id="benchmark-gates">Benchmark Gates</h2>
+      <p>Zaxy 2.0 must protect existing public numbers before claiming new intelligence. At minimum, every release candidate must report:</p>
+      <ul>
+        <li>LongMemEval-compatible 500-question mean score.</li>
+        <li>Answer@5.</li>
+        <li>Recall@5.</li>
+        <li>citation coverage.</li>
+        <li>latency percentiles.</li>
+        <li>token budgets.</li>
+        <li>benchmark config and workload hash.</li>
+      </ul>
+      <p>The published 1.x checkout behavior is the regression floor. The intended guardrail is:</p>
+      <ul>
+        <li>Recall@5 remains at the published floor.</li>
+        <li>citation coverage remains at the published floor.</li>
+        <li>Answer@5 and mean do not regress materially.</li>
+        <li>latency and token budgets remain within documented tolerances.</li>
+      </ul>
+      <p>Implementation must not tailor code to individual benchmark questions. Fixes must address general classes of memory behavior or add missing product capability.</p>
+      <h2 id="new-20-evaluation-lanes">New 2.0 Evaluation Lanes</h2>
+      <p>The 2.0 thesis needs benchmarks that measure more than recall. Proposed lanes:</p>
+      <ul>
+        <li>causal predecessor and successor accuracy;</li>
+        <li>outcome explanation quality;</li>
+        <li>causal distractor resistance;</li>
+        <li>stale causal edge rejection;</li>
+        <li>consolidation citation fidelity;</li>
+        <li>consolidation authority gating accuracy;</li>
+        <li>procedural reuse lift;</li>
+        <li>task-success lift with and without Zaxy memory;</li>
+        <li>metacognitive uncertainty detection;</li>
+        <li>belief revision accuracy under conflicting evidence.</li>
+      </ul>
+      <p>These lanes should be documented as project-defined until external validation is available. Claims must distinguish internal benchmark results from external or same-harness comparisons.</p>
+      <h2 id="production-constraints">Production Constraints</h2>
+      <p>All 2.0 features must follow the existing architectural discipline:</p>
+      <ul>
+        <li>event-sourced source of truth;</li>
+        <li>rebuildable projections;</li>
+        <li>no uncited trusted memory;</li>
+        <li>authority and purpose controls;</li>
+        <li>fail-open behavior for optional infrastructure;</li>
+        <li>deterministic rule-based extraction where possible;</li>
+        <li>LLM-dependent extraction or synthesis only where it adds real capability;</li>
+        <li>observable replayable memory operations;</li>
+        <li>tests before implementation;</li>
+        <li>benchmark evidence before release claims.</li>
+      </ul>
+      <h2 id="open-implementation-questions">Open Implementation Questions</h2>
+      <p>These are intentionally deferred to implementation planning:</p>
+      <ul>
+        <li>the exact causal edge type taxonomy;</li>
+        <li>whether causal projections live inside the existing graph backend contract or a parallel projection interface;</li>
+        <li>how consolidation candidates are stored before review;</li>
+        <li>whether alpha.1 should expose causal APIs through CLI, MCP, or both;</li>
+        <li>the smallest useful causal benchmark lane for alpha.1;</li>
+        <li>latency budgets for causal path expansion inside checkout.</li>
+      </ul>
+      <h2 id="acceptance-criteria">Acceptance Criteria</h2>
+      <p>The roadmap design is accepted when:</p>
+      <ul>
+        <li>Zaxy 1.x remains the stable benchmark-winning line;</li>
+        <li>Zaxy 2.0 is explicitly scoped as causal and consolidated cognitive substrate;</li>
+        <li><code>2.0.0-alpha.1</code> includes causal projection plus consolidation scaffold;</li>
+        <li>all generated abstractions remain review-gated before authority;</li>
+        <li>existing benchmark quality is protected by regression gates;</li>
+        <li>new 2.0 claims require new 2.0 evaluation lanes.</li>
+      </ul>
+    </article>
+  </main>
+</body>
+</html>

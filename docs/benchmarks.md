@@ -81,6 +81,32 @@ Primary report artifacts:
 Interpretation: Harvey LAB is external downstream work-product evidence. The
 metric is criterion pass rate, not binary task pass/fail.
 
+## Zaxy 2.0 Alpha Causal Lane
+
+Zaxy 2.0 alpha.1 includes a project-defined internal guardrail lane for causal
+projection and consolidation scaffolding. This lane is not external validation,
+is not part of the headline LongMemEval-compatible checkout claim, and must not
+be reported as a public benchmark number unless a future release explicitly
+publishes a full report with its own claim boundary.
+
+The alpha lane checks behavior that is specific to the causal and
+consolidation contracts:
+
+- causal predecessor and successor queries preserve expected endpoint and
+  relation matching;
+- causal results retain Eventloom citation coverage and expose review and
+  authority metadata;
+- authority-boundary preservation keeps inferred causal edges and
+  consolidation candidates non-authoritative unless a separate gate promotes
+  them;
+- stale or distractor-supported causal paths do not outrank cited target paths;
+- consolidation candidate scoring verifies source-event fidelity and rejects
+  candidates that omit required source references or imply authority promotion.
+
+Use this lane as an engineering regression guardrail for the alpha causal
+surface. Do not combine it with the headline 500 metrics, Harvey LAB evidence,
+or external-validation language.
+
 ## Claim Boundaries
 
 - Use **LongMemEval-compatible checkout** for the headline 500 diagnostic.

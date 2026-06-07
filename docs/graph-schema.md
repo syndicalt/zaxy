@@ -105,6 +105,73 @@ context counts, inferred edge counts, relation labels, inference methods,
 average trust, and low-trust guidance so models can distinguish cited inferred
 graph context from deterministic memory.
 
+## Causal Projection
+
+Zaxy 2.0 alpha.1 adds an explicit causal projection lane through
+`causal.edge.generated` events. These are Eventloom records, not hidden
+retrieval heuristics: every causal edge has an append event, actor, payload,
+hash-chain position, and graph projection path. The graph is still a projection
+of Eventloom, so causal edges remain replayable and auditable from the source
+log.
+
+The alpha relation taxonomy is deliberately bounded:
+
+- `caused`
+- `enabled`
+- `blocked`
+- `prevented`
+- `regressed`
+- `fixed`
+- `explained`
+
+Graph relation labels are derived by prefixing the taxonomy value with
+`causal_`, such as `causal_caused` or `causal_fixed`. Projection stores the
+causal label as graph metadata while preserving the same compatibility
+`RELATES` path used by existing traversal code.
+
+Causal edges are inferred, proposed evidence. They are non-authoritative unless
+a separate review and promotion workflow explicitly changes the authority state
+through the normal gates. Alpha.1 causal projection does not make a causal
+statement true by appearing in retrieval, and accepted-looking language in a
+method name or summary is not authority promotion. Downstream agents should
+treat these edges as cited diagnostics until reviewed authority is present.
+
+Each causal event must preserve evidence and provenance: source and target
+entity references, relation type, graph relation type, confidence, causal
+method, review status, authority status, Eventloom citation metadata, and
+structured evidence. Retrieval exposes the same trust boundary through causal
+successor/predecessor results and Memory Checkout diagnostics, including
+relation labels, methods, citations, authority status, and low-trust guidance.
+Weak, uncited, stale, or distractor-supported causal paths should be diagnosed
+or downweighted rather than presented as deterministic memory.
+
+## Consolidation Scaffold
+
+The alpha.1 consolidation scaffold records reviewable memory candidates through
+two Eventloom event types:
+
+- `consolidation.candidate.created`
+- `consolidation.candidate.reviewed`
+
+Candidate types are `episode`, `claim`, and `procedure`. A candidate is a cited
+summary proposal over one or more Eventloom source events. Projection creates a
+`consolidation_candidate` entity with the candidate id, type, title, summary,
+source-event citations, confidence, method, review status, and
+`authority_status=non_authoritative`.
+
+Candidates are review-pending and non-authoritative in alpha.1. They may help
+an operator or model inspect possible compaction targets, but they do not
+replace the original Eventloom records and should not be treated as current
+facts unless a separate authority gate promotes supported state.
+
+`consolidation.candidate.reviewed` records a review disposition such as
+`accepted`, `rejected`, `deferred`, or `conflicted`, plus rationale and
+candidate id. Review events are also replayable Eventloom records and project
+as `consolidation_review` entities linked to the candidate. A review
+disposition does not automatically promote authority; promotion remains an
+explicit separate workflow so alpha consolidation cannot silently collapse
+source memory into authoritative state.
+
 Example Eventloom payload:
 
 ```json
