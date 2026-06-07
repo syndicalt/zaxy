@@ -11,6 +11,7 @@ from zaxy.causal_benchmark import (
     evaluate_consolidation_candidate,
     summarize_causal_benchmark,
 )
+from zaxy.consolidation import build_consolidation_candidate_event
 
 
 def test_causal_case_rejects_unknown_query_type() -> None:
@@ -200,8 +201,8 @@ def test_consolidation_case_rejects_invalid_or_mismatched_candidate_contract(
             case_id="bad-candidate",
             candidate_id=candidate_id,
             candidate_type=candidate_type,
-            source_events=({"ref": "eventloom://session-alpha/events/42#def456", "hash": "def456"},),
-            citation="eventloom://session-alpha/events/42#def456",
+            source_events=({"seq": 42, "hash": "d" * 64},),
+            citation=f"eventloom://session-alpha/events/42#{'d' * 64}",
         )
 
 
@@ -211,23 +212,20 @@ def test_consolidation_candidate_scores_source_fidelity_and_non_authoritative_bo
         candidate_id="consolidation:claim:bbbbbbbbbbbbbbbbbbbbbbbb",
         candidate_type="claim",
         source_events=(
-            {"ref": "eventloom://session-alpha/events/41#abc123", "hash": "abc123"},
-            {"ref": "eventloom://session-alpha/events/42#def456", "hash": "def456"},
+            {"seq": 41, "hash": "a" * 64},
+            {"seq": 42, "hash": "d" * 64},
         ),
-        citation="eventloom://session-alpha/events/42#def456",
+        citation=f"eventloom://session-alpha/events/42#{'d' * 64}",
         authority_status="non_authoritative",
     )
     candidate = {
         "candidate_id": "consolidation:claim:bbbbbbbbbbbbbbbbbbbbbbbb",
         "candidate_type": "claim",
         "source_events": [
-            {"ref": "eventloom://session-alpha/events/41#abc123", "hash": "abc123"},
-            {"ref": "eventloom://session-alpha/events/42#def456", "hash": "def456"},
+            {"seq": 41, "hash": "a" * 64},
+            {"seq": 42, "hash": "d" * 64},
         ],
-        "citations": [
-            "eventloom://session-alpha/events/41#abc123",
-            "eventloom://session-alpha/events/42#def456",
-        ],
+        "source_event_refs": [f"41:{'a' * 64}", f"42:{'d' * 64}"],
         "authority_status": "non_authoritative",
     }
 
@@ -249,17 +247,17 @@ def test_consolidation_candidate_penalizes_promoted_or_missing_source_refs() -> 
         candidate_id="consolidation:claim:bbbbbbbbbbbbbbbbbbbbbbbb",
         candidate_type="claim",
         source_events=(
-            {"ref": "eventloom://session-alpha/events/41#abc123", "hash": "abc123"},
-            {"ref": "eventloom://session-alpha/events/42#def456", "hash": "def456"},
+            {"seq": 41, "hash": "a" * 64},
+            {"seq": 42, "hash": "d" * 64},
         ),
-        citation="eventloom://session-alpha/events/42#def456",
+        citation=f"eventloom://session-alpha/events/42#{'d' * 64}",
         authority_status="non_authoritative",
     )
     candidate = {
         "candidate_id": "consolidation:claim:bbbbbbbbbbbbbbbbbbbbbbbb",
         "candidate_type": "claim",
-        "source_events": [{"ref": "eventloom://session-alpha/events/41#abc123", "hash": "abc123"}],
-        "citations": ["eventloom://session-alpha/events/41#abc123"],
+        "source_events": [{"seq": 41, "hash": "a" * 64}],
+        "source_event_refs": [f"41:{'a' * 64}"],
         "authority_status": "promoted",
     }
 
@@ -270,3 +268,52 @@ def test_consolidation_candidate_penalizes_promoted_or_missing_source_refs() -> 
     assert row["citation_coverage"] is False
     assert row["authority_boundary"] is False
     assert row["score"] == 0.25
+
+
+def test_consolidation_case_rejects_non_production_source_event_shape() -> None:
+    with pytest.raises(ValueError, match=r"source_events\[0\]\.seq"):
+        ConsolidationBenchmarkCase(
+            case_id="bad-source-event",
+            candidate_id="consolidation:claim:bbbbbbbbbbbbbbbbbbbbbbbb",
+            candidate_type="claim",
+            source_events=(
+                {
+                    "ref": f"eventloom://session-alpha/events/42#{'d' * 64}",
+                    "hash": "d" * 64,
+                },
+            ),
+            citation=f"eventloom://session-alpha/events/42#{'d' * 64}",
+        )
+
+
+def test_production_consolidation_candidate_payload_scores_contract_fields() -> None:
+    source_hashes = ("a" * 64, "b" * 64)
+    production_event = build_consolidation_candidate_event(
+        actor="zaxy-consolidation",
+        session_id="session-alpha",
+        candidate_type="claim",
+        title="Deployment rollback root cause",
+        summary="Config drift caused the deployment rollback.",
+        source_events=[
+            {"seq": 41, "hash": source_hashes[0]},
+            {"seq": 42, "hash": source_hashes[1]},
+        ],
+        confidence=0.8,
+        method="event_segment_cluster_v1",
+    )
+    payload = production_event["payload"]
+    case = ConsolidationBenchmarkCase(
+        case_id="production-payload",
+        candidate_id=payload["candidate_id"],
+        candidate_type=payload["candidate_type"],
+        source_events=payload["source_events"],
+        citation=f"eventloom://session-alpha/events/42#{source_hashes[1]}",
+    )
+
+    row = evaluate_consolidation_candidate(case, payload)
+
+    assert row["candidate_match"] is True
+    assert row["source_event_fidelity"] is True
+    assert row["citation_coverage"] is True
+    assert row["authority_boundary"] is True
+    assert row["score"] == 1.0

@@ -18,6 +18,8 @@ NON_AUTHORITATIVE_STATUS = "non_authoritative"
 _EVENTLOOM_CITATION_RE = re.compile(
     r"^eventloom://(?P<session>[^/\s]+)/events/(?P<seq>\d+)#(?P<hash>[a-f0-9]{6,})$"
 )
+_EVENT_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
+_SOURCE_EVENT_REF_RE = re.compile(r"^(?P<seq>\d+):(?P<hash>[a-f0-9]{64})$")
 _CONSOLIDATION_CANDIDATE_ID_RE = re.compile(
     r"^consolidation:(?P<candidate_type>[a-z]+):(?P<digest>[a-f0-9]{24})$"
 )
@@ -207,13 +209,29 @@ def _consolidation_citation_coverage(
     case: ConsolidationBenchmarkCase,
     candidate: Mapping[str, Any] | object,
 ) -> bool:
-    expected_refs = {str(event["ref"]) for event in case.source_events}
-    citations = _candidate_citations(candidate)
-    return (
-        bool(expected_refs)
-        and expected_refs.issubset(citations)
-        and all(_is_eventloom_citation(citation) for citation in expected_refs)
+    expected_source_events = _source_event_set(case)
+    if not expected_source_events:
+        return False
+
+    expected_eventloom_refs = _eventloom_refs_from_source_events(
+        session=_session_from_eventloom_citation(case.citation),
+        source_events=expected_source_events,
     )
+
+    # Production candidate payloads cite Eventloom events as {"seq", "hash"}
+    # source_events. Graph-projected candidates may additionally expose
+    # source_event_refs as "seq:hash". Citation coverage accepts either
+    # production field without requiring benchmark-only source_events[].ref.
+    source_event_refs = _candidate_source_event_refs(candidate)
+    if source_event_refs:
+        return expected_source_events.issubset(source_event_refs)
+
+    citations = _candidate_citations(candidate)
+    if citations:
+        return expected_eventloom_refs.issubset(citations)
+
+    candidate_source_events = _source_event_set(candidate)
+    return expected_source_events == candidate_source_events
 
 
 def _candidate_citations(candidate: Mapping[str, Any] | object) -> set[str]:
@@ -231,7 +249,7 @@ def _candidate_citations(candidate: Mapping[str, Any] | object) -> set[str]:
 
 def _source_event_set(
     value: ConsolidationBenchmarkCase | Mapping[str, Any] | object,
-) -> set[tuple[str, str]]:
+) -> set[tuple[int, str]]:
     raw_events = (
         value.source_events
         if isinstance(value, ConsolidationBenchmarkCase)
@@ -239,15 +257,51 @@ def _source_event_set(
     )
     if not isinstance(raw_events, Sequence) or isinstance(raw_events, str):
         return set()
-    events: set[tuple[str, str]] = set()
+    events: set[tuple[int, str]] = set()
     for raw_event in raw_events:
         if not isinstance(raw_event, Mapping):
             continue
-        ref = raw_event.get("ref")
+        seq = raw_event.get("seq")
         event_hash = raw_event.get("hash")
-        if isinstance(ref, str) and isinstance(event_hash, str) and _is_eventloom_citation(ref):
-            events.add((ref, event_hash))
+        if (
+            isinstance(seq, int)
+            and not isinstance(seq, bool)
+            and seq > 0
+            and isinstance(event_hash, str)
+            and _EVENT_HASH_RE.fullmatch(event_hash)
+        ):
+            events.add((seq, event_hash))
     return events
+
+
+def _candidate_source_event_refs(candidate: Mapping[str, Any] | object) -> set[tuple[int, str]]:
+    raw_refs = _value(candidate, "source_event_refs")
+    if not isinstance(raw_refs, Sequence) or isinstance(raw_refs, str):
+        return set()
+    refs: set[tuple[int, str]] = set()
+    for raw_ref in raw_refs:
+        if not isinstance(raw_ref, str):
+            continue
+        match = _SOURCE_EVENT_REF_RE.fullmatch(raw_ref)
+        if match is not None:
+            refs.add((int(match.group("seq")), match.group("hash")))
+    return refs
+
+
+def _eventloom_refs_from_source_events(
+    *, session: str, source_events: set[tuple[int, str]]
+) -> set[str]:
+    return {
+        f"eventloom://{session}/events/{seq}#{event_hash}"
+        for seq, event_hash in source_events
+    }
+
+
+def _session_from_eventloom_citation(citation: str) -> str:
+    match = _EVENTLOOM_CITATION_RE.match(citation)
+    if match is None:
+        raise ValueError("citation must be an Eventloom citation")
+    return match.group("session")
 
 
 def _is_stale(result: Mapping[str, Any] | object) -> bool:
@@ -285,8 +339,16 @@ def _require_source_events(value: Sequence[Mapping[str, Any]]) -> None:
     for index, event in enumerate(value):
         if not isinstance(event, Mapping):
             raise ValueError(f"source_events[{index}] must be a mapping")
-        _require_eventloom_citation(f"source_events[{index}].ref", event.get("ref"))
-        _require_text(f"source_events[{index}].hash", event.get("hash"))
+        seq = event.get("seq")
+        if not isinstance(seq, int) or isinstance(seq, bool):
+            raise ValueError(f"source_events[{index}].seq must be an integer")
+        if seq <= 0:
+            raise ValueError(f"source_events[{index}].seq must be a positive integer")
+        event_hash = event.get("hash")
+        if not isinstance(event_hash, str) or _EVENT_HASH_RE.fullmatch(event_hash) is None:
+            raise ValueError(
+                f"source_events[{index}].hash must be exactly 64 lowercase hex characters"
+            )
 
 
 def _require_causal_relation_type(value: Any) -> None:
