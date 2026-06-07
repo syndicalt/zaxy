@@ -21,8 +21,9 @@ import re
 from contextlib import suppress
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
+from zaxy.causal import CausalQueryResult, causal_relation_to_graph_relation
 from zaxy.checkout import (
     build_checkout_diagnostics,
     build_checkout_guidance,
@@ -259,6 +260,82 @@ class ContextRefreshReport:
         }
 
 
+def _causal_query_result_from_entity(
+    entity: Any,
+    *,
+    direction: Literal["successors", "predecessors"],
+) -> CausalQueryResult:
+    properties = dict(entity.properties)
+    graph_relation_type = str(properties.get("graph_relation_type") or properties.get("relation_type") or "")
+    causal_relation_type = str(properties.get("causal_relation_type") or _causal_relation_from_graph_relation(graph_relation_type))
+    source = {
+        "name": str(properties.get("causal_source_name") or (entity.name if direction == "successors" else "")),
+        "entity_type": str(
+            properties.get("causal_source_type") or (entity.entity_type if direction == "successors" else "entity")
+        ),
+    }
+    target = {
+        "name": str(properties.get("causal_target_name") or (entity.name if direction == "predecessors" else "")),
+        "entity_type": str(
+            properties.get("causal_target_type") or (entity.entity_type if direction == "predecessors" else "entity")
+        ),
+    }
+    evidence = _causal_evidence_from_properties(properties)
+    return CausalQueryResult(
+        source=source,
+        target=target,
+        relation_type=causal_relation_type,
+        graph_relation_type=graph_relation_type,
+        confidence=_causal_float(properties.get("confidence"), default=1.0),
+        method=str(properties.get("method") or properties.get("inference_method") or "unknown"),
+        citation=str(properties.get("citation") or _citation_from_properties(properties)),
+        review_status=str(properties.get("review_status") or "proposed"),
+        authority_status=str(properties.get("authority_status") or "non_authoritative"),
+        evidence=evidence,
+        path_length=_optional_positive_int(properties.get("_path_length")),
+    )
+
+
+def _causal_relation_from_graph_relation(graph_relation_type: str) -> str:
+    if graph_relation_type.startswith("causal_"):
+        return graph_relation_type.removeprefix("causal_")
+    return graph_relation_type
+
+
+def _citation_from_properties(properties: dict[str, Any]) -> str:
+    event_seq = properties.get("source_event_seq")
+    event_hash = properties.get("source_event_hash")
+    session_id = str(properties.get("session_id") or "default")
+    if event_seq is not None and event_hash:
+        return f"eventloom://{session_id}/events/{event_seq}#{str(event_hash)[:12]}"
+    return "eventloom://unknown/events/unknown#unknown"
+
+
+def _causal_evidence_from_properties(properties: dict[str, Any]) -> dict[str, Any]:
+    raw_evidence = properties.get("evidence")
+    evidence = dict(raw_evidence) if isinstance(raw_evidence, dict) else {}
+    for key in ("source_event_seq", "source_event_hash"):
+        if key in properties and key not in evidence:
+            evidence[key] = properties[key]
+    for key in ("_path_relation_types", "_path_citations"):
+        if key in properties:
+            evidence[key.removeprefix("_")] = properties[key]
+    return evidence
+
+
+def _causal_float(value: Any, *, default: float) -> float:
+    if value is None:
+        return default
+    return float(value)
+
+
+def _optional_positive_int(value: Any) -> int | None:
+    if value is None:
+        return None
+    parsed = int(value)
+    return parsed if parsed > 0 else None
+
+
 class MemoryFabric:
     """Framework-agnostic persistent memory for AI agents.
 
@@ -371,6 +448,67 @@ class MemoryFabric:
         self._verbatim_index_cache = {}
         self._warmed_projection_sessions = set()
         self._connected = False
+
+    async def query_causal_successors(
+        self,
+        entity_name: str,
+        *,
+        relation_type: str | None = None,
+        depth: int = 2,
+        temporal_point: str | None = None,
+        session_id: str = "default",
+    ) -> list[CausalQueryResult]:
+        """Return directed causal effects of an entity."""
+        return await self._query_causal_neighbors(
+            entity_name,
+            direction="successors",
+            relation_type=relation_type,
+            depth=depth,
+            temporal_point=temporal_point,
+            session_id=session_id,
+        )
+
+    async def query_causal_predecessors(
+        self,
+        entity_name: str,
+        *,
+        relation_type: str | None = None,
+        depth: int = 2,
+        temporal_point: str | None = None,
+        session_id: str = "default",
+    ) -> list[CausalQueryResult]:
+        """Return directed causal causes of an entity."""
+        return await self._query_causal_neighbors(
+            entity_name,
+            direction="predecessors",
+            relation_type=relation_type,
+            depth=depth,
+            temporal_point=temporal_point,
+            session_id=session_id,
+        )
+
+    async def _query_causal_neighbors(
+        self,
+        entity_name: str,
+        *,
+        direction: Literal["successors", "predecessors"],
+        relation_type: str | None,
+        depth: int,
+        temporal_point: str | None,
+        session_id: str,
+    ) -> list[CausalQueryResult]:
+        graph_relation_type = (
+            causal_relation_to_graph_relation(relation_type) if relation_type is not None else None
+        )
+        neighbors = await self.graph.search_causal_neighbors(
+            entity_name,
+            direction=direction,
+            relation_type=graph_relation_type,
+            depth=depth,
+            temporal_point=temporal_point,
+            session_id=session_id,
+        )
+        return [_causal_query_result_from_entity(entity, direction=direction) for entity in neighbors]
 
     async def _warm_projection_session(self, session_id: str) -> None:
         """Warm optional backend read indexes once per session."""

@@ -9,6 +9,103 @@ from zaxy.causal import (
     build_causal_edge_event,
     causal_relation_to_graph_relation,
 )
+from zaxy.core import MemoryFabric
+from zaxy.graph import GraphEntity
+
+
+class _DirectionalCausalStore:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    async def search_causal_neighbors(
+        self,
+        entity_name: str,
+        *,
+        direction: str,
+        relation_type: str | None = None,
+        depth: int = 2,
+        temporal_point: str | None = None,
+        session_id: str = "default",
+    ) -> list[GraphEntity]:
+        self.calls.append(
+            {
+                "entity_name": entity_name,
+                "direction": direction,
+                "relation_type": relation_type,
+                "depth": depth,
+                "temporal_point": temporal_point,
+                "session_id": session_id,
+            }
+        )
+        if direction == "successors":
+            return [
+                _causal_entity(
+                    name="effect",
+                    entity_type="outcome",
+                    source_name=entity_name,
+                    source_type="event",
+                    target_name="effect",
+                    target_type="outcome",
+                    relation_type="caused",
+                    citation="eventloom://agent-1/events/42#aaaaaaaaaaaa",
+                )
+            ]
+        if direction == "predecessors":
+            return [
+                _causal_entity(
+                    name="cause",
+                    entity_type="event",
+                    source_name="cause",
+                    source_type="event",
+                    target_name=entity_name,
+                    target_type="outcome",
+                    relation_type="caused",
+                    citation="eventloom://agent-1/events/43#bbbbbbbbbbbb",
+                )
+            ]
+        raise AssertionError(f"unexpected direction: {direction}")
+
+
+def _fabric_with_graph(graph: object) -> MemoryFabric:
+    fabric = MemoryFabric.__new__(MemoryFabric)
+    fabric.graph = graph
+    return fabric
+
+
+def _causal_entity(
+    *,
+    name: str,
+    entity_type: str,
+    source_name: str,
+    source_type: str,
+    target_name: str,
+    target_type: str,
+    relation_type: str,
+    citation: str,
+) -> GraphEntity:
+    return GraphEntity(
+        name=name,
+        entity_type=entity_type,
+        valid_from="2026-06-07T00:00:00Z",
+        valid_to=None,
+        session_id="agent-1",
+        properties={
+            "causal_source_name": source_name,
+            "causal_source_type": source_type,
+            "causal_target_name": target_name,
+            "causal_target_type": target_type,
+            "causal_relation_type": relation_type,
+            "relation_type": causal_relation_to_graph_relation(relation_type),
+            "confidence": 0.91,
+            "inference_method": "explicit_outcome_citation_v1",
+            "citation": citation,
+            "review_status": "proposed",
+            "authority_status": "non_authoritative",
+            "evidence": {"source_event_seq": 42, "source_event_hash": "a" * 64},
+            "_path_length": 1,
+            "_path_relation_types": [causal_relation_to_graph_relation(relation_type)],
+        },
+    )
 
 
 def test_causal_relation_taxonomy_is_stable() -> None:
@@ -24,6 +121,67 @@ def test_causal_relation_taxonomy_is_stable() -> None:
     assert expected_relation_types == CAUSAL_RELATION_TYPES
     assert causal_relation_to_graph_relation("caused") == "causal_caused"
     assert causal_relation_to_graph_relation("fixed") == "causal_fixed"
+
+
+@pytest.mark.asyncio
+async def test_memory_fabric_query_causal_successors_filters_relation_and_returns_effect() -> None:
+    store = _DirectionalCausalStore()
+    fabric = _fabric_with_graph(store)
+
+    results = await fabric.query_causal_successors(
+        "cause",
+        relation_type="caused",
+        depth=3,
+        temporal_point="2026-06-07T00:00:00Z",
+        session_id="agent-1",
+    )
+
+    assert store.calls == [
+        {
+            "entity_name": "cause",
+            "direction": "successors",
+            "relation_type": "causal_caused",
+            "depth": 3,
+            "temporal_point": "2026-06-07T00:00:00Z",
+            "session_id": "agent-1",
+        }
+    ]
+    assert [result.target["name"] for result in results] == ["effect"]
+    assert results[0].to_dict()["method"] == "explicit_outcome_citation_v1"
+    assert results[0].to_dict()["citation"] == "eventloom://agent-1/events/42#aaaaaaaaaaaa"
+    assert results[0].to_dict()["review_status"] == "proposed"
+    assert results[0].to_dict()["authority_status"] == "non_authoritative"
+
+
+@pytest.mark.asyncio
+async def test_memory_fabric_query_causal_predecessors_uses_incoming_direction_and_returns_cause() -> None:
+    store = _DirectionalCausalStore()
+    fabric = _fabric_with_graph(store)
+
+    results = await fabric.query_causal_predecessors("effect", relation_type="caused", session_id="agent-1")
+
+    assert store.calls == [
+        {
+            "entity_name": "effect",
+            "direction": "predecessors",
+            "relation_type": "causal_caused",
+            "depth": 2,
+            "temporal_point": None,
+            "session_id": "agent-1",
+        }
+    ]
+    assert [result.source["name"] for result in results] == ["cause"]
+    assert [result.target["name"] for result in results] == ["effect"]
+
+
+@pytest.mark.asyncio
+async def test_memory_fabric_causal_queries_reject_invalid_relation_type() -> None:
+    fabric = _fabric_with_graph(_DirectionalCausalStore())
+
+    with pytest.raises(ValueError, match="causal relation_type"):
+        await fabric.query_causal_successors("cause", relation_type="not-causal")
+    with pytest.raises(ValueError, match="causal relation_type"):
+        await fabric.query_causal_predecessors("effect", relation_type="not-causal")
 
 
 def test_build_causal_edge_event_requires_cited_source_event() -> None:

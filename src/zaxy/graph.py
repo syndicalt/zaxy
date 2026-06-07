@@ -14,7 +14,7 @@ import re
 from dataclasses import dataclass
 from importlib import import_module
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from zaxy.extract import ExtractedEdge, ExtractedEntity, ExtractionResult
 from zaxy.projection import ProjectionStore
@@ -1113,6 +1113,111 @@ class GraphStore(ProjectionStore):
             )
         return entities
 
+    async def search_causal_neighbors(
+        self,
+        entity_name: str,
+        *,
+        direction: Literal["successors", "predecessors"],
+        relation_type: str | None = None,
+        depth: int = 2,
+        temporal_point: str | None = None,
+        session_id: str = "default",
+    ) -> list[GraphEntity]:
+        """Search directed causal neighbors from a starting entity."""
+        assert self._driver is not None
+        if direction not in {"successors", "predecessors"}:
+            raise ValueError("direction must be 'successors' or 'predecessors'")
+        depth = validate_traversal_depth(depth)
+        safe_session_id = validate_session_id(session_id)
+        params: dict[str, Any] = {
+            "entity_name": entity_name,
+            "session_id": safe_session_id,
+            "relation_type": relation_type,
+        }
+        temporal_checks = (
+            "rel.valid_to IS NULL"
+            " AND rel.relation_type STARTS WITH 'causal_'"
+            " AND ($relation_type IS NULL OR rel.relation_type = $relation_type)"
+        )
+        entity_checks = (
+            "start.session_id = $session_id"
+            " AND neighbor.session_id = $session_id"
+            " AND start.valid_to IS NULL"
+            " AND neighbor.valid_to IS NULL"
+        )
+        if temporal_point:
+            params["t"] = temporal_point
+            temporal_checks = (
+                "rel.valid_from <= datetime($t)"
+                " AND (rel.valid_to IS NULL OR rel.valid_to > datetime($t))"
+                " AND rel.relation_type STARTS WITH 'causal_'"
+                " AND ($relation_type IS NULL OR rel.relation_type = $relation_type)"
+            )
+            entity_checks = (
+                "start.session_id = $session_id"
+                " AND neighbor.session_id = $session_id"
+                " AND start.valid_from <= datetime($t)"
+                " AND (start.valid_to IS NULL OR start.valid_to > datetime($t))"
+                " AND neighbor.valid_from <= datetime($t)"
+                " AND (neighbor.valid_to IS NULL OR neighbor.valid_to > datetime($t))"
+            )
+
+        pattern = (
+            f"(start:Entity {{name: $entity_name}})-[r:RELATES*1..{depth}]->(neighbor:Entity)"
+            if direction == "successors"
+            else f"(neighbor:Entity)-[r:RELATES*1..{depth}]->(start:Entity {{name: $entity_name}})"
+        )
+        cypher = f"""
+        MATCH path = {pattern}
+        WHERE {entity_checks}
+          AND neighbor <> start
+          AND ALL(rel IN relationships(path) WHERE {temporal_checks})
+        WITH path, start, neighbor, last(relationships(path)) AS terminal_rel
+        RETURN neighbor,
+               startNode(terminal_rel) AS causal_source,
+               endNode(terminal_rel) AS causal_target,
+               terminal_rel.relation_type AS graph_relation_type,
+               terminal_rel.confidence AS confidence,
+               terminal_rel.inference_method AS inference_method,
+               terminal_rel.source_event_seq AS source_event_seq,
+               terminal_rel.source_event_hash AS source_event_hash,
+               properties(terminal_rel) AS edge_properties,
+               [rel IN relationships(path) | rel.relation_type] AS path_relation_types,
+               [rel IN relationships(path)
+                    WHERE rel.source_event_seq IS NOT NULL AND rel.source_event_hash IS NOT NULL
+                    | {{seq: rel.source_event_seq, hash: rel.source_event_hash}}] AS path_citations,
+               length(path) AS path_length
+        ORDER BY path_length ASC
+        """
+        records, _, _ = await self._driver.execute_query(cypher, **params)
+        entities: list[GraphEntity] = []
+        seen: set[tuple[str, str]] = set()
+        for record in records:
+            entity = _record_to_entity(record["neighbor"])
+            key = (entity.name, entity.entity_type)
+            if key in seen:
+                continue
+            seen.add(key)
+            edge_properties = dict(record.get("edge_properties") or {})
+            properties = {
+                **entity.properties,
+                **_causal_edge_metadata_from_record(record, session_id=safe_session_id, edge_properties=edge_properties),
+                "_path_relation_types": list(record.get("path_relation_types") or []),
+                "_path_citations": _path_citations_from_record(record, safe_session_id),
+                "_path_length": int(record.get("path_length") or 0),
+            }
+            entities.append(
+                GraphEntity(
+                    name=entity.name,
+                    entity_type=entity.entity_type,
+                    valid_from=entity.valid_from,
+                    valid_to=entity.valid_to,
+                    properties=properties,
+                    session_id=entity.session_id,
+                )
+            )
+        return entities
+
     async def search_keyword(
         self,
         query: str,
@@ -1297,6 +1402,64 @@ def _traversal_inferred_metadata(record: Any) -> dict[str, Any]:
         "_path_inferred_evidence_count": sum(evidence_counts),
         "_path_inferred_evidenced_edge_count": len(evidence_counts),
     }
+
+
+def _causal_edge_metadata_from_record(
+    record: Any,
+    *,
+    session_id: str,
+    edge_properties: dict[str, Any],
+) -> dict[str, Any]:
+    source = _record_to_entity(record["causal_source"])
+    target = _record_to_entity(record["causal_target"])
+    graph_relation_type = str(record.get("graph_relation_type") or "")
+    evidence = _evidence_from_edge_properties(edge_properties)
+    source_event_seq = record.get("source_event_seq")
+    source_event_hash = _optional_str_record_value(record.get("source_event_hash"))
+    return {
+        "causal_source_name": source.name,
+        "causal_source_type": source.entity_type,
+        "causal_target_name": target.name,
+        "causal_target_type": target.entity_type,
+        "relation_type": graph_relation_type,
+        "graph_relation_type": graph_relation_type,
+        "causal_relation_type": evidence.get("causal_relation_type") or graph_relation_type.removeprefix("causal_"),
+        "confidence": _optional_float_record_value(record.get("confidence")) or 1.0,
+        "inference_method": _optional_str_record_value(record.get("inference_method")) or "unknown",
+        "citation": _edge_citation(session_id, source_event_seq, source_event_hash),
+        "review_status": evidence.get("review_status") or "proposed",
+        "authority_status": evidence.get("authority_status") or "non_authoritative",
+        "source_event_seq": _optional_int_record_value(source_event_seq),
+        "source_event_hash": source_event_hash,
+        "evidence": evidence,
+        "session_id": session_id,
+    }
+
+
+def _evidence_from_edge_properties(properties: dict[str, Any]) -> dict[str, Any]:
+    evidence: dict[str, Any] = {}
+    for key, value in properties.items():
+        if key.startswith("evidence_"):
+            evidence[key.removeprefix("evidence_")] = value
+    return evidence
+
+
+def _path_citations_from_record(record: Any, session_id: str) -> list[str]:
+    citations: list[str] = []
+    for item in record.get("path_citations") or []:
+        if not isinstance(item, dict):
+            continue
+        citation = _edge_citation(session_id, item.get("seq"), _optional_str_record_value(item.get("hash")))
+        if citation.startswith("eventloom://unknown/"):
+            continue
+        citations.append(citation)
+    return citations
+
+
+def _edge_citation(session_id: str, source_event_seq: Any, source_event_hash: str | None) -> str:
+    if source_event_seq is not None and source_event_hash:
+        return f"eventloom://{session_id}/events/{source_event_seq}#{source_event_hash[:12]}"
+    return "eventloom://unknown/events/unknown#unknown"
 
 
 def _int_record_value(value: Any) -> int:

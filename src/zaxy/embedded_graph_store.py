@@ -17,7 +17,7 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, Literal, TypeVar
 
 _CacheValue = TypeVar("_CacheValue")
 _TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
@@ -607,6 +607,121 @@ class EmbeddedGraphStore:
             if not frontier:
                 break
         return list(found.values())
+
+    async def search_causal_neighbors(
+        self,
+        entity_name: str,
+        *,
+        direction: Literal["successors", "predecessors"],
+        relation_type: str | None = None,
+        depth: int = 2,
+        temporal_point: str | None = None,
+        session_id: str = "default",
+    ) -> list[GraphEntity]:
+        """Search directed causal neighbors from a starting entity."""
+        if direction not in {"successors", "predecessors"}:
+            raise ValueError("direction must be 'successors' or 'predecessors'")
+        safe_depth = max(1, min(depth, 5))
+        rows = self._causal_edge_rows(session_id=session_id, temporal_point=temporal_point)
+        adjacency: dict[str, list[tuple[str, GraphEntity, dict[str, Any]]]] = {}
+        keys_by_name: dict[str, set[str]] = {}
+        for row in rows:
+            source_key = str(row[0])
+            target_key = str(row[11])
+            source_entity = _row_to_entity(list(row[1:10]))
+            target_entity = _row_to_entity(list(row[12:21]))
+            edge_metadata = _causal_edge_metadata_from_row(row, source_entity=source_entity, target_entity=target_entity)
+            if relation_type is not None and edge_metadata["relation_type"] != relation_type:
+                continue
+            keys_by_name.setdefault(source_entity.name, set()).add(source_key)
+            keys_by_name.setdefault(target_entity.name, set()).add(target_key)
+            if direction == "successors":
+                adjacency.setdefault(source_key, []).append((target_key, target_entity, edge_metadata))
+            else:
+                adjacency.setdefault(target_key, []).append((source_key, source_entity, edge_metadata))
+
+        start_keys = set(keys_by_name.get(entity_name, set()))
+        frontier = set(start_keys)
+        seen = set(start_keys)
+        found: dict[str, GraphEntity] = {}
+        path_relations_by_key: dict[str, list[str]] = {start_key: [] for start_key in start_keys}
+        path_citations_by_key: dict[str, list[str]] = {start_key: [] for start_key in start_keys}
+        for _ in range(safe_depth):
+            next_frontier: set[str] = set()
+            for current_key in frontier:
+                for neighbor_key, neighbor, edge_metadata in adjacency.get(current_key, []):
+                    path_relations = [*path_relations_by_key.get(current_key, []), str(edge_metadata["relation_type"])]
+                    path_citations = [*path_citations_by_key.get(current_key, []), str(edge_metadata["citation"])]
+                    if neighbor_key not in found:
+                        found[neighbor_key] = _entity_with_causal_metadata(
+                            neighbor,
+                            edge_metadata=edge_metadata,
+                            path_relation_types=path_relations,
+                            path_citations=path_citations,
+                        )
+                    if neighbor_key not in seen:
+                        seen.add(neighbor_key)
+                        path_relations_by_key[neighbor_key] = path_relations
+                        path_citations_by_key[neighbor_key] = path_citations
+                        next_frontier.add(neighbor_key)
+            frontier = next_frontier
+            if not frontier:
+                break
+        return list(found.values())
+
+    def _causal_edge_rows(self, *, session_id: str, temporal_point: str | None) -> list[Any]:
+        if temporal_point is None:
+            return self._require_connection().execute(
+                """
+                MATCH (source:Entity)-[r:RELATES]->(target:Entity)
+                WHERE source.session_id = $session_id
+                  AND target.session_id = $session_id
+                  AND r.session_id = $session_id
+                  AND source.valid_to IS NULL
+                  AND target.valid_to IS NULL
+                  AND r.valid_to IS NULL
+                  AND r.relation_type STARTS WITH 'causal_'
+                RETURN source.node_key,
+                       source.name, source.entity_type, source.valid_from, source.valid_to,
+                       source.summary, source.properties_json, source.session_id,
+                       source.source_event_seq, source.source_event_hash,
+                       r.relation_type,
+                       target.node_key,
+                       target.name, target.entity_type, target.valid_from, target.valid_to,
+                       target.summary, target.properties_json, target.session_id,
+                       target.source_event_seq, target.source_event_hash,
+                       r.confidence, r.inference_method, r.source_event_seq,
+                       r.source_event_hash, r.evidence_json
+                """,
+                {"session_id": session_id},
+            ).get_all()
+        return self._require_connection().execute(
+            """
+            MATCH (source:Entity)-[r:RELATES]->(target:Entity)
+            WHERE source.session_id = $session_id
+              AND target.session_id = $session_id
+              AND r.session_id = $session_id
+              AND source.valid_from <= $temporal_point
+              AND (source.valid_to IS NULL OR $temporal_point < source.valid_to)
+              AND target.valid_from <= $temporal_point
+              AND (target.valid_to IS NULL OR $temporal_point < target.valid_to)
+              AND r.valid_from <= $temporal_point
+              AND (r.valid_to IS NULL OR $temporal_point < r.valid_to)
+              AND r.relation_type STARTS WITH 'causal_'
+            RETURN source.node_key,
+                   source.name, source.entity_type, source.valid_from, source.valid_to,
+                   source.summary, source.properties_json, source.session_id,
+                   source.source_event_seq, source.source_event_hash,
+                   r.relation_type,
+                   target.node_key,
+                   target.name, target.entity_type, target.valid_from, target.valid_to,
+                   target.summary, target.properties_json, target.session_id,
+                   target.source_event_seq, target.source_event_hash,
+                   r.confidence, r.inference_method, r.source_event_seq,
+                   r.source_event_hash, r.evidence_json
+            """,
+            {"session_id": session_id, "temporal_point": temporal_point},
+        ).get_all()
 
     def _traversal_index(self, session_id: str, temporal_point: str | None = None) -> _TraversalIndex:
         if temporal_point is not None:
@@ -1393,6 +1508,68 @@ def _entity_with_path_metadata(entity: GraphEntity, *, relation_types: list[str]
         },
         session_id=entity.session_id,
     )
+
+
+def _causal_edge_metadata_from_row(
+    row: Any,
+    *,
+    source_entity: GraphEntity,
+    target_entity: GraphEntity,
+) -> dict[str, Any]:
+    evidence = _json_dict(row[25])
+    source_event_seq = row[23]
+    source_event_hash = str(row[24] or "")
+    relation_type = str(row[10])
+    citation = _edge_citation(source_entity.session_id, source_event_seq, source_event_hash)
+    return {
+        "causal_source_name": source_entity.name,
+        "causal_source_type": source_entity.entity_type,
+        "causal_target_name": target_entity.name,
+        "causal_target_type": target_entity.entity_type,
+        "relation_type": relation_type,
+        "graph_relation_type": relation_type,
+        "causal_relation_type": evidence.get("causal_relation_type") or relation_type.removeprefix("causal_"),
+        "confidence": float(row[21]) if row[21] is not None else 1.0,
+        "inference_method": str(row[22] or "unknown"),
+        "citation": citation,
+        "review_status": evidence.get("review_status") or "proposed",
+        "authority_status": evidence.get("authority_status") or "non_authoritative",
+        "source_event_seq": int(source_event_seq) if source_event_seq is not None else None,
+        "source_event_hash": source_event_hash or None,
+        "evidence": evidence,
+        "session_id": source_entity.session_id,
+    }
+
+
+def _entity_with_causal_metadata(
+    entity: GraphEntity,
+    *,
+    edge_metadata: dict[str, Any],
+    path_relation_types: list[str],
+    path_citations: list[str],
+) -> GraphEntity:
+    from zaxy.graph import GraphEntity
+
+    return GraphEntity(
+        name=entity.name,
+        entity_type=entity.entity_type,
+        valid_from=entity.valid_from,
+        valid_to=entity.valid_to,
+        properties={
+            **entity.properties,
+            **edge_metadata,
+            "_path_relation_types": path_relation_types,
+            "_path_citations": path_citations,
+            "_path_length": len(path_relation_types),
+        },
+        session_id=entity.session_id,
+    )
+
+
+def _edge_citation(session_id: str, source_event_seq: Any, source_event_hash: str) -> str:
+    if source_event_seq is not None and source_event_hash:
+        return f"eventloom://{session_id}/events/{source_event_seq}#{source_event_hash[:12]}"
+    return "eventloom://unknown/events/unknown#unknown"
 
 
 def _entity_keyword_text(entity: GraphEntity) -> str:
