@@ -14,11 +14,17 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
 
 from zaxy.causal import CausalEdge, causal_relation_to_graph_relation
+from zaxy.consolidation import (
+    CONSOLIDATION_CANDIDATE_TYPES,
+    CONSOLIDATION_INITIAL_REVIEW_STATUS,
+    CONSOLIDATION_REVIEW_STATUSES,
+)
 from zaxy.event import Event
 from zaxy.neutral import (
     audit_ingestion_purpose_labels,
@@ -79,6 +85,9 @@ class ExtractionResult:
 # Registry of rule-based extractors: event_type -> extractor function
 _Registry = dict[str, Callable[[Event], ExtractionResult]]
 _RULES: _Registry = {}
+_CONSOLIDATION_CANDIDATE_ID_RE = re.compile(r"^consolidation:(episode|claim|procedure):[0-9a-f]{24}$")
+_CONSOLIDATION_EVENT_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
+_CONSOLIDATION_AUTHORITY_STATUS = "non_authoritative"
 
 
 def register(event_type: str) -> Callable[[Callable[[Event], ExtractionResult]], Callable[[Event], ExtractionResult]]:
@@ -2586,11 +2595,159 @@ def _extract_causal_edge_generated(event: Event) -> ExtractionResult:
     )
 
 
+@register("consolidation.candidate.created")
+def _extract_consolidation_candidate_created(event: Event) -> ExtractionResult:
+    """Project a cited, review-pending consolidation candidate."""
+    candidate_id = _required_consolidation_candidate_id(event.payload.get("candidate_id"))
+    candidate_type = _required_consolidation_candidate_type(event.payload.get("candidate_type"))
+    if not candidate_id.startswith(f"consolidation:{candidate_type}:"):
+        raise ValueError("candidate_id candidate_type must match candidate_type")
+    title = _required_consolidation_text(event.payload.get("title"), field="title")
+    summary = _required_consolidation_text(event.payload.get("summary"), field="summary")
+    source_events = _snapshot_consolidation_source_events(event.payload.get("source_events"))
+    confidence = _required_consolidation_confidence(event.payload.get("confidence"))
+    method = _required_consolidation_text(event.payload.get("method"), field="method")
+    review_status = event.payload.get("review_status")
+    if review_status != CONSOLIDATION_INITIAL_REVIEW_STATUS:
+        raise ValueError(
+            "review_status must be "
+            f"{CONSOLIDATION_INITIAL_REVIEW_STATUS!r} for consolidation candidates"
+        )
+    authority_status = _required_consolidation_authority_status(event.payload.get("authority_status"))
+    purpose = event.payload.get("purpose")
+    if purpose is not None:
+        purpose = _required_consolidation_text(purpose, field="purpose")
+
+    properties: dict[str, Any] = {
+        "candidate_type": candidate_type,
+        "title": title,
+        "confidence": confidence,
+        "method": method,
+        "review_status": review_status,
+        "authority_status": authority_status,
+        "source_event_count": len(source_events),
+        "source_events": source_events,
+    }
+    if purpose is not None:
+        properties["purpose"] = purpose
+
+    candidate = ExtractedEntity(
+        name=candidate_id,
+        entity_type="consolidation_candidate",
+        observed_at=event.timestamp,
+        summary=summary,
+        properties=properties,
+    )
+    return ExtractionResult(entities=[candidate], edges=[], source_event_seq=event.seq)
+
+
+@register("consolidation.candidate.reviewed")
+def _extract_consolidation_candidate_reviewed(event: Event) -> ExtractionResult:
+    """Project a human review outcome without promoting candidate authority."""
+    candidate_id = _required_consolidation_candidate_id(event.payload.get("candidate_id"))
+    status = event.payload.get("status")
+    if status not in CONSOLIDATION_REVIEW_STATUSES:
+        valid = ", ".join(sorted(CONSOLIDATION_REVIEW_STATUSES))
+        raise ValueError(f"status must be one of: {valid}")
+    authority_status = _required_consolidation_authority_status(event.payload.get("authority_status"))
+    rationale = _required_consolidation_text(event.payload.get("rationale"), field="rationale")
+
+    review_id = f"consolidation_review:{candidate_id}:{event.seq}"
+    review = ExtractedEntity(
+        name=review_id,
+        entity_type="consolidation_review",
+        observed_at=event.timestamp,
+        summary=rationale,
+        properties={
+            "candidate_id": candidate_id,
+            "status": status,
+            "authority_status": authority_status,
+            "rationale": rationale,
+        },
+    )
+    candidate = ExtractedEntity(
+        name=candidate_id,
+        entity_type="consolidation_candidate",
+        observed_at=event.timestamp,
+        properties={
+            "review_status": status,
+            "authority_status": authority_status,
+        },
+    )
+    edge = ExtractedEdge(
+        source=review_id,
+        target=candidate_id,
+        relation_type="reviewed_consolidation_candidate",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(entities=[review, candidate], edges=[edge], source_event_seq=event.seq)
+
+
 def _required_causal_graph_relation_type(payload: dict[str, Any], *, event_seq: int) -> str:
     graph_relation_type = payload.get("graph_relation_type")
     if not isinstance(graph_relation_type, str) or not graph_relation_type.strip():
         raise ValueError(f"causal.edge.generated event {event_seq} missing required graph_relation_type")
     return graph_relation_type
+
+
+def _required_consolidation_candidate_id(value: object) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("candidate_id must be a non-empty string")
+    if _CONSOLIDATION_CANDIDATE_ID_RE.fullmatch(value) is None:
+        raise ValueError(
+            "candidate_id must match consolidation:{episode|claim|procedure}:{24 lowercase hex characters}"
+        )
+    return value
+
+
+def _required_consolidation_candidate_type(value: object) -> str:
+    if value not in CONSOLIDATION_CANDIDATE_TYPES:
+        valid = ", ".join(sorted(CONSOLIDATION_CANDIDATE_TYPES))
+        raise ValueError(f"candidate_type must be one of: {valid}")
+    return str(value)
+
+
+def _required_consolidation_text(value: object, *, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} must be a non-empty string")
+    return value
+
+
+def _required_consolidation_confidence(value: object) -> float:
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        raise ValueError("confidence must be a number between 0.0 and 1.0")
+    confidence = float(value)
+    if not 0.0 <= confidence <= 1.0:
+        raise ValueError("confidence must be between 0.0 and 1.0")
+    return confidence
+
+
+def _required_consolidation_authority_status(value: object) -> str:
+    if value != _CONSOLIDATION_AUTHORITY_STATUS:
+        raise ValueError("authority_status must remain non_authoritative")
+    return _CONSOLIDATION_AUTHORITY_STATUS
+
+
+def _snapshot_consolidation_source_events(value: object) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        raise ValueError("source_events must be a non-empty list")
+    if not value:
+        raise ValueError("source_events must be non-empty")
+
+    source_events = []
+    for index, source_event in enumerate(value):
+        if not isinstance(source_event, Mapping):
+            raise ValueError(f"source_events[{index}] must be a mapping")
+        seq = source_event.get("seq")
+        if not isinstance(seq, int) or isinstance(seq, bool) or seq <= 0:
+            raise ValueError(f"source_events[{index}].seq must be a positive integer")
+        event_hash = source_event.get("hash")
+        if not isinstance(event_hash, str) or _CONSOLIDATION_EVENT_HASH_RE.fullmatch(event_hash) is None:
+            raise ValueError(
+                f"source_events[{index}].hash must be exactly 64 lowercase hex characters"
+            )
+        source_events.append({"seq": seq, "hash": event_hash})
+    return copy.deepcopy(source_events)
 
 
 def _optional_text(value: object) -> str | None:

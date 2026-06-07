@@ -1045,6 +1045,203 @@ class TestCausalEdgeGenerated:
         assert result.edges[0].evidence["details"] == {"line": 12, "message": "failed"}
 
 
+class TestConsolidationCandidateEvents:
+    """Tests for review-pending consolidation candidate projections."""
+
+    def test_extract_consolidation_candidate_created_projects_review_pending_memory(self) -> None:
+        event = _make_event(
+            "consolidation.candidate.created",
+            {
+                "candidate_id": "consolidation:episode:" + "a" * 24,
+                "candidate_type": "episode",
+                "title": "Pytest failure investigation",
+                "summary": "The agent ran pytest and identified the cause.",
+                "source_events": [{"seq": 10, "hash": "a" * 64}],
+                "confidence": 0.74,
+                "method": "event_segment_cluster_v1",
+                "review_status": "pending",
+                "authority_status": "non_authoritative",
+                "purpose": "coding",
+            },
+        )
+
+        result = extract(event)
+
+        candidate = result.entities[0]
+        assert candidate.name == "consolidation:episode:" + "a" * 24
+        assert candidate.entity_type == "consolidation_candidate"
+        assert candidate.summary == "The agent ran pytest and identified the cause."
+        assert candidate.properties["candidate_type"] == "episode"
+        assert candidate.properties["review_status"] == "pending"
+        assert candidate.properties["authority_status"] == "non_authoritative"
+        assert candidate.properties["source_event_count"] == 1
+
+    def test_extract_consolidation_review_links_review_to_candidate(self) -> None:
+        event = _make_event(
+            "consolidation.candidate.reviewed",
+            {
+                "candidate_id": "consolidation:episode:" + "a" * 24,
+                "status": "accepted",
+                "authority_status": "non_authoritative",
+                "rationale": "Useful but still alpha.1 non-authoritative.",
+            },
+        )
+
+        result = extract(event)
+
+        assert {entity.entity_type for entity in result.entities} == {
+            "consolidation_review",
+            "consolidation_candidate",
+        }
+        assert result.edges[0].relation_type == "reviewed_consolidation_candidate"
+        assert result.edges[0].source.startswith("consolidation_review:")
+        assert result.edges[0].target == "consolidation:episode:" + "a" * 24
+
+    @pytest.mark.parametrize(
+        "candidate_id",
+        [
+            "episode:" + "a" * 24,
+            "consolidation:memory:" + "a" * 24,
+            "consolidation:episode:" + "A" * 24,
+            "consolidation:episode:" + "g" * 24,
+            "consolidation:episode:" + "a" * 23,
+            "consolidation:episode:" + "a" * 25,
+        ],
+    )
+    def test_candidate_created_rejects_malformed_candidate_id(self, candidate_id: str) -> None:
+        event = _make_event(
+            "consolidation.candidate.created",
+            {
+                **self._candidate_created_payload(),
+                "candidate_id": candidate_id,
+            },
+        )
+
+        with pytest.raises(ValueError, match="candidate_id"):
+            extract(event)
+
+    def test_candidate_created_rejects_authoritative_status(self) -> None:
+        event = _make_event(
+            "consolidation.candidate.created",
+            {
+                **self._candidate_created_payload(),
+                "authority_status": "authoritative",
+            },
+        )
+
+        with pytest.raises(ValueError, match="authority_status"):
+            extract(event)
+
+    def test_candidate_created_rejects_string_confidence(self) -> None:
+        event = _make_event(
+            "consolidation.candidate.created",
+            {
+                **self._candidate_created_payload(),
+                "confidence": "0.74",
+            },
+        )
+
+        with pytest.raises(ValueError, match="confidence"):
+            extract(event)
+
+    @pytest.mark.parametrize(
+        "source_events",
+        [
+            [],
+            [{"seq": 0, "hash": "a" * 64}],
+            [{"seq": True, "hash": "a" * 64}],
+            [{"seq": 10, "hash": "A" * 64}],
+            [{"seq": 10, "hash": "a" * 63}],
+        ],
+    )
+    def test_candidate_created_rejects_invalid_source_events(
+        self,
+        source_events: list[dict[str, object]],
+    ) -> None:
+        event = _make_event(
+            "consolidation.candidate.created",
+            {
+                **self._candidate_created_payload(),
+                "source_events": source_events,
+            },
+        )
+
+        with pytest.raises(ValueError, match="source_events"):
+            extract(event)
+
+    def test_review_rejects_malformed_candidate_id(self) -> None:
+        event = _make_event(
+            "consolidation.candidate.reviewed",
+            {
+                **self._review_payload(),
+                "candidate_id": "consolidation:episode:" + "A" * 24,
+            },
+        )
+
+        with pytest.raises(ValueError, match="candidate_id"):
+            extract(event)
+
+    def test_review_rejects_authoritative_status(self) -> None:
+        event = _make_event(
+            "consolidation.candidate.reviewed",
+            {
+                **self._review_payload(),
+                "authority_status": "authoritative",
+            },
+        )
+
+        with pytest.raises(ValueError, match="authority_status"):
+            extract(event)
+
+    def test_review_rejects_invalid_status(self) -> None:
+        event = _make_event(
+            "consolidation.candidate.reviewed",
+            {
+                **self._review_payload(),
+                "status": "pending",
+            },
+        )
+
+        with pytest.raises(ValueError, match="status"):
+            extract(event)
+
+    def test_candidate_created_snapshots_nested_source_events(self) -> None:
+        payload = self._candidate_created_payload()
+        event = _make_event("consolidation.candidate.created", payload)
+
+        result = extract(event)
+        payload["source_events"][0]["seq"] = 11
+        payload["source_events"].append({"seq": 12, "hash": "b" * 64})
+
+        candidate = result.entities[0]
+        assert candidate.properties["source_events"] == [{"seq": 10, "hash": "a" * 64}]
+        assert candidate.properties["source_event_count"] == 1
+
+    @staticmethod
+    def _candidate_created_payload() -> dict[str, object]:
+        return {
+            "candidate_id": "consolidation:episode:" + "a" * 24,
+            "candidate_type": "episode",
+            "title": "Pytest failure investigation",
+            "summary": "The agent ran pytest and identified the cause.",
+            "source_events": [{"seq": 10, "hash": "a" * 64}],
+            "confidence": 0.74,
+            "method": "event_segment_cluster_v1",
+            "review_status": "pending",
+            "authority_status": "non_authoritative",
+            "purpose": "coding",
+        }
+
+    @staticmethod
+    def _review_payload() -> dict[str, object]:
+        return {
+            "candidate_id": "consolidation:episode:" + "a" * 24,
+            "status": "accepted",
+            "authority_status": "non_authoritative",
+            "rationale": "Useful but still alpha.1 non-authoritative.",
+        }
+
+
 class TestIssueDiagnosed:
     """Tests for issue.diagnosed extractor."""
 
