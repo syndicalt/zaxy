@@ -912,6 +912,7 @@ class TestRetrieval:
         assert "rel.session_id = $session_id" in call.args[0]
         assert "ALL(node IN nodes(path) WHERE node.session_id = $session_id" in call.args[0]
         assert "node.valid_to IS NULL" in call.args[0]
+        assert "last(relationships(path)) AS terminal_rel" in call.args[0]
         assert call.kwargs["relation_type"] == "causal_caused"
         assert results[0].name == "effect"
         assert results[0].properties["causal_source_name"] == "cause"
@@ -934,6 +935,64 @@ class TestRetrieval:
         assert ")-[r:RELATES*1..2]-(neighbor:Entity)" not in call.args[0]
         assert "ALL(rel IN relationships(path) WHERE rel.session_id = $session_id" in call.args[0]
         assert "ALL(node IN nodes(path) WHERE node.session_id = $session_id" in call.args[0]
+
+    async def test_search_causal_neighbors_predecessors_uses_edge_adjacent_to_neighbor(
+        self,
+        store: GraphStore,
+    ) -> None:
+        """Multi-hop predecessor metadata should describe the returned predecessor edge."""
+        root_cause = _make_node(
+            name="root cause",
+            entity_type="event",
+            valid_from="2026-06-07T00:00:00Z",
+        )
+        intermediate = _make_node(
+            name="intermediate effect",
+            entity_type="event",
+            valid_from="2026-06-07T00:00:00Z",
+        )
+        store._driver.execute_query.return_value = (
+            [
+                {
+                    "neighbor": root_cause,
+                    "causal_source": root_cause,
+                    "causal_target": intermediate,
+                    "graph_relation_type": "causal_caused",
+                    "confidence": 0.84,
+                    "inference_method": "explicit_outcome_citation_v1",
+                    "source_event_seq": 40,
+                    "source_event_hash": "b" * 64,
+                    "edge_properties": {
+                        "evidence_causal_relation_type": "caused",
+                        "evidence_review_status": "proposed",
+                        "evidence_authority_status": "non_authoritative",
+                    },
+                    "path_relation_types": ["causal_caused", "causal_enabled"],
+                    "path_citations": [
+                        {"seq": 40, "hash": "b" * 64},
+                        {"seq": 41, "hash": "c" * 64},
+                    ],
+                    "path_length": 2,
+                }
+            ],
+            None,
+            None,
+        )
+
+        results = await store.search_causal_neighbors(
+            "final effect",
+            direction="predecessors",
+            session_id="agent-1",
+            depth=2,
+        )
+
+        call = store._driver.execute_query.await_args
+        assert "first(relationships(path)) AS terminal_rel" in call.args[0]
+        assert results[0].name == "root cause"
+        assert results[0].properties["causal_source_name"] == "root cause"
+        assert results[0].properties["causal_target_name"] == "intermediate effect"
+        assert results[0].properties["source_event_seq"] == 40
+        assert results[0].properties["_path_length"] == 2
 
     async def test_search_causal_neighbors_temporal_filter_checks_all_path_nodes_and_edges(
         self,

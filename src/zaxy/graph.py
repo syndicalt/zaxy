@@ -1161,12 +1161,15 @@ class GraphStore(ProjectionStore):
             if direction == "successors"
             else f"(neighbor:Entity)-[r:RELATES*1..{depth}]->(start:Entity {{name: $entity_name}})"
         )
+        terminal_rel_expression = (
+            "last(relationships(path))" if direction == "successors" else "first(relationships(path))"
+        )
         cypher = f"""
         MATCH path = {pattern}
         WHERE neighbor <> start
           AND ALL(rel IN relationships(path) WHERE {relationship_checks})
           AND ALL(node IN nodes(path) WHERE {node_checks})
-        WITH path, start, neighbor, last(relationships(path)) AS terminal_rel
+        WITH path, start, neighbor, {terminal_rel_expression} AS terminal_rel
         RETURN neighbor,
                startNode(terminal_rel) AS causal_source,
                endNode(terminal_rel) AS causal_target,
