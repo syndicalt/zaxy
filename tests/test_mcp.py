@@ -442,10 +442,19 @@ class TestToolSchema:
             "claim",
             "procedure",
         ]
+        source_events = candidate.inputSchema["properties"]["source_events"]
+        assert source_events["minItems"] == 1
+        assert source_events["items"]["properties"]["hash"]["pattern"] == "^[0-9a-f]{64}$"
+        assert candidate.inputSchema["properties"]["confidence"]["minimum"] == 0
+        assert candidate.inputSchema["properties"]["confidence"]["maximum"] == 1
         assert candidate.inputSchema["properties"]["actor"]["default"] == "zaxy-consolidation"
 
         review = tools["memory_consolidation_review"]
         assert review.inputSchema["required"] == ["candidate_id", "status", "rationale"]
+        assert (
+            review.inputSchema["properties"]["candidate_id"]["pattern"]
+            == "^consolidation:(episode|claim|procedure):[0-9a-f]{24}$"
+        )
         assert review.inputSchema["properties"]["status"]["enum"] == [
             "accepted",
             "rejected",
@@ -694,6 +703,31 @@ class TestCausalAndConsolidationTools:
 
         server.session_manager.get.assert_not_called()
 
+    @pytest.mark.parametrize("field", ["actor", "candidate_type", "title", "summary", "method", "purpose"])
+    async def test_consolidation_candidate_rejects_non_string_contract_fields(
+        self,
+        server: ZaxyMCPServer,
+        field: str,
+    ) -> None:
+        """String fields should not be silently coerced before candidate event building."""
+        arguments: dict[str, object] = {
+            "candidate_type": "claim",
+            "title": "Retry policy",
+            "summary": "Retries should preserve original citations.",
+            "source_events": [{"seq": 7, "hash": "b" * 64}],
+            "confidence": 0.82,
+            "method": "manual-review",
+            "purpose": "release audit",
+            "session_id": "agent-1",
+            "actor": "assistant",
+        }
+        arguments[field] = {"not": "text"}
+
+        with pytest.raises(ValueError, match=rf"{field} must be a string"):
+            await server.handle_memory_consolidation_candidate(arguments)
+
+        server.session_manager.get.assert_not_called()
+
     async def test_consolidation_review_appends_projects_traces_without_authority_promotion(
         self,
         server: ZaxyMCPServer,
@@ -727,6 +761,27 @@ class TestCausalAndConsolidationTools:
             "reviewer",
             1,
         )
+
+    @pytest.mark.parametrize("field", ["actor", "candidate_id", "status", "rationale"])
+    async def test_consolidation_review_rejects_non_string_contract_fields(
+        self,
+        server: ZaxyMCPServer,
+        field: str,
+    ) -> None:
+        """Review contract string fields should fail before append/project on non-string values."""
+        arguments: dict[str, object] = {
+            "candidate_id": "consolidation:claim:" + ("c" * 24),
+            "status": "accepted",
+            "rationale": "Citations match the source events.",
+            "session_id": "agent-1",
+            "actor": "reviewer",
+        }
+        arguments[field] = ["not", "text"]
+
+        with pytest.raises(ValueError, match=rf"{field} must be a string"):
+            await server.handle_memory_consolidation_review(arguments)
+
+        server.session_manager.get.assert_not_called()
 
     @pytest.mark.parametrize(
         ("handler_name", "arguments"),

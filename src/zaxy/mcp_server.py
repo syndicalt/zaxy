@@ -205,18 +205,24 @@ TOOLS = [
                 "summary": {"type": "string", "description": "Candidate summary"},
                 "source_events": {
                     "type": "array",
+                    "minItems": 1,
                     "items": {
                         "type": "object",
                         "required": ["seq", "hash"],
                         "properties": {
                             "seq": {"type": "integer", "minimum": 1},
-                            "hash": {"type": "string"},
+                            "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
                         },
                         "additionalProperties": False,
                     },
                     "description": "Cited Eventloom source events",
                 },
-                "confidence": {"type": "number", "description": "Candidate confidence from 0.0 to 1.0"},
+                "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Candidate confidence from 0.0 to 1.0",
+                },
                 "method": {"type": "string", "description": "Consolidation method identifier"},
                 "purpose": {"type": "string", "description": "Optional consolidation purpose"},
                 "session_id": {"type": "string", "description": "Session ID for multi-agent sharding"},
@@ -236,7 +242,11 @@ TOOLS = [
             "type": "object",
             "required": ["candidate_id", "status", "rationale"],
             "properties": {
-                "candidate_id": {"type": "string", "description": "Consolidation candidate ID"},
+                "candidate_id": {
+                    "type": "string",
+                    "pattern": "^consolidation:(episode|claim|procedure):[0-9a-f]{24}$",
+                    "description": "Consolidation candidate ID",
+                },
                 "status": {
                     "type": "string",
                     "enum": ["accepted", "rejected", "deferred", "conflicted"],
@@ -1096,17 +1106,17 @@ class ZaxyMCPServer:
     async def handle_memory_consolidation_candidate(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle memory_consolidation_candidate tool calls."""
         session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
-        actor = _optional_text(arguments.get("actor")) or "zaxy-consolidation"
+        actor = _optional_strict_text(arguments.get("actor"), "actor") or "zaxy-consolidation"
         event_input = build_consolidation_candidate_event(
             actor=actor,
             session_id=session_id,
-            candidate_type=_required_text(arguments.get("candidate_type"), "candidate_type"),
-            title=_required_text(arguments.get("title"), "title"),
-            summary=_required_text(arguments.get("summary"), "summary"),
+            candidate_type=_required_strict_text(arguments.get("candidate_type"), "candidate_type"),
+            title=_required_strict_text(arguments.get("title"), "title"),
+            summary=_required_strict_text(arguments.get("summary"), "summary"),
             source_events=arguments.get("source_events", []),
             confidence=arguments.get("confidence"),
-            method=_required_text(arguments.get("method"), "method"),
-            purpose=_optional_text(arguments.get("purpose")),
+            method=_required_strict_text(arguments.get("method"), "method"),
+            purpose=_optional_strict_text(arguments.get("purpose"), "purpose"),
         )
         event = await self._append_project_and_trace_event(event_input, session_id=session_id)
         return [TextContent(type="text", text=json.dumps({"seq": event.seq, "hash": event.hash}))]
@@ -1114,13 +1124,13 @@ class ZaxyMCPServer:
     async def handle_memory_consolidation_review(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle memory_consolidation_review tool calls."""
         session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
-        actor = _optional_text(arguments.get("actor")) or "zaxy-reviewer"
+        actor = _optional_strict_text(arguments.get("actor"), "actor") or "zaxy-reviewer"
         event_input = build_consolidation_review_event(
             actor=actor,
             session_id=session_id,
-            candidate_id=_required_text(arguments.get("candidate_id"), "candidate_id"),
-            status=_required_text(arguments.get("status"), "status"),
-            rationale=_required_text(arguments.get("rationale"), "rationale"),
+            candidate_id=_required_strict_text(arguments.get("candidate_id"), "candidate_id"),
+            status=_required_strict_text(arguments.get("status"), "status"),
+            rationale=_required_strict_text(arguments.get("rationale"), "rationale"),
         )
         event = await self._append_project_and_trace_event(event_input, session_id=session_id)
         return [TextContent(type="text", text=json.dumps({"seq": event.seq, "hash": event.hash}))]
@@ -2538,10 +2548,26 @@ def _required_text(value: object, field: str) -> str:
     return text
 
 
+def _required_strict_text(value: object, field: str) -> str:
+    text = _optional_strict_text(value, field)
+    if text is None:
+        raise ValueError(f"{field} is required")
+    return text
+
+
 def _optional_text(value: object) -> str | None:
     if value is None:
         return None
     text = str(value).strip()
+    return text or None
+
+
+def _optional_strict_text(value: object, field: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"{field} must be a string")
+    text = value.strip()
     return text or None
 
 

@@ -164,6 +164,8 @@
           },
           "confidence": {
             "description": "Candidate confidence from 0.0 to 1.0",
+            "maximum": 1,
+            "minimum": 0,
             "type": "number"
           },
           "method": {
@@ -184,6 +186,7 @@
               "additionalProperties": false,
               "properties": {
                 "hash": {
+                  "pattern": "^[0-9a-f]{64}$",
                   "type": "string"
                 },
                 "seq": {
@@ -197,6 +200,7 @@
               ],
               "type": "object"
             },
+            "minItems": 1,
             "type": "array"
           },
           "summary": {
@@ -232,6 +236,7 @@
           },
           "candidate_id": {
             "description": "Consolidation candidate ID",
+            "pattern": "^consolidation:(episode|claim|procedure):[0-9a-f]{24}$",
             "type": "string"
           },
           "rationale": {
