@@ -9,6 +9,7 @@ from zaxy.causal import (
     CausalEdge,
     CausalQueryResult,
     build_causal_edge_event,
+    causal_query_result_from_projection,
     causal_relation_to_graph_relation,
 )
 from zaxy.core import MemoryFabric
@@ -291,6 +292,21 @@ async def test_memory_fabric_causal_queries_accept_valid_explicit_citation_witho
 
     assert [result.target["name"] for result in results] == ["effect"]
     assert results[0].citation == "eventloom://agent-1/events/42#aaaaaaaaaaaa"
+
+
+def test_causal_query_result_from_projection_preserves_endpoint_and_provenance_rules() -> None:
+    entity = _backend_causal_entity(
+        citation="eventloom://agent-1/events/42#aaaaaaaaaaaa",
+        source_event_seq=42,
+        source_event_hash="a" * 64,
+    )
+
+    result = causal_query_result_from_projection(entity, direction="successors")
+
+    assert result is not None
+    assert result.source == {"name": "cause", "entity_type": "event"}
+    assert result.target == {"name": "effect", "entity_type": "outcome"}
+    assert result.citation == "eventloom://agent-1/events/42#aaaaaaaaaaaa"
 
 
 @pytest.mark.asyncio

@@ -554,7 +554,7 @@ class TestCausalAndConsolidationTools:
         })
 
         payload = json_loads(response[0].text)
-        assert payload == [result.to_dict()]
+        assert payload == {"results": [result.to_dict()]}
         server.graph.search_causal_neighbors.assert_awaited_once_with(
             "Plan",
             direction="successors",
@@ -600,8 +600,8 @@ class TestCausalAndConsolidationTools:
         })
 
         payload = json_loads(response[0].text)
-        assert payload[0]["source"]["name"] == "Plan"
-        assert payload[0]["target"]["name"] == "Implementation"
+        assert payload["results"][0]["source"]["name"] == "Plan"
+        assert payload["results"][0]["target"]["name"] == "Implementation"
         server.graph.search_causal_neighbors.assert_awaited_once_with(
             "Implementation",
             direction="predecessors",
@@ -616,6 +616,8 @@ class TestCausalAndConsolidationTools:
         [
             ({"entity_name": "Plan", "depth": 0, "session_id": "agent-1"}, "depth must be between 1"),
             ({"entity_name": "Plan", "depth": True, "session_id": "agent-1"}, "depth must be an integer"),
+            ({"entity_name": 42, "session_id": "agent-1"}, "query must be a non-empty string"),
+            ({"entity_name": "x" * 4097, "session_id": "agent-1"}, "query exceeds 4096 characters"),
             (
                 {"entity_name": "Plan", "relation_type": "enables", "session_id": "agent-1"},
                 "causal relation_type",

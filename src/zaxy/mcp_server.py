@@ -41,7 +41,7 @@ from mcp.shared.message import SessionMessage
 from mcp.types import TextContent, Tool
 
 from zaxy.capabilities import build_memory_bootstrap, build_memory_capabilities
-from zaxy.causal import causal_relation_to_graph_relation
+from zaxy.causal import causal_query_result_from_projection, causal_relation_to_graph_relation
 from zaxy.config import get_settings
 from zaxy.consolidation import (
     build_consolidation_candidate_event,
@@ -51,7 +51,6 @@ from zaxy.context import Context, ContextAssemblyPolicy, context_counts
 from zaxy.core import (
     ContextAssembly,
     MemoryCheckout,
-    _causal_query_result_from_entity,
     build_memory_checkout,
 )
 from zaxy.extract import extract
@@ -1068,7 +1067,7 @@ class ZaxyMCPServer:
         *,
         direction: Literal["successors", "predecessors"],
     ) -> list[TextContent]:
-        entity_name = _required_text(arguments.get("entity_name"), "entity_name")
+        entity_name = validate_query(arguments.get("entity_name"))
         session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
         raw_depth = arguments.get("depth", 2)
         if isinstance(raw_depth, bool):
@@ -1090,9 +1089,9 @@ class ZaxyMCPServer:
         results = [
             result.to_dict()
             for entity in neighbors
-            if (result := _causal_query_result_from_entity(entity, direction=direction)) is not None
+            if (result := causal_query_result_from_projection(entity, direction=direction)) is not None
         ]
-        return [TextContent(type="text", text=json.dumps(results, indent=2))]
+        return [TextContent(type="text", text=json.dumps({"results": results}, indent=2))]
 
     async def handle_memory_consolidation_candidate(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle memory_consolidation_candidate tool calls."""

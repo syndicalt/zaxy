@@ -23,7 +23,11 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal, cast
 
-from zaxy.causal import CausalQueryResult, causal_relation_to_graph_relation
+from zaxy.causal import (
+    CausalQueryResult,
+    causal_query_result_from_projection,
+    causal_relation_to_graph_relation,
+)
 from zaxy.checkout import (
     build_checkout_diagnostics,
     build_checkout_guidance,
@@ -104,9 +108,6 @@ from zaxy.workspace import (
     mark_workspace_instruction_event_updated,
     workspace_profile_from_payload,
 )
-
-_EVENTLOOM_CAUSAL_CITATION_RE = re.compile(r"^eventloom://(?!unknown/)[^/\s]+/events/[1-9][0-9]*#[0-9a-f]{12}$")
-_EVENT_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 
 
 @dataclass(frozen=True)
@@ -261,113 +262,6 @@ class ContextRefreshReport:
             "event_count": self.event_count,
             "summary": self.summary,
         }
-
-
-def _causal_query_result_from_entity(
-    entity: Any,
-    *,
-    direction: Literal["successors", "predecessors"],
-) -> CausalQueryResult | None:
-    properties = dict(entity.properties)
-    graph_relation_type = str(properties.get("graph_relation_type") or properties.get("relation_type") or "")
-    causal_relation_type = str(properties.get("causal_relation_type") or _causal_relation_from_graph_relation(graph_relation_type))
-    citation = _citation_from_properties(properties)
-    if not citation:
-        return None
-    source = _causal_endpoint(properties, name_key="causal_source_name", type_key="causal_source_type")
-    target = _causal_endpoint(properties, name_key="causal_target_name", type_key="causal_target_type")
-    if source is None or target is None:
-        return None
-    evidence = _causal_evidence_from_properties(properties)
-    try:
-        return CausalQueryResult(
-            source=source,
-            target=target,
-            relation_type=causal_relation_type,
-            graph_relation_type=graph_relation_type,
-            confidence=_causal_float(properties.get("confidence"), default=1.0),
-            method=str(properties.get("method") or properties.get("inference_method") or "unknown"),
-            citation=citation,
-            review_status=str(properties.get("review_status") or "proposed"),
-            authority_status=str(properties.get("authority_status") or "non_authoritative"),
-            evidence=evidence,
-            path_length=_optional_positive_int(properties.get("_path_length")),
-        )
-    except (TypeError, ValueError):
-        return None
-
-
-def _causal_relation_from_graph_relation(graph_relation_type: str) -> str:
-    if graph_relation_type.startswith("causal_"):
-        return graph_relation_type.removeprefix("causal_")
-    return graph_relation_type
-
-
-def _citation_from_properties(properties: dict[str, Any]) -> str | None:
-    explicit = properties.get("citation")
-    has_explicit = "citation" in properties
-    if has_explicit and (
-        not isinstance(explicit, str) or not _EVENTLOOM_CAUSAL_CITATION_RE.fullmatch(explicit)
-    ):
-        return None
-    event_seq = properties.get("source_event_seq")
-    event_hash = properties.get("source_event_hash")
-    has_seq = "source_event_seq" in properties
-    has_hash = "source_event_hash" in properties
-    if (has_seq or has_hash) and not (
-        _valid_source_event_seq(event_seq) and isinstance(event_hash, str) and _EVENT_HASH_RE.fullmatch(event_hash)
-    ):
-        return None
-    if isinstance(explicit, str) and _EVENTLOOM_CAUSAL_CITATION_RE.fullmatch(explicit):
-        return explicit
-    session_id = str(properties.get("session_id") or "default")
-    if _valid_source_event_seq(event_seq) and isinstance(event_hash, str) and _EVENT_HASH_RE.fullmatch(event_hash):
-        return f"eventloom://{session_id}/events/{event_seq}#{str(event_hash)[:12]}"
-    return None
-
-
-def _causal_endpoint(
-    properties: dict[str, Any],
-    *,
-    name_key: str,
-    type_key: str,
-) -> dict[str, str] | None:
-    name = properties.get(name_key)
-    entity_type = properties.get(type_key)
-    if not isinstance(name, str) or not name.strip():
-        return None
-    if not isinstance(entity_type, str) or not entity_type.strip():
-        return None
-    return {"name": name, "entity_type": entity_type}
-
-
-def _valid_source_event_seq(value: Any) -> bool:
-    return isinstance(value, int) and not isinstance(value, bool) and value > 0
-
-
-def _causal_evidence_from_properties(properties: dict[str, Any]) -> dict[str, Any]:
-    raw_evidence = properties.get("evidence")
-    evidence = dict(raw_evidence) if isinstance(raw_evidence, dict) else {}
-    for key in ("source_event_seq", "source_event_hash"):
-        if key in properties and key not in evidence:
-            evidence[key] = properties[key]
-    for key in ("_path_relation_types", "_path_citations"):
-        if key in properties:
-            evidence[key.removeprefix("_")] = properties[key]
-    return evidence
-
-
-def _causal_float(value: Any, *, default: float) -> float:
-    if value is None:
-        return default
-    return float(value)
-
-
-def _optional_positive_int(value: Any) -> int | None:
-    if value is None:
-        return None
-    parsed = int(value)
-    return parsed if parsed > 0 else None
 
 
 class MemoryFabric:
@@ -544,7 +438,7 @@ class MemoryFabric:
         )
         results: list[CausalQueryResult] = []
         for entity in neighbors:
-            result = _causal_query_result_from_entity(entity, direction=direction)
+            result = causal_query_result_from_projection(entity, direction=direction)
             if result is not None:
                 results.append(result)
         return results
