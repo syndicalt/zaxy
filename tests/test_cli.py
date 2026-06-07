@@ -2227,6 +2227,220 @@ def test_memory_checkout_json_output(mock_fabric_cls: MagicMock, tmp_path: Path)
     }
 
 
+def test_memory_causal_and_consolidation_help_commands_are_registered() -> None:
+    """Nested memory causal and consolidation commands should expose command help."""
+    runner = CliRunner()
+
+    successors = runner.invoke(app, ["memory", "causal", "successors", "--help"])
+    propose = runner.invoke(app, ["memory", "consolidation", "propose", "--help"])
+
+    assert successors.exit_code == 0
+    assert "ENTITY_NAME" in successors.output
+    assert "--relation-type" in successors.output
+    assert propose.exit_code == 0
+    assert "--source-event" in propose.output
+    assert "--candidate-type" in propose.output
+
+
+@patch("zaxy.__main__.MemoryFabric")
+def test_memory_causal_successors_json_queries_fabric(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """memory causal successors --json should call the fabric causal read API."""
+    causal_result = MagicMock()
+    causal_result.to_dict.return_value = {
+        "source": {"name": "Plan", "entity_type": "task"},
+        "target": {"name": "Implementation", "entity_type": "task"},
+        "relation_type": "enables",
+        "citation": "eventloom://agent/events/3#abc",
+    }
+    fabric = AsyncMock()
+    fabric.query_causal_successors.return_value = [causal_result]
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "causal",
+            "successors",
+            "Plan",
+            "--entity-type",
+            "task",
+            "--relation-type",
+            "enables",
+            "--session-id",
+            "agent",
+            "--depth",
+            "3",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload == {
+        "direction": "successors",
+        "entity": {"name": "Plan", "entity_type": "task"},
+        "results": [causal_result.to_dict.return_value],
+    }
+    fabric.connect.assert_awaited_once()
+    fabric.query_causal_successors.assert_awaited_once_with(
+        "Plan",
+        relation_type="enables",
+        depth=3,
+        session_id="agent",
+    )
+    fabric.close.assert_awaited_once()
+
+
+@patch("zaxy.__main__.MemoryFabric")
+def test_memory_consolidation_propose_appends_candidate_event(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """memory consolidation propose should append the cited candidate event."""
+    from zaxy.consolidation import build_consolidation_candidate_event
+
+    source_hash = "a" * 64
+    fabric = AsyncMock()
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "consolidation",
+            "propose",
+            "--candidate-type",
+            "claim",
+            "--title",
+            "Retry policy",
+            "--summary",
+            "Retries should preserve original citations.",
+            "--source-event",
+            f"7:{source_hash}",
+            "--confidence",
+            "0.82",
+            "--method",
+            "manual-review",
+            "--purpose",
+            "release audit",
+            "--actor",
+            "assistant",
+            "--session-id",
+            "agent",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    expected = build_consolidation_candidate_event(
+        actor="assistant",
+        session_id="agent",
+        candidate_type="claim",
+        title="Retry policy",
+        summary="Retries should preserve original citations.",
+        source_events=[{"seq": 7, "hash": source_hash}],
+        confidence=0.82,
+        method="manual-review",
+        purpose="release audit",
+    )
+    payload = json.loads(result.output)
+    assert payload["event_type"] == "consolidation.candidate.created"
+    assert payload["payload"] == expected["payload"]
+    fabric.connect.assert_awaited_once()
+    fabric.append.assert_awaited_once_with(**expected)
+    fabric.close.assert_awaited_once()
+
+
+def test_memory_consolidation_propose_rejects_invalid_source_event(tmp_path: Path) -> None:
+    """--source-event must be strict SEQ:HASH input."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "consolidation",
+            "propose",
+            "--candidate-type",
+            "claim",
+            "--title",
+            "Retry policy",
+            "--summary",
+            "Retries should preserve original citations.",
+            "--source-event",
+            "not-a-citation",
+            "--confidence",
+            "0.82",
+            "--method",
+            "manual-review",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "source event must be formatted as SEQ:HASH" in result.output
+
+
+@patch("zaxy.__main__.MemoryFabric")
+def test_memory_consolidation_review_appends_review_event(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """memory consolidation review should append the review event contract."""
+    from zaxy.consolidation import build_consolidation_review_event
+
+    candidate_id = "consolidation:claim:" + ("b" * 24)
+    fabric = AsyncMock()
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "consolidation",
+            "review",
+            "--candidate-id",
+            candidate_id,
+            "--status",
+            "accepted",
+            "--rationale",
+            "Citations match the source events.",
+            "--actor",
+            "reviewer",
+            "--session-id",
+            "agent",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    expected = build_consolidation_review_event(
+        actor="reviewer",
+        session_id="agent",
+        candidate_id=candidate_id,
+        status="accepted",
+        rationale="Citations match the source events.",
+    )
+    assert json.loads(result.output) == expected
+    fabric.connect.assert_awaited_once()
+    fabric.append.assert_awaited_once_with(**expected)
+    fabric.close.assert_awaited_once()
+
+
 @patch("zaxy.__main__.MemoryFabric")
 def test_memory_checkout_uses_repo_local_embedded_profile(
     mock_fabric_cls: MagicMock,

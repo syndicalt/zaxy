@@ -111,6 +111,8 @@ def format_onboarding_result(*args: Any, **kwargs: Any) -> str:
 app = typer.Typer(help="Zaxy: Event-sourced temporal knowledge graph fabric")
 memory_app = typer.Typer(help="Inspect Eventloom-backed agent memory")
 memory_purpose_app = typer.Typer(help="Inspect replay-backed purpose control-plane diagnostics")
+memory_causal_app = typer.Typer(help="Inspect causal memory graph relationships")
+memory_consolidation_app = typer.Typer(help="Create and review consolidation candidates")
 capture_app = typer.Typer(help="Manage deterministic capture watchers")
 coordinate_app = typer.Typer(help="Coordinate parent missions and worker sessions")
 coordinate_worker_app = typer.Typer(help="Manage worker sessions for a mission")
@@ -120,6 +122,8 @@ trace_app = typer.Typer(help="Export neutral trace correlations from Eventloom")
 experimental_app = typer.Typer(help="Run isolated experimental memory research commands")
 app.add_typer(memory_app, name="memory")
 memory_app.add_typer(memory_purpose_app, name="purpose")
+memory_app.add_typer(memory_causal_app, name="causal")
+memory_app.add_typer(memory_consolidation_app, name="consolidation")
 app.add_typer(capture_app, name="capture")
 app.add_typer(coordinate_app, name="coordinate")
 app.add_typer(trace_app, name="trace")
@@ -1644,6 +1648,266 @@ def memory_checkout(
                 err=True,
             )
         typer.echo(payload["prompt"])
+
+
+def _cli_memory_fabric(
+    *,
+    eventloom_path: Path,
+    neo4j_uri: str | None = None,
+    neo4j_user: str | None = None,
+    neo4j_password: str | None = None,
+    neo4j_ca_cert: str | None = None,
+    neo4j_trust_all: bool | None = None,
+) -> Any:
+    settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
+    return MemoryFabric(
+        eventloom_path=str(eventloom_path),
+        neo4j_uri=neo4j_uri,
+        neo4j_user=neo4j_user,
+        neo4j_password=neo4j_password,
+        neo4j_ca_cert=neo4j_ca_cert,
+        neo4j_trust_all=neo4j_trust_all,
+        projection_backend=_resolve_cli_projection_backend(
+            None,
+            settings,
+            neo4j_uri=neo4j_uri,
+            neo4j_user=neo4j_user,
+            neo4j_password=neo4j_password,
+        ),
+        pggraph_dsn=settings.pggraph_dsn,
+        embedded_graph_path=Path(settings.embedded_graph_path),
+        latticedb_path=Path(settings.latticedb_path),
+    )
+
+
+def _parse_source_event(value: str) -> dict[str, object]:
+    seq_text, separator, event_hash = value.partition(":")
+    if separator != ":" or not seq_text or not event_hash:
+        raise typer.BadParameter("source event must be formatted as SEQ:HASH")
+    try:
+        seq = int(seq_text)
+    except ValueError as exc:
+        raise typer.BadParameter("source event sequence must be an integer") from exc
+    if seq <= 0:
+        raise typer.BadParameter("source event sequence must be a positive integer")
+    if len(event_hash) != 64 or any(char not in "0123456789abcdef" for char in event_hash):
+        raise typer.BadParameter("source event hash must be exactly 64 lowercase hex characters")
+    return {"seq": seq, "hash": event_hash}
+
+
+def _format_causal_results_text(
+    *,
+    direction: str,
+    entity_name: str,
+    results: list[dict[str, object]],
+) -> str:
+    if not results:
+        return f"No causal {direction} found for {entity_name}."
+
+    lines = []
+    for result in results:
+        source = result.get("source")
+        target = result.get("target")
+        source_name = source.get("name") if isinstance(source, dict) else None
+        target_name = target.get("name") if isinstance(target, dict) else None
+        relation_type = result.get("relation_type")
+        confidence = result.get("confidence")
+        citation = result.get("citation")
+        path_length = result.get("path_length")
+        pieces = [str(relation_type)]
+        if isinstance(confidence, int | float):
+            pieces.append(f"confidence={confidence:.3f}")
+        if isinstance(path_length, int):
+            pieces.append(f"path_length={path_length}")
+        if citation:
+            pieces.append(f"citation={citation}")
+        lines.append(f"{source_name or '?'} -> {target_name or '?'} [{', '.join(pieces)}]")
+    return "\n".join(lines)
+
+
+async def _query_causal_memory(
+    *,
+    direction: str,
+    entity_name: str,
+    relation_type: str | None,
+    session_id: str,
+    depth: int,
+    eventloom_path: Path,
+) -> list[dict[str, object]]:
+    fabric = _cli_memory_fabric(eventloom_path=eventloom_path)
+    try:
+        await fabric.connect()
+        if direction == "successors":
+            results = await fabric.query_causal_successors(
+                entity_name,
+                relation_type=relation_type,
+                depth=depth,
+                session_id=session_id,
+            )
+        else:
+            results = await fabric.query_causal_predecessors(
+                entity_name,
+                relation_type=relation_type,
+                depth=depth,
+                session_id=session_id,
+            )
+        return [cast(dict[str, object], result.to_dict()) for result in results]
+    finally:
+        with suppress(Exception):
+            await fabric.close()
+
+
+@memory_causal_app.command("successors")
+def memory_causal_successors(
+    entity_name: str = typer.Argument(..., help="Entity name to inspect"),  # noqa: B008
+    entity_type: str | None = typer.Option(None, help="Entity type label for output context"),
+    relation_type: str | None = typer.Option(None, help="Causal relation type to filter"),
+    session_id: str = typer.Option("default", help="Session ID to query"),
+    depth: int = typer.Option(2, min=1, help="Traversal depth"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """List directed causal effects of an entity."""
+    import asyncio
+
+    results = asyncio.run(
+        _query_causal_memory(
+            direction="successors",
+            entity_name=entity_name,
+            relation_type=relation_type,
+            session_id=session_id,
+            depth=depth,
+            eventloom_path=eventloom_path,
+        )
+    )
+    payload = {
+        "direction": "successors",
+        "entity": {"name": entity_name, "entity_type": entity_type},
+        "results": results,
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(_format_causal_results_text(direction="successors", entity_name=entity_name, results=results))
+
+
+@memory_causal_app.command("predecessors")
+def memory_causal_predecessors(
+    entity_name: str = typer.Argument(..., help="Entity name to inspect"),  # noqa: B008
+    entity_type: str | None = typer.Option(None, help="Entity type label for output context"),
+    relation_type: str | None = typer.Option(None, help="Causal relation type to filter"),
+    session_id: str = typer.Option("default", help="Session ID to query"),
+    depth: int = typer.Option(2, min=1, help="Traversal depth"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """List directed causal causes of an entity."""
+    import asyncio
+
+    results = asyncio.run(
+        _query_causal_memory(
+            direction="predecessors",
+            entity_name=entity_name,
+            relation_type=relation_type,
+            session_id=session_id,
+            depth=depth,
+            eventloom_path=eventloom_path,
+        )
+    )
+    payload = {
+        "direction": "predecessors",
+        "entity": {"name": entity_name, "entity_type": entity_type},
+        "results": results,
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(_format_causal_results_text(direction="predecessors", entity_name=entity_name, results=results))
+
+
+async def _append_consolidation_event(event: dict[str, Any], *, eventloom_path: Path) -> None:
+    fabric = _cli_memory_fabric(eventloom_path=eventloom_path)
+    try:
+        await fabric.connect()
+        await fabric.append(**event)
+    finally:
+        with suppress(Exception):
+            await fabric.close()
+
+
+@memory_consolidation_app.command("propose")
+def memory_consolidation_propose(
+    candidate_type: str = typer.Option(..., help="Candidate type: episode, claim, or procedure"),
+    title: str = typer.Option(..., help="Candidate title"),
+    summary: str = typer.Option(..., help="Candidate summary"),
+    source_event: list[str] = typer.Option(..., "--source-event", help="Cited source event as SEQ:HASH"),  # noqa: B008
+    confidence: float = typer.Option(..., min=0.0, max=1.0, help="Candidate confidence"),
+    method: str = typer.Option(..., help="Consolidation method"),
+    purpose: str | None = typer.Option(None, help="Optional candidate purpose"),
+    actor: str = typer.Option("zaxy", help="Actor writing the event"),
+    session_id: str = typer.Option("default", help="Session ID to append to"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Append a review-pending consolidation candidate event."""
+    import asyncio
+
+    from zaxy.consolidation import build_consolidation_candidate_event
+
+    try:
+        source_events = [_parse_source_event(value) for value in source_event]
+        event = build_consolidation_candidate_event(
+            actor=actor,
+            session_id=session_id,
+            candidate_type=candidate_type,
+            title=title,
+            summary=summary,
+            source_events=source_events,
+            confidence=confidence,
+            method=method,
+            purpose=purpose,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    asyncio.run(_append_consolidation_event(event, eventloom_path=eventloom_path))
+    if json_output:
+        typer.echo(json.dumps(event, indent=2, sort_keys=True))
+    else:
+        typer.echo(f"Created {event['payload']['candidate_id']} ({event['payload']['review_status']})")
+
+
+@memory_consolidation_app.command("review")
+def memory_consolidation_review(
+    candidate_id: str = typer.Option(..., help="Consolidation candidate ID"),
+    status: str = typer.Option(..., help="Review status: accepted, rejected, deferred, or conflicted"),
+    rationale: str = typer.Option(..., help="Review rationale"),
+    actor: str = typer.Option("zaxy", help="Actor writing the event"),
+    session_id: str = typer.Option("default", help="Session ID to append to"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Append a consolidation candidate review event."""
+    import asyncio
+
+    from zaxy.consolidation import build_consolidation_review_event
+
+    try:
+        event = build_consolidation_review_event(
+            actor=actor,
+            session_id=session_id,
+            candidate_id=candidate_id,
+            status=status,
+            rationale=rationale,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    asyncio.run(_append_consolidation_event(event, eventloom_path=eventloom_path))
+    if json_output:
+        typer.echo(json.dumps(event, indent=2, sort_keys=True))
+    else:
+        typer.echo(f"Reviewed {candidate_id} as {status}")
 
 
 @memory_app.command("log")
