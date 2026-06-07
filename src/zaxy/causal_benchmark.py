@@ -202,7 +202,7 @@ def _endpoint(result: Mapping[str, Any] | object, query_type: str) -> tuple[str,
     if direct_name is not None and direct_type is not None:
         return direct_name, direct_type
     causal_field_name = f"causal_{field_name}"
-    causal_field_type = f"causal_{field_type}"
+    causal_field_type = "causal_target_type" if query_type == "successor" else "causal_source_type"
     causal_name = _text_value(result, causal_field_name)
     causal_type = _text_value(result, causal_field_type)
     if causal_name is not None and causal_type is not None:

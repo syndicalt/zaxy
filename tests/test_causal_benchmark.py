@@ -105,7 +105,7 @@ def test_successor_scoring_uses_target_endpoint_and_prefers_non_authoritative_ci
             name="causal-edge",
             properties={
                 "causal_target_name": "deployment rollback",
-                "causal_target_entity_type": "Incident",
+                "causal_target_type": "Incident",
                 "relation_type": "caused",
                 "authority_status": "non_authoritative",
                 "citation": "eventloom://session-alpha/events/42#abcdefabcdef",
@@ -134,6 +134,38 @@ def test_causal_scoring_rejects_endpoint_with_matching_name_but_wrong_type(
     assert row["authority_boundary"] is False
     assert row["score"] == 0.0
     assert row["matched_result"] is None
+
+
+def test_causal_scoring_accepts_production_graph_projection_endpoint_keys() -> None:
+    case = CausalBenchmarkCase(
+        case_id="successor-production-graph",
+        query="What did the config drift cause?",
+        query_type="successor",
+        source={"name": "config drift", "entity_type": "Task"},
+        target={"name": "deployment rollback", "entity_type": "Task"},
+        relation_type="caused",
+        citation="eventloom://session-alpha/events/42#abcdefabcdef",
+    )
+    result = GraphEntityLike(
+        name="causal-edge",
+        properties={
+            "causal_source_name": "config drift",
+            "causal_source_type": "Task",
+            "causal_target_name": "deployment rollback",
+            "causal_target_type": "Task",
+            "relation_type": "caused",
+            "authority_status": "non_authoritative",
+            "citation": "eventloom://session-alpha/events/42#abcdefabcdef",
+        },
+    )
+
+    row = evaluate_causal_results(case, [result])
+
+    assert row["hit"] is True
+    assert row["relation_match"] is True
+    assert row["citation"] is True
+    assert row["authority_boundary"] is True
+    assert row["score"] == 1.0
 
 
 def test_predecessor_scoring_uses_source_endpoint_and_penalizes_distractor_defects() -> None:
