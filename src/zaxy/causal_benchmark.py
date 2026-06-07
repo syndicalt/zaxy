@@ -16,7 +16,7 @@ from zaxy.consolidation import (
 CAUSAL_QUERY_TYPES = frozenset({"successor", "predecessor"})
 NON_AUTHORITATIVE_STATUS = "non_authoritative"
 _EVENTLOOM_CITATION_RE = re.compile(
-    r"^eventloom://(?P<session>[^/\s]+)/events/(?P<seq>\d+)#(?P<hash>[a-f0-9]{12})$"
+    r"^eventloom://(?P<session>[^/\s]+)/events/(?P<seq>[1-9][0-9]*)#(?P<hash>[a-f0-9]{12})$"
 )
 _EVENT_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 _SOURCE_EVENT_REF_RE = re.compile(r"^(?P<seq>\d+):(?P<hash>[a-f0-9]{64})$")

@@ -246,6 +246,7 @@ def test_causal_case_requires_eventloom_style_citation() -> None:
     [
         "eventloom://unknown/events/42#abcdefabcdef",
         "eventloom://session-alpha/events/0#abcdefabcdef",
+        "eventloom://session-alpha/events/042#abcdefabcdef",
         "eventloom://session-alpha/events/42#abcdeabcdea",
         "eventloom://session-alpha/events/42#abcdefabcdef0",
     ],
@@ -268,6 +269,7 @@ def test_causal_case_rejects_invalid_eventloom_citation_contract(citation: str) 
     [
         "eventloom://unknown/events/42#abcdefabcdef",
         "eventloom://session-alpha/events/0#abcdefabcdef",
+        "eventloom://session-alpha/events/042#abcdefabcdef",
         "eventloom://session-alpha/events/42#abcdeabcdea",
         "eventloom://session-alpha/events/42#abcdefabcdef0",
     ],
