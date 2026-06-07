@@ -249,7 +249,39 @@ async def test_memory_fabric_causal_queries_drop_rows_with_invalid_explicit_cita
 
 
 @pytest.mark.asyncio
-async def test_memory_fabric_causal_queries_accept_valid_explicit_citation() -> None:
+async def test_memory_fabric_causal_queries_do_not_fallback_from_malformed_explicit_citation() -> None:
+    malformed = _backend_causal_entity(citation="https://example.invalid/events/42")
+    fabric = _fabric_with_graph(_DirectionalCausalStore([malformed]))
+
+    assert await fabric.query_causal_successors("cause", session_id="agent-1") == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("source_event_seq", "source_event_hash"),
+    [
+        ("42", "a" * 64),
+        (42, "not-a-hash"),
+        (42, None),
+        (None, "a" * 64),
+    ],
+)
+async def test_memory_fabric_causal_queries_drop_valid_citation_with_invalid_source_refs(
+    source_event_seq: object,
+    source_event_hash: object,
+) -> None:
+    malformed = _backend_causal_entity(
+        citation="eventloom://agent-1/events/42#aaaaaaaaaaaa",
+        source_event_seq=source_event_seq,
+        source_event_hash=source_event_hash,
+    )
+    fabric = _fabric_with_graph(_DirectionalCausalStore([malformed]))
+
+    assert await fabric.query_causal_successors("cause", session_id="agent-1") == []
+
+
+@pytest.mark.asyncio
+async def test_memory_fabric_causal_queries_accept_valid_explicit_citation_without_source_refs() -> None:
     entity = _backend_causal_entity(citation="eventloom://agent-1/events/42#aaaaaaaaaaaa")
     entity.properties.pop("source_event_seq", None)
     entity.properties.pop("source_event_hash", None)

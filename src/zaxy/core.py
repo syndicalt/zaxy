@@ -305,10 +305,21 @@ def _causal_relation_from_graph_relation(graph_relation_type: str) -> str:
 
 def _citation_from_properties(properties: dict[str, Any]) -> str | None:
     explicit = properties.get("citation")
-    if isinstance(explicit, str) and _EVENTLOOM_CAUSAL_CITATION_RE.fullmatch(explicit):
-        return explicit
+    has_explicit = "citation" in properties
+    if has_explicit and (
+        not isinstance(explicit, str) or not _EVENTLOOM_CAUSAL_CITATION_RE.fullmatch(explicit)
+    ):
+        return None
     event_seq = properties.get("source_event_seq")
     event_hash = properties.get("source_event_hash")
+    has_seq = "source_event_seq" in properties
+    has_hash = "source_event_hash" in properties
+    if (has_seq or has_hash) and not (
+        _valid_source_event_seq(event_seq) and isinstance(event_hash, str) and _EVENT_HASH_RE.fullmatch(event_hash)
+    ):
+        return None
+    if isinstance(explicit, str) and _EVENTLOOM_CAUSAL_CITATION_RE.fullmatch(explicit):
+        return explicit
     session_id = str(properties.get("session_id") or "default")
     if _valid_source_event_seq(event_seq) and isinstance(event_hash, str) and _EVENT_HASH_RE.fullmatch(event_hash):
         return f"eventloom://{session_id}/events/{event_seq}#{str(event_hash)[:12]}"
