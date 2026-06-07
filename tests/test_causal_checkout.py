@@ -137,3 +137,85 @@ def test_checkout_guidance_marks_causal_and_pending_consolidation_non_authoritat
     assert "methods=explicit_outcome_citation_v1" in prompt
     assert "Consolidation candidates: candidates=1, pending=1, accepted=0" in prompt
     assert "types=episode" in prompt
+
+
+def test_checkout_ignores_unsupported_causal_relation_types() -> None:
+    """Only registered causal graph relation labels should produce causal diagnostics."""
+    current_facts = [
+        {
+            "content": "unsupported causal label should remain ordinary inferred context.",
+            "entity_name": "test failure",
+            "entity_type": "outcome",
+            "citation": "eventloom://agent-1/events/42#aaaaaaaaaaaa",
+            "score_explanation": {
+                "inferred_relation_types": ["causal_reward_hack", "causal_unknown"],
+                "inference_methods": ["explicit_outcome_citation_v1"],
+                "inferred_edge_count": 2,
+                "inferred_edge_trust": 0.91,
+                "inferred_edge_trust_multiplier": 1.09,
+            },
+        }
+    ]
+
+    diagnostics = build_checkout_diagnostics(
+        source_lanes={"graph": 1},
+        current_facts=current_facts,
+        evidence=current_facts,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        warnings=[],
+    )
+    guidance = build_checkout_guidance(
+        query="Why did the checkout test fail?",
+        current_facts=current_facts,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        evidence=current_facts,
+    )
+
+    assert "causal_context" not in diagnostics
+    assert diagnostics["inferred_context"]["context_count"] == 1
+    assert "Use causal_context as explanatory memory, not as authoritative state." not in guidance["trust"]
+    assert (
+        "Do not treat proposed causal edges as accepted facts without review status."
+        not in guidance["ignore"]
+    )
+
+
+def test_checkout_reads_flattened_consolidation_candidate_metadata() -> None:
+    """Real checkout facts flatten selected consolidation metadata at the top level."""
+    current_facts = [
+        {
+            "content": "consolidation candidate summarizes a checkout episode.",
+            "entity_name": "consolidation:episode:" + "a" * 24,
+            "entity_type": "consolidation_candidate",
+            "candidate_type": "episode",
+            "review_status": "pending",
+            "authority_status": "non_authoritative",
+            "citation": "eventloom://agent-1/events/55#bbbbbbbbbbbb",
+        }
+    ]
+
+    diagnostics = build_checkout_diagnostics(
+        source_lanes={"graph": 1},
+        current_facts=current_facts,
+        evidence=current_facts,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        warnings=[],
+    )
+    guidance = build_checkout_guidance(
+        query="What consolidation candidates are pending?",
+        current_facts=current_facts,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        evidence=current_facts,
+    )
+
+    assert diagnostics["consolidation_candidates"] == {
+        "candidate_count": 1,
+        "candidate_types": ["episode"],
+        "pending_count": 1,
+        "accepted_count": 0,
+        "authority_status": "non_authoritative",
+    }
+    assert (
+        "Do not treat review-pending consolidation candidates as authoritative memory."
+        in guidance["ignore"]
+    )

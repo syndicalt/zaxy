@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from zaxy.causal import CAUSAL_RELATION_TYPES, causal_relation_to_graph_relation
 from zaxy.evidence import build_evidence_set, evaluate_evidence_policy
 from zaxy.evidence_candidates import candidate_type_priority, checkout_candidate_projection
 from zaxy.purpose import PurposeProfile, purpose_ontology_lens, purpose_profile
@@ -18,6 +19,9 @@ from zaxy.synthesis_packet import synthesis_packet_from_items
 _COMPACT_CONTEXT_LIMIT = 8
 _COMPACT_ANSWER_CANDIDATE_LIMIT = 5
 _COMPACT_SNIPPET_LIMIT = 500
+_CAUSAL_GRAPH_RELATION_TYPES = frozenset(
+    causal_relation_to_graph_relation(relation_type) for relation_type in CAUSAL_RELATION_TYPES
+)
 
 
 def build_checkout_diagnostics(
@@ -1277,7 +1281,7 @@ def _causal_context_diagnostics(items: list[dict[str, Any]]) -> dict[str, Any]:
         relation_types = [
             relation_type
             for relation_type in _text_list(explanation.get("inferred_relation_types"))
-            if relation_type.startswith("causal_")
+            if relation_type in _CAUSAL_GRAPH_RELATION_TYPES
         ]
         if relation_types:
             causal_items.append((item, explanation, relation_types))
@@ -1294,7 +1298,7 @@ def _causal_context_diagnostics(items: list[dict[str, Any]]) -> dict[str, Any]:
     explanations = [explanation for _, explanation, _ in causal_items]
     return {
         "context_count": context_count,
-        "edge_count": sum(_int_metric(exp.get("inferred_edge_count")) for exp in explanations),
+        "edge_count": sum(len(relation_types) for _, _, relation_types in causal_items),
         "relation_types": _unique_texts(
             relation_type
             for _, _, relation_types in causal_items
@@ -1323,8 +1327,16 @@ def _consolidation_candidate_diagnostics(items: list[dict[str, Any]]) -> dict[st
             _candidate_type(item, metadata)
             for item, metadata in zip(candidates, metadata_values, strict=True)
         ),
-        "pending_count": sum(1 for metadata in metadata_values if _review_status(metadata) == "pending"),
-        "accepted_count": sum(1 for metadata in metadata_values if _review_status(metadata) == "accepted"),
+        "pending_count": sum(
+            1
+            for item, metadata in zip(candidates, metadata_values, strict=True)
+            if _review_status(item, metadata) == "pending"
+        ),
+        "accepted_count": sum(
+            1
+            for item, metadata in zip(candidates, metadata_values, strict=True)
+            if _review_status(item, metadata) == "accepted"
+        ),
         "authority_status": "non_authoritative",
     }
 
@@ -1332,10 +1344,13 @@ def _consolidation_candidate_diagnostics(items: list[dict[str, Any]]) -> dict[st
 def _is_consolidation_candidate(item: dict[str, Any]) -> bool:
     if str(item.get("entity_type") or "").strip() == "consolidation_candidate":
         return True
+    entity_name = str(item.get("entity_name") or "").strip()
+    if entity_name.startswith("consolidation:"):
+        return True
     metadata = _metadata(item)
     return any(
-        str(metadata.get(key) or "").strip()
-        for key in ("candidate_type", "consolidation_candidate_type", "review_status")
+        _item_text_field(item, metadata, key)
+        for key in ("candidate_type", "consolidation_candidate_type", "candidate_id")
     )
 
 
@@ -1346,7 +1361,7 @@ def _metadata(item: dict[str, Any]) -> dict[str, Any]:
 
 def _candidate_type(item: dict[str, Any], metadata: dict[str, Any]) -> str:
     for key in ("candidate_type", "consolidation_candidate_type"):
-        value = str(metadata.get(key) or "").strip()
+        value = _item_text_field(item, metadata, key)
         if value:
             return value
     entity_name = str(item.get("entity_name") or "").strip()
@@ -1354,8 +1369,18 @@ def _candidate_type(item: dict[str, Any], metadata: dict[str, Any]) -> str:
     return match.group(1) if match else "unknown"
 
 
-def _review_status(metadata: dict[str, Any]) -> str:
-    return str(metadata.get("review_status") or "").strip().lower()
+def _review_status(item: dict[str, Any], metadata: dict[str, Any]) -> str:
+    return _item_text_field(item, metadata, "review_status").lower()
+
+
+def _item_text_field(item: dict[str, Any], metadata: dict[str, Any], key: str) -> str:
+    for source in (item, metadata):
+        value = source.get(key)
+        if isinstance(value, str):
+            text = value.strip()
+            if text:
+                return text
+    return ""
 
 
 def _average_metric(items: list[dict[str, Any]], key: str) -> float:
