@@ -125,6 +125,33 @@ def _causal_entity(
     )
 
 
+def _backend_causal_entity(**overrides: object) -> GraphEntity:
+    properties: dict[str, object] = {
+        "causal_source_name": "cause",
+        "causal_source_type": "event",
+        "causal_target_name": "effect",
+        "causal_target_type": "outcome",
+        "causal_relation_type": "caused",
+        "relation_type": "causal_caused",
+        "confidence": 0.91,
+        "inference_method": "explicit_outcome_citation_v1",
+        "review_status": "proposed",
+        "authority_status": "non_authoritative",
+        "source_event_seq": 42,
+        "source_event_hash": "a" * 64,
+        "session_id": "agent-1",
+    }
+    properties.update(overrides)
+    return GraphEntity(
+        name="effect",
+        entity_type="outcome",
+        valid_from="2026-06-07T00:00:00Z",
+        valid_to=None,
+        properties=properties,
+        session_id="agent-1",
+    )
+
+
 def test_causal_relation_taxonomy_is_stable() -> None:
     expected_relation_types = {
         "caused",
@@ -160,6 +187,78 @@ async def test_memory_fabric_causal_queries_drop_malformed_backend_rows() -> Non
     fabric = _fabric_with_graph(_DirectionalCausalStore([malformed]))
 
     assert await fabric.query_causal_successors("cause", session_id="agent-1") == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "missing_key",
+    [
+        "causal_source_name",
+        "causal_source_type",
+        "causal_target_name",
+        "causal_target_type",
+    ],
+)
+async def test_memory_fabric_causal_queries_drop_rows_missing_endpoint_metadata(missing_key: str) -> None:
+    malformed = _backend_causal_entity(**{missing_key: ""})
+    fabric = _fabric_with_graph(_DirectionalCausalStore([malformed]))
+
+    assert await fabric.query_causal_successors("cause", session_id="agent-1") == []
+    assert await fabric.query_causal_predecessors("effect", session_id="agent-1") == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("source_event_seq", "source_event_hash"),
+    [
+        (0, "a" * 64),
+        (-1, "a" * 64),
+        ("42", "a" * 64),
+        (42, "A" * 64),
+        (42, "not-a-hash"),
+    ],
+)
+async def test_memory_fabric_causal_queries_drop_rows_with_malformed_source_refs(
+    source_event_seq: object,
+    source_event_hash: object,
+) -> None:
+    malformed = _backend_causal_entity(source_event_seq=source_event_seq, source_event_hash=source_event_hash)
+    fabric = _fabric_with_graph(_DirectionalCausalStore([malformed]))
+
+    assert await fabric.query_causal_successors("cause", session_id="agent-1") == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "citation",
+    [
+        "eventloom://unknown/events/42#aaaaaaaaaaaa",
+        "https://example.invalid/events/42",
+        "eventloom://agent-1/events/not-int#aaaaaaaaaaaa",
+        "eventloom://agent-1/events/42#AAAAAAAAAAAA",
+        "eventloom://agent-1/events/42#not-a-hash",
+    ],
+)
+async def test_memory_fabric_causal_queries_drop_rows_with_invalid_explicit_citation(citation: str) -> None:
+    malformed = _backend_causal_entity(citation=citation)
+    malformed.properties.pop("source_event_seq", None)
+    malformed.properties.pop("source_event_hash", None)
+    fabric = _fabric_with_graph(_DirectionalCausalStore([malformed]))
+
+    assert await fabric.query_causal_successors("cause", session_id="agent-1") == []
+
+
+@pytest.mark.asyncio
+async def test_memory_fabric_causal_queries_accept_valid_explicit_citation() -> None:
+    entity = _backend_causal_entity(citation="eventloom://agent-1/events/42#aaaaaaaaaaaa")
+    entity.properties.pop("source_event_seq", None)
+    entity.properties.pop("source_event_hash", None)
+    fabric = _fabric_with_graph(_DirectionalCausalStore([entity]))
+
+    results = await fabric.query_causal_successors("cause", session_id="agent-1")
+
+    assert [result.target["name"] for result in results] == ["effect"]
+    assert results[0].citation == "eventloom://agent-1/events/42#aaaaaaaaaaaa"
 
 
 @pytest.mark.asyncio
