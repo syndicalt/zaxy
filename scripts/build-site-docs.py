@@ -81,7 +81,7 @@ def render_page(source: Path) -> RenderedPage:
     <div class="nav-links">
       <a href="{index_link}">Overview</a>
       <a href="{rel_to_root}docs/coordinate-roadmap.html">Coordinate</a>
-      <a href="{rel_to_root}docs/memory-is-purpose-zaxy-analysis.html">Purpose</a>
+      <a href="{rel_to_root}docs/why-zaxy.html">Why Zaxy</a>
       <a href="{rel_to_root}docs/benchmarks.html">Benchmarks</a>
       <a href="{docs_link}">Start</a>
       <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>

@@ -614,5 +614,5 @@ these pillars:
 
 Everything else can move past v1.0.
 
-Related references: [README.md](../README.md), [site/index.html](../site/index.html),
-[Coordinate roadmap](coordinate-roadmap.md), and [benchmarks](benchmarks.md).
+Related references: [README.md](../../README.md), [site/index.html](../../site/index.html),
+[Coordinate roadmap](../coordinate-roadmap.md), and [benchmarks](../benchmarks.md).

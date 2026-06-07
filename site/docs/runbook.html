@@ -15,7 +15,7 @@
     <div class="nav-links">
       <a href="../index.html">Overview</a>
       <a href="../docs/coordinate-roadmap.html">Coordinate</a>
-      <a href="../docs/memory-is-purpose-zaxy-analysis.html">Purpose</a>
+      <a href="../docs/why-zaxy.html">Why Zaxy</a>
       <a href="../docs/benchmarks.html">Benchmarks</a>
       <a href="getting-started.html">Start</a>
       <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
@@ -381,9 +381,8 @@ PATHLIGHT_ACCESS_TOKEN_FILE=/run/secrets/pathlight_access_token</code></pre>
       <h3 id="quarterly">Quarterly</h3>
       <ul>
         <li>Performance benchmark regression test: <code>pytest tests/test_competitive_benchmarks.py --benchmark-only --no-cov</code></li>
-        <li>Frozen live retrieval benchmark: <code>scripts/live-benchmark.sh --workload frozen --runs 1 --reset-graph</code></li>
-        <li>Representative retrieval benchmark suite: <code>scripts/live-benchmark.sh --workload suite --subjects 100 --documents 250 --sessions 50 --runs 1 --reset-graph</code></li>
-        <li>Benchmark guardrail check: <code>zaxy benchmark-compare reports/benchmarks/live-benchmark.json --baseline reports/benchmarks/baseline-live-benchmark.json --max-p95-ms 500 --max-p99-ms 750</code></li>
+        <li>Review the active benchmark hub: <code>docs/benchmarks.md</code></li>
+        <li>Re-run the benchmark report guard only against the current headline 500 or Harvey LAB artifacts listed in that hub.</li>
         <li>Capacity planning review</li>
         <li>Security audit (dependency updates, key rotation)</li>
       </ul>

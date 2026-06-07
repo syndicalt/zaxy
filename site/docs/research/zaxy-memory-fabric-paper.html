@@ -28,7 +28,7 @@
     <div class="nav-links">
       <a href="../../index.html">Overview</a>
       <a href="../../docs/coordinate-roadmap.html">Coordinate</a>
-      <a href="../../docs/memory-is-purpose-zaxy-analysis.html">Purpose</a>
+      <a href="../../docs/why-zaxy.html">Why Zaxy</a>
       <a href="../../docs/benchmarks.html">Benchmarks</a>
       <a href="../getting-started.html">Start</a>
       <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
@@ -44,7 +44,7 @@
       </ul>
       <h2 id="abstract">Abstract</h2>
       <p>Long-running AI agents do not merely need more context. They need memory that is replayable, temporal, cited, purpose-aware, and safe to share across agents. Zaxy was developed to test that thesis in a production-oriented memory system. The resulting architecture treats memory as an event-sourced temporal knowledge graph fabric: immutable Eventloom JSONL logs provide the source of truth, extractors project typed events into graph and source-recall views, retrieval combines exact, lexical, vector, verbatim, traversal, and active working-set lanes, and Memory Checkout returns a bounded, cited prompt contract rather than a raw context dump.</p>
-      <p>This paper summarizes the theory, mathematics, implementation lessons, benchmarks, failure modes, and research directions that emerged while building Zaxy through the 1.1.2 release. The strongest internal same-harness result is the current74 full 500-question LongMemEval-compatible checkout run: mean score 0.940, Answer@5 0.906, citation coverage 1.000, Recall@1/5/10 of 0.906/1.000/1.000, p95 latency 687.67 ms, and p99 latency 969.10 ms over 5,372 Eventloom events, 948 sessions, and a frozen workload hash <code>90fb2307195d7e16b963a2b8a30f03b375bd42a45d41aeaa55423029dd84e3fc</code>. The important interpretation is not simply that retrieval is strong. It is that within Zaxy&#x27;s event-sourced adaptation of this workload, retrieval and citation reached a plateau: 47 <code>synthesis_miss</code> cases remained and no retrieval-miss class was observed. That shifted the research agenda from &quot;find more context&quot; to &quot;compose, rank, verify, and cite the right answer from already-retrieved evidence.&quot; External legal-agent evidence from the Harvey LAB memory-ablation suite provides a separate downstream validation signal: Zaxy completed 10/10 pinned tasks with mean criterion pass rate 0.788, +0.184 over the regular/no-memory article row, +0.081 over article-best task rows, and 9/10 task wins versus the article-best rows.</p>
+      <p>This paper summarizes the theory, mathematics, implementation lessons, benchmarks, failure modes, and research directions that emerged while building Zaxy through the 1.1.2 release. The strongest internal same-harness result is the publish 20260607 full 500-question LongMemEval-compatible checkout run: mean score 0.956, Answer@5 0.910, citation coverage 1.000, Recall@1/5/10 of 0.960/1.000/1.000, p95 latency 1,966.65 ms, and p99 latency 2,495.07 ms over 5,372 Eventloom events, 948 sessions, and a frozen workload hash <code>90fb2307195d7e16b963a2b8a30f03b375bd42a45d41aeaa55423029dd84e3fc</code>. The important interpretation is not simply that retrieval is strong. It is that within Zaxy&#x27;s event-sourced adaptation of this workload, retrieval and citation reached a plateau: 45 <code>synthesis_miss</code> cases remained and no retrieval-miss class was observed. That shifted the research agenda from &quot;find more context&quot; to &quot;compose, rank, verify, and cite the right answer from already-retrieved evidence.&quot; External legal-agent evidence from the Harvey LAB memory-ablation suite provides a separate downstream validation signal: Zaxy completed 10/10 pinned tasks with mean criterion pass rate 0.788, +0.184 over the regular/no-memory article row, +0.081 over article-best task rows, and 9/10 task wins versus the article-best rows.</p>
       <p>Other benchmark lanes sharpened the thesis. StateRecoveryBench showed that raw associative propagation can recover latent state but fails at authority, stale row rejection, and distractor resistance unless resolved through explicit provenance metadata. CoordinationBench showed that flat transcripts, markdown notes, and BM25 worker logs can retrieve text but cannot represent accepted parent state, conflict review, duplicate consolidation, purpose feedback, or replayable citation chains. PurposeBench showed that memory quality depends on the intended action: coding, release, security, research, support, legal, and coordinate work require different evidence policies even when they query the same underlying event log.</p>
       <p>The central lesson is that agent memory is not only a vector database problem, a prompt-length problem, or a summary-management problem. It is primarily a state-management problem under temporal, evidential, and organizational constraints.</p>
       <h2 id="1-motivation">1. Motivation</h2>
@@ -260,7 +260,7 @@ Q(\mathcal{M}) =
       <h3 id="53-citations-became-a-product-constraint">5.3 Citations Became a Product Constraint</h3>
       <p>Once citations were required, many easy fixes were disallowed. A summary that looks right but cannot point back to an Eventloom event is not trustworthy memory. This forced source-aware graph projection, verbatim retrieval lanes, file-line citations for documents, source nodes, <code>CITES_SOURCE</code> edges, and checkout diagnostics that warn on uncited context.</p>
       <h3 id="54-the-retrieval-plateau-was-real">5.4 The Retrieval Plateau Was Real</h3>
-      <p>The current74 LongMemEval-compatible run hit Recall@5 1.000, Recall@10 1.000, and citation coverage 1.000 within Zaxy&#x27;s event-sourced checkout adaptation. The remaining 47 misses were <code>synthesis_miss</code>, not retrieval misses. This changed the roadmap. Adding more retrievers would mostly increase prompt load unless synthesis improved. The next layer had to be a typed synthesis ledger: answer type, evidence requirements, normalized values, units, support groups, exclusions, answer candidates, and proof packets.</p>
+      <p>The publish 20260607 LongMemEval-compatible run hit Recall@5 1.000, Recall@10 1.000, and citation coverage 1.000 within Zaxy&#x27;s event-sourced checkout adaptation. The remaining 47 misses were <code>synthesis_miss</code>, not retrieval misses. This changed the roadmap. Adding more retrievers would mostly increase prompt load unless synthesis improved. The next layer had to be a typed synthesis ledger: answer type, evidence requirements, normalized values, units, support groups, exclusions, answer candidates, and proof packets.</p>
       <h3 id="55-authority-metadata-beat-raw-association">5.5 Authority Metadata Beat Raw Association</h3>
       <p>The neuron-astrocyte associative memory direction was intellectually attractive. StateRecoveryBench made it falsifiable. Raw associative projection reached state accuracy 1.000 but stale rejection 0.485 and distractor resistance 0.212. Authority-resolved associative projection kept state accuracy 1.000 while raising minimal evidence recall to 0.985, stale rejection to 1.000, distractor resistance to 0.909, and abstention accuracy to 1.000. The lesson was sharp: association finds neighborhoods; authority resolves state.</p>
       <h3 id="56-coordination-needed-a-new-benchmark">5.6 Coordination Needed a New Benchmark</h3>
@@ -269,9 +269,9 @@ Q(\mathcal{M}) =
       <p>The same fact should not always be ranked or trusted the same way. A security review, release validation, coding task, legal response, and coordination handoff need different evidence policies. Purpose profiles became the retrieval-time ontology: they condition scoring, suppression, retention, answerability, and diagnostics. PurposeBench&#x27;s full-lane pass supports the claim that memory quality is action-conditioned, not merely query-conditioned.</p>
       <h2 id="6-empirical-results">6. Empirical Results</h2>
       <p>Internal metrics in this section are same-harness Zaxy artifacts unless explicitly marked as external evidence or article-relative disclosure. The LongMemEval-compatible numbers evaluate Zaxy&#x27;s event-sourced memory checkout adaptation, not official LongMemEval end-to-end assistant accuracy.</p>
-      <h3 id="61-longmemeval-compatible-current74">6.1 LongMemEval-Compatible Current74</h3>
-      <p>The current public Zaxy headline is the current74 full 500-question LongMemEval-compatible checkout run.</p>
-      <p>Protocol boundary. The cleaned LongMemEval-compatible dataset is transformed into Eventloom-backed memory events and queried through Zaxy&#x27;s checkout protocol. The report measures whether the memory fabric retrieves and cites answer-bearing identities and answer surfaces. It does not replay the official LongMemEval assistant-interaction protocol, and should not be compared directly to published LongMemEval end-to-end answer accuracy. In this paper, &quot;current74&quot; is the internal archived run label for the gated relative-temporal-anchor embedded Kuzu report, not a separate benchmark version.</p>
+      <h3 id="61-longmemeval-compatible-publish-run">6.1 LongMemEval-Compatible Publish Run</h3>
+      <p>The current public Zaxy headline is the publish 20260607 full 500-question LongMemEval-compatible checkout run.</p>
+      <p>Protocol boundary. The cleaned LongMemEval-compatible dataset is transformed into Eventloom-backed memory events and queried through Zaxy&#x27;s checkout protocol. The report measures whether the memory fabric retrieves and cites answer-bearing identities and answer surfaces. It does not replay the official LongMemEval assistant-interaction protocol, and should not be compared directly to published LongMemEval end-to-end answer accuracy. In this paper, &quot;publish 20260607&quot; is the frozen report label for the 2026-06-07 full 500-question checkout run, not a separate benchmark version.</p>
       <table>
         <thead>
           <tr>
@@ -306,19 +306,19 @@ Q(\mathcal{M}) =
           </tr>
           <tr>
             <td>Mean score</td>
-            <td>0.940</td>
+            <td>0.956</td>
           </tr>
           <tr>
             <td>Answer@1</td>
-            <td>0.696</td>
+            <td>0.714</td>
           </tr>
           <tr>
             <td>Answer@5</td>
-            <td>0.906</td>
+            <td>0.910</td>
           </tr>
           <tr>
             <td>Answer@10</td>
-            <td>0.932</td>
+            <td>0.950</td>
           </tr>
           <tr>
             <td>Citation coverage</td>
@@ -326,7 +326,7 @@ Q(\mathcal{M}) =
           </tr>
           <tr>
             <td>Recall@1</td>
-            <td>0.906</td>
+            <td>0.960</td>
           </tr>
           <tr>
             <td>Recall@5</td>
@@ -338,31 +338,31 @@ Q(\mathcal{M}) =
           </tr>
           <tr>
             <td>Mean identity recall</td>
-            <td>0.9682</td>
+            <td>0.980</td>
           </tr>
           <tr>
             <td>Mean latency</td>
-            <td>413.765 ms</td>
+            <td>991.62 ms</td>
           </tr>
           <tr>
             <td>p50 latency</td>
-            <td>358.434 ms</td>
+            <td>881.01 ms</td>
           </tr>
           <tr>
             <td>p95 latency</td>
-            <td>687.671 ms</td>
+            <td>1,966.65 ms</td>
           </tr>
           <tr>
             <td>p99 latency</td>
-            <td>969.099 ms</td>
+            <td>2,495.07 ms</td>
           </tr>
           <tr>
             <td>Mean approximate tokens</td>
-            <td>14,033.496</td>
+            <td>10,192.11</td>
           </tr>
           <tr>
             <td>Miss taxonomy</td>
-            <td>47 <code>synthesis_miss</code></td>
+            <td>45 <code>synthesis_miss</code></td>
           </tr>
         </tbody>
       </table>
@@ -629,7 +629,7 @@ Q(\mathcal{M}) =
       <h3 id="pitfall-optional-infrastructure-blocking-core-memory">Pitfall: Optional Infrastructure Blocking Core Memory</h3>
       <p>The 1.1.2 Pathlight fix is a small but important example. Observability should not block memory operations. Optional layers must fail open or degrade visibly, not become hidden dependencies of the control path.</p>
       <h3 id="plateau-retrieval-saturation">Plateau: Retrieval Saturation</h3>
-      <p>The current74 plateau is the clearest empirical result. Once Recall@5 and citation coverage reached 1.000, further broad retrieval would mostly increase the cognitive load on the model. The work shifted to structured synthesis.</p>
+      <p>The publish 20260607 plateau is the clearest empirical result. Once Recall@5 and citation coverage reached 1.000, further broad retrieval would mostly increase the cognitive load on the model. The work shifted to structured synthesis.</p>
       <h3 id="plateau-longmemeval-did-not-measure-coordination">Plateau: LongMemEval Did Not Measure Coordination</h3>
       <p>LongMemEval was valuable, but it could not tell whether a worker finding was accepted by a parent coordinator. This led to CoordinationBench and StateRecoveryBench. The broader lesson is that benchmarks must match the architecture claim. If the claim is coordinated agent memory, single-agent recall is necessary but not sufficient.</p>
       <h3 id="breakthrough-memory-checkout">Breakthrough: Memory Checkout</h3>
@@ -654,7 +654,7 @@ Q(\mathcal{M}) =
       <h2 id="9-future-research-directions">9. Future Research Directions</h2>
       <h3 id="91-structured-synthesis-working-memory">9.1 Structured Synthesis Working Memory</h3>
       <p>The highest-priority research direction is a typed synthesis ledger. The ledger should represent answer type, evidence requirements, normalized values, units, source groups, include/exclude reasons, candidate answer surfaces, and support packets. Operations such as count, sum, difference, average, argmax, absence, temporal interval, and graph path explanation should be pure functions over ledger rows.</p>
-      <p>This directly targets the current74 miss taxonomy: 47 synthesis misses with no retrieval-miss class.</p>
+      <p>This directly targets the publish 20260607 miss taxonomy: 45 synthesis misses with no retrieval-miss class.</p>
       <h3 id="92-two-phase-evidence-assembly">9.2 Two-Phase Evidence Assembly</h3>
       <p>Current top-k retrieval and final prompt assembly are too tightly coupled. Future checkout should overfetch candidates, then build a smaller evidence packet according to the synthesis plan. Candidate recall and evidence assembly quality should be measured separately.</p>
       <h3 id="93-late-interaction-and-local-reranking">9.3 Late Interaction and Local Reranking</h3>
@@ -693,17 +693,17 @@ Q(\mathcal{M}) =
       <ul>
         <li>Zaxy architecture: <code>docs/architecture.md</code>.</li>
         <li>Zaxy retrieval design and benchmark interpretation: <code>docs/retrieval.md</code>.</li>
-        <li>Zaxy benchmark hub and current74 report: <code>docs/benchmarks.md</code>.</li>
-        <li>Current74 LongMemEval-compatible report: <code>reports/benchmarks/longmemeval-500-current74-zaxyonly-gated-relative-temporal-anchor-embedded-reuse-20260604/live-benchmark.json</code>.</li>
+        <li>Zaxy benchmark hub and publish 20260607 report: <code>docs/benchmarks.md</code>.</li>
+        <li>Publish 20260607 LongMemEval-compatible report: <code>reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json</code>.</li>
         <li>StateRecoveryBench report: <code>reports/benchmarks/state-recovery-v1/state-recovery-benchmark.json</code>.</li>
         <li>CoordinationBench report: <code>reports/benchmarks/coordination-real-v1/coordination-benchmark.json</code>.</li>
         <li>PurposeBench report: <code>reports/benchmarks/purpose-v1/purpose-benchmark.json</code>.</li>
         <li>Harvey LAB external legal-agent report: <code>reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-benchmark.json</code>.</li>
         <li>Harvey LAB publishable statistics: <code>reports/benchmarks/harvey-lab-memory-ablation/publishable-statistics.md</code>.</li>
         <li>Eventloom contract: <code>docs/eventloom.md</code>.</li>
-        <li>Synthesis research note: <code>docs/synthesis-context-research.md</code>.</li>
-        <li>Experimental associative memory note: <code>docs/experimental-associative-memory.md</code>.</li>
-        <li>Competitive positioning: <code>docs/competitive-positioning.md</code>.</li>
+        <li>Synthesis research note: <code>docs/archive/synthesis-context-research.md</code>.</li>
+        <li>Experimental associative memory note: <code>docs/archive/experimental-associative-memory.md</code>.</li>
+        <li>Competitive positioning: <code>docs/archive/competitive-positioning.md</code>.</li>
         <li>Release history and version context: <code>CHANGELOG.md</code>.</li>
       </ul>
       <p>External references:</p>

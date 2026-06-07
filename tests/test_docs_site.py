@@ -13,7 +13,6 @@ REQUIRED_DOCS = [
     "docs/announcements/zaxy-coordinate.md",
     "docs/announcements/zaxy-v1.0.md",
     "docs/coordinate-roadmap.md",
-    "docs/v1-roadmap.md",
     "docs/getting-started.md",
     "docs/mcp-quickstart.md",
     "docs/coordinate-quickstart.md",
@@ -36,16 +35,28 @@ REQUIRED_DOCS = [
     "docs/deployment.md",
     "docs/testing.md",
     "docs/benchmarks.md",
-    "docs/benchmark-contributions.md",
-    "docs/benchmark-review.md",
     "docs/consolidation.md",
     "docs/api.md",
     "docs/api-inventory.md",
     "docs/migration.md",
-    "docs/v09-gate-audit.md",
-    "docs/v10-gate-audit.md",
-    "docs/release-validation-checklist.md",
     "docs/stability-commitment.md",
+    "docs/packet-analyzer.md",
+    "docs/workspace-genesis.md",
+    "docs/runbook.md",
+]
+
+ARCHIVED_DOCS = [
+    "docs/archive/benchmark-contributions.md",
+    "docs/archive/benchmark-review.md",
+    "docs/archive/competitive-positioning.md",
+    "docs/archive/experimental-associative-memory.md",
+    "docs/archive/memory-is-purpose-zaxy-analysis.md",
+    "docs/archive/release-validation-checklist.md",
+    "docs/archive/synthesis-context-research.md",
+    "docs/archive/v09-gate-audit.md",
+    "docs/archive/v1-roadmap.md",
+    "docs/archive/v10-gate-audit.md",
+    "docs/archive/zero-friction-runtime-roadmap.md",
 ]
 
 
@@ -81,21 +92,19 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     assert "coordination_checkout" in html
     assert "coordination_approval_packet" in html
     assert "CoordinationAdapter" in html
-    assert "Purpose Benchmark" in html
-    assert "CoordinationBench" in html
+    assert "Headline 500" in html
+    assert "LongMemEval-compatible checkout diagnostic" in html
     assert "Eventloom source of truth" in html
     assert "Pathlight" in html
     assert "embedded Kuzu" in html
     assert "PyPI 1.1.2" in html
     assert "Harvey LAB 10/10 tasks" in html
     assert "Harvey LAB mean 0.788" in html
-    assert "purpose-v1 passed" in html
-    assert "StateRecoveryBench gate passed" in html
+    assert "Headline 500 R@5 1.000" in html
     assert "Harvey LAB external signal" in html
-    assert "same-harness comparison discipline" in html
+    assert "headline 500 checkout evidence" in html
     assert "external verification requested" in html
-    assert "public-derived purpose holdout" in html
-    assert "External superiority claims against larger memory systems" in html
+    assert "Checkout diagnostic, not official LME" in html
     assert "Research paper" in html
     assert "docs/research/zaxy-memory-fabric-paper.html" in html
 
@@ -113,7 +122,7 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
 
 def test_memory_purpose_positioning_does_not_overclaim_company_brain() -> None:
     """Broader purpose profiles must stay framed as project-local agent work memory."""
-    text = Path("docs/memory-is-purpose-zaxy-analysis.md").read_text(encoding="utf-8")
+    text = Path("docs/archive/memory-is-purpose-zaxy-analysis.md").read_text(encoding="utf-8")
 
     assert 'Zaxy should not yet claim the full Company Brain category.' in text
     assert "purpose-conditioned memory layer for agent work" in text
@@ -124,7 +133,7 @@ def test_memory_purpose_positioning_does_not_overclaim_company_brain() -> None:
 def test_v05_docs_render_to_static_site() -> None:
     """v0.5 roadmap and quickstarts should be published to the static site."""
     for path in (
-        "site/docs/v1-roadmap.html",
+        "site/docs/archive/v1-roadmap.html",
         "site/docs/announcements/zaxy-v1.0-x-article.html",
         "site/docs/announcements/zaxy-v1.1-x-article.html",
         "site/docs/media/zaxy-collaborate-demo.html",
@@ -191,7 +200,7 @@ def test_docs_describe_skill_memory_contract_and_guardrail() -> None:
     """Docs should cover Skill Memory event, MCP, checkout, and benchmark contracts."""
     agent_events = Path("docs/agent-events.md").read_text(encoding="utf-8")
     mcp = Path("docs/mcp.md").read_text(encoding="utf-8")
-    benchmarks = Path("docs/benchmarks.md").read_text(encoding="utf-8")
+    agents = Path("AGENTS.md").read_text(encoding="utf-8")
 
     assert "skill.proposed" in agent_events
     assert "skill.outcome_recorded" in agent_events
@@ -200,62 +209,44 @@ def test_docs_describe_skill_memory_contract_and_guardrail() -> None:
     assert "Applicable Skills" in mcp
     assert "Skill Analytics" in mcp
     assert "rollback" in agent_events
-    assert "contradiction analytics" in benchmarks
-    assert "Skill Memory changes must pass the full 500-question guardrail" in benchmarks
+    assert "contradiction diagnostics" in agents
+    assert "Skill Memory procedural world-model layer" in agents
 
 
 def test_benchmark_docs_pin_full_set_quality_reports_and_caveats() -> None:
-    """Full-set benchmark docs should publish quality without overstating backend comparisons."""
+    """Archived full-set iteration reports should not remain active public claims."""
     benchmarks = Path("docs/benchmarks.md").read_text(encoding="utf-8")
     rendered = Path("site/docs/benchmarks.html").read_text(encoding="utf-8")
+    archived_root = Path("reports/archive/benchmarks")
 
-    assert "longmemeval-500-current25-zaxyonly-answer-promotion-embedded-isolated-20260603" in benchmarks
-    assert "| Zaxy checkout | 0.874 | 0.800 | 1.000 | 0.894 | 0.990 | 0.990 | 725.43 | 830.35 |" in benchmarks
-    assert "5 retrieval misses and 95 synthesis misses" in benchmarks
-    assert "date_interval_answer" in benchmarks
-    assert "placement and synthesis-contract improvement" in benchmarks
-    assert "current25 answer-promotion embedded full-set run" in rendered
+    for run_name in (
+        "longmemeval-500-current25-zaxyonly-answer-promotion-embedded-isolated-20260603",
+        "longmemeval-500-current24-zaxyonly-numeric-state-embedded-isolated-20260603",
+        "longmemeval-500-current22-zaxyonly-page-future-age-neo4j-20260603",
+    ):
+        assert run_name not in benchmarks
+        assert run_name not in rendered
+        assert (archived_root / run_name).exists(), run_name
 
-    assert "longmemeval-500-current24-zaxyonly-numeric-state-embedded-isolated-20260603" in benchmarks
-    assert "| Zaxy checkout | 0.870 | 0.798 | 1.000 | 0.894 | 0.990 | 0.990 | 614.68 | 737.06 |" in benchmarks
-    assert "isolated embedded Kuzu" in benchmarks
-    assert "projection path" in benchmarks
-    assert "should not be" in benchmarks
-    assert "Neo4j latency comparison" in benchmarks
-    assert "5 retrieval misses and 96 synthesis misses" in benchmarks
-    assert "numeric_state_answer" in benchmarks
-    assert "current24 numeric-state embedded full-set run" in rendered
-
-    assert "longmemeval-500-current22-zaxyonly-page-future-age-neo4j-20260603" in benchmarks
-    assert "| Zaxy checkout | 0.868 | 0.796 | 1.000 | 0.896 | 0.992 | 0.992 | 1234.20 | 1430.16 |" in benchmarks
-    assert "4 retrieval misses and 98 synthesis misses" in benchmarks
-    assert "current18 as the stable latency baseline" in benchmarks
-    assert "airplane run" in benchmarks
-    assert "Evidence Program layer" in benchmarks
-    assert "auditable slot-coverage contract" in benchmarks
-    assert "future_age_at_event_answer" in benchmarks
-    assert "current22 page/future-age zaxy-only full-set run" in rendered
-    assert "stable local conditions" in rendered
-    assert "Evidence Program layer" in rendered
+    assert "longmemeval-500-publish-20260607" in benchmarks
+    assert "Older backend shootouts, partial slices, experimental LongMemEval iterations" in benchmarks
 
 
 def test_docs_publish_coordination_competitor_claim_gate() -> None:
-    """CoordinationBench docs should prevent Quarq/Hybi disclosure rows from becoming claims."""
+    """Archived CoordinationBench reports should not be active public claims."""
     benchmarks = Path("docs/benchmarks.md").read_text(encoding="utf-8")
     roadmap = Path("docs/coordinate-roadmap.md").read_text(encoding="utf-8")
     report = json.loads(
-        Path("reports/benchmarks/coordination-real-v1/coordination-benchmark.json").read_text(
+        Path("reports/archive/benchmarks/coordination-real-v1/coordination-benchmark.json").read_text(
             encoding="utf-8"
         )
     )
-    report_md = Path("reports/benchmarks/coordination-real-v1/coordination-benchmark.md").read_text(
-        encoding="utf-8"
-    )
+    report_md = Path(
+        "reports/archive/benchmarks/coordination-real-v1/coordination-benchmark.md"
+    ).read_text(encoding="utf-8")
 
-    assert "competitor_claim_gate" in benchmarks
-    assert "--require-competitor-claim quarq" in benchmarks
-    assert "--require-competitor-claim hybi" in benchmarks
-    assert "disclosure-only for those systems" in benchmarks
+    assert "coordination-real-v1" not in benchmarks
+    assert "Do not cite archived partial runs as current benchmark claims" in benchmarks
     assert "Quarq and Semantic Reach/Hybi remain small-project disclosure rows" in roadmap
     assert report["competitor_claim_gate"]["status"] == "blocked"
     assert set(report["competitor_claim_gate"]["blocked_adapters"]) == {"quarq", "hybi"}
@@ -270,6 +261,7 @@ def test_pggraph_backend_roadmap_records_contract_first_state() -> None:
     """Docs should keep pgGraph behind the projection contract and explicit backend selector."""
     agents = Path("AGENTS.md").read_text(encoding="utf-8")
     benchmarks = Path("docs/benchmarks.md").read_text(encoding="utf-8")
+    archived_positioning = Path("docs/archive/competitive-positioning.md").read_text(encoding="utf-8")
     spec = Path("docs/superpowers/specs/2026-05-17-skill-memory-pggraph-evaluation-design.md").read_text(
         encoding="utf-8",
     )
@@ -285,23 +277,11 @@ def test_pggraph_backend_roadmap_records_contract_first_state() -> None:
     assert "PGGRAPH_INTEGRATION_DSN" in spec
     assert 'pip install "zaxy-memory[pggraph]"' in spec
     assert "version 0.1.0, PostgreSQL 13-18 support, and alpha status" in spec
-    assert "Projection backend changes must pass the full 500-question guardrail" in benchmarks
-    assert "vector search uses pgvector" in benchmarks
-    assert "longmemeval-100-pggraph-comparison" in benchmarks
-    assert "longmemeval-100-neo4j-comparison" in benchmarks
-    assert "longmemeval-500-pggraph-comparison" in benchmarks
-    assert "longmemeval-500-neo4j-current-checkout" in benchmarks
-    assert "pgGraph checkout" in benchmarks
-    assert "0.910" in benchmarks
-    assert "0.714" in benchmarks
-    assert "0.632" in benchmarks
-    assert "0.958" in benchmarks
-    assert "same-harness Neo4j checkout control" in benchmarks
-    assert "Neo4j checkout" in benchmarks
-    assert "0.930" in benchmarks
-    assert "0.626" in benchmarks
-    assert "no longer shows a pgGraph-specific quality" in benchmarks
-    assert "regression" in benchmarks
+    assert "pgGraph collaboration track" in agents
+    assert "LatticeDB evaluation" in agents
+    assert "longmemeval-500-pggraph-comparison" not in benchmarks
+    assert "development history, not" in benchmarks
+    assert "pgGraph" in archived_positioning
     assert "zaxy reproject" in spec
     assert "zaxy init --projection-backend pggraph --pggraph-repo" in spec
     assert "PGGRAPH_REPO" in spec
@@ -316,7 +296,7 @@ def test_zero_friction_runtime_roadmap_sets_frontier_bar() -> None:
     """Roadmap should target frontier memory quality, not a convenience-only backend swap."""
     agents = Path("AGENTS.md").read_text(encoding="utf-8")
     architecture = Path("docs/architecture.md").read_text(encoding="utf-8")
-    roadmap = Path("docs/zero-friction-runtime-roadmap.md").read_text(encoding="utf-8")
+    roadmap = Path("docs/archive/zero-friction-runtime-roadmap.md").read_text(encoding="utf-8")
 
     assert "frontier-grade memory" in roadmap
     assert "zaxy init" in roadmap
@@ -355,7 +335,8 @@ def test_zero_friction_runtime_roadmap_sets_frontier_bar() -> None:
     assert "zaxy reproject .eventloom/<session>.jsonl --session-id <session>" in roadmap
     assert "MCP embedded runtime status: wired" in roadmap
     assert "local-embedded-codex" in roadmap
-    assert "zero-friction-runtime-roadmap.md" in architecture
+    assert "[zero-friction-runtime-roadmap.md](archive/zero-friction-runtime-roadmap.md)" in architecture
+    assert "embedded Kuzu" in architecture
     assert "Build the zero-friction embedded graph runtime path" in agents
     assert "Memory Activation Layer" in agents
 
@@ -366,7 +347,7 @@ def test_embedded_runtime_docs_do_not_frame_current_kuzu_as_prototype() -> None:
         Path(path).read_text(encoding="utf-8")
         for path in (
             "AGENTS.md",
-            "docs/zero-friction-runtime-roadmap.md",
+            "docs/archive/zero-friction-runtime-roadmap.md",
             "docs/superpowers/plans/2026-05-20-zero-friction-embedded-graph-runtime.md",
         )
     )
@@ -399,37 +380,40 @@ def test_docs_show_embedded_local_profile_option() -> None:
 
 
 def test_backend_shootout_contract_is_documented_and_scripted() -> None:
-    """Backend shootout should define the embedded-vs-sidecar measurement contract."""
+    """Backend shootout scripts should keep detailed backend measurement contracts."""
     benchmarks = Path("docs/benchmarks.md").read_text(encoding="utf-8")
     normalized_benchmarks = " ".join(benchmarks.split())
     script = Path("scripts/backend-shootout.py").read_text(encoding="utf-8")
     guardrail = Path("scripts/check-backend-shootout.py").read_text(encoding="utf-8")
+    archived = Path("docs/archive/zero-friction-runtime-roadmap.md").read_text(encoding="utf-8")
 
     for phrase in (
-        "Backend Shootout",
-        "embedded",
+        "BM25",
+    ):
+        assert phrase in benchmarks
+
+    for phrase in (
         "LatticeDB",
         "Neo4j",
         "pgGraph",
-        "BM25",
-        "cold bootstrap time",
-        "first useful init time",
-        "first checkout time",
-        "append-to-projection",
-        "checkout p95",
-        "checkout p99",
+        "cold_bootstrap_ms",
+        "first_useful_init_ms",
+        "first_checkout_ms",
+        "append_to_projection_p95_ms",
+        "checkout_p95_ms",
+        "checkout_p99_ms",
         "returned tokens",
         "injected tokens",
         "citation coverage",
-        "resident memory",
-        "on-disk footprint",
-        "recovery time",
-        "report schema version",
-        "source fingerprints",
-        "workload fingerprints",
-        "event/query counts",
+        "resident_memory_delta_bytes",
+        "on_disk_footprint_bytes",
+        "rebuild_recovery_ms",
+        "report_schema_version",
+        "source_fingerprints",
+        "workload_fingerprints",
+        "event_count",
     ):
-        assert phrase in benchmarks
+        assert phrase in script or phrase in guardrail or phrase in archived
     assert "--eventloom-path" in script
     assert "latticedb" in script
     assert "--session-id" in script
@@ -437,53 +421,13 @@ def test_backend_shootout_contract_is_documented_and_scripted() -> None:
     assert "--queries-file" in script
     assert "--output" in script
     assert "Defaults run embedded plus BM25 without optional sidecar infrastructure." in script
-    assert "check-backend-shootout.py" in benchmarks
-    assert "--require-report-metadata" in benchmarks
+    assert "Validate backend shootout reports for release-gate use." in guardrail
     assert "--require-report-metadata" in guardrail
-    assert "--require-markdown-report" in benchmarks
+    assert "--require-report-metadata" in guardrail
     assert "--require-markdown-report" in guardrail
-    assert "--verify-report-fingerprints" in benchmarks
     assert "--verify-report-fingerprints" in guardrail
-    assert "--require-labeled-metrics" in benchmarks
-    assert "--require-dashboard-source embedded=embedded" in benchmarks
-    assert "--min-quality-per-1k-injected-tokens embedded=1.0" in benchmarks
-    assert "--min-answer-at-5-per-1k-injected-tokens embedded=1.0" in benchmarks
-    assert "--min-projection-events-per-second embedded=40" in benchmarks
-    assert "--max-first-useful-init-ms embedded=15000" in benchmarks
-    assert "--max-resident-memory-delta-bytes embedded=768000000" in benchmarks
-    assert "--max-on-disk-footprint-bytes embedded=256000000" in benchmarks
-    assert "--max-dashboard-graph-load-ms embedded=250" in benchmarks
-    assert "--max-checkout-p99-ms embedded=25" in benchmarks
-    assert "--max-exact-p99-ms embedded=10" in benchmarks
-    assert "--max-keyword-p99-ms embedded=5" in benchmarks
-    assert "--max-vector-p99-ms embedded=5" in benchmarks
-    assert "--max-traversal-p99-ms embedded=5" in benchmarks
-    assert "--max-dashboard-graph-load-ms embedded=500" in benchmarks
-    assert "--max-rebuild-recovery-ms embedded=15000" in benchmarks
-    assert "--max-checkout-p95-ms embedded=100" in benchmarks
-    assert "--min-quality-per-1k-returned-tokens embedded=0.10" in benchmarks
-    assert "--min-answer-at-5-per-1k-returned-tokens embedded=0.10" in benchmarks
-    assert "--min-quality-per-1k-injected-tokens embedded=0.10" in benchmarks
-    assert "--min-answer-at-5-per-1k-injected-tokens embedded=0.10" in benchmarks
-    assert "--max-exact-p95-ms embedded=15" in benchmarks
-    assert "--max-keyword-p95-ms embedded=75" in benchmarks
-    assert "--max-vector-p95-ms embedded=25" in benchmarks
-    assert "--max-traversal-p95-ms embedded=10" in benchmarks
-    assert "--min-recall-at-5 0.90" in benchmarks
-    assert "--max-first-useful-init-ms embedded=45000" in benchmarks
-    assert "--max-resident-memory-delta-bytes embedded=1700000000" in benchmarks
-    assert "--max-on-disk-footprint-bytes embedded=512000000" in benchmarks
-    assert "--max-rebuild-recovery-ms embedded=45000" in benchmarks
-    assert "--max-checkout-p95-ms embedded=200" in benchmarks
-    assert "--min-quality-per-1k-returned-tokens embedded=0.15" in benchmarks
-    assert "--min-answer-at-5-per-1k-returned-tokens embedded=0.15" in benchmarks
-    assert "--min-quality-per-1k-injected-tokens embedded=0.15" in benchmarks
-    assert "--min-answer-at-5-per-1k-injected-tokens embedded=0.15" in benchmarks
-    assert "--max-keyword-p95-ms embedded=20" in benchmarks
-    assert "--max-checkout-p99-ms embedded=250" in benchmarks
-    assert "--max-exact-p99-ms embedded=12" in benchmarks
-    assert "--max-keyword-p99-ms embedded=15" in benchmarks
-    assert "--max-vector-p99-ms embedded=20" in benchmarks
+    assert "LongMemEval-compatible checkout" in benchmarks
+    assert "archived under" in benchmarks
     assert "Backend shootout guardrail passed" in guardrail
     assert "min-projection-events-per-second" in guardrail
     assert "max-rebuild-recovery-ms" in guardrail
@@ -493,38 +437,7 @@ def test_backend_shootout_contract_is_documented_and_scripted() -> None:
     assert "min-answer-at-5-per-1k-injected-tokens" in guardrail
     assert "max-keyword-p95-ms" in guardrail
     assert "max-keyword-p99-ms" in guardrail
-    report = json.loads(Path("reports/backend-shootout/backend-shootout.json").read_text(encoding="utf-8"))
-    if any(row["status"] != "ok" for row in report["summaries"]):
-        assert "with all rows passing" not in benchmarks
-        assert "error rows" in benchmarks
-    assert "parked candidate" in benchmarks
-    assert "backend-shootout-graph-traversal-embedded-after-carry-forward" in benchmarks
-    assert "longmemeval-40-backend-shootout.json" in benchmarks
-    assert "longmemeval-100-backend-shootout.json" in benchmarks
-    assert "medium-scale backend evidence" in benchmarks
-    assert "Answer@5=0.575" in benchmarks
-    assert "100 nodes and 100 edges" in benchmarks
-    assert "cold bootstrap `225.93ms`" in benchmarks
-    assert "`10.55ms`" in benchmarks
-    assert "append-to-projection p95 `24.674ms`" in benchmarks
-    assert "resident memory delta" in benchmarks
-    assert "on-disk footprint" in benchmarks
-    assert "`9347.717ms`" in benchmarks
-    assert "projection throughput `57.007` events/sec" in normalized_benchmarks
-    assert "vector retrieval enabled" in benchmarks
-    assert "answer-ready synthesis now closes the answer-surface gap" in benchmarks
-    assert "lane p95s of exact `0.007ms`, keyword `3.285ms`" in normalized_benchmarks
-    assert "roughly 10" in benchmarks
-    assert "100-query scale evidence" in benchmarks
-    assert "The `answer_ready` row scored `Answer@5=0.99` and `Recall@5=1.0`" in normalized_benchmarks
-    assert "cold bootstrap `421.649ms`" in normalized_benchmarks
-    assert "first useful init `29620.186ms`" in normalized_benchmarks
-    assert "append-to-projection p95 `26.931ms`" in normalized_benchmarks
-    assert "Answer@5 per 1k injected tokens `0.2889`" in normalized_benchmarks
-    assert "projection throughput `53.393` events/sec" in normalized_benchmarks
-    assert "first answer-ready checkout does not pay" in normalized_benchmarks
-    assert "BM25 scored `Answer@5=0.52`" in benchmarks
-    assert "retrieve path now clears a stricter `Recall@5=0.90` release floor" in normalized_benchmarks
+    assert "backend-shootout" not in normalized_benchmarks
 
 
 def test_install_docs_offer_zero_surprise_first_run_path() -> None:
@@ -571,20 +484,16 @@ def test_public_site_benchmark_claims_use_current_full_set_guardrails() -> None:
     """The public site should lead with current reproducible floors, not stale headline-only claims."""
     html = Path("site/index.html").read_text(encoding="utf-8")
 
-    assert "CoordinationBench v1" in html
-    assert "accepted-finding precision and recall" in html
+    assert "LongMemEval-compatible checkout diagnostic" in html
     assert "Harvey LAB external memory-ablation" in html
     assert "0.788 mean criterion pass rate" in html
     assert "+0.184 vs regular/no-memory" in html
-    assert "docs/benchmarks.html#completed-2026-06-06-result" in html
-    assert "0.272727 precision" in html
-    assert "Mem0 / Agent Memory / Zep-Graphiti / MemPalace / GBrain" in html
+    assert "docs/benchmarks.html#harvey-lab" in html
+    assert "docs/benchmarks.html#headline-500" in html
+    assert "mean 0.956" in html
+    assert "Answer@5 0.910" in html
     assert "Evidence first, claims second" in html
-    assert "Larger memory-system comparisons stay disclosure-only" in html
-    assert "disclosure-only" in html
-    assert "Flat transcript" in html
-    assert "Markdown notes" in html
-    assert "BM25 worker logs" in html
+    assert "archived as development history" in html
     assert "PyPI 0.2.1" not in html
     assert "1005 tests" not in html
     assert "91.96% coverage" not in html
@@ -626,7 +535,7 @@ def test_framework_integration_docs_record_next_hardening_target() -> None:
     """Docs should pin the native-preview learning into a maintained UX target."""
     agents = Path("AGENTS.md").read_text(encoding="utf-8")
     integrations = Path("docs/integrations.md").read_text(encoding="utf-8")
-    competitive = Path("docs/competitive-positioning.md").read_text(encoding="utf-8")
+    competitive = Path("docs/archive/competitive-positioning.md").read_text(encoding="utf-8")
 
     assert "Common native-preview adapter contract" in agents
     assert "Use LangGraph and CrewAI native-preview usage" not in agents
@@ -657,7 +566,7 @@ def test_docs_publish_langgraph_v06_native_contract() -> None:
     """Integration docs and rendered site should publish the LangGraph beta metadata contract."""
     integrations = Path("docs/integrations.md").read_text(encoding="utf-8")
     rendered = Path("site/docs/integrations.html").read_text(encoding="utf-8")
-    roadmap = Path("docs/v1-roadmap.md").read_text(encoding="utf-8")
+    roadmap = Path("docs/archive/v1-roadmap.md").read_text(encoding="utf-8")
 
     for text in (integrations, rendered):
         assert "zaxy.native.v0.6" in text
@@ -722,20 +631,20 @@ def test_full_set_guardrail_docs_distinguish_legacy_and_same_harness_floors() ->
     """Docs should not mix the legacy limit=10 floor with current backend-eval floors."""
     benchmarks = Path("docs/benchmarks.md").read_text(encoding="utf-8")
     testing = Path("docs/testing.md").read_text(encoding="utf-8")
-    competitive = Path("docs/competitive-positioning.md").read_text(encoding="utf-8")
+    competitive = Path("docs/archive/competitive-positioning.md").read_text(encoding="utf-8")
     retrieval = Path("docs/retrieval.md").read_text(encoding="utf-8")
     combined = "\n".join([benchmarks, testing, competitive, retrieval])
 
-    assert "Legacy limit=10 full-set floor" in benchmarks
-    assert "Current same-harness backend-evaluation floor" in benchmarks
-    assert "0dc36a139bb9a4fdc7c6cd34400737a58a1eb7410517341f015e9fbfc76ed854" in combined
-    assert "longmemeval-500-neo4j-current-checkout/live-benchmark.json" in testing
-    assert "--min-mean-score 0.714" in testing
-    assert "--min-answer-recall-at-5 0.626" in testing
-    assert "--min-recall-at-5 0.958" in testing
+    assert "LongMemEval-compatible checkout" in benchmarks
+    assert "Older backend shootouts" in benchmarks
     assert "legacy `limit=10`" in competitive
     assert "current same-harness `limit=5`" in competitive
-    assert "current backend-evaluation floor" in retrieval
+    assert "current74 checkout" in competitive
+    assert "current public benchmark evidence is intentionally narrow" in testing
+    assert "longmemeval-500-publish-20260607/live-benchmark.md" in benchmarks
+    assert "legacy `limit=10`" in competitive
+    assert "current same-harness `limit=5`" in competitive
+    assert "LongMemEval-compatible checkout" in benchmarks
 
 
 def test_memory_checkout_docs_and_site_match_golden_contract_fixture() -> None:
@@ -876,26 +785,19 @@ def test_public_site_benchmark_claim_is_scoped_to_fixture() -> None:
     html = Path("site/index.html").read_text(encoding="utf-8")
 
     assert "Benchmark evidence" in html
-    assert "CoordinationBench" in html
-    assert "accepted-finding" in html
-    assert "Mem0" in html
-    assert "Agent Memory" in html
-    assert "Zep/Graphiti" in html
-    assert "GBrain" in html
+    assert "LongMemEval-compatible checkout 500" in html
+    assert "Checkout diagnostic, not official LME" in html
     assert "1.000" in html
-    assert "0.636364" in html
-    assert "0.666667" in html
-    assert "0.272727" in html
-    assert "disclosure-only" in html
-    assert "not_run" in html
+    assert "0.956" in html
+    assert "0.910" in html
     assert 'class="benchmark-metrics"' in html
     assert 'class="benchmark-card benchmark-card-primary"' in html
     assert 'class="benchmark-comparison"' in html
     assert 'class="benchmark-links"' in html
-    assert "docs/benchmark-review.html" in html
     assert "docs/external-validation.html" in html
     assert "docs/benchmarks.html" in html
     assert "docs/coordinate-roadmap.html" in html
+    assert "docs/benchmark-review.html" not in html
     assert "production-grade vector RAG" not in html
     assert "destroyed" not in html.casefold()
 
@@ -905,37 +807,28 @@ def test_benchmark_docs_disclose_harness_external_claims_and_sources() -> None:
     text = Path("docs/benchmarks.md").read_text(encoding="utf-8")
 
     assert "LongMemEval-compatible" in text
-    assert "0.940" in text
-    assert "0.906" in text
+    assert "0.956" in text
+    assert "0.910" in text
     assert "1.000" in text
-    assert "0.500" in text
-    assert "0.840" in text
+    assert "0.520" in text
+    assert "0.770" in text
     assert "BM25" in text
     assert "same-harness" in text
     assert "Approx tokens" in text
-    assert "external disclosures" in text
-    assert "MemPalace" in text
-    assert "96.6%" in text
-    assert "98.4%" in text
-    assert "Agent Memory" in text
-    assert "95.2%" in text
-    assert "Mem0" in text
-    assert "low-to-mid 90s" in text
-    assert "https://github.com/rohitg00/agentmemory/blob/main/benchmark/LONGMEMEVAL.md" in text
-    assert "https://github.com/MemPalace/mempalace/blob/develop/benchmarks/BENCHMARKS.md" in text
-    assert "https://mem0.ai/research" in text
-    assert "../reports/benchmarks/longmemeval-500-current74-zaxyonly-gated-relative-temporal-anchor-embedded-reuse-20260604/live-benchmark.md" in text
-    assert "../reports/benchmarks/longmemeval-100-comparison/live-benchmark.md" in text
-    assert "not same-harness results" in text
-    assert "coordination-real-v1" in text
-    assert "../reports/benchmarks/coordination-real-v1/coordination-benchmark.md" in text
-    assert "legacy disclosure-only adapter" in text
+    assert "../reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.md" in text
+    assert "../reports/benchmarks/longmemeval-500-publish-20260607/run-config.md" in text
+    assert "Harvey LAB external" in text
+    assert "0.788" in text
+    assert "+0.184" in text
+    assert "Archived partial runs" not in text
+    assert "Do not describe the LongMemEval-compatible checkout run as an official" in text
+    assert "Do not cite archived partial runs as current benchmark claims" in text
 
 
 def test_benchmark_docs_record_competitor_adapter_feasibility() -> None:
-    """Docs should say which competitor adapters are buildable and which remain disclosures."""
+    """Archived positioning should retain competitor adapter feasibility detail."""
     benchmarks = Path("docs/benchmarks.md").read_text(encoding="utf-8")
-    positioning = Path("docs/competitive-positioning.md").read_text(encoding="utf-8")
+    positioning = Path("docs/archive/competitive-positioning.md").read_text(encoding="utf-8")
     combined = f"{benchmarks}\n{positioning}"
 
     assert "Same-Harness Adapter Feasibility" in combined
@@ -949,7 +842,8 @@ def test_benchmark_docs_record_competitor_adapter_feasibility() -> None:
     assert "external disclosure only" in combined
     assert "Zep/Graphiti" in combined
     assert "GBrain" in combined
-    assert "No same-harness adapter should be published without" in combined
+    assert "same-harness adapter" in combined
+    assert "pinned runner" in combined
 
 
 def test_public_longmemeval_reports_keep_bm25_tradeoff_baseline() -> None:
@@ -959,7 +853,6 @@ def test_public_longmemeval_reports_keep_bm25_tradeoff_baseline() -> None:
         for path in Path("reports/benchmarks").glob("*/live-benchmark.json")
         if "longmemeval" in path.as_posix()
     ]
-    report_paths.append(Path("reports/benchmarks/live-benchmark.json"))
 
     for report_path in report_paths:
         payload = json.loads(report_path.read_text(encoding="utf-8"))
@@ -1084,12 +977,14 @@ def test_site_local_links_resolve() -> None:
 
 def test_required_docs_are_substantial_and_cross_linked() -> None:
     """Core docs should be long enough to be useful and link back to related topics."""
+    cross_link_exempt = {"docs/packet-analyzer.md", "docs/runbook.md"}
     for doc in REQUIRED_DOCS:
         path = Path(doc)
         text = path.read_text(encoding="utf-8")
         assert text.startswith("# "), doc
         assert len(text.split()) >= 250, doc
-        assert "README.md" in text or "runbook.md" in text or "site/index.html" in text, doc
+        if doc not in cross_link_exempt:
+            assert "README.md" in text or "runbook.md" in text or "site/index.html" in text, doc
 
 
 def test_agents_roadmap_records_dual_clean_repo_uat() -> None:
@@ -1107,9 +1002,9 @@ def test_docs_reference_public_benchmark_guardrail_script() -> None:
     testing = Path("docs/testing.md").read_text(encoding="utf-8")
 
     assert "Public benchmark guardrail script" in agents
-    assert "scripts/benchmark-guardrails.sh" in benchmarks
-    assert "scripts/benchmark-guardrails.sh" in testing
-    assert "cached LongMemEval dataset" in testing
+    assert "Before publishing a new full 500" in benchmarks
+    assert "public benchmark evidence is intentionally narrow" in testing
+    assert "headline 500-question LongMemEval-compatible checkout report" in testing
 
 
 def test_hooks_docs_explain_capture_readiness() -> None:
@@ -1186,11 +1081,9 @@ def test_release_gate_runs_docs_validation() -> None:
     assert "--min-quality-per-1k-injected-tokens embedded=0.15" in script
     assert "--min-answer-at-5-per-1k-injected-tokens embedded=0.15" in script
     assert "backend shootout" in testing
-    assert "medium-scale embedded runtime evidence" in testing
-    assert "100-query embedded scale evidence" in testing
-    assert "--require-query-results" in testing
-    assert "--require-git-tracked-inputs" in testing
-    assert "--max-cold-bootstrap-ms embedded=250" in testing
+    assert "public benchmark evidence is intentionally narrow" in testing
+    assert "Older benchmark suites, backend shootouts" in testing
+    assert "headline report" in testing
     assert "activation efficiency" in testing
     assert "--min-activation-rate" in testing
     assert "--max-checkout-prompt-tokens" in testing
@@ -1202,7 +1095,7 @@ def test_release_gate_runs_docs_validation() -> None:
     assert "zaxy memory status --eventloom-path .eventloom --graph" in testing
     assert "zaxy memory inferred-status" in testing
     assert "zaxy reproject" in testing
-    assert "scripts/check-backend-shootout.py" in testing
+    assert "archived benchmark reports" in testing
     assert "--min-quality-per-1k-returned-tokens embedded=0.10" in script
     assert "--min-answer-at-5-per-1k-returned-tokens embedded=0.10" in script
     assert "--min-quality-per-1k-injected-tokens embedded=0.10" in script
@@ -1224,28 +1117,13 @@ def test_release_gate_runs_docs_validation() -> None:
     assert "--max-vector-p99-ms embedded=35" in script
     assert "--max-traversal-p95-ms embedded=10" in script
     assert "--max-traversal-p99-ms embedded=10" in script
-    assert "--min-quality-per-1k-returned-tokens embedded=0.10" in testing
-    assert "--min-answer-at-5-per-1k-returned-tokens embedded=0.10" in testing
-    assert "--min-quality-per-1k-injected-tokens embedded=0.10" in testing
-    assert "--min-answer-at-5-per-1k-injected-tokens embedded=0.10" in testing
-    assert "--min-quality-per-1k-injected-tokens embedded=0.15" in testing
-    assert "--max-cold-bootstrap-ms embedded=600" in testing
-    assert "--max-first-checkout-ms embedded=150" in testing
-    assert "--max-append-to-projection-p95-ms embedded=40" in testing
-    assert "--max-resident-memory-delta-bytes embedded=1700000000" in testing
-    assert "--max-on-disk-footprint-bytes embedded=512000000" in testing
-    assert "--max-dashboard-graph-load-ms embedded=500" in testing
-    assert "--max-checkout-p95-ms embedded=200" in testing
-    assert "--max-checkout-p99-ms embedded=250" in testing
-    assert "--max-keyword-p95-ms embedded=20" in testing
-    assert "--max-keyword-p99-ms embedded=15" in testing
-    assert "--max-vector-p99-ms embedded=35" in testing
+    assert "reports/archive/" in testing
 
 
 def test_embedded_runtime_docs_publish_read_index_warmup_contract() -> None:
     """Source docs and rendered site should preserve embedded read-index warmup behavior."""
-    roadmap = Path("docs/zero-friction-runtime-roadmap.md").read_text(encoding="utf-8")
-    rendered = Path("site/docs/zero-friction-runtime-roadmap.html").read_text(encoding="utf-8")
+    roadmap = Path("docs/archive/zero-friction-runtime-roadmap.md").read_text(encoding="utf-8")
+    rendered = Path("site/docs/archive/zero-friction-runtime-roadmap.html").read_text(encoding="utf-8")
 
     for text in (roadmap, rendered):
         normalized = " ".join(text.split())
@@ -1305,9 +1183,11 @@ def test_readme_integration_compose_uses_explicit_profile() -> None:
 def test_benchmark_docs_describe_sidecar_free_default_shootout() -> None:
     """Backend shootout docs should not imply sidecars run by default."""
     benchmarks = Path("docs/benchmarks.md").read_text(encoding="utf-8")
+    archived = Path("docs/archive/zero-friction-runtime-roadmap.md").read_text(encoding="utf-8")
 
-    assert "The default active backend set is `embedded` and `bm25`." in benchmarks
-    assert "explicit backend set" in benchmarks
+    assert "public benchmark surface intentionally small" in benchmarks
+    assert "production settings default" in archived
+    assert "Neo4j and pgGraph remain explicit sidecar" in archived
     assert "The default active backend set is `embedded`, `neo4j`, `pggraph`, and `bm25`." not in benchmarks
 
 

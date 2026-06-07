@@ -15,7 +15,7 @@
     <div class="nav-links">
       <a href="../index.html">Overview</a>
       <a href="../docs/coordinate-roadmap.html">Coordinate</a>
-      <a href="../docs/memory-is-purpose-zaxy-analysis.html">Purpose</a>
+      <a href="../docs/why-zaxy.html">Why Zaxy</a>
       <a href="../docs/benchmarks.html">Benchmarks</a>
       <a href="getting-started.html">Start</a>
       <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
@@ -212,7 +212,7 @@
           <tr>
             <td><code>zaxy benchmark-inventory</code>, <code>zaxy benchmark-compare</code>, <code>zaxy state-recovery-benchmark</code></td>
             <td><code>Beta</code></td>
-            <td>Benchmark report inventory, guardrail checks, and accepted-state recovery benchmark lane.</td>
+            <td>Benchmark report inventory and guardrail helpers. Public claims are scoped by <a href="benchmarks.html">benchmarks.md</a>.</td>
           </tr>
           <tr>
             <td>Backend candidate options such as <code>PROJECTION_BACKEND=pggraph</code> or <code>latticedb</code></td>
@@ -318,7 +318,7 @@
         </tbody>
       </table>
       <h2 id="benchmark-artifact-schemas">Benchmark Artifact Schemas</h2>
-      <p>Benchmark claims must be reproducible from tracked inputs. The release gate checks report metadata, Markdown sidecars, query diagnostics, workload fingerprints, and git-tracked Eventloom/query inputs.</p>
+      <p>Benchmark claims must be reproducible from tracked inputs. The current public benchmark surface is intentionally limited to the headline 500-question LongMemEval-compatible checkout report and the Harvey LAB external memory-ablation report. Older suite, backend, state-recovery, purpose, and debug artifacts are archived development history.</p>
       <table>
         <thead>
           <tr>
@@ -329,39 +329,29 @@
         </thead>
         <tbody>
           <tr>
-            <td><code>reports/backend-shootout/backend-shootout.json</code></td>
+            <td><code>reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json</code></td>
             <td><code>Beta</code></td>
-            <td>Active backend smoke report.</td>
+            <td>Current headline 500-question checkout diagnostic.</td>
           </tr>
           <tr>
-            <td><code>reports/backend-shootout/longmemeval-40-backend-shootout.json</code></td>
+            <td><code>reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-benchmark.json</code></td>
             <td><code>Beta</code></td>
-            <td>Medium-scale performance report.</td>
+            <td>Harvey LAB external legal-agent memory-ablation report.</td>
           </tr>
           <tr>
-            <td><code>reports/backend-shootout/longmemeval-100-backend-shootout.json</code></td>
+            <td><code>reports/benchmarks/harvey-lab-memory-ablation/publishable-statistics.md</code></td>
             <td><code>Beta</code></td>
-            <td>Scale guardrail report.</td>
+            <td>Publishable Harvey LAB statistics summary.</td>
           </tr>
           <tr>
-            <td><code>reports/benchmarks/coordination-real-v1/coordination-benchmark.json</code></td>
-            <td><code>Beta</code></td>
-            <td>Coordinate benchmark smoke artifact.</td>
-          </tr>
-          <tr>
-            <td><code>reports/benchmarks/state-recovery-v1/state-recovery-benchmark.json</code></td>
-            <td><code>Beta</code></td>
-            <td>StateRecoveryBench accepted-state recovery guardrail artifact.</td>
-          </tr>
-          <tr>
-            <td><code>reports/benchmarks/state-recovery-v1/state-recovery-workload.json</code></td>
-            <td><code>Beta</code></td>
-            <td>Canonical StateRecoveryBench workload; fingerprint checked by <code>scripts/check-state-recovery-benchmark.py</code>.</td>
+            <td><code>reports/archive/**</code> and <code>docs/archive/**</code></td>
+            <td><code>Internal</code></td>
+            <td>Archived development history; do not cite as current public benchmark claims.</td>
           </tr>
           <tr>
             <td><code>reports/benchmarks/*-diagnostics.*</code></td>
             <td><code>Internal</code></td>
-            <td>Local diagnostics are ignored unless promoted to tracked evidence.</td>
+            <td>Local diagnostics are ignored unless promoted through <a href="benchmarks.html">benchmarks.md</a>.</td>
           </tr>
           <tr>
             <td>Competitor adapter disclosures</td>

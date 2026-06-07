@@ -3,7 +3,7 @@
 This page preserves the suite-v1 representative context benchmark review. For
 the current public LongMemEval-compatible headline, BM25 comparison, and
 external MemPalace, Mem0, and Agent Memory disclosures, start with
-[benchmarks.md](benchmarks.md).
+[benchmarks.md](../benchmarks.md).
 
 Author: Nicholas Blanchard
 
@@ -145,7 +145,7 @@ Paired comparisons:
 The current `reports/benchmarks/live-benchmark.*` files now hold the latest
 LongMemEval-compatible release evidence. The suite-v1 figures above are retained
 in this review as the audited representative-context result; regenerate them
-with the suite workload described in [testing.md](testing.md) when a fresh
+with the suite workload described in [testing.md](../testing.md) when a fresh
 same-file report is needed.
 
 ## Why Zaxy Succeeds On This Workload
@@ -280,5 +280,5 @@ excellent performance on a reproducible, statistically powered representative
 agent-context benchmark. The next research step is adversarial and external
 comparison, not broader marketing claims.
 
-Related references: [testing.md](testing.md), [retrieval.md](retrieval.md),
-[architecture.md](architecture.md), and [README.md](../README.md).
+Related references: [testing.md](../testing.md), [retrieval.md](../retrieval.md),
+[architecture.md](../architecture.md), and [README.md](../../README.md).

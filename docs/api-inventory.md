@@ -68,7 +68,7 @@ treated as public release-candidate surfaces. Internal helper functions in
 | `zaxy coordinate ...` | `Beta` | Coordinate mission, worker, finding, approval, handoff, audit, and benchmark commands. |
 | `zaxy integration-template`, `zaxy integrations`, `zaxy ide-config`, `zaxy local-profile` | `Beta` | Integration discovery and config rendering. |
 | `zaxy trace export` | `Beta` | Provider-neutral Eventloom-derived trace export. |
-| `zaxy benchmark-inventory`, `zaxy benchmark-compare`, `zaxy state-recovery-benchmark` | `Beta` | Benchmark report inventory, guardrail checks, and accepted-state recovery benchmark lane. |
+| `zaxy benchmark-inventory`, `zaxy benchmark-compare`, `zaxy state-recovery-benchmark` | `Beta` | Benchmark report inventory and guardrail helpers. Public claims are scoped by [benchmarks.md](benchmarks.md). |
 | Backend candidate options such as `PROJECTION_BACKEND=pggraph` or `latticedb` | `Experimental` | Candidate backends stay behind explicit configuration. |
 | `zaxy experimental pattern-completion`, `zaxy experimental state-recovery` | `Experimental` | Research commands for associative projection diagnostics; do not use for production claims. |
 
@@ -106,19 +106,19 @@ operation gates.
 
 ## Benchmark Artifact Schemas
 
-Benchmark claims must be reproducible from tracked inputs. The release gate
-checks report metadata, Markdown sidecars, query diagnostics, workload
-fingerprints, and git-tracked Eventloom/query inputs.
+Benchmark claims must be reproducible from tracked inputs. The current public
+benchmark surface is intentionally limited to the headline 500-question
+LongMemEval-compatible checkout report and the Harvey LAB external
+memory-ablation report. Older suite, backend, state-recovery, purpose, and debug
+artifacts are archived development history.
 
 | Artifact | Status | Contract authority |
 | --- | --- | --- |
-| `reports/backend-shootout/backend-shootout.json` | `Beta` | Active backend smoke report. |
-| `reports/backend-shootout/longmemeval-40-backend-shootout.json` | `Beta` | Medium-scale performance report. |
-| `reports/backend-shootout/longmemeval-100-backend-shootout.json` | `Beta` | Scale guardrail report. |
-| `reports/benchmarks/coordination-real-v1/coordination-benchmark.json` | `Beta` | Coordinate benchmark smoke artifact. |
-| `reports/benchmarks/state-recovery-v1/state-recovery-benchmark.json` | `Beta` | StateRecoveryBench accepted-state recovery guardrail artifact. |
-| `reports/benchmarks/state-recovery-v1/state-recovery-workload.json` | `Beta` | Canonical StateRecoveryBench workload; fingerprint checked by `scripts/check-state-recovery-benchmark.py`. |
-| `reports/benchmarks/*-diagnostics.*` | `Internal` | Local diagnostics are ignored unless promoted to tracked evidence. |
+| `reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json` | `Beta` | Current headline 500-question checkout diagnostic. |
+| `reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-benchmark.json` | `Beta` | Harvey LAB external legal-agent memory-ablation report. |
+| `reports/benchmarks/harvey-lab-memory-ablation/publishable-statistics.md` | `Beta` | Publishable Harvey LAB statistics summary. |
+| `reports/archive/**` and `docs/archive/**` | `Internal` | Archived development history; do not cite as current public benchmark claims. |
+| `reports/benchmarks/*-diagnostics.*` | `Internal` | Local diagnostics are ignored unless promoted through [benchmarks.md](benchmarks.md). |
 | Competitor adapter disclosures | `Experimental` | Disclosure-only until run against the same harness and inputs. |
 
 ## Migration and Freeze Policy

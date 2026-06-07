@@ -114,7 +114,7 @@ External verification is optional post-release evidence for 1.0.0, not a hidden
 release blocker. Failed validations are welcome because they make the next
 release better.
 
-Related references: [../v1-roadmap.md](../v1-roadmap.md),
-[../v09-gate-audit.md](../v09-gate-audit.md),
+Related references: [../v1-roadmap.md](../archive/v1-roadmap.md),
+[../v09-gate-audit.md](../archive/v09-gate-audit.md),
 [../benchmarks.md](../benchmarks.md), [../getting-started.md](../getting-started.md),
 and [../../README.md](../../README.md).

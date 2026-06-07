@@ -40,7 +40,7 @@ The embedded Kuzu projection is the default graph backend because it preserves
 graph-native traversal, citations, temporal versioning, and replay without a
 separate graph service. Neo4j remains the quality and performance control
 backend, and pgGraph remains an experimental Postgres-native projection backend.
-See [zero-friction-runtime-roadmap.md](zero-friction-runtime-roadmap.md) for the
+See [zero-friction-runtime-roadmap.md](archive/zero-friction-runtime-roadmap.md) for the
 embedded runtime gates and backend lifecycle.
 
 Zaxy does not delegate schema control to a high-level graph-memory abstraction

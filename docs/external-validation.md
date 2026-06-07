@@ -207,11 +207,12 @@ for follow-up work, but it does not block the v1.0 release unless maintainers
 explicitly opt into `--require-external-validation`.
 
 After the report is attached, update the optional evidence reference in
-`docs/v10-gate-audit.md` only if the report proves the requirement. Then check
-the matching optional review item in `docs/release-validation-checklist.md`.
+`docs/archive/v10-gate-audit.md` only if the report proves the requirement.
+Then check the matching optional review item in
+`docs/archive/release-validation-checklist.md`.
 
 Related references: [first-run-validation.md](first-run-validation.md),
 [coordinate-quickstart.md](coordinate-quickstart.md),
-[v10-gate-audit.md](v10-gate-audit.md),
-[release-validation-checklist.md](release-validation-checklist.md),
+[v10-gate-audit.md](archive/v10-gate-audit.md),
+[release-validation-checklist.md](archive/release-validation-checklist.md),
 [testing.md](testing.md), and [README.md](../README.md).

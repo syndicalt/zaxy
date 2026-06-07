@@ -65,11 +65,11 @@ Reviewers should reject benchmark contributions when:
 - `query_results` are missing or replaced with placeholders;
 - citation coverage is not reported;
 - the report makes a public claim from a candidate backend marked experimental
-  in [api-inventory.md](api-inventory.md);
+  in [api-inventory.md](../api-inventory.md);
 - latency budgets are relaxed without explanation and changelog coverage;
 - the Markdown sidecar disagrees with the JSON report.
 
-Accepted benchmark changes should update [benchmarks.md](benchmarks.md),
-[testing.md](testing.md), the changelog, and [README.md](../README.md) when the
+Accepted benchmark changes should update [benchmarks.md](../benchmarks.md),
+[testing.md](../testing.md), the changelog, and [README.md](../../README.md) when the
 public benchmark story changes. Operational release steps live in
-[runbook.md](runbook.md).
+[runbook.md](../runbook.md).
