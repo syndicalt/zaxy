@@ -14,6 +14,12 @@ from zaxy.causal_benchmark import (
 from zaxy.consolidation import build_consolidation_candidate_event
 
 
+class GraphEntityLike:
+    def __init__(self, name: str, properties: dict[str, object]) -> None:
+        self.name = name
+        self.properties = properties
+
+
 def test_causal_case_rejects_unknown_query_type() -> None:
     with pytest.raises(ValueError, match="query_type"):
         CausalBenchmarkCase(
@@ -185,6 +191,50 @@ def test_causal_case_requires_eventloom_style_citation() -> None:
 
 
 @pytest.mark.parametrize(
+    "citation",
+    [
+        "eventloom://unknown/events/42#abcdefabcdef",
+        "eventloom://session-alpha/events/0#abcdefabcdef",
+        "eventloom://session-alpha/events/42#abcdeabcdea",
+        "eventloom://session-alpha/events/42#abcdefabcdef0",
+    ],
+)
+def test_causal_case_rejects_invalid_eventloom_citation_contract(citation: str) -> None:
+    with pytest.raises(ValueError, match="citation"):
+        CausalBenchmarkCase(
+            case_id="bad-citation-contract",
+            query="What caused the deployment rollback?",
+            query_type="predecessor",
+            source={"name": "config drift", "entity_type": "Task"},
+            target={"name": "deployment rollback", "entity_type": "Task"},
+            relation_type="caused",
+            citation=citation,
+        )
+
+
+@pytest.mark.parametrize(
+    "citation",
+    [
+        "eventloom://unknown/events/42#abcdefabcdef",
+        "eventloom://session-alpha/events/0#abcdefabcdef",
+        "eventloom://session-alpha/events/42#abcdeabcdea",
+        "eventloom://session-alpha/events/42#abcdefabcdef0",
+    ],
+)
+def test_consolidation_case_rejects_invalid_eventloom_citation_contract(
+    citation: str,
+) -> None:
+    with pytest.raises(ValueError, match="citation"):
+        ConsolidationBenchmarkCase(
+            case_id="bad-consolidation-citation-contract",
+            candidate_id="consolidation:claim:bbbbbbbbbbbbbbbbbbbbbbbb",
+            candidate_type="claim",
+            source_events=({"seq": 42, "hash": "d" * 64},),
+            citation=citation,
+        )
+
+
+@pytest.mark.parametrize(
     ("candidate_id", "candidate_type"),
     [
         ("projection:deploy-root-cause", "claim"),
@@ -202,7 +252,7 @@ def test_consolidation_case_rejects_invalid_or_mismatched_candidate_contract(
             candidate_id=candidate_id,
             candidate_type=candidate_type,
             source_events=({"seq": 42, "hash": "d" * 64},),
-            citation=f"eventloom://session-alpha/events/42#{'d' * 64}",
+            citation=f"eventloom://session-alpha/events/42#{'d' * 12}",
         )
 
 
@@ -215,7 +265,7 @@ def test_consolidation_candidate_scores_source_fidelity_and_non_authoritative_bo
             {"seq": 41, "hash": "a" * 64},
             {"seq": 42, "hash": "d" * 64},
         ),
-        citation=f"eventloom://session-alpha/events/42#{'d' * 64}",
+        citation=f"eventloom://session-alpha/events/42#{'d' * 12}",
         authority_status="non_authoritative",
     )
     candidate = {
@@ -241,6 +291,44 @@ def test_consolidation_candidate_scores_source_fidelity_and_non_authoritative_bo
     }
 
 
+def test_consolidation_candidate_scores_graph_entity_name_as_candidate_id() -> None:
+    candidate_id = "consolidation:claim:bbbbbbbbbbbbbbbbbbbbbbbb"
+    case = ConsolidationBenchmarkCase(
+        case_id="graph-entity-projection",
+        candidate_id=candidate_id,
+        candidate_type="claim",
+        source_events=(
+            {"seq": 41, "hash": "a" * 64},
+            {"seq": 42, "hash": "d" * 64},
+        ),
+        citation="eventloom://session-alpha/events/42#dddddddddddd",
+        authority_status="non_authoritative",
+    )
+    candidate = GraphEntityLike(
+        name=candidate_id,
+        properties={
+            "candidate_type": "claim",
+            "source_events": [
+                {"seq": 41, "hash": "a" * 64},
+                {"seq": 42, "hash": "d" * 64},
+            ],
+            "source_event_refs": [f"41:{'a' * 64}", f"42:{'d' * 64}"],
+            "authority_status": "non_authoritative",
+        },
+    )
+
+    row = evaluate_consolidation_candidate(case, candidate)
+
+    assert row == {
+        "case_id": "graph-entity-projection",
+        "candidate_match": True,
+        "source_event_fidelity": True,
+        "citation_coverage": True,
+        "authority_boundary": True,
+        "score": 1.0,
+    }
+
+
 def test_consolidation_candidate_penalizes_promoted_or_missing_source_refs() -> None:
     case = ConsolidationBenchmarkCase(
         case_id="projection-boundary",
@@ -250,7 +338,7 @@ def test_consolidation_candidate_penalizes_promoted_or_missing_source_refs() -> 
             {"seq": 41, "hash": "a" * 64},
             {"seq": 42, "hash": "d" * 64},
         ),
-        citation=f"eventloom://session-alpha/events/42#{'d' * 64}",
+        citation=f"eventloom://session-alpha/events/42#{'d' * 12}",
         authority_status="non_authoritative",
     )
     candidate = {
@@ -278,11 +366,11 @@ def test_consolidation_case_rejects_non_production_source_event_shape() -> None:
             candidate_type="claim",
             source_events=(
                 {
-                    "ref": f"eventloom://session-alpha/events/42#{'d' * 64}",
+                    "ref": f"eventloom://session-alpha/events/42#{'d' * 12}",
                     "hash": "d" * 64,
                 },
             ),
-            citation=f"eventloom://session-alpha/events/42#{'d' * 64}",
+            citation=f"eventloom://session-alpha/events/42#{'d' * 12}",
         )
 
 
@@ -307,7 +395,7 @@ def test_production_consolidation_candidate_payload_scores_contract_fields() -> 
         candidate_id=payload["candidate_id"],
         candidate_type=payload["candidate_type"],
         source_events=payload["source_events"],
-        citation=f"eventloom://session-alpha/events/42#{source_hashes[1]}",
+        citation=f"eventloom://session-alpha/events/42#{source_hashes[1][:12]}",
     )
 
     row = evaluate_consolidation_candidate(case, payload)

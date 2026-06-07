@@ -16,7 +16,7 @@ from zaxy.consolidation import (
 CAUSAL_QUERY_TYPES = frozenset({"successor", "predecessor"})
 NON_AUTHORITATIVE_STATUS = "non_authoritative"
 _EVENTLOOM_CITATION_RE = re.compile(
-    r"^eventloom://(?P<session>[^/\s]+)/events/(?P<seq>\d+)#(?P<hash>[a-f0-9]{6,})$"
+    r"^eventloom://(?P<session>[^/\s]+)/events/(?P<seq>\d+)#(?P<hash>[a-f0-9]{12})$"
 )
 _EVENT_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 _SOURCE_EVENT_REF_RE = re.compile(r"^(?P<seq>\d+):(?P<hash>[a-f0-9]{64})$")
@@ -117,7 +117,7 @@ def evaluate_consolidation_candidate(
 ) -> dict[str, Any]:
     """Score a consolidation projection candidate for citation fidelity."""
     candidate_match = (
-        _text_value(candidate, "candidate_id") == case.candidate_id
+        _candidate_id_value(candidate) == case.candidate_id
         and _text_value(candidate, "candidate_type") == case.candidate_type
     )
     source_event_fidelity = _source_event_set(candidate) == _source_event_set(case)
@@ -389,7 +389,21 @@ def _require_eventloom_citation(field: str, value: Any) -> None:
 
 
 def _is_eventloom_citation(value: str) -> bool:
-    return bool(_EVENTLOOM_CITATION_RE.match(value))
+    match = _EVENTLOOM_CITATION_RE.match(value)
+    if match is None:
+        return False
+    session = match.group("session")
+    if session == "unknown":
+        return False
+    return int(match.group("seq")) > 0
+
+
+def _candidate_id_value(candidate: Mapping[str, Any] | object) -> str | None:
+    for key in ("candidate_id", "name", "entity_name"):
+        value = _text_value(candidate, key)
+        if value is not None:
+            return value
+    return None
 
 
 def _text_value(value: Mapping[str, Any] | object, key: str) -> str | None:
