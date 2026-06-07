@@ -1134,32 +1134,26 @@ class GraphStore(ProjectionStore):
             "session_id": safe_session_id,
             "relation_type": relation_type,
         }
-        temporal_checks = (
-            "rel.valid_to IS NULL"
+        relationship_checks = (
+            "rel.session_id = $session_id"
+            " AND rel.valid_to IS NULL"
             " AND rel.relation_type STARTS WITH 'causal_'"
             " AND ($relation_type IS NULL OR rel.relation_type = $relation_type)"
         )
-        entity_checks = (
-            "start.session_id = $session_id"
-            " AND neighbor.session_id = $session_id"
-            " AND start.valid_to IS NULL"
-            " AND neighbor.valid_to IS NULL"
-        )
+        node_checks = "node.session_id = $session_id AND node.valid_to IS NULL"
         if temporal_point:
             params["t"] = temporal_point
-            temporal_checks = (
-                "rel.valid_from <= datetime($t)"
+            relationship_checks = (
+                "rel.session_id = $session_id"
+                " AND rel.valid_from <= datetime($t)"
                 " AND (rel.valid_to IS NULL OR rel.valid_to > datetime($t))"
                 " AND rel.relation_type STARTS WITH 'causal_'"
                 " AND ($relation_type IS NULL OR rel.relation_type = $relation_type)"
             )
-            entity_checks = (
-                "start.session_id = $session_id"
-                " AND neighbor.session_id = $session_id"
-                " AND start.valid_from <= datetime($t)"
-                " AND (start.valid_to IS NULL OR start.valid_to > datetime($t))"
-                " AND neighbor.valid_from <= datetime($t)"
-                " AND (neighbor.valid_to IS NULL OR neighbor.valid_to > datetime($t))"
+            node_checks = (
+                "node.session_id = $session_id"
+                " AND node.valid_from <= datetime($t)"
+                " AND (node.valid_to IS NULL OR node.valid_to > datetime($t))"
             )
 
         pattern = (
@@ -1169,9 +1163,9 @@ class GraphStore(ProjectionStore):
         )
         cypher = f"""
         MATCH path = {pattern}
-        WHERE {entity_checks}
-          AND neighbor <> start
-          AND ALL(rel IN relationships(path) WHERE {temporal_checks})
+        WHERE neighbor <> start
+          AND ALL(rel IN relationships(path) WHERE {relationship_checks})
+          AND ALL(node IN nodes(path) WHERE {node_checks})
         WITH path, start, neighbor, last(relationships(path)) AS terminal_rel
         RETURN neighbor,
                startNode(terminal_rel) AS causal_source,

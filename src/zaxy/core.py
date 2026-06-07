@@ -264,10 +264,13 @@ def _causal_query_result_from_entity(
     entity: Any,
     *,
     direction: Literal["successors", "predecessors"],
-) -> CausalQueryResult:
+) -> CausalQueryResult | None:
     properties = dict(entity.properties)
     graph_relation_type = str(properties.get("graph_relation_type") or properties.get("relation_type") or "")
     causal_relation_type = str(properties.get("causal_relation_type") or _causal_relation_from_graph_relation(graph_relation_type))
+    citation = _citation_from_properties(properties)
+    if not citation:
+        return None
     source = {
         "name": str(properties.get("causal_source_name") or (entity.name if direction == "successors" else "")),
         "entity_type": str(
@@ -281,19 +284,22 @@ def _causal_query_result_from_entity(
         ),
     }
     evidence = _causal_evidence_from_properties(properties)
-    return CausalQueryResult(
-        source=source,
-        target=target,
-        relation_type=causal_relation_type,
-        graph_relation_type=graph_relation_type,
-        confidence=_causal_float(properties.get("confidence"), default=1.0),
-        method=str(properties.get("method") or properties.get("inference_method") or "unknown"),
-        citation=str(properties.get("citation") or _citation_from_properties(properties)),
-        review_status=str(properties.get("review_status") or "proposed"),
-        authority_status=str(properties.get("authority_status") or "non_authoritative"),
-        evidence=evidence,
-        path_length=_optional_positive_int(properties.get("_path_length")),
-    )
+    try:
+        return CausalQueryResult(
+            source=source,
+            target=target,
+            relation_type=causal_relation_type,
+            graph_relation_type=graph_relation_type,
+            confidence=_causal_float(properties.get("confidence"), default=1.0),
+            method=str(properties.get("method") or properties.get("inference_method") or "unknown"),
+            citation=citation,
+            review_status=str(properties.get("review_status") or "proposed"),
+            authority_status=str(properties.get("authority_status") or "non_authoritative"),
+            evidence=evidence,
+            path_length=_optional_positive_int(properties.get("_path_length")),
+        )
+    except (TypeError, ValueError):
+        return None
 
 
 def _causal_relation_from_graph_relation(graph_relation_type: str) -> str:
@@ -302,13 +308,16 @@ def _causal_relation_from_graph_relation(graph_relation_type: str) -> str:
     return graph_relation_type
 
 
-def _citation_from_properties(properties: dict[str, Any]) -> str:
+def _citation_from_properties(properties: dict[str, Any]) -> str | None:
+    explicit = properties.get("citation")
+    if isinstance(explicit, str) and explicit.strip() and not explicit.startswith("eventloom://unknown/"):
+        return explicit
     event_seq = properties.get("source_event_seq")
     event_hash = properties.get("source_event_hash")
     session_id = str(properties.get("session_id") or "default")
     if event_seq is not None and event_hash:
         return f"eventloom://{session_id}/events/{event_seq}#{str(event_hash)[:12]}"
-    return "eventloom://unknown/events/unknown#unknown"
+    return None
 
 
 def _causal_evidence_from_properties(properties: dict[str, Any]) -> dict[str, Any]:
@@ -508,7 +517,12 @@ class MemoryFabric:
             temporal_point=temporal_point,
             session_id=session_id,
         )
-        return [_causal_query_result_from_entity(entity, direction=direction) for entity in neighbors]
+        results: list[CausalQueryResult] = []
+        for entity in neighbors:
+            result = _causal_query_result_from_entity(entity, direction=direction)
+            if result is not None:
+                results.append(result)
+        return results
 
     async def _warm_projection_session(self, session_id: str) -> None:
         """Warm optional backend read indexes once per session."""

@@ -647,7 +647,8 @@ class LatticeDBStore:
         graph_relation_type = str(self._edge_property(edge_id, "relation_type") or "")
         source_event_seq = self._edge_property(edge_id, "source_event_seq")
         source_event_hash = str(self._edge_property(edge_id, "source_event_hash") or "")
-        confidence = self._edge_property(edge_id, "confidence")
+        confidence = _optional_float(self._edge_property(edge_id, "confidence"))
+        source_event_seq_value = _optional_int(source_event_seq)
         return {
             "causal_source_name": source.name,
             "causal_source_type": source.entity_type,
@@ -656,12 +657,12 @@ class LatticeDBStore:
             "relation_type": graph_relation_type,
             "graph_relation_type": graph_relation_type,
             "causal_relation_type": evidence.get("causal_relation_type") or graph_relation_type.removeprefix("causal_"),
-            "confidence": float(confidence) if confidence is not None and float(confidence) >= 0.0 else 1.0,
+            "confidence": confidence if confidence is not None and confidence >= 0.0 else 1.0,
             "inference_method": str(self._edge_property(edge_id, "inference_method") or "unknown"),
             "citation": _edge_citation(session_id, source_event_seq, source_event_hash),
             "review_status": evidence.get("review_status") or "proposed",
             "authority_status": evidence.get("authority_status") or "non_authoritative",
-            "source_event_seq": int(source_event_seq) if source_event_seq is not None else None,
+            "source_event_seq": source_event_seq_value,
             "source_event_hash": source_event_hash or None,
             "evidence": evidence,
             "session_id": session_id,
@@ -707,7 +708,10 @@ def _label(value: str) -> str:
 def _json_dict(raw: Any) -> dict[str, Any]:
     if not raw:
         return {}
-    parsed = json.loads(str(raw))
+    try:
+        parsed = json.loads(str(raw))
+    except (TypeError, json.JSONDecodeError):
+        return {}
     return parsed if isinstance(parsed, dict) else {}
 
 
@@ -757,7 +761,21 @@ def _vector(values: list[float]) -> Any:
 
 
 def _optional_int(value: Any) -> int | None:
-    return int(value) if value is not None and value != "" else None
+    if value is None or value == "" or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None or value == "" or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _properties_reference_source(properties: dict[str, Any], source_path: str) -> bool:

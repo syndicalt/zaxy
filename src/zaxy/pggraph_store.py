@@ -1156,7 +1156,10 @@ def _properties_from_row(row: dict[str, Any]) -> dict[str, Any]:
     if isinstance(value, dict):
         return dict(value)
     if isinstance(value, str):
-        decoded = json.loads(value)
+        try:
+            decoded = json.loads(value)
+        except (TypeError, json.JSONDecodeError):
+            return {}
         if isinstance(decoded, dict):
             return decoded
     return {}
@@ -1214,7 +1217,10 @@ def _optional_int_value(value: object) -> int | None:
     if isinstance(value, int):
         return value
     if isinstance(value, float | Decimal | str):
-        return int(value)
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
     raise TypeError(f"expected int-compatible value, got {type(value).__name__}")
 
 
@@ -1231,7 +1237,10 @@ def _optional_float_value(value: object) -> float | None:
         return float(value)
     if isinstance(value, int | float | Decimal):
         return float(value)
-    return float(str(value))
+    try:
+        return float(str(value))
+    except (TypeError, ValueError):
+        return None
 
 
 def _extraction_observed_at(result: ExtractionResult) -> str | None:

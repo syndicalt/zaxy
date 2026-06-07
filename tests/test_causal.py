@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib.util
+
 import pytest
 
 from zaxy.causal import (
@@ -10,12 +12,25 @@ from zaxy.causal import (
     causal_relation_to_graph_relation,
 )
 from zaxy.core import MemoryFabric
+from zaxy.embedded_graph_store import (
+    EmbeddedGraphStore,
+    _causal_edge_metadata_from_row,
+)
+from zaxy.extract import ExtractedEdge, ExtractedEntity, ExtractionResult
 from zaxy.graph import GraphEntity
+from zaxy.latticedb_store import _json_dict as _latticedb_json_dict
+from zaxy.pggraph_store import (
+    _causal_edge_metadata as _pggraph_causal_edge_metadata,
+)
+from zaxy.pggraph_store import (
+    _properties_from_row as _pggraph_properties_from_row,
+)
 
 
 class _DirectionalCausalStore:
-    def __init__(self) -> None:
+    def __init__(self, entities: list[GraphEntity] | None = None) -> None:
         self.calls: list[dict[str, object]] = []
+        self.entities = entities
 
     async def search_causal_neighbors(
         self,
@@ -37,6 +52,8 @@ class _DirectionalCausalStore:
                 "session_id": session_id,
             }
         )
+        if self.entities is not None:
+            return self.entities
         if direction == "successors":
             return [
                 _causal_entity(
@@ -121,6 +138,28 @@ def test_causal_relation_taxonomy_is_stable() -> None:
     assert expected_relation_types == CAUSAL_RELATION_TYPES
     assert causal_relation_to_graph_relation("caused") == "causal_caused"
     assert causal_relation_to_graph_relation("fixed") == "causal_fixed"
+
+
+@pytest.mark.asyncio
+async def test_memory_fabric_causal_queries_drop_malformed_backend_rows() -> None:
+    malformed = GraphEntity(
+        name="effect",
+        entity_type="outcome",
+        valid_from="2026-06-07T00:00:00Z",
+        valid_to=None,
+        properties={
+            "relation_type": "causal_caused",
+            "causal_relation_type": "caused",
+            "confidence": 0.8,
+            "inference_method": "explicit_outcome_citation_v1",
+            "review_status": "proposed",
+            "authority_status": "non_authoritative",
+        },
+        session_id="agent-1",
+    )
+    fabric = _fabric_with_graph(_DirectionalCausalStore([malformed]))
+
+    assert await fabric.query_causal_successors("cause", session_id="agent-1") == []
 
 
 @pytest.mark.asyncio
@@ -445,6 +484,119 @@ def test_causal_query_result_to_dict_preserves_authority_boundary() -> None:
     assert result.to_dict()["citation"] == "eventloom://agent-1/events/42#aaaaaaaaaaaa"
     assert result.to_dict()["method"] == "explicit_outcome_citation_v1"
     assert "causal_method" not in result.to_dict()
+
+
+def test_embedded_causal_metadata_returns_none_for_malformed_backend_fields() -> None:
+    source = GraphEntity("cause", "event", "2026-06-07T00:00:00Z", None, {}, session_id="agent-1")
+    target = GraphEntity("effect", "outcome", "2026-06-07T00:00:00Z", None, {}, session_id="agent-1")
+    row = [
+        "source-key",
+        "cause",
+        "event",
+        "2026-06-07T00:00:00Z",
+        None,
+        None,
+        "{}",
+        "agent-1",
+        1,
+        "a" * 64,
+        "causal_caused",
+        "target-key",
+        "effect",
+        "outcome",
+        "2026-06-07T00:00:00Z",
+        None,
+        None,
+        "{}",
+        "agent-1",
+        2,
+        "b" * 64,
+        "not-a-float",
+        "explicit_outcome_citation_v1",
+        "not-an-int",
+        "not-a-hash",
+        "{broken-json",
+    ]
+
+    assert _causal_edge_metadata_from_row(row, source_entity=source, target_entity=target) is None
+
+
+def test_backend_json_helpers_omit_malformed_json_without_crashing() -> None:
+    assert _latticedb_json_dict("{broken-json") == {}
+    assert _pggraph_properties_from_row({"properties": "{broken-json"}) == {}
+
+
+def test_pggraph_causal_metadata_defaults_bad_numeric_fields_without_crashing() -> None:
+    source = GraphEntity("cause", "event", "2026-06-07T00:00:00Z", None, {}, session_id="agent-1")
+    target = GraphEntity("effect", "outcome", "2026-06-07T00:00:00Z", None, {}, session_id="agent-1")
+
+    metadata = _pggraph_causal_edge_metadata(
+        {
+            "relation_type": "causal_caused",
+            "confidence": "not-a-float",
+            "inference_method": "explicit_outcome_citation_v1",
+            "edge_source_event_seq": "not-an-int",
+            "edge_source_event_hash": "a" * 64,
+            "edge_properties": "{broken-json",
+        },
+        source=source,
+        target=target,
+        session_id="agent-1",
+    )
+
+    assert metadata["confidence"] == 1.0
+    assert metadata["source_event_seq"] is None
+    assert metadata["evidence"] == {}
+
+
+@pytest.mark.skipif(importlib.util.find_spec("kuzu") is None, reason="kuzu is not installed")
+@pytest.mark.asyncio
+async def test_embedded_store_search_causal_neighbors_preserves_direction(tmp_path) -> None:
+    store = EmbeddedGraphStore(tmp_path / "embedded.kuzu")
+    await store.connect()
+    try:
+        await store.init_schema()
+        await store.upsert_extraction(
+            ExtractionResult(
+                entities=[
+                    ExtractedEntity(name="cause", entity_type="event", observed_at="2026-06-07T00:00:00Z"),
+                    ExtractedEntity(name="effect", entity_type="outcome", observed_at="2026-06-07T00:00:00Z"),
+                ],
+                edges=[
+                    ExtractedEdge(
+                        source="cause",
+                        target="effect",
+                        relation_type="causal_caused",
+                        valid_from="2026-06-07T00:00:00Z",
+                        inferred=True,
+                        confidence=0.91,
+                        inference_method="explicit_outcome_citation_v1",
+                        evidence={
+                            "source_event_seq": 1,
+                            "source_event_hash": "a" * 64,
+                            "causal_relation_type": "caused",
+                            "review_status": "proposed",
+                            "authority_status": "non_authoritative",
+                        },
+                    )
+                ],
+                source_event_seq=1,
+                source_event_hash="a" * 64,
+                source_event_type="causal.edge.generated",
+                source_thread="agent-1",
+            ),
+            session_id="agent-1",
+        )
+
+        successors = await store.search_causal_neighbors("cause", direction="successors", session_id="agent-1")
+        predecessors = await store.search_causal_neighbors("effect", direction="predecessors", session_id="agent-1")
+        wrong_direction = await store.search_causal_neighbors("effect", direction="successors", session_id="agent-1")
+
+        assert [entity.name for entity in successors] == ["effect"]
+        assert [entity.name for entity in predecessors] == ["cause"]
+        assert wrong_direction == []
+    finally:
+        await store.close()
 
 
 @pytest.mark.parametrize("citation", ["", "   "])

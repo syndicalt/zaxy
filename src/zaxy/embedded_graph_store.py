@@ -631,6 +631,8 @@ class EmbeddedGraphStore:
             source_entity = _row_to_entity(list(row[1:10]))
             target_entity = _row_to_entity(list(row[12:21]))
             edge_metadata = _causal_edge_metadata_from_row(row, source_entity=source_entity, target_entity=target_entity)
+            if edge_metadata is None:
+                continue
             if relation_type is not None and edge_metadata["relation_type"] != relation_type:
                 continue
             keys_by_name.setdefault(source_entity.name, set()).add(source_key)
@@ -1515,11 +1517,15 @@ def _causal_edge_metadata_from_row(
     *,
     source_entity: GraphEntity,
     target_entity: GraphEntity,
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
     evidence = _json_dict(row[25])
     source_event_seq = row[23]
     source_event_hash = str(row[24] or "")
     relation_type = str(row[10])
+    confidence = _optional_float(row[21])
+    cited_seq = _optional_int(row[23])
+    if confidence is None or cited_seq is None or not source_event_hash or not evidence:
+        return None
     citation = _edge_citation(source_entity.session_id, source_event_seq, source_event_hash)
     return {
         "causal_source_name": source_entity.name,
@@ -1529,12 +1535,12 @@ def _causal_edge_metadata_from_row(
         "relation_type": relation_type,
         "graph_relation_type": relation_type,
         "causal_relation_type": evidence.get("causal_relation_type") or relation_type.removeprefix("causal_"),
-        "confidence": float(row[21]) if row[21] is not None else 1.0,
+        "confidence": confidence,
         "inference_method": str(row[22] or "unknown"),
         "citation": citation,
         "review_status": evidence.get("review_status") or "proposed",
         "authority_status": evidence.get("authority_status") or "non_authoritative",
-        "source_event_seq": int(source_event_seq) if source_event_seq is not None else None,
+        "source_event_seq": cited_seq,
         "source_event_hash": source_event_hash or None,
         "evidence": evidence,
         "session_id": source_entity.session_id,
@@ -1570,6 +1576,24 @@ def _edge_citation(session_id: str, source_event_seq: Any, source_event_hash: st
     if source_event_seq is not None and source_event_hash:
         return f"eventloom://{session_id}/events/{source_event_seq}#{source_event_hash[:12]}"
     return "eventloom://unknown/events/unknown#unknown"
+
+
+def _optional_float(value: Any) -> float | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _optional_int(value: Any) -> int | None:
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _entity_keyword_text(entity: GraphEntity) -> str:
@@ -1754,7 +1778,10 @@ def _sparse_vector(vector: list[float]) -> dict[int, float]:
 def _json_dict(raw: Any) -> dict[str, Any]:
     if not raw:
         return {}
-    parsed = json.loads(str(raw))
+    try:
+        parsed = json.loads(str(raw))
+    except (TypeError, json.JSONDecodeError):
+        return {}
     return parsed if isinstance(parsed, dict) else {}
 
 

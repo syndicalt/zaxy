@@ -909,6 +909,9 @@ class TestRetrieval:
         call = store._driver.execute_query.await_args
         assert "(start:Entity {name: $entity_name})-[r:RELATES*1..2]->(neighbor:Entity)" in call.args[0]
         assert "rel.relation_type STARTS WITH 'causal_'" in call.args[0]
+        assert "rel.session_id = $session_id" in call.args[0]
+        assert "ALL(node IN nodes(path) WHERE node.session_id = $session_id" in call.args[0]
+        assert "node.valid_to IS NULL" in call.args[0]
         assert call.kwargs["relation_type"] == "causal_caused"
         assert results[0].name == "effect"
         assert results[0].properties["causal_source_name"] == "cause"
@@ -929,6 +932,28 @@ class TestRetrieval:
         call = store._driver.execute_query.await_args
         assert "(neighbor:Entity)-[r:RELATES*1..2]->(start:Entity {name: $entity_name})" in call.args[0]
         assert ")-[r:RELATES*1..2]-(neighbor:Entity)" not in call.args[0]
+        assert "ALL(rel IN relationships(path) WHERE rel.session_id = $session_id" in call.args[0]
+        assert "ALL(node IN nodes(path) WHERE node.session_id = $session_id" in call.args[0]
+
+    async def test_search_causal_neighbors_temporal_filter_checks_all_path_nodes_and_edges(
+        self,
+        store: GraphStore,
+    ) -> None:
+        """Temporal causal reads should apply as-of visibility to the whole path."""
+        store._driver.execute_query.return_value = ([], None, None)
+
+        await store.search_causal_neighbors(
+            "effect",
+            direction="predecessors",
+            temporal_point="2026-06-07T00:00:00Z",
+            session_id="agent-1",
+        )
+
+        call = store._driver.execute_query.await_args
+        assert "ALL(rel IN relationships(path) WHERE rel.session_id = $session_id" in call.args[0]
+        assert "rel.valid_from <= datetime($t)" in call.args[0]
+        assert "ALL(node IN nodes(path) WHERE node.session_id = $session_id" in call.args[0]
+        assert "node.valid_from <= datetime($t)" in call.args[0]
 
     async def test_search_keyword(self, store: GraphStore) -> None:
         """Keyword search should use the full-text index."""
