@@ -1,0 +1,1005 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Zaxy 2.0 Alpha.2 Review-Gated Consolidation Implementation Plan - Zaxy Docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=Inter:wght@400;550;650;750;850&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../../../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../../../index.html">Overview</a>
+      <a href="../../../docs/coordinate-roadmap.html">Coordinate</a>
+      <a href="../../../docs/why-zaxy.html">Why Zaxy</a>
+      <a href="../../../docs/benchmarks.html">Benchmarks</a>
+      <a href="../../getting-started.html">Start</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="zaxy-20-alpha2-review-gated-consolidation-implementation-plan">Zaxy 2.0 Alpha.2 Review-Gated Consolidation Implementation Plan</h1>
+      <blockquote><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</blockquote>
+      <p><strong>Goal:</strong> Turn the alpha.1 consolidation scaffold into a usable review-gated consolidation MVP that proposes cited episodes, claims, and procedures from Eventloom history without silently promoting generated abstractions to authoritative memory.</p>
+      <p><strong>Architecture:</strong> Eventloom remains the source of truth. Alpha.2 adds deterministic segment selection and candidate-generation services that append <code>consolidation.candidate.created</code> events through the existing alpha.1 contract, then projects and surfaces review state through the graph, MCP, CLI, checkout diagnostics, and internal guardrails. Generated candidates remain <code>authority_status=non_authoritative</code>; accepted reviews are dispositions, not promotion.</p>
+      <p><strong>Tech Stack:</strong> Python 3.11+, Eventloom JSONL, existing <code>MemoryFabric</code>, <code>SessionManager</code>, graph projection backends, Typer CLI, MCP Python SDK, pytest, ruff.</p>
+      <p>---</p>
+      <h2 id="scope-boundary">Scope Boundary</h2>
+      <p>Included:</p>
+      <ul>
+        <li>Deterministic event segment selection from replayed Eventloom sessions.</li>
+        <li>Reviewable episode candidates built from related event windows.</li>
+        <li>Reviewable claim candidates built from cited source-event clusters.</li>
+        <li>Reviewable procedure candidates built from successful or failed workflow traces.</li>
+        <li>Candidate supersession, conflict, rejection, and stale diagnostics.</li>
+        <li>CLI and MCP proposal/status surfaces.</li>
+        <li>Checkout diagnostics for generated candidates without authority promotion.</li>
+        <li>Internal alpha.2 guardrail tests for source-event fidelity and authority gating.</li>
+      </ul>
+      <p>Excluded:</p>
+      <ul>
+        <li>Autonomous authority promotion.</li>
+        <li>Learned consolidation policies.</li>
+        <li>Cross-project global procedure sharing.</li>
+        <li>LongMemEval-specific synthesis changes.</li>
+        <li>Code tailored to individual benchmark cases.</li>
+      </ul>
+      <h2 id="file-structure">File Structure</h2>
+      <p>Create:</p>
+      <ul>
+        <li><code>src/zaxy/consolidation_pipeline.py</code>   Owns segment selection, deterministic candidate proposal, stale/conflict diagnostics, and append specs that reuse <code>zaxy.consolidation</code>.</li>
+      </ul>
+      <ul>
+        <li><code>tests/test_consolidation_pipeline.py</code>   Unit tests for segment selection, candidate generation, conflict/stale detection, and no-authority-promotion invariants.</li>
+      </ul>
+      <ul>
+        <li><code>src/zaxy/consolidation_benchmark.py</code>   Internal alpha.2 guardrail lane for consolidation proposal fidelity, review gating, stale rejection, and source-event coverage.</li>
+      </ul>
+      <ul>
+        <li><code>tests/test_consolidation_benchmark.py</code>   Tests for the alpha.2 guardrail scorer.</li>
+      </ul>
+      <p>Modify:</p>
+      <ul>
+        <li><code>src/zaxy/core.py</code>   Add <code>MemoryFabric.propose_consolidation_candidates(...)</code> and <code>MemoryFabric.consolidation_status(...)</code>.</li>
+      </ul>
+      <ul>
+        <li><code>src/zaxy/__main__.py</code>   Add CLI commands under <code>zaxy memory consolidation propose-from-log</code> and <code>zaxy memory consolidation status</code>.</li>
+      </ul>
+      <ul>
+        <li><code>src/zaxy/mcp_server.py</code>   Add MCP tools for consolidation proposal generation and status.</li>
+      </ul>
+      <ul>
+        <li><code>src/zaxy/checkout.py</code>   Extend consolidation diagnostics with generated/stale/conflict/supersession fields while preserving alpha.1 trust guidance.</li>
+      </ul>
+      <ul>
+        <li><code>docs/graph-schema.md</code>, <code>docs/mcp.md</code>, <code>docs/benchmarks.md</code>   Document the alpha.2 pipeline, new tools, and internal guardrail boundary.</li>
+      </ul>
+      <p>---</p>
+      <h3 id="task-1-add-consolidation-pipeline-contracts">Task 1: Add Consolidation Pipeline Contracts</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Create: <code>src/zaxy/consolidation_pipeline.py</code></li>
+        <li>Test: <code>tests/test_consolidation_pipeline.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Write failing contract tests</strong></li>
+      </ul>
+      <p>Add <code>tests/test_consolidation_pipeline.py</code>:</p>
+      <pre><code class="language-python">from __future__ import annotations
+
+import pytest
+
+from zaxy.consolidation_pipeline import (
+    ConsolidationSegment,
+    ProposedConsolidation,
+    build_segment_id,
+)
+
+
+def test_segment_requires_cited_source_events() -&gt; None:
+    segment = ConsolidationSegment(
+        session_id=&quot;agent-1&quot;,
+        segment_id=&quot;segment:agent-1:000001-000003&quot;,
+        event_type_counts={&quot;tool.call.completed&quot;: 2, &quot;file.edit.applied&quot;: 1},
+        source_events=[
+            {&quot;seq&quot;: 1, &quot;hash&quot;: &quot;a&quot; * 64, &quot;event_type&quot;: &quot;tool.call.completed&quot;, &quot;summary&quot;: &quot;pytest failed&quot;},
+            {&quot;seq&quot;: 2, &quot;hash&quot;: &quot;b&quot; * 64, &quot;event_type&quot;: &quot;file.edit.applied&quot;, &quot;summary&quot;: &quot;patched checkout&quot;},
+            {&quot;seq&quot;: 3, &quot;hash&quot;: &quot;c&quot; * 64, &quot;event_type&quot;: &quot;tool.call.completed&quot;, &quot;summary&quot;: &quot;pytest passed&quot;},
+        ],
+    )
+
+    assert segment.source_event_refs == [
+        &quot;1:&quot; + &quot;a&quot; * 64,
+        &quot;2:&quot; + &quot;b&quot; * 64,
+        &quot;3:&quot; + &quot;c&quot; * 64,
+    ]
+    assert segment.source_event_count == 3
+
+
+def test_segment_rejects_missing_source_citations() -&gt; None:
+    with pytest.raises(ValueError, match=&quot;hash&quot;):
+        ConsolidationSegment(
+            session_id=&quot;agent-1&quot;,
+            segment_id=&quot;segment:agent-1:000001-000001&quot;,
+            event_type_counts={&quot;tool.call.completed&quot;: 1},
+            source_events=[{&quot;seq&quot;: 1, &quot;hash&quot;: &quot;short&quot;, &quot;event_type&quot;: &quot;tool.call.completed&quot;}],
+        )
+
+
+def test_proposed_consolidation_preserves_non_authoritative_boundary() -&gt; None:
+    segment = ConsolidationSegment(
+        session_id=&quot;agent-1&quot;,
+        segment_id=&quot;segment:agent-1:000001-000002&quot;,
+        event_type_counts={&quot;tool.call.completed&quot;: 2},
+        source_events=[
+            {&quot;seq&quot;: 1, &quot;hash&quot;: &quot;a&quot; * 64, &quot;event_type&quot;: &quot;tool.call.completed&quot;, &quot;summary&quot;: &quot;run failed&quot;},
+            {&quot;seq&quot;: 2, &quot;hash&quot;: &quot;b&quot; * 64, &quot;event_type&quot;: &quot;tool.call.completed&quot;, &quot;summary&quot;: &quot;run passed&quot;},
+        ],
+    )
+    proposal = ProposedConsolidation(
+        segment=segment,
+        candidate_type=&quot;episode&quot;,
+        title=&quot;Test run recovery&quot;,
+        summary=&quot;The agent observed a failed run and then a passing run.&quot;,
+        confidence=0.72,
+        method=&quot;deterministic_segment_summary_v1&quot;,
+        purpose=&quot;coding&quot;,
+    )
+
+    event = proposal.to_candidate_event(actor=&quot;zaxy-consolidation&quot;)
+
+    assert event[&quot;event_type&quot;] == &quot;consolidation.candidate.created&quot;
+    assert event[&quot;thread&quot;] == &quot;agent-1&quot;
+    assert event[&quot;payload&quot;][&quot;candidate_type&quot;] == &quot;episode&quot;
+    assert event[&quot;payload&quot;][&quot;authority_status&quot;] == &quot;non_authoritative&quot;
+    assert event[&quot;payload&quot;][&quot;review_status&quot;] == &quot;pending&quot;
+    assert event[&quot;payload&quot;][&quot;source_events&quot;] == [
+        {&quot;seq&quot;: 1, &quot;hash&quot;: &quot;a&quot; * 64},
+        {&quot;seq&quot;: 2, &quot;hash&quot;: &quot;b&quot; * 64},
+    ]
+
+
+def test_build_segment_id_is_stable_and_session_scoped() -&gt; None:
+    assert build_segment_id(&quot;agent-1&quot;, [3, 4, 9]) == &quot;segment:agent-1:000003-000009&quot;</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run tests to verify failure</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_consolidation_pipeline.py --no-cov -q</code></pre>
+      <p>Expected: fail with <code>ModuleNotFoundError: No module named &#x27;zaxy.consolidation_pipeline&#x27;</code>.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement contracts</strong></li>
+      </ul>
+      <p>Create <code>src/zaxy/consolidation_pipeline.py</code> with:</p>
+      <pre><code class="language-python">from __future__ import annotations
+
+from collections import Counter
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any
+
+from zaxy.consolidation import build_consolidation_candidate_event
+from zaxy.security import validate_session_id
+
+_EVENT_HASH_LEN = 64
+
+
+@dataclass(frozen=True)
+class ConsolidationSegment:
+    session_id: str
+    segment_id: str
+    event_type_counts: Mapping[str, int]
+    source_events: Sequence[Mapping[str, Any]]
+
+    def __post_init__(self) -&gt; None:
+        validate_session_id(self.session_id)
+        if not isinstance(self.segment_id, str) or not self.segment_id.startswith(f&quot;segment:{self.session_id}:&quot;):
+            raise ValueError(&quot;segment_id must be session-scoped&quot;)
+        if not self.source_events:
+            raise ValueError(&quot;source_events must be non-empty&quot;)
+        for index, event in enumerate(self.source_events):
+            _validate_source_event(event, index=index)
+        for event_type, count in self.event_type_counts.items():
+            if not isinstance(event_type, str) or not event_type:
+                raise ValueError(&quot;event_type_counts keys must be non-empty strings&quot;)
+            if not isinstance(count, int) or isinstance(count, bool) or count &lt; 0:
+                raise ValueError(&quot;event_type_counts values must be non-negative integers&quot;)
+
+    @property
+    def source_event_refs(self) -&gt; list[str]:
+        return [f&quot;{event[&#x27;seq&#x27;]}:{event[&#x27;hash&#x27;]}&quot; for event in self.source_events]
+
+    @property
+    def source_event_count(self) -&gt; int:
+        return len(self.source_events)
+
+    def candidate_source_events(self) -&gt; list[dict[str, Any]]:
+        return [{&quot;seq&quot;: int(event[&quot;seq&quot;]), &quot;hash&quot;: str(event[&quot;hash&quot;])} for event in self.source_events]
+
+
+@dataclass(frozen=True)
+class ProposedConsolidation:
+    segment: ConsolidationSegment
+    candidate_type: str
+    title: str
+    summary: str
+    confidence: float
+    method: str
+    purpose: str | None = None
+
+    def to_candidate_event(self, *, actor: str) -&gt; dict[str, Any]:
+        return build_consolidation_candidate_event(
+            actor=actor,
+            session_id=self.segment.session_id,
+            candidate_type=self.candidate_type,
+            title=self.title,
+            summary=self.summary,
+            source_events=self.segment.candidate_source_events(),
+            confidence=self.confidence,
+            method=self.method,
+            purpose=self.purpose,
+        )
+
+
+def build_segment_id(session_id: str, event_seqs: Sequence[int]) -&gt; str:
+    sid = validate_session_id(session_id)
+    if not event_seqs:
+        raise ValueError(&quot;event_seqs must be non-empty&quot;)
+    seqs = sorted(_validate_seq(seq) for seq in event_seqs)
+    return f&quot;segment:{sid}:{seqs[0]:06d}-{seqs[-1]:06d}&quot;
+
+
+def event_type_counts(source_events: Sequence[Mapping[str, Any]]) -&gt; dict[str, int]:
+    counts: Counter[str] = Counter()
+    for index, event in enumerate(source_events):
+        _validate_source_event(event, index=index)
+        event_type = event.get(&quot;event_type&quot;)
+        if isinstance(event_type, str) and event_type:
+            counts[event_type] += 1
+    return dict(sorted(counts.items()))
+
+
+def _validate_seq(value: object) -&gt; int:
+    if not isinstance(value, int) or isinstance(value, bool) or value &lt;= 0:
+        raise ValueError(&quot;event seq must be a positive integer&quot;)
+    return value
+
+
+def _validate_source_event(event: Mapping[str, Any], *, index: int) -&gt; None:
+    if not isinstance(event, Mapping):
+        raise ValueError(f&quot;source_events[{index}] must be a mapping&quot;)
+    _validate_seq(event.get(&quot;seq&quot;))
+    event_hash = event.get(&quot;hash&quot;)
+    if not isinstance(event_hash, str) or len(event_hash) != _EVENT_HASH_LEN:
+        raise ValueError(f&quot;source_events[{index}].hash must be 64 lowercase hex&quot;)
+    if any(char not in &quot;0123456789abcdef&quot; for char in event_hash):
+        raise ValueError(f&quot;source_events[{index}].hash must be 64 lowercase hex&quot;)</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 4: Run tests</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_consolidation_pipeline.py --no-cov -q</code></pre>
+      <p>Expected: all tests pass.</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Commit</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">git add src/zaxy/consolidation_pipeline.py tests/test_consolidation_pipeline.py
+git commit -m &quot;feat: add consolidation pipeline contracts&quot;</code></pre>
+      <p>---</p>
+      <h3 id="task-2-select-deterministic-event-segments">Task 2: Select Deterministic Event Segments</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>src/zaxy/consolidation_pipeline.py</code></li>
+        <li>Test: <code>tests/test_consolidation_pipeline.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Add failing segment-selection tests</strong></li>
+      </ul>
+      <p>Append:</p>
+      <pre><code class="language-python">from datetime import UTC, datetime
+
+
+class EventLike:
+    def __init__(self, seq: int, event_hash: str, event_type: str, payload: dict[str, object]) -&gt; None:
+        self.seq = seq
+        self.hash = event_hash
+        self.event_type = event_type
+        self.payload = payload
+        self.timestamp = datetime(2026, 6, 7, 12, seq, tzinfo=UTC)
+
+
+def test_select_consolidation_segments_groups_adjacent_relevant_events() -&gt; None:
+    from zaxy.consolidation_pipeline import select_consolidation_segments
+
+    events = [
+        EventLike(1, &quot;a&quot; * 64, &quot;tool.call.completed&quot;, {&quot;tool_name&quot;: &quot;pytest&quot;, &quot;status&quot;: &quot;failed&quot;}),
+        EventLike(2, &quot;b&quot; * 64, &quot;file.edit.applied&quot;, {&quot;path&quot;: &quot;src/zaxy/checkout.py&quot;}),
+        EventLike(3, &quot;c&quot; * 64, &quot;tool.call.completed&quot;, {&quot;tool_name&quot;: &quot;pytest&quot;, &quot;status&quot;: &quot;succeeded&quot;}),
+        EventLike(4, &quot;d&quot; * 64, &quot;memory.checkout.completed&quot;, {&quot;query&quot;: &quot;unrelated&quot;}),
+    ]
+
+    segments = select_consolidation_segments(events, session_id=&quot;agent-1&quot;, window_size=3)
+
+    assert len(segments) == 1
+    assert segments[0].segment_id == &quot;segment:agent-1:000001-000003&quot;
+    assert segments[0].event_type_counts == {
+        &quot;file.edit.applied&quot;: 1,
+        &quot;tool.call.completed&quot;: 2,
+    }
+    assert [event[&quot;seq&quot;] for event in segments[0].source_events] == [1, 2, 3]
+
+
+def test_select_consolidation_segments_ignores_non_actionable_noise() -&gt; None:
+    from zaxy.consolidation_pipeline import select_consolidation_segments
+
+    events = [
+        EventLike(1, &quot;a&quot; * 64, &quot;memory.checkout.completed&quot;, {&quot;query&quot;: &quot;status&quot;}),
+        EventLike(2, &quot;b&quot; * 64, &quot;tool.call.completed&quot;, {&quot;tool_name&quot;: &quot;pytest&quot;, &quot;status&quot;: &quot;failed&quot;}),
+    ]
+
+    segments = select_consolidation_segments(events, session_id=&quot;agent-1&quot;, window_size=2)
+
+    assert len(segments) == 1
+    assert [event[&quot;seq&quot;] for event in segments[0].source_events] == [2]</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run tests to verify failure</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_consolidation_pipeline.py -k select --no-cov -q</code></pre>
+      <p>Expected: fail because <code>select_consolidation_segments</code> is missing.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement deterministic selector</strong></li>
+      </ul>
+      <p>Add:</p>
+      <pre><code class="language-python">ACTIONABLE_EVENT_TYPES = frozenset({
+    &quot;tool.call.completed&quot;,
+    &quot;command.completed&quot;,
+    &quot;command.result&quot;,
+    &quot;file.edit.applied&quot;,
+    &quot;task.completed&quot;,
+    &quot;coordination.handoff.created&quot;,
+    &quot;coordination.finding.reported&quot;,
+})
+
+
+def select_consolidation_segments(
+    events: Sequence[Any],
+    *,
+    session_id: str,
+    window_size: int = 8,
+) -&gt; list[ConsolidationSegment]:
+    sid = validate_session_id(session_id)
+    if not isinstance(window_size, int) or isinstance(window_size, bool) or window_size &lt; 1:
+        raise ValueError(&quot;window_size must be a positive integer&quot;)
+    source_events = [_source_event_from_event(event) for event in events]
+    actionable = [event for event in source_events if event[&quot;event_type&quot;] in ACTIONABLE_EVENT_TYPES]
+    segments: list[ConsolidationSegment] = []
+    for start in range(0, len(actionable), window_size):
+        window = actionable[start : start + window_size]
+        if not window:
+            continue
+        segments.append(
+            ConsolidationSegment(
+                session_id=sid,
+                segment_id=build_segment_id(sid, [int(event[&quot;seq&quot;]) for event in window]),
+                event_type_counts=event_type_counts(window),
+                source_events=window,
+            )
+        )
+    return segments
+
+
+def _source_event_from_event(event: Any) -&gt; dict[str, Any]:
+    seq = _validate_seq(getattr(event, &quot;seq&quot;, None))
+    event_hash = getattr(event, &quot;hash&quot;, None)
+    if not isinstance(event_hash, str) or len(event_hash) != _EVENT_HASH_LEN:
+        raise ValueError(&quot;event hash must be 64 lowercase hex&quot;)
+    if any(char not in &quot;0123456789abcdef&quot; for char in event_hash):
+        raise ValueError(&quot;event hash must be 64 lowercase hex&quot;)
+    event_type = getattr(event, &quot;event_type&quot;, None)
+    if not isinstance(event_type, str) or not event_type:
+        raise ValueError(&quot;event_type must be a non-empty string&quot;)
+    payload = getattr(event, &quot;payload&quot;, {})
+    return {
+        &quot;seq&quot;: seq,
+        &quot;hash&quot;: event_hash,
+        &quot;event_type&quot;: event_type,
+        &quot;summary&quot;: _event_summary(event_type, payload),
+    }
+
+
+def _event_summary(event_type: str, payload: object) -&gt; str:
+    if not isinstance(payload, Mapping):
+        return event_type
+    parts = [event_type]
+    for key in (&quot;status&quot;, &quot;tool_name&quot;, &quot;path&quot;, &quot;summary&quot;, &quot;query&quot;, &quot;title&quot;):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            parts.append(value.strip())
+    return &quot; | &quot;.join(parts[:4])</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 4: Run tests</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_consolidation_pipeline.py -k select --no-cov -q</code></pre>
+      <p>Expected: selection tests pass.</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Commit</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">git add src/zaxy/consolidation_pipeline.py tests/test_consolidation_pipeline.py
+git commit -m &quot;feat: select consolidation event segments&quot;</code></pre>
+      <p>---</p>
+      <h3 id="task-3-generate-episode-claim-and-procedure-candidates">Task 3: Generate Episode, Claim, and Procedure Candidates</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>src/zaxy/consolidation_pipeline.py</code></li>
+        <li>Test: <code>tests/test_consolidation_pipeline.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Add failing candidate-generation tests</strong></li>
+      </ul>
+      <p>Append:</p>
+      <pre><code class="language-python">def test_generate_consolidation_proposals_creates_episode_claim_and_procedure() -&gt; None:
+    from zaxy.consolidation_pipeline import generate_consolidation_proposals
+
+    segment = ConsolidationSegment(
+        session_id=&quot;agent-1&quot;,
+        segment_id=&quot;segment:agent-1:000001-000003&quot;,
+        event_type_counts={&quot;tool.call.completed&quot;: 2, &quot;file.edit.applied&quot;: 1},
+        source_events=[
+            {&quot;seq&quot;: 1, &quot;hash&quot;: &quot;a&quot; * 64, &quot;event_type&quot;: &quot;tool.call.completed&quot;, &quot;summary&quot;: &quot;pytest failed&quot;},
+            {&quot;seq&quot;: 2, &quot;hash&quot;: &quot;b&quot; * 64, &quot;event_type&quot;: &quot;file.edit.applied&quot;, &quot;summary&quot;: &quot;patched checkout&quot;},
+            {&quot;seq&quot;: 3, &quot;hash&quot;: &quot;c&quot; * 64, &quot;event_type&quot;: &quot;tool.call.completed&quot;, &quot;summary&quot;: &quot;pytest succeeded&quot;},
+        ],
+    )
+
+    proposals = generate_consolidation_proposals([segment], purpose=&quot;coding&quot;)
+
+    assert [proposal.candidate_type for proposal in proposals] == [&quot;episode&quot;, &quot;claim&quot;, &quot;procedure&quot;]
+    assert all(proposal.segment == segment for proposal in proposals)
+    assert all(proposal.purpose == &quot;coding&quot; for proposal in proposals)
+    assert all(proposal.method.startswith(&quot;deterministic_&quot;) for proposal in proposals)</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run tests to verify failure</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_consolidation_pipeline.py -k generate --no-cov -q</code></pre>
+      <p>Expected: fail because <code>generate_consolidation_proposals</code> is missing.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement deterministic candidate generator</strong></li>
+      </ul>
+      <p>Add:</p>
+      <pre><code class="language-python">def generate_consolidation_proposals(
+    segments: Sequence[ConsolidationSegment],
+    *,
+    purpose: str | None = None,
+) -&gt; list[ProposedConsolidation]:
+    proposals: list[ProposedConsolidation] = []
+    for segment in segments:
+        proposals.append(_episode_proposal(segment, purpose=purpose))
+        if _has_claim_signal(segment):
+            proposals.append(_claim_proposal(segment, purpose=purpose))
+        if _has_procedure_signal(segment):
+            proposals.append(_procedure_proposal(segment, purpose=purpose))
+    return proposals
+
+
+def _episode_proposal(segment: ConsolidationSegment, *, purpose: str | None) -&gt; ProposedConsolidation:
+    return ProposedConsolidation(
+        segment=segment,
+        candidate_type=&quot;episode&quot;,
+        title=f&quot;Episode {segment.segment_id.rsplit(&#x27;:&#x27;, 1)[-1]}&quot;,
+        summary=_segment_summary(segment),
+        confidence=0.68,
+        method=&quot;deterministic_episode_segment_v1&quot;,
+        purpose=purpose,
+    )
+
+
+def _claim_proposal(segment: ConsolidationSegment, *, purpose: str | None) -&gt; ProposedConsolidation:
+    return ProposedConsolidation(
+        segment=segment,
+        candidate_type=&quot;claim&quot;,
+        title=f&quot;Claim from {segment.segment_id}&quot;,
+        summary=f&quot;Candidate claim supported by {segment.source_event_count} cited source events: {_segment_summary(segment)}&quot;,
+        confidence=0.62,
+        method=&quot;deterministic_claim_signal_v1&quot;,
+        purpose=purpose,
+    )
+
+
+def _procedure_proposal(segment: ConsolidationSegment, *, purpose: str | None) -&gt; ProposedConsolidation:
+    return ProposedConsolidation(
+        segment=segment,
+        candidate_type=&quot;procedure&quot;,
+        title=f&quot;Procedure from {segment.segment_id}&quot;,
+        summary=f&quot;Candidate procedure inferred from observed workflow steps: {_segment_summary(segment)}&quot;,
+        confidence=0.58,
+        method=&quot;deterministic_procedure_trace_v1&quot;,
+        purpose=purpose,
+    )
+
+
+def _segment_summary(segment: ConsolidationSegment) -&gt; str:
+    summaries = [str(event.get(&quot;summary&quot;, &quot;&quot;)).strip() for event in segment.source_events]
+    compact = [summary for summary in summaries if summary]
+    return &quot; -&gt; &quot;.join(compact[:4]) or segment.segment_id
+
+
+def _has_claim_signal(segment: ConsolidationSegment) -&gt; bool:
+    return segment.source_event_count &gt;= 2
+
+
+def _has_procedure_signal(segment: ConsolidationSegment) -&gt; bool:
+    return segment.event_type_counts.get(&quot;tool.call.completed&quot;, 0) &gt;= 2 or (
+        segment.event_type_counts.get(&quot;file.edit.applied&quot;, 0) &gt;= 1
+        and segment.event_type_counts.get(&quot;tool.call.completed&quot;, 0) &gt;= 1
+    )</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 4: Run tests</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_consolidation_pipeline.py -k generate --no-cov -q</code></pre>
+      <p>Expected: generator tests pass.</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Commit</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">git add src/zaxy/consolidation_pipeline.py tests/test_consolidation_pipeline.py
+git commit -m &quot;feat: generate reviewable consolidation proposals&quot;</code></pre>
+      <p>---</p>
+      <h3 id="task-4-add-memoryfabric-consolidation-services">Task 4: Add MemoryFabric Consolidation Services</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>src/zaxy/core.py</code></li>
+        <li>Test: <code>tests/test_consolidation_pipeline.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Add failing fabric service tests</strong></li>
+      </ul>
+      <p>Append:</p>
+      <pre><code class="language-python">import pytest
+
+
+@pytest.mark.asyncio
+async def test_memory_fabric_proposes_consolidation_candidates_from_session_events(tmp_path) -&gt; None:
+    from zaxy.core import MemoryFabric
+
+    fabric = MemoryFabric(eventloom_path=str(tmp_path / &quot;.eventloom&quot;), projection_backend=&quot;embedded&quot;)
+    await fabric.connect()
+    try:
+        await fabric.append(&quot;tool.call.completed&quot;, actor=&quot;agent&quot;, payload={&quot;tool_name&quot;: &quot;pytest&quot;, &quot;status&quot;: &quot;failed&quot;}, session_id=&quot;agent-1&quot;)
+        await fabric.append(&quot;file.edit.applied&quot;, actor=&quot;agent&quot;, payload={&quot;path&quot;: &quot;src/zaxy/checkout.py&quot;}, session_id=&quot;agent-1&quot;)
+        await fabric.append(&quot;tool.call.completed&quot;, actor=&quot;agent&quot;, payload={&quot;tool_name&quot;: &quot;pytest&quot;, &quot;status&quot;: &quot;succeeded&quot;}, session_id=&quot;agent-1&quot;)
+
+        result = await fabric.propose_consolidation_candidates(
+            session_id=&quot;agent-1&quot;,
+            actor=&quot;zaxy-consolidation&quot;,
+            purpose=&quot;coding&quot;,
+            window_size=3,
+        )
+    finally:
+        await fabric.close()
+
+    assert result[&quot;session_id&quot;] == &quot;agent-1&quot;
+    assert result[&quot;segment_count&quot;] == 1
+    assert result[&quot;candidate_count&quot;] &gt;= 1
+    assert all(item[&quot;event_type&quot;] == &quot;consolidation.candidate.created&quot; for item in result[&quot;events&quot;])</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run tests to verify failure</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_consolidation_pipeline.py -k memory_fabric --no-cov -q</code></pre>
+      <p>Expected: fail because <code>MemoryFabric.propose_consolidation_candidates</code> is missing.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement fabric services</strong></li>
+      </ul>
+      <p>Add to <code>src/zaxy/core.py</code>:</p>
+      <pre><code class="language-python">    async def propose_consolidation_candidates(
+        self,
+        *,
+        session_id: str = &quot;default&quot;,
+        actor: str = &quot;zaxy-consolidation&quot;,
+        purpose: str | None = None,
+        window_size: int = 8,
+    ) -&gt; dict[str, Any]:
+        from zaxy.consolidation_pipeline import (
+            generate_consolidation_proposals,
+            select_consolidation_segments,
+        )
+
+        sid = validate_session_id(session_id)
+        events = self.session_manager.get(sid).eventlog.read_all()
+        segments = select_consolidation_segments(events, session_id=sid, window_size=window_size)
+        proposals = generate_consolidation_proposals(segments, purpose=purpose)
+        appended: list[dict[str, Any]] = []
+        for proposal in proposals:
+            event_spec = proposal.to_candidate_event(actor=actor)
+            event = await self.append(
+                event_spec[&quot;event_type&quot;],
+                actor=event_spec[&quot;actor&quot;],
+                payload=event_spec[&quot;payload&quot;],
+                session_id=sid,
+            )
+            appended.append({&quot;event_type&quot;: event.event_type, &quot;seq&quot;: event.seq, &quot;hash&quot;: event.hash})
+        return {
+            &quot;session_id&quot;: sid,
+            &quot;segment_count&quot;: len(segments),
+            &quot;candidate_count&quot;: len(appended),
+            &quot;events&quot;: appended,
+        }</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 4: Run tests</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_consolidation_pipeline.py -k memory_fabric --no-cov -q</code></pre>
+      <p>Expected: fabric service test passes.</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Commit</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">git add src/zaxy/core.py tests/test_consolidation_pipeline.py
+git commit -m &quot;feat: propose consolidation candidates from memory fabric&quot;</code></pre>
+      <p>---</p>
+      <h3 id="task-5-add-stale-conflict-and-supersession-diagnostics">Task 5: Add Stale, Conflict, and Supersession Diagnostics</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>src/zaxy/consolidation_pipeline.py</code></li>
+        <li>Modify: <code>src/zaxy/checkout.py</code></li>
+        <li>Test: <code>tests/test_consolidation_pipeline.py</code></li>
+        <li>Test: <code>tests/test_causal_checkout.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Add failing diagnostic tests</strong></li>
+      </ul>
+      <p>Add:</p>
+      <pre><code class="language-python">def test_candidate_diagnostics_counts_stale_conflicted_and_superseded() -&gt; None:
+    from zaxy.consolidation_pipeline import consolidation_candidate_diagnostics
+
+    rows = [
+        {&quot;entity_type&quot;: &quot;consolidation_candidate&quot;, &quot;review_status&quot;: &quot;pending&quot;, &quot;authority_status&quot;: &quot;non_authoritative&quot;},
+        {&quot;entity_type&quot;: &quot;consolidation_candidate&quot;, &quot;review_status&quot;: &quot;conflicted&quot;, &quot;authority_status&quot;: &quot;non_authoritative&quot;},
+        {&quot;entity_type&quot;: &quot;consolidation_candidate&quot;, &quot;review_status&quot;: &quot;accepted&quot;, &quot;authority_status&quot;: &quot;non_authoritative&quot;, &quot;valid_to&quot;: &quot;2026-06-07T00:00:00Z&quot;},
+        {&quot;entity_type&quot;: &quot;consolidation_candidate&quot;, &quot;review_status&quot;: &quot;rejected&quot;, &quot;authority_status&quot;: &quot;non_authoritative&quot;},
+    ]
+
+    assert consolidation_candidate_diagnostics(rows) == {
+        &quot;candidate_count&quot;: 4,
+        &quot;pending_count&quot;: 1,
+        &quot;accepted_count&quot;: 1,
+        &quot;rejected_count&quot;: 1,
+        &quot;conflicted_count&quot;: 1,
+        &quot;stale_count&quot;: 1,
+        &quot;authority_status&quot;: &quot;non_authoritative&quot;,
+    }</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run tests to verify failure</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_consolidation_pipeline.py -k diagnostics --no-cov -q</code></pre>
+      <p>Expected: fail because diagnostics helper is missing.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement diagnostics and wire checkout</strong></li>
+      </ul>
+      <p>Add to <code>src/zaxy/consolidation_pipeline.py</code>:</p>
+      <pre><code class="language-python">def consolidation_candidate_diagnostics(rows: Sequence[Mapping[str, Any]]) -&gt; dict[str, Any]:
+    candidates = [row for row in rows if row.get(&quot;entity_type&quot;) == &quot;consolidation_candidate&quot;]
+    statuses = [str(row.get(&quot;review_status&quot;) or row.get(&quot;status&quot;) or &quot;&quot;) for row in candidates]
+    stale_count = sum(1 for row in candidates if row.get(&quot;valid_to&quot;) or row.get(&quot;stale&quot;) is True)
+    return {
+        &quot;candidate_count&quot;: len(candidates),
+        &quot;pending_count&quot;: statuses.count(&quot;pending&quot;),
+        &quot;accepted_count&quot;: statuses.count(&quot;accepted&quot;),
+        &quot;rejected_count&quot;: statuses.count(&quot;rejected&quot;),
+        &quot;conflicted_count&quot;: statuses.count(&quot;conflicted&quot;),
+        &quot;stale_count&quot;: stale_count,
+        &quot;authority_status&quot;: &quot;non_authoritative&quot;,
+    }</code></pre>
+      <p>In <code>src/zaxy/checkout.py</code>, preserve existing fields and add <code>rejected_count</code>, <code>conflicted_count</code>, and <code>stale_count</code> to consolidation diagnostics. Keep the guidance from alpha.1:</p>
+      <pre><code class="language-python">&quot;Do not treat consolidation candidates as authoritative memory without a separate promotion event.&quot;</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 4: Run tests</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_consolidation_pipeline.py tests/test_causal_checkout.py -k &quot;diagnostics or consolidation&quot; --no-cov -q</code></pre>
+      <p>Expected: diagnostics and checkout tests pass.</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Commit</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">git add src/zaxy/consolidation_pipeline.py src/zaxy/checkout.py tests/test_consolidation_pipeline.py tests/test_causal_checkout.py
+git commit -m &quot;feat: add consolidation candidate diagnostics&quot;</code></pre>
+      <p>---</p>
+      <h3 id="task-6-add-cli-and-mcp-proposal-surfaces">Task 6: Add CLI and MCP Proposal Surfaces</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>src/zaxy/__main__.py</code></li>
+        <li>Modify: <code>src/zaxy/mcp_server.py</code></li>
+        <li>Test: <code>tests/test_cli.py</code></li>
+        <li>Test: <code>tests/test_mcp.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Add failing CLI/MCP tests</strong></li>
+      </ul>
+      <p>Add CLI tests:</p>
+      <pre><code class="language-python">def test_memory_consolidation_propose_from_log_help_is_registered() -&gt; None:
+    runner = CliRunner()
+
+    result = runner.invoke(app, [&quot;memory&quot;, &quot;consolidation&quot;, &quot;propose-from-log&quot;, &quot;--help&quot;])
+
+    assert result.exit_code == 0
+    assert &quot;--window-size&quot; in result.output
+    assert &quot;--purpose&quot; in result.output</code></pre>
+      <p>Add MCP schema test:</p>
+      <pre><code class="language-python">def test_memory_consolidation_propose_from_log_tool_is_registered() -&gt; None:
+    tool_names = {tool.name for tool in TOOLS}
+
+    assert &quot;memory_consolidation_propose_from_log&quot; in tool_names</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run tests to verify failure</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_cli.py -k propose_from_log --no-cov -q
+pytest tests/test_mcp.py -k propose_from_log --no-cov -q</code></pre>
+      <p>Expected: fail because commands/tools are missing.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement CLI</strong></li>
+      </ul>
+      <p>Add under <code>memory_consolidation_app</code>:</p>
+      <pre><code class="language-python">@memory_consolidation_app.command(&quot;propose-from-log&quot;)
+def memory_consolidation_propose_from_log(
+    session_id: str = typer.Option(&quot;default&quot;, help=&quot;Session ID to consolidate&quot;),
+    actor: str = typer.Option(&quot;zaxy-consolidation&quot;, help=&quot;Actor writing candidate events&quot;),
+    purpose: str | None = typer.Option(None, help=&quot;Optional consolidation purpose&quot;),
+    window_size: int = typer.Option(8, min=1, max=50, help=&quot;Actionable event window size&quot;),
+    eventloom_path: Path = typer.Option(&quot;.eventloom&quot;, help=&quot;Eventloom directory&quot;),
+    json_output: bool = typer.Option(False, &quot;--json&quot;, help=&quot;Print machine-readable JSON&quot;),
+) -&gt; None:
+    import asyncio
+
+    async def _run() -&gt; dict[str, object]:
+        fabric = MemoryFabric(eventloom_path=str(eventloom_path))
+        try:
+            await fabric.connect()
+            return await fabric.propose_consolidation_candidates(
+                session_id=session_id,
+                actor=actor,
+                purpose=purpose,
+                window_size=window_size,
+            )
+        finally:
+            with suppress(Exception):
+                await fabric.close()
+
+    result = asyncio.run(_run())
+    if json_output:
+        typer.echo(json.dumps(result, indent=2, sort_keys=True))
+    else:
+        typer.echo(
+            f&quot;Created {result[&#x27;candidate_count&#x27;]} consolidation candidates &quot;
+            f&quot;from {result[&#x27;segment_count&#x27;]} segments for {result[&#x27;session_id&#x27;]}.&quot;
+        )</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 4: Implement MCP</strong></li>
+      </ul>
+      <p>Add tool schema:</p>
+      <pre><code class="language-python">Tool(
+    name=&quot;memory_consolidation_propose_from_log&quot;,
+    description=&quot;Generate cited, review-pending consolidation candidates from one session log.&quot;,
+    inputSchema={
+        &quot;type&quot;: &quot;object&quot;,
+        &quot;required&quot;: [],
+        &quot;properties&quot;: {
+            &quot;session_id&quot;: {&quot;type&quot;: &quot;string&quot;},
+            &quot;actor&quot;: {&quot;type&quot;: &quot;string&quot;, &quot;default&quot;: &quot;zaxy-consolidation&quot;},
+            &quot;purpose&quot;: {&quot;type&quot;: &quot;string&quot;},
+            &quot;window_size&quot;: {&quot;type&quot;: &quot;integer&quot;, &quot;default&quot;: 8, &quot;minimum&quot;: 1, &quot;maximum&quot;: 50},
+        },
+        &quot;additionalProperties&quot;: False,
+    },
+)</code></pre>
+      <p>Add <code>ZaxyMCPServer.handle_memory_consolidation_propose_from_log</code> that calls a configured <code>MemoryFabric</code> or shared internal service without creating a second Eventloom path. Register it in <code>_dispatch_tool_call</code>.</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Run tests</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_cli.py tests/test_mcp.py -k &quot;consolidation and propose&quot; --no-cov -q</code></pre>
+      <p>Expected: CLI and MCP tests pass.</p>
+      <ul>
+        <li>[ ] <strong>Step 6: Commit</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">git add src/zaxy/__main__.py src/zaxy/mcp_server.py tests/test_cli.py tests/test_mcp.py docs/examples/mcp-tool-contract.json
+git commit -m &quot;feat: expose consolidation proposal pipeline&quot;</code></pre>
+      <p>---</p>
+      <h3 id="task-7-add-alpha2-consolidation-guardrail">Task 7: Add Alpha.2 Consolidation Guardrail</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Create: <code>src/zaxy/consolidation_benchmark.py</code></li>
+        <li>Test: <code>tests/test_consolidation_benchmark.py</code></li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Add failing guardrail tests</strong></li>
+      </ul>
+      <p>Create <code>tests/test_consolidation_benchmark.py</code>:</p>
+      <pre><code class="language-python">from __future__ import annotations
+
+from zaxy.consolidation_benchmark import (
+    ConsolidationGuardrailCase,
+    evaluate_consolidation_guardrail,
+    summarize_consolidation_guardrail,
+)
+
+
+def test_guardrail_scores_cited_non_authoritative_candidate() -&gt; None:
+    case = ConsolidationGuardrailCase(
+        case_id=&quot;claim-1&quot;,
+        candidate_type=&quot;claim&quot;,
+        required_source_events=[{&quot;seq&quot;: 1, &quot;hash&quot;: &quot;a&quot; * 64}, {&quot;seq&quot;: 2, &quot;hash&quot;: &quot;b&quot; * 64}],
+    )
+    row = evaluate_consolidation_guardrail(
+        case,
+        {
+            &quot;candidate_type&quot;: &quot;claim&quot;,
+            &quot;source_events&quot;: [{&quot;seq&quot;: 1, &quot;hash&quot;: &quot;a&quot; * 64}, {&quot;seq&quot;: 2, &quot;hash&quot;: &quot;b&quot; * 64}],
+            &quot;review_status&quot;: &quot;pending&quot;,
+            &quot;authority_status&quot;: &quot;non_authoritative&quot;,
+            &quot;confidence&quot;: 0.7,
+        },
+    )
+
+    assert row == {
+        &quot;case_id&quot;: &quot;claim-1&quot;,
+        &quot;type_match&quot;: 1.0,
+        &quot;source_event_fidelity&quot;: 1.0,
+        &quot;authority_boundary&quot;: 1.0,
+        &quot;review_gate&quot;: 1.0,
+        &quot;score&quot;: 1.0,
+    }
+
+
+def test_guardrail_penalizes_authority_promotion() -&gt; None:
+    case = ConsolidationGuardrailCase(
+        case_id=&quot;claim-2&quot;,
+        candidate_type=&quot;claim&quot;,
+        required_source_events=[{&quot;seq&quot;: 1, &quot;hash&quot;: &quot;a&quot; * 64}],
+    )
+    row = evaluate_consolidation_guardrail(
+        case,
+        {
+            &quot;candidate_type&quot;: &quot;claim&quot;,
+            &quot;source_events&quot;: [{&quot;seq&quot;: 1, &quot;hash&quot;: &quot;a&quot; * 64}],
+            &quot;review_status&quot;: &quot;accepted&quot;,
+            &quot;authority_status&quot;: &quot;authoritative&quot;,
+            &quot;confidence&quot;: 0.7,
+        },
+    )
+
+    assert row[&quot;authority_boundary&quot;] == 0.0
+    assert row[&quot;review_gate&quot;] == 1.0
+    assert row[&quot;score&quot;] == 0.75</code></pre>
+      <ul>
+        <li>[ ] <strong>Step 2: Run tests to verify failure</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_consolidation_benchmark.py --no-cov -q</code></pre>
+      <p>Expected: fail because module is missing.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Implement guardrail scorer</strong></li>
+      </ul>
+      <p>Create <code>src/zaxy/consolidation_benchmark.py</code> with deterministic scoring over type match, source event fidelity, authority boundary, and review gate. Validate source event hashes as 64 lowercase hex and review statuses as <code>pending</code>, <code>accepted</code>, <code>rejected</code>, <code>deferred</code>, or <code>conflicted</code>.</p>
+      <ul>
+        <li>[ ] <strong>Step 4: Run tests</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_consolidation_benchmark.py --no-cov -q</code></pre>
+      <p>Expected: guardrail tests pass.</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Commit</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">git add src/zaxy/consolidation_benchmark.py tests/test_consolidation_benchmark.py
+git commit -m &quot;feat: add consolidation alpha guardrail&quot;</code></pre>
+      <p>---</p>
+      <h3 id="task-8-documentation-and-regression-gate">Task 8: Documentation and Regression Gate</h3>
+      <p><strong>Files:</strong></p>
+      <ul>
+        <li>Modify: <code>docs/graph-schema.md</code></li>
+        <li>Modify: <code>docs/mcp.md</code></li>
+        <li>Modify: <code>docs/benchmarks.md</code></li>
+        <li>Modify generated <code>site/docs/*.html</code> if <code>scripts/validate-docs.sh</code> requires it.</li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 1: Update docs</strong></li>
+      </ul>
+      <p>Document:</p>
+      <ul>
+        <li>alpha.2 segment selection is deterministic and event-sourced;</li>
+        <li>generated episode, claim, and procedure candidates remain non-authoritative;</li>
+        <li>accepted reviews are dispositions, not promotion;</li>
+        <li><code>memory_consolidation_propose_from_log</code> is a proposal tool, not an authority tool;</li>
+        <li>consolidation guardrail is internal/project-defined and not external validation.</li>
+      </ul>
+      <ul>
+        <li>[ ] <strong>Step 2: Run focused tests</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest \
+  tests/test_consolidation.py \
+  tests/test_consolidation_pipeline.py \
+  tests/test_consolidation_benchmark.py \
+  tests/test_causal_checkout.py \
+  tests/test_cli.py \
+  tests/test_mcp.py \
+  -k &quot;consolidation&quot; \
+  --no-cov -q</code></pre>
+      <p>Expected: all selected tests pass.</p>
+      <ul>
+        <li>[ ] <strong>Step 3: Run core regression tests</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">pytest tests/test_checkout.py tests/test_graph.py tests/test_mcp.py --no-cov -q</code></pre>
+      <p>Expected: pass.</p>
+      <ul>
+        <li>[ ] <strong>Step 4: Run docs validation and lint</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">scripts/validate-docs.sh --root .
+ruff check src/zaxy/consolidation.py src/zaxy/consolidation_pipeline.py src/zaxy/consolidation_benchmark.py src/zaxy/core.py src/zaxy/__main__.py src/zaxy/mcp_server.py tests/test_consolidation.py tests/test_consolidation_pipeline.py tests/test_consolidation_benchmark.py tests/test_cli.py tests/test_mcp.py</code></pre>
+      <p>Expected: pass.</p>
+      <ul>
+        <li>[ ] <strong>Step 5: Run cached public benchmark guardrail</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">python -m zaxy benchmark-compare \
+  reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json \
+  --backend zaxy-checkout \
+  --min-mean-score 0.95 \
+  --min-answer-recall-at-5 0.90 \
+  --min-recall-at-5 0.99 \
+  --min-citation-coverage 1.0 \
+  --max-p95-ms 2500 \
+  --max-p99-ms 3000</code></pre>
+      <p>Expected: PASS against the cached published artifact. Do not change implementation to satisfy missing artifacts.</p>
+      <ul>
+        <li>[ ] <strong>Step 6: Commit</strong></li>
+      </ul>
+      <p>Run:</p>
+      <pre><code class="language-bash">git add docs/graph-schema.md docs/mcp.md docs/benchmarks.md site/docs src/zaxy tests
+git commit -m &quot;docs: document consolidation alpha mvp&quot;</code></pre>
+      <p>---</p>
+      <h2 id="self-review-notes">Self-Review Notes</h2>
+      <p>Spec coverage:</p>
+      <ul>
+        <li>Cluster related event segments into reviewable episodes: Tasks 1-3.</li>
+        <li>Synthesize cited candidate claims and procedures: Task 3.</li>
+        <li>Preserve source event backpointers: Tasks 1, 3, 4, and 7.</li>
+        <li>Track review status, authority status, confidence, scope, and purpose: Tasks 1, 3, 4, and 5.</li>
+        <li>Add checkout and status diagnostics: Task 5.</li>
+        <li>Add CLI/MCP surfaces: Task 6.</li>
+        <li>Add rejection, stale, supersession, and conflict behavior: Task 5.</li>
+        <li>Protect 1.x benchmark claims: Task 8.</li>
+      </ul>
+      <p>No benchmark tailoring:</p>
+      <ul>
+        <li>The pipeline operates on Eventloom event classes and source citations, not LongMemEval questions.</li>
+        <li>The guardrail measures consolidation fidelity and authority boundaries only.</li>
+        <li>LongMemEval-compatible checks remain regression gates, not implementation targets.</li>
+      </ul>
+      <p>Known risks:</p>
+      <ul>
+        <li>The first generator is deterministic and conservative; it will likely produce useful review candidates but not polished narrative summaries.</li>
+        <li>Backend parity for projected candidate status should be watched after each graph adapter change.</li>
+        <li>LLM-assisted synthesis can be planned later only after deterministic source-event fidelity is stable.</li>
+      </ul>
+    </article>
+  </main>
+</body>
+</html>
