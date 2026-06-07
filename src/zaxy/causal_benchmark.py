@@ -7,10 +7,19 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from zaxy.causal import CAUSAL_RELATION_TYPES
+from zaxy.consolidation import (
+    CONSOLIDATION_CANDIDATE_TYPES,
+    validate_consolidation_candidate_id,
+)
+
 CAUSAL_QUERY_TYPES = frozenset({"successor", "predecessor"})
 NON_AUTHORITATIVE_STATUS = "non_authoritative"
 _EVENTLOOM_CITATION_RE = re.compile(
     r"^eventloom://(?P<session>[^/\s]+)/events/(?P<seq>\d+)#(?P<hash>[a-f0-9]{6,})$"
+)
+_CONSOLIDATION_CANDIDATE_ID_RE = re.compile(
+    r"^consolidation:(?P<candidate_type>[a-z]+):(?P<digest>[a-f0-9]{24})$"
 )
 
 
@@ -33,7 +42,7 @@ class CausalBenchmarkCase:
             raise ValueError("query_type must be 'successor' or 'predecessor'")
         _require_endpoint("source", self.source)
         _require_endpoint("target", self.target)
-        _require_text("relation_type", self.relation_type)
+        _require_causal_relation_type(self.relation_type)
         _require_eventloom_citation("citation", self.citation)
 
 
@@ -50,8 +59,8 @@ class ConsolidationBenchmarkCase:
 
     def __post_init__(self) -> None:
         _require_text("case_id", self.case_id)
-        _require_text("candidate_id", self.candidate_id)
-        _require_text("candidate_type", self.candidate_type)
+        _require_consolidation_candidate_type(self.candidate_type)
+        _require_consolidation_candidate_id(self.candidate_id, self.candidate_type)
         _require_source_events(self.source_events)
         _require_eventloom_citation("citation", self.citation)
         if self.authority_status != NON_AUTHORITATIVE_STATUS:
@@ -278,6 +287,32 @@ def _require_source_events(value: Sequence[Mapping[str, Any]]) -> None:
             raise ValueError(f"source_events[{index}] must be a mapping")
         _require_eventloom_citation(f"source_events[{index}].ref", event.get("ref"))
         _require_text(f"source_events[{index}].hash", event.get("hash"))
+
+
+def _require_causal_relation_type(value: Any) -> None:
+    _require_text("relation_type", value)
+    if value not in CAUSAL_RELATION_TYPES:
+        valid = ", ".join(sorted(CAUSAL_RELATION_TYPES))
+        raise ValueError(f"relation_type must be one of: {valid}")
+
+
+def _require_consolidation_candidate_type(value: Any) -> None:
+    _require_text("candidate_type", value)
+    if value not in CONSOLIDATION_CANDIDATE_TYPES:
+        valid = ", ".join(sorted(CONSOLIDATION_CANDIDATE_TYPES))
+        raise ValueError(f"candidate_type must be one of: {valid}")
+
+
+def _require_consolidation_candidate_id(candidate_id: Any, candidate_type: str) -> None:
+    validated_candidate_id = validate_consolidation_candidate_id(candidate_id)
+    match = _CONSOLIDATION_CANDIDATE_ID_RE.fullmatch(validated_candidate_id)
+    if match is None:
+        raise ValueError(
+            "candidate_id must match consolidation:{candidate_type}:{24 lowercase hex characters}"
+        )
+    id_candidate_type = match.group("candidate_type")
+    if id_candidate_type != candidate_type:
+        raise ValueError("candidate_id candidate_type must match candidate_type")
 
 
 def _require_text(field: str, value: Any) -> None:

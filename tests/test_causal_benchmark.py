@@ -21,7 +21,21 @@ def test_causal_case_rejects_unknown_query_type() -> None:
             query_type="neighbor",
             source={"name": "config drift", "entity_type": "Task"},
             target={"name": "deployment rollback", "entity_type": "Task"},
-            relation_type="CAUSES",
+            relation_type="caused",
+            citation="eventloom://session-alpha/events/42#abcdefabcdef",
+        )
+
+
+@pytest.mark.parametrize("relation_type", ["CAUSES", "causal_caused", "depends_on"])
+def test_causal_case_rejects_non_production_relation_labels(relation_type: str) -> None:
+    with pytest.raises(ValueError, match="relation_type"):
+        CausalBenchmarkCase(
+            case_id="bad-relation",
+            query="What caused the deployment rollback?",
+            query_type="predecessor",
+            source={"name": "config drift", "entity_type": "Task"},
+            target={"name": "deployment rollback", "entity_type": "Task"},
+            relation_type=relation_type,
             citation="eventloom://session-alpha/events/42#abcdefabcdef",
         )
 
@@ -33,21 +47,21 @@ def test_successor_scoring_uses_target_endpoint_and_prefers_non_authoritative_ci
         query_type="successor",
         source={"name": "config drift", "entity_type": "Task"},
         target={"name": "deployment rollback", "entity_type": "Task"},
-        relation_type="CAUSES",
+        relation_type="caused",
         citation="eventloom://session-alpha/events/42#abcdefabcdef",
     )
     results = [
         {
             "source": {"name": "config drift"},
             "target": {"name": "deployment rollback"},
-            "relation_type": "CAUSES",
+            "relation_type": "caused",
             "authority_status": "promoted",
             "citation": "eventloom://session-alpha/events/42#abcdefabcdef",
         },
         {
             "source": {"name": "config drift"},
             "target": {"name": "deployment rollback"},
-            "relation_type": "CAUSES",
+            "relation_type": "caused",
             "authority_status": "non_authoritative",
             "citation": "eventloom://session-alpha/events/42#abcdefabcdef",
         },
@@ -71,21 +85,21 @@ def test_predecessor_scoring_uses_source_endpoint_and_penalizes_distractor_defec
         query_type="predecessor",
         source={"name": "config drift", "entity_type": "Task"},
         target={"name": "deployment rollback", "entity_type": "Task"},
-        relation_type="CAUSES",
+        relation_type="caused",
         citation="eventloom://session-alpha/events/42#abcdefabcdef",
     )
     results = [
         {
             "source": {"name": "config drift"},
             "target": {"name": "deployment rollback"},
-            "relation_type": "SUPERSEDES",
+            "relation_type": "enabled",
             "authority_status": "promoted",
             "citation": "note://not-eventloom",
         },
         {
             "source": {"name": "unrelated alert"},
             "target": {"name": "deployment rollback"},
-            "relation_type": "CAUSES",
+            "relation_type": "caused",
             "authority_status": "non_authoritative",
             "citation": "eventloom://session-alpha/events/42#abcdefabcdef",
         },
@@ -107,20 +121,20 @@ def test_causal_scoring_prefers_current_match_over_stale_matching_endpoint() -> 
         query_type="successor",
         source={"name": "config drift", "entity_type": "Task"},
         target={"name": "deployment rollback", "entity_type": "Task"},
-        relation_type="CAUSES",
+        relation_type="caused",
         citation="eventloom://session-alpha/events/42#abcdefabcdef",
     )
     results = [
         {
             "target": {"name": "deployment rollback"},
-            "relation_type": "CAUSES",
+            "relation_type": "caused",
             "authority_status": "non_authoritative",
             "citation": "eventloom://session-alpha/events/42#abcdefabcdef",
             "superseded_by": "eventloom://session-alpha/events/43#bbbbbbbbbbbb",
         },
         {
             "target": {"name": "deployment rollback"},
-            "relation_type": "CAUSES",
+            "relation_type": "caused",
             "authority_status": "non_authoritative",
             "citation": "eventloom://session-alpha/events/42#abcdefabcdef",
         },
@@ -164,16 +178,38 @@ def test_causal_case_requires_eventloom_style_citation() -> None:
             query_type="predecessor",
             source={"name": "config drift", "entity_type": "Task"},
             target={"name": "deployment rollback", "entity_type": "Task"},
-            relation_type="CAUSES",
+            relation_type="caused",
             citation="plain text",
+        )
+
+
+@pytest.mark.parametrize(
+    ("candidate_id", "candidate_type"),
+    [
+        ("projection:deploy-root-cause", "claim"),
+        ("consolidation:memory:bbbbbbbbbbbbbbbbbbbbbbbb", "memory"),
+        ("consolidation:claim:BBBBBBBBBBBBBBBBBBBBBBBB", "claim"),
+        ("consolidation:episode:bbbbbbbbbbbbbbbbbbbbbbbb", "claim"),
+    ],
+)
+def test_consolidation_case_rejects_invalid_or_mismatched_candidate_contract(
+    candidate_id: str, candidate_type: str
+) -> None:
+    with pytest.raises(ValueError, match="candidate"):
+        ConsolidationBenchmarkCase(
+            case_id="bad-candidate",
+            candidate_id=candidate_id,
+            candidate_type=candidate_type,
+            source_events=({"ref": "eventloom://session-alpha/events/42#def456", "hash": "def456"},),
+            citation="eventloom://session-alpha/events/42#def456",
         )
 
 
 def test_consolidation_candidate_scores_source_fidelity_and_non_authoritative_boundary() -> None:
     case = ConsolidationBenchmarkCase(
         case_id="projection-fidelity",
-        candidate_id="projection:deploy-root-cause",
-        candidate_type="causal_projection",
+        candidate_id="consolidation:claim:bbbbbbbbbbbbbbbbbbbbbbbb",
+        candidate_type="claim",
         source_events=(
             {"ref": "eventloom://session-alpha/events/41#abc123", "hash": "abc123"},
             {"ref": "eventloom://session-alpha/events/42#def456", "hash": "def456"},
@@ -182,8 +218,8 @@ def test_consolidation_candidate_scores_source_fidelity_and_non_authoritative_bo
         authority_status="non_authoritative",
     )
     candidate = {
-        "candidate_id": "projection:deploy-root-cause",
-        "candidate_type": "causal_projection",
+        "candidate_id": "consolidation:claim:bbbbbbbbbbbbbbbbbbbbbbbb",
+        "candidate_type": "claim",
         "source_events": [
             {"ref": "eventloom://session-alpha/events/41#abc123", "hash": "abc123"},
             {"ref": "eventloom://session-alpha/events/42#def456", "hash": "def456"},
@@ -210,8 +246,8 @@ def test_consolidation_candidate_scores_source_fidelity_and_non_authoritative_bo
 def test_consolidation_candidate_penalizes_promoted_or_missing_source_refs() -> None:
     case = ConsolidationBenchmarkCase(
         case_id="projection-boundary",
-        candidate_id="projection:deploy-root-cause",
-        candidate_type="causal_projection",
+        candidate_id="consolidation:claim:bbbbbbbbbbbbbbbbbbbbbbbb",
+        candidate_type="claim",
         source_events=(
             {"ref": "eventloom://session-alpha/events/41#abc123", "hash": "abc123"},
             {"ref": "eventloom://session-alpha/events/42#def456", "hash": "def456"},
@@ -220,8 +256,8 @@ def test_consolidation_candidate_penalizes_promoted_or_missing_source_refs() -> 
         authority_status="non_authoritative",
     )
     candidate = {
-        "candidate_id": "projection:deploy-root-cause",
-        "candidate_type": "causal_projection",
+        "candidate_id": "consolidation:claim:bbbbbbbbbbbbbbbbbbbbbbbb",
+        "candidate_type": "claim",
         "source_events": [{"ref": "eventloom://session-alpha/events/41#abc123", "hash": "abc123"}],
         "citations": ["eventloom://session-alpha/events/41#abc123"],
         "authority_status": "promoted",
