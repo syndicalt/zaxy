@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+import zaxy.consolidation as consolidation
 from zaxy.consolidation import (
     CONSOLIDATION_CANDIDATE_TYPES,
     CONSOLIDATION_INITIAL_REVIEW_STATUS,
@@ -76,6 +77,18 @@ def test_build_review_event_cannot_promote_to_authority_in_alpha_1() -> None:
 
 def test_candidate_type_taxonomy_is_stable() -> None:
     assert {"episode", "claim", "procedure"} == CONSOLIDATION_CANDIDATE_TYPES
+
+
+def test_public_candidate_id_validator_follows_candidate_type_taxonomy() -> None:
+    assert hasattr(consolidation, "validate_consolidation_candidate_id")
+
+    for candidate_type in CONSOLIDATION_CANDIDATE_TYPES:
+        consolidation.validate_consolidation_candidate_id(
+            f"consolidation:{candidate_type}:{'c' * 24}"
+        )
+
+    with pytest.raises(ValueError, match="candidate_id"):
+        consolidation.validate_consolidation_candidate_id("consolidation:memory:" + "c" * 24)
 
 
 def test_review_status_taxonomy_separates_initial_pending_from_review_outcomes() -> None:

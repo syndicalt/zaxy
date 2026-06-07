@@ -24,6 +24,7 @@ from zaxy.consolidation import (
     CONSOLIDATION_CANDIDATE_TYPES,
     CONSOLIDATION_INITIAL_REVIEW_STATUS,
     CONSOLIDATION_REVIEW_STATUSES,
+    validate_consolidation_candidate_id,
 )
 from zaxy.event import Event
 from zaxy.neutral import (
@@ -85,7 +86,6 @@ class ExtractionResult:
 # Registry of rule-based extractors: event_type -> extractor function
 _Registry = dict[str, Callable[[Event], ExtractionResult]]
 _RULES: _Registry = {}
-_CONSOLIDATION_CANDIDATE_ID_RE = re.compile(r"^consolidation:(episode|claim|procedure):[0-9a-f]{24}$")
 _CONSOLIDATION_EVENT_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 _CONSOLIDATION_AUTHORITY_STATUS = "non_authoritative"
 
@@ -2605,6 +2605,9 @@ def _extract_consolidation_candidate_created(event: Event) -> ExtractionResult:
     title = _required_consolidation_text(event.payload.get("title"), field="title")
     summary = _required_consolidation_text(event.payload.get("summary"), field="summary")
     source_events = _snapshot_consolidation_source_events(event.payload.get("source_events"))
+    source_event_refs = [f"{source_event['seq']}:{source_event['hash']}" for source_event in source_events]
+    source_event_seqs = [source_event["seq"] for source_event in source_events]
+    source_event_hashes = [source_event["hash"] for source_event in source_events]
     confidence = _required_consolidation_confidence(event.payload.get("confidence"))
     method = _required_consolidation_text(event.payload.get("method"), field="method")
     review_status = event.payload.get("review_status")
@@ -2626,6 +2629,9 @@ def _extract_consolidation_candidate_created(event: Event) -> ExtractionResult:
         "review_status": review_status,
         "authority_status": authority_status,
         "source_event_count": len(source_events),
+        "source_event_refs": source_event_refs,
+        "source_event_seqs": source_event_seqs,
+        "source_event_hashes": source_event_hashes,
         "source_events": source_events,
     }
     if purpose is not None:
@@ -2691,13 +2697,7 @@ def _required_causal_graph_relation_type(payload: dict[str, Any], *, event_seq: 
 
 
 def _required_consolidation_candidate_id(value: object) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError("candidate_id must be a non-empty string")
-    if _CONSOLIDATION_CANDIDATE_ID_RE.fullmatch(value) is None:
-        raise ValueError(
-            "candidate_id must match consolidation:{episode|claim|procedure}:{24 lowercase hex characters}"
-        )
-    return value
+    return validate_consolidation_candidate_id(value)
 
 
 def _required_consolidation_candidate_type(value: object) -> str:

@@ -100,6 +100,14 @@ def build_consolidation_review_event(
     }
 
 
+def validate_consolidation_candidate_id(candidate_id: object) -> str:
+    """Validate and return a consolidation candidate identifier."""
+    _validate_candidate_id(candidate_id)
+    if not isinstance(candidate_id, str):
+        raise ValueError("candidate_id must be a non-empty string")
+    return candidate_id
+
+
 def _build_candidate_id(
     *,
     candidate_type: str,

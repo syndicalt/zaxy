@@ -5,8 +5,11 @@ Every registered extractor gets exercised."""
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
+import zaxy.extract as extract_module
 from zaxy.event import Event
 from zaxy.extract import (
     ExtractedEdge,
@@ -1076,6 +1079,35 @@ class TestConsolidationCandidateEvents:
         assert candidate.properties["authority_status"] == "non_authoritative"
         assert candidate.properties["source_event_count"] == 1
 
+    def test_candidate_created_projects_backend_safe_source_event_citations(self) -> None:
+        event = _make_event(
+            "consolidation.candidate.created",
+            {
+                **self._candidate_created_payload(),
+                "source_events": [
+                    {"seq": 10, "hash": "a" * 64},
+                    {"seq": 11, "hash": "b" * 64},
+                ],
+            },
+        )
+
+        result = extract(event)
+
+        properties = result.entities[0].properties
+        assert properties["source_event_refs"] == [
+            "10:" + "a" * 64,
+            "11:" + "b" * 64,
+        ]
+        assert properties["source_event_seqs"] == [10, 11]
+        assert properties["source_event_hashes"] == ["a" * 64, "b" * 64]
+        backend_safe_keys = [
+            "source_event_count",
+            "source_event_refs",
+            "source_event_seqs",
+            "source_event_hashes",
+        ]
+        assert all(_is_neo4j_property_value(properties[key]) for key in backend_safe_keys)
+
     def test_extract_consolidation_review_links_review_to_candidate(self) -> None:
         event = _make_event(
             "consolidation.candidate.reviewed",
@@ -1119,6 +1151,12 @@ class TestConsolidationCandidateEvents:
 
         with pytest.raises(ValueError, match="candidate_id"):
             extract(event)
+
+    def test_candidate_id_validation_uses_consolidation_contract_taxonomy(self) -> None:
+        source = inspect.getsource(extract_module)
+
+        assert "episode|claim|procedure" not in source
+        assert "consolidation:(episode|claim|procedure)" not in source
 
     def test_candidate_created_rejects_authoritative_status(self) -> None:
         event = _make_event(
@@ -1240,6 +1278,16 @@ class TestConsolidationCandidateEvents:
             "authority_status": "non_authoritative",
             "rationale": "Useful but still alpha.1 non-authoritative.",
         }
+
+
+def _is_neo4j_property_value(value: object) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str | int | float | bool):
+        return True
+    if not isinstance(value, list):
+        return False
+    return all(isinstance(item, str | int | float | bool) for item in value)
 
 
 class TestIssueDiagnosed:
