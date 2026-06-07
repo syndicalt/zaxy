@@ -1,0 +1,236 @@
+"""Tests for the alpha.1 causal/consolidation benchmark helpers."""
+
+from __future__ import annotations
+
+import pytest
+
+from zaxy.causal_benchmark import (
+    CausalBenchmarkCase,
+    ConsolidationBenchmarkCase,
+    evaluate_causal_results,
+    evaluate_consolidation_candidate,
+    summarize_causal_benchmark,
+)
+
+
+def test_causal_case_rejects_unknown_query_type() -> None:
+    with pytest.raises(ValueError, match="query_type"):
+        CausalBenchmarkCase(
+            case_id="bad-direction",
+            query="What caused the deployment rollback?",
+            query_type="neighbor",
+            source={"name": "config drift", "entity_type": "Task"},
+            target={"name": "deployment rollback", "entity_type": "Task"},
+            relation_type="CAUSES",
+            citation="eventloom://session-alpha/events/42#abcdefabcdef",
+        )
+
+
+def test_successor_scoring_uses_target_endpoint_and_prefers_non_authoritative_cited_match() -> None:
+    case = CausalBenchmarkCase(
+        case_id="successor-target",
+        query="What did the config drift cause?",
+        query_type="successor",
+        source={"name": "config drift", "entity_type": "Task"},
+        target={"name": "deployment rollback", "entity_type": "Task"},
+        relation_type="CAUSES",
+        citation="eventloom://session-alpha/events/42#abcdefabcdef",
+    )
+    results = [
+        {
+            "source": {"name": "config drift"},
+            "target": {"name": "deployment rollback"},
+            "relation_type": "CAUSES",
+            "authority_status": "promoted",
+            "citation": "eventloom://session-alpha/events/42#abcdefabcdef",
+        },
+        {
+            "source": {"name": "config drift"},
+            "target": {"name": "deployment rollback"},
+            "relation_type": "CAUSES",
+            "authority_status": "non_authoritative",
+            "citation": "eventloom://session-alpha/events/42#abcdefabcdef",
+        },
+    ]
+
+    row = evaluate_causal_results(case, results)
+
+    assert row["case_id"] == "successor-target"
+    assert row["hit"] is True
+    assert row["relation_match"] is True
+    assert row["citation"] is True
+    assert row["authority_boundary"] is True
+    assert row["score"] == 1.0
+    assert row["matched_result"]["authority_status"] == "non_authoritative"
+
+
+def test_predecessor_scoring_uses_source_endpoint_and_penalizes_distractor_defects() -> None:
+    case = CausalBenchmarkCase(
+        case_id="predecessor-source",
+        query="What caused the deployment rollback?",
+        query_type="predecessor",
+        source={"name": "config drift", "entity_type": "Task"},
+        target={"name": "deployment rollback", "entity_type": "Task"},
+        relation_type="CAUSES",
+        citation="eventloom://session-alpha/events/42#abcdefabcdef",
+    )
+    results = [
+        {
+            "source": {"name": "config drift"},
+            "target": {"name": "deployment rollback"},
+            "relation_type": "SUPERSEDES",
+            "authority_status": "promoted",
+            "citation": "note://not-eventloom",
+        },
+        {
+            "source": {"name": "unrelated alert"},
+            "target": {"name": "deployment rollback"},
+            "relation_type": "CAUSES",
+            "authority_status": "non_authoritative",
+            "citation": "eventloom://session-alpha/events/42#abcdefabcdef",
+        },
+    ]
+
+    row = evaluate_causal_results(case, results)
+
+    assert row["hit"] is True
+    assert row["relation_match"] is False
+    assert row["citation"] is False
+    assert row["authority_boundary"] is False
+    assert row["score"] == 0.25
+
+
+def test_causal_scoring_prefers_current_match_over_stale_matching_endpoint() -> None:
+    case = CausalBenchmarkCase(
+        case_id="stale-distractor",
+        query="What did the config drift cause?",
+        query_type="successor",
+        source={"name": "config drift", "entity_type": "Task"},
+        target={"name": "deployment rollback", "entity_type": "Task"},
+        relation_type="CAUSES",
+        citation="eventloom://session-alpha/events/42#abcdefabcdef",
+    )
+    results = [
+        {
+            "target": {"name": "deployment rollback"},
+            "relation_type": "CAUSES",
+            "authority_status": "non_authoritative",
+            "citation": "eventloom://session-alpha/events/42#abcdefabcdef",
+            "superseded_by": "eventloom://session-alpha/events/43#bbbbbbbbbbbb",
+        },
+        {
+            "target": {"name": "deployment rollback"},
+            "relation_type": "CAUSES",
+            "authority_status": "non_authoritative",
+            "citation": "eventloom://session-alpha/events/42#abcdefabcdef",
+        },
+    ]
+
+    row = evaluate_causal_results(case, results)
+
+    assert row["score"] == 1.0
+    assert "superseded_by" not in row["matched_result"]
+
+
+def test_causal_summary_reports_mean_rates_and_empty_defaults() -> None:
+    rows = [
+        {"score": 1.0, "hit": True, "citation": True, "authority_boundary": True},
+        {"score": 0.25, "hit": True, "citation": False, "authority_boundary": False},
+    ]
+
+    summary = summarize_causal_benchmark(rows)
+
+    assert summary == {
+        "case_count": 2,
+        "mean": 0.625,
+        "hit_rate": 1.0,
+        "citation_coverage": 0.5,
+        "authority_boundary": 0.5,
+    }
+    assert summarize_causal_benchmark([]) == {
+        "case_count": 0,
+        "mean": 0.0,
+        "hit_rate": 0.0,
+        "citation_coverage": 0.0,
+        "authority_boundary": 0.0,
+    }
+
+
+def test_causal_case_requires_eventloom_style_citation() -> None:
+    with pytest.raises(ValueError, match="citation"):
+        CausalBenchmarkCase(
+            case_id="bad-citation",
+            query="What caused the deployment rollback?",
+            query_type="predecessor",
+            source={"name": "config drift", "entity_type": "Task"},
+            target={"name": "deployment rollback", "entity_type": "Task"},
+            relation_type="CAUSES",
+            citation="plain text",
+        )
+
+
+def test_consolidation_candidate_scores_source_fidelity_and_non_authoritative_boundary() -> None:
+    case = ConsolidationBenchmarkCase(
+        case_id="projection-fidelity",
+        candidate_id="projection:deploy-root-cause",
+        candidate_type="causal_projection",
+        source_events=(
+            {"ref": "eventloom://session-alpha/events/41#abc123", "hash": "abc123"},
+            {"ref": "eventloom://session-alpha/events/42#def456", "hash": "def456"},
+        ),
+        citation="eventloom://session-alpha/events/42#def456",
+        authority_status="non_authoritative",
+    )
+    candidate = {
+        "candidate_id": "projection:deploy-root-cause",
+        "candidate_type": "causal_projection",
+        "source_events": [
+            {"ref": "eventloom://session-alpha/events/41#abc123", "hash": "abc123"},
+            {"ref": "eventloom://session-alpha/events/42#def456", "hash": "def456"},
+        ],
+        "citations": [
+            "eventloom://session-alpha/events/41#abc123",
+            "eventloom://session-alpha/events/42#def456",
+        ],
+        "authority_status": "non_authoritative",
+    }
+
+    row = evaluate_consolidation_candidate(case, candidate)
+
+    assert row == {
+        "case_id": "projection-fidelity",
+        "candidate_match": True,
+        "source_event_fidelity": True,
+        "citation_coverage": True,
+        "authority_boundary": True,
+        "score": 1.0,
+    }
+
+
+def test_consolidation_candidate_penalizes_promoted_or_missing_source_refs() -> None:
+    case = ConsolidationBenchmarkCase(
+        case_id="projection-boundary",
+        candidate_id="projection:deploy-root-cause",
+        candidate_type="causal_projection",
+        source_events=(
+            {"ref": "eventloom://session-alpha/events/41#abc123", "hash": "abc123"},
+            {"ref": "eventloom://session-alpha/events/42#def456", "hash": "def456"},
+        ),
+        citation="eventloom://session-alpha/events/42#def456",
+        authority_status="non_authoritative",
+    )
+    candidate = {
+        "candidate_id": "projection:deploy-root-cause",
+        "candidate_type": "causal_projection",
+        "source_events": [{"ref": "eventloom://session-alpha/events/41#abc123", "hash": "abc123"}],
+        "citations": ["eventloom://session-alpha/events/41#abc123"],
+        "authority_status": "promoted",
+    }
+
+    row = evaluate_consolidation_candidate(case, candidate)
+
+    assert row["candidate_match"] is True
+    assert row["source_event_fidelity"] is False
+    assert row["citation_coverage"] is False
+    assert row["authority_boundary"] is False
+    assert row["score"] == 0.25
