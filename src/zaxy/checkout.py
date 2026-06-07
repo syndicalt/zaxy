@@ -57,6 +57,12 @@ def build_checkout_diagnostics(
     inferred_context = _inferred_context_diagnostics(current_facts)
     if inferred_context["context_count"]:
         diagnostics["inferred_context"] = inferred_context
+    causal_context = _causal_context_diagnostics(current_facts)
+    if causal_context["context_count"]:
+        diagnostics["causal_context"] = causal_context
+    consolidation_candidates = _consolidation_candidate_diagnostics(current_facts)
+    if consolidation_candidates["candidate_count"]:
+        diagnostics["consolidation_candidates"] = consolidation_candidates
     evidence_set = build_evidence_set(
         query=query,
         evidence_plan=evidence_plan,
@@ -136,6 +142,15 @@ def build_checkout_guidance(
         trust.append("Checkout depends on inferred graph paths; inspect inferred_context diagnostics.")
     if inferred_context["low_trust_count"]:
         ignore.append("Low-trust inferred graph paths were included; treat them as leads, not facts.")
+    causal_context = _causal_context_diagnostics(current_facts)
+    if causal_context["context_count"]:
+        trust.append("Use causal_context as explanatory memory, not as authoritative state.")
+        ignore.append("Do not treat proposed causal edges as accepted facts without review status.")
+    consolidation_candidates = _consolidation_candidate_diagnostics(current_facts)
+    if consolidation_candidates["candidate_count"]:
+        trust.append("Use consolidation candidates as cited summaries that still require review.")
+    if consolidation_candidates["pending_count"]:
+        ignore.append("Do not treat review-pending consolidation candidates as authoritative memory.")
     synthesis = _checkout_synthesis_guidance(
         query=query,
         current_facts=current_facts,
@@ -429,6 +444,35 @@ def format_memory_checkout_prompt(
         if inference_methods:
             inferred_line += f", methods={', '.join(inference_methods)}"
         lines.append(inferred_line)
+    causal_context = diagnostics.get("causal_context")
+    if isinstance(causal_context, dict):
+        causal_line = (
+            "- Causal context: "
+            f"contexts={causal_context.get('context_count', 0)}, "
+            f"edges={causal_context.get('edge_count', 0)}, "
+            f"average_trust={causal_context.get('average_trust', 0)}, "
+            f"authority={causal_context.get('authority_status', 'non_authoritative')}"
+        )
+        relation_types = _text_list(causal_context.get("relation_types"))
+        if relation_types:
+            causal_line += f", relations={', '.join(relation_types)}"
+        methods = _text_list(causal_context.get("methods"))
+        if methods:
+            causal_line += f", methods={', '.join(methods)}"
+        lines.append(causal_line)
+    consolidation_candidates = diagnostics.get("consolidation_candidates")
+    if isinstance(consolidation_candidates, dict):
+        consolidation_line = (
+            "- Consolidation candidates: "
+            f"candidates={consolidation_candidates.get('candidate_count', 0)}, "
+            f"pending={consolidation_candidates.get('pending_count', 0)}, "
+            f"accepted={consolidation_candidates.get('accepted_count', 0)}, "
+            f"authority={consolidation_candidates.get('authority_status', 'non_authoritative')}"
+        )
+        candidate_types = _text_list(consolidation_candidates.get("candidate_types"))
+        if candidate_types:
+            consolidation_line += f", types={', '.join(candidate_types)}"
+        lines.append(consolidation_line)
     if diagnostics.get("feedback_recommended"):
         lines.append(
             "- Feedback: call "
@@ -1226,6 +1270,94 @@ def _inferred_score_explanation(item: dict[str, Any]) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _causal_context_diagnostics(items: list[dict[str, Any]]) -> dict[str, Any]:
+    causal_items: list[tuple[dict[str, Any], dict[str, Any], list[str]]] = []
+    for item in items:
+        explanation = _inferred_score_explanation(item)
+        relation_types = [
+            relation_type
+            for relation_type in _text_list(explanation.get("inferred_relation_types"))
+            if relation_type.startswith("causal_")
+        ]
+        if relation_types:
+            causal_items.append((item, explanation, relation_types))
+    context_count = len(causal_items)
+    if context_count == 0:
+        return {
+            "context_count": 0,
+            "edge_count": 0,
+            "relation_types": [],
+            "methods": [],
+            "average_trust": 0.0,
+            "authority_status": "non_authoritative",
+        }
+    explanations = [explanation for _, explanation, _ in causal_items]
+    return {
+        "context_count": context_count,
+        "edge_count": sum(_int_metric(exp.get("inferred_edge_count")) for exp in explanations),
+        "relation_types": _unique_texts(
+            relation_type
+            for _, _, relation_types in causal_items
+            for relation_type in relation_types
+        ),
+        "methods": _unique_explanation_texts(explanations, "inference_methods"),
+        "average_trust": _round_metric(_average_metric(explanations, "inferred_edge_trust")),
+        "authority_status": "non_authoritative",
+    }
+
+
+def _consolidation_candidate_diagnostics(items: list[dict[str, Any]]) -> dict[str, Any]:
+    candidates = [item for item in items if _is_consolidation_candidate(item)]
+    if not candidates:
+        return {
+            "candidate_count": 0,
+            "candidate_types": [],
+            "pending_count": 0,
+            "accepted_count": 0,
+            "authority_status": "non_authoritative",
+        }
+    metadata_values = [_metadata(item) for item in candidates]
+    return {
+        "candidate_count": len(candidates),
+        "candidate_types": _unique_texts(
+            _candidate_type(item, metadata)
+            for item, metadata in zip(candidates, metadata_values, strict=True)
+        ),
+        "pending_count": sum(1 for metadata in metadata_values if _review_status(metadata) == "pending"),
+        "accepted_count": sum(1 for metadata in metadata_values if _review_status(metadata) == "accepted"),
+        "authority_status": "non_authoritative",
+    }
+
+
+def _is_consolidation_candidate(item: dict[str, Any]) -> bool:
+    if str(item.get("entity_type") or "").strip() == "consolidation_candidate":
+        return True
+    metadata = _metadata(item)
+    return any(
+        str(metadata.get(key) or "").strip()
+        for key in ("candidate_type", "consolidation_candidate_type", "review_status")
+    )
+
+
+def _metadata(item: dict[str, Any]) -> dict[str, Any]:
+    metadata = item.get("metadata")
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def _candidate_type(item: dict[str, Any], metadata: dict[str, Any]) -> str:
+    for key in ("candidate_type", "consolidation_candidate_type"):
+        value = str(metadata.get(key) or "").strip()
+        if value:
+            return value
+    entity_name = str(item.get("entity_name") or "").strip()
+    match = re.match(r"^consolidation:([^:]+):", entity_name)
+    return match.group(1) if match else "unknown"
+
+
+def _review_status(metadata: dict[str, Any]) -> str:
+    return str(metadata.get("review_status") or "").strip().lower()
+
+
 def _average_metric(items: list[dict[str, Any]], key: str) -> float:
     values = [_float_metric(item.get(key)) for item in items]
     return sum(values) / len(values) if values else 0.0
@@ -1247,9 +1379,16 @@ def _unique_explanation_texts(items: list[dict[str, Any]], key: str) -> list[str
     values: list[str] = []
     for item in items:
         values.extend(_text_list(item.get(key)))
+    return _unique_texts(values)
+
+
+def _unique_texts(values: Any) -> list[str]:
     seen: set[str] = set()
     unique: list[str] = []
     for value in values:
+        value = str(value).strip()
+        if not value:
+            continue
         if value in seen:
             continue
         seen.add(value)
