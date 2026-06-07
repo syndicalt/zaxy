@@ -91,8 +91,8 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     assert "Harvey LAB mean 0.788" in html
     assert "purpose-v1 passed" in html
     assert "StateRecoveryBench gate passed" in html
-    assert "GBrain beaten on Harvey LAB" in html
-    assert "Mem0/Agent Memory adapters pending" in html
+    assert "Harvey LAB external signal" in html
+    assert "same-harness comparison discipline" in html
     assert "external verification requested" in html
     assert "public-derived purpose holdout" in html
     assert "External superiority claims against larger memory systems" in html
@@ -579,7 +579,8 @@ def test_public_site_benchmark_claims_use_current_full_set_guardrails() -> None:
     assert "docs/benchmarks.html#completed-2026-06-06-result" in html
     assert "0.272727 precision" in html
     assert "Mem0 / Agent Memory / Zep-Graphiti / MemPalace / GBrain" in html
-    assert "GBrain beaten; memory-system adapters pending" in html
+    assert "Evidence first, claims second" in html
+    assert "Larger memory-system comparisons stay disclosure-only" in html
     assert "disclosure-only" in html
     assert "Flat transcript" in html
     assert "Markdown notes" in html
