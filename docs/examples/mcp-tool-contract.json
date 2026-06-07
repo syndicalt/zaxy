@@ -1,5 +1,5 @@
 {
-  "tool_count": 29,
+  "tool_count": 33,
   "tools": [
     {
       "description": "Append a typed event to the agent's persistent memory log.",
@@ -80,6 +80,187 @@
         "type": "object"
       },
       "name": "memory_query"
+    },
+    {
+      "description": "Read directed causal effects of an entity from graph-backed memory.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "depth": {
+            "default": 2,
+            "description": "Traversal depth",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "entity_name": {
+            "description": "Entity name to start causal traversal from",
+            "type": "string"
+          },
+          "relation_type": {
+            "description": "Optional causal relation taxonomy label",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session ID for scoped causal retrieval",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_name"
+        ],
+        "type": "object"
+      },
+      "name": "memory_causal_successors"
+    },
+    {
+      "description": "Read directed causal causes of an entity from graph-backed memory.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "depth": {
+            "default": 2,
+            "description": "Traversal depth",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "entity_name": {
+            "description": "Entity name to start causal traversal from",
+            "type": "string"
+          },
+          "relation_type": {
+            "description": "Optional causal relation taxonomy label",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session ID for scoped causal retrieval",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_name"
+        ],
+        "type": "object"
+      },
+      "name": "memory_causal_predecessors"
+    },
+    {
+      "description": "Append a cited, review-pending consolidation candidate event.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "default": "zaxy-consolidation",
+            "description": "Actor recording the candidate",
+            "type": "string"
+          },
+          "candidate_type": {
+            "description": "Consolidation candidate type",
+            "enum": [
+              "episode",
+              "claim",
+              "procedure"
+            ],
+            "type": "string"
+          },
+          "confidence": {
+            "description": "Candidate confidence from 0.0 to 1.0",
+            "type": "number"
+          },
+          "method": {
+            "description": "Consolidation method identifier",
+            "type": "string"
+          },
+          "purpose": {
+            "description": "Optional consolidation purpose",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session ID for multi-agent sharding",
+            "type": "string"
+          },
+          "source_events": {
+            "description": "Cited Eventloom source events",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "hash": {
+                  "type": "string"
+                },
+                "seq": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "seq",
+                "hash"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "summary": {
+            "description": "Candidate summary",
+            "type": "string"
+          },
+          "title": {
+            "description": "Candidate title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate_type",
+          "title",
+          "summary",
+          "source_events",
+          "confidence",
+          "method"
+        ],
+        "type": "object"
+      },
+      "name": "memory_consolidation_candidate"
+    },
+    {
+      "description": "Append a consolidation candidate review event without promoting authority.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "default": "zaxy-reviewer",
+            "description": "Actor recording the review",
+            "type": "string"
+          },
+          "candidate_id": {
+            "description": "Consolidation candidate ID",
+            "type": "string"
+          },
+          "rationale": {
+            "description": "Review rationale",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session ID for multi-agent sharding",
+            "type": "string"
+          },
+          "status": {
+            "description": "Review lifecycle status",
+            "enum": [
+              "accepted",
+              "rejected",
+              "deferred",
+              "conflicted"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "status",
+          "rationale"
+        ],
+        "type": "object"
+      },
+      "name": "memory_consolidation_review"
     },
     {
       "description": "Retrieve exact Eventloom source chunks with citations.",

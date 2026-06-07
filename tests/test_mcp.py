@@ -11,9 +11,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import zaxy.mcp_server
+from zaxy.causal import CausalQueryResult
 from zaxy.config import Settings
 from zaxy.core import build_memory_checkout
 from zaxy.event import EventLog
+from zaxy.graph import GraphEntity
 from zaxy.mcp_server import (
     TOOLS,
     MCPTransportAuth,
@@ -191,7 +193,7 @@ class TestToolSchema:
 
     def test_tools_list_length(self) -> None:
         """Should expose the memory and context lifecycle tools."""
-        assert len(TOOLS) == 29
+        assert len(TOOLS) == 33
 
     def test_tool_names(self) -> None:
         """Tool names should match the expected contract."""
@@ -199,6 +201,10 @@ class TestToolSchema:
         assert names == {
             "memory_append",
             "memory_query",
+            "memory_causal_successors",
+            "memory_causal_predecessors",
+            "memory_consolidation_candidate",
+            "memory_consolidation_review",
             "memory_verbatim",
             "memory_feedback",
             "memory_synthesis_artifact",
@@ -408,6 +414,46 @@ class TestToolSchema:
         assert "handoff_id" in tool.inputSchema["properties"]
         assert tool.inputSchema["properties"]["proof_seq"]["minimum"] == 1
 
+    def test_causal_and_consolidation_tools_are_registered(self) -> None:
+        """Causal and consolidation tools should expose stable public schemas."""
+        tools = {tool.name: tool for tool in TOOLS}
+
+        successors = tools["memory_causal_successors"]
+        predecessors = tools["memory_causal_predecessors"]
+        assert successors.inputSchema["required"] == ["entity_name"]
+        assert predecessors.inputSchema["required"] == ["entity_name"]
+        for tool in (successors, predecessors):
+            assert "relation_type" in tool.inputSchema["properties"]
+            assert tool.inputSchema["properties"]["depth"]["default"] == 2
+            assert tool.inputSchema["properties"]["depth"]["minimum"] == 1
+            assert "session_id" in tool.inputSchema["properties"]
+
+        candidate = tools["memory_consolidation_candidate"]
+        assert candidate.inputSchema["required"] == [
+            "candidate_type",
+            "title",
+            "summary",
+            "source_events",
+            "confidence",
+            "method",
+        ]
+        assert candidate.inputSchema["properties"]["candidate_type"]["enum"] == [
+            "episode",
+            "claim",
+            "procedure",
+        ]
+        assert candidate.inputSchema["properties"]["actor"]["default"] == "zaxy-consolidation"
+
+        review = tools["memory_consolidation_review"]
+        assert review.inputSchema["required"] == ["candidate_id", "status", "rationale"]
+        assert review.inputSchema["properties"]["status"]["enum"] == [
+            "accepted",
+            "rejected",
+            "deferred",
+            "conflicted",
+        ]
+        assert review.inputSchema["properties"]["actor"]["default"] == "zaxy-reviewer"
+
 
 # ------------------------------------------------------------------
 # Handler tests
@@ -451,6 +497,288 @@ class TestMemoryAppend:
         """memory_append should bound direct handler inputs as tightly as advertised schemas."""
         with pytest.raises(ValueError):
             await server.handle_memory_append(arguments)
+
+
+class TestCausalAndConsolidationTools:
+    """Tests for causal reads and consolidation MCP handlers."""
+
+    async def test_causal_successors_calls_graph_read_path_and_serializes_results(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_causal_successors should query configured graph causal neighbors."""
+        result = CausalQueryResult(
+            source={"name": "Plan", "entity_type": "task"},
+            target={"name": "Implementation", "entity_type": "task"},
+            relation_type="enabled",
+            graph_relation_type="causal_enabled",
+            confidence=0.82,
+            method="explicit_outcome_citation_v1",
+            citation="eventloom://agent-1/events/7#" + ("a" * 12),
+            review_status="proposed",
+            authority_status="non_authoritative",
+            evidence={"source_event_seq": 7, "source_event_hash": "a" * 64},
+            path_length=1,
+        )
+        server.graph.search_causal_neighbors.return_value = [
+            GraphEntity(
+                name="Implementation",
+                entity_type="task",
+                valid_from="2026-06-07T00:00:00Z",
+                valid_to=None,
+                session_id="agent-1",
+                properties={
+                    "causal_source_name": "Plan",
+                    "causal_source_type": "task",
+                    "causal_target_name": "Implementation",
+                    "causal_target_type": "task",
+                    "causal_relation_type": "enabled",
+                    "graph_relation_type": "causal_enabled",
+                    "confidence": 0.82,
+                    "method": "explicit_outcome_citation_v1",
+                    "review_status": "proposed",
+                    "authority_status": "non_authoritative",
+                    "session_id": "agent-1",
+                    "source_event_seq": 7,
+                    "source_event_hash": "a" * 64,
+                    "_path_length": 1,
+                },
+            )
+        ]
+
+        response = await server.handle_memory_causal_successors({
+            "entity_name": "Plan",
+            "relation_type": "enabled",
+            "depth": 3,
+            "session_id": "agent-1",
+        })
+
+        payload = json_loads(response[0].text)
+        assert payload == [result.to_dict()]
+        server.graph.search_causal_neighbors.assert_awaited_once_with(
+            "Plan",
+            direction="successors",
+            relation_type="causal_enabled",
+            depth=3,
+            temporal_point=None,
+            session_id="agent-1",
+        )
+
+    async def test_causal_predecessors_calls_graph_read_path_and_serializes_results(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_causal_predecessors should use incoming causal direction."""
+        server.graph.search_causal_neighbors.return_value = [
+            GraphEntity(
+                name="Plan",
+                entity_type="task",
+                valid_from="2026-06-07T00:00:00Z",
+                valid_to=None,
+                session_id="agent-1",
+                properties={
+                    "causal_source_name": "Plan",
+                    "causal_source_type": "task",
+                    "causal_target_name": "Implementation",
+                    "causal_target_type": "task",
+                    "causal_relation_type": "enabled",
+                    "graph_relation_type": "causal_enabled",
+                    "confidence": 0.82,
+                    "method": "explicit_outcome_citation_v1",
+                    "review_status": "proposed",
+                    "authority_status": "non_authoritative",
+                    "session_id": "agent-1",
+                    "source_event_seq": 7,
+                    "source_event_hash": "a" * 64,
+                },
+            )
+        ]
+
+        response = await server.handle_memory_causal_predecessors({
+            "entity_name": "Implementation",
+            "session_id": "agent-1",
+        })
+
+        payload = json_loads(response[0].text)
+        assert payload[0]["source"]["name"] == "Plan"
+        assert payload[0]["target"]["name"] == "Implementation"
+        server.graph.search_causal_neighbors.assert_awaited_once_with(
+            "Implementation",
+            direction="predecessors",
+            relation_type=None,
+            depth=2,
+            temporal_point=None,
+            session_id="agent-1",
+        )
+
+    @pytest.mark.parametrize(
+        ("arguments", "match"),
+        [
+            ({"entity_name": "Plan", "depth": 0, "session_id": "agent-1"}, "depth must be between 1"),
+            ({"entity_name": "Plan", "depth": True, "session_id": "agent-1"}, "depth must be an integer"),
+            (
+                {"entity_name": "Plan", "relation_type": "enables", "session_id": "agent-1"},
+                "causal relation_type",
+            ),
+        ],
+    )
+    async def test_causal_handlers_reject_invalid_relation_and_depth(
+        self,
+        server: ZaxyMCPServer,
+        arguments: dict[str, object],
+        match: str,
+    ) -> None:
+        """Causal handler validation should fail before graph access."""
+        with pytest.raises(ValueError, match=match):
+            await server.handle_memory_causal_successors(arguments)
+
+        server.graph.search_causal_neighbors.assert_not_awaited()
+
+    async def test_consolidation_candidate_appends_projects_traces_and_returns_event_ref(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_consolidation_candidate should append and immediately project the candidate."""
+        source_hash = "b" * 64
+        extraction = MagicMock()
+        with patch("zaxy.mcp_server.extract", return_value=extraction) as mock_extract:
+            response = await server.handle_memory_consolidation_candidate({
+                "candidate_type": "claim",
+                "title": "Retry policy",
+                "summary": "Retries should preserve original citations.",
+                "source_events": [{"seq": 7, "hash": source_hash}],
+                "confidence": 0.82,
+                "method": "manual-review",
+                "purpose": "release audit",
+                "session_id": "agent-1",
+                "actor": "assistant",
+            })
+
+        payload = json_loads(response[0].text)
+        assert payload == {"seq": 1, "hash": "a" * 64}
+        server.session_manager.get.assert_called_once_with("agent-1")
+        append_call = server.session_manager.get.return_value.eventlog.append.call_args
+        assert append_call.args == ("consolidation.candidate.created",)
+        assert append_call.kwargs["actor"] == "assistant"
+        assert append_call.kwargs["thread"] == "agent-1"
+        event_payload = append_call.kwargs["payload"]
+        assert event_payload["candidate_type"] == "claim"
+        assert event_payload["review_status"] == "pending"
+        assert event_payload["authority_status"] == "non_authoritative"
+        assert event_payload["source_events"] == [{"seq": 7, "hash": source_hash}]
+        mock_extract.assert_called_once_with(server.session_manager.get.return_value.eventlog.append.return_value)
+        server.graph.upsert_extraction.assert_awaited_once_with(extraction, session_id="agent-1")
+        server.tracer.trace_append.assert_awaited_once_with(
+            "consolidation.candidate.created",
+            "assistant",
+            1,
+        )
+
+    async def test_consolidation_candidate_leaves_source_event_validation_to_builder(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """Invalid source_events should fail under the strict consolidation builder contract."""
+        with pytest.raises(ValueError, match=r"source_events\[0\]\.hash"):
+            await server.handle_memory_consolidation_candidate({
+                "candidate_type": "claim",
+                "title": "Retry policy",
+                "summary": "Retries should preserve original citations.",
+                "source_events": [{"seq": 7, "hash": "not-a-hash"}],
+                "confidence": 0.82,
+                "method": "manual-review",
+                "session_id": "agent-1",
+            })
+
+        server.session_manager.get.assert_not_called()
+
+    async def test_consolidation_review_appends_projects_traces_without_authority_promotion(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_consolidation_review should record review lifecycle without promoting authority."""
+        candidate_id = "consolidation:claim:" + ("c" * 24)
+        extraction = MagicMock()
+        with patch("zaxy.mcp_server.extract", return_value=extraction):
+            response = await server.handle_memory_consolidation_review({
+                "candidate_id": candidate_id,
+                "status": "accepted",
+                "rationale": "Citations match the source events.",
+                "session_id": "agent-1",
+                "actor": "reviewer",
+            })
+
+        assert json_loads(response[0].text) == {"seq": 1, "hash": "a" * 64}
+        append_call = server.session_manager.get.return_value.eventlog.append.call_args
+        assert append_call.args == ("consolidation.candidate.reviewed",)
+        assert append_call.kwargs["actor"] == "reviewer"
+        assert append_call.kwargs["thread"] == "agent-1"
+        assert append_call.kwargs["payload"] == {
+            "candidate_id": candidate_id,
+            "status": "accepted",
+            "authority_status": "non_authoritative",
+            "rationale": "Citations match the source events.",
+        }
+        server.graph.upsert_extraction.assert_awaited_once_with(extraction, session_id="agent-1")
+        server.tracer.trace_append.assert_awaited_once_with(
+            "consolidation.candidate.reviewed",
+            "reviewer",
+            1,
+        )
+
+    @pytest.mark.parametrize(
+        ("handler_name", "arguments"),
+        [
+            ("handle_memory_causal_successors", {"entity_name": "Plan", "session_id": "agent-2"}),
+            (
+                "handle_memory_consolidation_review",
+                {
+                    "candidate_id": "consolidation:claim:" + ("c" * 24),
+                    "status": "deferred",
+                    "rationale": "Needs source review.",
+                    "session_id": "agent-2",
+                },
+            ),
+        ],
+    )
+    async def test_remote_scope_rejects_cross_session_causal_and_consolidation_calls(
+        self,
+        server: ZaxyMCPServer,
+        handler_name: str,
+        arguments: dict[str, object],
+    ) -> None:
+        """Remote scoped calls should not cross into a different session."""
+        token = remote_session_scope.set("agent-1")
+        try:
+            with pytest.raises(PermissionError, match="session scope"):
+                await getattr(server, handler_name)(arguments)
+        finally:
+            remote_session_scope.reset(token)
+
+    @pytest.mark.parametrize(
+        ("tool_name", "handler_name"),
+        [
+            ("memory_causal_successors", "handle_memory_causal_successors"),
+            ("memory_causal_predecessors", "handle_memory_causal_predecessors"),
+            ("memory_consolidation_candidate", "handle_memory_consolidation_candidate"),
+            ("memory_consolidation_review", "handle_memory_consolidation_review"),
+        ],
+    )
+    async def test_causal_and_consolidation_dispatch_routes_to_handlers(
+        self,
+        server: ZaxyMCPServer,
+        tool_name: str,
+        handler_name: str,
+    ) -> None:
+        """_dispatch_tool_call should route all new public tools."""
+        expected = [MagicMock()]
+        handler = AsyncMock(return_value=expected)
+        setattr(server, handler_name, handler)
+
+        result = await zaxy.mcp_server._dispatch_tool_call(server, tool_name, {"entity_name": "Plan"})
+
+        assert result == expected
+        handler.assert_awaited_once_with({"entity_name": "Plan"})
 
 
 class TestCoordinationTools:

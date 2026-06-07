@@ -6,6 +6,10 @@ with Zaxy via the Model Context Protocol.
 Tools exposed:
 - memory_append: Append a typed event to the log.
 - memory_query: Query the temporal knowledge graph.
+- memory_causal_successors: Read causal effects from the graph.
+- memory_causal_predecessors: Read causal causes from the graph.
+- memory_consolidation_candidate: Append a cited consolidation candidate.
+- memory_consolidation_review: Append a consolidation review.
 - memory_feedback: Record retrieval feedback for a graph entity.
 - memory_synthesis_artifact: Persist checkout synthesis answer candidates and feedback.
 - memory_synthesis_evidence: Record feedback for one synthesis ledger row.
@@ -25,7 +29,7 @@ from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 import anyio
 import jwt
@@ -37,9 +41,19 @@ from mcp.shared.message import SessionMessage
 from mcp.types import TextContent, Tool
 
 from zaxy.capabilities import build_memory_bootstrap, build_memory_capabilities
+from zaxy.causal import causal_relation_to_graph_relation
 from zaxy.config import get_settings
+from zaxy.consolidation import (
+    build_consolidation_candidate_event,
+    build_consolidation_review_event,
+)
 from zaxy.context import Context, ContextAssemblyPolicy, context_counts
-from zaxy.core import ContextAssembly, MemoryCheckout, build_memory_checkout
+from zaxy.core import (
+    ContextAssembly,
+    MemoryCheckout,
+    _causal_query_result_from_entity,
+    build_memory_checkout,
+)
 from zaxy.extract import extract
 from zaxy.lifecycle import (
     build_session_ended_event,
@@ -66,6 +80,7 @@ from zaxy.security import (
     validate_payload,
     validate_query,
     validate_session_id,
+    validate_traversal_depth,
 )
 from zaxy.session import SessionManager
 from zaxy.synthesis_artifact import (
@@ -133,6 +148,107 @@ TOOLS = [
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "Local-only explicit cross-session query scope",
+                },
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_causal_successors",
+        description="Read directed causal effects of an entity from graph-backed memory.",
+        inputSchema={
+            "type": "object",
+            "required": ["entity_name"],
+            "properties": {
+                "entity_name": {"type": "string", "description": "Entity name to start causal traversal from"},
+                "relation_type": {"type": "string", "description": "Optional causal relation taxonomy label"},
+                "depth": {"type": "integer", "description": "Traversal depth", "default": 2, "minimum": 1},
+                "session_id": {"type": "string", "description": "Session ID for scoped causal retrieval"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_causal_predecessors",
+        description="Read directed causal causes of an entity from graph-backed memory.",
+        inputSchema={
+            "type": "object",
+            "required": ["entity_name"],
+            "properties": {
+                "entity_name": {"type": "string", "description": "Entity name to start causal traversal from"},
+                "relation_type": {"type": "string", "description": "Optional causal relation taxonomy label"},
+                "depth": {"type": "integer", "description": "Traversal depth", "default": 2, "minimum": 1},
+                "session_id": {"type": "string", "description": "Session ID for scoped causal retrieval"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_consolidation_candidate",
+        description="Append a cited, review-pending consolidation candidate event.",
+        inputSchema={
+            "type": "object",
+            "required": [
+                "candidate_type",
+                "title",
+                "summary",
+                "source_events",
+                "confidence",
+                "method",
+            ],
+            "properties": {
+                "candidate_type": {
+                    "type": "string",
+                    "enum": ["episode", "claim", "procedure"],
+                    "description": "Consolidation candidate type",
+                },
+                "title": {"type": "string", "description": "Candidate title"},
+                "summary": {"type": "string", "description": "Candidate summary"},
+                "source_events": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "required": ["seq", "hash"],
+                        "properties": {
+                            "seq": {"type": "integer", "minimum": 1},
+                            "hash": {"type": "string"},
+                        },
+                        "additionalProperties": False,
+                    },
+                    "description": "Cited Eventloom source events",
+                },
+                "confidence": {"type": "number", "description": "Candidate confidence from 0.0 to 1.0"},
+                "method": {"type": "string", "description": "Consolidation method identifier"},
+                "purpose": {"type": "string", "description": "Optional consolidation purpose"},
+                "session_id": {"type": "string", "description": "Session ID for multi-agent sharding"},
+                "actor": {
+                    "type": "string",
+                    "description": "Actor recording the candidate",
+                    "default": "zaxy-consolidation",
+                },
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_consolidation_review",
+        description="Append a consolidation candidate review event without promoting authority.",
+        inputSchema={
+            "type": "object",
+            "required": ["candidate_id", "status", "rationale"],
+            "properties": {
+                "candidate_id": {"type": "string", "description": "Consolidation candidate ID"},
+                "status": {
+                    "type": "string",
+                    "enum": ["accepted", "rejected", "deferred", "conflicted"],
+                    "description": "Review lifecycle status",
+                },
+                "rationale": {"type": "string", "description": "Review rationale"},
+                "session_id": {"type": "string", "description": "Session ID for multi-agent sharding"},
+                "actor": {
+                    "type": "string",
+                    "description": "Actor recording the review",
+                    "default": "zaxy-reviewer",
                 },
             },
             "additionalProperties": False,
@@ -937,6 +1053,89 @@ class ZaxyMCPServer:
         await self.tracer.trace_append(event_type, actor, event.seq)
 
         return [TextContent(type="text", text=json.dumps({"seq": event.seq, "hash": event.hash}))]
+
+    async def handle_memory_causal_successors(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_causal_successors tool calls."""
+        return await self._handle_memory_causal_neighbors(arguments, direction="successors")
+
+    async def handle_memory_causal_predecessors(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_causal_predecessors tool calls."""
+        return await self._handle_memory_causal_neighbors(arguments, direction="predecessors")
+
+    async def _handle_memory_causal_neighbors(
+        self,
+        arguments: dict[str, Any],
+        *,
+        direction: Literal["successors", "predecessors"],
+    ) -> list[TextContent]:
+        entity_name = _required_text(arguments.get("entity_name"), "entity_name")
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
+        raw_depth = arguments.get("depth", 2)
+        if isinstance(raw_depth, bool):
+            raise ValueError("depth must be an integer")
+        depth = validate_traversal_depth(raw_depth)
+        relation_type = _optional_text(arguments.get("relation_type"))
+        graph_relation_type = (
+            causal_relation_to_graph_relation(relation_type) if relation_type is not None else None
+        )
+
+        neighbors = await self.graph.search_causal_neighbors(
+            entity_name,
+            direction=direction,
+            relation_type=graph_relation_type,
+            depth=depth,
+            temporal_point=None,
+            session_id=session_id,
+        )
+        results = [
+            result.to_dict()
+            for entity in neighbors
+            if (result := _causal_query_result_from_entity(entity, direction=direction)) is not None
+        ]
+        return [TextContent(type="text", text=json.dumps(results, indent=2))]
+
+    async def handle_memory_consolidation_candidate(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_consolidation_candidate tool calls."""
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
+        actor = _optional_text(arguments.get("actor")) or "zaxy-consolidation"
+        event_input = build_consolidation_candidate_event(
+            actor=actor,
+            session_id=session_id,
+            candidate_type=_required_text(arguments.get("candidate_type"), "candidate_type"),
+            title=_required_text(arguments.get("title"), "title"),
+            summary=_required_text(arguments.get("summary"), "summary"),
+            source_events=arguments.get("source_events", []),
+            confidence=arguments.get("confidence"),
+            method=_required_text(arguments.get("method"), "method"),
+            purpose=_optional_text(arguments.get("purpose")),
+        )
+        event = await self._append_project_and_trace_event(event_input, session_id=session_id)
+        return [TextContent(type="text", text=json.dumps({"seq": event.seq, "hash": event.hash}))]
+
+    async def handle_memory_consolidation_review(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_consolidation_review tool calls."""
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
+        actor = _optional_text(arguments.get("actor")) or "zaxy-reviewer"
+        event_input = build_consolidation_review_event(
+            actor=actor,
+            session_id=session_id,
+            candidate_id=_required_text(arguments.get("candidate_id"), "candidate_id"),
+            status=_required_text(arguments.get("status"), "status"),
+            rationale=_required_text(arguments.get("rationale"), "rationale"),
+        )
+        event = await self._append_project_and_trace_event(event_input, session_id=session_id)
+        return [TextContent(type="text", text=json.dumps({"seq": event.seq, "hash": event.hash}))]
+
+    async def _append_project_and_trace_event(self, event_input: dict[str, Any], *, session_id: str) -> Any:
+        event_type = validate_event_text(event_input["event_type"], "event_type")
+        actor = validate_event_text(event_input["actor"], "actor")
+        payload = validate_payload(event_input["payload"])
+        eventlog = self.session_manager.get(session_id).eventlog
+        event = eventlog.append(event_type, actor=actor, payload=payload, thread=session_id)
+        extraction = extract(event)
+        await self.graph.upsert_extraction(extraction, session_id=session_id)
+        await self.tracer.trace_append(event_type, actor, event.seq)
+        return event
 
     async def handle_coordination_start(self, arguments: dict[str, Any]) -> list[TextContent]:
         """Handle coordination_start tool calls."""
@@ -2411,6 +2610,14 @@ async def _dispatch_tool_call(
         return await active_server.handle_memory_append(arguments)
     if name == "memory_query":
         return await active_server.handle_memory_query(arguments)
+    if name == "memory_causal_successors":
+        return await active_server.handle_memory_causal_successors(arguments)
+    if name == "memory_causal_predecessors":
+        return await active_server.handle_memory_causal_predecessors(arguments)
+    if name == "memory_consolidation_candidate":
+        return await active_server.handle_memory_consolidation_candidate(arguments)
+    if name == "memory_consolidation_review":
+        return await active_server.handle_memory_consolidation_review(arguments)
     if name == "memory_verbatim":
         return await active_server.handle_memory_verbatim(arguments)
     if name == "memory_feedback":
