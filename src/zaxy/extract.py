@@ -13,10 +13,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
 
+from zaxy.causal import CausalEdge, causal_relation_to_graph_relation
 from zaxy.event import Event
 from zaxy.neutral import (
     audit_ingestion_purpose_labels,
@@ -2533,6 +2534,92 @@ def _extract_inference_edge_retracted(event: Event) -> ExtractionResult:
     )
 
 
+@register("causal.edge.generated")
+def _extract_causal_edge_generated(event: Event) -> ExtractionResult:
+    """Project an explicit, cited causal edge as non-authoritative graph evidence."""
+    graph_relation_type = _required_text(
+        event.payload.get("graph_relation_type"),
+        field="graph_relation_type",
+        event_seq=event.seq,
+        event_type="causal.edge.generated",
+    )
+    causal_method = _required_text(
+        event.payload.get("causal_method"),
+        field="causal_method",
+        event_seq=event.seq,
+        event_type="causal.edge.generated",
+    )
+    edge_contract = CausalEdge(
+        source=_required_mapping(
+            event.payload.get("source"),
+            field="source",
+            event_seq=event.seq,
+            event_type="causal.edge.generated",
+        ),
+        target=_required_mapping(
+            event.payload.get("target"),
+            field="target",
+            event_seq=event.seq,
+            event_type="causal.edge.generated",
+        ),
+        relation_type=_required_text(
+            event.payload.get("relation_type"),
+            field="relation_type",
+            event_seq=event.seq,
+            event_type="causal.edge.generated",
+        ),
+        graph_relation_type=graph_relation_type,
+        confidence=_required_confidence(
+            event.payload.get("confidence"),
+            event_seq=event.seq,
+            event_type="causal.edge.generated",
+        ),
+        method=causal_method,
+        review_status=_optional_text(event.payload.get("review_status")) or "proposed",
+        authority_status=_optional_text(event.payload.get("authority_status")) or "non_authoritative",
+        evidence=_required_mapping(
+            event.payload.get("evidence"),
+            field="evidence",
+            event_seq=event.seq,
+            event_type="causal.edge.generated",
+        ),
+    )
+    source = _entity_reference_from_mapping(
+        edge_contract.source,
+        role="source",
+        event_seq=event.seq,
+        observed_at=event.timestamp,
+        event_type="causal.edge.generated",
+    )
+    target = _entity_reference_from_mapping(
+        edge_contract.target,
+        role="target",
+        event_seq=event.seq,
+        observed_at=event.timestamp,
+        event_type="causal.edge.generated",
+    )
+    edge = ExtractedEdge(
+        source=source.name,
+        target=target.name,
+        relation_type=causal_relation_to_graph_relation(edge_contract.relation_type),
+        valid_from=event.timestamp,
+        inferred=True,
+        confidence=edge_contract.confidence,
+        inference_method=edge_contract.method,
+        evidence={
+            **dict(edge_contract.evidence),
+            "causal_relation_type": edge_contract.relation_type,
+            "review_status": edge_contract.review_status,
+            "authority_status": edge_contract.authority_status,
+        },
+    )
+    return ExtractionResult(
+        entities=[source, target],
+        edges=[edge],
+        source_event_seq=event.seq,
+    )
+
+
 def _optional_text(value: object) -> str | None:
     """Return non-empty text for extracted summaries."""
     if value is None:
@@ -2594,27 +2681,34 @@ def _synthesis_ledger_row_id(artifact_id: str, row: dict[str, Any]) -> str | Non
     return f"{artifact_id}:ledger:{digest}"
 
 
-def _required_text(value: object, *, field: str, event_seq: int) -> str:
+def _required_text(
+    value: object,
+    *,
+    field: str,
+    event_seq: int,
+    event_type: str = "inference.edge.generated",
+) -> str:
     """Return required text or raise a precise extraction error."""
     if text := _optional_text(value):
         return text
-    raise ValueError(f"inference.edge.generated event {event_seq} missing required {field}")
+    raise ValueError(f"{event_type} event {event_seq} missing required {field}")
 
 
-def _required_confidence(value: object, *, event_seq: int) -> float:
+def _required_confidence(
+    value: object,
+    *,
+    event_seq: int,
+    event_type: str = "inference.edge.generated",
+) -> float:
     """Return a required 0..1 confidence value for an inferred edge event."""
     if value is None or isinstance(value, bool):
-        raise ValueError(f"inference.edge.generated event {event_seq} missing required confidence")
+        raise ValueError(f"{event_type} event {event_seq} missing required confidence")
     try:
         confidence = float(str(value))
     except (TypeError, ValueError) as exc:
-        raise ValueError(
-            f"inference.edge.generated event {event_seq} has invalid confidence"
-        ) from exc
+        raise ValueError(f"{event_type} event {event_seq} has invalid confidence") from exc
     if not 0.0 <= confidence <= 1.0:
-        raise ValueError(
-            f"inference.edge.generated event {event_seq} confidence must be between 0.0 and 1.0"
-        )
+        raise ValueError(f"{event_type} event {event_seq} confidence must be between 0.0 and 1.0")
     return confidence
 
 
@@ -2628,11 +2722,37 @@ def _entity_reference(
     """Return a source or target entity reference for an inferred-edge event."""
     if not isinstance(value, dict):
         raise ValueError(f"inference.edge.generated event {event_seq} missing {role} entity")
-    name = _required_text(value.get("name"), field=f"{role}.name", event_seq=event_seq)
+    return _entity_reference_from_mapping(
+        value,
+        role=role,
+        event_seq=event_seq,
+        observed_at=observed_at,
+        event_type="inference.edge.generated",
+    )
+
+
+def _entity_reference_from_mapping(
+    value: object,
+    *,
+    role: str,
+    event_seq: int,
+    observed_at: str,
+    event_type: str,
+) -> ExtractedEntity:
+    """Return a graph entity reference from a validated payload mapping."""
+    if not isinstance(value, Mapping):
+        raise ValueError(f"{event_type} event {event_seq} missing {role} entity")
+    name = _required_text(
+        value.get("name"),
+        field=f"{role}.name",
+        event_seq=event_seq,
+        event_type=event_type,
+    )
     entity_type = _required_text(
         value.get("entity_type"),
         field=f"{role}.entity_type",
         event_seq=event_seq,
+        event_type=event_type,
     )
     return ExtractedEntity(
         name=name,
@@ -2640,6 +2760,19 @@ def _entity_reference(
         observed_at=observed_at,
         summary=_optional_text(value.get("summary")),
     )
+
+
+def _required_mapping(
+    value: object,
+    *,
+    field: str,
+    event_seq: int,
+    event_type: str,
+) -> dict[str, Any]:
+    """Return a required mapping payload field as a shallow copy."""
+    if not isinstance(value, dict):
+        raise ValueError(f"{event_type} event {event_seq} missing required {field}")
+    return dict(value)
 
 
 def _explicit_task_id(payload: dict[str, Any]) -> str | None:

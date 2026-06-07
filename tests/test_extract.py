@@ -5,6 +5,8 @@ Every registered extractor gets exercised."""
 
 from __future__ import annotations
 
+import pytest
+
 from zaxy.event import Event
 from zaxy.extract import (
     ExtractedEdge,
@@ -828,6 +830,158 @@ class TestInferredEdgeGenerated:
         assert edge.inferred is True
         assert edge.confidence == 0.0
         assert edge.inference_method == "contradicting_evidence_retraction_v1"
+
+
+class TestCausalEdgeGenerated:
+    """Tests for explicit causal-edge event projection."""
+
+    def test_extract_causal_edge_generated_projects_inferred_causal_relation(self) -> None:
+        event = _make_event(
+            "causal.edge.generated",
+            {
+                "source": {"name": "command:pytest", "entity_type": "command"},
+                "target": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "graph_relation_type": "causal_caused",
+                "confidence": 0.91,
+                "causal_method": "explicit_outcome_citation_v1",
+                "review_status": "proposed",
+                "authority_status": "non_authoritative",
+                "evidence": {
+                    "source_event_seq": 42,
+                    "source_event_hash": "a" * 64,
+                    "reason": "The command output contained the failure.",
+                },
+            },
+        )
+
+        result = extract(event)
+
+        assert {entity.name for entity in result.entities} == {"command:pytest", "test failure"}
+        assert result.edges == [
+            ExtractedEdge(
+                source="command:pytest",
+                target="test failure",
+                relation_type="causal_caused",
+                valid_from=event.timestamp,
+                inferred=True,
+                confidence=0.91,
+                inference_method="explicit_outcome_citation_v1",
+                evidence={
+                    "causal_relation_type": "caused",
+                    "review_status": "proposed",
+                    "authority_status": "non_authoritative",
+                    "source_event_seq": 42,
+                    "source_event_hash": "a" * 64,
+                    "reason": "The command output contained the failure.",
+                },
+            )
+        ]
+
+    @pytest.mark.parametrize(
+        "source_event_hash",
+        ["", "a" * 63, "a" * 65, "A" * 64, "g" * 64],
+    )
+    def test_causal_edge_generated_rejects_invalid_source_event_hash(
+        self,
+        source_event_hash: str,
+    ) -> None:
+        event = _make_event(
+            "causal.edge.generated",
+            {
+                "source": {"name": "command:pytest", "entity_type": "command"},
+                "target": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "graph_relation_type": "causal_caused",
+                "confidence": 0.91,
+                "causal_method": "explicit_outcome_citation_v1",
+                "review_status": "proposed",
+                "authority_status": "non_authoritative",
+                "evidence": {
+                    "source_event_seq": 42,
+                    "source_event_hash": source_event_hash,
+                },
+            },
+        )
+
+        with pytest.raises(ValueError, match="source_event_hash"):
+            extract(event)
+
+    def test_causal_edge_generated_rejects_missing_source_event_hash(self) -> None:
+        event = _make_event(
+            "causal.edge.generated",
+            {
+                "source": {"name": "command:pytest", "entity_type": "command"},
+                "target": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "graph_relation_type": "causal_caused",
+                "confidence": 0.91,
+                "causal_method": "explicit_outcome_citation_v1",
+                "review_status": "proposed",
+                "authority_status": "non_authoritative",
+                "evidence": {"source_event_seq": 42},
+            },
+        )
+
+        with pytest.raises(ValueError, match="source_event_hash"):
+            extract(event)
+
+    def test_causal_edge_generated_rejects_mismatched_graph_relation_type(self) -> None:
+        event = _make_event(
+            "causal.edge.generated",
+            {
+                "source": {"name": "command:pytest", "entity_type": "command"},
+                "target": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "graph_relation_type": "causal_enabled",
+                "confidence": 0.91,
+                "causal_method": "explicit_outcome_citation_v1",
+                "review_status": "proposed",
+                "authority_status": "non_authoritative",
+                "evidence": {"source_event_seq": 42, "source_event_hash": "a" * 64},
+            },
+        )
+
+        with pytest.raises(ValueError, match="graph_relation_type"):
+            extract(event)
+
+    def test_causal_edge_generated_rejects_unsupported_causal_relation_type(self) -> None:
+        event = _make_event(
+            "causal.edge.generated",
+            {
+                "source": {"name": "command:pytest", "entity_type": "command"},
+                "target": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "likely_informed",
+                "graph_relation_type": "causal_likely_informed",
+                "confidence": 0.91,
+                "causal_method": "explicit_outcome_citation_v1",
+                "review_status": "proposed",
+                "authority_status": "non_authoritative",
+                "evidence": {"source_event_seq": 42, "source_event_hash": "a" * 64},
+            },
+        )
+
+        with pytest.raises(ValueError, match="causal relation_type"):
+            extract(event)
+
+    def test_causal_edge_generated_rejects_authoritative_status(self) -> None:
+        event = _make_event(
+            "causal.edge.generated",
+            {
+                "source": {"name": "command:pytest", "entity_type": "command"},
+                "target": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "graph_relation_type": "causal_caused",
+                "confidence": 0.91,
+                "causal_method": "explicit_outcome_citation_v1",
+                "review_status": "proposed",
+                "authority_status": "authoritative",
+                "evidence": {"source_event_seq": 42, "source_event_hash": "a" * 64},
+            },
+        )
+
+        with pytest.raises(ValueError, match="authority_status"):
+            extract(event)
 
 
 class TestIssueDiagnosed:
