@@ -7,9 +7,12 @@ authority boundary instead of presenting inferred causality as fact.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
+
+_EVENT_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 
 CAUSAL_RELATION_TYPES = frozenset(
     {
@@ -111,7 +114,7 @@ class CausalQueryResult:
             "relation_type": self.relation_type,
             "graph_relation_type": self.graph_relation_type,
             "confidence": self.confidence,
-            "causal_method": self.method,
+            "method": self.method,
             "citation": self.citation,
             "review_status": self.review_status,
             "authority_status": self.authority_status,
@@ -169,7 +172,7 @@ def _validate_entity_ref(entity: Mapping[str, Any], *, field_name: str) -> None:
         raise ValueError(f"{field_name} must be an entity reference mapping")
     for key in ("name", "entity_type"):
         value = entity.get(key)
-        if not isinstance(value, str) or not value:
+        if not isinstance(value, str) or not value.strip():
             raise ValueError(f"{field_name}.{key} must be a non-empty string")
 
 
@@ -191,7 +194,7 @@ def _validate_confidence(confidence: float) -> None:
 
 
 def _validate_method(method: str) -> None:
-    if not isinstance(method, str) or not method:
+    if not isinstance(method, str) or not method.strip():
         raise ValueError("causal method must be a non-empty string")
 
 
@@ -201,9 +204,11 @@ def _validate_evidence(evidence: Mapping[str, Any]) -> None:
     source_event_seq = evidence.get("source_event_seq")
     if not isinstance(source_event_seq, int) or isinstance(source_event_seq, bool):
         raise ValueError("evidence.source_event_seq must be an integer")
+    if source_event_seq <= 0:
+        raise ValueError("evidence.source_event_seq must be a positive integer")
     source_event_hash = evidence.get("source_event_hash")
-    if not isinstance(source_event_hash, str) or not source_event_hash:
-        raise ValueError("evidence.source_event_hash must be a non-empty string")
+    if not isinstance(source_event_hash, str) or not _EVENT_HASH_RE.fullmatch(source_event_hash):
+        raise ValueError("evidence.source_event_hash must be exactly 64 lowercase hex characters")
 
 
 def _validate_status(status: str, *, field_name: str) -> None:

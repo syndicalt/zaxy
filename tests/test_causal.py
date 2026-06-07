@@ -106,6 +106,91 @@ def test_build_causal_edge_event_rejects_uncited_evidence() -> None:
         )
 
 
+@pytest.mark.parametrize("source_event_seq", [0, -1, True])
+def test_build_causal_edge_event_rejects_invalid_source_event_seq(
+    source_event_seq: int | bool,
+) -> None:
+    with pytest.raises(ValueError, match="source_event_seq"):
+        build_causal_edge_event(
+            actor="zaxy-causal",
+            session_id="agent-1",
+            source={"name": "a", "entity_type": "event"},
+            target={"name": "b", "entity_type": "outcome"},
+            relation_type="caused",
+            confidence=0.8,
+            method="explicit_outcome_citation_v1",
+            evidence={"source_event_seq": source_event_seq, "source_event_hash": "b" * 64},
+        )
+
+
+@pytest.mark.parametrize(
+    "source_event_hash",
+    [
+        "",
+        "b" * 63,
+        "b" * 65,
+        "B" * 64,
+        "g" * 64,
+        True,
+    ],
+)
+def test_build_causal_edge_event_rejects_invalid_source_event_hash(
+    source_event_hash: str | bool,
+) -> None:
+    with pytest.raises(ValueError, match="source_event_hash"):
+        build_causal_edge_event(
+            actor="zaxy-causal",
+            session_id="agent-1",
+            source={"name": "a", "entity_type": "event"},
+            target={"name": "b", "entity_type": "outcome"},
+            relation_type="caused",
+            confidence=0.8,
+            method="explicit_outcome_citation_v1",
+            evidence={"source_event_seq": 1, "source_event_hash": source_event_hash},
+        )
+
+
+def test_build_causal_edge_event_rejects_whitespace_method() -> None:
+    with pytest.raises(ValueError, match="causal method"):
+        build_causal_edge_event(
+            actor="zaxy-causal",
+            session_id="agent-1",
+            source={"name": "a", "entity_type": "event"},
+            target={"name": "b", "entity_type": "outcome"},
+            relation_type="caused",
+            confidence=0.8,
+            method="   ",
+            evidence={"source_event_seq": 1, "source_event_hash": "b" * 64},
+        )
+
+
+@pytest.mark.parametrize(
+    ("source", "target", "message"),
+    [
+        ({"name": "   ", "entity_type": "event"}, {"name": "b", "entity_type": "outcome"}, "source.name"),
+        ({"name": "a", "entity_type": "   "}, {"name": "b", "entity_type": "outcome"}, "source.entity_type"),
+        ({"name": "a", "entity_type": "event"}, {"name": "   ", "entity_type": "outcome"}, "target.name"),
+        ({"name": "a", "entity_type": "event"}, {"name": "b", "entity_type": "   "}, "target.entity_type"),
+    ],
+)
+def test_build_causal_edge_event_rejects_whitespace_entity_refs(
+    source: dict[str, str],
+    target: dict[str, str],
+    message: str,
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        build_causal_edge_event(
+            actor="zaxy-causal",
+            session_id="agent-1",
+            source=source,
+            target=target,
+            relation_type="caused",
+            confidence=0.8,
+            method="explicit_outcome_citation_v1",
+            evidence={"source_event_seq": 1, "source_event_hash": "b" * 64},
+        )
+
+
 def test_causal_query_result_to_dict_preserves_authority_boundary() -> None:
     result = CausalQueryResult(
         source={"name": "command:pytest", "entity_type": "command"},
@@ -123,3 +208,5 @@ def test_causal_query_result_to_dict_preserves_authority_boundary() -> None:
     assert result.to_dict()["authority_status"] == "non_authoritative"
     assert result.to_dict()["review_status"] == "proposed"
     assert result.to_dict()["citation"] == "eventloom://agent-1/events/42#aaaaaaaaaaaa"
+    assert result.to_dict()["method"] == "explicit_outcome_citation_v1"
+    assert "causal_method" not in result.to_dict()
