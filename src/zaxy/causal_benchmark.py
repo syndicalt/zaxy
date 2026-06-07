@@ -145,7 +145,7 @@ def evaluate_consolidation_candidate(
 def _score_causal_result(
     case: CausalBenchmarkCase, result: Mapping[str, Any] | object
 ) -> dict[str, Any]:
-    hit = _endpoint_name(result, case.query_type) == _expected_endpoint_name(case)
+    hit = _endpoint(result, case.query_type) == _expected_endpoint(case)
     relation_match = hit and _text_value(result, "relation_type") == case.relation_type
     citation = hit and _result_citation_matches(case, result)
     authority_boundary = (
@@ -181,23 +181,33 @@ def _empty_causal_row(case: CausalBenchmarkCase) -> dict[str, Any]:
     }
 
 
-def _expected_endpoint_name(case: CausalBenchmarkCase) -> str:
+def _expected_endpoint(case: CausalBenchmarkCase) -> tuple[str, str]:
     endpoint = case.target if case.query_type == "successor" else case.source
-    return str(endpoint["name"])
+    return str(endpoint["name"]), str(endpoint["entity_type"])
 
 
-def _endpoint_name(result: Mapping[str, Any] | object, query_type: str) -> str | None:
+def _endpoint(result: Mapping[str, Any] | object, query_type: str) -> tuple[str, str] | None:
     endpoint_key = "target" if query_type == "successor" else "source"
     endpoint = _value(result, endpoint_key)
     if isinstance(endpoint, Mapping):
-        name = endpoint.get("name")
-        return name if isinstance(name, str) else None
+        name = _mapping_text_value(endpoint, "name")
+        entity_type = _mapping_text_value(endpoint, "entity_type")
+        if name is not None and entity_type is not None:
+            return name, entity_type
+        return None
     field_name = "target_name" if query_type == "successor" else "source_name"
-    direct = _text_value(result, field_name)
-    if direct is not None:
-        return direct
+    field_type = "target_entity_type" if query_type == "successor" else "source_entity_type"
+    direct_name = _text_value(result, field_name)
+    direct_type = _text_value(result, field_type)
+    if direct_name is not None and direct_type is not None:
+        return direct_name, direct_type
     causal_field_name = f"causal_{field_name}"
-    return _text_value(result, causal_field_name)
+    causal_field_type = f"causal_{field_type}"
+    causal_name = _text_value(result, causal_field_name)
+    causal_type = _text_value(result, causal_field_type)
+    if causal_name is not None and causal_type is not None:
+        return causal_name, causal_type
+    return None
 
 
 def _result_citation_matches(case: CausalBenchmarkCase, result: Mapping[str, Any] | object) -> bool:
@@ -292,7 +302,7 @@ def _eventloom_refs_from_source_events(
     *, session: str, source_events: set[tuple[int, str]]
 ) -> set[str]:
     return {
-        f"eventloom://{session}/events/{seq}#{event_hash}"
+        f"eventloom://{session}/events/{seq}#{event_hash[:12]}"
         for seq, event_hash in source_events
     }
 
@@ -408,6 +418,15 @@ def _candidate_id_value(candidate: Mapping[str, Any] | object) -> str | None:
 
 def _text_value(value: Mapping[str, Any] | object, key: str) -> str | None:
     raw = _value(value, key)
+    return raw if isinstance(raw, str) else None
+
+
+def _mapping_text_value(value: Mapping[str, Any], key: str) -> str | None:
+    raw = value.get(key)
+    if raw is None:
+        properties = value.get("properties")
+        if isinstance(properties, Mapping):
+            raw = properties.get(key)
     return raw if isinstance(raw, str) else None
 
 

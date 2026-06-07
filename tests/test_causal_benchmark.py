@@ -59,15 +59,15 @@ def test_successor_scoring_uses_target_endpoint_and_prefers_non_authoritative_ci
     )
     results = [
         {
-            "source": {"name": "config drift"},
-            "target": {"name": "deployment rollback"},
+            "source": {"name": "config drift", "entity_type": "Task"},
+            "target": {"name": "deployment rollback", "entity_type": "Task"},
             "relation_type": "caused",
             "authority_status": "promoted",
             "citation": "eventloom://session-alpha/events/42#abcdefabcdef",
         },
         {
-            "source": {"name": "config drift"},
-            "target": {"name": "deployment rollback"},
+            "source": {"name": "config drift", "entity_type": "Task"},
+            "target": {"name": "deployment rollback", "entity_type": "Task"},
             "relation_type": "caused",
             "authority_status": "non_authoritative",
             "citation": "eventloom://session-alpha/events/42#abcdefabcdef",
@@ -85,6 +85,57 @@ def test_successor_scoring_uses_target_endpoint_and_prefers_non_authoritative_ci
     assert row["matched_result"]["authority_status"] == "non_authoritative"
 
 
+@pytest.mark.parametrize(
+    "result",
+    [
+        {
+            "target": {"name": "deployment rollback", "entity_type": "Incident"},
+            "relation_type": "caused",
+            "authority_status": "non_authoritative",
+            "citation": "eventloom://session-alpha/events/42#abcdefabcdef",
+        },
+        {
+            "target_name": "deployment rollback",
+            "target_entity_type": "Incident",
+            "relation_type": "caused",
+            "authority_status": "non_authoritative",
+            "citation": "eventloom://session-alpha/events/42#abcdefabcdef",
+        },
+        GraphEntityLike(
+            name="causal-edge",
+            properties={
+                "causal_target_name": "deployment rollback",
+                "causal_target_entity_type": "Incident",
+                "relation_type": "caused",
+                "authority_status": "non_authoritative",
+                "citation": "eventloom://session-alpha/events/42#abcdefabcdef",
+            },
+        ),
+    ],
+)
+def test_causal_scoring_rejects_endpoint_with_matching_name_but_wrong_type(
+    result: object,
+) -> None:
+    case = CausalBenchmarkCase(
+        case_id="successor-target-type",
+        query="What did the config drift cause?",
+        query_type="successor",
+        source={"name": "config drift", "entity_type": "Task"},
+        target={"name": "deployment rollback", "entity_type": "Task"},
+        relation_type="caused",
+        citation="eventloom://session-alpha/events/42#abcdefabcdef",
+    )
+
+    row = evaluate_causal_results(case, [result])
+
+    assert row["hit"] is False
+    assert row["relation_match"] is False
+    assert row["citation"] is False
+    assert row["authority_boundary"] is False
+    assert row["score"] == 0.0
+    assert row["matched_result"] is None
+
+
 def test_predecessor_scoring_uses_source_endpoint_and_penalizes_distractor_defects() -> None:
     case = CausalBenchmarkCase(
         case_id="predecessor-source",
@@ -97,15 +148,15 @@ def test_predecessor_scoring_uses_source_endpoint_and_penalizes_distractor_defec
     )
     results = [
         {
-            "source": {"name": "config drift"},
-            "target": {"name": "deployment rollback"},
+            "source": {"name": "config drift", "entity_type": "Task"},
+            "target": {"name": "deployment rollback", "entity_type": "Task"},
             "relation_type": "enabled",
             "authority_status": "promoted",
             "citation": "note://not-eventloom",
         },
         {
-            "source": {"name": "unrelated alert"},
-            "target": {"name": "deployment rollback"},
+            "source": {"name": "unrelated alert", "entity_type": "Task"},
+            "target": {"name": "deployment rollback", "entity_type": "Task"},
             "relation_type": "caused",
             "authority_status": "non_authoritative",
             "citation": "eventloom://session-alpha/events/42#abcdefabcdef",
@@ -133,14 +184,14 @@ def test_causal_scoring_prefers_current_match_over_stale_matching_endpoint() -> 
     )
     results = [
         {
-            "target": {"name": "deployment rollback"},
+            "target": {"name": "deployment rollback", "entity_type": "Task"},
             "relation_type": "caused",
             "authority_status": "non_authoritative",
             "citation": "eventloom://session-alpha/events/42#abcdefabcdef",
             "superseded_by": "eventloom://session-alpha/events/43#bbbbbbbbbbbb",
         },
         {
-            "target": {"name": "deployment rollback"},
+            "target": {"name": "deployment rollback", "entity_type": "Task"},
             "relation_type": "caused",
             "authority_status": "non_authoritative",
             "citation": "eventloom://session-alpha/events/42#abcdefabcdef",
@@ -356,6 +407,32 @@ def test_consolidation_candidate_penalizes_promoted_or_missing_source_refs() -> 
     assert row["citation_coverage"] is False
     assert row["authority_boundary"] is False
     assert row["score"] == 0.25
+
+
+def test_consolidation_candidate_accepts_case_citation_in_citation_list() -> None:
+    case = ConsolidationBenchmarkCase(
+        case_id="citation-list-coverage",
+        candidate_id="consolidation:claim:bbbbbbbbbbbbbbbbbbbbbbbb",
+        candidate_type="claim",
+        source_events=({"seq": 42, "hash": "d" * 64},),
+        citation=f"eventloom://session-alpha/events/42#{'d' * 12}",
+        authority_status="non_authoritative",
+    )
+    candidate = {
+        "candidate_id": "consolidation:claim:bbbbbbbbbbbbbbbbbbbbbbbb",
+        "candidate_type": "claim",
+        "source_events": [{"seq": 42, "hash": "d" * 64}],
+        "citations": [case.citation],
+        "authority_status": "non_authoritative",
+    }
+
+    row = evaluate_consolidation_candidate(case, candidate)
+
+    assert row["candidate_match"] is True
+    assert row["source_event_fidelity"] is True
+    assert row["citation_coverage"] is True
+    assert row["authority_boundary"] is True
+    assert row["score"] == 1.0
 
 
 def test_consolidation_case_rejects_non_production_source_event_shape() -> None:
