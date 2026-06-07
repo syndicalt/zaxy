@@ -87,12 +87,16 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     assert "Pathlight" in html
     assert "embedded Kuzu" in html
     assert "PyPI 1.1.2" in html
+    assert "Harvey LAB 10/10 tasks" in html
+    assert "Harvey LAB mean 0.788" in html
     assert "purpose-v1 passed" in html
     assert "StateRecoveryBench gate passed" in html
     assert "Quarq/Hybi claims blocked" in html
     assert "external verification requested" in html
     assert "public-derived purpose holdout" in html
     assert "external Semantic Reach or Quarq superiority claims" in html
+    assert "Research paper" in html
+    assert "docs/research/zaxy-memory-fabric-paper.html" in html
 
     for section_id in (
         "coordinate",
@@ -568,6 +572,10 @@ def test_public_site_benchmark_claims_use_current_full_set_guardrails() -> None:
 
     assert "CoordinationBench v1" in html
     assert "accepted-finding precision and recall" in html
+    assert "Harvey LAB external memory-ablation" in html
+    assert "0.788 mean criterion pass rate" in html
+    assert "+0.184 vs regular/no-memory" in html
+    assert "docs/benchmarks.html#completed-2026-06-06-result" in html
     assert "0.272727 precision" in html
     assert "Mem0 / Agent Memory / ActiveGraph" in html
     assert "disclosure only" in html
@@ -577,6 +585,17 @@ def test_public_site_benchmark_claims_use_current_full_set_guardrails() -> None:
     assert "PyPI 0.2.1" not in html
     assert "1005 tests" not in html
     assert "91.96% coverage" not in html
+
+
+def test_research_paper_is_rendered_and_linked_from_public_site() -> None:
+    """The research paper should be published as rendered static-site HTML."""
+    homepage = Path("site/index.html").read_text(encoding="utf-8")
+    paper = Path("site/docs/research/zaxy-memory-fabric-paper.html").read_text(encoding="utf-8")
+
+    assert 'href="docs/research/zaxy-memory-fabric-paper.html"' in homepage
+    assert "Zaxy: Event-Sourced Memory Fabric" in paper
+    assert "Harvey LAB memory-ablation suite" in paper
+    assert "mean criterion pass rate 0.788" in paper
 
 
 def test_why_zaxy_doc_explains_markdown_vector_tradeoffs() -> None:
