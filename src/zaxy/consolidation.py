@@ -14,10 +14,11 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 _EVENT_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
+_CANDIDATE_ID_RE = re.compile(r"^consolidation:([a-z_]+):([0-9a-f]{24})$")
 _AUTHORITY_STATUS = "non_authoritative"
-_PENDING_REVIEW_STATUS = "pending"
 
 CONSOLIDATION_CANDIDATE_TYPES = frozenset({"episode", "claim", "procedure"})
+CONSOLIDATION_INITIAL_REVIEW_STATUS = "pending"
 CONSOLIDATION_REVIEW_STATUSES = frozenset({"accepted", "rejected", "deferred", "conflicted"})
 
 
@@ -57,7 +58,7 @@ def build_consolidation_candidate_event(
         "source_events": cited_source_events,
         "confidence": confidence,
         "method": method,
-        "review_status": _PENDING_REVIEW_STATUS,
+        "review_status": CONSOLIDATION_INITIAL_REVIEW_STATUS,
         "authority_status": _AUTHORITY_STATUS,
     }
     if purpose is not None:
@@ -82,7 +83,7 @@ def build_consolidation_review_event(
     """Build a consolidation review event spec without authority promotion."""
     _validate_non_empty_string(actor, field_name="actor")
     _validate_non_empty_string(session_id, field_name="session_id")
-    _validate_non_empty_string(candidate_id, field_name="candidate_id")
+    _validate_candidate_id(candidate_id)
     _validate_review_status(status)
     _validate_non_empty_string(rationale, field_name="rationale")
 
@@ -151,6 +152,20 @@ def _validate_candidate_type(candidate_type: str) -> None:
     if candidate_type not in CONSOLIDATION_CANDIDATE_TYPES:
         valid = ", ".join(sorted(CONSOLIDATION_CANDIDATE_TYPES))
         raise ValueError(f"candidate_type must be one of: {valid}")
+
+
+def _validate_candidate_id(candidate_id: object) -> None:
+    if not isinstance(candidate_id, str) or not candidate_id.strip():
+        raise ValueError("candidate_id must be a non-empty string")
+    match = _CANDIDATE_ID_RE.fullmatch(candidate_id)
+    if match is None:
+        raise ValueError(
+            "candidate_id must match consolidation:{candidate_type}:{24 lowercase hex characters}"
+        )
+    candidate_type = match.group(1)
+    if candidate_type not in CONSOLIDATION_CANDIDATE_TYPES:
+        valid = ", ".join(sorted(CONSOLIDATION_CANDIDATE_TYPES))
+        raise ValueError(f"candidate_id candidate_type must be one of: {valid}")
 
 
 def _validate_review_status(status: str) -> None:

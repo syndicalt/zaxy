@@ -4,6 +4,8 @@ import pytest
 
 from zaxy.consolidation import (
     CONSOLIDATION_CANDIDATE_TYPES,
+    CONSOLIDATION_INITIAL_REVIEW_STATUS,
+    CONSOLIDATION_REVIEW_STATUSES,
     build_consolidation_candidate_event,
     build_consolidation_review_event,
 )
@@ -54,7 +56,7 @@ def test_build_review_event_cannot_promote_to_authority_in_alpha_1() -> None:
     event = build_consolidation_review_event(
         actor="reviewer",
         session_id="agent-1",
-        candidate_id="consolidation:episode:abc123",
+        candidate_id="consolidation:episode:" + "c" * 24,
         status="accepted",
         rationale="Cited and useful, but alpha.1 keeps authority separate.",
     )
@@ -63,7 +65,7 @@ def test_build_review_event_cannot_promote_to_authority_in_alpha_1() -> None:
         "event_type": "consolidation.candidate.reviewed",
         "actor": "reviewer",
         "payload": {
-            "candidate_id": "consolidation:episode:abc123",
+            "candidate_id": "consolidation:episode:" + "c" * 24,
             "status": "accepted",
             "authority_status": "non_authoritative",
             "rationale": "Cited and useful, but alpha.1 keeps authority separate.",
@@ -74,6 +76,12 @@ def test_build_review_event_cannot_promote_to_authority_in_alpha_1() -> None:
 
 def test_candidate_type_taxonomy_is_stable() -> None:
     assert {"episode", "claim", "procedure"} == CONSOLIDATION_CANDIDATE_TYPES
+
+
+def test_review_status_taxonomy_separates_initial_pending_from_review_outcomes() -> None:
+    assert CONSOLIDATION_INITIAL_REVIEW_STATUS == "pending"
+    assert {"accepted", "rejected", "deferred", "conflicted"} == CONSOLIDATION_REVIEW_STATUSES
+    assert CONSOLIDATION_INITIAL_REVIEW_STATUS not in CONSOLIDATION_REVIEW_STATUSES
 
 
 def test_build_candidate_rejects_unsupported_candidate_type() -> None:
@@ -95,7 +103,7 @@ def test_build_review_event_rejects_invalid_review_status() -> None:
         build_consolidation_review_event(
             actor="reviewer",
             session_id="agent-1",
-            candidate_id="consolidation:episode:abc123",
+            candidate_id="consolidation:episode:" + "c" * 24,
             status="pending",
             rationale="Pending is only for candidate creation.",
         )
@@ -174,19 +182,90 @@ def test_build_candidate_rejects_non_string_text_fields(field: str) -> None:
         build_consolidation_candidate_event(**kwargs)
 
 
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("actor", "   "),
+        ("actor", 123),
+        ("session_id", "   "),
+        ("session_id", 123),
+        ("purpose", "   "),
+        ("purpose", 123),
+    ],
+)
+def test_build_candidate_rejects_invalid_actor_session_and_purpose(
+    field: str,
+    value: object,
+) -> None:
+    kwargs = {
+        "actor": "zaxy-consolidation",
+        "session_id": "agent-1",
+        "candidate_type": "procedure",
+        "title": "Incident workflow",
+        "summary": "Steps observed during the incident workflow.",
+        "source_events": [{"seq": 1, "hash": "a" * 64}],
+        "confidence": 0.5,
+        "method": "event_segment_cluster_v1",
+        "purpose": "coding",
+    }
+    kwargs[field] = value
+
+    with pytest.raises(ValueError, match=field):
+        build_consolidation_candidate_event(**kwargs)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("actor", "   "),
+        ("actor", 123),
+        ("session_id", "   "),
+        ("session_id", 123),
+    ],
+)
+def test_build_review_event_rejects_invalid_actor_and_session(
+    field: str,
+    value: object,
+) -> None:
+    kwargs = {
+        "actor": "reviewer",
+        "session_id": "agent-1",
+        "candidate_id": "consolidation:episode:" + "c" * 24,
+        "status": "accepted",
+        "rationale": "Cited and useful.",
+    }
+    kwargs[field] = value
+
+    with pytest.raises(ValueError, match=field):
+        build_consolidation_review_event(**kwargs)
+
+
 @pytest.mark.parametrize("rationale", ["   ", 123])
 def test_build_review_event_rejects_invalid_rationale(rationale: object) -> None:
     with pytest.raises(ValueError, match="rationale"):
         build_consolidation_review_event(
             actor="reviewer",
             session_id="agent-1",
-            candidate_id="consolidation:episode:abc123",
+            candidate_id="consolidation:episode:" + "c" * 24,
             status="accepted",
             rationale=rationale,
         )
 
 
-@pytest.mark.parametrize("candidate_id", ["   ", 123])
+@pytest.mark.parametrize(
+    "candidate_id",
+    [
+        "   ",
+        123,
+        "episode:" + "c" * 24,
+        "consolidation:memory:" + "c" * 24,
+        "consolidation:episode:" + "C" * 24,
+        "consolidation:episode:" + "g" * 24,
+        "consolidation:episode:" + "c" * 23,
+        "consolidation:episode:" + "c" * 25,
+        "consolidation:episode:" + "c" * 24 + ":extra",
+    ],
+)
 def test_build_review_event_rejects_invalid_candidate_id(candidate_id: object) -> None:
     with pytest.raises(ValueError, match="candidate_id"):
         build_consolidation_review_event(
