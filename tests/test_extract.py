@@ -983,6 +983,67 @@ class TestCausalEdgeGenerated:
         with pytest.raises(ValueError, match="authority_status"):
             extract(event)
 
+    def test_causal_edge_generated_rejects_string_confidence(self) -> None:
+        event = _make_event(
+            "causal.edge.generated",
+            {
+                "source": {"name": "command:pytest", "entity_type": "command"},
+                "target": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "graph_relation_type": "causal_caused",
+                "confidence": "0.91",
+                "causal_method": "explicit_outcome_citation_v1",
+                "review_status": "proposed",
+                "authority_status": "non_authoritative",
+                "evidence": {"source_event_seq": 42, "source_event_hash": "a" * 64},
+            },
+        )
+
+        with pytest.raises(ValueError, match="confidence"):
+            extract(event)
+
+    def test_causal_edge_generated_rejects_non_string_causal_method(self) -> None:
+        event = _make_event(
+            "causal.edge.generated",
+            {
+                "source": {"name": "command:pytest", "entity_type": "command"},
+                "target": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "graph_relation_type": "causal_caused",
+                "confidence": 0.91,
+                "causal_method": 123,
+                "review_status": "proposed",
+                "authority_status": "non_authoritative",
+                "evidence": {"source_event_seq": 42, "source_event_hash": "a" * 64},
+            },
+        )
+
+        with pytest.raises(ValueError, match="causal method"):
+            extract(event)
+
+    def test_causal_edge_generated_snapshots_nested_evidence(self) -> None:
+        payload = {
+            "source": {"name": "command:pytest", "entity_type": "command"},
+            "target": {"name": "test failure", "entity_type": "outcome"},
+            "relation_type": "caused",
+            "graph_relation_type": "causal_caused",
+            "confidence": 0.91,
+            "causal_method": "explicit_outcome_citation_v1",
+            "review_status": "proposed",
+            "authority_status": "non_authoritative",
+            "evidence": {
+                "source_event_seq": 42,
+                "source_event_hash": "a" * 64,
+                "details": {"line": 12, "message": "failed"},
+            },
+        }
+        event = _make_event("causal.edge.generated", payload)
+
+        result = extract(event)
+        payload["evidence"]["details"]["message"] = "mutated"
+
+        assert result.edges[0].evidence["details"] == {"line": 12, "message": "failed"}
+
 
 class TestIssueDiagnosed:
     """Tests for issue.diagnosed extractor."""

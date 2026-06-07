@@ -11,6 +11,7 @@ structured event types.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from collections.abc import Callable, Mapping
@@ -2537,52 +2538,17 @@ def _extract_inference_edge_retracted(event: Event) -> ExtractionResult:
 @register("causal.edge.generated")
 def _extract_causal_edge_generated(event: Event) -> ExtractionResult:
     """Project an explicit, cited causal edge as non-authoritative graph evidence."""
-    graph_relation_type = _required_text(
-        event.payload.get("graph_relation_type"),
-        field="graph_relation_type",
-        event_seq=event.seq,
-        event_type="causal.edge.generated",
-    )
-    causal_method = _required_text(
-        event.payload.get("causal_method"),
-        field="causal_method",
-        event_seq=event.seq,
-        event_type="causal.edge.generated",
-    )
+    graph_relation_type = _required_causal_graph_relation_type(event.payload, event_seq=event.seq)
     edge_contract = CausalEdge(
-        source=_required_mapping(
-            event.payload.get("source"),
-            field="source",
-            event_seq=event.seq,
-            event_type="causal.edge.generated",
-        ),
-        target=_required_mapping(
-            event.payload.get("target"),
-            field="target",
-            event_seq=event.seq,
-            event_type="causal.edge.generated",
-        ),
-        relation_type=_required_text(
-            event.payload.get("relation_type"),
-            field="relation_type",
-            event_seq=event.seq,
-            event_type="causal.edge.generated",
-        ),
+        source=event.payload.get("source"),
+        target=event.payload.get("target"),
+        relation_type=event.payload.get("relation_type"),
         graph_relation_type=graph_relation_type,
-        confidence=_required_confidence(
-            event.payload.get("confidence"),
-            event_seq=event.seq,
-            event_type="causal.edge.generated",
-        ),
-        method=causal_method,
-        review_status=_optional_text(event.payload.get("review_status")) or "proposed",
-        authority_status=_optional_text(event.payload.get("authority_status")) or "non_authoritative",
-        evidence=_required_mapping(
-            event.payload.get("evidence"),
-            field="evidence",
-            event_seq=event.seq,
-            event_type="causal.edge.generated",
-        ),
+        confidence=event.payload.get("confidence"),
+        method=event.payload.get("causal_method"),
+        review_status=event.payload.get("review_status", "proposed"),
+        authority_status=event.payload.get("authority_status", "non_authoritative"),
+        evidence=event.payload.get("evidence"),
     )
     source = _entity_reference_from_mapping(
         edge_contract.source,
@@ -2607,7 +2573,7 @@ def _extract_causal_edge_generated(event: Event) -> ExtractionResult:
         confidence=edge_contract.confidence,
         inference_method=edge_contract.method,
         evidence={
-            **dict(edge_contract.evidence),
+            **copy.deepcopy(dict(edge_contract.evidence)),
             "causal_relation_type": edge_contract.relation_type,
             "review_status": edge_contract.review_status,
             "authority_status": edge_contract.authority_status,
@@ -2618,6 +2584,13 @@ def _extract_causal_edge_generated(event: Event) -> ExtractionResult:
         edges=[edge],
         source_event_seq=event.seq,
     )
+
+
+def _required_causal_graph_relation_type(payload: dict[str, Any], *, event_seq: int) -> str:
+    graph_relation_type = payload.get("graph_relation_type")
+    if not isinstance(graph_relation_type, str) or not graph_relation_type.strip():
+        raise ValueError(f"causal.edge.generated event {event_seq} missing required graph_relation_type")
+    return graph_relation_type
 
 
 def _optional_text(value: object) -> str | None:
@@ -2760,19 +2733,6 @@ def _entity_reference_from_mapping(
         observed_at=observed_at,
         summary=_optional_text(value.get("summary")),
     )
-
-
-def _required_mapping(
-    value: object,
-    *,
-    field: str,
-    event_seq: int,
-    event_type: str,
-) -> dict[str, Any]:
-    """Return a required mapping payload field as a shallow copy."""
-    if not isinstance(value, dict):
-        raise ValueError(f"{event_type} event {event_seq} missing required {field}")
-    return dict(value)
 
 
 def _explicit_task_id(payload: dict[str, Any]) -> str | None:
