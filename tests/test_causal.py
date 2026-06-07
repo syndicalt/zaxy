@@ -191,6 +191,83 @@ def test_build_causal_edge_event_rejects_whitespace_entity_refs(
         )
 
 
+@pytest.mark.parametrize("review_status", ["", "   ", "approved", "authoritative"])
+def test_causal_edge_rejects_invalid_review_status(review_status: str) -> None:
+    with pytest.raises(ValueError, match="review_status"):
+        CausalEdge(
+            source={"name": "a", "entity_type": "event"},
+            target={"name": "b", "entity_type": "outcome"},
+            relation_type="caused",
+            confidence=0.8,
+            method="explicit_outcome_citation_v1",
+            evidence={"source_event_seq": 1, "source_event_hash": "b" * 64},
+            review_status=review_status,
+        )
+
+
+@pytest.mark.parametrize(
+    "review_status",
+    ["proposed", "accepted", "rejected", "deferred", "conflicted"],
+)
+def test_causal_edge_accepts_review_lifecycle_statuses(review_status: str) -> None:
+    edge = CausalEdge(
+        source={"name": "a", "entity_type": "event"},
+        target={"name": "b", "entity_type": "outcome"},
+        relation_type="caused",
+        confidence=0.8,
+        method="explicit_outcome_citation_v1",
+        evidence={"source_event_seq": 1, "source_event_hash": "b" * 64},
+        review_status=review_status,
+    )
+
+    assert edge.to_payload()["review_status"] == review_status
+
+
+@pytest.mark.parametrize("authority_status", ["", "   ", "authoritative", "accepted"])
+def test_causal_edge_rejects_invalid_authority_status(authority_status: str) -> None:
+    with pytest.raises(ValueError, match="authority_status"):
+        CausalEdge(
+            source={"name": "a", "entity_type": "event"},
+            target={"name": "b", "entity_type": "outcome"},
+            relation_type="caused",
+            confidence=0.8,
+            method="explicit_outcome_citation_v1",
+            evidence={"source_event_seq": 1, "source_event_hash": "b" * 64},
+            authority_status=authority_status,
+        )
+
+
+def test_causal_edge_snapshots_mutable_mapping_inputs() -> None:
+    source = {"name": "a", "entity_type": "event"}
+    target = {"name": "b", "entity_type": "outcome"}
+    evidence: dict[str, object] = {
+        "source_event_seq": 1,
+        "source_event_hash": "b" * 64,
+        "reason": "original",
+    }
+    edge = CausalEdge(
+        source=source,
+        target=target,
+        relation_type="caused",
+        confidence=0.8,
+        method="explicit_outcome_citation_v1",
+        evidence=evidence,
+    )
+
+    source["name"] = "mutated-source"
+    target["entity_type"] = "mutated-target"
+    evidence["source_event_hash"] = "g" * 64
+    evidence["reason"] = "mutated"
+
+    assert edge.to_payload()["source"] == {"name": "a", "entity_type": "event"}
+    assert edge.to_payload()["target"] == {"name": "b", "entity_type": "outcome"}
+    assert edge.to_payload()["evidence"] == {
+        "source_event_seq": 1,
+        "source_event_hash": "b" * 64,
+        "reason": "original",
+    }
+
+
 def test_causal_query_result_to_dict_preserves_authority_boundary() -> None:
     result = CausalQueryResult(
         source={"name": "command:pytest", "entity_type": "command"},
@@ -210,3 +287,105 @@ def test_causal_query_result_to_dict_preserves_authority_boundary() -> None:
     assert result.to_dict()["citation"] == "eventloom://agent-1/events/42#aaaaaaaaaaaa"
     assert result.to_dict()["method"] == "explicit_outcome_citation_v1"
     assert "causal_method" not in result.to_dict()
+
+
+@pytest.mark.parametrize("citation", ["", "   "])
+def test_causal_query_result_rejects_invalid_citation(citation: str) -> None:
+    with pytest.raises(ValueError, match="citation"):
+        CausalQueryResult(
+            source={"name": "a", "entity_type": "event"},
+            target={"name": "b", "entity_type": "outcome"},
+            relation_type="caused",
+            graph_relation_type="causal_caused",
+            confidence=0.8,
+            method="explicit_outcome_citation_v1",
+            citation=citation,
+            review_status="proposed",
+            authority_status="non_authoritative",
+        )
+
+
+@pytest.mark.parametrize("path_length", [0, -1])
+def test_causal_query_result_rejects_invalid_path_length(path_length: int) -> None:
+    with pytest.raises(ValueError, match="path_length"):
+        CausalQueryResult(
+            source={"name": "a", "entity_type": "event"},
+            target={"name": "b", "entity_type": "outcome"},
+            relation_type="caused",
+            graph_relation_type="causal_caused",
+            confidence=0.8,
+            method="explicit_outcome_citation_v1",
+            citation="eventloom://agent-1/events/1#bbbbbbbbbbbb",
+            review_status="proposed",
+            authority_status="non_authoritative",
+            path_length=path_length,
+        )
+
+
+def test_causal_query_result_rejects_invalid_evidence_mapping() -> None:
+    with pytest.raises(ValueError, match="evidence"):
+        CausalQueryResult(
+            source={"name": "a", "entity_type": "event"},
+            target={"name": "b", "entity_type": "outcome"},
+            relation_type="caused",
+            graph_relation_type="causal_caused",
+            confidence=0.8,
+            method="explicit_outcome_citation_v1",
+            citation="eventloom://agent-1/events/1#bbbbbbbbbbbb",
+            review_status="proposed",
+            authority_status="non_authoritative",
+            evidence=[("source_event_seq", 1)],  # type: ignore[arg-type]
+        )
+
+
+def test_causal_query_result_rejects_invalid_statuses() -> None:
+    with pytest.raises(ValueError, match="review_status"):
+        CausalQueryResult(
+            source={"name": "a", "entity_type": "event"},
+            target={"name": "b", "entity_type": "outcome"},
+            relation_type="caused",
+            graph_relation_type="causal_caused",
+            confidence=0.8,
+            method="explicit_outcome_citation_v1",
+            citation="eventloom://agent-1/events/1#bbbbbbbbbbbb",
+            review_status="approved",
+            authority_status="non_authoritative",
+        )
+    with pytest.raises(ValueError, match="authority_status"):
+        CausalQueryResult(
+            source={"name": "a", "entity_type": "event"},
+            target={"name": "b", "entity_type": "outcome"},
+            relation_type="caused",
+            graph_relation_type="causal_caused",
+            confidence=0.8,
+            method="explicit_outcome_citation_v1",
+            citation="eventloom://agent-1/events/1#bbbbbbbbbbbb",
+            review_status="proposed",
+            authority_status="authoritative",
+        )
+
+
+def test_causal_query_result_snapshots_mutable_mapping_inputs() -> None:
+    source = {"name": "a", "entity_type": "event"}
+    target = {"name": "b", "entity_type": "outcome"}
+    evidence: dict[str, object] = {"source_event_seq": 1, "reason": "original"}
+    result = CausalQueryResult(
+        source=source,
+        target=target,
+        relation_type="caused",
+        graph_relation_type="causal_caused",
+        confidence=0.8,
+        method="explicit_outcome_citation_v1",
+        citation="eventloom://agent-1/events/1#bbbbbbbbbbbb",
+        review_status="proposed",
+        authority_status="non_authoritative",
+        evidence=evidence,
+    )
+
+    source["name"] = "mutated-source"
+    target["entity_type"] = "mutated-target"
+    evidence["reason"] = "mutated"
+
+    assert result.to_dict()["source"] == {"name": "a", "entity_type": "event"}
+    assert result.to_dict()["target"] == {"name": "b", "entity_type": "outcome"}
+    assert result.to_dict()["evidence"] == {"source_event_seq": 1, "reason": "original"}

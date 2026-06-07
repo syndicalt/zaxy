@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Any
 
 _EVENT_HASH_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -25,6 +26,18 @@ CAUSAL_RELATION_TYPES = frozenset(
         "explained",
     }
 )
+
+CAUSAL_REVIEW_STATUSES = frozenset(
+    {
+        "proposed",
+        "accepted",
+        "rejected",
+        "deferred",
+        "conflicted",
+    }
+)
+
+CAUSAL_AUTHORITY_STATUSES = frozenset({"non_authoritative"})
 
 _DEFAULT_REVIEW_STATUS = "proposed"
 _DEFAULT_AUTHORITY_STATUS = "non_authoritative"
@@ -55,8 +68,11 @@ class CausalEdge:
             self.relation_type
         ):
             raise ValueError("graph_relation_type must match causal relation_type")
-        _validate_status(self.review_status, field_name="review_status")
-        _validate_status(self.authority_status, field_name="authority_status")
+        _validate_review_status(self.review_status)
+        _validate_authority_status(self.authority_status)
+        object.__setattr__(self, "source", _snapshot_entity_ref(self.source))
+        object.__setattr__(self, "target", _snapshot_entity_ref(self.target))
+        object.__setattr__(self, "evidence", _snapshot_mapping(self.evidence))
 
     def to_payload(self) -> dict[str, Any]:
         """Return the Eventloom payload representation for this causal edge."""
@@ -99,12 +115,16 @@ class CausalQueryResult:
             raise ValueError("graph_relation_type must match causal relation_type")
         _validate_confidence(self.confidence)
         _validate_method(self.method)
-        _validate_status(self.review_status, field_name="review_status")
-        _validate_status(self.authority_status, field_name="authority_status")
-        if not isinstance(self.citation, str) or not self.citation:
+        _validate_review_status(self.review_status)
+        _validate_authority_status(self.authority_status)
+        if not isinstance(self.citation, str) or not self.citation.strip():
             raise ValueError("citation must be a non-empty string")
         if self.path_length is not None and self.path_length < 1:
             raise ValueError("path_length must be at least 1 when set")
+        _validate_query_evidence(self.evidence)
+        object.__setattr__(self, "source", _snapshot_entity_ref(self.source))
+        object.__setattr__(self, "target", _snapshot_entity_ref(self.target))
+        object.__setattr__(self, "evidence", _snapshot_mapping(self.evidence))
 
     def to_dict(self) -> dict[str, Any]:
         """Return a JSON-serializable causal retrieval result."""
@@ -180,6 +200,14 @@ def _entity_ref_to_dict(entity: Mapping[str, Any]) -> dict[str, Any]:
     return {"name": entity["name"], "entity_type": entity["entity_type"]}
 
 
+def _snapshot_entity_ref(entity: Mapping[str, Any]) -> Mapping[str, Any]:
+    return MappingProxyType(_entity_ref_to_dict(entity))
+
+
+def _snapshot_mapping(mapping: Mapping[str, Any]) -> Mapping[str, Any]:
+    return MappingProxyType(dict(mapping))
+
+
 def _validate_causal_relation_type(relation_type: str) -> None:
     if relation_type not in CAUSAL_RELATION_TYPES:
         valid = ", ".join(sorted(CAUSAL_RELATION_TYPES))
@@ -211,6 +239,18 @@ def _validate_evidence(evidence: Mapping[str, Any]) -> None:
         raise ValueError("evidence.source_event_hash must be exactly 64 lowercase hex characters")
 
 
-def _validate_status(status: str, *, field_name: str) -> None:
-    if not isinstance(status, str) or not status:
-        raise ValueError(f"{field_name} must be a non-empty string")
+def _validate_query_evidence(evidence: Mapping[str, Any]) -> None:
+    if not isinstance(evidence, Mapping):
+        raise ValueError("evidence must be a mapping")
+
+
+def _validate_review_status(status: str) -> None:
+    if status not in CAUSAL_REVIEW_STATUSES:
+        valid = ", ".join(sorted(CAUSAL_REVIEW_STATUSES))
+        raise ValueError(f"review_status must be one of: {valid}")
+
+
+def _validate_authority_status(status: str) -> None:
+    if status not in CAUSAL_AUTHORITY_STATUSES:
+        valid = ", ".join(sorted(CAUSAL_AUTHORITY_STATUSES))
+        raise ValueError(f"authority_status must be one of: {valid}")
