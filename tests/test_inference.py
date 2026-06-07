@@ -18,6 +18,19 @@ def _event(event_type: str, payload: dict) -> Event:
     )
 
 
+def _outcome_event(event_type: str, payload: dict[str, object]) -> Event:
+    return Event(
+        seq=9,
+        timestamp="2026-06-07T12:00:00Z",
+        type=event_type,
+        actor="assistant",
+        payload=payload,
+        prev_hash="0" * 64,
+        hash="f" * 64,
+        thread="agent-1",
+    )
+
+
 def test_task_completion_with_cited_decision_emits_inferred_edge_event() -> None:
     """Task completions can produce inferred edges only with explicit decision citation."""
     event = _event(
@@ -61,6 +74,204 @@ def test_task_completion_with_cited_decision_emits_inferred_edge_event() -> None
             "thread": "agent-1",
         }
     ]
+
+
+def test_outcome_explained_event_generates_cited_causal_edge() -> None:
+    generated = build_inferred_edge_events(
+        _outcome_event(
+            "outcome.explained",
+            {
+                "cause": {"name": "command:pytest", "entity_type": "command"},
+                "effect": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "confidence": 0.92,
+                "evidence": {
+                    "source_event_seq": 9,
+                    "source_event_hash": "f" * 64,
+                    "reason": "The command output contained the failure.",
+                },
+            },
+        )
+    )
+
+    assert generated == [
+        {
+            "event_type": "causal.edge.generated",
+            "actor": "zaxy-causal",
+            "payload": {
+                "source": {"name": "command:pytest", "entity_type": "command"},
+                "target": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "graph_relation_type": "causal_caused",
+                "confidence": 0.92,
+                "causal_method": "explicit_outcome_explanation_v1",
+                "review_status": "proposed",
+                "authority_status": "non_authoritative",
+                "evidence": {
+                    "source_event_seq": 9,
+                    "source_event_hash": "f" * 64,
+                    "reason": "The command output contained the failure.",
+                },
+            },
+            "thread": "agent-1",
+        }
+    ]
+
+
+def test_outcome_explained_event_without_citation_generates_nothing() -> None:
+    generated = build_inferred_edge_events(
+        _outcome_event(
+            "outcome.explained",
+            {
+                "cause": {"name": "command:pytest", "entity_type": "command"},
+                "effect": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "confidence": 0.92,
+                "evidence": {"reason": "No Eventloom citation."},
+            },
+        )
+    )
+
+    assert generated == []
+
+
+def test_outcome_explained_event_uses_default_evidence_reason() -> None:
+    generated = build_inferred_edge_events(
+        _outcome_event(
+            "outcome.explained",
+            {
+                "cause": {"name": "command:pytest", "entity_type": "command"},
+                "effect": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "confidence": 0.92,
+                "evidence": {
+                    "source_event_seq": 9,
+                    "source_event_hash": "f" * 64,
+                },
+            },
+        )
+    )
+
+    assert generated[0]["payload"]["evidence"]["reason"] == (
+        "outcome.explained explicitly cited Eventloom evidence"
+    )
+
+
+def test_outcome_explained_event_does_not_infer_from_text() -> None:
+    generated = build_inferred_edge_events(
+        _outcome_event(
+            "outcome.explained",
+            {
+                "summary": "The pytest command caused a test failure.",
+                "evidence": {
+                    "source_event_seq": 9,
+                    "source_event_hash": "f" * 64,
+                },
+            },
+        )
+    )
+
+    assert generated == []
+
+
+def test_outcome_explained_event_with_unsupported_relation_generates_nothing() -> None:
+    generated = build_inferred_edge_events(
+        _outcome_event(
+            "outcome.explained",
+            {
+                "cause": {"name": "command:pytest", "entity_type": "command"},
+                "effect": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "likely_caused",
+                "confidence": 0.92,
+                "evidence": {
+                    "source_event_seq": 9,
+                    "source_event_hash": "f" * 64,
+                },
+            },
+        )
+    )
+
+    assert generated == []
+
+
+def test_outcome_explained_event_with_bool_confidence_generates_nothing() -> None:
+    generated = build_inferred_edge_events(
+        _outcome_event(
+            "outcome.explained",
+            {
+                "cause": {"name": "command:pytest", "entity_type": "command"},
+                "effect": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "confidence": True,
+                "evidence": {
+                    "source_event_seq": 9,
+                    "source_event_hash": "f" * 64,
+                },
+            },
+        )
+    )
+
+    assert generated == []
+
+
+def test_outcome_explained_event_with_string_confidence_generates_nothing() -> None:
+    generated = build_inferred_edge_events(
+        _outcome_event(
+            "outcome.explained",
+            {
+                "cause": {"name": "command:pytest", "entity_type": "command"},
+                "effect": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "confidence": "0.92",
+                "evidence": {
+                    "source_event_seq": 9,
+                    "source_event_hash": "f" * 64,
+                },
+            },
+        )
+    )
+
+    assert generated == []
+
+
+def test_outcome_explained_event_with_malformed_entity_refs_generates_nothing() -> None:
+    generated = build_inferred_edge_events(
+        _outcome_event(
+            "outcome.explained",
+            {
+                "cause": {"name": "command:pytest"},
+                "effect": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "confidence": 0.92,
+                "evidence": {
+                    "source_event_seq": 9,
+                    "source_event_hash": "f" * 64,
+                },
+            },
+        )
+    )
+
+    assert generated == []
+
+
+def test_outcome_explained_event_with_invalid_source_hash_generates_nothing() -> None:
+    generated = build_inferred_edge_events(
+        _outcome_event(
+            "outcome.explained",
+            {
+                "cause": {"name": "command:pytest", "entity_type": "command"},
+                "effect": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "confidence": 0.92,
+                "evidence": {
+                    "source_event_seq": 9,
+                    "source_event_hash": "F" * 64,
+                },
+            },
+        )
+    )
+
+    assert generated == []
 
 
 def test_task_completion_without_decision_citation_emits_no_inference() -> None:
