@@ -530,8 +530,10 @@ python -m zaxy purpose-benchmark --output-dir reports/benchmarks/purpose-v1
 The archived report at
 `reports/benchmarks/purpose-v1/purpose-benchmark.json` passes all ten
 internal lanes. This is an internal Zaxy gate, not a public competitor
-leaderboard: Semantic Reach and Quarq remain blocked until pinned same-harness
-adapters are available.
+leaderboard. Public comparison should focus on larger memory systems and
+benchmark-visible competitors such as Mem0, Agent Memory, Zep/Graphiti,
+MemPalace, and GBrain; Semantic Reach and Quarq remain small-project
+disclosure rows until pinned same-harness adapters are available.
 
 | Benchmark | What It Measures |
 | --- | --- |
@@ -625,8 +627,9 @@ Purpose Recall, Ontology Shift, Consequence Retention, Governed Forgetting,
 Action Outcome Loop, Evidence Policy Discipline, Broader Profile Fixtures,
 Neutral Substrate Projection, Cross-Role Citation, and Accepted-State
 Discipline. The gate must pass before purpose-conditioned memory claims are
-treated as releaseable. Comparative Semantic Reach or Quarq claims remain
-blocked until same-harness adapters are pinned and scored.
+treated as releaseable. Comparative claims against larger memory systems remain
+blocked until same-harness adapters are pinned and scored; Semantic Reach and
+Quarq stay as neutral disclosure rows rather than headline targets.
 
 Maintain benchmark lanes that show Zaxy can retrieve and preserve different
 memories from the same evidence depending on purpose.
@@ -643,8 +646,9 @@ policy, used in retention/compaction policy, and covered by the `purpose-v1`
 gate.
 
 The remaining roadmap should focus on the areas where Zaxy is still weaker
-than the strongest version of the "memory is purpose" thesis and where Semantic
-Reach / Quarq-style claims could pressure the product.
+than the strongest version of the "memory is purpose" thesis and where larger
+memory-system competitors such as Mem0, Agent Memory, Zep/Graphiti, MemPalace,
+and GBrain could pressure the product.
 
 ### Priority 1: Purpose Ontology Projection
 
@@ -853,10 +857,13 @@ Exit criteria:
 - Purpose diagnostics are available without requiring Neo4j. **Implemented by
   direct Eventloom replay; no projection backend is constructed.**
 
-### Priority 7: Same-Harness Semantic Reach and Quarq Evaluation
+### Priority 7: Larger Competitor Same-Harness Evaluation
 
-Problem: Zaxy now blocks comparative claims correctly, but it still lacks
-scored same-harness adapters for Semantic Reach / HyperBinder / Hybi and Quarq.
+Problem: Zaxy now blocks comparative claims correctly, but it still needs
+better same-harness or audited adapter coverage for the larger competitive set:
+Mem0, Agent Memory, Zep/Graphiti, MemPalace, and GBrain. Semantic Reach /
+HyperBinder / Hybi and Quarq should remain neutral small-project disclosures
+unless their adapters become locally scoreable.
 
 Implementation:
 
@@ -881,6 +888,9 @@ Implementation:
 - Keep disclosure-only status until results are locally reproducible.
   **Implemented; the competitor claim gate still requires completed locally
   scored Quarq and Hybi rows.**
+- Add or document larger-system adapter paths first, with Harvey LAB preserving
+  the audited GBrain article-relative comparison and LongMemEval/CoordinationBench
+  prioritizing Mem0, Agent Memory, Zep/Graphiti, and MemPalace.
 
 Exit criteria:
 
@@ -934,7 +944,7 @@ Exit criteria:
 4. Broader Purpose Profiles.
 5. Neutral Document/Transcript Substrate.
 6. Purpose Control Plane UX.
-7. Same-Harness Semantic Reach / Quarq Evaluation.
+7. Larger Competitor Same-Harness Evaluation.
 8. Representative Purpose Holdouts.
 
 This order keeps Coordinate and Memory Checkout front-and-center while building

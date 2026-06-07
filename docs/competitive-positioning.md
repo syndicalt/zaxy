@@ -56,10 +56,14 @@ leaderboard. MemPalace publicly reports 96.6% raw LongMemEval R@5 and 98.4%
 held-out hybrid R@5, plus optional LLM-reranked full-set runs reported at
 99%+ R@5. Agent Memory publicly reports 95.2% R@5 on LongMemEval-S. Mem0
 publicly reports LongMemEval accuracy in the low-to-mid 90s and lower-token
-memory retrieval, plus LoCoMo accuracy gains; those are different metric
-families from Zaxy's local retrieval reports unless run through the same
-harness. These claims are important market context, but they are not
-same-harness Zaxy results.
+memory retrieval, plus LoCoMo accuracy gains. Zep/Graphiti remains an important
+graph-memory product reference point, but its public numbers should still be
+kept separate unless a same-harness adapter is pinned. GBrain is the
+benchmark-visible Harvey LAB comparison: Zaxy's audited Harvey run beats the
+article-best task rows by +0.081 mean criterion pass rate and wins 9/10 tasks,
+but that is article-relative evidence rather than a Zaxy-run GBrain adapter.
+These claims are important market context, but they are not same-harness Zaxy
+results.
 
 ## Same-Harness Adapter Feasibility
 
@@ -80,6 +84,15 @@ does not provide a stable same-harness CLI/API contract for Zaxy to call. Keep
 the number in the disclosure table until a reproducible command and result
 export are available.
 
+Zep/Graphiti should be treated as a larger graph-memory comparison target, not
+as a thesis-adjacent ally to attack. A same-harness adapter would need to pin
+the graph construction path, retrieval limit, source-citation mapping, and
+latency/token accounting.
+
+GBrain belongs in the Harvey LAB lane. The current publishable claim is that
+Zaxy beats the article-best GBrain task rows in the audited Harvey artifact
+comparison; a stronger claim requires a pinned GBrain runner.
+
 ## Near-Term Roadmap
 
 - Treat the current74 full 500-question LongMemEval-compatible report as the
@@ -90,8 +103,10 @@ export are available.
   show both retrieval quality and latency/token tradeoffs against a strong
   lexical baseline.
 - Build or document feasible same-harness competitor adapters for MemPalace,
-  Mem0, and Agent Memory. If a same-harness adapter is not practical, document
-  the blocker and keep the competitor number in the external-disclosure table.
+  Mem0, Agent Memory, and Zep/Graphiti. Keep GBrain in the Harvey LAB
+  article-relative lane until a pinned runner exists. If a same-harness adapter
+  is not practical, document the blocker and keep the competitor number in the
+  external-disclosure table.
 - Add Skill Memory as a first-class procedural layer: skill lifecycle events,
   skill-version graph projection, checkout skill routing, outcome tracking, and
   eval-gated promotion/rollback.

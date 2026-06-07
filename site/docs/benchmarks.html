@@ -1523,9 +1523,9 @@ zaxy benchmark \
       </table>
       <p>The public-derived holdout mean is <code>0.606</code>. That result is the right product signal: the replay-backed coordination layer gets strong accepted-state precision and duplicate consolidation, but the current frozen adapter still needs better source-aware final answering, stale-source interpretation, and conflict detection across public-derived cases. Until independent review and unseen workload promotion are complete, Zaxy should not market a perfect CoordinationBench score as representative performance.</p>
       <p>The in-repo Zaxy-owned CoordinationBench adapter now emits a source-aware accepted-state answer packet for each case: <code>returned_text</code>, <code>answer_candidate</code>, <code>synthesis_artifact</code>, <code>support_source_ids</code>, <code>excluded_source_ids</code>, and <code>non_authoritative_rows_injected</code>. The scorer treats <code>accepted_state_synthesis_quality</code> as proof-backed: plain returned text is not enough to receive synthesis-quality credit. Public-derived holdout numbers must be rerun and archived before this adapter hardening changes any published holdout claim. The report also includes a machine-readable <code>coordinate_purpose_synthesis_gate</code> that passes only when accepted-state synthesis quality, non-authoritative leakage, Coordinate-purpose feedback coverage, citation coverage, parent-checkout answerability, and Eventloom replayability all meet their required floors. This is the gate for Zaxy Coordinate product claims; it is separate from the competitor claim gate. Coordinate proof packets are also projected into graph memory as mission-scoped proof nodes with accepted-finding, conflict, handoff, and non-authoritative-row edges, so benchmark evidence remains replayable and queryable instead of living only as text output. <code>purpose_feedback_coverage</code> is an internal Coordinate audit metric: Zaxy gets credit when accepted parent-state findings are feedback-ready with source citations, while external same-harness adapters get credit only when their strict result files include explicit Coordinate-purpose feedback events for the accepted findings. Disclosure-only competitor rows do not receive feedback coverage credit.</p>
-      <p>The internal <code>coordination-real-v1</code> report is archived at <a href="../reports/benchmarks/coordination-real-v1/coordination-benchmark.md"><code>reports/benchmarks/coordination-real-v1/coordination-benchmark.md</code></a>. It remains useful as a Zaxy development smoke test over real project history. It should not be used as the headline benchmark claim because it was produced inside the Zaxy repo and is easier to tune against than an external holdout pack. The report includes local baselines, disclosure-only adapter templates for Mem0, Agent Memory, ActiveGraph, Quarq, and Semantic Reach/Hybi, limitations, and reproduction commands. Its <code>competitor_claim_gate</code> is currently <code>blocked</code> for Quarq and Hybi, which means the report may disclose adapter status but must not be used as a same-harness public claim for either system. Its <code>coordinate_purpose_synthesis_gate</code> is <code>passed</code>, which means the internal real-history report is suitable as a development proof of the Coordinate purpose/synthesis contract while still not being a public competitor claim.</p>
+      <p>The internal <code>coordination-real-v1</code> report is archived at <a href="../reports/benchmarks/coordination-real-v1/coordination-benchmark.md"><code>reports/benchmarks/coordination-real-v1/coordination-benchmark.md</code></a>. It remains useful as a Zaxy development smoke test over real project history. It should not be used as the headline benchmark claim because it was produced inside the Zaxy repo and is easier to tune against than an external holdout pack. The report includes local baselines, a legacy disclosure-only adapter template set, limitations, and reproduction commands. Mem0, Agent Memory, Zep/Graphiti, MemPalace, and GBrain are the primary external comparison targets. Quarq and Semantic Reach/Hybi remain small-project disclosure rows; the report may disclose adapter status for them, but they should not be framed as headline competitors. Its <code>coordinate_purpose_synthesis_gate</code> is <code>passed</code>, which means the internal real-history report is suitable as a development proof of the Coordinate purpose/synthesis contract while still not being a public competitor claim.</p>
       <h2 id="purpose-conditioned-memory-gate">Purpose-Conditioned Memory Gate</h2>
-      <p>The <code>purpose-v1</code> benchmark is Zaxy&#x27;s deterministic internal gate for the &quot;memory is purpose&quot; claim. It does not compare against Semantic Reach, Quarq, or other products. Comparative SOTA claims remain blocked until same-harness adapters are pinned and scored.</p>
+      <p>The <code>purpose-v1</code> benchmark is Zaxy&#x27;s deterministic internal gate for the &quot;memory is purpose&quot; claim. It does not compare against Semantic Reach, Quarq, or other products. Comparative SOTA claims against larger memory systems remain blocked until same-harness adapters are pinned and scored.</p>
       <p>Run:</p>
       <pre><code class="language-bash">python -m zaxy purpose-benchmark --output-dir reports/benchmarks/purpose-v1 --include-holdouts</code></pre>
       <p>Archived report: <code>reports/benchmarks/purpose-v1/purpose-benchmark.json</code></p>
@@ -1663,7 +1663,7 @@ zaxy benchmark \
           </tr>
         </tbody>
       </table>
-      <p>The same report lists Mem0, Agent Memory, ActiveGraph, Quarq, and Semantic Reach/Hybi as <code>not_run</code> with <code>disclosure_only</code> claim status until a pinned runner result is locally scored. Quarq and Hybi now ship pinned disclosure manifests with source refs, install commands, workload/result contracts, and explicit unsupported runner commands; those manifests still are not performance results. The report also writes a machine-readable <code>competitor_claim_gate</code>; public same-harness claims for Quarq or Hybi are blocked until the gate sees completed, locally scored, fingerprinted result audits. That is deliberate: CoordinationBench should make the adapter gap visible without turning placeholder templates into public claims.</p>
+      <p>The same report&#x27;s legacy template pack lists several <code>not_run</code> rows with <code>disclosure_only</code> claim status until a pinned runner result is locally scored. Public positioning should lead with the larger comparison set: Mem0, Agent Memory, Zep/Graphiti, MemPalace, and GBrain. Quarq and Hybi now ship pinned disclosure manifests with source refs, install commands, workload/result contracts, and explicit unsupported runner commands; those manifests still are not performance results and should remain neutral audit rows. The report also writes a machine-readable <code>competitor_claim_gate</code>; public same-harness claims for Quarq or Hybi are blocked until the gate sees completed, locally scored, fingerprinted result audits. That is deliberate: CoordinationBench should make the adapter gap visible without turning placeholder templates into public claims or targeting small projects.</p>
       <h2 id="external-disclosures">External Disclosures</h2>
       <p>These rows summarize public claims from other projects. They are external disclosures, not same-harness results, because Zaxy did not execute those systems inside its benchmark harness.</p>
       <table>
@@ -1695,16 +1695,28 @@ zaxy benchmark \
             <td>Different metric family and hosted/managed setup; useful as production-memory context, but not directly comparable to Zaxy&#x27;s retrieval R@5 and cited checkout metrics.</td>
           </tr>
           <tr>
+            <td>Zep/Graphiti</td>
+            <td>Public graph-memory platform and open graph-memory framework used by agent applications.</td>
+            <td><a href="https://www.getzep.com/">Zep</a>, <a href="https://github.com/getzep/graphiti">Graphiti</a></td>
+            <td>Larger graph-memory comparison target. Keep claims separate until a pinned graph construction and retrieval adapter is locally scored.</td>
+          </tr>
+          <tr>
+            <td>GBrain</td>
+            <td>Harvey LAB article rows show GBrain keyword/Gemma/LightRAG as the strongest task row on several legal-agent tasks; Zaxy&#x27;s audited Harvey run beats those article-best task rows on 9/10 tasks and by +0.081 mean criterion pass rate.</td>
+            <td><a href="benchmarks.html#completed-2026-06-06-result">Harvey LAB result</a></td>
+            <td>Strong benchmark-visible legal-agent comparison. Treat this as article-relative Harvey LAB evidence, not a same-harness rerun of GBrain by Zaxy.</td>
+          </tr>
+          <tr>
             <td>Quarq</td>
             <td>Reports memory-first agent behavior and high LongMemEval-S accuracy claims.</td>
             <td><a href="https://www.quarq.io/agent">quarq.io/agent</a>, <a href="https://github.com/quarqlabs/agent-oss">quarqlabs/agent-oss</a></td>
-            <td>Strong retrieval-protocol target, but Zaxy does not treat the claim as same-harness until a pinned runner or strict result file is locally scored.</td>
+            <td>Small-project disclosure row. Keep the adapter gap visible, but do not use it as headline competitive positioning.</td>
           </tr>
           <tr>
             <td>Semantic Reach / HyperBinder / Hybi</td>
             <td>Claims a unified HDC-backed substrate for semantic, graph, relational, and exact retrieval.</td>
             <td><a href="https://www.semantic-reach.io/">semantic-reach.io</a>, <a href="https://semanticreach.github.io/hyperbinder-sdk/">HyperBinder SDK</a>, <a href="https://pypi.org/project/hybi/">hybi on PyPI</a></td>
-            <td>Architecture target for slot-aware retrieval, but public evidence is not a Zaxy same-harness result without a pinned HyperBinder/Hybi runtime adapter.</td>
+            <td>Small-project disclosure row. Public evidence is not a Zaxy same-harness result without a pinned HyperBinder/Hybi runtime adapter.</td>
           </tr>
         </tbody>
       </table>
@@ -1738,6 +1750,18 @@ zaxy benchmark \
             <td>external disclosure only</td>
             <td>The product page reports LongMemEval-S R@5 and the retrieval stack, but it does not document a stable same-harness CLI/API contract for Zaxy to call.</td>
             <td>Keep the claim in external disclosures until a reproducible benchmark command, dataset contract, and result export are available.</td>
+          </tr>
+          <tr>
+            <td>Zep/Graphiti</td>
+            <td>adapter candidate</td>
+            <td>The public Graphiti project exposes graph-memory construction and retrieval primitives, but a Zaxy runner must pin ingestion, search config, and citation mapping.</td>
+            <td>Build a same-workload graph-memory adapter that exports top-k cited contexts and preserves latency/token accounting.</td>
+          </tr>
+          <tr>
+            <td>GBrain</td>
+            <td>Harvey LAB article-relative evidence</td>
+            <td>The Harvey LAB task matrix exposes GBrain keyword/Gemma/LightRAG task-best rows that Zaxy beats in the audited full run.</td>
+            <td>Keep publishing the Harvey artifact audit and score deltas; do not call it a same-harness GBrain rerun unless a GBrain runner is pinned and executed.</td>
           </tr>
           <tr>
             <td>Quarq</td>

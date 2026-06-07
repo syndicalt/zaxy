@@ -1537,12 +1537,12 @@ The internal `coordination-real-v1` report is archived at
 It remains useful as a Zaxy development smoke test over real project history.
 It should not be used as the headline benchmark claim because it was produced
 inside the Zaxy repo and is easier to tune against than an external holdout
-pack. The report includes local baselines, disclosure-only adapter templates
-for Mem0, Agent Memory, ActiveGraph, Quarq, and Semantic Reach/Hybi,
-limitations, and reproduction commands. Its `competitor_claim_gate` is
-currently `blocked` for Quarq and Hybi, which means the report may disclose
-adapter status but must not be used as a same-harness public claim for either
-system.
+pack. The report includes local baselines, a legacy disclosure-only adapter
+template set, limitations, and reproduction commands. Mem0, Agent Memory,
+Zep/Graphiti, MemPalace, and GBrain are the primary external comparison
+targets. Quarq and Semantic Reach/Hybi remain small-project disclosure rows;
+the report may disclose adapter status for them, but they should not be framed
+as headline competitors.
 Its `coordinate_purpose_synthesis_gate` is `passed`, which means the internal
 real-history report is suitable as a development proof of the Coordinate
 purpose/synthesis contract while still not being a public competitor claim.
@@ -1551,8 +1551,8 @@ purpose/synthesis contract while still not being a public competitor claim.
 
 The `purpose-v1` benchmark is Zaxy's deterministic internal gate for the
 "memory is purpose" claim. It does not compare against Semantic Reach, Quarq,
-or other products. Comparative SOTA claims remain blocked until same-harness
-adapters are pinned and scored.
+or other products. Comparative SOTA claims against larger memory systems remain
+blocked until same-harness adapters are pinned and scored.
 
 Run:
 
@@ -1611,17 +1611,18 @@ It uses workload fingerprint
 | BM25 worker logs | 0.333 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 |
 | Flat transcript | 0.200 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 |
 
-The same report lists Mem0, Agent Memory, ActiveGraph, Quarq, and Semantic
-Reach/Hybi as `not_run` with `disclosure_only` claim status until a pinned
-runner result is locally scored. Quarq and Hybi now ship pinned disclosure
-manifests with source refs, install commands, workload/result contracts, and
-explicit unsupported runner commands; those manifests still are not performance
-results. The report also writes a
-machine-readable `competitor_claim_gate`; public same-harness claims for Quarq
-or Hybi are blocked until the gate sees completed, locally scored,
+The same report's legacy template pack lists several `not_run` rows with
+`disclosure_only` claim status until a pinned runner result is locally scored.
+Public positioning should lead with the larger comparison set: Mem0, Agent
+Memory, Zep/Graphiti, MemPalace, and GBrain. Quarq and Hybi now ship pinned
+disclosure manifests with source refs, install commands, workload/result
+contracts, and explicit unsupported runner commands; those manifests still are
+not performance results and should remain neutral audit rows. The report also
+writes a machine-readable `competitor_claim_gate`; public same-harness claims
+for Quarq or Hybi are blocked until the gate sees completed, locally scored,
 fingerprinted result audits. That is deliberate: CoordinationBench should make
 the adapter gap visible without turning placeholder templates into public
-claims.
+claims or targeting small projects.
 
 ## External Disclosures
 
@@ -1634,8 +1635,10 @@ systems inside its benchmark harness.
 | MemPalace | 96.6% raw LongMemEval R@5; 98.4% held-out hybrid R@5; LLM-reranked full-set runs reported at 99%+ R@5 | [MemPalace README](https://github.com/MemPalace/mempalace), [MemPalace BENCHMARKS.md](https://github.com/MemPalace/mempalace/blob/develop/benchmarks/BENCHMARKS.md) | Strongest public retrieval target. Compare Zaxy's `R@5=1.000` to no-LLM retrieval disclosures separately from MemPalace's optional LLM-rerank line. |
 | Agent Memory | 95.2% R@5 on LongMemEval-S, with BM25 + vector retrieval and broader graph-memory positioning | [Agent Memory LONGMEMEVAL.md](https://github.com/rohitg00/agentmemory/blob/main/benchmark/LONGMEMEVAL.md) | Direct product-positioning target for coding-agent memory with aggressive hook and viewer UX. |
 | Mem0 | Research pages report LongMemEval accuracy in the low-to-mid 90s plus lower token usage; managed-platform category rows report up to 97.0% on temporal reasoning | [Mem0 research](https://mem0.ai/research), [memory-benchmarks](https://github.com/mem0ai/memory-benchmarks) | Different metric family and hosted/managed setup; useful as production-memory context, but not directly comparable to Zaxy's retrieval R@5 and cited checkout metrics. |
-| Quarq | Reports memory-first agent behavior and high LongMemEval-S accuracy claims. | [quarq.io/agent](https://www.quarq.io/agent), [quarqlabs/agent-oss](https://github.com/quarqlabs/agent-oss) | Strong retrieval-protocol target, but Zaxy does not treat the claim as same-harness until a pinned runner or strict result file is locally scored. |
-| Semantic Reach / HyperBinder / Hybi | Claims a unified HDC-backed substrate for semantic, graph, relational, and exact retrieval. | [semantic-reach.io](https://www.semantic-reach.io/), [HyperBinder SDK](https://semanticreach.github.io/hyperbinder-sdk/), [hybi on PyPI](https://pypi.org/project/hybi/) | Architecture target for slot-aware retrieval, but public evidence is not a Zaxy same-harness result without a pinned HyperBinder/Hybi runtime adapter. |
+| Zep/Graphiti | Public graph-memory platform and open graph-memory framework used by agent applications. | [Zep](https://www.getzep.com/), [Graphiti](https://github.com/getzep/graphiti) | Larger graph-memory comparison target. Keep claims separate until a pinned graph construction and retrieval adapter is locally scored. |
+| GBrain | Harvey LAB article rows show GBrain keyword/Gemma/LightRAG as the strongest task row on several legal-agent tasks; Zaxy's audited Harvey run beats those article-best task rows on 9/10 tasks and by +0.081 mean criterion pass rate. | [Harvey LAB result](benchmarks.md#completed-2026-06-06-result) | Strong benchmark-visible legal-agent comparison. Treat this as article-relative Harvey LAB evidence, not a same-harness rerun of GBrain by Zaxy. |
+| Quarq | Reports memory-first agent behavior and high LongMemEval-S accuracy claims. | [quarq.io/agent](https://www.quarq.io/agent), [quarqlabs/agent-oss](https://github.com/quarqlabs/agent-oss) | Small-project disclosure row. Keep the adapter gap visible, but do not use it as headline competitive positioning. |
+| Semantic Reach / HyperBinder / Hybi | Claims a unified HDC-backed substrate for semantic, graph, relational, and exact retrieval. | [semantic-reach.io](https://www.semantic-reach.io/), [HyperBinder SDK](https://semanticreach.github.io/hyperbinder-sdk/), [hybi on PyPI](https://pypi.org/project/hybi/) | Small-project disclosure row. Public evidence is not a Zaxy same-harness result without a pinned HyperBinder/Hybi runtime adapter. |
 
 When writing public copy, do not collapse these into a single leaderboard.
 Metric families differ: R@5 retrieval, Answer@5 expected-term recall, LOCOMO
@@ -1650,6 +1653,8 @@ As of May 18, 2026, competitor adapters have different readiness levels:
 | MemPalace | adapter candidate | The public repo documents `benchmarks/longmemeval_bench.py`, committed per-question results, and a no-API-key raw LongMemEval path. | Build a wrapper that exports per-query top-k contexts into Zaxy's `BenchmarkRun` schema without changing MemPalace ranking settings. |
 | Mem0 | benchmark harness candidate | `mem0ai/memory-benchmarks` includes LongMemEval scripts, but the OSS path requires Docker, Qdrant, model configuration, and LLM answer/judge settings. | Separate retrieval-only evidence from answer/judge accuracy, pin backend config, and preserve token/latency accounting. |
 | Agent Memory | external disclosure only | The product page reports LongMemEval-S R@5 and the retrieval stack, but it does not document a stable same-harness CLI/API contract for Zaxy to call. | Keep the claim in external disclosures until a reproducible benchmark command, dataset contract, and result export are available. |
+| Zep/Graphiti | adapter candidate | The public Graphiti project exposes graph-memory construction and retrieval primitives, but a Zaxy runner must pin ingestion, search config, and citation mapping. | Build a same-workload graph-memory adapter that exports top-k cited contexts and preserves latency/token accounting. |
+| GBrain | Harvey LAB article-relative evidence | The Harvey LAB task matrix exposes GBrain keyword/Gemma/LightRAG task-best rows that Zaxy beats in the audited full run. | Keep publishing the Harvey artifact audit and score deltas; do not call it a same-harness GBrain rerun unless a GBrain runner is pinned and executed. |
 | Quarq | pinned unsupported runner manifest | The OSS repo exposes a local memory-first agent architecture. Zaxy pins `quarqlabs/agent-oss` at `b68386048795765d46c87bef5bd88ecfb1301337`, but no CoordinationBench runner adapter is committed. | Replace the packaged unsupported runner with a real workload replay adapter and score the generated result locally before publishing metrics. |
 | Semantic Reach / HyperBinder / Hybi | pinned unsupported runner manifest | The public `hybi` SDK is pinned to 0.1.1 by PyPI wheel hash, but it is an HTTP client for a HyperBinder runtime and Zaxy has no pinned server/runtime adapter yet. | Pin a HyperBinder server/runtime, replace the unsupported runner, and export strict result files before publishing metrics. |
 

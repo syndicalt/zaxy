@@ -91,10 +91,11 @@ def test_public_site_has_product_positioning_and_required_sections() -> None:
     assert "Harvey LAB mean 0.788" in html
     assert "purpose-v1 passed" in html
     assert "StateRecoveryBench gate passed" in html
-    assert "Quarq/Hybi claims blocked" in html
+    assert "GBrain beaten on Harvey LAB" in html
+    assert "Mem0/Agent Memory adapters pending" in html
     assert "external verification requested" in html
     assert "public-derived purpose holdout" in html
-    assert "external Semantic Reach or Quarq superiority claims" in html
+    assert "External superiority claims against larger memory systems" in html
     assert "Research paper" in html
     assert "docs/research/zaxy-memory-fabric-paper.html" in html
 
@@ -577,8 +578,9 @@ def test_public_site_benchmark_claims_use_current_full_set_guardrails() -> None:
     assert "+0.184 vs regular/no-memory" in html
     assert "docs/benchmarks.html#completed-2026-06-06-result" in html
     assert "0.272727 precision" in html
-    assert "Mem0 / Agent Memory / ActiveGraph" in html
-    assert "disclosure only" in html
+    assert "Mem0 / Agent Memory / Zep-Graphiti / MemPalace / GBrain" in html
+    assert "GBrain beaten; memory-system adapters pending" in html
+    assert "disclosure-only" in html
     assert "Flat transcript" in html
     assert "Markdown notes" in html
     assert "BM25 worker logs" in html
@@ -873,12 +875,13 @@ def test_public_site_benchmark_claim_is_scoped_to_fixture() -> None:
     assert "accepted-finding" in html
     assert "Mem0" in html
     assert "Agent Memory" in html
-    assert "ActiveGraph" in html
+    assert "Zep/Graphiti" in html
+    assert "GBrain" in html
     assert "1.000" in html
     assert "0.636364" in html
     assert "0.666667" in html
     assert "0.272727" in html
-    assert "disclosure only" in html
+    assert "disclosure-only" in html
     assert "not_run" in html
     assert 'class="benchmark-metrics"' in html
     assert 'class="benchmark-card benchmark-card-primary"' in html
@@ -921,7 +924,7 @@ def test_benchmark_docs_disclose_harness_external_claims_and_sources() -> None:
     assert "not same-harness results" in text
     assert "coordination-real-v1" in text
     assert "../reports/benchmarks/coordination-real-v1/coordination-benchmark.md" in text
-    assert "disclosure-only adapter templates" in text
+    assert "legacy disclosure-only adapter" in text
 
 
 def test_benchmark_docs_record_competitor_adapter_feasibility() -> None:
@@ -939,6 +942,8 @@ def test_benchmark_docs_record_competitor_adapter_feasibility() -> None:
     assert "requires Docker" in combined
     assert "Agent Memory" in combined
     assert "external disclosure only" in combined
+    assert "Zep/Graphiti" in combined
+    assert "GBrain" in combined
     assert "No same-harness adapter should be published without" in combined
 
 

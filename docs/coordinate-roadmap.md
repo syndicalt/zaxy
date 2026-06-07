@@ -68,9 +68,9 @@ The first production slice is implemented:
   Zaxy metrics, local baselines, disclosure-only adapter status, limitations,
   and reproduction commands from the tracked workload in
   `benchmarks/coordination-real-v1/coordination-workload.json`.
-- CoordinationBench includes a competitor adapter disclosure contract for Mem0,
-  Agent Memory, and ActiveGraph. Until a pinned adapter and workload replay
-  contract is configured, these entries are reported as `not_run` with
+- CoordinationBench includes a competitor adapter disclosure contract. Until a
+  pinned adapter and workload replay contract is configured, generated entries
+  are reported as `not_run` with
   `disclosure_only` claim status rather than fake scores. Pinned external
   result files can be ingested with `--competitor-result NAME=PATH`, but Zaxy
   recomputes public metrics locally from case outputs and rejects fingerprint
@@ -84,10 +84,10 @@ The first production slice is implemented:
   the adapter to write the standard result file, and still recomputes all public
   metrics locally through the same strict scorer. Duplicate adapter names across
   result ingestion and runner execution are rejected.
-- Each benchmark run now writes a `competitor-runner-manifests/` manifest pack
-  for Mem0, Agent Memory, and ActiveGraph. These JSON templates are bound to the
-  frozen workload fingerprint and include the exact result path each adapter must
-  write, but they are marked `template: true` and contain a placeholder
+- Each benchmark run now writes a `competitor-runner-manifests/` manifest pack.
+  These JSON templates are bound to the frozen workload fingerprint and include
+  the exact result path each adapter must write, but they are marked
+  `template: true` and contain a placeholder
   `run_command`; Zaxy refuses to execute unfinalized templates, preventing
   placeholder manifests from turning into public same-harness claims.
 - Zaxy also ships an installable CoordinationBench Adapter Contract Kit with
@@ -134,12 +134,13 @@ The first production slice is implemented:
 
 Still pending:
 
-- External Mem0, Agent Memory, ActiveGraph, Quarq, and Semantic Reach/Hybi
-  adapter packages that replace the generated templates with real pinned
-  `run_command` entries and publish reproducible runner packages.
-- The CoordinationBench public-claim gate is now implemented for Quarq and
-  Semantic Reach/Hybi; it stays blocked while those adapters are
-  disclosure-only and passes only after locally scored result audits exist.
+- External Mem0, Agent Memory, Zep/Graphiti, MemPalace, and GBrain adapter or
+  result-ingestion packages that replace generated templates with real pinned
+  `run_command` entries or audited result artifacts.
+- Quarq and Semantic Reach/Hybi remain small-project disclosure rows. Their
+  public-claim gate stays blocked while those adapters are disclosure-only and
+  passes only after locally scored result audits exist; they should not be
+  treated as the headline competitive set.
 - A refreshed public-derived CoordinationBench report after the in-repo
   Zaxy-owned adapter's source-aware answer packet and proof-backed synthesis
   quality scoring are rerun against the holdout packs.
@@ -452,12 +453,12 @@ Competitor adapters should be added only when they can run through a pinned,
 reproducible contract. External public claims should stay in disclosure tables
 until they are same-harness.
 The first disclosure, result-ingestion, and pinned runner execution contract is
-implemented for Mem0, Agent Memory, and ActiveGraph; all three remain `not_run`
-until a real adapter result or runner manifest is provided.
+implemented as a generated template pack; generated rows remain `not_run` until
+a real adapter result or runner manifest is provided.
 Every benchmark run writes `competitor-runner-manifests/*.template.json` files
-for those three adapters. The files are workload-fingerprint-bound templates for
-adapter authors, not executable claims; unedited templates are rejected by the
-runner.
+for the generated adapters. The files are workload-fingerprint-bound templates
+for adapter authors, not executable claims; unedited templates are rejected by
+the runner.
 
 The adapter contract kit is exportable with:
 

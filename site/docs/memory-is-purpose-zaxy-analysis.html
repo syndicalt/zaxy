@@ -589,7 +589,7 @@
       <h2 id="10-benchmark-direction">10. Benchmark Direction</h2>
       <p>Zaxy now includes a deterministic <code>purpose-v1</code> benchmark gate that tests the article&#x27;s thesis directly. Run it with:</p>
       <pre><code class="language-bash">python -m zaxy purpose-benchmark --output-dir reports/benchmarks/purpose-v1</code></pre>
-      <p>The archived report at <code>reports/benchmarks/purpose-v1/purpose-benchmark.json</code> passes all ten internal lanes. This is an internal Zaxy gate, not a public competitor leaderboard: Semantic Reach and Quarq remain blocked until pinned same-harness adapters are available.</p>
+      <p>The archived report at <code>reports/benchmarks/purpose-v1/purpose-benchmark.json</code> passes all ten internal lanes. This is an internal Zaxy gate, not a public competitor leaderboard. Public comparison should focus on larger memory systems and benchmark-visible competitors such as Mem0, Agent Memory, Zep/Graphiti, MemPalace, and GBrain; Semantic Reach and Quarq remain small-project disclosure rows until pinned same-harness adapters are available.</p>
       <table>
         <thead>
           <tr>
@@ -688,12 +688,12 @@
       <p>Do not compact legal obligations the same way as coding hints or support context.</p>
       <p>Status: implemented for the Coordinate production path through purpose-aware compaction projections and for retrieval-time decay through purpose-specific half-life and expired-weight floors. Broader consolidation strategies for every purpose profile now have explicit preserve-all or exemplar policies; future work is expanding the profile set beyond the current presets.</p>
       <h3 id="phase-5-purpose-benchmarks">Phase 5: Purpose Benchmarks</h3>
-      <p>Status: implemented as the deterministic <code>purpose-v1</code> gate. The report covers Purpose Recall, Ontology Shift, Consequence Retention, Governed Forgetting, Action Outcome Loop, Evidence Policy Discipline, Broader Profile Fixtures, Neutral Substrate Projection, Cross-Role Citation, and Accepted-State Discipline. The gate must pass before purpose-conditioned memory claims are treated as releaseable. Comparative Semantic Reach or Quarq claims remain blocked until same-harness adapters are pinned and scored.</p>
+      <p>Status: implemented as the deterministic <code>purpose-v1</code> gate. The report covers Purpose Recall, Ontology Shift, Consequence Retention, Governed Forgetting, Action Outcome Loop, Evidence Policy Discipline, Broader Profile Fixtures, Neutral Substrate Projection, Cross-Role Citation, and Accepted-State Discipline. The gate must pass before purpose-conditioned memory claims are treated as releaseable. Comparative claims against larger memory systems remain blocked until same-harness adapters are pinned and scored; Semantic Reach and Quarq stay as neutral disclosure rows rather than headline targets.</p>
       <p>Maintain benchmark lanes that show Zaxy can retrieve and preserve different memories from the same evidence depending on purpose.</p>
       <p>This is a stronger internal product claim than generic token savings, but it does not become a comparative SOTA claim until external products are evaluated on the same harness.</p>
       <h2 id="12-implementation-roadmap-for-remaining-weak-areas">12. Implementation Roadmap for Remaining Weak Areas</h2>
       <p>Zaxy is now aligned with the article&#x27;s core direction for agent-work memory: purpose is typed, visible in checkout, preserved in feedback, used in retrieval policy, used in retention/compaction policy, and covered by the <code>purpose-v1</code> gate.</p>
-      <p>The remaining roadmap should focus on the areas where Zaxy is still weaker than the strongest version of the &quot;memory is purpose&quot; thesis and where Semantic Reach / Quarq-style claims could pressure the product.</p>
+      <p>The remaining roadmap should focus on the areas where Zaxy is still weaker than the strongest version of the &quot;memory is purpose&quot; thesis and where larger memory-system competitors such as Mem0, Agent Memory, Zep/Graphiti, MemPalace, and GBrain could pressure the product.</p>
       <h3 id="priority-1-purpose-ontology-projection">Priority 1: Purpose Ontology Projection</h3>
       <p>Problem: Zaxy applies purpose at retrieval and checkout, but graph structure is still mostly role-neutral. The same evidence should project different relationship structures for coding, security, release, support, legal, product, and coordination without reingesting the source.</p>
       <p>Implementation:</p>
@@ -835,8 +835,8 @@
         <li>Coordinate users can see accepted parent memory, pending worker diagnostics, and proof packets in one surface. <strong>Implemented in <code>zaxy memory purpose status</code> and the dashboard Purpose tab.</strong></li>
         <li>Purpose diagnostics are available without requiring Neo4j. <strong>Implemented by direct Eventloom replay; no projection backend is constructed.</strong></li>
       </ul>
-      <h3 id="priority-7-same-harness-semantic-reach-and-quarq-evaluation">Priority 7: Same-Harness Semantic Reach and Quarq Evaluation</h3>
-      <p>Problem: Zaxy now blocks comparative claims correctly, but it still lacks scored same-harness adapters for Semantic Reach / HyperBinder / Hybi and Quarq.</p>
+      <h3 id="priority-7-larger-competitor-same-harness-evaluation">Priority 7: Larger Competitor Same-Harness Evaluation</h3>
+      <p>Problem: Zaxy now blocks comparative claims correctly, but it still needs better same-harness or audited adapter coverage for the larger competitive set: Mem0, Agent Memory, Zep/Graphiti, MemPalace, and GBrain. Semantic Reach / HyperBinder / Hybi and Quarq should remain neutral small-project disclosures unless their adapters become locally scoreable.</p>
       <p>Implementation:</p>
       <ul>
         <li>Fill the packaged Quarq and Hybi runner manifests with pinned source refs, install commands, runtime commands, dataset contracts, and result export schemas. <strong>Implemented as pinned unsupported runner manifests: Quarq pins <code>quarqlabs/agent-oss</code> at <code>b68386048795765d46c87bef5bd88ecfb1301337</code>; Hybi pins <code>hybi==0.1.1</code> by PyPI wheel hash.</strong></li>
@@ -854,6 +854,9 @@
         <li>Keep disclosure-only status until results are locally reproducible.</li>
       </ul>
       <p><strong>Implemented; the competitor claim gate still requires completed locally scored Quarq and Hybi rows.</strong></p>
+      <ul>
+        <li>Add or document larger-system adapter paths first, with Harvey LAB preserving the audited GBrain article-relative comparison and LongMemEval/CoordinationBench prioritizing Mem0, Agent Memory, Zep/Graphiti, and MemPalace.</li>
+      </ul>
       <p>Exit criteria:</p>
       <ul>
         <li><code>competitor_claim_gate</code> can pass only with completed Quarq and Hybi rows.</li>
@@ -900,7 +903,7 @@
         <li>Broader Purpose Profiles.</li>
         <li>Neutral Document/Transcript Substrate.</li>
         <li>Purpose Control Plane UX.</li>
-        <li>Same-Harness Semantic Reach / Quarq Evaluation.</li>
+        <li>Larger Competitor Same-Harness Evaluation.</li>
         <li>Representative Purpose Holdouts.</li>
       </ol>
       <p>This order keeps Coordinate and Memory Checkout front-and-center while building toward broader organizational memory without prematurely claiming full Company Brain coverage.</p>
