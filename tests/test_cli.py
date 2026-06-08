@@ -2549,10 +2549,14 @@ def test_memory_causal_and_consolidation_help_commands_are_registered() -> None:
     """Nested memory causal and consolidation commands should expose command help."""
     runner = CliRunner()
 
-    successors = runner.invoke(app, ["memory", "causal", "successors", "--help"])
-    propose = runner.invoke(app, ["memory", "consolidation", "propose", "--help"])
-    propose_from_log = runner.invoke(app, ["memory", "consolidation", "propose-from-log", "--help"])
-    status = runner.invoke(app, ["memory", "consolidation", "status", "--help"])
+    successors = runner.invoke(app, ["memory", "causal", "successors", "--help"], terminal_width=120)
+    propose = runner.invoke(app, ["memory", "consolidation", "propose", "--help"], terminal_width=120)
+    propose_from_log = runner.invoke(
+        app,
+        ["memory", "consolidation", "propose-from-log", "--help"],
+        terminal_width=120,
+    )
+    status = runner.invoke(app, ["memory", "consolidation", "status", "--help"], terminal_width=120)
 
     assert successors.exit_code == 0
     assert "ENTITY_NAME" in successors.output
@@ -2571,15 +2575,31 @@ def test_memory_reasoning_help_commands_are_registered() -> None:
     """Nested memory reasoning commands should expose primitive help."""
     runner = CliRunner()
 
-    explain = runner.invoke(app, ["memory", "reasoning", "explain-outcome", "--help"])
-    belief = runner.invoke(app, ["memory", "reasoning", "propose-belief-update", "--help"])
-    confidence = runner.invoke(app, ["memory", "reasoning", "claim-confidence", "--help"])
-    procedures = runner.invoke(app, ["memory", "reasoning", "similar-procedures", "--help"])
-    record_unknown = runner.invoke(app, ["memory", "reasoning", "record-unknown", "--help"])
-    known_unknowns = runner.invoke(app, ["memory", "reasoning", "known-unknowns", "--help"])
-    trajectory = runner.invoke(app, ["memory", "reasoning", "confidence-trajectory", "--help"])
-    reverify = runner.invoke(app, ["memory", "reasoning", "reverify-needed", "--help"])
-    plan = runner.invoke(app, ["memory", "reasoning", "plan-from-procedures", "--help"])
+    explain = runner.invoke(app, ["memory", "reasoning", "explain-outcome", "--help"], terminal_width=120)
+    belief = runner.invoke(
+        app,
+        ["memory", "reasoning", "propose-belief-update", "--help"],
+        terminal_width=120,
+    )
+    confidence = runner.invoke(app, ["memory", "reasoning", "claim-confidence", "--help"], terminal_width=120)
+    procedures = runner.invoke(
+        app,
+        ["memory", "reasoning", "similar-procedures", "--help"],
+        terminal_width=120,
+    )
+    record_unknown = runner.invoke(app, ["memory", "reasoning", "record-unknown", "--help"], terminal_width=120)
+    known_unknowns = runner.invoke(app, ["memory", "reasoning", "known-unknowns", "--help"], terminal_width=120)
+    trajectory = runner.invoke(
+        app,
+        ["memory", "reasoning", "confidence-trajectory", "--help"],
+        terminal_width=120,
+    )
+    reverify = runner.invoke(app, ["memory", "reasoning", "reverify-needed", "--help"], terminal_width=120)
+    plan = runner.invoke(
+        app,
+        ["memory", "reasoning", "plan-from-procedures", "--help"],
+        terminal_width=120,
+    )
 
     assert explain.exit_code == 0
     assert "OUTCOME" in explain.output
