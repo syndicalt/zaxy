@@ -368,3 +368,79 @@ def test_confidence_assessment_trims_evidence_string_fields() -> None:
     )
 
     assert event["payload"]["evidence"][0]["stance"] == "support"
+
+
+def test_metacognition_builders_reject_empty_required_text() -> None:
+    with pytest.raises(ValueError, match="actor"):
+        build_known_unknown_event(
+            actor=" ",
+            session_id="agent-1",
+            question="What changed?",
+            reason="No cited answer.",
+            source_events=SOURCE,
+        )
+
+
+def test_reverify_request_rejects_non_string_priority() -> None:
+    with pytest.raises(ValueError, match="priority"):
+        build_reverify_request_event(
+            actor="agent",
+            session_id="agent-1",
+            query="what changed",
+            reason="missing evidence",
+            source_events=SOURCE,
+            priority=1,  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.parametrize("source_events", ["not-a-list", []])
+def test_known_unknown_rejects_non_sequence_or_empty_source_events(source_events: object) -> None:
+    with pytest.raises(ValueError, match="source_events"):
+        build_known_unknown_event(
+            actor="agent",
+            session_id="agent-1",
+            question="What changed?",
+            reason="No cited answer.",
+            source_events=source_events,  # type: ignore[arg-type]
+        )
+
+
+def test_conflict_cluster_rejects_non_mapping_source_event() -> None:
+    with pytest.raises(ValueError, match="supporting_source_events"):
+        build_conflict_cluster_event(
+            actor="zaxy-reasoning",
+            session_id="agent-1",
+            claim_key="projection-latency-cause",
+            claim="Projection stale caused failure",
+            supporting_source_events=["eventloom://agent-1/events/7#aaaaaaaaaaaa"],  # type: ignore[list-item]
+            conflicting_source_events=[{"seq": 8, "hash": "b" * 64}],
+            confidence=0.5,
+            reason="Support and conflict evidence both present.",
+        )
+
+
+def test_confidence_assessment_rejects_non_mapping_evidence_item() -> None:
+    with pytest.raises(ValueError, match="evidence"):
+        build_confidence_assessment_event(
+            actor="zaxy-reasoning",
+            session_id="agent-1",
+            claim="Projection stale caused failure",
+            confidence=0.42,
+            support_count=1,
+            conflict_count=0,
+            evidence=["eventloom://agent-1/events/7#aaaaaaaaaaaa"],  # type: ignore[list-item]
+            method="deterministic_token_overlap_v1",
+        )
+
+
+def test_known_unknown_accepts_valid_explicit_id() -> None:
+    event = build_known_unknown_event(
+        actor="agent",
+        session_id="agent-1",
+        question="What changed?",
+        reason="No cited answer.",
+        source_events=SOURCE,
+        unknown_id="metacognition:unknown:" + ("a" * 24),
+    )
+
+    assert event["payload"]["unknown_id"] == "metacognition:unknown:" + ("a" * 24)
