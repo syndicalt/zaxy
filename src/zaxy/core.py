@@ -3830,9 +3830,12 @@ def _strict_reasoning_evidence(evidence: list[dict[str, Any]]) -> list[dict[str,
 
 
 def _causal_result_reasoning_evidence(item: dict[str, Any]) -> dict[str, Any]:
-    source = item.get("source") if isinstance(item.get("source"), dict) else {}
-    target = item.get("target") if isinstance(item.get("target"), dict) else {}
-    evidence = item.get("evidence") if isinstance(item.get("evidence"), dict) else {}
+    raw_source = item.get("source")
+    raw_target = item.get("target")
+    raw_evidence = item.get("evidence")
+    source = raw_source if isinstance(raw_source, dict) else {}
+    target = raw_target if isinstance(raw_target, dict) else {}
+    evidence = raw_evidence if isinstance(raw_evidence, dict) else {}
     content = evidence.get("summary") or (
         f"{source.get('name', 'unknown source')} {item.get('relation_type', 'related')} "
         f"{target.get('name', 'unknown target')}"
@@ -3852,7 +3855,7 @@ def _checkout_reasoning_evidence(item: dict[str, Any]) -> dict[str, Any] | None:
     if not isinstance(citation, str):
         return None
     content = item.get("content") or item.get("summary") or item.get("text")
-    evidence = {
+    evidence: dict[str, Any] = {
         "citation": citation,
         "content": str(content or ""),
         "source": str(item.get("source") or "checkout"),

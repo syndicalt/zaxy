@@ -17,7 +17,7 @@ from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, TypeVar
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
 _CacheValue = TypeVar("_CacheValue")
 _TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
@@ -673,7 +673,7 @@ class EmbeddedGraphStore:
 
     def _causal_edge_rows(self, *, session_id: str, temporal_point: str | None) -> list[Any]:
         if temporal_point is None:
-            return self._require_connection().execute(
+            rows = self._require_connection().execute(
                 """
                 MATCH (source:Entity)-[r:RELATES]->(target:Entity)
                 WHERE source.session_id = $session_id
@@ -697,7 +697,8 @@ class EmbeddedGraphStore:
                 """,
                 {"session_id": session_id},
             ).get_all()
-        return self._require_connection().execute(
+            return cast(list[Any], rows)
+        rows = self._require_connection().execute(
             """
             MATCH (source:Entity)-[r:RELATES]->(target:Entity)
             WHERE source.session_id = $session_id
@@ -724,6 +725,7 @@ class EmbeddedGraphStore:
             """,
             {"session_id": session_id, "temporal_point": temporal_point},
         ).get_all()
+        return cast(list[Any], rows)
 
     def _traversal_index(self, session_id: str, temporal_point: str | None = None) -> _TraversalIndex:
         if temporal_point is not None:

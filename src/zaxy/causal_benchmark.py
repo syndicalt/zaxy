@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -329,7 +329,7 @@ def _metric_score(*values: bool) -> float:
     return round(sum(1 for value in values if value) / len(values), 4)
 
 
-def _mean(values: Any) -> float:
+def _mean(values: Iterable[float]) -> float:
     items = list(values)
     if not items:
         return 0.0

@@ -35,7 +35,7 @@ from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, cast
 
 import anyio
 import jwt
@@ -1355,7 +1355,7 @@ class ZaxyMCPServer:
         *,
         direction: Literal["successors", "predecessors"],
     ) -> list[TextContent]:
-        entity_name = validate_query(arguments.get("entity_name"))
+        entity_name = validate_query(cast(str, arguments.get("entity_name")))
         session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
         raw_depth = arguments.get("depth", 2)
         if isinstance(raw_depth, bool):
@@ -1392,7 +1392,7 @@ class ZaxyMCPServer:
             title=_required_strict_text(arguments.get("title"), "title"),
             summary=_required_strict_text(arguments.get("summary"), "summary"),
             source_events=arguments.get("source_events", []),
-            confidence=arguments.get("confidence"),
+            confidence=_validate_reasoning_confidence(arguments.get("confidence")),
             method=_required_strict_text(arguments.get("method"), "method"),
             purpose=_optional_strict_text(arguments.get("purpose"), "purpose"),
         )

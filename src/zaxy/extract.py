@@ -2548,16 +2548,39 @@ def _extract_inference_edge_retracted(event: Event) -> ExtractionResult:
 def _extract_causal_edge_generated(event: Event) -> ExtractionResult:
     """Project an explicit, cited causal edge as non-authoritative graph evidence."""
     graph_relation_type = _required_causal_graph_relation_type(event.payload, event_seq=event.seq)
+    source_payload = event.payload.get("source")
+    target_payload = event.payload.get("target")
+    evidence_payload = event.payload.get("evidence")
+    if not isinstance(source_payload, Mapping):
+        raise ValueError(f"causal.edge.generated event {event.seq} missing source entity")
+    if not isinstance(target_payload, Mapping):
+        raise ValueError(f"causal.edge.generated event {event.seq} missing target entity")
+    if not isinstance(evidence_payload, Mapping):
+        raise ValueError(f"causal.edge.generated event {event.seq} missing evidence")
     edge_contract = CausalEdge(
-        source=event.payload.get("source"),
-        target=event.payload.get("target"),
-        relation_type=event.payload.get("relation_type"),
+        source=source_payload,
+        target=target_payload,
+        relation_type=_required_text(
+            event.payload.get("relation_type"),
+            field="relation_type",
+            event_seq=event.seq,
+            event_type="causal.edge.generated",
+        ),
         graph_relation_type=graph_relation_type,
-        confidence=event.payload.get("confidence"),
-        method=event.payload.get("causal_method"),
+        confidence=_required_numeric_confidence(
+            event.payload.get("confidence"),
+            event_seq=event.seq,
+            event_type="causal.edge.generated",
+        ),
+        method=_required_strict_text(
+            event.payload.get("causal_method"),
+            field="causal method",
+            event_seq=event.seq,
+            event_type="causal.edge.generated",
+        ),
         review_status=event.payload.get("review_status", "proposed"),
         authority_status=event.payload.get("authority_status", "non_authoritative"),
-        evidence=event.payload.get("evidence"),
+        evidence=evidence_payload,
     )
     source = _entity_reference_from_mapping(
         edge_contract.source,
@@ -3134,6 +3157,34 @@ def _required_confidence(
     if not 0.0 <= confidence <= 1.0:
         raise ValueError(f"{event_type} event {event_seq} confidence must be between 0.0 and 1.0")
     return confidence
+
+
+def _required_numeric_confidence(
+    value: object,
+    *,
+    event_seq: int,
+    event_type: str,
+) -> float:
+    """Return required numeric confidence without accepting string coercion."""
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError(f"{event_type} event {event_seq} missing required confidence")
+    confidence = float(value)
+    if not 0.0 <= confidence <= 1.0:
+        raise ValueError(f"{event_type} event {event_seq} confidence must be between 0.0 and 1.0")
+    return confidence
+
+
+def _required_strict_text(
+    value: object,
+    *,
+    field: str,
+    event_seq: int,
+    event_type: str,
+) -> str:
+    """Return required text without accepting non-string coercion."""
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{event_type} event {event_seq} missing required {field}")
+    return value.strip()
 
 
 def _entity_reference(

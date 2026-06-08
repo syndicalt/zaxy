@@ -2188,12 +2188,13 @@ async def _propose_consolidation_from_log(
     )
     try:
         await fabric.connect()
-        return await fabric.propose_consolidation_candidates(
+        result = await fabric.propose_consolidation_candidates(
             session_id=session_id,
             actor=actor,
             purpose=purpose,
             window_size=window_size,
         )
+        return cast(dict[str, Any], result)
     finally:
         with suppress(Exception):
             await fabric.close()
@@ -2210,7 +2211,8 @@ async def _read_consolidation_status(*, session_id: str, eventloom_path: Path) -
     )
     try:
         await fabric.connect()
-        return await fabric.consolidation_status(session_id=session_id)
+        result = await fabric.consolidation_status(session_id=session_id)
+        return cast(dict[str, Any], result)
     finally:
         with suppress(Exception):
             await fabric.close()
