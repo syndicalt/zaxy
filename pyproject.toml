@@ -1,6 +1,6 @@
 [project]
 name = "zaxy-memory"
-version = "1.1.2"
+version = "2.0.0rc1"
 description = "Coordinator memory for auditable multi-agent projects"
 readme = "README.md"
 requires-python = ">=3.11"

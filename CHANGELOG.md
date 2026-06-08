@@ -2,6 +2,29 @@
 
 All notable Zaxy release changes are recorded here.
 
+## 2.0.0rc1 - 2026-06-08
+
+- Added the Zaxy 2.0 cognitive-substrate release-candidate surface with causal
+  memory contracts, auditable causal edge projection, causal checkout
+  diagnostics, causal CLI/MCP read APIs, and benchmark helpers.
+- Added review-gated consolidation contracts and pipeline support so raw
+  Eventloom traces can produce cited, reviewable higher-level candidates
+  without replacing the immutable source of truth.
+- Added reasoning-loop, metacognitive, and procedural-planning primitives for
+  first-class memory participation during planning, execution, review, and
+  reflection.
+- Added the 2.0 RC.1 benchmark freeze manifest, refreshed release guardrails,
+  and tracked benchmark evidence for backend shootout, StateRecoveryBench,
+  PurposeBench, CoordinationBench, and LongMemBench/LongMemEval development
+  history.
+- Hardened first-run onboarding and Codex activation so `zaxy init` produces a
+  compact setup/readiness summary, path-stable activation commands, safer Codex
+  MCP config handling, structured JSON action items, and clearer capture
+  guidance.
+- Added first-class LongMemBench adapter support plus archived externally
+  anchored run artifacts, while keeping generated benchmark projection
+  databases out of git.
+
 ## 1.1.2 - 2026-06-05
 
 - Updated the Eventloom adapter for `@eventloom/runtime@1.0.0` v1 JSONL
