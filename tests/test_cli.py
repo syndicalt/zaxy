@@ -30,6 +30,16 @@ def _git(cwd: Path, *args: str) -> str:
     return completed.stdout.strip()
 
 
+def _cli_command_params(*path: str) -> tuple[set[str], set[str]]:
+    """Return option strings and argument names for a nested Typer command."""
+    command = get_command(app)
+    for name in path:
+        command = command.commands[name]
+    options = {opt for param in command.params for opt in getattr(param, "opts", []) if opt.startswith("--")}
+    arguments = {param.name for param in command.params if not any(opt.startswith("--") for opt in param.opts)}
+    return options, arguments
+
+
 def _write_rc1_freeze_artifacts(root: Path) -> None:
     _write_rc1_project_benchmark_artifacts(root)
     manifest_dir = root / "reports/benchmarks/2.0.0-rc.1"
@@ -2549,70 +2559,61 @@ def test_memory_causal_and_consolidation_help_commands_are_registered() -> None:
     """Nested memory causal and consolidation commands should expose command help."""
     runner = CliRunner()
 
-    successors = runner.invoke(app, ["memory", "causal", "successors", "--help"], terminal_width=120)
-    propose = runner.invoke(app, ["memory", "consolidation", "propose", "--help"], terminal_width=120)
+    successors = runner.invoke(app, ["memory", "causal", "successors", "--help"])
+    propose = runner.invoke(app, ["memory", "consolidation", "propose", "--help"])
     propose_from_log = runner.invoke(
         app,
         ["memory", "consolidation", "propose-from-log", "--help"],
-        terminal_width=120,
     )
-    status = runner.invoke(app, ["memory", "consolidation", "status", "--help"], terminal_width=120)
+    status = runner.invoke(app, ["memory", "consolidation", "status", "--help"])
+    successor_options, successor_arguments = _cli_command_params("memory", "causal", "successors")
+    propose_options, _ = _cli_command_params("memory", "consolidation", "propose")
+    propose_from_log_options, _ = _cli_command_params("memory", "consolidation", "propose-from-log")
+    status_options, _ = _cli_command_params("memory", "consolidation", "status")
 
     assert successors.exit_code == 0
-    assert "ENTITY_NAME" in successors.output
-    assert "--relation-type" in successors.output
+    assert "entity_name" in successor_arguments
+    assert "--relation-type" in successor_options
     assert propose.exit_code == 0
-    assert "--source-event" in propose.output
-    assert "--candidate-type" in propose.output
+    assert "--source-event" in propose_options
+    assert "--candidate-type" in propose_options
     assert propose_from_log.exit_code == 0
-    assert "--window-size" in propose_from_log.output
-    assert "--purpose" in propose_from_log.output
+    assert "--window-size" in propose_from_log_options
+    assert "--purpose" in propose_from_log_options
     assert status.exit_code == 0
-    assert "--session-id" in status.output
+    assert "--session-id" in status_options
 
 
 def test_memory_reasoning_help_commands_are_registered() -> None:
     """Nested memory reasoning commands should expose primitive help."""
     runner = CliRunner()
 
-    explain = runner.invoke(app, ["memory", "reasoning", "explain-outcome", "--help"], terminal_width=120)
-    belief = runner.invoke(
-        app,
-        ["memory", "reasoning", "propose-belief-update", "--help"],
-        terminal_width=120,
-    )
-    confidence = runner.invoke(app, ["memory", "reasoning", "claim-confidence", "--help"], terminal_width=120)
-    procedures = runner.invoke(
-        app,
-        ["memory", "reasoning", "similar-procedures", "--help"],
-        terminal_width=120,
-    )
-    record_unknown = runner.invoke(app, ["memory", "reasoning", "record-unknown", "--help"], terminal_width=120)
-    known_unknowns = runner.invoke(app, ["memory", "reasoning", "known-unknowns", "--help"], terminal_width=120)
-    trajectory = runner.invoke(
-        app,
-        ["memory", "reasoning", "confidence-trajectory", "--help"],
-        terminal_width=120,
-    )
-    reverify = runner.invoke(app, ["memory", "reasoning", "reverify-needed", "--help"], terminal_width=120)
-    plan = runner.invoke(
-        app,
-        ["memory", "reasoning", "plan-from-procedures", "--help"],
-        terminal_width=120,
-    )
+    explain = runner.invoke(app, ["memory", "reasoning", "explain-outcome", "--help"])
+    belief = runner.invoke(app, ["memory", "reasoning", "propose-belief-update", "--help"])
+    confidence = runner.invoke(app, ["memory", "reasoning", "claim-confidence", "--help"])
+    procedures = runner.invoke(app, ["memory", "reasoning", "similar-procedures", "--help"])
+    record_unknown = runner.invoke(app, ["memory", "reasoning", "record-unknown", "--help"])
+    known_unknowns = runner.invoke(app, ["memory", "reasoning", "known-unknowns", "--help"])
+    trajectory = runner.invoke(app, ["memory", "reasoning", "confidence-trajectory", "--help"])
+    reverify = runner.invoke(app, ["memory", "reasoning", "reverify-needed", "--help"])
+    plan = runner.invoke(app, ["memory", "reasoning", "plan-from-procedures", "--help"])
+    explain_options, explain_arguments = _cli_command_params("memory", "reasoning", "explain-outcome")
+    belief_options, _ = _cli_command_params("memory", "reasoning", "propose-belief-update")
+    confidence_options, confidence_arguments = _cli_command_params("memory", "reasoning", "claim-confidence")
+    procedures_options, procedures_arguments = _cli_command_params("memory", "reasoning", "similar-procedures")
 
     assert explain.exit_code == 0
-    assert "OUTCOME" in explain.output
-    assert "--phase" in explain.output
+    assert "outcome" in explain_arguments
+    assert "--phase" in explain_options
     assert belief.exit_code == 0
-    assert "--source-event" in belief.output
-    assert "--confidence" in belief.output
+    assert "--source-event" in belief_options
+    assert "--confidence" in belief_options
     assert confidence.exit_code == 0
-    assert "CLAIM" in confidence.output
-    assert "--limit" in confidence.output
+    assert "claim" in confidence_arguments
+    assert "--limit" in confidence_options
     assert procedures.exit_code == 0
-    assert "QUERY" in procedures.output
-    assert "--limit" in procedures.output
+    assert "query" in procedures_arguments
+    assert "--limit" in procedures_options
     assert record_unknown.exit_code == 0
     assert "--source-event" in record_unknown.output
     assert "--claim-key" in record_unknown.output
