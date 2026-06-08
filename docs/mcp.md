@@ -242,7 +242,11 @@ a purpose-selected scoring profile; the applied policy is reported in
 `diagnostics.purpose_retrieval_policy`. Purpose suppress rules are
 then enforced before checkout projection, and any excluded rows are summarized in
 `diagnostics.purpose_policy` and `retention.purpose_policy` so clients can audit
-why retrieved material did not become current memory. When applicable Skill Memory is retrieved,
+why retrieved material did not become current memory.
+
+### Skill Analytics
+
+When applicable Skill Memory is retrieved,
 diagnostics also include a `skills` block and the prompt includes an
 `Applicable Skills` section with cited procedure steps. This lane is read-only:
 models may follow the guidance, but revisions require a new `memory_skill` or
