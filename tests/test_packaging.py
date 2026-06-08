@@ -1678,7 +1678,7 @@ def test_v1_schema_freeze_manifest_tracks_candidate_contracts() -> None:
 
 def test_v09_gate_audit_records_current_gate_evidence() -> None:
     """The v0.9 gate audit should separate proven gates from optional external feedback."""
-    audit = Path("docs/v09-gate-audit.md").read_text(encoding="utf-8")
+    audit = Path("docs/archive/v09-gate-audit.md").read_text(encoding="utf-8")
 
     for required in (
         "## Proven Gates",
@@ -1701,7 +1701,7 @@ def test_v09_gate_audit_records_current_gate_evidence() -> None:
 def test_v10_announcement_and_release_checklist_cover_launch_requirements() -> None:
     """v1.0 release artifacts should cover positioning, evidence, limitations, and gates."""
     announcement = Path("docs/announcements/zaxy-v1.0.md").read_text(encoding="utf-8")
-    checklist = Path("docs/release-validation-checklist.md").read_text(encoding="utf-8")
+    checklist = Path("docs/archive/release-validation-checklist.md").read_text(encoding="utf-8")
 
     for required in (
         "Coordinator Memory for Agent Teams",
@@ -1736,7 +1736,7 @@ def test_v10_announcement_and_release_checklist_cover_launch_requirements() -> N
 
 def test_v10_gate_audit_records_release_gate_evidence() -> None:
     """The v1.0 gate audit should map release gates to proof and optional evidence."""
-    audit = Path("docs/v10-gate-audit.md").read_text(encoding="utf-8")
+    audit = Path("docs/archive/v10-gate-audit.md").read_text(encoding="utf-8")
 
     for required in (
         "## Proven Local Gates",
@@ -1785,8 +1785,8 @@ def test_v10_external_validation_packet_captures_optional_evidence() -> None:
         "zaxy doctor --beta-readiness",
         "python examples/coordinate_three_worker_project.py",
         "scripts/beta-uat.sh",
-        "docs/v10-gate-audit.md",
-        "docs/release-validation-checklist.md",
+        "archive/v10-gate-audit.md",
+        "archive/release-validation-checklist.md",
         "Status: optional for the v1.0 release",
     ):
         assert required in packet
@@ -4385,8 +4385,8 @@ def test_external_validation_rejects_vague_version_reference_phrases() -> None:
 def test_external_validation_docs_reference_machine_checkable_report() -> None:
     """The v1.0 release docs should point validators at the machine-checkable report contract."""
     packet = Path("docs/external-validation.md").read_text(encoding="utf-8")
-    checklist = Path("docs/release-validation-checklist.md").read_text(encoding="utf-8")
-    audit = Path("docs/v10-gate-audit.md").read_text(encoding="utf-8")
+    checklist = Path("docs/archive/release-validation-checklist.md").read_text(encoding="utf-8")
+    audit = Path("docs/archive/v10-gate-audit.md").read_text(encoding="utf-8")
     issue = Path(".github/ISSUE_TEMPLATE/external_validation.md").read_text(encoding="utf-8")
     example = Path("docs/examples/external-validation-report.example.json").read_text(encoding="utf-8")
 
@@ -4521,7 +4521,7 @@ def test_v10_stability_commitment_covers_public_surfaces_and_data_model() -> Non
 def test_contributor_docs_and_issue_templates_cover_v09_release_inputs() -> None:
     """Contributor docs should cover code, issue, and benchmark contribution paths."""
     guide = Path("CONTRIBUTING.md").read_text(encoding="utf-8")
-    benchmark = Path("docs/benchmark-contributions.md").read_text(encoding="utf-8")
+    benchmark = Path("docs/archive/benchmark-contributions.md").read_text(encoding="utf-8")
     bug = Path(".github/ISSUE_TEMPLATE/bug_report.md").read_text(encoding="utf-8")
     feature = Path(".github/ISSUE_TEMPLATE/feature_request.md").read_text(encoding="utf-8")
     benchmark_issue = Path(".github/ISSUE_TEMPLATE/benchmark_contribution.md").read_text(encoding="utf-8")
@@ -4552,7 +4552,7 @@ def test_contributor_docs_and_issue_templates_cover_v09_release_inputs() -> None
 
 def test_v09_roadmap_records_failure_injection_evidence() -> None:
     """The v0.9 roadmap should cite the failure-injection coverage that gates hardening."""
-    roadmap = Path("docs/v1-roadmap.md").read_text(encoding="utf-8")
+    roadmap = Path("docs/archive/v1-roadmap.md").read_text(encoding="utf-8")
 
     assert "failure-injection" in roadmap
     assert "projection rebuild" in roadmap

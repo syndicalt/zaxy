@@ -105,6 +105,141 @@ context counts, inferred edge counts, relation labels, inference methods,
 average trust, and low-trust guidance so models can distinguish cited inferred
 graph context from deterministic memory.
 
+## Causal Projection
+
+Zaxy 2.0 alpha.1 adds an explicit causal projection lane through
+`causal.edge.generated` events. These are Eventloom records, not hidden
+retrieval heuristics: every causal edge has an append event, actor, payload,
+hash-chain position, and graph projection path. The graph is still a projection
+of Eventloom, so causal edges remain replayable and auditable from the source
+log.
+
+The alpha relation taxonomy is deliberately bounded:
+
+- `caused`
+- `enabled`
+- `blocked`
+- `prevented`
+- `regressed`
+- `fixed`
+- `explained`
+
+Graph relation labels are derived by prefixing the taxonomy value with
+`causal_`, such as `causal_caused` or `causal_fixed`. Projection stores the
+causal label as graph metadata while preserving the same compatibility
+`RELATES` path used by existing traversal code.
+
+Causal edges are inferred, proposed evidence. They are non-authoritative unless
+a separate review and promotion workflow explicitly changes the authority state
+through the normal gates. Alpha.1 causal projection does not make a causal
+statement true by appearing in retrieval, and accepted-looking language in a
+method name or summary is not authority promotion. Downstream agents should
+treat these edges as cited diagnostics until reviewed authority is present.
+
+Each causal event must preserve evidence and provenance: source and target
+entity references, relation type, graph relation type, confidence, causal
+method, review status, authority status, Eventloom citation metadata, and
+structured evidence. Retrieval exposes the same trust boundary through causal
+successor/predecessor results and Memory Checkout diagnostics, including
+relation labels, methods, citations, authority status, and low-trust guidance.
+Weak, uncited, stale, or distractor-supported causal paths should be diagnosed
+or downweighted rather than presented as deterministic memory.
+
+## Consolidation Scaffold
+
+The alpha.1 consolidation scaffold records reviewable memory candidates through
+two Eventloom event types:
+
+- `consolidation.candidate.created`
+- `consolidation.candidate.reviewed`
+
+Candidate types are `episode`, `claim`, and `procedure`. A candidate is a cited
+summary proposal over one or more Eventloom source events. Projection creates a
+`consolidation_candidate` entity with the candidate id, type, title, summary,
+source-event citations, confidence, method, review status, and
+`authority_status=non_authoritative`.
+
+Alpha.2 adds deterministic segment selection and generated proposal creation on
+top of this scaffold. Segment selection is event-sourced: Zaxy replays bounded
+Eventloom ranges, derives stable segment ids from session id and source event
+sequence windows, and emits candidates whose source events retain sequence and
+hash citations. The same Eventloom inputs produce the same proposal identities;
+no proposal is selected or shaped to fit a benchmark case.
+
+Generated episode, claim, and procedure candidates are review-pending and
+non-authoritative. They may help an operator or model inspect possible
+compaction targets, but they do not replace the original Eventloom records and
+should not be treated as current facts unless a separate authority gate promotes
+supported state. Stale, conflicted, rejected, superseded, or `valid_to`-closed
+candidates remain auditable graph state, not current authoritative memory.
+
+`consolidation.candidate.reviewed` records a review disposition such as
+`accepted`, `rejected`, `deferred`, or `conflicted`, plus rationale and
+candidate id. Review events are also replayable Eventloom records and project
+as `consolidation_review` entities linked to the candidate. A review
+disposition, including `accepted`, does not automatically promote authority;
+promotion remains an explicit separate workflow so alpha consolidation cannot
+silently collapse source memory into authoritative state. Accepted review means
+the proposal passed a review disposition, not that its summary became canonical
+truth.
+
+## Reasoning-Loop Primitives
+
+Zaxy 2.0 beta.1 adds reasoning-loop primitive observations as graph-projected
+Eventloom evidence. The graph projection may contain observation entities for
+`reasoning.primitive.called` with primitive name, deterministic phase, status,
+result count, cited evidence count, session, actor, sequence, hash, and source
+citations. The supported phase taxonomy is deliberately small:
+
+- `planning`
+- `execution`
+- `review`
+- `reflection`
+
+Phase routing is deterministic policy metadata. It helps checkout and operators
+distinguish planning context from execution, review, and reflection context, but
+it is not a learned planning policy and it is not a benchmark-specific scoring
+shortcut. Primitive observations are reasoning trace evidence: they are
+observable, replayable, and useful for audit, but they do not prove the
+primitive result is true.
+
+Belief proposals use `belief.update.proposed`. Projection should preserve the
+claim, rationale, confidence, source-event citations, phase,
+`review_status=pending`, and `authority_status=non_authoritative`. A proposal
+is not a fact update. It remains review material until a separate authority path
+promotes supported state through the normal gates.
+
+Memory Checkout summarizes these graph surfaces separately from current facts:
+`diagnostics.reasoning_primitives` reports context count, phase counts, and
+primitive counts; `diagnostics.belief_update_proposals` reports proposal count,
+pending count, and the non-authoritative authority status. Prompt guidance must
+preserve this separation so a model can inspect the reasoning trace without
+treating proposal text as canonical memory.
+
+Zaxy 2.0 beta.2 adds typed metacognition projections for uncertainty and
+re-verification workflows:
+
+- `metacognition.unknown.recorded` -> `known_unknown`
+- `metacognition.confidence.assessed` -> `confidence_assessment`
+- `metacognition.conflict.clustered` -> `conflict_cluster`
+- `metacognition.reverify.requested` -> `reverify_request`
+
+These entities preserve claim keys, status or resolution status, confidence,
+priority, source event refs, source event hashes, and
+`authority_status=non_authoritative`. They are diagnostic graph state, not
+accepted facts. Confidence assessment entities are append-only trajectory
+points. Conflict clusters remain unresolved until a separate resolution
+workflow records authority. Re-verification requests remain open until another
+event explicitly closes or supersedes the need.
+
+Beta.2 also hardens procedural memory projection. Skill versions and
+procedure candidates preserve procedure steps, applicability, citations,
+failure modes, rollback guidance, contradiction reasons, status, and outcome
+evidence. Checkout treats validated, revised, or accepted cited procedures as
+applicable planning guidance; proposed, pending, or deferred procedures as
+diagnostic; and rejected, conflicted, deprecated, contradicted, stale,
+superseded, closed, or uncited procedures as excluded.
+
 Example Eventloom payload:
 
 ```json

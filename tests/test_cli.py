@@ -30,6 +30,299 @@ def _git(cwd: Path, *args: str) -> str:
     return completed.stdout.strip()
 
 
+def _cli_command_params(*path: str) -> tuple[set[str], set[str]]:
+    """Return option strings and argument names for a nested Typer command."""
+    command = get_command(app)
+    for name in path:
+        command = command.commands[name]
+    options = {opt for param in command.params for opt in getattr(param, "opts", []) if opt.startswith("--")}
+    arguments = {param.name for param in command.params if not any(opt.startswith("--") for opt in param.opts)}
+    return options, arguments
+
+
+def _write_rc1_freeze_artifacts(root: Path) -> None:
+    _write_rc1_project_benchmark_artifacts(root)
+    manifest_dir = root / "reports/benchmarks/2.0.0-rc.1"
+    manifest_dir.mkdir(parents=True)
+    (manifest_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "release": "2.0.0-rc.1",
+                "schema_version": "zaxy.rc1-benchmark-freeze.v1",
+                "headline_500": {
+                    "artifact": "reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json",
+                    "run_config": "reports/benchmarks/longmemeval-500-publish-20260607/run-config.md",
+                    "claim_scope": "longmemeval_compatible_checkout",
+                    "workload_sha256": "90fb2307195d7e16b963a2b8a30f03b375bd42a45d41aeaa55423029dd84e3fc",
+                },
+                "harvey_lab": {
+                    "claim_scope": "external_anchor",
+                    "harvey_commit": "29748828133dff83ad2263af353fb035504f8f77",
+                },
+                "internal_lanes": [
+                    {"lane": "causal", "claim_scope": "project_defined_internal"},
+                    {"lane": "consolidation", "claim_scope": "project_defined_internal"},
+                    {"lane": "procedural", "claim_scope": "project_defined_internal"},
+                    {"lane": "metacognition", "claim_scope": "project_defined_internal"},
+                ],
+                "project_benchmarks": {
+                    "state_recovery": {
+                        "artifact": "reports/benchmarks/state-recovery-v1/state-recovery-benchmark.json",
+                        "workload": "reports/benchmarks/state-recovery-v1/state-recovery-workload.json",
+                        "markdown": "reports/benchmarks/state-recovery-v1/state-recovery-benchmark.md",
+                        "claim_scope": "project_defined_internal",
+                        "version": "state-recovery-v0",
+                        "workload_fingerprint": "state-fingerprint",
+                    },
+                    "coordination": {
+                        "artifact": "reports/benchmarks/coordination-v1/coordination-benchmark.json",
+                        "workload": "reports/benchmarks/coordination-v1/coordination-workload.json",
+                        "markdown": "reports/benchmarks/coordination-v1/coordination-benchmark.md",
+                        "claim_scope": "project_defined_internal",
+                        "version": "coordination-v1",
+                        "workload_fingerprint": "coordination-fingerprint",
+                    },
+                    "purpose": {
+                        "artifact": "reports/benchmarks/purpose-v1/purpose-benchmark.json",
+                        "markdown": "reports/benchmarks/purpose-v1/purpose-benchmark.md",
+                        "holdout_pack": "reports/benchmarks/purpose-v1/holdouts/public-derived-purpose-v1/holdout-pack.json",
+                        "holdout_fingerprint": "holdout-fingerprint",
+                        "source_disclosures": "reports/benchmarks/purpose-v1/holdouts/public-derived-purpose-v1/source-disclosures.json",
+                        "claim_scope": "project_defined_internal",
+                        "version": "purpose-v1",
+                        "lane_count": 10,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    headline_dir = root / "reports/benchmarks/longmemeval-500-publish-20260607"
+    headline_dir.mkdir(parents=True)
+    (headline_dir / "run-config.md").write_text("frozen config\n", encoding="utf-8")
+    (headline_dir / "live-benchmark.json").write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-06-07T16:20:10Z",
+                "workload": {"sha256": "90fb2307195d7e16b963a2b8a30f03b375bd42a45d41aeaa55423029dd84e3fc"},
+                "summaries": [
+                    {
+                        "backend": "zaxy-checkout",
+                        "case_count": 500,
+                        "mean_score": 0.956,
+                        "mean_answer_recall_at_5": 0.91,
+                        "mean_recall_at_5": 1.0,
+                        "mean_citation_coverage": 1.0,
+                        "latency_ms_p95": 1966.65,
+                        "latency_ms_p99": 2495.07,
+                        "mean_approx_tokens": 10192,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    harvey_dir = root / "reports/benchmarks/harvey-lab-memory-ablation"
+    harvey_dir.mkdir(parents=True)
+    (harvey_dir / "harvey-lab-benchmark.json").write_text(
+        json.dumps(
+            {
+                "status": "complete",
+                "schema_version": "zaxy.harvey-lab-benchmark.v1",
+                "summary": {
+                    "status": "complete",
+                    "article_task_count": 10,
+                    "zaxy_task_count": 10,
+                },
+                "result_provenance": {
+                    "harvey_git_commit": "29748828133dff83ad2263af353fb035504f8f77",
+                    "normalized_result_paths": [
+                        f"/tmp/harvey/.ingestion/runs/zaxy-task-{index}/normalized-result.json"
+                        for index in range(10)
+                    ],
+                    "external_baseline_reports": [
+                        {
+                            "path": "/tmp/harvey/.ingestion/reports/comparison-zaxy.json",
+                            "schema_version": "0.1",
+                            "normalized_result_count": 10,
+                            "framework_count": 1,
+                        }
+                    ],
+                    "external_baseline_report_paths": [
+                        "/tmp/harvey/.ingestion/reports/comparison-zaxy.json"
+                    ],
+                    "external_readiness_report_paths": [
+                        "reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-ready.json"
+                    ],
+                    "external_run_manifest_paths": [
+                        "reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-external-run.json"
+                    ],
+                    "external_status_report_paths": [
+                        "reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-status.json"
+                    ],
+                },
+                "task_rows": {
+                    f"task-{index}": {
+                        "task_id": f"task-{index}",
+                        "zaxy_score": 0.8,
+                        "article_best_score": 0.7,
+                        "regular_no_memory_score": 0.6,
+                        "zaxy_memory_read_calls": 1,
+                        "zaxy_memory_search_calls": 3,
+                    }
+                    for index in range(10)
+                },
+                "zaxy_results": [
+                    {
+                        "task_id": f"task-{index}",
+                        "run_id": f"zaxy-task-{index}",
+                        "framework": "zaxy",
+                        "commit": "29748828133dff83ad2263af353fb035504f8f77",
+                        "score": 0.8,
+                        "memory_read_calls": 1,
+                        "memory_search_calls": 3,
+                        "answer_path": f"results/zaxy-task-{index}/output.docx",
+                        "judge_path": f"results/zaxy-task-{index}/scores.json",
+                        "run_metrics_path": f"results/zaxy-task-{index}/metrics.json",
+                        "tool_log_path": f"results/zaxy-task-{index}/transcript.jsonl",
+                        "results_run_dir": f"results/zaxy-task-{index}",
+                    }
+                    for index in range(10)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (harvey_dir / "harvey-lab-external-run.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "zaxy.harvey-lab-external-run.v1",
+                "task_count": 10,
+                "report_json_path": "reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-benchmark.json",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (harvey_dir / "harvey-lab-ready.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "zaxy.harvey-lab-run-readiness.v1",
+                "status": "not_ready",
+                "blocking_reasons": ["results_already_complete"],
+                "expected_task_count": 10,
+                "ready_task_count": 10,
+                "normalized_ready_count": 10,
+                "run_ready_count": 10,
+                "harvey_git_commit": "29748828133dff83ad2263af353fb035504f8f77",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (harvey_dir / "harvey-lab-status.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "zaxy.harvey-lab-run-status.v1",
+                "status": "complete",
+                "expected_task_count": 10,
+                "ready_task_count": 10,
+                "harvey_git_commit": "29748828133dff83ad2263af353fb035504f8f77",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_rc1_project_benchmark_artifacts(root: Path) -> None:
+    state_dir = root / "reports/benchmarks/state-recovery-v1"
+    state_dir.mkdir(parents=True)
+    (state_dir / "state-recovery-workload.json").write_text(
+        json.dumps({"version": "state-recovery-v0", "fingerprint": "state-fingerprint", "cases": [{}]}),
+        encoding="utf-8",
+    )
+    (state_dir / "state-recovery-benchmark.md").write_text("# StateRecoveryBench\n", encoding="utf-8")
+    (state_dir / "state-recovery-benchmark.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "state-recovery-report-v1",
+                "version": "state-recovery-v0",
+                "status": "pass",
+                "workload_fingerprint": "state-fingerprint",
+                "production_baseline": "memory_fabric_checkout",
+                "checks": {
+                    "state_accuracy": {"status": "pass"},
+                    "minimal_evidence_recall": {"status": "pass"},
+                    "stale_rejection": {"status": "pass"},
+                    "distractor_resistance": {"status": "pass"},
+                    "abstention_accuracy": {"status": "pass"},
+                    "citation_coverage": {"status": "pass"},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    coordination_dir = root / "reports/benchmarks/coordination-v1"
+    coordination_dir.mkdir(parents=True)
+    (coordination_dir / "coordination-workload.json").write_text(
+        json.dumps({"version": "coordination-v1"}), encoding="utf-8"
+    )
+    (coordination_dir / "coordination-benchmark.md").write_text("# CoordinationBench\n", encoding="utf-8")
+    (coordination_dir / "coordination-benchmark.json").write_text(
+        json.dumps(
+            {
+                "version": "coordination-v1",
+                "workload_fingerprint": "coordination-fingerprint",
+                "metrics": {
+                    "accepted_finding_precision": 1.0,
+                    "accepted_finding_recall": 1.0,
+                    "citation_coverage": 1.0,
+                    "evidence_coverage": 1.0,
+                    "stale_claim_rejection": 1.0,
+                    "duplicate_consolidation": 1.0,
+                    "non_authoritative_leakage": 1.0,
+                    "parent_checkout_answerability": 1.0,
+                    "purpose_feedback_coverage": 1.0,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    purpose_dir = root / "reports/benchmarks/purpose-v1"
+    purpose_dir.mkdir(parents=True)
+    holdout_dir = purpose_dir / "holdouts/public-derived-purpose-v1"
+    holdout_dir.mkdir(parents=True)
+    (holdout_dir / "holdout-pack.json").write_text(
+        json.dumps({"fingerprint": "holdout-fingerprint", "cases": [{}, {}, {}, {}, {}]}),
+        encoding="utf-8",
+    )
+    (holdout_dir / "source-disclosures.json").write_text(
+        json.dumps({"sources": []}),
+        encoding="utf-8",
+    )
+    (purpose_dir / "purpose-benchmark.md").write_text("# PurposeBench\n", encoding="utf-8")
+    (purpose_dir / "purpose-benchmark.json").write_text(
+        json.dumps(
+            {
+                "version": "purpose-v1",
+                "status": "passed",
+                "lane_count": 10,
+                "passed_lanes": 10,
+                "holdout_reports": {
+                    "public-derived-purpose-v1": {
+                        "pack_fingerprint": "holdout-fingerprint",
+                        "gate_status": "diagnostic",
+                        "claim_status": "public_derived_holdout",
+                        "metrics": {"case_count": 5},
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_version_option_reports_project_version() -> None:
     """The installed CLI should expose the packaged Zaxy version."""
     runner = CliRunner()
@@ -38,6 +331,41 @@ def test_version_option_reports_project_version() -> None:
 
     assert result.exit_code == 0
     assert result.output.strip() == f"zaxy {package_version()}"
+
+
+def test_benchmark_freeze_json_passes_with_required_rc1_artifacts(tmp_path: Path) -> None:
+    """benchmark-freeze should expose the RC.1 release evidence contract."""
+    _write_rc1_freeze_artifacts(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["benchmark-freeze", "--root", str(tmp_path), "--json"])
+
+    assert result.exit_code == 0
+    report = json.loads(result.output)
+    assert report["release"] == "2.0.0-rc.1"
+    assert report["passed"] is True
+    assert report["headline_500"]["claim_scope"] == "longmemeval_compatible_checkout"
+    assert report["harvey_lab"]["claim_scope"] == "external_anchor"
+
+
+def test_benchmark_freeze_fails_when_required_rc1_artifact_is_missing(tmp_path: Path) -> None:
+    """benchmark-freeze should fail closed when frozen evidence is incomplete."""
+    _write_rc1_freeze_artifacts(tmp_path)
+    (
+        tmp_path
+        / "reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json"
+    ).unlink()
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["benchmark-freeze", "--root", str(tmp_path), "--json"])
+
+    assert result.exit_code == 1
+    report = json.loads(result.output)
+    assert report["passed"] is False
+    assert any(
+        check["name"] == "headline_report" and check["passed"] is False
+        for check in report["checks"]
+    )
 
 
 def test_memory_status_prints_eventloom_sessions(tmp_path: Path) -> None:
@@ -2225,6 +2553,642 @@ def test_memory_checkout_json_output(mock_fabric_cls: MagicMock, tmp_path: Path)
         "evidence_count": 1,
         "facts_per_1k_prompt_tokens": 125.0,
     }
+
+
+def test_memory_causal_and_consolidation_help_commands_are_registered() -> None:
+    """Nested memory causal and consolidation commands should expose command help."""
+    runner = CliRunner()
+
+    successors = runner.invoke(app, ["memory", "causal", "successors", "--help"])
+    propose = runner.invoke(app, ["memory", "consolidation", "propose", "--help"])
+    propose_from_log = runner.invoke(
+        app,
+        ["memory", "consolidation", "propose-from-log", "--help"],
+    )
+    status = runner.invoke(app, ["memory", "consolidation", "status", "--help"])
+    successor_options, successor_arguments = _cli_command_params("memory", "causal", "successors")
+    propose_options, _ = _cli_command_params("memory", "consolidation", "propose")
+    propose_from_log_options, _ = _cli_command_params("memory", "consolidation", "propose-from-log")
+    status_options, _ = _cli_command_params("memory", "consolidation", "status")
+
+    assert successors.exit_code == 0
+    assert "entity_name" in successor_arguments
+    assert "--relation-type" in successor_options
+    assert propose.exit_code == 0
+    assert "--source-event" in propose_options
+    assert "--candidate-type" in propose_options
+    assert propose_from_log.exit_code == 0
+    assert "--window-size" in propose_from_log_options
+    assert "--purpose" in propose_from_log_options
+    assert status.exit_code == 0
+    assert "--session-id" in status_options
+
+
+def test_memory_reasoning_help_commands_are_registered() -> None:
+    """Nested memory reasoning commands should expose primitive help."""
+    runner = CliRunner()
+
+    explain = runner.invoke(app, ["memory", "reasoning", "explain-outcome", "--help"])
+    belief = runner.invoke(app, ["memory", "reasoning", "propose-belief-update", "--help"])
+    confidence = runner.invoke(app, ["memory", "reasoning", "claim-confidence", "--help"])
+    procedures = runner.invoke(app, ["memory", "reasoning", "similar-procedures", "--help"])
+    record_unknown = runner.invoke(app, ["memory", "reasoning", "record-unknown", "--help"])
+    known_unknowns = runner.invoke(app, ["memory", "reasoning", "known-unknowns", "--help"])
+    trajectory = runner.invoke(app, ["memory", "reasoning", "confidence-trajectory", "--help"])
+    reverify = runner.invoke(app, ["memory", "reasoning", "reverify-needed", "--help"])
+    plan = runner.invoke(app, ["memory", "reasoning", "plan-from-procedures", "--help"])
+    explain_options, explain_arguments = _cli_command_params("memory", "reasoning", "explain-outcome")
+    belief_options, _ = _cli_command_params("memory", "reasoning", "propose-belief-update")
+    confidence_options, confidence_arguments = _cli_command_params("memory", "reasoning", "claim-confidence")
+    procedures_options, procedures_arguments = _cli_command_params("memory", "reasoning", "similar-procedures")
+    record_unknown_options, _ = _cli_command_params("memory", "reasoning", "record-unknown")
+    known_unknowns_options, _ = _cli_command_params("memory", "reasoning", "known-unknowns")
+    _, trajectory_arguments = _cli_command_params("memory", "reasoning", "confidence-trajectory")
+    reverify_options, _ = _cli_command_params("memory", "reasoning", "reverify-needed")
+    plan_options, plan_arguments = _cli_command_params("memory", "reasoning", "plan-from-procedures")
+
+    assert explain.exit_code == 0
+    assert "outcome" in explain_arguments
+    assert "--phase" in explain_options
+    assert belief.exit_code == 0
+    assert "--source-event" in belief_options
+    assert "--confidence" in belief_options
+    assert confidence.exit_code == 0
+    assert "claim" in confidence_arguments
+    assert "--limit" in confidence_options
+    assert procedures.exit_code == 0
+    assert "query" in procedures_arguments
+    assert "--limit" in procedures_options
+    assert record_unknown.exit_code == 0
+    assert "--source-event" in record_unknown_options
+    assert "--claim-key" in record_unknown_options
+    assert known_unknowns.exit_code == 0
+    assert "--status" in known_unknowns_options
+    assert trajectory.exit_code == 0
+    assert "claim" in trajectory_arguments
+    assert reverify.exit_code == 0
+    assert "--min-confidence" in reverify_options
+    assert plan.exit_code == 0
+    assert "goal" in plan_arguments
+    assert "--phase" in plan_options
+
+
+@pytest.mark.parametrize(
+    ("command", "arguments", "method_name", "expected_kwargs"),
+    [
+        (
+            "explain-outcome",
+            ["Test failed", "--depth", "3"],
+            "explain_outcome",
+            {"phase": "review", "session_id": "agent", "depth": 3},
+        ),
+        (
+            "claim-confidence",
+            ["Projection is stale", "--limit", "4"],
+            "get_claim_confidence",
+            {"phase": "review", "session_id": "agent", "limit": 4},
+        ),
+        (
+            "similar-procedures",
+            ["Fix stale projection", "--limit", "6"],
+            "retrieve_similar_procedures",
+            {"phase": "review", "session_id": "agent", "limit": 6},
+        ),
+        (
+            "known-unknowns",
+            ["--limit", "3"],
+            "list_known_unknowns",
+            {"session_id": "agent", "status": "open", "limit": 3},
+        ),
+        (
+            "confidence-trajectory",
+            ["Projection is stale", "--limit", "4"],
+            "list_confidence_trajectory",
+            {"session_id": "agent", "limit": 4},
+        ),
+        (
+            "reverify-needed",
+            ["--query", "projection", "--limit", "7", "--min-confidence", "0.8"],
+            "list_reverification_needs",
+            {"session_id": "agent", "limit": 7, "min_confidence": 0.8},
+        ),
+        (
+            "plan-from-procedures",
+            ["Fix stale projection", "--limit", "6"],
+            "plan_from_procedures",
+            {"phase": "review", "session_id": "agent", "limit": 6},
+        ),
+    ],
+)
+@patch("zaxy.__main__._memory_fabric")
+def test_memory_reasoning_read_commands_json_delegate_to_fabric(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+    command: str,
+    arguments: list[str],
+    method_name: str,
+    expected_kwargs: dict[str, object],
+) -> None:
+    """Reasoning read commands should call configured MemoryFabric methods."""
+    expected = {"primitive": method_name, "session_id": "agent", "results": []}
+    fabric = AsyncMock()
+    getattr(fabric, method_name).return_value = expected
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "reasoning",
+            command,
+            *arguments,
+            "--phase",
+            "review",
+            "--session-id",
+            "agent",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == expected
+    fabric.connect.assert_awaited_once()
+    method = getattr(fabric, method_name)
+    if command == "known-unknowns":
+        method.assert_awaited_once_with(**expected_kwargs)
+    elif command == "reverify-needed":
+        method.assert_awaited_once_with(query="projection", **expected_kwargs)
+    else:
+        method.assert_awaited_once_with(arguments[0], **expected_kwargs)
+    fabric.close.assert_awaited_once()
+
+
+@patch("zaxy.__main__._memory_fabric")
+def test_memory_reasoning_propose_belief_update_json_delegates_to_fabric(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Belief update CLI should delegate proposal creation without authority promotion."""
+    source_hash = "d" * 64
+    expected = {
+        "primitive": "propose_belief_update",
+        "session_id": "agent",
+        "event_type": "belief.update.proposed",
+        "authority_status": "non_authoritative",
+    }
+    fabric = AsyncMock()
+    fabric.propose_belief_update.return_value = expected
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "reasoning",
+            "propose-belief-update",
+            "Projection is stale",
+            "--rationale",
+            "Cited outcome points to stale projection.",
+            "--confidence",
+            "0.74",
+            "--source-event",
+            f"9:{source_hash}",
+            "--phase",
+            "reflection",
+            "--actor",
+            "reviewer",
+            "--session-id",
+            "agent",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == expected
+    fabric.connect.assert_awaited_once()
+    fabric.propose_belief_update.assert_awaited_once_with(
+        "Projection is stale",
+        rationale="Cited outcome points to stale projection.",
+        confidence=0.74,
+        source_events=[{"seq": 9, "hash": source_hash}],
+        phase="reflection",
+        session_id="agent",
+        actor="reviewer",
+    )
+    fabric.close.assert_awaited_once()
+
+
+@patch("zaxy.__main__._memory_fabric")
+def test_memory_reasoning_record_unknown_json_delegates_to_fabric(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Known-unknown CLI should append cited non-authoritative uncertainty state."""
+    source_hash = "e" * 64
+    expected = {
+        "event_type": "metacognition.unknown.recorded",
+        "payload": {"authority_status": "non_authoritative"},
+    }
+    fabric = AsyncMock()
+    fabric.record_known_unknown.return_value = expected
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "reasoning",
+            "record-unknown",
+            "Which backend caused latency?",
+            "--reason",
+            "Evidence conflicted.",
+            "--claim-key",
+            "backend-latency",
+            "--gap-type",
+            "conflicting_evidence",
+            "--reverify-query",
+            "latest backend latency cause",
+            "--source-event",
+            f"11:{source_hash}",
+            "--phase",
+            "review",
+            "--actor",
+            "reviewer",
+            "--session-id",
+            "agent",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == expected
+    fabric.connect.assert_awaited_once()
+    fabric.record_known_unknown.assert_awaited_once_with(
+        "Which backend caused latency?",
+        reason="Evidence conflicted.",
+        source_events=[{"seq": 11, "hash": source_hash}],
+        claim_key="backend-latency",
+        gap_type="conflicting_evidence",
+        reverify_query="latest backend latency cause",
+        phase="review",
+        session_id="agent",
+        actor="reviewer",
+    )
+    fabric.close.assert_awaited_once()
+
+
+@patch("zaxy.__main__._memory_fabric")
+def test_memory_causal_successors_json_queries_fabric(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """memory causal successors --json should call the fabric causal read API."""
+    causal_result = MagicMock()
+    causal_result.to_dict.return_value = {
+        "source": {"name": "Plan", "entity_type": "task"},
+        "target": {"name": "Implementation", "entity_type": "task"},
+        "relation_type": "enabled",
+        "citation": "eventloom://agent/events/3#abc",
+    }
+    fabric = AsyncMock()
+    fabric.query_causal_successors.return_value = [causal_result]
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "causal",
+            "successors",
+            "Plan",
+            "--entity-type",
+            "task",
+            "--relation-type",
+            "enabled",
+            "--session-id",
+            "agent",
+            "--depth",
+            "3",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload == {
+        "direction": "successors",
+        "entity": {"name": "Plan", "entity_type": "task"},
+        "results": [causal_result.to_dict.return_value],
+    }
+    fabric.connect.assert_awaited_once()
+    fabric.query_causal_successors.assert_awaited_once_with(
+        "Plan",
+        relation_type="enabled",
+        depth=3,
+        session_id="agent",
+    )
+    fabric.close.assert_awaited_once()
+
+
+@patch("zaxy.__main__._memory_fabric")
+def test_memory_causal_successors_rejects_invalid_relation_before_fabric(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """--relation-type should reject labels outside the causal taxonomy at the CLI boundary."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "causal",
+            "successors",
+            "Plan",
+            "--relation-type",
+            "enables",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "causal relation_type must be one of:" in result.output
+    mock_fabric_cls.assert_not_called()
+
+
+@patch("zaxy.__main__._memory_fabric")
+def test_memory_consolidation_propose_appends_candidate_event(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """memory consolidation propose should append the cited candidate event."""
+    from zaxy.consolidation import build_consolidation_candidate_event
+
+    source_hash = "a" * 64
+    fabric = AsyncMock()
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "consolidation",
+            "propose",
+            "--candidate-type",
+            "claim",
+            "--title",
+            "Retry policy",
+            "--summary",
+            "Retries should preserve original citations.",
+            "--source-event",
+            f"7:{source_hash}",
+            "--confidence",
+            "0.82",
+            "--method",
+            "manual-review",
+            "--purpose",
+            "release audit",
+            "--actor",
+            "assistant",
+            "--session-id",
+            "agent",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    expected = build_consolidation_candidate_event(
+        actor="assistant",
+        session_id="agent",
+        candidate_type="claim",
+        title="Retry policy",
+        summary="Retries should preserve original citations.",
+        source_events=[{"seq": 7, "hash": source_hash}],
+        confidence=0.82,
+        method="manual-review",
+        purpose="release audit",
+    )
+    payload = json.loads(result.output)
+    assert payload["event_type"] == "consolidation.candidate.created"
+    assert payload["payload"] == expected["payload"]
+    fabric.connect.assert_awaited_once()
+    fabric.append.assert_awaited_once_with(**expected)
+    fabric.close.assert_awaited_once()
+
+
+def test_memory_consolidation_propose_rejects_invalid_source_event(tmp_path: Path) -> None:
+    """--source-event must be strict SEQ:HASH input."""
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "consolidation",
+            "propose",
+            "--candidate-type",
+            "claim",
+            "--title",
+            "Retry policy",
+            "--summary",
+            "Retries should preserve original citations.",
+            "--source-event",
+            "not-a-citation",
+            "--confidence",
+            "0.82",
+            "--method",
+            "manual-review",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "source event must be formatted as SEQ:HASH" in result.output
+
+
+@patch("zaxy.__main__._memory_fabric")
+def test_memory_consolidation_propose_from_log_json_delegates_to_fabric(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """memory consolidation propose-from-log should delegate segment proposal to MemoryFabric."""
+    expected = {
+        "session_id": "agent",
+        "segment_count": 2,
+        "candidate_count": 3,
+        "events": [{"candidate_id": "consolidation:claim:" + ("a" * 24)}],
+    }
+    fabric = AsyncMock()
+    fabric.propose_consolidation_candidates.return_value = expected
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "consolidation",
+            "propose-from-log",
+            "--session-id",
+            "agent",
+            "--actor",
+            "review-bot",
+            "--purpose",
+            "release audit",
+            "--window-size",
+            "4",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == expected
+    fabric.connect.assert_awaited_once()
+    fabric.propose_consolidation_candidates.assert_awaited_once_with(
+        session_id="agent",
+        actor="review-bot",
+        purpose="release audit",
+        window_size=4,
+    )
+    fabric.close.assert_awaited_once()
+
+
+@patch("zaxy.__main__._memory_fabric")
+def test_memory_consolidation_propose_from_log_text_reports_segments(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Text output should make clear candidates came from reviewed log segments."""
+    fabric = AsyncMock()
+    fabric.propose_consolidation_candidates.return_value = {
+        "session_id": "agent",
+        "segment_count": 2,
+        "candidate_count": 3,
+    }
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "consolidation",
+            "propose-from-log",
+            "--session-id",
+            "agent",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Created 3 non-authoritative consolidation candidates from 2 log segments for agent." in result.output
+
+
+@patch("zaxy.__main__._memory_fabric")
+def test_memory_consolidation_status_json_delegates_to_fabric(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """memory consolidation status should read review-gated status through MemoryFabric."""
+    expected = {
+        "session_id": "agent",
+        "pending_count": 2,
+        "accepted_count": 1,
+        "rejected_count": 0,
+    }
+    fabric = AsyncMock()
+    fabric.consolidation_status.return_value = expected
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "consolidation",
+            "status",
+            "--session-id",
+            "agent",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == expected
+    fabric.connect.assert_awaited_once()
+    fabric.consolidation_status.assert_awaited_once_with(session_id="agent")
+    fabric.close.assert_awaited_once()
+
+
+@patch("zaxy.__main__._memory_fabric")
+def test_memory_consolidation_review_appends_review_event(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """memory consolidation review should append the review event contract."""
+    from zaxy.consolidation import build_consolidation_review_event
+
+    candidate_id = "consolidation:claim:" + ("b" * 24)
+    fabric = AsyncMock()
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "consolidation",
+            "review",
+            "--candidate-id",
+            candidate_id,
+            "--status",
+            "accepted",
+            "--rationale",
+            "Citations match the source events.",
+            "--actor",
+            "reviewer",
+            "--session-id",
+            "agent",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    expected = build_consolidation_review_event(
+        actor="reviewer",
+        session_id="agent",
+        candidate_id=candidate_id,
+        status="accepted",
+        rationale="Citations match the source events.",
+    )
+    assert json.loads(result.output) == expected
+    fabric.connect.assert_awaited_once()
+    fabric.append.assert_awaited_once_with(**expected)
+    fabric.close.assert_awaited_once()
 
 
 @patch("zaxy.__main__.MemoryFabric")

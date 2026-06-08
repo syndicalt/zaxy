@@ -1,5 +1,5 @@
 {
-  "tool_count": 29,
+  "tool_count": 44,
   "tools": [
     {
       "description": "Append a typed event to the agent's persistent memory log.",
@@ -80,6 +80,632 @@
         "type": "object"
       },
       "name": "memory_query"
+    },
+    {
+      "description": "Read directed causal effects of an entity from graph-backed memory.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "depth": {
+            "default": 2,
+            "description": "Traversal depth",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "entity_name": {
+            "description": "Entity name to start causal traversal from",
+            "type": "string"
+          },
+          "relation_type": {
+            "description": "Optional causal relation taxonomy label",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session ID for scoped causal retrieval",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_name"
+        ],
+        "type": "object"
+      },
+      "name": "memory_causal_successors"
+    },
+    {
+      "description": "Read directed causal causes of an entity from graph-backed memory.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "depth": {
+            "default": 2,
+            "description": "Traversal depth",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "entity_name": {
+            "description": "Entity name to start causal traversal from",
+            "type": "string"
+          },
+          "relation_type": {
+            "description": "Optional causal relation taxonomy label",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session ID for scoped causal retrieval",
+            "type": "string"
+          }
+        },
+        "required": [
+          "entity_name"
+        ],
+        "type": "object"
+      },
+      "name": "memory_causal_predecessors"
+    },
+    {
+      "description": "Append a cited, review-pending consolidation candidate event.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "default": "zaxy-consolidation",
+            "description": "Actor recording the candidate",
+            "type": "string"
+          },
+          "candidate_type": {
+            "description": "Consolidation candidate type",
+            "enum": [
+              "episode",
+              "claim",
+              "procedure"
+            ],
+            "type": "string"
+          },
+          "confidence": {
+            "description": "Candidate confidence from 0.0 to 1.0",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "method": {
+            "description": "Consolidation method identifier",
+            "type": "string"
+          },
+          "purpose": {
+            "description": "Optional consolidation purpose",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session ID for multi-agent sharding",
+            "type": "string"
+          },
+          "source_events": {
+            "description": "Cited Eventloom source events",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "hash": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "seq": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "seq",
+                "hash"
+              ],
+              "type": "object"
+            },
+            "minItems": 1,
+            "type": "array"
+          },
+          "summary": {
+            "description": "Candidate summary",
+            "type": "string"
+          },
+          "title": {
+            "description": "Candidate title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate_type",
+          "title",
+          "summary",
+          "source_events",
+          "confidence",
+          "method"
+        ],
+        "type": "object"
+      },
+      "name": "memory_consolidation_candidate"
+    },
+    {
+      "description": "Create non-authoritative consolidation candidates from Eventloom log segments.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "default": "zaxy-consolidation",
+            "description": "Actor recording generated candidates",
+            "type": "string"
+          },
+          "purpose": {
+            "description": "Optional consolidation purpose",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session ID to replay for proposal windows",
+            "type": "string"
+          },
+          "window_size": {
+            "default": 5,
+            "description": "Number of source events per proposal window",
+            "maximum": 200,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "type": "object"
+      },
+      "name": "memory_consolidation_propose_from_log"
+    },
+    {
+      "description": "Read review-gated consolidation candidate status.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "session_id": {
+            "description": "Session ID to inspect",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "type": "object"
+      },
+      "name": "memory_consolidation_status"
+    },
+    {
+      "description": "Append a consolidation candidate review event without promoting authority.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "default": "zaxy-reviewer",
+            "description": "Actor recording the review",
+            "type": "string"
+          },
+          "candidate_id": {
+            "description": "Consolidation candidate ID",
+            "pattern": "^consolidation:(episode|claim|procedure):[0-9a-f]{24}$",
+            "type": "string"
+          },
+          "rationale": {
+            "description": "Review rationale",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session ID for multi-agent sharding",
+            "type": "string"
+          },
+          "status": {
+            "description": "Review lifecycle status",
+            "enum": [
+              "accepted",
+              "rejected",
+              "deferred",
+              "conflicted"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "status",
+          "rationale"
+        ],
+        "type": "object"
+      },
+      "name": "memory_consolidation_review"
+    },
+    {
+      "description": "Explain an outcome from cited causal and checkout memory context.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "depth": {
+            "default": 2,
+            "description": "Causal traversal depth",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "outcome": {
+            "description": "Outcome to explain",
+            "type": "string"
+          },
+          "phase": {
+            "default": "planning",
+            "description": "Reasoning phase for purpose-conditioned retrieval",
+            "enum": [
+              "planning",
+              "execution",
+              "review",
+              "reflection"
+            ],
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session ID for scoped reasoning",
+            "type": "string"
+          }
+        },
+        "required": [
+          "outcome"
+        ],
+        "type": "object"
+      },
+      "name": "memory_explain_outcome"
+    },
+    {
+      "description": "Append a cited, review-pending belief update proposal without promoting authority.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "default": "zaxy-reasoning",
+            "description": "Actor recording the proposal",
+            "type": "string"
+          },
+          "claim": {
+            "description": "Claim to propose for review",
+            "type": "string"
+          },
+          "confidence": {
+            "description": "Proposal confidence from 0.0 to 1.0",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "phase": {
+            "default": "reflection",
+            "description": "Reasoning phase for purpose-conditioned proposal recording",
+            "enum": [
+              "planning",
+              "execution",
+              "review",
+              "reflection"
+            ],
+            "type": "string"
+          },
+          "rationale": {
+            "description": "Cited rationale for the proposal",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session ID for multi-agent sharding",
+            "type": "string"
+          },
+          "source_events": {
+            "description": "Cited Eventloom source events supporting the proposal",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "hash": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "seq": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "seq",
+                "hash"
+              ],
+              "type": "object"
+            },
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "claim",
+          "rationale",
+          "confidence",
+          "source_events"
+        ],
+        "type": "object"
+      },
+      "name": "memory_propose_belief_update"
+    },
+    {
+      "description": "Score claim confidence from cited support and conflict evidence.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "claim": {
+            "description": "Claim to score against memory evidence",
+            "type": "string"
+          },
+          "limit": {
+            "default": 5,
+            "description": "Max evidence items",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "phase": {
+            "default": "review",
+            "description": "Reasoning phase for purpose-conditioned evidence scoring",
+            "enum": [
+              "planning",
+              "execution",
+              "review",
+              "reflection"
+            ],
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session ID for scoped reasoning",
+            "type": "string"
+          }
+        },
+        "required": [
+          "claim"
+        ],
+        "type": "object"
+      },
+      "name": "memory_claim_confidence"
+    },
+    {
+      "description": "Retrieve similar procedure candidates from Skill Memory and consolidation memory.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 5,
+            "description": "Max procedure candidates",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "phase": {
+            "default": "planning",
+            "description": "Reasoning phase for purpose-conditioned procedure retrieval",
+            "enum": [
+              "planning",
+              "execution",
+              "review",
+              "reflection"
+            ],
+            "type": "string"
+          },
+          "query": {
+            "description": "Procedure retrieval query",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session ID for scoped reasoning",
+            "type": "string"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "type": "object"
+      },
+      "name": "memory_similar_procedures"
+    },
+    {
+      "description": "Record a cited, open, non-authoritative known unknown.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "actor": {
+            "default": "zaxy-reasoning",
+            "description": "Actor recording the known unknown",
+            "type": "string"
+          },
+          "claim_key": {
+            "description": "Stable claim or uncertainty key",
+            "type": "string"
+          },
+          "gap_type": {
+            "default": "missing_evidence",
+            "description": "Uncertainty gap type",
+            "type": "string"
+          },
+          "phase": {
+            "default": "review",
+            "description": "Reasoning phase for purpose-conditioned uncertainty recording",
+            "enum": [
+              "planning",
+              "execution",
+              "review",
+              "reflection"
+            ],
+            "type": "string"
+          },
+          "question": {
+            "description": "Known-unknown question to track",
+            "type": "string"
+          },
+          "reason": {
+            "description": "Reason this uncertainty was recorded",
+            "type": "string"
+          },
+          "reverify_query": {
+            "description": "Suggested query for re-verification",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session ID for scoped reasoning",
+            "type": "string"
+          },
+          "source_events": {
+            "description": "Cited Eventloom source events supporting the known unknown",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "hash": {
+                  "pattern": "^[0-9a-f]{64}$",
+                  "type": "string"
+                },
+                "seq": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "required": [
+                "seq",
+                "hash"
+              ],
+              "type": "object"
+            },
+            "minItems": 1,
+            "type": "array"
+          }
+        },
+        "required": [
+          "question",
+          "reason",
+          "source_events",
+          "claim_key"
+        ],
+        "type": "object"
+      },
+      "name": "memory_record_known_unknown"
+    },
+    {
+      "description": "List replay-derived known unknowns for a session.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 10,
+            "description": "Max known unknowns",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "session_id": {
+            "description": "Session ID for scoped reasoning",
+            "type": "string"
+          },
+          "status": {
+            "default": "open",
+            "description": "Known-unknown status filter or all",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "memory_known_unknowns"
+    },
+    {
+      "description": "List append-only confidence assessments for a claim.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "claim": {
+            "description": "Claim or claim key to inspect",
+            "type": "string"
+          },
+          "limit": {
+            "default": 10,
+            "description": "Max trajectory points",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "session_id": {
+            "description": "Session ID for scoped reasoning",
+            "type": "string"
+          }
+        },
+        "required": [
+          "claim"
+        ],
+        "type": "object"
+      },
+      "name": "memory_confidence_trajectory"
+    },
+    {
+      "description": "List open unknowns, unresolved conflicts, and low-confidence claims needing re-verification.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 10,
+            "description": "Max re-verification needs",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "min_confidence": {
+            "default": 0.7,
+            "description": "Confidence threshold",
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number"
+          },
+          "query": {
+            "description": "Optional query filter",
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session ID for scoped reasoning",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "memory_reverification_needs"
+    },
+    {
+      "description": "Build a non-authoritative planning packet from applicable procedures.",
+      "input_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "goal": {
+            "description": "Planning goal",
+            "type": "string"
+          },
+          "limit": {
+            "default": 5,
+            "description": "Max plan steps/source procedures",
+            "minimum": 1,
+            "type": "integer"
+          },
+          "phase": {
+            "default": "planning",
+            "description": "Reasoning phase for purpose-conditioned procedural planning",
+            "enum": [
+              "planning",
+              "execution",
+              "review",
+              "reflection"
+            ],
+            "type": "string"
+          },
+          "session_id": {
+            "description": "Session ID for scoped reasoning",
+            "type": "string"
+          }
+        },
+        "required": [
+          "goal"
+        ],
+        "type": "object"
+      },
+      "name": "memory_plan_from_procedures"
     },
     {
       "description": "Retrieve exact Eventloom source chunks with citations.",
@@ -311,8 +937,19 @@
             },
             "type": "array"
           },
+          "contradiction_reason": {
+            "description": "Reason a procedure was contradicted",
+            "type": "string"
+          },
           "evidence": {
             "description": "Outcome evidence such as commands or citations",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "failure_modes": {
+            "description": "Known failure modes or invalidating conditions for the skill",
             "items": {
               "type": "string"
             },
@@ -335,6 +972,10 @@
           },
           "reason": {
             "description": "Reason for status changes",
+            "type": "string"
+          },
+          "rollback": {
+            "description": "Rollback guidance for deprecated or contradicted procedures",
             "type": "string"
           },
           "session_id": {

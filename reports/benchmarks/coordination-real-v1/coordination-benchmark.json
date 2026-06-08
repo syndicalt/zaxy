@@ -1,0 +1,1167 @@
+{
+  "baselines": {
+    "bm25_worker_logs": {
+      "accepted_finding_precision": 0.666667,
+      "accepted_finding_recall": 0.2,
+      "accepted_state_synthesis_quality": 0.0,
+      "brief_latency_ms": 0.0,
+      "citation_coverage": 0.0,
+      "conflict_precision": 0.0,
+      "conflict_recall": 0.0,
+      "duplicate_consolidation": 0.0,
+      "eventloom_replayable": false,
+      "evidence_coverage": 1.0,
+      "injected_tokens": 481,
+      "non_authoritative_leakage": 0.0,
+      "parent_checkout_answerability": 0.0,
+      "promotion_latency_ms": 0.0,
+      "purpose_feedback_coverage": 0.0,
+      "returned_tokens": 481,
+      "stale_claim_rejection": 0.0
+    },
+    "flat_transcript": {
+      "accepted_finding_precision": 0.272727,
+      "accepted_finding_recall": 0.6,
+      "accepted_state_synthesis_quality": 0.0,
+      "brief_latency_ms": 0.0,
+      "citation_coverage": 0.0,
+      "conflict_precision": 0.0,
+      "conflict_recall": 0.0,
+      "duplicate_consolidation": 0.0,
+      "eventloom_replayable": true,
+      "evidence_coverage": 0.909091,
+      "injected_tokens": 1265,
+      "non_authoritative_leakage": 0.0,
+      "parent_checkout_answerability": 0.0,
+      "promotion_latency_ms": 0.0,
+      "purpose_feedback_coverage": 0.0,
+      "returned_tokens": 1265,
+      "stale_claim_rejection": 0.0
+    },
+    "markdown_notes": {
+      "accepted_finding_precision": 0.636364,
+      "accepted_finding_recall": 1.0,
+      "accepted_state_synthesis_quality": 0.0,
+      "brief_latency_ms": 0.0,
+      "citation_coverage": 0.0,
+      "conflict_precision": 0.0,
+      "conflict_recall": 0.0,
+      "duplicate_consolidation": 0.0,
+      "eventloom_replayable": false,
+      "evidence_coverage": 0.909091,
+      "injected_tokens": 1603,
+      "non_authoritative_leakage": 0.0,
+      "parent_checkout_answerability": 0.0,
+      "promotion_latency_ms": 0.0,
+      "purpose_feedback_coverage": 0.0,
+      "returned_tokens": 1603,
+      "stale_claim_rejection": 0.0
+    }
+  },
+  "cases": [
+    {
+      "brief": {
+        "accepted_findings": [
+          {
+            "claim_key": "release.package",
+            "claim_value": "zaxy-memory-0.4.0-published",
+            "confidence": 0.98,
+            "evidence": [
+              {
+                "kind": "eventloom",
+                "reference": "eventloom://zaxy-default/events/28134#829cf7c0e37414e3212dc168d6a1e46a2349e45c3da8d97d7e32e7f37a146fe7",
+                "source_sha256": null,
+                "stale": false,
+                "status": null,
+                "summary": null,
+                "superseded_by": null
+              },
+              {
+                "branch": null,
+                "changed_files": [],
+                "detached": false,
+                "diff_summary": null,
+                "dirty": false,
+                "head": null,
+                "kind": "git",
+                "reference": "git:40ade66 chore: release 0.4.0",
+                "repo_root": null,
+                "test_results": [],
+                "worktree": null,
+                "worktrees": []
+              }
+            ],
+            "finding_id": "finding-release-published",
+            "mission_id": "coordinate-0-4-real-1",
+            "rationale": null,
+            "source_event_hash": "f6a47fc01a8b47591dae5645ce975f2eb0d4255e781dd661218758e67ea65d2c",
+            "source_event_seq": 1,
+            "stale": false,
+            "status": "accepted",
+            "summary": "Zaxy Coordinate was merged and released as zaxy-memory 0.4.0 after PR #14 passed CI.",
+            "superseded_by": null,
+            "worker_id": "worker-release"
+          },
+          {
+            "claim_key": "site.positioning",
+            "claim_value": "coordinate-first-docs-site",
+            "confidence": 0.96,
+            "evidence": [
+              {
+                "branch": null,
+                "changed_files": [],
+                "detached": false,
+                "diff_summary": null,
+                "dirty": false,
+                "head": null,
+                "kind": "git",
+                "reference": "git:ea23e05 docs: refresh Coordinate site",
+                "repo_root": null,
+                "test_results": [],
+                "worktree": null,
+                "worktrees": []
+              },
+              {
+                "kind": "file",
+                "reference": "site/assets/graph.png",
+                "source_sha256": null,
+                "stale": false,
+                "status": null,
+                "summary": null,
+                "superseded_by": null
+              },
+              {
+                "kind": "file",
+                "reference": "docs/benchmarks.md",
+                "source_sha256": null,
+                "stale": false,
+                "status": null,
+                "summary": null,
+                "superseded_by": null
+              }
+            ],
+            "finding_id": "finding-docs-coordinate-first",
+            "mission_id": "coordinate-0-4-real-1",
+            "rationale": null,
+            "source_event_hash": "0ba807bc4e147977a001e55d52ea3285da0669e9e3f1f30983b3e50aaca2e5a1",
+            "source_event_seq": 1,
+            "stale": false,
+            "status": "accepted",
+            "summary": "The docs site was refreshed to lead with Zaxy Coordinate and include the new graph/header assets.",
+            "superseded_by": null,
+            "worker_id": "worker-docs-site"
+          },
+          {
+            "claim_key": "benchmark.seed_claim",
+            "claim_value": "contract-smoke-only",
+            "confidence": 0.97,
+            "evidence": [
+              {
+                "kind": "file",
+                "reference": "reports/benchmarks/coordination-v1/coordination-benchmark.md",
+                "source_sha256": null,
+                "stale": false,
+                "status": null,
+                "summary": null,
+                "superseded_by": null
+              },
+              {
+                "kind": "file",
+                "reference": "reports/benchmarks/coordination-v1/coordination-workload.json",
+                "source_sha256": null,
+                "stale": false,
+                "status": null,
+                "summary": null,
+                "superseded_by": null
+              }
+            ],
+            "finding_id": "finding-benchmark-contract-seed",
+            "mission_id": "coordinate-0-4-real-1",
+            "rationale": null,
+            "source_event_hash": "c6e881d07f0958a1b0b29797a771f8bd32d8ac9a43cefb7ab3020b9ac8447566",
+            "source_event_seq": 1,
+            "stale": false,
+            "status": "accepted",
+            "summary": "The published coordination-v1 result is a deterministic contract smoke lane, not a representative multi-agent proof.",
+            "superseded_by": null,
+            "worker_id": "worker-benchmark-audit"
+          },
+          {
+            "claim_key": "external.adapters",
+            "claim_value": "disclosure-only-not-run",
+            "confidence": 0.95,
+            "evidence": [
+              {
+                "kind": "eventloom",
+                "reference": "eventloom://019e69ed-aeeb-7b22-a18b-7335252ad16f/events/15#16974551e0170ed6f15fbe25f3d26d898172b6abaa47c9c04b468dc23de7199a",
+                "source_sha256": null,
+                "stale": false,
+                "status": null,
+                "summary": null,
+                "superseded_by": null
+              },
+              {
+                "kind": "file",
+                "reference": "src/zaxy/resources/coordinationbench/README.md",
+                "source_sha256": null,
+                "stale": false,
+                "status": null,
+                "summary": null,
+                "superseded_by": null
+              }
+            ],
+            "finding_id": "finding-adapters-disclosure-only",
+            "mission_id": "coordinate-0-4-real-1",
+            "rationale": null,
+            "source_event_hash": "6b03c1fc851994c3044a6d0e84604605ca7b25339a49d6e95eb819af0da586dd",
+            "source_event_seq": 1,
+            "stale": false,
+            "status": "accepted",
+            "summary": "Mem0, Agent Memory, and ActiveGraph have disclosure-only same-harness adapter templates; no external competitor scores were published.",
+            "superseded_by": null,
+            "worker_id": "worker-adapter-contract"
+          },
+          {
+            "claim_key": "workload.history",
+            "claim_value": "real-eventloom-and-git-history",
+            "confidence": 0.94,
+            "evidence": [
+              {
+                "kind": "eventloom",
+                "reference": "eventloom://019e69ed-aeeb-7b22-a18b-7335252ad16f/events/17#a43b0308c9e0761e403a9add3fccf3429d4fadd2e3f4b82810314a88fc959cf4",
+                "source_sha256": null,
+                "stale": false,
+                "status": null,
+                "summary": null,
+                "superseded_by": null
+              },
+              {
+                "kind": "eventloom",
+                "reference": "eventloom://zaxy-default/events/28132#e8380497e2e313f029e6350281367ebd26d0ef36fc386279b22e1006270fb274",
+                "source_sha256": null,
+                "stale": false,
+                "status": null,
+                "summary": null,
+                "superseded_by": null
+              }
+            ],
+            "finding_id": "finding-runtime-history-real",
+            "mission_id": "coordinate-0-4-real-1",
+            "rationale": null,
+            "source_event_hash": "4aaa1960c1e0b0f54bf4d62dd5fbf5445988afe7351962d1dabc3b820103269b",
+            "source_event_seq": 1,
+            "stale": false,
+            "status": "accepted",
+            "summary": "The workload is grounded in real Zaxy worker sessions, release history, docs artifacts, and Eventloom replay references.",
+            "superseded_by": null,
+            "worker_id": "worker-runtime-history"
+          }
+        ],
+        "conflicted_findings": [
+          {
+            "claim_key": "benchmark.seed_claim",
+            "claim_value": "contract-smoke-only",
+            "confidence": 0.97,
+            "evidence": [
+              {
+                "kind": "file",
+                "reference": "reports/benchmarks/coordination-v1/coordination-benchmark.md",
+                "source_sha256": null,
+                "stale": false,
+                "status": null,
+                "summary": null,
+                "superseded_by": null
+              },
+              {
+                "kind": "file",
+                "reference": "reports/benchmarks/coordination-v1/coordination-workload.json",
+                "source_sha256": null,
+                "stale": false,
+                "status": null,
+                "summary": null,
+                "superseded_by": null
+              }
+            ],
+            "finding_id": "finding-benchmark-contract-seed",
+            "mission_id": "coordinate-0-4-real-1",
+            "rationale": null,
+            "source_event_hash": "c6e881d07f0958a1b0b29797a771f8bd32d8ac9a43cefb7ab3020b9ac8447566",
+            "source_event_seq": 1,
+            "stale": false,
+            "status": "accepted",
+            "summary": "The published coordination-v1 result is a deterministic contract smoke lane, not a representative multi-agent proof.",
+            "superseded_by": null,
+            "worker_id": "worker-benchmark-audit"
+          },
+          {
+            "claim_key": "benchmark.seed_claim",
+            "claim_value": "representative-proof",
+            "confidence": 0.34,
+            "evidence": [
+              {
+                "kind": "file",
+                "reference": "reports/benchmarks/coordination-v1/coordination-benchmark.md",
+                "source_sha256": null,
+                "stale": true,
+                "status": null,
+                "summary": null,
+                "superseded_by": "benchmark.seed_claim=contract-smoke-only"
+              }
+            ],
+            "finding_id": "finding-benchmark-perfect-generalizes",
+            "mission_id": "coordinate-0-4-real-1",
+            "rationale": null,
+            "source_event_hash": "bd81e614f267a2f0e429b2116d9befadbca4ce50d784b2704a9404672ccb112d",
+            "source_event_seq": 2,
+            "stale": true,
+            "status": "pending",
+            "summary": "The perfect coordination-v1 score should be treated as a representative proof of real multi-agent coordination quality.",
+            "superseded_by": "benchmark.seed_claim=contract-smoke-only",
+            "worker_id": "worker-benchmark-audit"
+          },
+          {
+            "claim_key": "external.adapters",
+            "claim_value": "disclosure-only-not-run",
+            "confidence": 0.95,
+            "evidence": [
+              {
+                "kind": "eventloom",
+                "reference": "eventloom://019e69ed-aeeb-7b22-a18b-7335252ad16f/events/15#16974551e0170ed6f15fbe25f3d26d898172b6abaa47c9c04b468dc23de7199a",
+                "source_sha256": null,
+                "stale": false,
+                "status": null,
+                "summary": null,
+                "superseded_by": null
+              },
+              {
+                "kind": "file",
+                "reference": "src/zaxy/resources/coordinationbench/README.md",
+                "source_sha256": null,
+                "stale": false,
+                "status": null,
+                "summary": null,
+                "superseded_by": null
+              }
+            ],
+            "finding_id": "finding-adapters-disclosure-only",
+            "mission_id": "coordinate-0-4-real-1",
+            "rationale": null,
+            "source_event_hash": "6b03c1fc851994c3044a6d0e84604605ca7b25339a49d6e95eb819af0da586dd",
+            "source_event_seq": 1,
+            "stale": false,
+            "status": "accepted",
+            "summary": "Mem0, Agent Memory, and ActiveGraph have disclosure-only same-harness adapter templates; no external competitor scores were published.",
+            "superseded_by": null,
+            "worker_id": "worker-adapter-contract"
+          },
+          {
+            "claim_key": "external.adapters",
+            "claim_value": "competitor-scores-published",
+            "confidence": 0.22,
+            "evidence": [
+              {
+                "kind": "file",
+                "reference": "reports/benchmarks/coordination-v1/coordination-benchmark.md",
+                "source_sha256": null,
+                "stale": false,
+                "status": null,
+                "summary": null,
+                "superseded_by": null
+              }
+            ],
+            "finding_id": "finding-adapters-fake-scores",
+            "mission_id": "coordinate-0-4-real-1",
+            "rationale": null,
+            "source_event_hash": "838dd2e0f5c8771c3f3834693c0817c3485e3fc712813b107171aebd0cdbc2a4",
+            "source_event_seq": 2,
+            "stale": false,
+            "status": "pending",
+            "summary": "Mem0, Agent Memory, and ActiveGraph already have completed same-harness CoordinationBench scores in this repository.",
+            "superseded_by": null,
+            "worker_id": "worker-adapter-contract"
+          }
+        ],
+        "conflicts": [
+          {
+            "claim_key": "benchmark.seed_claim",
+            "conflict_type": "exact_claim",
+            "findings": [
+              {
+                "claim_key": "benchmark.seed_claim",
+                "claim_value": "contract-smoke-only",
+                "confidence": 0.97,
+                "evidence": [
+                  {
+                    "kind": "file",
+                    "reference": "reports/benchmarks/coordination-v1/coordination-benchmark.md",
+                    "source_sha256": null,
+                    "stale": false,
+                    "status": null,
+                    "summary": null,
+                    "superseded_by": null
+                  },
+                  {
+                    "kind": "file",
+                    "reference": "reports/benchmarks/coordination-v1/coordination-workload.json",
+                    "source_sha256": null,
+                    "stale": false,
+                    "status": null,
+                    "summary": null,
+                    "superseded_by": null
+                  }
+                ],
+                "finding_id": "finding-benchmark-contract-seed",
+                "mission_id": "coordinate-0-4-real-1",
+                "rationale": null,
+                "source_event_hash": "c6e881d07f0958a1b0b29797a771f8bd32d8ac9a43cefb7ab3020b9ac8447566",
+                "source_event_seq": 1,
+                "stale": false,
+                "status": "accepted",
+                "summary": "The published coordination-v1 result is a deterministic contract smoke lane, not a representative multi-agent proof.",
+                "superseded_by": null,
+                "worker_id": "worker-benchmark-audit"
+              },
+              {
+                "claim_key": "benchmark.seed_claim",
+                "claim_value": "representative-proof",
+                "confidence": 0.34,
+                "evidence": [
+                  {
+                    "kind": "file",
+                    "reference": "reports/benchmarks/coordination-v1/coordination-benchmark.md",
+                    "source_sha256": null,
+                    "stale": true,
+                    "status": null,
+                    "summary": null,
+                    "superseded_by": "benchmark.seed_claim=contract-smoke-only"
+                  }
+                ],
+                "finding_id": "finding-benchmark-perfect-generalizes",
+                "mission_id": "coordinate-0-4-real-1",
+                "rationale": null,
+                "source_event_hash": "bd81e614f267a2f0e429b2116d9befadbca4ce50d784b2704a9404672ccb112d",
+                "source_event_seq": 2,
+                "stale": true,
+                "status": "pending",
+                "summary": "The perfect coordination-v1 score should be treated as a representative proof of real multi-agent coordination quality.",
+                "superseded_by": "benchmark.seed_claim=contract-smoke-only",
+                "worker_id": "worker-benchmark-audit"
+              }
+            ],
+            "reason": "conflicting_claim_values",
+            "source_reference": null
+          },
+          {
+            "claim_key": "external.adapters",
+            "conflict_type": "exact_claim",
+            "findings": [
+              {
+                "claim_key": "external.adapters",
+                "claim_value": "disclosure-only-not-run",
+                "confidence": 0.95,
+                "evidence": [
+                  {
+                    "kind": "eventloom",
+                    "reference": "eventloom://019e69ed-aeeb-7b22-a18b-7335252ad16f/events/15#16974551e0170ed6f15fbe25f3d26d898172b6abaa47c9c04b468dc23de7199a",
+                    "source_sha256": null,
+                    "stale": false,
+                    "status": null,
+                    "summary": null,
+                    "superseded_by": null
+                  },
+                  {
+                    "kind": "file",
+                    "reference": "src/zaxy/resources/coordinationbench/README.md",
+                    "source_sha256": null,
+                    "stale": false,
+                    "status": null,
+                    "summary": null,
+                    "superseded_by": null
+                  }
+                ],
+                "finding_id": "finding-adapters-disclosure-only",
+                "mission_id": "coordinate-0-4-real-1",
+                "rationale": null,
+                "source_event_hash": "6b03c1fc851994c3044a6d0e84604605ca7b25339a49d6e95eb819af0da586dd",
+                "source_event_seq": 1,
+                "stale": false,
+                "status": "accepted",
+                "summary": "Mem0, Agent Memory, and ActiveGraph have disclosure-only same-harness adapter templates; no external competitor scores were published.",
+                "superseded_by": null,
+                "worker_id": "worker-adapter-contract"
+              },
+              {
+                "claim_key": "external.adapters",
+                "claim_value": "competitor-scores-published",
+                "confidence": 0.22,
+                "evidence": [
+                  {
+                    "kind": "file",
+                    "reference": "reports/benchmarks/coordination-v1/coordination-benchmark.md",
+                    "source_sha256": null,
+                    "stale": false,
+                    "status": null,
+                    "summary": null,
+                    "superseded_by": null
+                  }
+                ],
+                "finding_id": "finding-adapters-fake-scores",
+                "mission_id": "coordinate-0-4-real-1",
+                "rationale": null,
+                "source_event_hash": "838dd2e0f5c8771c3f3834693c0817c3485e3fc712813b107171aebd0cdbc2a4",
+                "source_event_seq": 2,
+                "stale": false,
+                "status": "pending",
+                "summary": "Mem0, Agent Memory, and ActiveGraph already have completed same-harness CoordinationBench scores in this repository.",
+                "superseded_by": null,
+                "worker_id": "worker-adapter-contract"
+              }
+            ],
+            "reason": "conflicting_claim_values",
+            "source_reference": null
+          }
+        ],
+        "deferred_findings": [],
+        "mission_id": "coordinate-0-4-real-1",
+        "objective": "Merge real Zaxy Coordinate release, docs-site, and benchmark history into one parent-session brief without accepting stale or unsupported benchmark claims.",
+        "pending_findings": [
+          {
+            "claim_key": "release.package",
+            "claim_value": "zaxy-memory-0.4.0-published",
+            "confidence": 0.92,
+            "evidence": [
+              {
+                "kind": "eventloom",
+                "reference": "eventloom://zaxy-default/events/28134#829cf7c0e37414e3212dc168d6a1e46a2349e45c3da8d97d7e32e7f37a146fe7",
+                "source_sha256": null,
+                "stale": false,
+                "status": null,
+                "summary": null,
+                "superseded_by": null
+              }
+            ],
+            "finding_id": "finding-release-duplicate",
+            "mission_id": "coordinate-0-4-real-1",
+            "rationale": null,
+            "source_event_hash": "92e969eb88c08021576424fd16854ff6a63ed9ee08c1eb648bfe46115a5119b2",
+            "source_event_seq": 2,
+            "stale": false,
+            "status": "pending",
+            "summary": "A second release audit independently points to the same 0.4.0 published package outcome.",
+            "superseded_by": null,
+            "worker_id": "worker-release"
+          },
+          {
+            "claim_key": "site.positioning",
+            "claim_value": "coordinate-first-docs-site",
+            "confidence": 0.91,
+            "evidence": [
+              {
+                "branch": null,
+                "changed_files": [],
+                "detached": false,
+                "diff_summary": null,
+                "dirty": false,
+                "head": null,
+                "kind": "git",
+                "reference": "git:ea23e05 docs: refresh Coordinate site",
+                "repo_root": null,
+                "test_results": [],
+                "worktree": null,
+                "worktrees": []
+              },
+              {
+                "kind": "file",
+                "reference": "site/index.html",
+                "source_sha256": null,
+                "stale": false,
+                "status": null,
+                "summary": null,
+                "superseded_by": null
+              }
+            ],
+            "finding_id": "finding-docs-coordinate-first-duplicate",
+            "mission_id": "coordinate-0-4-real-1",
+            "rationale": null,
+            "source_event_hash": "79ea982c46b32c178ca08d792b0293561e9a97e328b761d973f4ef4971c2147e",
+            "source_event_seq": 2,
+            "stale": false,
+            "status": "pending",
+            "summary": "The generated site copy also identifies Coordinate as the first-screen docs direction.",
+            "superseded_by": null,
+            "worker_id": "worker-docs-site"
+          },
+          {
+            "claim_key": "benchmark.seed_claim",
+            "claim_value": "representative-proof",
+            "confidence": 0.34,
+            "evidence": [
+              {
+                "kind": "file",
+                "reference": "reports/benchmarks/coordination-v1/coordination-benchmark.md",
+                "source_sha256": null,
+                "stale": true,
+                "status": null,
+                "summary": null,
+                "superseded_by": "benchmark.seed_claim=contract-smoke-only"
+              }
+            ],
+            "finding_id": "finding-benchmark-perfect-generalizes",
+            "mission_id": "coordinate-0-4-real-1",
+            "rationale": null,
+            "source_event_hash": "bd81e614f267a2f0e429b2116d9befadbca4ce50d784b2704a9404672ccb112d",
+            "source_event_seq": 2,
+            "stale": true,
+            "status": "pending",
+            "summary": "The perfect coordination-v1 score should be treated as a representative proof of real multi-agent coordination quality.",
+            "superseded_by": "benchmark.seed_claim=contract-smoke-only",
+            "worker_id": "worker-benchmark-audit"
+          },
+          {
+            "claim_key": "roadmap.coordinate.status",
+            "claim_value": "stale-pending-dashboard-and-baselines",
+            "confidence": 0.28,
+            "evidence": [
+              {
+                "kind": "eventloom",
+                "reference": "eventloom://zaxy-coordinate-roadmap/events/4#9c58ef62ce38738eb5ec3a7423f2927047f1791f3bc5976a105f185f604f262c",
+                "source_sha256": null,
+                "stale": true,
+                "status": null,
+                "summary": null,
+                "superseded_by": "eventloom://019e69ed-aeeb-7b22-a18b-7335252ad16f/events/2#2ba5ed3dd00064e4480a7bcc15085654aa16e85607c72d62359c79062cd197e2"
+              }
+            ],
+            "finding_id": "finding-old-roadmap-stale",
+            "mission_id": "coordinate-0-4-real-1",
+            "rationale": null,
+            "source_event_hash": "e742663386e524fec922366079f0f10c041aa204007a1cc4603323ea1e762f45",
+            "source_event_seq": 3,
+            "stale": true,
+            "status": "pending",
+            "summary": "Older roadmap notes still say dashboard mutation and local baselines are pending.",
+            "superseded_by": "eventloom://019e69ed-aeeb-7b22-a18b-7335252ad16f/events/2#2ba5ed3dd00064e4480a7bcc15085654aa16e85607c72d62359c79062cd197e2",
+            "worker_id": "worker-benchmark-audit"
+          },
+          {
+            "claim_key": "external.adapters",
+            "claim_value": "competitor-scores-published",
+            "confidence": 0.22,
+            "evidence": [
+              {
+                "kind": "file",
+                "reference": "reports/benchmarks/coordination-v1/coordination-benchmark.md",
+                "source_sha256": null,
+                "stale": false,
+                "status": null,
+                "summary": null,
+                "superseded_by": null
+              }
+            ],
+            "finding_id": "finding-adapters-fake-scores",
+            "mission_id": "coordinate-0-4-real-1",
+            "rationale": null,
+            "source_event_hash": "838dd2e0f5c8771c3f3834693c0817c3485e3fc712813b107171aebd0cdbc2a4",
+            "source_event_seq": 2,
+            "stale": false,
+            "status": "pending",
+            "summary": "Mem0, Agent Memory, and ActiveGraph already have completed same-harness CoordinationBench scores in this repository.",
+            "superseded_by": null,
+            "worker_id": "worker-adapter-contract"
+          },
+          {
+            "claim_key": "external.activegraph.result",
+            "claim_value": "pinned-result-present",
+            "confidence": 0.18,
+            "evidence": [],
+            "finding_id": "finding-activegraph-result-unsupported",
+            "mission_id": "coordinate-0-4-real-1",
+            "rationale": null,
+            "source_event_hash": "656fec20683602db076aa29a085df19acc7bf7394c11c139ecb1ac98efac8e04",
+            "source_event_seq": 2,
+            "stale": false,
+            "status": "pending",
+            "summary": "ActiveGraph has a pinned same-harness result artifact in the repo.",
+            "superseded_by": null,
+            "worker_id": "worker-runtime-history"
+          }
+        ],
+        "rejected_findings": [],
+        "stale_findings": [
+          {
+            "claim_key": "benchmark.seed_claim",
+            "claim_value": "representative-proof",
+            "confidence": 0.34,
+            "evidence": [
+              {
+                "kind": "file",
+                "reference": "reports/benchmarks/coordination-v1/coordination-benchmark.md",
+                "source_sha256": null,
+                "stale": true,
+                "status": null,
+                "summary": null,
+                "superseded_by": "benchmark.seed_claim=contract-smoke-only"
+              }
+            ],
+            "finding_id": "finding-benchmark-perfect-generalizes",
+            "mission_id": "coordinate-0-4-real-1",
+            "rationale": null,
+            "source_event_hash": "bd81e614f267a2f0e429b2116d9befadbca4ce50d784b2704a9404672ccb112d",
+            "source_event_seq": 2,
+            "stale": true,
+            "status": "pending",
+            "summary": "The perfect coordination-v1 score should be treated as a representative proof of real multi-agent coordination quality.",
+            "superseded_by": "benchmark.seed_claim=contract-smoke-only",
+            "worker_id": "worker-benchmark-audit"
+          },
+          {
+            "claim_key": "roadmap.coordinate.status",
+            "claim_value": "stale-pending-dashboard-and-baselines",
+            "confidence": 0.28,
+            "evidence": [
+              {
+                "kind": "eventloom",
+                "reference": "eventloom://zaxy-coordinate-roadmap/events/4#9c58ef62ce38738eb5ec3a7423f2927047f1791f3bc5976a105f185f604f262c",
+                "source_sha256": null,
+                "stale": true,
+                "status": null,
+                "summary": null,
+                "superseded_by": "eventloom://019e69ed-aeeb-7b22-a18b-7335252ad16f/events/2#2ba5ed3dd00064e4480a7bcc15085654aa16e85607c72d62359c79062cd197e2"
+              }
+            ],
+            "finding_id": "finding-old-roadmap-stale",
+            "mission_id": "coordinate-0-4-real-1",
+            "rationale": null,
+            "source_event_hash": "e742663386e524fec922366079f0f10c041aa204007a1cc4603323ea1e762f45",
+            "source_event_seq": 3,
+            "stale": true,
+            "status": "pending",
+            "summary": "Older roadmap notes still say dashboard mutation and local baselines are pending.",
+            "superseded_by": "eventloom://019e69ed-aeeb-7b22-a18b-7335252ad16f/events/2#2ba5ed3dd00064e4480a7bcc15085654aa16e85607c72d62359c79062cd197e2",
+            "worker_id": "worker-benchmark-audit"
+          }
+        ],
+        "workers": [
+          {
+            "assignment": "Verify the shipped Coordinate release and CI/merge state from real Eventloom and git history.",
+            "mission_id": "coordinate-0-4-real-1",
+            "status": "active",
+            "worker_id": "worker-release"
+          },
+          {
+            "assignment": "Verify the public docs-site refresh and graph/header artifact state.",
+            "mission_id": "coordinate-0-4-real-1",
+            "status": "active",
+            "worker_id": "worker-docs-site"
+          },
+          {
+            "assignment": "Audit the prior CoordinationBench result and distinguish seed smoke coverage from representative proof.",
+            "mission_id": "coordinate-0-4-real-1",
+            "status": "active",
+            "worker_id": "worker-benchmark-audit"
+          },
+          {
+            "assignment": "Verify external adapter status and the benchmark contract kit without inventing competitor scores.",
+            "mission_id": "coordinate-0-4-real-1",
+            "status": "active",
+            "worker_id": "worker-adapter-contract"
+          },
+          {
+            "assignment": "Check whether real worker runtime metadata and examples exist for the representative workload.",
+            "mission_id": "coordinate-0-4-real-1",
+            "status": "active",
+            "worker_id": "worker-runtime-history"
+          }
+        ]
+      },
+      "case": {
+        "case_id": "coordinate-0-4-real-1",
+        "gold": {
+          "expected_accepted_claims": {
+            "benchmark.seed_claim": "contract-smoke-only",
+            "external.adapters": "disclosure-only-not-run",
+            "release.package": "zaxy-memory-0.4.0-published",
+            "site.positioning": "coordinate-first-docs-site",
+            "workload.history": "real-eventloom-and-git-history"
+          },
+          "expected_conflict_pairs": [
+            [
+              "finding-adapters-disclosure-only",
+              "finding-adapters-fake-scores"
+            ],
+            [
+              "finding-benchmark-contract-seed",
+              "finding-benchmark-perfect-generalizes"
+            ]
+          ],
+          "expected_duplicate_groups": {
+            "release.package=zaxy-memory-0.4.0-published": [
+              "finding-release-published",
+              "finding-release-duplicate"
+            ],
+            "site.positioning=coordinate-first-docs-site": [
+              "finding-docs-coordinate-first",
+              "finding-docs-coordinate-first-duplicate"
+            ]
+          },
+          "expected_missing_evidence": [
+            "finding-activegraph-result-unsupported"
+          ],
+          "expected_stale_findings": [
+            "finding-benchmark-perfect-generalizes",
+            "finding-old-roadmap-stale"
+          ],
+          "final_questions": [
+            {
+              "expected_terms": [
+                "zaxy-memory-0.4.0-published",
+                "coordinate-first-docs-site",
+                "contract-smoke-only",
+                "disclosure-only-not-run",
+                "real-eventloom-and-git-history"
+              ],
+              "forbidden_terms": [
+                "representative-proof",
+                "competitor-scores-published",
+                "pinned-result-present"
+              ],
+              "query": "What should the release brief say about Zaxy Coordinate and CoordinationBench?"
+            }
+          ]
+        },
+        "mission_id": "coordinate-0-4-real-1",
+        "objective": "Merge real Zaxy Coordinate release, docs-site, and benchmark history into one parent-session brief without accepting stale or unsupported benchmark claims.",
+        "workers": [
+          {
+            "assignment": "Verify the shipped Coordinate release and CI/merge state from real Eventloom and git history.",
+            "findings": [
+              {
+                "claim_key": "release.package",
+                "claim_value": "zaxy-memory-0.4.0-published",
+                "confidence": 0.98,
+                "evidence": [
+                  {
+                    "kind": "eventloom",
+                    "reference": "eventloom://zaxy-default/events/28134#829cf7c0e37414e3212dc168d6a1e46a2349e45c3da8d97d7e32e7f37a146fe7"
+                  },
+                  {
+                    "kind": "git",
+                    "reference": "git:40ade66 chore: release 0.4.0"
+                  }
+                ],
+                "finding_id": "finding-release-published",
+                "summary": "Zaxy Coordinate was merged and released as zaxy-memory 0.4.0 after PR #14 passed CI."
+              },
+              {
+                "claim_key": "release.package",
+                "claim_value": "zaxy-memory-0.4.0-published",
+                "confidence": 0.92,
+                "evidence": [
+                  {
+                    "kind": "eventloom",
+                    "reference": "eventloom://zaxy-default/events/28134#829cf7c0e37414e3212dc168d6a1e46a2349e45c3da8d97d7e32e7f37a146fe7"
+                  }
+                ],
+                "finding_id": "finding-release-duplicate",
+                "summary": "A second release audit independently points to the same 0.4.0 published package outcome."
+              }
+            ],
+            "worker_id": "worker-release"
+          },
+          {
+            "assignment": "Verify the public docs-site refresh and graph/header artifact state.",
+            "findings": [
+              {
+                "claim_key": "site.positioning",
+                "claim_value": "coordinate-first-docs-site",
+                "confidence": 0.96,
+                "evidence": [
+                  {
+                    "kind": "git",
+                    "reference": "git:ea23e05 docs: refresh Coordinate site"
+                  },
+                  {
+                    "kind": "file",
+                    "reference": "site/assets/graph.png"
+                  },
+                  {
+                    "kind": "file",
+                    "reference": "docs/benchmarks.md"
+                  }
+                ],
+                "finding_id": "finding-docs-coordinate-first",
+                "summary": "The docs site was refreshed to lead with Zaxy Coordinate and include the new graph/header assets."
+              },
+              {
+                "claim_key": "site.positioning",
+                "claim_value": "coordinate-first-docs-site",
+                "confidence": 0.91,
+                "evidence": [
+                  {
+                    "kind": "git",
+                    "reference": "git:ea23e05 docs: refresh Coordinate site"
+                  },
+                  {
+                    "kind": "file",
+                    "reference": "site/index.html"
+                  }
+                ],
+                "finding_id": "finding-docs-coordinate-first-duplicate",
+                "summary": "The generated site copy also identifies Coordinate as the first-screen docs direction."
+              }
+            ],
+            "worker_id": "worker-docs-site"
+          },
+          {
+            "assignment": "Audit the prior CoordinationBench result and distinguish seed smoke coverage from representative proof.",
+            "findings": [
+              {
+                "claim_key": "benchmark.seed_claim",
+                "claim_value": "contract-smoke-only",
+                "confidence": 0.97,
+                "evidence": [
+                  {
+                    "kind": "file",
+                    "reference": "reports/benchmarks/coordination-v1/coordination-benchmark.md"
+                  },
+                  {
+                    "kind": "file",
+                    "reference": "reports/benchmarks/coordination-v1/coordination-workload.json"
+                  }
+                ],
+                "finding_id": "finding-benchmark-contract-seed",
+                "summary": "The published coordination-v1 result is a deterministic contract smoke lane, not a representative multi-agent proof."
+              },
+              {
+                "claim_key": "benchmark.seed_claim",
+                "claim_value": "representative-proof",
+                "confidence": 0.34,
+                "evidence": [
+                  {
+                    "kind": "file",
+                    "reference": "reports/benchmarks/coordination-v1/coordination-benchmark.md",
+                    "stale": true,
+                    "superseded_by": "benchmark.seed_claim=contract-smoke-only"
+                  }
+                ],
+                "finding_id": "finding-benchmark-perfect-generalizes",
+                "summary": "The perfect coordination-v1 score should be treated as a representative proof of real multi-agent coordination quality."
+              },
+              {
+                "claim_key": "roadmap.coordinate.status",
+                "claim_value": "stale-pending-dashboard-and-baselines",
+                "confidence": 0.28,
+                "evidence": [
+                  {
+                    "kind": "eventloom",
+                    "reference": "eventloom://zaxy-coordinate-roadmap/events/4#9c58ef62ce38738eb5ec3a7423f2927047f1791f3bc5976a105f185f604f262c",
+                    "stale": true,
+                    "superseded_by": "eventloom://019e69ed-aeeb-7b22-a18b-7335252ad16f/events/2#2ba5ed3dd00064e4480a7bcc15085654aa16e85607c72d62359c79062cd197e2"
+                  }
+                ],
+                "finding_id": "finding-old-roadmap-stale",
+                "summary": "Older roadmap notes still say dashboard mutation and local baselines are pending."
+              }
+            ],
+            "worker_id": "worker-benchmark-audit"
+          },
+          {
+            "assignment": "Verify external adapter status and the benchmark contract kit without inventing competitor scores.",
+            "findings": [
+              {
+                "claim_key": "external.adapters",
+                "claim_value": "disclosure-only-not-run",
+                "confidence": 0.95,
+                "evidence": [
+                  {
+                    "kind": "eventloom",
+                    "reference": "eventloom://019e69ed-aeeb-7b22-a18b-7335252ad16f/events/15#16974551e0170ed6f15fbe25f3d26d898172b6abaa47c9c04b468dc23de7199a"
+                  },
+                  {
+                    "kind": "file",
+                    "reference": "src/zaxy/resources/coordinationbench/README.md"
+                  }
+                ],
+                "finding_id": "finding-adapters-disclosure-only",
+                "summary": "Mem0, Agent Memory, and ActiveGraph have disclosure-only same-harness adapter templates; no external competitor scores were published."
+              },
+              {
+                "claim_key": "external.adapters",
+                "claim_value": "competitor-scores-published",
+                "confidence": 0.22,
+                "evidence": [
+                  {
+                    "kind": "file",
+                    "reference": "reports/benchmarks/coordination-v1/coordination-benchmark.md"
+                  }
+                ],
+                "finding_id": "finding-adapters-fake-scores",
+                "summary": "Mem0, Agent Memory, and ActiveGraph already have completed same-harness CoordinationBench scores in this repository."
+              }
+            ],
+            "worker_id": "worker-adapter-contract"
+          },
+          {
+            "assignment": "Check whether real worker runtime metadata and examples exist for the representative workload.",
+            "findings": [
+              {
+                "claim_key": "workload.history",
+                "claim_value": "real-eventloom-and-git-history",
+                "confidence": 0.94,
+                "evidence": [
+                  {
+                    "kind": "eventloom",
+                    "reference": "eventloom://019e69ed-aeeb-7b22-a18b-7335252ad16f/events/17#a43b0308c9e0761e403a9add3fccf3429d4fadd2e3f4b82810314a88fc959cf4"
+                  },
+                  {
+                    "kind": "eventloom",
+                    "reference": "eventloom://zaxy-default/events/28132#e8380497e2e313f029e6350281367ebd26d0ef36fc386279b22e1006270fb274"
+                  }
+                ],
+                "finding_id": "finding-runtime-history-real",
+                "summary": "The workload is grounded in real Zaxy worker sessions, release history, docs artifacts, and Eventloom replay references."
+              },
+              {
+                "claim_key": "external.activegraph.result",
+                "claim_value": "pinned-result-present",
+                "confidence": 0.18,
+                "evidence": [],
+                "finding_id": "finding-activegraph-result-unsupported",
+                "summary": "ActiveGraph has a pinned same-harness result artifact in the repo."
+              }
+            ],
+            "worker_id": "worker-runtime-history"
+          }
+        ]
+      },
+      "metrics": {
+        "accepted_finding_precision": 1.0,
+        "accepted_finding_recall": 1.0,
+        "accepted_state_synthesis_quality": 1.0,
+        "brief_latency_ms": 4.65,
+        "citation_coverage": 1.0,
+        "conflict_precision": 1.0,
+        "conflict_recall": 1.0,
+        "duplicate_consolidation": 1.0,
+        "eventloom_replayable": true,
+        "evidence_coverage": 1.0,
+        "injected_tokens": 5151,
+        "non_authoritative_leakage": 1.0,
+        "parent_checkout_answerability": 1.0,
+        "promotion_latency_ms": 124.21,
+        "purpose_feedback_coverage": 1.0,
+        "returned_tokens": 5151,
+        "stale_claim_rejection": 1.0
+      }
+    }
+  ],
+  "competitor_adapters": {
+    "activegraph": {
+      "adapter_contract": "coordinationbench-v1",
+      "blockers": [
+        "No pinned adapter package/version and same-harness workload replay contract has been configured."
+      ],
+      "claim_status": "disclosure_only",
+      "display_name": "ActiveGraph",
+      "metrics": null,
+      "name": "activegraph",
+      "result_audit": null,
+      "status": "not_run"
+    },
+    "agent_memory": {
+      "adapter_contract": "coordinationbench-v1",
+      "blockers": [
+        "No pinned adapter package/version and same-harness workload replay contract has been configured."
+      ],
+      "claim_status": "disclosure_only",
+      "display_name": "Agent Memory",
+      "metrics": null,
+      "name": "agent_memory",
+      "result_audit": null,
+      "status": "not_run"
+    },
+    "hybi": {
+      "adapter_contract": "coordinationbench-v1",
+      "blockers": [
+        "Pinned hybi SDK metadata exists, but no completed same-harness HyperBinder runtime result has been locally scored."
+      ],
+      "claim_status": "disclosure_only",
+      "display_name": "Semantic Reach / HyperBinder / Hybi",
+      "metrics": null,
+      "name": "hybi",
+      "result_audit": null,
+      "status": "not_run"
+    },
+    "mem0": {
+      "adapter_contract": "coordinationbench-v1",
+      "blockers": [
+        "No pinned adapter package/version and same-harness workload replay contract has been configured."
+      ],
+      "claim_status": "disclosure_only",
+      "display_name": "Mem0",
+      "metrics": null,
+      "name": "mem0",
+      "result_audit": null,
+      "status": "not_run"
+    },
+    "quarq": {
+      "adapter_contract": "coordinationbench-v1",
+      "blockers": [
+        "Pinned Quarq source metadata exists, but no completed same-harness CoordinationBench result has been locally scored."
+      ],
+      "claim_status": "disclosure_only",
+      "display_name": "Quarq",
+      "metrics": null,
+      "name": "quarq",
+      "result_audit": null,
+      "status": "not_run"
+    }
+  },
+  "competitor_claim_gate": {
+    "blocked_adapters": {
+      "hybi": "adapter status is not_run/disclosure_only; same-harness public claims require completed locally scored results",
+      "quarq": "adapter status is not_run/disclosure_only; same-harness public claims require completed locally scored results"
+    },
+    "completed_adapters": [],
+    "message": "Public same-harness competitor claims are blocked until required adapters have completed, locally scored, fingerprinted results.",
+    "required_adapters": [
+      "quarq",
+      "hybi"
+    ],
+    "status": "blocked"
+  },
+  "coordinate_purpose_synthesis_gate": {
+    "blocked_metrics": {},
+    "message": "Coordinate accepted-state synthesis is proof-backed with citations, Coordinate-purpose feedback, replayable Eventloom provenance, parent checkout answerability, and no non-authoritative worker-row leakage.",
+    "required_metrics": {
+      "accepted_state_synthesis_quality": 1.0,
+      "citation_coverage": 1.0,
+      "eventloom_replayable": true,
+      "non_authoritative_leakage": 1.0,
+      "parent_checkout_answerability": 1.0,
+      "purpose_feedback_coverage": 1.0
+    },
+    "status": "passed"
+  },
+  "metrics": {
+    "accepted_finding_precision": 1.0,
+    "accepted_finding_recall": 1.0,
+    "accepted_state_synthesis_quality": 1.0,
+    "brief_latency_ms": 4.65,
+    "citation_coverage": 1.0,
+    "conflict_precision": 1.0,
+    "conflict_recall": 1.0,
+    "duplicate_consolidation": 1.0,
+    "eventloom_replayable": true,
+    "evidence_coverage": 1.0,
+    "injected_tokens": 5151,
+    "non_authoritative_leakage": 1.0,
+    "parent_checkout_answerability": 1.0,
+    "promotion_latency_ms": 124.21,
+    "purpose_feedback_coverage": 1.0,
+    "returned_tokens": 5151,
+    "stale_claim_rejection": 1.0
+  },
+  "version": "coordination-real-v1",
+  "workload_fingerprint": "b63e156150b92c9aa7d8895604741484f85f4c231d4c7d2097a2467fdaf14bd0"
+}

@@ -18,6 +18,7 @@ DOCS_CMD="python scripts/build-site-docs.py --check && scripts/validate-docs.sh"
 VALIDATE_CMD="scripts/validate-deployment.sh"
 BETA_UAT_CMD="scripts/beta-uat.sh"
 STATE_RECOVERY_CMD='python scripts/check-state-recovery-benchmark.py reports/benchmarks/state-recovery-v1/state-recovery-benchmark.json --workload reports/benchmarks/state-recovery-v1/state-recovery-workload.json --require-git-tracked-inputs && tmpdir=$(mktemp -d) && python -m zaxy state-recovery-benchmark --output-dir "${tmpdir}" --workload reports/benchmarks/state-recovery-v1/state-recovery-workload.json --json >/dev/null && python scripts/check-state-recovery-benchmark.py "${tmpdir}/state-recovery-benchmark.json" --workload "${tmpdir}/state-recovery-workload.json" && rm -rf "${tmpdir}"'
+BENCHMARK_FREEZE_CMD="DEFAULT"
 EXTERNAL_VALIDATION_REPORT=""
 EXTERNAL_VALIDATION_CMD="SKIP:external validation is optional for v1.0 release"
 REQUIRE_EXTERNAL_VALIDATION=0
@@ -28,9 +29,9 @@ BACKEND_SCALE_CMD="python scripts/check-backend-shootout.py reports/backend-shoo
 
 usage() {
     cat <<USAGE
-Usage: scripts/release-check.sh [--root PATH] [--ruff-cmd CMD] [--mypy-cmd CMD] [--pytest-cmd CMD] [--coverage-cmd CMD] [--packet-smoke-cmd CMD] [--examples-smoke-cmd CMD] [--mcp-smoke-cmd CMD] [--langgraph-smoke-cmd CMD] [--coordinate-smoke-cmd CMD] [--package-cmd CMD] [--docs-cmd CMD] [--validate-cmd CMD] [--hook-status-cmd CMD] [--backend-shootout-cmd CMD] [--backend-performance-cmd CMD] [--backend-scale-cmd CMD] [--state-recovery-cmd CMD] [--beta-uat-cmd CMD] [--external-validation-report PATH] [--external-validation-cmd CMD] [--require-external-validation]
+Usage: scripts/release-check.sh [--root PATH] [--ruff-cmd CMD] [--mypy-cmd CMD] [--pytest-cmd CMD] [--coverage-cmd CMD] [--packet-smoke-cmd CMD] [--examples-smoke-cmd CMD] [--mcp-smoke-cmd CMD] [--langgraph-smoke-cmd CMD] [--coordinate-smoke-cmd CMD] [--package-cmd CMD] [--docs-cmd CMD] [--validate-cmd CMD] [--hook-status-cmd CMD] [--backend-shootout-cmd CMD] [--backend-performance-cmd CMD] [--backend-scale-cmd CMD] [--state-recovery-cmd CMD] [--benchmark-freeze-cmd CMD] [--beta-uat-cmd CMD] [--external-validation-report PATH] [--external-validation-cmd CMD] [--require-external-validation]
 
-Runs ruff, mypy, the full pytest suite, coverage ratchet, packet-memory smoke coverage, public examples, MCP smoke, LangGraph smoke, Coordinate mission smoke, packaging validation, docs validation, deployment validation, activation guardrails, backend shootout validation, medium-scale backend performance validation, 100-query backend scale validation, StateRecoveryBench guardrails, beta UAT, and optional external validation evidence.
+Runs ruff, mypy, the full pytest suite, coverage ratchet, packet-memory smoke coverage, public examples, MCP smoke, LangGraph smoke, Coordinate mission smoke, packaging validation, docs validation, deployment validation, activation guardrails, backend shootout validation, medium-scale backend performance validation, 100-query backend scale validation, StateRecoveryBench guardrails, RC.1 benchmark-freeze validation, beta UAT, and optional external validation evidence.
 Set any smoke command to SKIP:<reason> to print an explicit skip reason.
 USAGE
 }
@@ -109,6 +110,10 @@ while [[ $# -gt 0 ]]; do
             STATE_RECOVERY_CMD="$2"
             shift 2
             ;;
+        --benchmark-freeze-cmd)
+            BENCHMARK_FREEZE_CMD="$2"
+            shift 2
+            ;;
         --beta-uat-cmd)
             BETA_UAT_CMD="$2"
             shift 2
@@ -139,6 +144,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 export PYTHONPATH="${ROOT}/src${PYTHONPATH:+:${PYTHONPATH}}"
+if [[ "${BENCHMARK_FREEZE_CMD}" == "DEFAULT" ]]; then
+    BENCHMARK_FREEZE_CMD="python -m zaxy benchmark-freeze --root \"${ROOT}\" --json"
+fi
 
 run_gate() {
     local label="$1"
@@ -175,6 +183,7 @@ bash -c "${BACKEND_SHOOTOUT_CMD}"
 bash -c "${BACKEND_PERFORMANCE_CMD}"
 bash -c "${BACKEND_SCALE_CMD}"
 run_gate "StateRecoveryBench guardrail" "${STATE_RECOVERY_CMD}"
+run_gate "RC.1 benchmark freeze" "${BENCHMARK_FREEZE_CMD}"
 run_gate "beta UAT" "${BETA_UAT_CMD}"
 if [[ "${REQUIRE_EXTERNAL_VALIDATION}" == "1" && "${EXTERNAL_VALIDATION_CMD}" == SKIP:* ]]; then
     echo "External validation is required; pass --external-validation-report PATH or --external-validation-cmd CMD." >&2

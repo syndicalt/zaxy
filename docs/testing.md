@@ -19,6 +19,7 @@ pytest tests/test_packet_memory_e2e.py --no-cov -q
 zaxy doctor --beta-readiness
 scripts/beta-uat.sh
 scripts/release-check.sh --root .
+zaxy benchmark-freeze --json
 ```
 
 The default pytest command includes coverage reporting and `--cov-fail-under=92`
@@ -159,9 +160,26 @@ LongMemBench adapter artifacts, debug runs, and partial LongMemEval iterations
 are archived development history. Use those artifacts for engineering
 investigation only, not as current public benchmark claims.
 
+The `2.0.0-rc.1` StateRecoveryBench, CoordinationBench, and PurposeBench
+artifacts under `reports/benchmarks/` are active RC release guardrails, but
+remain project-defined internal evidence unless a future release publishes a
+separate external validation boundary for them.
+
 When staging the next full 500-question run, write it to a new report directory
 under `reports/benchmarks/`, update [benchmarks.md](benchmarks.md) to select one
 headline report, and move the superseded headline into `reports/archive/`.
+
+For the 2.0 RC.1 release candidate, run:
+
+```bash
+zaxy benchmark-freeze --json
+```
+
+This validates the frozen headline LongMemEval-compatible 500 report, Harvey
+LAB external-anchor artifacts, StateRecoveryBench, CoordinationBench,
+PurposeBench, and project-defined 2.0 internal lanes. It is a release evidence
+and claim-boundary gate; it must not be used to tune answers or
+mix internal guardrail lanes into public benchmark claims.
 
 For consolidation safety checks, use the identity-collapse workload. It creates
 near-duplicate source records with distinct durable identifiers and adds an

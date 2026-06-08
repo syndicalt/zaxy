@@ -111,6 +111,9 @@ def format_onboarding_result(*args: Any, **kwargs: Any) -> str:
 app = typer.Typer(help="Zaxy: Event-sourced temporal knowledge graph fabric")
 memory_app = typer.Typer(help="Inspect Eventloom-backed agent memory")
 memory_purpose_app = typer.Typer(help="Inspect replay-backed purpose control-plane diagnostics")
+memory_causal_app = typer.Typer(help="Inspect causal memory graph relationships")
+memory_consolidation_app = typer.Typer(help="Create and review consolidation candidates")
+memory_reasoning_app = typer.Typer(help="Run MemoryFabric reasoning-loop primitives")
 capture_app = typer.Typer(help="Manage deterministic capture watchers")
 coordinate_app = typer.Typer(help="Coordinate parent missions and worker sessions")
 coordinate_worker_app = typer.Typer(help="Manage worker sessions for a mission")
@@ -120,6 +123,9 @@ trace_app = typer.Typer(help="Export neutral trace correlations from Eventloom")
 experimental_app = typer.Typer(help="Run isolated experimental memory research commands")
 app.add_typer(memory_app, name="memory")
 memory_app.add_typer(memory_purpose_app, name="purpose")
+memory_app.add_typer(memory_causal_app, name="causal")
+memory_app.add_typer(memory_consolidation_app, name="consolidation")
+memory_app.add_typer(memory_reasoning_app, name="reasoning")
 app.add_typer(capture_app, name="capture")
 app.add_typer(coordinate_app, name="coordinate")
 app.add_typer(trace_app, name="trace")
@@ -1644,6 +1650,705 @@ def memory_checkout(
                 err=True,
             )
         typer.echo(payload["prompt"])
+
+
+def _parse_source_event(value: str) -> dict[str, object]:
+    seq_text, separator, event_hash = value.partition(":")
+    if separator != ":" or not seq_text or not event_hash:
+        raise typer.BadParameter("source event must be formatted as SEQ:HASH")
+    try:
+        seq = int(seq_text)
+    except ValueError as exc:
+        raise typer.BadParameter("source event sequence must be an integer") from exc
+    if seq <= 0:
+        raise typer.BadParameter("source event sequence must be a positive integer")
+    if len(event_hash) != 64 or any(char not in "0123456789abcdef" for char in event_hash):
+        raise typer.BadParameter("source event hash must be exactly 64 lowercase hex characters")
+    return {"seq": seq, "hash": event_hash}
+
+
+def _validate_causal_relation_type_option(value: str | None) -> str | None:
+    if value is None:
+        return None
+    from zaxy.causal import causal_relation_to_graph_relation
+
+    try:
+        causal_relation_to_graph_relation(value)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    return value
+
+
+REASONING_PHASES = {"planning", "execution", "review", "reflection"}
+
+
+def _validate_reasoning_phase_option(value: str) -> str:
+    phase = value.strip()
+    if phase not in REASONING_PHASES:
+        raise typer.BadParameter(
+            "reasoning phase must be one of: " + ", ".join(sorted(REASONING_PHASES))
+        )
+    return phase
+
+
+def _format_reasoning_result_text(result: dict[str, Any]) -> str:
+    primitive = result.get("primitive") or "reasoning"
+    session_id = result.get("session_id") or "default"
+    result_count = result.get("result_count")
+    if result_count is None:
+        for key in ("explanations", "evidence", "procedures", "results"):
+            values = result.get(key)
+            if isinstance(values, list):
+                result_count = len(values)
+                break
+    if result_count is not None:
+        return f"{primitive} for {session_id}: result_count={int(result_count)}"
+    return f"{primitive} for {session_id}"
+
+
+async def _run_reasoning_primitive(
+    *,
+    method_name: str,
+    eventloom_path: Path,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> dict[str, Any]:
+    settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
+    fabric = _memory_fabric(
+        eventloom_path=str(eventloom_path),
+        projection_backend=_resolve_cli_projection_backend(None, settings),
+        pggraph_dsn=settings.pggraph_dsn,
+        embedded_graph_path=Path(settings.embedded_graph_path),
+        latticedb_path=Path(settings.latticedb_path),
+    )
+    try:
+        await fabric.connect()
+        result = await getattr(fabric, method_name)(*args, **kwargs)
+        return cast(dict[str, Any], result)
+    finally:
+        with suppress(Exception):
+            await fabric.close()
+
+
+def _format_causal_results_text(
+    *,
+    direction: str,
+    entity_name: str,
+    results: list[dict[str, object]],
+) -> str:
+    if not results:
+        return f"No causal {direction} found for {entity_name}."
+
+    lines = []
+    for result in results:
+        source = result.get("source")
+        target = result.get("target")
+        source_name = source.get("name") if isinstance(source, dict) else None
+        target_name = target.get("name") if isinstance(target, dict) else None
+        relation_type = result.get("relation_type")
+        confidence = result.get("confidence")
+        citation = result.get("citation")
+        path_length = result.get("path_length")
+        pieces = [str(relation_type)]
+        if isinstance(confidence, int | float):
+            pieces.append(f"confidence={confidence:.3f}")
+        if isinstance(path_length, int):
+            pieces.append(f"path_length={path_length}")
+        if citation:
+            pieces.append(f"citation={citation}")
+        lines.append(f"{source_name or '?'} -> {target_name or '?'} [{', '.join(pieces)}]")
+    return "\n".join(lines)
+
+
+async def _query_causal_memory(
+    *,
+    direction: str,
+    entity_name: str,
+    relation_type: str | None,
+    session_id: str,
+    depth: int,
+    eventloom_path: Path,
+) -> list[dict[str, object]]:
+    settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
+    fabric = _memory_fabric(
+        eventloom_path=str(eventloom_path),
+        projection_backend=_resolve_cli_projection_backend(None, settings),
+        pggraph_dsn=settings.pggraph_dsn,
+        embedded_graph_path=Path(settings.embedded_graph_path),
+        latticedb_path=Path(settings.latticedb_path),
+    )
+    try:
+        await fabric.connect()
+        if direction == "successors":
+            results = await fabric.query_causal_successors(
+                entity_name,
+                relation_type=relation_type,
+                depth=depth,
+                session_id=session_id,
+            )
+        else:
+            results = await fabric.query_causal_predecessors(
+                entity_name,
+                relation_type=relation_type,
+                depth=depth,
+                session_id=session_id,
+            )
+        return [cast(dict[str, object], result.to_dict()) for result in results]
+    finally:
+        with suppress(Exception):
+            await fabric.close()
+
+
+@memory_causal_app.command("successors")
+def memory_causal_successors(
+    entity_name: str = typer.Argument(..., help="Entity name to inspect"),  # noqa: B008
+    entity_type: str | None = typer.Option(None, help="Entity type label for output context"),
+    relation_type: str | None = typer.Option(
+        None,
+        callback=_validate_causal_relation_type_option,
+        help="Causal relation type to filter",
+    ),
+    session_id: str = typer.Option("default", help="Session ID to query"),
+    depth: int = typer.Option(2, min=1, help="Traversal depth"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """List directed causal effects of an entity."""
+    import asyncio
+
+    results = asyncio.run(
+        _query_causal_memory(
+            direction="successors",
+            entity_name=entity_name,
+            relation_type=relation_type,
+            session_id=session_id,
+            depth=depth,
+            eventloom_path=eventloom_path,
+        )
+    )
+    payload = {
+        "direction": "successors",
+        "entity": {"name": entity_name, "entity_type": entity_type},
+        "results": results,
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(_format_causal_results_text(direction="successors", entity_name=entity_name, results=results))
+
+
+@memory_causal_app.command("predecessors")
+def memory_causal_predecessors(
+    entity_name: str = typer.Argument(..., help="Entity name to inspect"),  # noqa: B008
+    entity_type: str | None = typer.Option(None, help="Entity type label for output context"),
+    relation_type: str | None = typer.Option(
+        None,
+        callback=_validate_causal_relation_type_option,
+        help="Causal relation type to filter",
+    ),
+    session_id: str = typer.Option("default", help="Session ID to query"),
+    depth: int = typer.Option(2, min=1, help="Traversal depth"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """List directed causal causes of an entity."""
+    import asyncio
+
+    results = asyncio.run(
+        _query_causal_memory(
+            direction="predecessors",
+            entity_name=entity_name,
+            relation_type=relation_type,
+            session_id=session_id,
+            depth=depth,
+            eventloom_path=eventloom_path,
+        )
+    )
+    payload = {
+        "direction": "predecessors",
+        "entity": {"name": entity_name, "entity_type": entity_type},
+        "results": results,
+    }
+    if json_output:
+        typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        typer.echo(_format_causal_results_text(direction="predecessors", entity_name=entity_name, results=results))
+
+
+@memory_reasoning_app.command("explain-outcome")
+def memory_reasoning_explain_outcome(
+    outcome: str = typer.Argument(..., help="Outcome to explain from memory context"),  # noqa: B008
+    phase: str = typer.Option(  # noqa: B008
+        "planning",
+        callback=_validate_reasoning_phase_option,
+        help="Reasoning phase: planning, execution, review, or reflection",
+    ),
+    session_id: str = typer.Option("default", help="Session ID to query"),
+    depth: int = typer.Option(2, min=1, help="Causal traversal depth"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Explain an outcome through cited MemoryFabric reasoning context."""
+    import asyncio
+
+    result = asyncio.run(
+        _run_reasoning_primitive(
+            method_name="explain_outcome",
+            eventloom_path=eventloom_path,
+            args=(outcome,),
+            kwargs={"phase": phase, "session_id": session_id, "depth": depth},
+        )
+    )
+    typer.echo(json.dumps(result, indent=2, sort_keys=True) if json_output else _format_reasoning_result_text(result))
+
+
+@memory_reasoning_app.command("propose-belief-update")
+def memory_reasoning_propose_belief_update(
+    claim: str = typer.Argument(..., help="Claim to propose for review"),  # noqa: B008
+    rationale: str = typer.Option(..., help="Cited rationale for the proposal"),
+    confidence: float = typer.Option(..., min=0.0, max=1.0, help="Proposal confidence from 0.0 to 1.0"),
+    source_event: list[str] = typer.Option(..., "--source-event", help="Cited source event as SEQ:HASH"),  # noqa: B008
+    phase: str = typer.Option(  # noqa: B008
+        "reflection",
+        callback=_validate_reasoning_phase_option,
+        help="Reasoning phase: planning, execution, review, or reflection",
+    ),
+    actor: str = typer.Option("zaxy-reasoning", help="Actor recording the proposal"),
+    session_id: str = typer.Option("default", help="Session ID to append to"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Propose a non-authoritative belief update through MemoryFabric."""
+    import asyncio
+
+    source_events = [_parse_source_event(value) for value in source_event]
+    result = asyncio.run(
+        _run_reasoning_primitive(
+            method_name="propose_belief_update",
+            eventloom_path=eventloom_path,
+            args=(claim,),
+            kwargs={
+                "rationale": rationale,
+                "confidence": confidence,
+                "source_events": source_events,
+                "phase": phase,
+                "session_id": session_id,
+                "actor": actor,
+            },
+        )
+    )
+    typer.echo(json.dumps(result, indent=2, sort_keys=True) if json_output else _format_reasoning_result_text(result))
+
+
+@memory_reasoning_app.command("claim-confidence")
+def memory_reasoning_claim_confidence(
+    claim: str = typer.Argument(..., help="Claim to score against cited memory evidence"),  # noqa: B008
+    phase: str = typer.Option(  # noqa: B008
+        "review",
+        callback=_validate_reasoning_phase_option,
+        help="Reasoning phase: planning, execution, review, or reflection",
+    ),
+    session_id: str = typer.Option("default", help="Session ID to query"),
+    limit: int = typer.Option(5, min=1, help="Maximum evidence items"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Score claim confidence through MemoryFabric evidence retrieval."""
+    import asyncio
+
+    result = asyncio.run(
+        _run_reasoning_primitive(
+            method_name="get_claim_confidence",
+            eventloom_path=eventloom_path,
+            args=(claim,),
+            kwargs={"phase": phase, "session_id": session_id, "limit": limit},
+        )
+    )
+    typer.echo(json.dumps(result, indent=2, sort_keys=True) if json_output else _format_reasoning_result_text(result))
+
+
+@memory_reasoning_app.command("record-unknown")
+def memory_reasoning_record_unknown(
+    question: str = typer.Argument(..., help="Known-unknown question to track"),  # noqa: B008
+    reason: str = typer.Option(..., help="Reason this uncertainty was recorded"),
+    source_event: list[str] = typer.Option(..., "--source-event", help="Cited source event as SEQ:HASH"),  # noqa: B008
+    claim_key: str = typer.Option(..., help="Stable claim or uncertainty key"),
+    gap_type: str = typer.Option("missing_evidence", help="Uncertainty gap type"),
+    reverify_query: str | None = typer.Option(None, help="Suggested query for re-verification"),
+    phase: str = typer.Option(  # noqa: B008
+        "review",
+        callback=_validate_reasoning_phase_option,
+        help="Reasoning phase: planning, execution, review, or reflection",
+    ),
+    actor: str = typer.Option("zaxy-reasoning", help="Actor recording the known unknown"),
+    session_id: str = typer.Option("default", help="Session ID to append to"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Record a cited, open, non-authoritative known unknown."""
+    import asyncio
+
+    source_events = [_parse_source_event(value) for value in source_event]
+    result = asyncio.run(
+        _run_reasoning_primitive(
+            method_name="record_known_unknown",
+            eventloom_path=eventloom_path,
+            args=(question,),
+            kwargs={
+                "reason": reason,
+                "source_events": source_events,
+                "claim_key": claim_key,
+                "gap_type": gap_type,
+                "reverify_query": reverify_query,
+                "phase": phase,
+                "session_id": session_id,
+                "actor": actor,
+            },
+        )
+    )
+    typer.echo(json.dumps(result, indent=2, sort_keys=True) if json_output else _format_reasoning_result_text(result))
+
+
+@memory_reasoning_app.command("known-unknowns")
+def memory_reasoning_known_unknowns(
+    status: str = typer.Option("open", help="Known-unknown status filter or all"),
+    phase: str = typer.Option(  # noqa: B008
+        "review",
+        callback=_validate_reasoning_phase_option,
+        help="Accepted for reasoning command consistency; list queries are replay-derived",
+    ),
+    session_id: str = typer.Option("default", help="Session ID to query"),
+    limit: int = typer.Option(10, min=1, help="Maximum known unknowns"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """List replay-derived known unknowns."""
+    import asyncio
+
+    _ = phase
+    result = asyncio.run(
+        _run_reasoning_primitive(
+            method_name="list_known_unknowns",
+            eventloom_path=eventloom_path,
+            args=(),
+            kwargs={"session_id": session_id, "status": status, "limit": limit},
+        )
+    )
+    typer.echo(json.dumps(result, indent=2, sort_keys=True) if json_output else _format_reasoning_result_text(result))
+
+
+@memory_reasoning_app.command("confidence-trajectory")
+def memory_reasoning_confidence_trajectory(
+    claim: str = typer.Argument(..., help="Claim or claim key to inspect"),  # noqa: B008
+    phase: str = typer.Option(  # noqa: B008
+        "review",
+        callback=_validate_reasoning_phase_option,
+        help="Accepted for reasoning command consistency; trajectory queries are replay-derived",
+    ),
+    session_id: str = typer.Option("default", help="Session ID to query"),
+    limit: int = typer.Option(10, min=1, help="Maximum trajectory points"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """List append-only confidence assessments for a claim."""
+    import asyncio
+
+    _ = phase
+    result = asyncio.run(
+        _run_reasoning_primitive(
+            method_name="list_confidence_trajectory",
+            eventloom_path=eventloom_path,
+            args=(claim,),
+            kwargs={"session_id": session_id, "limit": limit},
+        )
+    )
+    typer.echo(json.dumps(result, indent=2, sort_keys=True) if json_output else _format_reasoning_result_text(result))
+
+
+@memory_reasoning_app.command("reverify-needed")
+def memory_reasoning_reverify_needed(
+    query: str | None = typer.Option(None, help="Optional query filter"),
+    phase: str = typer.Option(  # noqa: B008
+        "review",
+        callback=_validate_reasoning_phase_option,
+        help="Accepted for reasoning command consistency; reverify queries are replay-derived",
+    ),
+    session_id: str = typer.Option("default", help="Session ID to query"),
+    limit: int = typer.Option(10, min=1, help="Maximum re-verification needs"),
+    min_confidence: float = typer.Option(0.7, min=0.0, max=1.0, help="Confidence threshold"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """List open unknowns, unresolved conflicts, and low-confidence claims."""
+    import asyncio
+
+    _ = phase
+    result = asyncio.run(
+        _run_reasoning_primitive(
+            method_name="list_reverification_needs",
+            eventloom_path=eventloom_path,
+            args=(),
+            kwargs={
+                "query": query,
+                "session_id": session_id,
+                "limit": limit,
+                "min_confidence": min_confidence,
+            },
+        )
+    )
+    typer.echo(json.dumps(result, indent=2, sort_keys=True) if json_output else _format_reasoning_result_text(result))
+
+
+@memory_reasoning_app.command("plan-from-procedures")
+def memory_reasoning_plan_from_procedures(
+    goal: str = typer.Argument(..., help="Planning goal"),  # noqa: B008
+    phase: str = typer.Option(  # noqa: B008
+        "planning",
+        callback=_validate_reasoning_phase_option,
+        help="Reasoning phase: planning, execution, review, or reflection",
+    ),
+    session_id: str = typer.Option("default", help="Session ID to query"),
+    limit: int = typer.Option(5, min=1, help="Maximum plan steps/source procedures"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Build a non-authoritative planning packet from applicable procedures."""
+    import asyncio
+
+    result = asyncio.run(
+        _run_reasoning_primitive(
+            method_name="plan_from_procedures",
+            eventloom_path=eventloom_path,
+            args=(goal,),
+            kwargs={"phase": phase, "session_id": session_id, "limit": limit},
+        )
+    )
+    typer.echo(json.dumps(result, indent=2, sort_keys=True) if json_output else _format_reasoning_result_text(result))
+
+
+@memory_reasoning_app.command("similar-procedures")
+def memory_reasoning_similar_procedures(
+    query: str = typer.Argument(..., help="Procedure retrieval query"),  # noqa: B008
+    phase: str = typer.Option(  # noqa: B008
+        "planning",
+        callback=_validate_reasoning_phase_option,
+        help="Reasoning phase: planning, execution, review, or reflection",
+    ),
+    session_id: str = typer.Option("default", help="Session ID to query"),
+    limit: int = typer.Option(5, min=1, help="Maximum procedure candidates"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Retrieve similar procedures through MemoryFabric."""
+    import asyncio
+
+    result = asyncio.run(
+        _run_reasoning_primitive(
+            method_name="retrieve_similar_procedures",
+            eventloom_path=eventloom_path,
+            args=(query,),
+            kwargs={"phase": phase, "session_id": session_id, "limit": limit},
+        )
+    )
+    typer.echo(json.dumps(result, indent=2, sort_keys=True) if json_output else _format_reasoning_result_text(result))
+
+
+async def _append_consolidation_event(event: dict[str, Any], *, eventloom_path: Path) -> None:
+    settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
+    fabric = _memory_fabric(
+        eventloom_path=str(eventloom_path),
+        projection_backend=_resolve_cli_projection_backend(None, settings),
+        pggraph_dsn=settings.pggraph_dsn,
+        embedded_graph_path=Path(settings.embedded_graph_path),
+        latticedb_path=Path(settings.latticedb_path),
+    )
+    try:
+        await fabric.connect()
+        await fabric.append(**event)
+    finally:
+        with suppress(Exception):
+            await fabric.close()
+
+
+async def _propose_consolidation_from_log(
+    *,
+    session_id: str,
+    actor: str,
+    purpose: str | None,
+    window_size: int,
+    eventloom_path: Path,
+) -> dict[str, Any]:
+    settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
+    fabric = _memory_fabric(
+        eventloom_path=str(eventloom_path),
+        projection_backend=_resolve_cli_projection_backend(None, settings),
+        pggraph_dsn=settings.pggraph_dsn,
+        embedded_graph_path=Path(settings.embedded_graph_path),
+        latticedb_path=Path(settings.latticedb_path),
+    )
+    try:
+        await fabric.connect()
+        result = await fabric.propose_consolidation_candidates(
+            session_id=session_id,
+            actor=actor,
+            purpose=purpose,
+            window_size=window_size,
+        )
+        return cast(dict[str, Any], result)
+    finally:
+        with suppress(Exception):
+            await fabric.close()
+
+
+async def _read_consolidation_status(*, session_id: str, eventloom_path: Path) -> dict[str, Any]:
+    settings = _status_settings(_profile_root_for_eventloom_path(eventloom_path))
+    fabric = _memory_fabric(
+        eventloom_path=str(eventloom_path),
+        projection_backend=_resolve_cli_projection_backend(None, settings),
+        pggraph_dsn=settings.pggraph_dsn,
+        embedded_graph_path=Path(settings.embedded_graph_path),
+        latticedb_path=Path(settings.latticedb_path),
+    )
+    try:
+        await fabric.connect()
+        result = await fabric.consolidation_status(session_id=session_id)
+        return cast(dict[str, Any], result)
+    finally:
+        with suppress(Exception):
+            await fabric.close()
+
+
+@memory_consolidation_app.command("propose")
+def memory_consolidation_propose(
+    candidate_type: str = typer.Option(..., help="Candidate type: episode, claim, or procedure"),
+    title: str = typer.Option(..., help="Candidate title"),
+    summary: str = typer.Option(..., help="Candidate summary"),
+    source_event: list[str] = typer.Option(..., "--source-event", help="Cited source event as SEQ:HASH"),  # noqa: B008
+    confidence: float = typer.Option(..., min=0.0, max=1.0, help="Candidate confidence"),
+    method: str = typer.Option(..., help="Consolidation method"),
+    purpose: str | None = typer.Option(None, help="Optional candidate purpose"),
+    actor: str = typer.Option("zaxy", help="Actor writing the event"),
+    session_id: str = typer.Option("default", help="Session ID to append to"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Append a review-pending consolidation candidate event."""
+    import asyncio
+
+    from zaxy.consolidation import build_consolidation_candidate_event
+
+    try:
+        source_events = [_parse_source_event(value) for value in source_event]
+        event = build_consolidation_candidate_event(
+            actor=actor,
+            session_id=session_id,
+            candidate_type=candidate_type,
+            title=title,
+            summary=summary,
+            source_events=source_events,
+            confidence=confidence,
+            method=method,
+            purpose=purpose,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    asyncio.run(_append_consolidation_event(event, eventloom_path=eventloom_path))
+    if json_output:
+        typer.echo(json.dumps(event, indent=2, sort_keys=True))
+    else:
+        typer.echo(f"Created {event['payload']['candidate_id']} ({event['payload']['review_status']})")
+
+
+@memory_consolidation_app.command("propose-from-log")
+def memory_consolidation_propose_from_log(
+    session_id: str = typer.Option("default", help="Session ID to replay for proposal windows"),
+    actor: str = typer.Option("zaxy-consolidation", help="Actor writing candidate events"),
+    purpose: str | None = typer.Option(None, help="Optional consolidation purpose"),
+    window_size: int = typer.Option(5, min=1, max=200, help="Number of source events per proposal window"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Create review-pending consolidation candidates from Eventloom log segments."""
+    import asyncio
+
+    result = asyncio.run(
+        _propose_consolidation_from_log(
+            session_id=session_id,
+            actor=actor,
+            purpose=purpose,
+            window_size=window_size,
+            eventloom_path=eventloom_path,
+        )
+    )
+    if json_output:
+        typer.echo(json.dumps(result, indent=2, sort_keys=True))
+    else:
+        candidates_created = int(result.get("candidate_count", 0))
+        segments_considered = int(result.get("segment_count", 0))
+        typer.echo(
+            "Created "
+            f"{candidates_created} non-authoritative consolidation candidates from "
+            f"{segments_considered} log segments for {session_id}."
+        )
+
+
+@memory_consolidation_app.command("status")
+def memory_consolidation_status(
+    session_id: str = typer.Option("default", help="Session ID to inspect"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Show review-gated consolidation candidate status."""
+    import asyncio
+
+    result = asyncio.run(_read_consolidation_status(session_id=session_id, eventloom_path=eventloom_path))
+    if json_output:
+        typer.echo(json.dumps(result, indent=2, sort_keys=True))
+    else:
+        pending = int(result.get("pending_count", 0))
+        accepted = int(result.get("accepted_count", 0))
+        rejected = int(result.get("rejected_count", 0))
+        deferred = int(result.get("deferred_count", 0))
+        conflicted = int(result.get("conflicted_count", 0))
+        typer.echo(
+            f"Consolidation status for {session_id}: "
+            f"pending={pending}, accepted={accepted}, rejected={rejected}, "
+            f"deferred={deferred}, conflicted={conflicted}"
+        )
+
+
+@memory_consolidation_app.command("review")
+def memory_consolidation_review(
+    candidate_id: str = typer.Option(..., help="Consolidation candidate ID"),
+    status: str = typer.Option(..., help="Review status: accepted, rejected, deferred, or conflicted"),
+    rationale: str = typer.Option(..., help="Review rationale"),
+    actor: str = typer.Option("zaxy", help="Actor writing the event"),
+    session_id: str = typer.Option("default", help="Session ID to append to"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Append a consolidation candidate review event."""
+    import asyncio
+
+    from zaxy.consolidation import build_consolidation_review_event
+
+    try:
+        event = build_consolidation_review_event(
+            actor=actor,
+            session_id=session_id,
+            candidate_id=candidate_id,
+            status=status,
+            rationale=rationale,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    asyncio.run(_append_consolidation_event(event, eventloom_path=eventloom_path))
+    if json_output:
+        typer.echo(json.dumps(event, indent=2, sort_keys=True))
+    else:
+        typer.echo(f"Reviewed {candidate_id} as {status}")
 
 
 @memory_app.command("log")
@@ -4761,6 +5466,26 @@ def benchmark_compare(
     else:
         typer.echo(format_benchmark_comparison(comparison))
     if not comparison.passed:
+        raise typer.Exit(code=1)
+
+
+@app.command("benchmark-freeze")
+def benchmark_freeze(
+    root: Path = typer.Option(Path("."), "--root", help="Repository root containing frozen reports"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
+) -> None:
+    """Validate the 2.0 RC.1 benchmark-freeze evidence contract."""
+    from zaxy.rc_benchmark_freeze import (
+        build_rc1_benchmark_freeze_report,
+        format_rc1_benchmark_freeze_report,
+    )
+
+    report = build_rc1_benchmark_freeze_report(root)
+    if json_output:
+        typer.echo(json.dumps(report.to_dict(), indent=2, sort_keys=True))
+    else:
+        typer.echo(format_rc1_benchmark_freeze_report(report), nl=False)
+    if not report.passed:
         raise typer.Exit(code=1)
 
 
