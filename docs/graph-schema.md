@@ -216,6 +216,30 @@ pending count, and the non-authoritative authority status. Prompt guidance must
 preserve this separation so a model can inspect the reasoning trace without
 treating proposal text as canonical memory.
 
+Zaxy 2.0 beta.2 adds typed metacognition projections for uncertainty and
+re-verification workflows:
+
+- `metacognition.unknown.recorded` -> `known_unknown`
+- `metacognition.confidence.assessed` -> `confidence_assessment`
+- `metacognition.conflict.clustered` -> `conflict_cluster`
+- `metacognition.reverify.requested` -> `reverify_request`
+
+These entities preserve claim keys, status or resolution status, confidence,
+priority, source event refs, source event hashes, and
+`authority_status=non_authoritative`. They are diagnostic graph state, not
+accepted facts. Confidence assessment entities are append-only trajectory
+points. Conflict clusters remain unresolved until a separate resolution
+workflow records authority. Re-verification requests remain open until another
+event explicitly closes or supersedes the need.
+
+Beta.2 also hardens procedural memory projection. Skill versions and
+procedure candidates preserve procedure steps, applicability, citations,
+failure modes, rollback guidance, contradiction reasons, status, and outcome
+evidence. Checkout treats validated, revised, or accepted cited procedures as
+applicable planning guidance; proposed, pending, or deferred procedures as
+diagnostic; and rejected, conflicted, deprecated, contradicted, stale,
+superseded, closed, or uncited procedures as excluded.
+
 Example Eventloom payload:
 
 ```json

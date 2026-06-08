@@ -321,6 +321,71 @@ async def test_memory_fabric_claim_confidence_excludes_pending_proposals_and_tra
 
 
 @pytest.mark.asyncio
+async def test_memory_fabric_claim_confidence_records_reverify_for_missing_evidence(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Low-confidence no-evidence assessments should still create a cited reverify event."""
+    fabric = _fabric(tmp_path, monkeypatch)
+
+    async def fake_checkout_memory(*args: Any, **kwargs: Any) -> Any:
+        return _Checkout(evidence=[])
+
+    monkeypatch.setattr(fabric, "checkout_memory", fake_checkout_memory)
+
+    result = await fabric.get_claim_confidence(
+        "Projection stale caused failure",
+        phase="review",
+        session_id="agent-1",
+        limit=5,
+        min_confidence=0.7,
+    )
+
+    assert result["confidence"] == 0.0
+    events = fabric.session_manager.get("agent-1").eventlog.read_all()
+    assert [event.type for event in events] == [
+        "metacognition.confidence.assessed",
+        "metacognition.reverify.requested",
+        "reasoning.primitive.called",
+    ]
+    assert events[1].payload["source_events"] == [{"seq": events[0].seq, "hash": events[0].hash}]
+    assert events[1].payload["status"] == "open"
+
+
+@pytest.mark.asyncio
+async def test_memory_fabric_metacognition_query_surfaces_record_primitive_observations(
+    tmp_path: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Model-callable metacognition query surfaces should remain observable."""
+    fabric = _fabric(tmp_path, monkeypatch)
+    await fabric.record_known_unknown(
+        "Which backend caused latency?",
+        reason="Evidence conflicted.",
+        source_events=[{"seq": 7, "hash": "a" * 64}],
+        claim_key="backend-latency",
+        phase="review",
+        session_id="agent-1",
+    )
+
+    await fabric.list_known_unknowns(session_id="agent-1", limit=3)
+    await fabric.list_confidence_trajectory("backend-latency", session_id="agent-1", limit=3)
+    await fabric.list_reverification_needs("backend", session_id="agent-1", limit=3)
+
+    primitives = [
+        event.payload["primitive"]
+        for event in fabric.session_manager.get("agent-1").eventlog.read_all()
+        if event.type == "reasoning.primitive.called"
+    ]
+    assert primitives == [
+        "record_known_unknown",
+        "list_known_unknowns",
+        "list_confidence_trajectory",
+        "list_reverification_needs",
+    ]
+
+
+@pytest.mark.asyncio
 async def test_memory_fabric_retrieve_similar_procedures_filters_review_state(
     tmp_path: Any,
     monkeypatch: pytest.MonkeyPatch,

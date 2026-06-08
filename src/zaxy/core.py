@@ -56,8 +56,16 @@ from zaxy.evidence import select_checkout_evidence
 from zaxy.extract import extract
 from zaxy.inference import build_inferred_edge_events
 from zaxy.lifecycle import build_subagent_completed_event
+from zaxy.metacognition import (
+    build_confidence_assessment_event,
+    build_conflict_cluster_event,
+    build_known_unknown_event,
+    build_reverify_request_event,
+    summarize_metacognition_events,
+)
 from zaxy.metrics import get_metrics
 from zaxy.pagination import encode_query_cursor, validate_query_cursor
+from zaxy.procedural_planning import classify_procedure_contexts
 from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
 from zaxy.purpose import PurposeProfile, purpose_profile, purpose_retrieval_policy
 from zaxy.query import QueryRouter, ScoringProfile, build_reranker, build_retention_policy
@@ -569,12 +577,15 @@ class MemoryFabric:
         phase: str = "review",
         session_id: str = "default",
         limit: int = 5,
+        record_assessment: bool = True,
+        min_confidence: float = 0.7,
     ) -> dict[str, Any]:
         """Score cited support and conflict evidence for a claim."""
         safe_claim = validate_query(claim)
         safe_phase = validate_reasoning_phase(phase)
         sid = validate_session_id(session_id)
         safe_limit = validate_limit(limit)
+        safe_min_confidence = _bounded_threshold(min_confidence)
         profile = phase_purpose_profile(safe_phase)
         evidence: list[dict[str, Any]] = []
         try:
@@ -586,6 +597,14 @@ class MemoryFabric:
             )
             scored = _score_claim_evidence(safe_claim, checkout.evidence, limit=safe_limit)
             evidence = scored["evidence"]
+            if record_assessment:
+                await self._append_metacognition_for_claim_confidence(
+                    claim=safe_claim,
+                    session_id=sid,
+                    phase=safe_phase,
+                    scored=scored,
+                    min_confidence=safe_min_confidence,
+                )
             await self._append_reasoning_primitive_call(
                 primitive="get_claim_confidence",
                 phase=safe_phase,
@@ -600,6 +619,7 @@ class MemoryFabric:
                 "phase": safe_phase,
                 "session_id": sid,
                 "claim": safe_claim,
+                "min_confidence": safe_min_confidence,
                 **scored,
             }
         except Exception:
@@ -642,7 +662,8 @@ class MemoryFabric:
                     base_recall_limit=safe_limit,
                 ).scoring_profile,
             )
-            procedures = _procedure_contexts(contexts, limit=safe_limit)
+            classified = classify_procedure_contexts(contexts, limit=safe_limit)
+            procedures = cast(list[dict[str, Any]], classified["applicable"])
             evidence = [
                 item
                 for procedure in procedures
@@ -664,6 +685,10 @@ class MemoryFabric:
                 "query": safe_query,
                 "procedure_count": len(procedures),
                 "procedures": procedures,
+                "applicable": procedures,
+                "diagnostic": classified["diagnostic"],
+                "excluded": classified["excluded"],
+                "procedural_memory": classified["procedural_memory"],
                 "evidence": evidence,
             }
         except Exception:
@@ -677,6 +702,330 @@ class MemoryFabric:
                 status="failed",
             )
             raise
+
+    async def record_known_unknown(
+        self,
+        question: str,
+        *,
+        reason: str,
+        source_events: list[dict[str, Any]],
+        claim_key: str,
+        gap_type: str = "missing_evidence",
+        reverify_query: str | None = None,
+        phase: str = "review",
+        session_id: str = "default",
+        actor: str = "zaxy-reasoning",
+    ) -> dict[str, Any]:
+        """Append an open, non-authoritative known-unknown diagnostic event."""
+        safe_question = validate_query(question)
+        safe_phase = validate_reasoning_phase(phase)
+        sid = validate_session_id(session_id)
+        event = build_known_unknown_event(
+            actor=actor,
+            session_id=sid,
+            question=safe_question,
+            reason=validate_query(reason),
+            source_events=source_events,
+            claim_key=validate_query(claim_key),
+            gap_type=validate_query(gap_type),
+            reverify_query=reverify_query,
+        )
+        await self._append_event_spec(event, session_id=sid)
+        evidence = _source_events_reasoning_evidence(sid, event["payload"]["source_events"])
+        await self._append_reasoning_primitive_call(
+            primitive="record_known_unknown",
+            phase=safe_phase,
+            session_id=sid,
+            query=safe_question,
+            result_count=1,
+            evidence=evidence,
+            status="succeeded",
+        )
+        return event
+
+    async def list_known_unknowns(
+        self,
+        *,
+        session_id: str = "default",
+        status: str = "open",
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        """Return replay-derived known unknowns for a session."""
+        sid = validate_session_id(session_id)
+        safe_limit = validate_limit(limit)
+        normalized_status = status.strip().casefold() if isinstance(status, str) else "open"
+        events = self._metacognition_event_specs(sid)
+        unknowns = [
+            dict(event["payload"])
+            for event in events
+            if event["event_type"] == "metacognition.unknown.recorded"
+            and (normalized_status == "all" or str(event["payload"].get("status") or "") == normalized_status)
+        ][:safe_limit]
+        result = {
+            "primitive": "known_unknowns",
+            "session_id": sid,
+            "status": normalized_status,
+            "unknown_count": len(unknowns),
+            "unknowns": unknowns,
+            "summary": summarize_metacognition_events(events),
+        }
+        await self._append_reasoning_primitive_call(
+            primitive="list_known_unknowns",
+            phase="review",
+            session_id=sid,
+            query=f"known_unknowns:{normalized_status}",
+            result_count=len(unknowns),
+            evidence=_metacognition_payloads_reasoning_evidence(sid, unknowns),
+            status="succeeded",
+        )
+        return result
+
+    async def list_conflict_clusters(
+        self,
+        *,
+        session_id: str = "default",
+        unresolved_only: bool = True,
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        """Return replay-derived metacognitive conflict clusters."""
+        sid = validate_session_id(session_id)
+        safe_limit = validate_limit(limit)
+        events = self._metacognition_event_specs(sid)
+        clusters = [
+            dict(event["payload"])
+            for event in events
+            if event["event_type"] == "metacognition.conflict.clustered"
+            and (
+                not unresolved_only
+                or event["payload"].get("resolution_status") == "unresolved"
+            )
+        ][:safe_limit]
+        result = {
+            "primitive": "conflict_clusters",
+            "session_id": sid,
+            "unresolved_only": bool(unresolved_only),
+            "cluster_count": len(clusters),
+            "clusters": clusters,
+            "summary": summarize_metacognition_events(events),
+        }
+        await self._append_reasoning_primitive_call(
+            primitive="list_conflict_clusters",
+            phase="review",
+            session_id=sid,
+            query="unresolved_conflict_clusters" if unresolved_only else "all_conflict_clusters",
+            result_count=len(clusters),
+            evidence=_metacognition_payloads_reasoning_evidence(sid, clusters),
+            status="succeeded",
+        )
+        return result
+
+    async def list_confidence_trajectory(
+        self,
+        claim: str,
+        *,
+        session_id: str = "default",
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        """Return append-only confidence trajectory points for a claim."""
+        safe_claim = validate_query(claim)
+        sid = validate_session_id(session_id)
+        safe_limit = validate_limit(limit)
+        target = safe_claim.casefold()
+        events = self._metacognition_event_specs(sid)
+        trajectory = [
+            dict(event["payload"])
+            for event in events
+            if event["event_type"] == "metacognition.confidence.assessed"
+            and (
+                str(event["payload"].get("claim") or "").casefold() == target
+                or str(event["payload"].get("claim_key") or "").casefold() == target
+            )
+        ][-safe_limit:]
+        result = {
+            "primitive": "confidence_trajectory",
+            "session_id": sid,
+            "claim": safe_claim,
+            "trajectory_count": len(trajectory),
+            "trajectory": trajectory,
+        }
+        await self._append_reasoning_primitive_call(
+            primitive="list_confidence_trajectory",
+            phase="review",
+            session_id=sid,
+            query=safe_claim,
+            result_count=len(trajectory),
+            evidence=_metacognition_payloads_reasoning_evidence(sid, trajectory),
+            status="succeeded",
+        )
+        return result
+
+    async def list_reverification_needs(
+        self,
+        query: str | None = None,
+        *,
+        session_id: str = "default",
+        limit: int = 10,
+        min_confidence: float = 0.7,
+    ) -> dict[str, Any]:
+        """Return replay-derived claims and unknowns that need re-verification."""
+        sid = validate_session_id(session_id)
+        safe_limit = validate_limit(limit)
+        safe_min_confidence = _bounded_threshold(min_confidence)
+        query_text = validate_query(query) if query else None
+        events = self._metacognition_event_specs(sid)
+        needs = _reverification_needs_from_events(
+            events,
+            query=query_text,
+            limit=safe_limit,
+            min_confidence=safe_min_confidence,
+        )
+        result = {
+            "primitive": "reverification_needs",
+            "session_id": sid,
+            "query": query_text,
+            "min_confidence": safe_min_confidence,
+            "need_count": len(needs),
+            "needs": needs,
+            "summary": summarize_metacognition_events(events),
+        }
+        await self._append_reasoning_primitive_call(
+            primitive="list_reverification_needs",
+            phase="review",
+            session_id=sid,
+            query=query_text or "reverification_needs",
+            result_count=len(needs),
+            evidence=_metacognition_payloads_reasoning_evidence(sid, needs),
+            status="succeeded",
+        )
+        return result
+
+    async def plan_from_procedures(
+        self,
+        goal: str,
+        *,
+        phase: str = "planning",
+        session_id: str = "default",
+        limit: int = 5,
+    ) -> dict[str, Any]:
+        """Return a non-authoritative planning packet from applicable procedures."""
+        result = await self.retrieve_similar_procedures(
+            goal,
+            phase=phase,
+            session_id=session_id,
+            limit=limit,
+        )
+        steps: list[str] = []
+        for procedure in result.get("applicable", []):
+            for step in procedure.get("procedure", []):
+                if isinstance(step, str) and step not in steps:
+                    steps.append(step)
+        packet = {
+            "primitive": "plan_from_procedures",
+            "phase": result["phase"],
+            "session_id": result["session_id"],
+            "goal": result["query"],
+            "steps": steps[: validate_limit(limit)],
+            "source_procedures": result.get("applicable", []),
+            "procedural_memory": result.get("procedural_memory", {}),
+            "authority_status": "non_authoritative",
+        }
+        await self._append_reasoning_primitive_call(
+            primitive="plan_from_procedures",
+            phase=str(result["phase"]),
+            session_id=str(result["session_id"]),
+            query=str(result["query"]),
+            result_count=len(steps),
+            evidence=list(result.get("evidence") or []),
+            status="succeeded",
+        )
+        return packet
+
+    async def _append_metacognition_for_claim_confidence(
+        self,
+        *,
+        claim: str,
+        session_id: str,
+        phase: str,
+        scored: dict[str, Any],
+        min_confidence: float,
+    ) -> None:
+        evidence = list(scored.get("evidence") or [])
+        confidence = float(scored.get("confidence") or 0.0)
+        support_count = int(scored.get("support_count") or 0)
+        conflict_count = int(scored.get("conflict_count") or 0)
+        assessment = build_confidence_assessment_event(
+            actor="zaxy-reasoning",
+            session_id=session_id,
+            claim=claim,
+            confidence=confidence,
+            support_count=support_count,
+            conflict_count=conflict_count,
+            evidence=evidence,
+            method="deterministic_token_overlap_v1",
+            requires_reverify=confidence < min_confidence or conflict_count > 0,
+            claim_key=_claim_key(claim),
+        )
+        assessment_event = await self._append_event_spec(assessment, session_id=session_id)
+        source_events = _source_events_from_reasoning_evidence(evidence)
+        if not source_events and confidence < min_confidence:
+            source_events = [{"seq": assessment_event.seq, "hash": assessment_event.hash}]
+        if support_count > 0 and conflict_count > 0:
+            supports = _source_events_from_reasoning_evidence(
+                [item for item in evidence if item.get("stance") == "support"]
+            )
+            conflicts = _source_events_from_reasoning_evidence(
+                [item for item in evidence if item.get("stance") == "conflict"]
+            )
+            if supports and conflicts:
+                cluster = build_conflict_cluster_event(
+                    actor="zaxy-reasoning",
+                    session_id=session_id,
+                    claim_key=_claim_key(claim),
+                    claim=claim,
+                    supporting_source_events=supports,
+                    conflicting_source_events=conflicts,
+                    confidence=confidence,
+                    reason="Support and conflict evidence both present.",
+                )
+                await self._append_event_spec(cluster, session_id=session_id)
+        if confidence < min_confidence or conflict_count > 0:
+            reverify = build_reverify_request_event(
+                actor="zaxy-reasoning",
+                session_id=session_id,
+                query=claim,
+                reason="Low confidence or conflicting cited evidence requires re-verification.",
+                source_events=source_events,
+                priority="high" if conflict_count > 0 else "normal",
+                claim_key=_claim_key(claim),
+            )
+            await self._append_event_spec(reverify, session_id=session_id)
+
+    async def _append_event_spec(self, event: dict[str, Any], *, session_id: str) -> Any:
+        return await self.append(
+            str(event["event_type"]),
+            actor=str(event["actor"]),
+            payload=cast(dict[str, Any], event["payload"]),
+            session_id=session_id,
+        )
+
+    def _metacognition_event_specs(self, session_id: str) -> list[dict[str, Any]]:
+        replayed = self.session_manager.get(session_id).eventlog.read_all()
+        events: list[dict[str, Any]] = []
+        for event in replayed:
+            if not str(event.type).startswith("metacognition."):
+                continue
+            events.append(
+                {
+                    "event_type": event.type,
+                    "actor": event.actor,
+                    "thread": event.thread,
+                    "payload": dict(event.payload),
+                    "seq": event.seq,
+                    "hash": event.hash,
+                    "timestamp": event.timestamp,
+                }
+            )
+        return events
 
     async def _append_reasoning_primitive_call(
         self,
@@ -766,7 +1115,7 @@ class MemoryFabric:
         payload: dict[str, Any] | None = None,
         thread: str = "default",
         session_id: str | None = None,
-    ) -> None:
+    ) -> Any:
         """Append a typed event to the immutable log and project to the graph.
 
         This is the primary write path. It:
@@ -799,6 +1148,7 @@ class MemoryFabric:
 
         await self._project_event(event, session_id=sid)
         await self._append_generated_inferences(eventlog, source_event=event, session_id=sid)
+        return event
 
     async def _project_event(self, event: Any, *, session_id: str) -> None:
         """Extract, project, trace, and record metrics for one sealed event."""
@@ -3511,6 +3861,10 @@ def _checkout_reasoning_evidence(item: dict[str, Any]) -> dict[str, Any] | None:
         "entity_name",
         "entity_type",
         "event_type",
+        "event_seq",
+        "event_hash",
+        "source_event_seq",
+        "source_event_hash",
         "authority_status",
         "authority",
         "review_status",
@@ -3568,12 +3922,147 @@ def _score_claim_evidence(
     }
 
 
+def _bounded_threshold(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError("min_confidence must be a number between 0.0 and 1.0")
+    parsed = float(value)
+    if not 0.0 <= parsed <= 1.0:
+        raise ValueError("min_confidence must be between 0.0 and 1.0")
+    return parsed
+
+
+def _claim_key(claim: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", claim.casefold()).strip("-")[:80] or "claim"
+
+
+def _source_events_from_reasoning_evidence(evidence: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    source_events: list[dict[str, Any]] = []
+    seen: set[tuple[int, str]] = set()
+    for item in evidence:
+        seq = item.get("source_event_seq") or item.get("event_seq")
+        event_hash = item.get("source_event_hash") or item.get("event_hash")
+        if not isinstance(seq, int) or not isinstance(event_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", event_hash):
+            citation = item.get("citation")
+            parsed_seq, parsed_hash = _citation_event_identity(citation if isinstance(citation, str) else None)
+            seq = parsed_seq
+            event_hash = parsed_hash
+        if not isinstance(seq, int) or not isinstance(event_hash, str) or not re.fullmatch(r"[0-9a-f]{64}", event_hash):
+            continue
+        key = (seq, event_hash)
+        if key in seen:
+            continue
+        seen.add(key)
+        source_events.append({"seq": seq, "hash": event_hash})
+    return source_events
+
+
+def _source_events_reasoning_evidence(session_id: str, source_events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    evidence: list[dict[str, Any]] = []
+    for source_event in source_events:
+        seq = source_event.get("seq")
+        event_hash = source_event.get("hash")
+        if isinstance(seq, int) and isinstance(event_hash, str):
+            evidence.append(
+                {
+                    "citation": f"eventloom://{session_id}/events/{seq}#{event_hash[:12]}",
+                    "source_event_seq": seq,
+                    "source_event_hash": event_hash,
+                }
+            )
+    return evidence
+
+
+def _metacognition_payloads_reasoning_evidence(
+    session_id: str,
+    payloads: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    evidence: list[dict[str, Any]] = []
+    seen: set[tuple[int, str]] = set()
+    for payload in payloads:
+        source_groups = [
+            payload.get("source_events"),
+            payload.get("supporting_source_events"),
+            payload.get("conflicting_source_events"),
+        ]
+        for group in source_groups:
+            if not isinstance(group, list):
+                continue
+            for item in _source_events_reasoning_evidence(session_id, group):
+                seq = item.get("source_event_seq")
+                event_hash = item.get("source_event_hash")
+                if not isinstance(seq, int) or not isinstance(event_hash, str):
+                    continue
+                key = (seq, event_hash)
+                if key in seen:
+                    continue
+                seen.add(key)
+                evidence.append(item)
+        payload_evidence = payload.get("evidence")
+        evidence_items = payload_evidence if isinstance(payload_evidence, list) else []
+        for item in evidence_items:
+            if not isinstance(item, dict):
+                continue
+            citation = item.get("citation")
+            if isinstance(citation, str) and citation.strip():
+                evidence.append({"citation": citation.strip()})
+    return evidence
+
+
+def _reverification_needs_from_events(
+    events: list[dict[str, Any]],
+    *,
+    query: str | None,
+    limit: int,
+    min_confidence: float,
+) -> list[dict[str, Any]]:
+    terms = _tokens(query or "")
+    needs: list[dict[str, Any]] = []
+    for event in events:
+        payload = event["payload"]
+        haystack = " ".join(str(payload.get(key) or "") for key in ("claim", "claim_key", "query", "question", "reason"))
+        if terms and not (_tokens(haystack) & terms):
+            continue
+        event_type = event["event_type"]
+        if event_type == "metacognition.unknown.recorded" and payload.get("status") == "open":
+            needs.append({"reason": "known_unknown_open", "event_type": event_type, **dict(payload)})
+        elif event_type == "metacognition.reverify.requested" and payload.get("status") == "open":
+            needs.append({"reason": "reverify_request_open", "event_type": event_type, **dict(payload)})
+        elif event_type == "metacognition.conflict.clustered" and payload.get("resolution_status") == "unresolved":
+            needs.append({"reason": "conflict_unresolved", "event_type": event_type, **dict(payload)})
+        elif event_type == "metacognition.confidence.assessed":
+            confidence = payload.get("confidence")
+            conflict_count = payload.get("conflict_count")
+            if (
+                isinstance(confidence, int | float)
+                and not isinstance(confidence, bool)
+                and float(confidence) < min_confidence
+            ) or (isinstance(conflict_count, int) and conflict_count > 0) or payload.get("requires_reverify") is True:
+                needs.append({"reason": "confidence_requires_reverify", "event_type": event_type, **dict(payload)})
+        if len(needs) >= limit:
+            break
+    return needs
+
+
 def _eligible_claim_confidence_evidence(item: dict[str, Any]) -> bool:
     event_type = str(item.get("event_type") or "").strip()
     entity_type = str(item.get("entity_type") or "").strip()
-    if event_type in {"belief.update.proposed", "reasoning.primitive.called"}:
+    if event_type in {
+        "belief.update.proposed",
+        "reasoning.primitive.called",
+        "metacognition.unknown.recorded",
+        "metacognition.confidence.assessed",
+        "metacognition.conflict.clustered",
+        "metacognition.reverify.requested",
+    }:
         return False
-    if entity_type in {"belief_update_proposal", "reasoning_primitive_observation"}:
+    if entity_type in {
+        "belief_update_proposal",
+        "reasoning_primitive_observation",
+        "known_unknown",
+        "confidence_assessment",
+        "conflict_cluster",
+        "reverify_request",
+    }:
         return False
     review_status = str(item.get("review_status") or item.get("status") or "").casefold().strip()
     if review_status in {"pending", "rejected", "deferred", "unsupported", "stale", "conflicted"}:

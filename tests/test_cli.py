@@ -2257,6 +2257,11 @@ def test_memory_reasoning_help_commands_are_registered() -> None:
     belief = runner.invoke(app, ["memory", "reasoning", "propose-belief-update", "--help"])
     confidence = runner.invoke(app, ["memory", "reasoning", "claim-confidence", "--help"])
     procedures = runner.invoke(app, ["memory", "reasoning", "similar-procedures", "--help"])
+    record_unknown = runner.invoke(app, ["memory", "reasoning", "record-unknown", "--help"])
+    known_unknowns = runner.invoke(app, ["memory", "reasoning", "known-unknowns", "--help"])
+    trajectory = runner.invoke(app, ["memory", "reasoning", "confidence-trajectory", "--help"])
+    reverify = runner.invoke(app, ["memory", "reasoning", "reverify-needed", "--help"])
+    plan = runner.invoke(app, ["memory", "reasoning", "plan-from-procedures", "--help"])
 
     assert explain.exit_code == 0
     assert "OUTCOME" in explain.output
@@ -2270,6 +2275,17 @@ def test_memory_reasoning_help_commands_are_registered() -> None:
     assert procedures.exit_code == 0
     assert "QUERY" in procedures.output
     assert "--limit" in procedures.output
+    assert record_unknown.exit_code == 0
+    assert "--source-event" in record_unknown.output
+    assert "--claim-key" in record_unknown.output
+    assert known_unknowns.exit_code == 0
+    assert "--status" in known_unknowns.output
+    assert trajectory.exit_code == 0
+    assert "CLAIM" in trajectory.output
+    assert reverify.exit_code == 0
+    assert "--min-confidence" in reverify.output
+    assert plan.exit_code == 0
+    assert "GOAL" in plan.output
 
 
 @pytest.mark.parametrize(
@@ -2291,6 +2307,30 @@ def test_memory_reasoning_help_commands_are_registered() -> None:
             "similar-procedures",
             ["Fix stale projection", "--limit", "6"],
             "retrieve_similar_procedures",
+            {"phase": "review", "session_id": "agent", "limit": 6},
+        ),
+        (
+            "known-unknowns",
+            ["--limit", "3"],
+            "list_known_unknowns",
+            {"session_id": "agent", "status": "open", "limit": 3},
+        ),
+        (
+            "confidence-trajectory",
+            ["Projection is stale", "--limit", "4"],
+            "list_confidence_trajectory",
+            {"session_id": "agent", "limit": 4},
+        ),
+        (
+            "reverify-needed",
+            ["--query", "projection", "--limit", "7", "--min-confidence", "0.8"],
+            "list_reverification_needs",
+            {"session_id": "agent", "limit": 7, "min_confidence": 0.8},
+        ),
+        (
+            "plan-from-procedures",
+            ["Fix stale projection", "--limit", "6"],
+            "plan_from_procedures",
             {"phase": "review", "session_id": "agent", "limit": 6},
         ),
     ],
@@ -2332,7 +2372,12 @@ def test_memory_reasoning_read_commands_json_delegate_to_fabric(
     assert json.loads(result.output) == expected
     fabric.connect.assert_awaited_once()
     method = getattr(fabric, method_name)
-    method.assert_awaited_once_with(arguments[0], **expected_kwargs)
+    if command == "known-unknowns":
+        method.assert_awaited_once_with(**expected_kwargs)
+    elif command == "reverify-needed":
+        method.assert_awaited_once_with(query="projection", **expected_kwargs)
+    else:
+        method.assert_awaited_once_with(arguments[0], **expected_kwargs)
     fabric.close.assert_awaited_once()
 
 
@@ -2388,6 +2433,68 @@ def test_memory_reasoning_propose_belief_update_json_delegates_to_fabric(
         confidence=0.74,
         source_events=[{"seq": 9, "hash": source_hash}],
         phase="reflection",
+        session_id="agent",
+        actor="reviewer",
+    )
+    fabric.close.assert_awaited_once()
+
+
+@patch("zaxy.__main__._memory_fabric")
+def test_memory_reasoning_record_unknown_json_delegates_to_fabric(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Known-unknown CLI should append cited non-authoritative uncertainty state."""
+    source_hash = "e" * 64
+    expected = {
+        "event_type": "metacognition.unknown.recorded",
+        "payload": {"authority_status": "non_authoritative"},
+    }
+    fabric = AsyncMock()
+    fabric.record_known_unknown.return_value = expected
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "reasoning",
+            "record-unknown",
+            "Which backend caused latency?",
+            "--reason",
+            "Evidence conflicted.",
+            "--claim-key",
+            "backend-latency",
+            "--gap-type",
+            "conflicting_evidence",
+            "--reverify-query",
+            "latest backend latency cause",
+            "--source-event",
+            f"11:{source_hash}",
+            "--phase",
+            "review",
+            "--actor",
+            "reviewer",
+            "--session-id",
+            "agent",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == expected
+    fabric.connect.assert_awaited_once()
+    fabric.record_known_unknown.assert_awaited_once_with(
+        "Which backend caused latency?",
+        reason="Evidence conflicted.",
+        source_events=[{"seq": 11, "hash": source_hash}],
+        claim_key="backend-latency",
+        gap_type="conflicting_evidence",
+        reverify_query="latest backend latency cause",
+        phase="review",
         session_id="agent",
         actor="reviewer",
     )

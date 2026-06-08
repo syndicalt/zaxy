@@ -419,6 +419,117 @@ TOOLS = [
         },
     ),
     Tool(
+        name="memory_record_known_unknown",
+        description="Record a cited, open, non-authoritative known unknown.",
+        inputSchema={
+            "type": "object",
+            "required": ["question", "reason", "source_events", "claim_key"],
+            "properties": {
+                "question": {"type": "string", "description": "Known-unknown question to track"},
+                "reason": {"type": "string", "description": "Reason this uncertainty was recorded"},
+                "source_events": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "required": ["seq", "hash"],
+                        "properties": {
+                            "seq": {"type": "integer", "minimum": 1},
+                            "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                        },
+                        "additionalProperties": False,
+                    },
+                    "description": "Cited Eventloom source events supporting the known unknown",
+                },
+                "claim_key": {"type": "string", "description": "Stable claim or uncertainty key"},
+                "gap_type": {"type": "string", "description": "Uncertainty gap type", "default": "missing_evidence"},
+                "reverify_query": {"type": "string", "description": "Suggested query for re-verification"},
+                "phase": {
+                    "type": "string",
+                    "enum": REASONING_PHASES,
+                    "default": "review",
+                    "description": "Reasoning phase for purpose-conditioned uncertainty recording",
+                },
+                "actor": {
+                    "type": "string",
+                    "description": "Actor recording the known unknown",
+                    "default": "zaxy-reasoning",
+                },
+                "session_id": {"type": "string", "description": "Session ID for scoped reasoning"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_known_unknowns",
+        description="List replay-derived known unknowns for a session.",
+        inputSchema={
+            "type": "object",
+            "required": [],
+            "properties": {
+                "status": {"type": "string", "description": "Known-unknown status filter or all", "default": "open"},
+                "limit": {"type": "integer", "description": "Max known unknowns", "default": 10, "minimum": 1},
+                "session_id": {"type": "string", "description": "Session ID for scoped reasoning"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_confidence_trajectory",
+        description="List append-only confidence assessments for a claim.",
+        inputSchema={
+            "type": "object",
+            "required": ["claim"],
+            "properties": {
+                "claim": {"type": "string", "description": "Claim or claim key to inspect"},
+                "limit": {"type": "integer", "description": "Max trajectory points", "default": 10, "minimum": 1},
+                "session_id": {"type": "string", "description": "Session ID for scoped reasoning"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_reverification_needs",
+        description="List open unknowns, unresolved conflicts, and low-confidence claims needing re-verification.",
+        inputSchema={
+            "type": "object",
+            "required": [],
+            "properties": {
+                "query": {"type": "string", "description": "Optional query filter"},
+                "limit": {"type": "integer", "description": "Max re-verification needs", "default": 10, "minimum": 1},
+                "min_confidence": {
+                    "type": "number",
+                    "description": "Confidence threshold",
+                    "default": 0.7,
+                    "minimum": 0,
+                    "maximum": 1,
+                },
+                "session_id": {"type": "string", "description": "Session ID for scoped reasoning"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_plan_from_procedures",
+        description="Build a non-authoritative planning packet from applicable procedures.",
+        inputSchema={
+            "type": "object",
+            "required": ["goal"],
+            "properties": {
+                "goal": {"type": "string", "description": "Planning goal"},
+                "phase": {
+                    "type": "string",
+                    "enum": REASONING_PHASES,
+                    "default": "planning",
+                    "description": "Reasoning phase for purpose-conditioned procedural planning",
+                },
+                "limit": {"type": "integer", "description": "Max plan steps/source procedures", "default": 5, "minimum": 1},
+                "session_id": {"type": "string", "description": "Session ID for scoped reasoning"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
         name="memory_verbatim",
         description="Retrieve exact Eventloom source chunks with citations.",
         inputSchema={
@@ -559,6 +670,11 @@ TOOLS = [
                     "items": {"type": "string"},
                     "description": "Situations where the skill applies",
                 },
+                "failure_modes": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Known failure modes or invalidating conditions for the skill",
+                },
                 "citations": {
                     "type": "array",
                     "items": {"type": "string"},
@@ -573,6 +689,8 @@ TOOLS = [
                     "description": "Outcome evidence such as commands or citations",
                 },
                 "reason": {"type": "string", "description": "Reason for status changes"},
+                "rollback": {"type": "string", "description": "Rollback guidance for deprecated or contradicted procedures"},
+                "contradiction_reason": {"type": "string", "description": "Reason a procedure was contradicted"},
                 "supersedes_version": {"type": "string", "description": "Version replaced by this event"},
                 "actor": {"type": "string", "description": "Actor recording the skill event", "default": "zaxy"},
                 "session_id": {"type": "string", "description": "Session ID for multi-agent sharding"},
@@ -1379,6 +1497,70 @@ class ZaxyMCPServer:
         )
         return [TextContent(type="text", text=json.dumps(result, indent=2))]
 
+    async def handle_memory_record_known_unknown(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_record_known_unknown tool calls."""
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
+        actor = _optional_strict_text(arguments.get("actor"), "actor") or "zaxy-reasoning"
+        result = await self._call_reasoning_fabric(
+            "record_known_unknown",
+            _required_strict_text(arguments.get("question"), "question"),
+            reason=_required_strict_text(arguments.get("reason"), "reason"),
+            source_events=_validate_reasoning_source_events(arguments.get("source_events")),
+            claim_key=_required_strict_text(arguments.get("claim_key"), "claim_key"),
+            gap_type=_optional_strict_text(arguments.get("gap_type"), "gap_type") or "missing_evidence",
+            reverify_query=_optional_strict_text(arguments.get("reverify_query"), "reverify_query"),
+            phase=_validate_reasoning_phase(arguments.get("phase"), default="review"),
+            session_id=session_id,
+            actor=actor,
+        )
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    async def handle_memory_known_unknowns(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_known_unknowns tool calls."""
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
+        result = await self._call_reasoning_fabric(
+            "list_known_unknowns",
+            session_id=session_id,
+            status=_optional_strict_text(arguments.get("status"), "status") or "open",
+            limit=validate_limit(arguments.get("limit"), default=10),
+        )
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    async def handle_memory_confidence_trajectory(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_confidence_trajectory tool calls."""
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
+        result = await self._call_reasoning_fabric(
+            "list_confidence_trajectory",
+            _required_strict_text(arguments.get("claim"), "claim"),
+            session_id=session_id,
+            limit=validate_limit(arguments.get("limit"), default=10),
+        )
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    async def handle_memory_reverification_needs(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_reverification_needs tool calls."""
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
+        result = await self._call_reasoning_fabric(
+            "list_reverification_needs",
+            query=_optional_strict_text(arguments.get("query"), "query"),
+            session_id=session_id,
+            limit=validate_limit(arguments.get("limit"), default=10),
+            min_confidence=_validate_reasoning_confidence(arguments.get("min_confidence", 0.7)),
+        )
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    async def handle_memory_plan_from_procedures(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_plan_from_procedures tool calls."""
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
+        result = await self._call_reasoning_fabric(
+            "plan_from_procedures",
+            _required_strict_text(arguments.get("goal"), "goal"),
+            phase=_validate_reasoning_phase(arguments.get("phase"), default="planning"),
+            session_id=session_id,
+            limit=validate_limit(arguments.get("limit"), default=5),
+        )
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
     async def _call_reasoning_fabric(self, method_name: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
         fabric = self._memory_fabric()
         try:
@@ -2015,12 +2197,14 @@ class ZaxyMCPServer:
             "task",
             "feedback",
             "reason",
+            "rollback",
+            "contradiction_reason",
             "supersedes_version",
         ):
             value = _optional_text(arguments.get(key))
             if value is not None:
                 payload[key] = value
-        for key in ("procedure", "applicability", "citations", "evidence"):
+        for key in ("procedure", "applicability", "citations", "evidence", "failure_modes"):
             values = _optional_text_list(arguments.get(key))
             if values:
                 payload[key] = values
@@ -2970,6 +3154,16 @@ async def _dispatch_tool_call(
         return await active_server.handle_memory_claim_confidence(arguments)
     if name == "memory_similar_procedures":
         return await active_server.handle_memory_similar_procedures(arguments)
+    if name == "memory_record_known_unknown":
+        return await active_server.handle_memory_record_known_unknown(arguments)
+    if name == "memory_known_unknowns":
+        return await active_server.handle_memory_known_unknowns(arguments)
+    if name == "memory_confidence_trajectory":
+        return await active_server.handle_memory_confidence_trajectory(arguments)
+    if name == "memory_reverification_needs":
+        return await active_server.handle_memory_reverification_needs(arguments)
+    if name == "memory_plan_from_procedures":
+        return await active_server.handle_memory_plan_from_procedures(arguments)
     if name == "memory_verbatim":
         return await active_server.handle_memory_verbatim(arguments)
     if name == "memory_feedback":

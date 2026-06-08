@@ -2689,6 +2689,204 @@ def _extract_consolidation_candidate_reviewed(event: Event) -> ExtractionResult:
     return ExtractionResult(entities=[review, candidate], edges=[edge], source_event_seq=event.seq)
 
 
+@register("metacognition.unknown.recorded")
+def _extract_metacognition_unknown_recorded(event: Event) -> ExtractionResult:
+    """Project an open known-unknown diagnostic without granting authority."""
+    unknown_id = _required_reasoning_text(event.payload.get("unknown_id"), field="unknown_id")
+    question = _required_reasoning_text(event.payload.get("question"), field="question")
+    reason = _required_reasoning_text(event.payload.get("reason"), field="reason")
+    claim_key = _required_reasoning_text(event.payload.get("claim_key"), field="claim_key")
+    gap_type = _required_reasoning_text(event.payload.get("gap_type"), field="gap_type")
+    status = _required_reasoning_text(event.payload.get("status"), field="status")
+    if status != "open":
+        raise ValueError("status must be 'open' for known unknowns")
+    authority_status = _required_consolidation_authority_status(event.payload.get("authority_status"))
+    source_events = _snapshot_consolidation_source_events(event.payload.get("source_events"))
+    source_event_refs = [f"{source_event['seq']}:{source_event['hash']}" for source_event in source_events]
+    source_event_seqs = [source_event["seq"] for source_event in source_events]
+    source_event_hashes = [source_event["hash"] for source_event in source_events]
+    unknown = ExtractedEntity(
+        name=unknown_id,
+        entity_type="known_unknown",
+        observed_at=event.timestamp,
+        summary=question,
+        properties=_compact_properties(
+            {
+                "event_type": event.type,
+                "question": question,
+                "reason": reason,
+                "claim_key": claim_key,
+                "gap_type": gap_type,
+                "status": status,
+                "reverify_query": _optional_text(event.payload.get("reverify_query")),
+                "source_event_count": len(source_events),
+                "source_event_refs": source_event_refs,
+                "source_event_seqs": source_event_seqs,
+                "source_event_hashes": source_event_hashes,
+                "source_events": source_events,
+                "authority_status": authority_status,
+            }
+        ),
+    )
+    actor = ExtractedEntity(name=event.actor, entity_type="actor", observed_at=event.timestamp)
+    edge = ExtractedEdge(
+        source=event.actor,
+        target=unknown_id,
+        relation_type="recorded_known_unknown",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(entities=[unknown, actor], edges=[edge], source_event_seq=event.seq)
+
+
+@register("metacognition.confidence.assessed")
+def _extract_metacognition_confidence_assessed(event: Event) -> ExtractionResult:
+    """Project an append-only confidence trajectory point as diagnostic state."""
+    assessment_id = _required_reasoning_text(event.payload.get("assessment_id"), field="assessment_id")
+    claim = _required_reasoning_text(event.payload.get("claim"), field="claim")
+    claim_key = _required_reasoning_text(event.payload.get("claim_key"), field="claim_key")
+    confidence = _required_consolidation_confidence(event.payload.get("confidence"))
+    support_count = _non_negative_int(event.payload.get("support_count"), default=0)
+    conflict_count = _non_negative_int(event.payload.get("conflict_count"), default=0)
+    method = _required_reasoning_text(event.payload.get("method"), field="method")
+    authority_status = _required_consolidation_authority_status(event.payload.get("authority_status"))
+    evidence = _dict_list(event.payload.get("evidence"))
+    assessment = ExtractedEntity(
+        name=assessment_id,
+        entity_type="confidence_assessment",
+        observed_at=event.timestamp,
+        summary=claim,
+        properties=_compact_properties(
+            {
+                "event_type": event.type,
+                "claim": claim,
+                "claim_key": claim_key,
+                "confidence": confidence,
+                "support_count": support_count,
+                "conflict_count": conflict_count,
+                "requires_reverify": bool(event.payload.get("requires_reverify")),
+                "method": method,
+                "evidence_count": len(evidence),
+                "evidence": evidence,
+                "authority_status": authority_status,
+            }
+        ),
+    )
+    actor = ExtractedEntity(name=event.actor, entity_type="actor", observed_at=event.timestamp)
+    edge = ExtractedEdge(
+        source=event.actor,
+        target=assessment_id,
+        relation_type="assessed_confidence",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(entities=[assessment, actor], edges=[edge], source_event_seq=event.seq)
+
+
+@register("metacognition.conflict.clustered")
+def _extract_metacognition_conflict_clustered(event: Event) -> ExtractionResult:
+    """Project unresolved support/conflict clusters as diagnostic state."""
+    cluster_id = _required_reasoning_text(event.payload.get("cluster_id"), field="cluster_id")
+    claim_key = _required_reasoning_text(event.payload.get("claim_key"), field="claim_key")
+    claim = _required_reasoning_text(event.payload.get("claim"), field="claim")
+    confidence = _required_consolidation_confidence(event.payload.get("confidence"))
+    reason = _required_reasoning_text(event.payload.get("reason"), field="reason")
+    resolution_status = _required_reasoning_text(
+        event.payload.get("resolution_status"),
+        field="resolution_status",
+    )
+    if resolution_status != "unresolved":
+        raise ValueError("resolution_status must be 'unresolved' for conflict clusters")
+    authority_status = _required_consolidation_authority_status(event.payload.get("authority_status"))
+    supporting_source_events = _snapshot_consolidation_source_events(
+        event.payload.get("supporting_source_events")
+    )
+    conflicting_source_events = _snapshot_consolidation_source_events(
+        event.payload.get("conflicting_source_events")
+    )
+    cluster = ExtractedEntity(
+        name=cluster_id,
+        entity_type="conflict_cluster",
+        observed_at=event.timestamp,
+        summary=claim,
+        properties={
+            "event_type": event.type,
+            "claim_key": claim_key,
+            "claim": claim,
+            "confidence": confidence,
+            "reason": reason,
+            "resolution_status": resolution_status,
+            "supporting_source_event_count": len(supporting_source_events),
+            "supporting_source_event_refs": [
+                f"{source_event['seq']}:{source_event['hash']}"
+                for source_event in supporting_source_events
+            ],
+            "supporting_source_event_seqs": [source_event["seq"] for source_event in supporting_source_events],
+            "supporting_source_event_hashes": [source_event["hash"] for source_event in supporting_source_events],
+            "supporting_source_events": supporting_source_events,
+            "conflicting_source_event_count": len(conflicting_source_events),
+            "conflicting_source_event_refs": [
+                f"{source_event['seq']}:{source_event['hash']}"
+                for source_event in conflicting_source_events
+            ],
+            "conflicting_source_event_seqs": [source_event["seq"] for source_event in conflicting_source_events],
+            "conflicting_source_event_hashes": [source_event["hash"] for source_event in conflicting_source_events],
+            "conflicting_source_events": conflicting_source_events,
+            "authority_status": authority_status,
+        },
+    )
+    actor = ExtractedEntity(name=event.actor, entity_type="actor", observed_at=event.timestamp)
+    edge = ExtractedEdge(
+        source=event.actor,
+        target=cluster_id,
+        relation_type="clustered_conflicting_evidence",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(entities=[cluster, actor], edges=[edge], source_event_seq=event.seq)
+
+
+@register("metacognition.reverify.requested")
+def _extract_metacognition_reverify_requested(event: Event) -> ExtractionResult:
+    """Project an open re-verification request as non-authoritative diagnostic state."""
+    reverify_id = _required_reasoning_text(event.payload.get("reverify_id"), field="reverify_id")
+    query = _required_reasoning_text(event.payload.get("query"), field="query")
+    reason = _required_reasoning_text(event.payload.get("reason"), field="reason")
+    claim_key = _required_reasoning_text(event.payload.get("claim_key"), field="claim_key")
+    priority = _required_reasoning_text(event.payload.get("priority"), field="priority")
+    status = _required_reasoning_text(event.payload.get("status"), field="status")
+    if status != "open":
+        raise ValueError("status must be 'open' for reverify requests")
+    authority_status = _required_consolidation_authority_status(event.payload.get("authority_status"))
+    source_events = _snapshot_consolidation_source_events(event.payload.get("source_events"))
+    source_event_refs = [f"{source_event['seq']}:{source_event['hash']}" for source_event in source_events]
+    request = ExtractedEntity(
+        name=reverify_id,
+        entity_type="reverify_request",
+        observed_at=event.timestamp,
+        summary=query,
+        properties={
+            "event_type": event.type,
+            "query": query,
+            "reason": reason,
+            "claim_key": claim_key,
+            "priority": priority,
+            "status": status,
+            "source_event_count": len(source_events),
+            "source_event_refs": source_event_refs,
+            "source_event_seqs": [source_event["seq"] for source_event in source_events],
+            "source_event_hashes": [source_event["hash"] for source_event in source_events],
+            "source_events": source_events,
+            "authority_status": authority_status,
+        },
+    )
+    actor = ExtractedEntity(name=event.actor, entity_type="actor", observed_at=event.timestamp)
+    edge = ExtractedEdge(
+        source=event.actor,
+        target=reverify_id,
+        relation_type="requested_reverification",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(entities=[request, actor], edges=[edge], source_event_seq=event.seq)
+
+
 @register("reasoning.primitive.called")
 def _extract_reasoning_primitive_called(event: Event) -> ExtractionResult:
     """Project an observable reasoning-loop primitive call as trace evidence."""

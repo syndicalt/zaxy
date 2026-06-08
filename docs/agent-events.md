@@ -141,6 +141,45 @@ Projection: unknown-event fallback today, preserving the feedback as an
 Eventloom-backed audit record without deleting, invalidating, or downranking the
 target entity.
 
+## Metacognition
+
+Use `metacognition.*` events for uncertainty, confidence trajectories,
+conflicting evidence, and re-verification needs. These events are always
+diagnostic and non-authoritative. They help an agent decide when to refresh,
+ask a user, or inspect conflicting evidence, but they do not update accepted
+facts.
+
+Supported beta.2 events:
+
+- `metacognition.unknown.recorded`: records an open known unknown with cited
+  source events, a claim key, gap type, and optional reverify query.
+- `metacognition.confidence.assessed`: records one append-only confidence point
+  for a claim with support/conflict counts and cited evidence.
+- `metacognition.conflict.clustered`: records unresolved support and conflict
+  source-event sets for a claim.
+- `metacognition.reverify.requested`: records an open re-verification request
+  with priority and cited source events.
+
+Example known unknown:
+
+```json
+{
+  "unknown_id": "metacognition:unknown:111111111111111111111111",
+  "question": "Which backend caused the latency spike?",
+  "reason": "Checkout had conflicting evidence.",
+  "claim_key": "backend-latency-cause",
+  "gap_type": "conflicting_evidence",
+  "status": "open",
+  "source_events": [{"seq": 7, "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}],
+  "authority_status": "non_authoritative"
+}
+```
+
+Projection: `known_unknown`, `confidence_assessment`, `conflict_cluster`, and
+`reverify_request` entities. Graph properties preserve claim keys, status or
+resolution state, confidence, priority, source-event refs, source-event hashes,
+and `authority_status=non_authoritative`.
+
 ## Skill Memory
 
 Use `skill.*` events for procedural memory that should be retrieved as
@@ -188,6 +227,11 @@ Contradiction or deprecation events may also include `failure_modes`,
 `rollback`, `contradiction_reason`, and `evidence`. These fields are preserved
 on the `SkillVersion` projection so checkout can identify rollback candidates
 without deleting the old version or changing the active procedure implicitly.
+Checkout separates procedural memory into applicable, diagnostic, and excluded
+buckets. Applicable procedures must be cited and validated, revised, or
+accepted. Proposed, pending, and deferred procedures remain diagnostic. Rejected,
+conflicted, deprecated, contradicted, stale, superseded, closed, or uncited
+procedures are excluded from operational instructions.
 
 Projection: `Skill` and `SkillVersion` entities linked with `HAS_VERSION`
 style edges, plus lifecycle and outcome entities for application metrics.

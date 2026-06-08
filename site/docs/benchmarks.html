@@ -206,6 +206,16 @@
         <li><code>score</code>: the simple mean of the four contract ratios.</li>
       </ul>
       <p>Use this lane to catch regressions in observability, phase routing, citation coverage, and authority boundaries for beta.1 primitives. Do not report it as external validation, do not combine it with the headline 500 or Harvey LAB numbers, and do not use it to reward answer phrasing.</p>
+      <p>Beta.2 extends the internal guardrail to metacognition and procedural planning contracts. The scorer inspects contract fields only; it does not score final answers, expected benchmark labels, or answer phrasing. The beta.2 fields are:</p>
+      <ul>
+        <li><code>observable_metacognition</code>: known unknowns, confidence assessments, conflict clusters, and reverify requests must be replayable Eventloom event types.</li>
+        <li><code>open_reverify_status</code>: re-verification needs stay open until a separate resolution path changes state.</li>
+        <li><code>procedural_citation_presence</code>: applicable procedures must carry Eventloom citations.</li>
+        <li><code>planning_phase_match</code>: procedure-derived planning packets must remain in the planning phase unless explicitly routed otherwise.</li>
+        <li><code>authority_boundary</code>: metacognition and procedures remain <code>non_authoritative</code>; they are diagnostic or planning guidance, not accepted facts.</li>
+        <li><code>score</code>: the simple mean of the beta.2 contract ratios.</li>
+      </ul>
+      <p>This beta.2 guardrail is an internal release-quality check and readiness signal. It is not external validation and must not be merged into the headline LongMemEval-compatible or Harvey LAB results.</p>
       <h2 id="claim-boundaries">Claim Boundaries</h2>
       <ul>
         <li>Use <strong>LongMemEval-compatible checkout</strong> for the headline 500 diagnostic.</li>

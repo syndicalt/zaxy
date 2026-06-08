@@ -1967,6 +1967,165 @@ def memory_reasoning_claim_confidence(
     typer.echo(json.dumps(result, indent=2, sort_keys=True) if json_output else _format_reasoning_result_text(result))
 
 
+@memory_reasoning_app.command("record-unknown")
+def memory_reasoning_record_unknown(
+    question: str = typer.Argument(..., help="Known-unknown question to track"),  # noqa: B008
+    reason: str = typer.Option(..., help="Reason this uncertainty was recorded"),
+    source_event: list[str] = typer.Option(..., "--source-event", help="Cited source event as SEQ:HASH"),  # noqa: B008
+    claim_key: str = typer.Option(..., help="Stable claim or uncertainty key"),
+    gap_type: str = typer.Option("missing_evidence", help="Uncertainty gap type"),
+    reverify_query: str | None = typer.Option(None, help="Suggested query for re-verification"),
+    phase: str = typer.Option(  # noqa: B008
+        "review",
+        callback=_validate_reasoning_phase_option,
+        help="Reasoning phase: planning, execution, review, or reflection",
+    ),
+    actor: str = typer.Option("zaxy-reasoning", help="Actor recording the known unknown"),
+    session_id: str = typer.Option("default", help="Session ID to append to"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Record a cited, open, non-authoritative known unknown."""
+    import asyncio
+
+    source_events = [_parse_source_event(value) for value in source_event]
+    result = asyncio.run(
+        _run_reasoning_primitive(
+            method_name="record_known_unknown",
+            eventloom_path=eventloom_path,
+            args=(question,),
+            kwargs={
+                "reason": reason,
+                "source_events": source_events,
+                "claim_key": claim_key,
+                "gap_type": gap_type,
+                "reverify_query": reverify_query,
+                "phase": phase,
+                "session_id": session_id,
+                "actor": actor,
+            },
+        )
+    )
+    typer.echo(json.dumps(result, indent=2, sort_keys=True) if json_output else _format_reasoning_result_text(result))
+
+
+@memory_reasoning_app.command("known-unknowns")
+def memory_reasoning_known_unknowns(
+    status: str = typer.Option("open", help="Known-unknown status filter or all"),
+    phase: str = typer.Option(  # noqa: B008
+        "review",
+        callback=_validate_reasoning_phase_option,
+        help="Accepted for reasoning command consistency; list queries are replay-derived",
+    ),
+    session_id: str = typer.Option("default", help="Session ID to query"),
+    limit: int = typer.Option(10, min=1, help="Maximum known unknowns"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """List replay-derived known unknowns."""
+    import asyncio
+
+    _ = phase
+    result = asyncio.run(
+        _run_reasoning_primitive(
+            method_name="list_known_unknowns",
+            eventloom_path=eventloom_path,
+            args=(),
+            kwargs={"session_id": session_id, "status": status, "limit": limit},
+        )
+    )
+    typer.echo(json.dumps(result, indent=2, sort_keys=True) if json_output else _format_reasoning_result_text(result))
+
+
+@memory_reasoning_app.command("confidence-trajectory")
+def memory_reasoning_confidence_trajectory(
+    claim: str = typer.Argument(..., help="Claim or claim key to inspect"),  # noqa: B008
+    phase: str = typer.Option(  # noqa: B008
+        "review",
+        callback=_validate_reasoning_phase_option,
+        help="Accepted for reasoning command consistency; trajectory queries are replay-derived",
+    ),
+    session_id: str = typer.Option("default", help="Session ID to query"),
+    limit: int = typer.Option(10, min=1, help="Maximum trajectory points"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """List append-only confidence assessments for a claim."""
+    import asyncio
+
+    _ = phase
+    result = asyncio.run(
+        _run_reasoning_primitive(
+            method_name="list_confidence_trajectory",
+            eventloom_path=eventloom_path,
+            args=(claim,),
+            kwargs={"session_id": session_id, "limit": limit},
+        )
+    )
+    typer.echo(json.dumps(result, indent=2, sort_keys=True) if json_output else _format_reasoning_result_text(result))
+
+
+@memory_reasoning_app.command("reverify-needed")
+def memory_reasoning_reverify_needed(
+    query: str | None = typer.Option(None, help="Optional query filter"),
+    phase: str = typer.Option(  # noqa: B008
+        "review",
+        callback=_validate_reasoning_phase_option,
+        help="Accepted for reasoning command consistency; reverify queries are replay-derived",
+    ),
+    session_id: str = typer.Option("default", help="Session ID to query"),
+    limit: int = typer.Option(10, min=1, help="Maximum re-verification needs"),
+    min_confidence: float = typer.Option(0.7, min=0.0, max=1.0, help="Confidence threshold"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """List open unknowns, unresolved conflicts, and low-confidence claims."""
+    import asyncio
+
+    _ = phase
+    result = asyncio.run(
+        _run_reasoning_primitive(
+            method_name="list_reverification_needs",
+            eventloom_path=eventloom_path,
+            args=(),
+            kwargs={
+                "query": query,
+                "session_id": session_id,
+                "limit": limit,
+                "min_confidence": min_confidence,
+            },
+        )
+    )
+    typer.echo(json.dumps(result, indent=2, sort_keys=True) if json_output else _format_reasoning_result_text(result))
+
+
+@memory_reasoning_app.command("plan-from-procedures")
+def memory_reasoning_plan_from_procedures(
+    goal: str = typer.Argument(..., help="Planning goal"),  # noqa: B008
+    phase: str = typer.Option(  # noqa: B008
+        "planning",
+        callback=_validate_reasoning_phase_option,
+        help="Reasoning phase: planning, execution, review, or reflection",
+    ),
+    session_id: str = typer.Option("default", help="Session ID to query"),
+    limit: int = typer.Option(5, min=1, help="Maximum plan steps/source procedures"),
+    eventloom_path: Path = typer.Option(".eventloom", help="Eventloom directory"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
+) -> None:
+    """Build a non-authoritative planning packet from applicable procedures."""
+    import asyncio
+
+    result = asyncio.run(
+        _run_reasoning_primitive(
+            method_name="plan_from_procedures",
+            eventloom_path=eventloom_path,
+            args=(goal,),
+            kwargs={"phase": phase, "session_id": session_id, "limit": limit},
+        )
+    )
+    typer.echo(json.dumps(result, indent=2, sort_keys=True) if json_output else _format_reasoning_result_text(result))
+
+
 @memory_reasoning_app.command("similar-procedures")
 def memory_reasoning_similar_procedures(
     query: str = typer.Argument(..., help="Procedure retrieval query"),  # noqa: B008

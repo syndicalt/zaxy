@@ -368,6 +368,148 @@ class TestSkillMemory:
         assert version.properties["evidence"] == ["pytest tests/test_release.py::test_cache_race -q"]
 
 
+class TestMetacognition:
+    """Tests for non-authoritative metacognitive state projections."""
+
+    SOURCE = [{"seq": 7, "hash": "a" * 64}]
+
+    def test_known_unknown_projects_non_authoritative_state(self) -> None:
+        ev = _make_event(
+            "metacognition.unknown.recorded",
+            {
+                "unknown_id": "metacognition:unknown:" + "1" * 24,
+                "question": "Which backend caused the latency spike?",
+                "reason": "Checkout had conflicting evidence.",
+                "claim_key": "backend-latency-cause",
+                "gap_type": "conflicting_evidence",
+                "status": "open",
+                "reverify_query": "latest cited backend latency cause",
+                "source_events": self.SOURCE,
+                "authority_status": "non_authoritative",
+            },
+            actor="agent",
+        )
+
+        result = extract(ev)
+
+        unknown = next(entity for entity in result.entities if entity.entity_type == "known_unknown")
+        assert unknown.name == "metacognition:unknown:" + "1" * 24
+        assert unknown.summary == "Which backend caused the latency spike?"
+        assert unknown.properties == {
+            "event_type": "metacognition.unknown.recorded",
+            "question": "Which backend caused the latency spike?",
+            "reason": "Checkout had conflicting evidence.",
+            "claim_key": "backend-latency-cause",
+            "gap_type": "conflicting_evidence",
+            "status": "open",
+            "reverify_query": "latest cited backend latency cause",
+            "source_event_count": 1,
+            "source_event_refs": ["7:" + ("a" * 64)],
+            "source_event_seqs": [7],
+            "source_event_hashes": ["a" * 64],
+            "source_events": self.SOURCE,
+            "authority_status": "non_authoritative",
+        }
+
+    def test_confidence_assessment_projects_append_only_point(self) -> None:
+        ev = _make_event(
+            "metacognition.confidence.assessed",
+            {
+                "assessment_id": "metacognition:confidence:" + "2" * 24,
+                "claim": "Projection stale caused failure",
+                "claim_key": "projection-stale-caused-failure",
+                "confidence": 0.42,
+                "support_count": 1,
+                "conflict_count": 2,
+                "requires_reverify": True,
+                "method": "deterministic_token_overlap_v1",
+                "evidence": [
+                    {
+                        "citation": "eventloom://agent-1/events/7#aaaaaaaaaaaa",
+                        "stance": "support",
+                    }
+                ],
+                "authority_status": "non_authoritative",
+            },
+            actor="zaxy-reasoning",
+        )
+
+        result = extract(ev)
+
+        assessment = next(entity for entity in result.entities if entity.entity_type == "confidence_assessment")
+        assert assessment.name == "metacognition:confidence:" + "2" * 24
+        assert assessment.properties["confidence"] == 0.42
+        assert assessment.properties["support_count"] == 1
+        assert assessment.properties["conflict_count"] == 2
+        assert assessment.properties["requires_reverify"] is True
+        assert assessment.properties["authority_status"] == "non_authoritative"
+        assert assessment.properties["evidence_count"] == 1
+
+    def test_conflict_cluster_and_reverify_project_diagnostics(self) -> None:
+        conflict = extract(
+            _make_event(
+                "metacognition.conflict.clustered",
+                {
+                    "cluster_id": "metacognition:conflict:" + "3" * 24,
+                    "claim_key": "projection-latency-cause",
+                    "claim": "Projection stale caused failure",
+                    "confidence": 0.5,
+                    "reason": "Support and conflict evidence both present.",
+                    "resolution_status": "unresolved",
+                    "supporting_source_events": [{"seq": 7, "hash": "a" * 64}],
+                    "conflicting_source_events": [{"seq": 8, "hash": "b" * 64}],
+                    "authority_status": "non_authoritative",
+                },
+                actor="zaxy-reasoning",
+            )
+        )
+        reverify = extract(
+            _make_event(
+                "metacognition.reverify.requested",
+                {
+                    "reverify_id": "metacognition:reverify:" + "4" * 24,
+                    "query": "Re-check projection latency cause",
+                    "reason": "Low confidence and conflict count above zero.",
+                    "claim_key": "projection-latency-cause",
+                    "priority": "high",
+                    "status": "open",
+                    "source_events": self.SOURCE,
+                    "authority_status": "non_authoritative",
+                },
+                actor="zaxy-reasoning",
+            )
+        )
+
+        cluster = next(entity for entity in conflict.entities if entity.entity_type == "conflict_cluster")
+        request = next(entity for entity in reverify.entities if entity.entity_type == "reverify_request")
+        assert cluster.properties["resolution_status"] == "unresolved"
+        assert cluster.properties["supporting_source_event_refs"] == ["7:" + ("a" * 64)]
+        assert cluster.properties["conflicting_source_event_refs"] == ["8:" + ("b" * 64)]
+        assert cluster.properties["authority_status"] == "non_authoritative"
+        assert request.properties["status"] == "open"
+        assert request.properties["priority"] == "high"
+        assert request.properties["source_event_refs"] == ["7:" + ("a" * 64)]
+        assert request.properties["authority_status"] == "non_authoritative"
+
+    def test_metacognition_rejects_authoritative_payloads(self) -> None:
+        ev = _make_event(
+            "metacognition.unknown.recorded",
+            {
+                "unknown_id": "metacognition:unknown:" + "5" * 24,
+                "question": "What changed?",
+                "reason": "No cited answer.",
+                "claim_key": "change",
+                "gap_type": "missing_evidence",
+                "status": "open",
+                "source_events": self.SOURCE,
+                "authority_status": "authoritative",
+            },
+        )
+
+        with pytest.raises(ValueError, match="authority_status"):
+            extract(ev)
+
+
 class TestTaskClaimed:
     """Tests for task.claimed extractor."""
 

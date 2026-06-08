@@ -96,8 +96,9 @@ projects the event through the same extractor and graph path as
 `memory_append`. Use it when an agent learns, validates, revises, applies, or
 records outcomes for a reusable procedure. The helper accepts `version`, `name`,
 `summary`, `procedure`, `applicability`, `citations`, `task`, `success_score`,
-`feedback`, `evidence`, `reason`, and `supersedes_version` as relevant to the
-action. Skill updates are never implicit checkout side effects.
+`feedback`, `evidence`, `reason`, `failure_modes`, `rollback`,
+`contradiction_reason`, and `supersedes_version` as relevant to the action.
+Skill updates are never implicit checkout side effects.
 
 ## Alpha Causal And Consolidation Tools
 
@@ -173,6 +174,20 @@ Memory Checkout reports these surfaces under
 `diagnostics.belief_update_proposals` so clients can show trace evidence
 without granting authority.
 
+Beta.2 adds metacognitive and procedural planning tools on the same boundary.
+`memory_record_known_unknown(question, reason, source_events, claim_key, ...)`
+records an open, cited, non-authoritative uncertainty item.
+`memory_known_unknowns`, `memory_confidence_trajectory`, and
+`memory_reverification_needs` replay the Eventloom log to surface open
+unknowns, append-only confidence assessments, unresolved conflict clusters, and
+explicit re-verification requests. Confidence trajectory events do not overwrite
+truth, and re-verification requests remain open until a separate workflow
+records a resolution. `memory_plan_from_procedures(goal, ...)` builds a
+non-authoritative planning packet from applicable procedural memory; rejected,
+conflicted, deprecated, contradicted, stale, superseded, closed, or uncited
+procedures are diagnostic or excluded instead of being returned as operational
+instructions.
+
 `memory_replay(session_id, from_seq?)` rebuilds session history from the
 Eventloom log. This is useful for handoffs, audits, and debugging. In remote SSE
 mode, the authenticated session scope is enforced so a client cannot replay a
@@ -232,10 +247,12 @@ diagnostics also include a `skills` block and the prompt includes an
 `Applicable Skills` section with cited procedure steps. This lane is read-only:
 models may follow the guidance, but revisions require a new `memory_skill` or
 `memory_append` event. When retrieved skill versions and outcomes include enough
-history, diagnostics also include `skill_analytics` and the prompt includes a
-`Skill Analytics` section. That section reports read-only promotion candidates,
-rollback candidates, contradiction counts, outcome counts, scores, and citations
-so the model can decide whether to apply, avoid, or explicitly revise a skill.
+history, diagnostics also include `skill_analytics` and
+`procedural_memory`, and the prompt includes skill and procedural diagnostics.
+Those sections report applicable, diagnostic, and excluded procedural memory;
+read-only promotion candidates; rollback candidates; contradiction counts;
+outcome counts; scores; citations; and exclusion reasons so the model can decide
+whether to apply, avoid, or explicitly revise a skill.
 This is the preferred tool when a model needs a
 bounded, auditable working state rather than a raw list of retrieval hits. The
 response also includes `guidance` with
@@ -252,6 +269,10 @@ When reasoning-loop primitive observations or belief proposals are present,
 checkout guidance explicitly tells the model to treat primitive observations as
 replayable reasoning trace evidence rather than authority, and to treat belief
 updates as proposals until reviewed and promoted by a separate authority path.
+When metacognitive state is present, checkout reports
+`diagnostics.metacognition` and tells the model to use known unknowns,
+confidence trajectories, conflict clusters, and reverify requests as diagnostic
+uncertainty signals, not as accepted facts.
 When `ref` is supplied, checkout resolves a Git-style memory ref such as `HEAD`
 or `refs/heads/main` and filters replay/context to the target event identity.
 MCP clients discover this tool through the standard `tools/list` handshake, so

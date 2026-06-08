@@ -193,7 +193,7 @@ class TestToolSchema:
 
     def test_tools_list_length(self) -> None:
         """Should expose the memory and context lifecycle tools."""
-        assert len(TOOLS) == 39
+        assert len(TOOLS) == 44
 
     def test_tool_names(self) -> None:
         """Tool names should match the expected contract."""
@@ -211,6 +211,11 @@ class TestToolSchema:
             "memory_propose_belief_update",
             "memory_claim_confidence",
             "memory_similar_procedures",
+            "memory_record_known_unknown",
+            "memory_known_unknowns",
+            "memory_confidence_trajectory",
+            "memory_reverification_needs",
+            "memory_plan_from_procedures",
             "memory_verbatim",
             "memory_feedback",
             "memory_synthesis_artifact",
@@ -324,6 +329,9 @@ class TestToolSchema:
             "outcome_recorded",
         ]
         assert "procedure" in tool.inputSchema["properties"]
+        assert "failure_modes" in tool.inputSchema["properties"]
+        assert "rollback" in tool.inputSchema["properties"]
+        assert "contradiction_reason" in tool.inputSchema["properties"]
 
     def test_context_after_turn_has_required_fields(self) -> None:
         """context_after_turn should require role and content."""
@@ -512,6 +520,33 @@ class TestToolSchema:
         assert procedures.inputSchema["properties"]["phase"]["default"] == "planning"
         assert procedures.inputSchema["properties"]["limit"]["minimum"] == 1
         assert procedures.inputSchema["additionalProperties"] is False
+
+        record_unknown = tools["memory_record_known_unknown"]
+        assert record_unknown.inputSchema["required"] == ["question", "reason", "source_events", "claim_key"]
+        assert record_unknown.inputSchema["properties"]["source_events"]["minItems"] == 1
+        assert record_unknown.inputSchema["properties"]["actor"]["default"] == "zaxy-reasoning"
+        assert record_unknown.inputSchema["additionalProperties"] is False
+
+        known_unknowns = tools["memory_known_unknowns"]
+        assert known_unknowns.inputSchema["required"] == []
+        assert known_unknowns.inputSchema["properties"]["status"]["default"] == "open"
+        assert known_unknowns.inputSchema["additionalProperties"] is False
+
+        trajectory = tools["memory_confidence_trajectory"]
+        assert trajectory.inputSchema["required"] == ["claim"]
+        assert trajectory.inputSchema["properties"]["limit"]["minimum"] == 1
+        assert trajectory.inputSchema["additionalProperties"] is False
+
+        reverify = tools["memory_reverification_needs"]
+        assert reverify.inputSchema["required"] == []
+        assert reverify.inputSchema["properties"]["min_confidence"]["minimum"] == 0
+        assert reverify.inputSchema["properties"]["min_confidence"]["maximum"] == 1
+        assert reverify.inputSchema["additionalProperties"] is False
+
+        plan = tools["memory_plan_from_procedures"]
+        assert plan.inputSchema["required"] == ["goal"]
+        assert plan.inputSchema["properties"]["phase"]["default"] == "planning"
+        assert plan.inputSchema["additionalProperties"] is False
 
 
 # ------------------------------------------------------------------
@@ -1028,6 +1063,100 @@ class TestCausalAndConsolidationTools:
         )
         fabric.close.assert_awaited_once()
 
+    async def test_memory_record_known_unknown_uses_configured_fabric_path(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_record_known_unknown should delegate uncertainty recording to MemoryFabric."""
+        source_hash = "e" * 64
+        expected = {"event_type": "metacognition.unknown.recorded"}
+        fabric = AsyncMock()
+        fabric.record_known_unknown.return_value = expected
+
+        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric) as fabric_cls:
+            response = await server.handle_memory_record_known_unknown({
+                "question": "Which backend caused latency?",
+                "reason": "Evidence conflicted.",
+                "source_events": [{"seq": 11, "hash": source_hash}],
+                "claim_key": "backend-latency",
+                "gap_type": "conflicting_evidence",
+                "reverify_query": "latest backend latency cause",
+                "phase": "review",
+                "actor": "reviewer",
+                "session_id": "agent-1",
+            })
+
+        assert json_loads(response[0].text) == expected
+        fabric_cls.assert_called_once()
+        fabric.connect.assert_awaited_once()
+        fabric.record_known_unknown.assert_awaited_once_with(
+            "Which backend caused latency?",
+            reason="Evidence conflicted.",
+            source_events=[{"seq": 11, "hash": source_hash}],
+            claim_key="backend-latency",
+            gap_type="conflicting_evidence",
+            reverify_query="latest backend latency cause",
+            phase="review",
+            session_id="agent-1",
+            actor="reviewer",
+        )
+        fabric.close.assert_awaited_once()
+
+    @pytest.mark.parametrize(
+        ("handler_name", "method_name", "arguments", "expected_args", "expected_kwargs"),
+        [
+            (
+                "handle_memory_known_unknowns",
+                "list_known_unknowns",
+                {"status": "all", "limit": 3, "session_id": "agent-1"},
+                (),
+                {"session_id": "agent-1", "status": "all", "limit": 3},
+            ),
+            (
+                "handle_memory_confidence_trajectory",
+                "list_confidence_trajectory",
+                {"claim": "Projection is stale", "limit": 4, "session_id": "agent-1"},
+                ("Projection is stale",),
+                {"session_id": "agent-1", "limit": 4},
+            ),
+            (
+                "handle_memory_reverification_needs",
+                "list_reverification_needs",
+                {"query": "projection", "limit": 5, "min_confidence": 0.8, "session_id": "agent-1"},
+                (),
+                {"query": "projection", "session_id": "agent-1", "limit": 5, "min_confidence": 0.8},
+            ),
+            (
+                "handle_memory_plan_from_procedures",
+                "plan_from_procedures",
+                {"goal": "Fix stale projection", "phase": "planning", "limit": 6, "session_id": "agent-1"},
+                ("Fix stale projection",),
+                {"phase": "planning", "session_id": "agent-1", "limit": 6},
+            ),
+        ],
+    )
+    async def test_beta2_reasoning_tools_use_configured_fabric_path(
+        self,
+        server: ZaxyMCPServer,
+        handler_name: str,
+        method_name: str,
+        arguments: dict[str, object],
+        expected_args: tuple[object, ...],
+        expected_kwargs: dict[str, object],
+    ) -> None:
+        """Beta.2 MCP reasoning tools should delegate to MemoryFabric methods."""
+        expected = {"primitive": method_name}
+        fabric = AsyncMock()
+        getattr(fabric, method_name).return_value = expected
+
+        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric):
+            response = await getattr(server, handler_name)(arguments)
+
+        assert json_loads(response[0].text) == expected
+        fabric.connect.assert_awaited_once()
+        getattr(fabric, method_name).assert_awaited_once_with(*expected_args, **expected_kwargs)
+        fabric.close.assert_awaited_once()
+
     @pytest.mark.parametrize(
         ("handler_name", "arguments"),
         [
@@ -1037,6 +1166,20 @@ class TestCausalAndConsolidationTools:
             ("handle_memory_explain_outcome", {"outcome": "Test failed", "session_id": "agent-2"}),
             ("handle_memory_claim_confidence", {"claim": "Projection is stale", "session_id": "agent-2"}),
             ("handle_memory_similar_procedures", {"query": "Fix stale projection", "session_id": "agent-2"}),
+            ("handle_memory_known_unknowns", {"session_id": "agent-2"}),
+            ("handle_memory_confidence_trajectory", {"claim": "Projection is stale", "session_id": "agent-2"}),
+            ("handle_memory_reverification_needs", {"session_id": "agent-2"}),
+            ("handle_memory_plan_from_procedures", {"goal": "Fix stale projection", "session_id": "agent-2"}),
+            (
+                "handle_memory_record_known_unknown",
+                {
+                    "question": "Which backend caused latency?",
+                    "reason": "Evidence conflicted.",
+                    "source_events": [{"seq": 11, "hash": "e" * 64}],
+                    "claim_key": "backend-latency",
+                    "session_id": "agent-2",
+                },
+            ),
             (
                 "handle_memory_propose_belief_update",
                 {
@@ -1085,6 +1228,11 @@ class TestCausalAndConsolidationTools:
             ("memory_propose_belief_update", "handle_memory_propose_belief_update"),
             ("memory_claim_confidence", "handle_memory_claim_confidence"),
             ("memory_similar_procedures", "handle_memory_similar_procedures"),
+            ("memory_record_known_unknown", "handle_memory_record_known_unknown"),
+            ("memory_known_unknowns", "handle_memory_known_unknowns"),
+            ("memory_confidence_trajectory", "handle_memory_confidence_trajectory"),
+            ("memory_reverification_needs", "handle_memory_reverification_needs"),
+            ("memory_plan_from_procedures", "handle_memory_plan_from_procedures"),
         ],
     )
     async def test_causal_and_consolidation_dispatch_routes_to_handlers(
@@ -2310,6 +2458,9 @@ class TestMemorySkill:
             "procedure": ["Write focused failing test", "Run pytest"],
             "applicability": ["Python feature work"],
             "citations": ["eventloom://agent-1/events/4#abcd"],
+            "failure_modes": ["misses cache invalidation race"],
+            "rollback": "Use python-test-first v1 until validation recovers.",
+            "contradiction_reason": "Regression found in release validation.",
             "actor": "assistant",
             "session_id": "agent-1",
         })
@@ -2328,6 +2479,9 @@ class TestMemorySkill:
             "procedure": ["Write focused failing test", "Run pytest"],
             "applicability": ["Python feature work"],
             "citations": ["eventloom://agent-1/events/4#abcd"],
+            "failure_modes": ["misses cache invalidation race"],
+            "rollback": "Use python-test-first v1 until validation recovers.",
+            "contradiction_reason": "Regression found in release validation.",
         }
         server.graph.upsert_extraction.assert_awaited_once()
         server.tracer.trace_append.assert_awaited_once_with("skill.validated", "assistant", 1)

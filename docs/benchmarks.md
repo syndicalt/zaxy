@@ -139,6 +139,27 @@ coverage, and authority boundaries for beta.1 primitives. Do not report it as
 external validation, do not combine it with the headline 500 or Harvey LAB
 numbers, and do not use it to reward answer phrasing.
 
+Beta.2 extends the internal guardrail to metacognition and procedural planning
+contracts. The scorer inspects contract fields only; it does not score final
+answers, expected benchmark labels, or answer phrasing. The beta.2 fields are:
+
+- `observable_metacognition`: known unknowns, confidence assessments, conflict
+  clusters, and reverify requests must be replayable Eventloom event types.
+- `open_reverify_status`: re-verification needs stay open until a separate
+  resolution path changes state.
+- `procedural_citation_presence`: applicable procedures must carry Eventloom
+  citations.
+- `planning_phase_match`: procedure-derived planning packets must remain in the
+  planning phase unless explicitly routed otherwise.
+- `authority_boundary`: metacognition and procedures remain
+  `non_authoritative`; they are diagnostic or planning guidance, not accepted
+  facts.
+- `score`: the simple mean of the beta.2 contract ratios.
+
+This beta.2 guardrail is an internal release-quality check and readiness signal.
+It is not external validation and must not be merged into the headline
+LongMemEval-compatible or Harvey LAB results.
+
 ## Claim Boundaries
 
 - Use **LongMemEval-compatible checkout** for the headline 500 diagnostic.

@@ -74,6 +74,15 @@ zaxy memory inferred-status --session-id zaxy-default --json</code></pre>
       <p>Phase routing is deterministic policy metadata. It helps checkout and operators distinguish planning context from execution, review, and reflection context, but it is not a learned planning policy and it is not a benchmark-specific scoring shortcut. Primitive observations are reasoning trace evidence: they are observable, replayable, and useful for audit, but they do not prove the primitive result is true.</p>
       <p>Belief proposals use <code>belief.update.proposed</code>. Projection should preserve the claim, rationale, confidence, source-event citations, phase, <code>review_status=pending</code>, and <code>authority_status=non_authoritative</code>. A proposal is not a fact update. It remains review material until a separate authority path promotes supported state through the normal gates.</p>
       <p>Memory Checkout summarizes these graph surfaces separately from current facts: <code>diagnostics.reasoning_primitives</code> reports context count, phase counts, and primitive counts; <code>diagnostics.belief_update_proposals</code> reports proposal count, pending count, and the non-authoritative authority status. Prompt guidance must preserve this separation so a model can inspect the reasoning trace without treating proposal text as canonical memory.</p>
+      <p>Zaxy 2.0 beta.2 adds typed metacognition projections for uncertainty and re-verification workflows:</p>
+      <ul>
+        <li><code>metacognition.unknown.recorded</code> -&gt; <code>known_unknown</code></li>
+        <li><code>metacognition.confidence.assessed</code> -&gt; <code>confidence_assessment</code></li>
+        <li><code>metacognition.conflict.clustered</code> -&gt; <code>conflict_cluster</code></li>
+        <li><code>metacognition.reverify.requested</code> -&gt; <code>reverify_request</code></li>
+      </ul>
+      <p>These entities preserve claim keys, status or resolution status, confidence, priority, source event refs, source event hashes, and <code>authority_status=non_authoritative</code>. They are diagnostic graph state, not accepted facts. Confidence assessment entities are append-only trajectory points. Conflict clusters remain unresolved until a separate resolution workflow records authority. Re-verification requests remain open until another event explicitly closes or supersedes the need.</p>
+      <p>Beta.2 also hardens procedural memory projection. Skill versions and procedure candidates preserve procedure steps, applicability, citations, failure modes, rollback guidance, contradiction reasons, status, and outcome evidence. Checkout treats validated, revised, or accepted cited procedures as applicable planning guidance; proposed, pending, or deferred procedures as diagnostic; and rejected, conflicted, deprecated, contradicted, stale, superseded, closed, or uncited procedures as excluded.</p>
       <p>Example Eventloom payload:</p>
       <pre><code class="language-json">{
   &quot;source&quot;: {&quot;name&quot;: &quot;task-7&quot;, &quot;entity_type&quot;: &quot;task&quot;},
