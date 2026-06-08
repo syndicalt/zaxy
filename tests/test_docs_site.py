@@ -233,20 +233,21 @@ def test_benchmark_docs_pin_full_set_quality_reports_and_caveats() -> None:
 
 
 def test_docs_publish_coordination_competitor_claim_gate() -> None:
-    """Archived CoordinationBench reports should not be active public claims."""
+    """Active CoordinationBench evidence should keep competitor claims disclosure-only."""
     benchmarks = Path("docs/benchmarks.md").read_text(encoding="utf-8")
     roadmap = Path("docs/coordinate-roadmap.md").read_text(encoding="utf-8")
     report = json.loads(
-        Path("reports/archive/benchmarks/coordination-real-v1/coordination-benchmark.json").read_text(
+        Path("reports/benchmarks/coordination-real-v1/coordination-benchmark.json").read_text(
             encoding="utf-8"
         )
     )
     report_md = Path(
-        "reports/archive/benchmarks/coordination-real-v1/coordination-benchmark.md"
+        "reports/benchmarks/coordination-real-v1/coordination-benchmark.md"
     ).read_text(encoding="utf-8")
 
-    assert "coordination-real-v1" not in benchmarks
-    assert "Do not cite archived partial runs as current benchmark claims" in benchmarks
+    assert "coordination-real-v1" in benchmarks
+    assert "project-defined internal guardrail" in benchmarks
+    assert "cannot silently become a public claim" in benchmarks
     assert "Quarq and Semantic Reach/Hybi remain small-project disclosure rows" in roadmap
     assert report["competitor_claim_gate"]["status"] == "blocked"
     assert set(report["competitor_claim_gate"]["blocked_adapters"]) == {"quarq", "hybi"}
@@ -701,7 +702,7 @@ def test_mcp_docs_publish_tool_contract_snapshot() -> None:
     fixture = json.loads(Path("docs/examples/mcp-tool-contract.json").read_text(encoding="utf-8"))
     docs = Path("docs/mcp.md").read_text(encoding="utf-8")
 
-    assert fixture["tool_count"] == 29
+    assert fixture["tool_count"] == len(fixture["tools"]) == 44
     assert "docs/examples/mcp-tool-contract.json" in docs
     assert "MCP tool contract snapshot" in docs
     assert {tool["name"] for tool in fixture["tools"]} >= {

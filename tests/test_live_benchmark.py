@@ -157,14 +157,15 @@ def test_public_benchmark_guardrail_script_is_reproducible_from_clean_checkout()
 
     assert ".cache/zaxy/benchmarks/longmemeval_oracle.json" in script
     assert ".cache/zaxy/longmemeval-embeddings.json" in script
-    assert "reports/benchmarks/longmemeval-500-hash/live-benchmark.json" in script
-    assert "reports/benchmarks/longmemeval-500-neo4j-current-checkout/live-benchmark.json" in script
-    assert "reports/benchmarks/longmemeval-500-pggraph-comparison/live-benchmark.json" in script
+    assert "reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json" in script
+    assert "reports/benchmarks/longmemeval-500-publish-20260607/run-config.md" in script
+    assert "reports/benchmarks/longmemeval-500-hash/live-benchmark.json" not in script
     assert "benchmark-inventory" in script
+    assert "benchmark-freeze" in script
     assert "benchmark-compare" in script
-    assert "--min-mean-score 0.714" in script
-    assert "--min-answer-recall-at-5 0.626" in script
-    assert "--min-recall-at-5 0.958" in script
+    assert "--min-mean-score 0.95" in script
+    assert "--min-answer-recall-at-5 0.90" in script
+    assert "--min-recall-at-5 0.99" in script
     assert "--min-citation-coverage 1.0" in script
 
 

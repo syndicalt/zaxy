@@ -19,46 +19,19 @@ require_file() {
 
 require_file "${DATASET}"
 require_file "${EMBEDDING_CACHE}"
-require_file "reports/benchmarks/longmemeval-500-hash/live-benchmark.json"
-require_file "reports/benchmarks/longmemeval-500-neo4j-current-checkout/live-benchmark.json"
-require_file "reports/benchmarks/longmemeval-500-pggraph-comparison/live-benchmark.json"
+require_file "reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json"
+require_file "reports/benchmarks/longmemeval-500-publish-20260607/run-config.md"
 
 "${ZAXY_CMD[@]}" benchmark-inventory --json >/dev/null
+"${ZAXY_CMD[@]}" benchmark-freeze --json >/dev/null
 
-"${ZAXY_CMD[@]}" benchmark-compare reports/benchmarks/longmemeval-500-hash/live-benchmark.json \
+"${ZAXY_CMD[@]}" benchmark-compare reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json \
     --backend zaxy-checkout \
-    --min-mean-score 0.626 \
-    --min-answer-recall-at-5 0.608 \
-    --min-recall-at-5 0.956 \
+    --min-mean-score 0.95 \
+    --min-answer-recall-at-5 0.90 \
+    --min-recall-at-5 0.99 \
     --min-citation-coverage 1.0 \
-    --max-p95-ms 15000 \
-    --max-p99-ms 23000
-
-"${ZAXY_CMD[@]}" benchmark-compare reports/benchmarks/longmemeval-500-neo4j-current-checkout/live-benchmark.json \
-    --backend zaxy-checkout \
-    --min-mean-score 0.714 \
-    --min-answer-recall-at-5 0.626 \
-    --min-recall-at-5 0.958 \
-    --min-citation-coverage 1.0 \
-    --max-p95-ms 1200 \
-    --max-p99-ms 2500
-
-"${ZAXY_CMD[@]}" benchmark-compare reports/benchmarks/longmemeval-500-pggraph-comparison/live-benchmark.json \
-    --backend zaxy-checkout \
-    --min-mean-score 0.714 \
-    --min-answer-recall-at-5 0.626 \
-    --min-recall-at-5 0.958 \
-    --min-citation-coverage 1.0 \
-    --max-p95-ms 1200 \
+    --max-p95-ms 2500 \
     --max-p99-ms 3000
-
-"${ZAXY_CMD[@]}" benchmark-compare reports/benchmarks/longmemeval-500-pggraph-comparison/live-benchmark.json \
-    --backend zaxy \
-    --min-mean-score 0.626 \
-    --min-answer-recall-at-5 0.608 \
-    --min-recall-at-5 0.956 \
-    --min-citation-coverage 1.0 \
-    --max-p95-ms 15000 \
-    --max-p99-ms 23000
 
 echo "Benchmark guardrails passed."

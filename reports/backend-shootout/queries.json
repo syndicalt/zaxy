@@ -1,0 +1,18 @@
+[
+  {
+    "query": "zero-friction embedded graph memory runtime",
+    "expected_terms": ["zero-friction", "embedded graph"]
+  },
+  {
+    "query": "compare LatticeDB Neo4j pgGraph BM25 same harness",
+    "expected_terms": ["LatticeDB", "same harness"]
+  },
+  {
+    "query": "activation launcher memory checkout guidance",
+    "expected_terms": ["activate codex", "memory_checkout"]
+  },
+  {
+    "query": "default backend requires citations temporal semantics benchmark guardrails",
+    "expected_terms": ["citations", "benchmark guardrails"]
+  }
+]

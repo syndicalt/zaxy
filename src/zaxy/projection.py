@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Literal, Protocol
 
 if TYPE_CHECKING:
     from zaxy.extract import ExtractionResult
@@ -66,6 +66,19 @@ class ProjectionStore(Protocol):  # pragma: no cover
         session_id: str = "default",
     ) -> list[GraphEntity]:
         """Search graph neighbors from a starting entity."""
+        ...
+
+    async def search_causal_neighbors(
+        self,
+        entity_name: str,
+        *,
+        direction: Literal["successors", "predecessors"],
+        relation_type: str | None = None,
+        depth: int = 2,
+        temporal_point: str | None = None,
+        session_id: str = "default",
+    ) -> list[GraphEntity]:
+        """Search directed causal neighbors from a starting entity."""
         ...
 
     async def has_traversal_edges(self, session_id: str = "default") -> bool:

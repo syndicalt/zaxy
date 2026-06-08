@@ -15,7 +15,7 @@ import json
 import shutil
 from collections import defaultdict
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from zaxy.security import vector_has_signal
 
@@ -266,6 +266,72 @@ class LatticeDBStore:
                     if target_id not in visited:
                         visited.add(target_id)
                         next_frontier.add(target_id)
+            frontier = next_frontier
+            if not frontier:
+                break
+        return list(found.values())
+
+    async def search_causal_neighbors(
+        self,
+        entity_name: str,
+        *,
+        direction: Literal["successors", "predecessors"],
+        relation_type: str | None = None,
+        depth: int = 2,
+        temporal_point: str | None = None,
+        session_id: str = "default",
+    ) -> list[GraphEntity]:
+        """Search directed causal neighbors from a starting entity."""
+        if direction not in {"successors", "predecessors"}:
+            raise ValueError("direction must be 'successors' or 'predecessors'")
+        safe_depth = max(1, min(depth, 5))
+        start_ids = {
+            node_id
+            for node_id in self._entity_node_ids()
+            if self._node_property(node_id, "session_id") == session_id
+            and self._node_property(node_id, "name") == entity_name
+            and self._is_visible_at(node_id, temporal_point)
+        }
+        frontier = set(start_ids)
+        seen = set(start_ids)
+        found: dict[int, GraphEntity] = {}
+        path_relations_by_id: dict[int, list[str]] = {node_id: [] for node_id in start_ids}
+        path_citations_by_id: dict[int, list[str]] = {node_id: [] for node_id in start_ids}
+        for _ in range(safe_depth):
+            next_frontier: set[int] = set()
+            for node_id in frontier:
+                edges = self._outgoing_edges(node_id) if direction == "successors" else self._incoming_edges(node_id)
+                for edge in edges:
+                    if not self._active_edge_at(edge.id, session_id, relation_type, temporal_point):
+                        continue
+                    graph_relation_type = str(self._edge_property(edge.id, "relation_type") or "")
+                    if not graph_relation_type.startswith("causal_"):
+                        continue
+                    neighbor_id = int(edge.target_id if direction == "successors" else edge.source_id)
+                    if not self._is_visible_at(neighbor_id, temporal_point):
+                        continue
+                    source = self._entity_from_node_id(int(edge.source_id))
+                    target = self._entity_from_node_id(int(edge.target_id))
+                    edge_metadata = self._causal_edge_metadata(
+                        edge.id,
+                        source=source,
+                        target=target,
+                        session_id=session_id,
+                    )
+                    path_relations = [*path_relations_by_id.get(node_id, []), graph_relation_type]
+                    path_citations = [*path_citations_by_id.get(node_id, []), str(edge_metadata["citation"])]
+                    if neighbor_id not in found:
+                        found[neighbor_id] = _entity_with_causal_metadata(
+                            self._entity_from_node_id(neighbor_id),
+                            edge_metadata=edge_metadata,
+                            path_relation_types=path_relations,
+                            path_citations=path_citations,
+                        )
+                    if neighbor_id not in seen:
+                        seen.add(neighbor_id)
+                        path_relations_by_id[neighbor_id] = path_relations
+                        path_citations_by_id[neighbor_id] = path_citations
+                        next_frontier.add(neighbor_id)
             frontier = next_frontier
             if not frontier:
                 break
@@ -551,6 +617,57 @@ class LatticeDBStore:
             and (relation_type is None or self._edge_property(edge_id, "relation_type") == relation_type)
         )
 
+    def _active_edge_at(
+        self,
+        edge_id: int,
+        session_id: str,
+        relation_type: str | None,
+        temporal_point: str | None,
+    ) -> bool:
+        if self._edge_property(edge_id, "session_id") != session_id:
+            return False
+        graph_relation_type = self._edge_property(edge_id, "relation_type")
+        if relation_type is not None and graph_relation_type != relation_type:
+            return False
+        valid_to = self._edge_property(edge_id, "valid_to") or ""
+        if temporal_point is None:
+            return valid_to == ""
+        valid_from = str(self._edge_property(edge_id, "valid_from") or "")
+        return valid_from <= temporal_point and (not valid_to or temporal_point < str(valid_to))
+
+    def _causal_edge_metadata(
+        self,
+        edge_id: int,
+        *,
+        source: GraphEntity,
+        target: GraphEntity,
+        session_id: str,
+    ) -> dict[str, Any]:
+        evidence = _json_dict(self._edge_property(edge_id, "evidence_json"))
+        graph_relation_type = str(self._edge_property(edge_id, "relation_type") or "")
+        source_event_seq = self._edge_property(edge_id, "source_event_seq")
+        source_event_hash = str(self._edge_property(edge_id, "source_event_hash") or "")
+        confidence = _optional_float(self._edge_property(edge_id, "confidence"))
+        source_event_seq_value = _optional_int(source_event_seq)
+        return {
+            "causal_source_name": source.name,
+            "causal_source_type": source.entity_type,
+            "causal_target_name": target.name,
+            "causal_target_type": target.entity_type,
+            "relation_type": graph_relation_type,
+            "graph_relation_type": graph_relation_type,
+            "causal_relation_type": evidence.get("causal_relation_type") or graph_relation_type.removeprefix("causal_"),
+            "confidence": confidence if confidence is not None and confidence >= 0.0 else 1.0,
+            "inference_method": str(self._edge_property(edge_id, "inference_method") or "unknown"),
+            "citation": _edge_citation(session_id, source_event_seq, source_event_hash),
+            "review_status": evidence.get("review_status") or "proposed",
+            "authority_status": evidence.get("authority_status") or "non_authoritative",
+            "source_event_seq": source_event_seq_value,
+            "source_event_hash": source_event_hash or None,
+            "evidence": evidence,
+            "session_id": session_id,
+        }
+
     def _entity_from_node_id(self, node_id: int) -> GraphEntity:
         from zaxy.graph import GraphEntity
 
@@ -591,8 +708,42 @@ def _label(value: str) -> str:
 def _json_dict(raw: Any) -> dict[str, Any]:
     if not raw:
         return {}
-    parsed = json.loads(str(raw))
+    try:
+        parsed = json.loads(str(raw))
+    except (TypeError, json.JSONDecodeError):
+        return {}
     return parsed if isinstance(parsed, dict) else {}
+
+
+def _entity_with_causal_metadata(
+    entity: GraphEntity,
+    *,
+    edge_metadata: dict[str, Any],
+    path_relation_types: list[str],
+    path_citations: list[str],
+) -> GraphEntity:
+    from zaxy.graph import GraphEntity
+
+    return GraphEntity(
+        name=entity.name,
+        entity_type=entity.entity_type,
+        valid_from=entity.valid_from,
+        valid_to=entity.valid_to,
+        properties={
+            **entity.properties,
+            **edge_metadata,
+            "_path_relation_types": path_relation_types,
+            "_path_citations": path_citations,
+            "_path_length": len(path_relation_types),
+        },
+        session_id=entity.session_id,
+    )
+
+
+def _edge_citation(session_id: str, source_event_seq: Any, source_event_hash: str) -> str:
+    if source_event_seq is not None and source_event_hash:
+        return f"eventloom://{session_id}/events/{source_event_seq}#{source_event_hash[:12]}"
+    return "eventloom://unknown/events/unknown#unknown"
 
 
 def _fts_text(name: str, entity_type: str, properties: dict[str, Any]) -> str:
@@ -610,7 +761,21 @@ def _vector(values: list[float]) -> Any:
 
 
 def _optional_int(value: Any) -> int | None:
-    return int(value) if value is not None and value != "" else None
+    if value is None or value == "" or isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None or value == "" or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _properties_reference_source(properties: dict[str, Any], source_path: str) -> bool:

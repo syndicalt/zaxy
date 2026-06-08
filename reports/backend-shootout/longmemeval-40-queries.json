@@ -1,0 +1,242 @@
+[
+  {
+    "expected_terms": [
+      "GPS system not functioning correctly"
+    ],
+    "query": "What was the first issue I had with my new car after its first service?"
+  },
+  {
+    "expected_terms": [
+      "'Data Analysis using Python' webinar"
+    ],
+    "query": "Which event did I attend first, the 'Effective Time Management' workshop or the 'Data Analysis using Python' webinar?"
+  },
+  {
+    "expected_terms": [
+      "bike"
+    ],
+    "query": "Which vehicle did I take care of first in February, the bike or the car?"
+  },
+  {
+    "expected_terms": [
+      "Samsung Galaxy S22"
+    ],
+    "query": "Which device did I got first, the Samsung Galaxy S22 or the Dell XPS 13?"
+  },
+  {
+    "expected_terms": [
+      "7 days. 8 days (including the last day) is also acceptable."
+    ],
+    "query": "How many days before the team meeting I was preparing for did I attend the workshop on 'Effective Communication in the Workplace'?"
+  },
+  {
+    "expected_terms": [
+      "30 days. 31 days (including the last day) is also acceptable."
+    ],
+    "query": "How many days had passed between the Sunday mass at St. Mary's Church and the Ash Wednesday service at the cathedral?"
+  },
+  {
+    "expected_terms": [
+      "14 days. 15 days (including the last day) is also acceptable."
+    ],
+    "query": "How many days did it take for me to find a house I loved after starting to work with Rachel?"
+  },
+  {
+    "expected_terms": [
+      "Tomatoes"
+    ],
+    "query": "Which seeds were started first, the tomatoes or the marigolds?"
+  },
+  {
+    "expected_terms": [
+      "21 days. 22 days (including the last day) is also acceptable."
+    ],
+    "query": "How many days had passed between the Hindu festival of Holi and the Sunday mass at St. Mary's Church?"
+  },
+  {
+    "expected_terms": [
+      "4 days."
+    ],
+    "query": "How many days before the 'Rack Fest' did I participate in the 'Turbocharged Tuesdays' event?"
+  },
+  {
+    "expected_terms": [
+      "white Adidas sneakers"
+    ],
+    "query": "Which pair of shoes did I clean last month?"
+  },
+  {
+    "expected_terms": [
+      "The malfunction of the stand mixer"
+    ],
+    "query": "Which event happened first, the purchase of the coffee maker or the malfunction of the stand mixer?"
+  },
+  {
+    "expected_terms": [
+      "14 days. 8 days (including the last day) is also acceptable."
+    ],
+    "query": "How many days had passed between the 'Walk for Hunger' event and the 'Coastal Cleanup' event?"
+  },
+  {
+    "expected_terms": [
+      "Training pads for Luna"
+    ],
+    "query": "Which item did I purchase first, the dog bed for Max or the training pads for Luna?"
+  },
+  {
+    "expected_terms": [
+      "Fixing the fence"
+    ],
+    "query": "Which task did I complete first, fixing the fence or trimming the goats' hooves?"
+  },
+  {
+    "expected_terms": [
+      "4"
+    ],
+    "query": "How many charity events did I participate in before the 'Run for the Cure' event?"
+  },
+  {
+    "expected_terms": [
+      "4 years and 9 months"
+    ],
+    "query": "How long have I been working before I started my current job at NovaTech?"
+  },
+  {
+    "expected_terms": [
+      "'The Hate U Give'"
+    ],
+    "query": "Which book did I finish reading first, 'The Hate U Give' or 'The Nightingale'?"
+  },
+  {
+    "expected_terms": [
+      "Smart thermostat"
+    ],
+    "query": "Which device did I set up first, the smart thermostat or the mesh network system?"
+  },
+  {
+    "expected_terms": [
+      "Five months ago"
+    ],
+    "query": "How many months ago did I book the Airbnb in San Francisco?"
+  },
+  {
+    "expected_terms": [
+      "5.5 weeks"
+    ],
+    "query": "How long did I take to finish 'The Seven Husbands of Evelyn Hugo' and 'The Nightingale' combined?"
+  },
+  {
+    "expected_terms": [
+      "June 3rd"
+    ],
+    "query": "What was the date on which I attended the first BBQ event in June?"
+  },
+  {
+    "expected_terms": [
+      "7 days. 8 days (including the last day) is also acceptable."
+    ],
+    "query": "How many days before I bought the iPhone 13 Pro did I attend the Holiday Market?"
+  },
+  {
+    "expected_terms": [
+      "'Game of Thrones'"
+    ],
+    "query": "Which show did I start watching first, 'The Crown' or 'Game of Thrones'?"
+  },
+  {
+    "expected_terms": [
+      "Two weeks"
+    ],
+    "query": "How long had I been a member of 'Book Lovers Unite' when I attended the meetup?"
+  },
+  {
+    "expected_terms": [
+      "2 months"
+    ],
+    "query": "How long had I been watching stand-up comedy specials regularly when I attended the open mic night at the local comedy club?"
+  },
+  {
+    "expected_terms": [
+      "6:45 AM"
+    ],
+    "query": "What time do I wake up on Tuesdays and Thursdays?"
+  },
+  {
+    "expected_terms": [
+      "14 days. 15 days (including the last day) is also acceptable."
+    ],
+    "query": "How many days had passed since I bought my Adidas running shoes when I realized one of the shoelaces on my old Converse sneakers had broken?"
+  },
+  {
+    "expected_terms": [
+      "The arrival of the new prime lens"
+    ],
+    "query": "Which event happened first, the road trip to the coast or the arrival of the new prime lens?"
+  },
+  {
+    "expected_terms": [
+      "United Airlines"
+    ],
+    "query": "Which airline did I fly with the most in March and April?"
+  },
+  {
+    "expected_terms": [
+      "Two months"
+    ],
+    "query": "How long had I been bird watching when I attended the bird watching workshop?"
+  },
+  {
+    "expected_terms": [
+      "The solo trip to Thailand"
+    ],
+    "query": "Which trip did I take first, the one to Europe with family or the solo trip to Thailand?"
+  },
+  {
+    "expected_terms": [
+      "new router"
+    ],
+    "query": "Which device did I set up first, the smart thermostat or the new router?"
+  },
+  {
+    "expected_terms": [
+      "Persistent cough"
+    ],
+    "query": "Which health issue did I deal with first, the persistent cough or the skin tag removal?"
+  },
+  {
+    "expected_terms": [
+      "27"
+    ],
+    "query": "How old was I when I moved to the United States?"
+  },
+  {
+    "expected_terms": [
+      "One week. Answers ranging from 7 days to 10 days are also acceptable."
+    ],
+    "query": "How long had I been using the new area rug when I rearranged my living room furniture?"
+  },
+  {
+    "expected_terms": [
+      "7 days. 8 days (including the last day) is also acceptable."
+    ],
+    "query": "How many days before my best friend's birthday party did I order her gift?"
+  },
+  {
+    "expected_terms": [
+      "The family road trip across the American Southwest"
+    ],
+    "query": "Which trip did the narrator take first, the solo trip to Europe or the family road trip across the American Southwest?"
+  },
+  {
+    "expected_terms": [
+      "Two weeks"
+    ],
+    "query": "How long did I use my new binoculars before I saw the American goldfinches returning to the area?"
+  },
+  {
+    "expected_terms": [
+      "Tom"
+    ],
+    "query": "Who did I meet first, Mark and Sarah or Tom?"
+  }
+]

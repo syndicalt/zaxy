@@ -1,0 +1,24 @@
+{
+  "adapter_contract": "coordinationbench-v1",
+  "adapter_version": "hybi==0.1.1",
+  "capability_status": "unsupported_runner_required",
+  "dataset_contract": "coordinationbench-v1 workload JSON; runner receives --workload <path>",
+  "display_name": "Semantic Reach / HyperBinder / Hybi",
+  "install_command": "pip install hybi==0.1.1 # expected wheel sha256:96dc256022d74ae7d05a91cb0cccfd8cd561bf25f91a21540b20a39f7748e223",
+  "name": "hybi",
+  "result_export_schema": "schemas/result.schema.json; runner must write --output <path>",
+  "result_file": "hybi-coordination-result.json",
+  "run_command": [
+    "python",
+    "-m",
+    "zaxy.resources.coordinationbench.unsupported_runner",
+    "--adapter",
+    "hybi"
+  ],
+  "source_ref": "pypi:hybi==0.1.1 sha256:96dc256022d74ae7d05a91cb0cccfd8cd561bf25f91a21540b20a39f7748e223",
+  "source_url": "https://pypi.org/project/hybi/0.1.1/",
+  "template": true,
+  "unsupported_reason": "The public hybi package is an HTTP SDK for a running HyperBinder server; Zaxy has no pinned HyperBinder server/runtime adapter for CoordinationBench replay.",
+  "workload_file": "coordination-workload.json",
+  "workload_fingerprint": "b63e156150b92c9aa7d8895604741484f85f4c231d4c7d2097a2467fdaf14bd0"
+}

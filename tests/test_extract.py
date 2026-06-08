@@ -5,6 +5,11 @@ Every registered extractor gets exercised."""
 
 from __future__ import annotations
 
+import inspect
+
+import pytest
+
+import zaxy.extract as extract_module
 from zaxy.event import Event
 from zaxy.extract import (
     ExtractedEdge,
@@ -361,6 +366,148 @@ class TestSkillMemory:
         assert version.properties["rollback"] == "Use deploy-cache-check v0 until cache race is resolved."
         assert version.properties["contradiction_reason"] == "Failed release validation after cache race."
         assert version.properties["evidence"] == ["pytest tests/test_release.py::test_cache_race -q"]
+
+
+class TestMetacognition:
+    """Tests for non-authoritative metacognitive state projections."""
+
+    SOURCE = [{"seq": 7, "hash": "a" * 64}]
+
+    def test_known_unknown_projects_non_authoritative_state(self) -> None:
+        ev = _make_event(
+            "metacognition.unknown.recorded",
+            {
+                "unknown_id": "metacognition:unknown:" + "1" * 24,
+                "question": "Which backend caused the latency spike?",
+                "reason": "Checkout had conflicting evidence.",
+                "claim_key": "backend-latency-cause",
+                "gap_type": "conflicting_evidence",
+                "status": "open",
+                "reverify_query": "latest cited backend latency cause",
+                "source_events": self.SOURCE,
+                "authority_status": "non_authoritative",
+            },
+            actor="agent",
+        )
+
+        result = extract(ev)
+
+        unknown = next(entity for entity in result.entities if entity.entity_type == "known_unknown")
+        assert unknown.name == "metacognition:unknown:" + "1" * 24
+        assert unknown.summary == "Which backend caused the latency spike?"
+        assert unknown.properties == {
+            "event_type": "metacognition.unknown.recorded",
+            "question": "Which backend caused the latency spike?",
+            "reason": "Checkout had conflicting evidence.",
+            "claim_key": "backend-latency-cause",
+            "gap_type": "conflicting_evidence",
+            "status": "open",
+            "reverify_query": "latest cited backend latency cause",
+            "source_event_count": 1,
+            "source_event_refs": ["7:" + ("a" * 64)],
+            "source_event_seqs": [7],
+            "source_event_hashes": ["a" * 64],
+            "source_events": self.SOURCE,
+            "authority_status": "non_authoritative",
+        }
+
+    def test_confidence_assessment_projects_append_only_point(self) -> None:
+        ev = _make_event(
+            "metacognition.confidence.assessed",
+            {
+                "assessment_id": "metacognition:confidence:" + "2" * 24,
+                "claim": "Projection stale caused failure",
+                "claim_key": "projection-stale-caused-failure",
+                "confidence": 0.42,
+                "support_count": 1,
+                "conflict_count": 2,
+                "requires_reverify": True,
+                "method": "deterministic_token_overlap_v1",
+                "evidence": [
+                    {
+                        "citation": "eventloom://agent-1/events/7#aaaaaaaaaaaa",
+                        "stance": "support",
+                    }
+                ],
+                "authority_status": "non_authoritative",
+            },
+            actor="zaxy-reasoning",
+        )
+
+        result = extract(ev)
+
+        assessment = next(entity for entity in result.entities if entity.entity_type == "confidence_assessment")
+        assert assessment.name == "metacognition:confidence:" + "2" * 24
+        assert assessment.properties["confidence"] == 0.42
+        assert assessment.properties["support_count"] == 1
+        assert assessment.properties["conflict_count"] == 2
+        assert assessment.properties["requires_reverify"] is True
+        assert assessment.properties["authority_status"] == "non_authoritative"
+        assert assessment.properties["evidence_count"] == 1
+
+    def test_conflict_cluster_and_reverify_project_diagnostics(self) -> None:
+        conflict = extract(
+            _make_event(
+                "metacognition.conflict.clustered",
+                {
+                    "cluster_id": "metacognition:conflict:" + "3" * 24,
+                    "claim_key": "projection-latency-cause",
+                    "claim": "Projection stale caused failure",
+                    "confidence": 0.5,
+                    "reason": "Support and conflict evidence both present.",
+                    "resolution_status": "unresolved",
+                    "supporting_source_events": [{"seq": 7, "hash": "a" * 64}],
+                    "conflicting_source_events": [{"seq": 8, "hash": "b" * 64}],
+                    "authority_status": "non_authoritative",
+                },
+                actor="zaxy-reasoning",
+            )
+        )
+        reverify = extract(
+            _make_event(
+                "metacognition.reverify.requested",
+                {
+                    "reverify_id": "metacognition:reverify:" + "4" * 24,
+                    "query": "Re-check projection latency cause",
+                    "reason": "Low confidence and conflict count above zero.",
+                    "claim_key": "projection-latency-cause",
+                    "priority": "high",
+                    "status": "open",
+                    "source_events": self.SOURCE,
+                    "authority_status": "non_authoritative",
+                },
+                actor="zaxy-reasoning",
+            )
+        )
+
+        cluster = next(entity for entity in conflict.entities if entity.entity_type == "conflict_cluster")
+        request = next(entity for entity in reverify.entities if entity.entity_type == "reverify_request")
+        assert cluster.properties["resolution_status"] == "unresolved"
+        assert cluster.properties["supporting_source_event_refs"] == ["7:" + ("a" * 64)]
+        assert cluster.properties["conflicting_source_event_refs"] == ["8:" + ("b" * 64)]
+        assert cluster.properties["authority_status"] == "non_authoritative"
+        assert request.properties["status"] == "open"
+        assert request.properties["priority"] == "high"
+        assert request.properties["source_event_refs"] == ["7:" + ("a" * 64)]
+        assert request.properties["authority_status"] == "non_authoritative"
+
+    def test_metacognition_rejects_authoritative_payloads(self) -> None:
+        ev = _make_event(
+            "metacognition.unknown.recorded",
+            {
+                "unknown_id": "metacognition:unknown:" + "5" * 24,
+                "question": "What changed?",
+                "reason": "No cited answer.",
+                "claim_key": "change",
+                "gap_type": "missing_evidence",
+                "status": "open",
+                "source_events": self.SOURCE,
+                "authority_status": "authoritative",
+            },
+        )
+
+        with pytest.raises(ValueError, match="authority_status"):
+            extract(ev)
 
 
 class TestTaskClaimed:
@@ -828,6 +975,543 @@ class TestInferredEdgeGenerated:
         assert edge.inferred is True
         assert edge.confidence == 0.0
         assert edge.inference_method == "contradicting_evidence_retraction_v1"
+
+
+class TestCausalEdgeGenerated:
+    """Tests for explicit causal-edge event projection."""
+
+    def test_extract_causal_edge_generated_projects_inferred_causal_relation(self) -> None:
+        event = _make_event(
+            "causal.edge.generated",
+            {
+                "source": {"name": "command:pytest", "entity_type": "command"},
+                "target": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "graph_relation_type": "causal_caused",
+                "confidence": 0.91,
+                "causal_method": "explicit_outcome_citation_v1",
+                "review_status": "proposed",
+                "authority_status": "non_authoritative",
+                "evidence": {
+                    "source_event_seq": 42,
+                    "source_event_hash": "a" * 64,
+                    "reason": "The command output contained the failure.",
+                },
+            },
+        )
+
+        result = extract(event)
+
+        assert {entity.name for entity in result.entities} == {"command:pytest", "test failure"}
+        assert result.edges == [
+            ExtractedEdge(
+                source="command:pytest",
+                target="test failure",
+                relation_type="causal_caused",
+                valid_from=event.timestamp,
+                inferred=True,
+                confidence=0.91,
+                inference_method="explicit_outcome_citation_v1",
+                evidence={
+                    "causal_relation_type": "caused",
+                    "review_status": "proposed",
+                    "authority_status": "non_authoritative",
+                    "source_event_seq": 42,
+                    "source_event_hash": "a" * 64,
+                    "reason": "The command output contained the failure.",
+                },
+            )
+        ]
+
+    @pytest.mark.parametrize(
+        "source_event_hash",
+        ["", "a" * 63, "a" * 65, "A" * 64, "g" * 64],
+    )
+    def test_causal_edge_generated_rejects_invalid_source_event_hash(
+        self,
+        source_event_hash: str,
+    ) -> None:
+        event = _make_event(
+            "causal.edge.generated",
+            {
+                "source": {"name": "command:pytest", "entity_type": "command"},
+                "target": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "graph_relation_type": "causal_caused",
+                "confidence": 0.91,
+                "causal_method": "explicit_outcome_citation_v1",
+                "review_status": "proposed",
+                "authority_status": "non_authoritative",
+                "evidence": {
+                    "source_event_seq": 42,
+                    "source_event_hash": source_event_hash,
+                },
+            },
+        )
+
+        with pytest.raises(ValueError, match="source_event_hash"):
+            extract(event)
+
+    def test_causal_edge_generated_rejects_missing_source_event_hash(self) -> None:
+        event = _make_event(
+            "causal.edge.generated",
+            {
+                "source": {"name": "command:pytest", "entity_type": "command"},
+                "target": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "graph_relation_type": "causal_caused",
+                "confidence": 0.91,
+                "causal_method": "explicit_outcome_citation_v1",
+                "review_status": "proposed",
+                "authority_status": "non_authoritative",
+                "evidence": {"source_event_seq": 42},
+            },
+        )
+
+        with pytest.raises(ValueError, match="source_event_hash"):
+            extract(event)
+
+    def test_causal_edge_generated_rejects_mismatched_graph_relation_type(self) -> None:
+        event = _make_event(
+            "causal.edge.generated",
+            {
+                "source": {"name": "command:pytest", "entity_type": "command"},
+                "target": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "graph_relation_type": "causal_enabled",
+                "confidence": 0.91,
+                "causal_method": "explicit_outcome_citation_v1",
+                "review_status": "proposed",
+                "authority_status": "non_authoritative",
+                "evidence": {"source_event_seq": 42, "source_event_hash": "a" * 64},
+            },
+        )
+
+        with pytest.raises(ValueError, match="graph_relation_type"):
+            extract(event)
+
+    def test_causal_edge_generated_rejects_unsupported_causal_relation_type(self) -> None:
+        event = _make_event(
+            "causal.edge.generated",
+            {
+                "source": {"name": "command:pytest", "entity_type": "command"},
+                "target": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "likely_informed",
+                "graph_relation_type": "causal_likely_informed",
+                "confidence": 0.91,
+                "causal_method": "explicit_outcome_citation_v1",
+                "review_status": "proposed",
+                "authority_status": "non_authoritative",
+                "evidence": {"source_event_seq": 42, "source_event_hash": "a" * 64},
+            },
+        )
+
+        with pytest.raises(ValueError, match="causal relation_type"):
+            extract(event)
+
+    def test_causal_edge_generated_rejects_authoritative_status(self) -> None:
+        event = _make_event(
+            "causal.edge.generated",
+            {
+                "source": {"name": "command:pytest", "entity_type": "command"},
+                "target": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "graph_relation_type": "causal_caused",
+                "confidence": 0.91,
+                "causal_method": "explicit_outcome_citation_v1",
+                "review_status": "proposed",
+                "authority_status": "authoritative",
+                "evidence": {"source_event_seq": 42, "source_event_hash": "a" * 64},
+            },
+        )
+
+        with pytest.raises(ValueError, match="authority_status"):
+            extract(event)
+
+    def test_causal_edge_generated_rejects_string_confidence(self) -> None:
+        event = _make_event(
+            "causal.edge.generated",
+            {
+                "source": {"name": "command:pytest", "entity_type": "command"},
+                "target": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "graph_relation_type": "causal_caused",
+                "confidence": "0.91",
+                "causal_method": "explicit_outcome_citation_v1",
+                "review_status": "proposed",
+                "authority_status": "non_authoritative",
+                "evidence": {"source_event_seq": 42, "source_event_hash": "a" * 64},
+            },
+        )
+
+        with pytest.raises(ValueError, match="confidence"):
+            extract(event)
+
+    def test_causal_edge_generated_rejects_non_string_causal_method(self) -> None:
+        event = _make_event(
+            "causal.edge.generated",
+            {
+                "source": {"name": "command:pytest", "entity_type": "command"},
+                "target": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "graph_relation_type": "causal_caused",
+                "confidence": 0.91,
+                "causal_method": 123,
+                "review_status": "proposed",
+                "authority_status": "non_authoritative",
+                "evidence": {"source_event_seq": 42, "source_event_hash": "a" * 64},
+            },
+        )
+
+        with pytest.raises(ValueError, match="causal method"):
+            extract(event)
+
+    def test_causal_edge_generated_snapshots_nested_evidence(self) -> None:
+        payload = {
+            "source": {"name": "command:pytest", "entity_type": "command"},
+            "target": {"name": "test failure", "entity_type": "outcome"},
+            "relation_type": "caused",
+            "graph_relation_type": "causal_caused",
+            "confidence": 0.91,
+            "causal_method": "explicit_outcome_citation_v1",
+            "review_status": "proposed",
+            "authority_status": "non_authoritative",
+            "evidence": {
+                "source_event_seq": 42,
+                "source_event_hash": "a" * 64,
+                "details": {"line": 12, "message": "failed"},
+            },
+        }
+        event = _make_event("causal.edge.generated", payload)
+
+        result = extract(event)
+        payload["evidence"]["details"]["message"] = "mutated"
+
+        assert result.edges[0].evidence["details"] == {"line": 12, "message": "failed"}
+
+
+class TestConsolidationCandidateEvents:
+    """Tests for review-pending consolidation candidate projections."""
+
+    def test_extract_consolidation_candidate_created_projects_review_pending_memory(self) -> None:
+        event = _make_event(
+            "consolidation.candidate.created",
+            {
+                "candidate_id": "consolidation:episode:" + "a" * 24,
+                "candidate_type": "episode",
+                "title": "Pytest failure investigation",
+                "summary": "The agent ran pytest and identified the cause.",
+                "source_events": [{"seq": 10, "hash": "a" * 64}],
+                "confidence": 0.74,
+                "method": "event_segment_cluster_v1",
+                "review_status": "pending",
+                "authority_status": "non_authoritative",
+                "purpose": "coding",
+            },
+        )
+
+        result = extract(event)
+
+        candidate = result.entities[0]
+        assert candidate.name == "consolidation:episode:" + "a" * 24
+        assert candidate.entity_type == "consolidation_candidate"
+        assert candidate.summary == "The agent ran pytest and identified the cause."
+        assert candidate.properties["candidate_type"] == "episode"
+        assert candidate.properties["review_status"] == "pending"
+        assert candidate.properties["authority_status"] == "non_authoritative"
+        assert candidate.properties["source_event_count"] == 1
+
+    def test_candidate_created_projects_backend_safe_source_event_citations(self) -> None:
+        event = _make_event(
+            "consolidation.candidate.created",
+            {
+                **self._candidate_created_payload(),
+                "source_events": [
+                    {"seq": 10, "hash": "a" * 64},
+                    {"seq": 11, "hash": "b" * 64},
+                ],
+            },
+        )
+
+        result = extract(event)
+
+        properties = result.entities[0].properties
+        assert properties["source_event_refs"] == [
+            "10:" + "a" * 64,
+            "11:" + "b" * 64,
+        ]
+        assert properties["source_event_seqs"] == [10, 11]
+        assert properties["source_event_hashes"] == ["a" * 64, "b" * 64]
+        backend_safe_keys = [
+            "source_event_count",
+            "source_event_refs",
+            "source_event_seqs",
+            "source_event_hashes",
+        ]
+        assert all(_is_neo4j_property_value(properties[key]) for key in backend_safe_keys)
+
+    def test_extract_consolidation_review_links_review_to_candidate(self) -> None:
+        event = _make_event(
+            "consolidation.candidate.reviewed",
+            {
+                "candidate_id": "consolidation:episode:" + "a" * 24,
+                "status": "accepted",
+                "authority_status": "non_authoritative",
+                "rationale": "Useful but still alpha.1 non-authoritative.",
+            },
+        )
+
+        result = extract(event)
+
+        assert {entity.entity_type for entity in result.entities} == {
+            "consolidation_review",
+            "consolidation_candidate",
+        }
+        assert result.edges[0].relation_type == "reviewed_consolidation_candidate"
+        assert result.edges[0].source.startswith("consolidation_review:")
+        assert result.edges[0].target == "consolidation:episode:" + "a" * 24
+
+    @pytest.mark.parametrize(
+        "candidate_id",
+        [
+            "episode:" + "a" * 24,
+            "consolidation:memory:" + "a" * 24,
+            "consolidation:episode:" + "A" * 24,
+            "consolidation:episode:" + "g" * 24,
+            "consolidation:episode:" + "a" * 23,
+            "consolidation:episode:" + "a" * 25,
+        ],
+    )
+    def test_candidate_created_rejects_malformed_candidate_id(self, candidate_id: str) -> None:
+        event = _make_event(
+            "consolidation.candidate.created",
+            {
+                **self._candidate_created_payload(),
+                "candidate_id": candidate_id,
+            },
+        )
+
+        with pytest.raises(ValueError, match="candidate_id"):
+            extract(event)
+
+    def test_candidate_id_validation_uses_consolidation_contract_taxonomy(self) -> None:
+        source = inspect.getsource(extract_module)
+
+        assert "episode|claim|procedure" not in source
+        assert "consolidation:(episode|claim|procedure)" not in source
+
+    def test_candidate_created_rejects_authoritative_status(self) -> None:
+        event = _make_event(
+            "consolidation.candidate.created",
+            {
+                **self._candidate_created_payload(),
+                "authority_status": "authoritative",
+            },
+        )
+
+        with pytest.raises(ValueError, match="authority_status"):
+            extract(event)
+
+    def test_candidate_created_rejects_string_confidence(self) -> None:
+        event = _make_event(
+            "consolidation.candidate.created",
+            {
+                **self._candidate_created_payload(),
+                "confidence": "0.74",
+            },
+        )
+
+        with pytest.raises(ValueError, match="confidence"):
+            extract(event)
+
+    @pytest.mark.parametrize(
+        "source_events",
+        [
+            [],
+            [{"seq": 0, "hash": "a" * 64}],
+            [{"seq": True, "hash": "a" * 64}],
+            [{"seq": 10, "hash": "A" * 64}],
+            [{"seq": 10, "hash": "a" * 63}],
+        ],
+    )
+    def test_candidate_created_rejects_invalid_source_events(
+        self,
+        source_events: list[dict[str, object]],
+    ) -> None:
+        event = _make_event(
+            "consolidation.candidate.created",
+            {
+                **self._candidate_created_payload(),
+                "source_events": source_events,
+            },
+        )
+
+        with pytest.raises(ValueError, match="source_events"):
+            extract(event)
+
+    def test_review_rejects_malformed_candidate_id(self) -> None:
+        event = _make_event(
+            "consolidation.candidate.reviewed",
+            {
+                **self._review_payload(),
+                "candidate_id": "consolidation:episode:" + "A" * 24,
+            },
+        )
+
+        with pytest.raises(ValueError, match="candidate_id"):
+            extract(event)
+
+    def test_review_rejects_authoritative_status(self) -> None:
+        event = _make_event(
+            "consolidation.candidate.reviewed",
+            {
+                **self._review_payload(),
+                "authority_status": "authoritative",
+            },
+        )
+
+        with pytest.raises(ValueError, match="authority_status"):
+            extract(event)
+
+    def test_review_rejects_invalid_status(self) -> None:
+        event = _make_event(
+            "consolidation.candidate.reviewed",
+            {
+                **self._review_payload(),
+                "status": "pending",
+            },
+        )
+
+        with pytest.raises(ValueError, match="status"):
+            extract(event)
+
+    def test_candidate_created_snapshots_nested_source_events(self) -> None:
+        payload = self._candidate_created_payload()
+        event = _make_event("consolidation.candidate.created", payload)
+
+        result = extract(event)
+        payload["source_events"][0]["seq"] = 11
+        payload["source_events"].append({"seq": 12, "hash": "b" * 64})
+
+        candidate = result.entities[0]
+        assert candidate.properties["source_events"] == [{"seq": 10, "hash": "a" * 64}]
+        assert candidate.properties["source_event_count"] == 1
+
+    @staticmethod
+    def _candidate_created_payload() -> dict[str, object]:
+        return {
+            "candidate_id": "consolidation:episode:" + "a" * 24,
+            "candidate_type": "episode",
+            "title": "Pytest failure investigation",
+            "summary": "The agent ran pytest and identified the cause.",
+            "source_events": [{"seq": 10, "hash": "a" * 64}],
+            "confidence": 0.74,
+            "method": "event_segment_cluster_v1",
+            "review_status": "pending",
+            "authority_status": "non_authoritative",
+            "purpose": "coding",
+        }
+
+    @staticmethod
+    def _review_payload() -> dict[str, object]:
+        return {
+            "candidate_id": "consolidation:episode:" + "a" * 24,
+            "status": "accepted",
+            "authority_status": "non_authoritative",
+            "rationale": "Useful but still alpha.1 non-authoritative.",
+        }
+
+
+class TestReasoningPrimitiveEvents:
+    """Tests for beta.1 reasoning-loop event projections."""
+
+    def test_extract_reasoning_primitive_called_projects_observable_trace(self) -> None:
+        event = _make_event(
+            "reasoning.primitive.called",
+            {
+                "primitive": "explain_outcome",
+                "phase": "planning",
+                "query": "Why did the replay fail?",
+                "status": "succeeded",
+                "result_count": 2,
+                "evidence_count": 1,
+                "citations": ["eventloom://agent-1/events/7#aaaaaaaaaaaa"],
+            },
+            actor="zaxy-reasoning",
+        )
+
+        result = extract(event)
+
+        observation = next(entity for entity in result.entities if entity.entity_type == "reasoning_primitive_observation")
+        assert observation.name == "reasoning:explain_outcome:1"
+        assert observation.summary == "Why did the replay fail?"
+        assert observation.properties == {
+            "event_type": "reasoning.primitive.called",
+            "primitive": "explain_outcome",
+            "phase": "planning",
+            "status": "succeeded",
+            "result_count": 2,
+            "evidence_count": 1,
+            "citations": ["eventloom://agent-1/events/7#aaaaaaaaaaaa"],
+            "authority_status": "non_authoritative",
+        }
+        assert any(edge.relation_type == "called_reasoning_primitive" for edge in result.edges)
+
+    def test_extract_belief_update_proposed_projects_non_authoritative_proposal(self) -> None:
+        event = _make_event(
+            "belief.update.proposed",
+            {
+                "claim": "The stale projection caused the replay failure.",
+                "rationale": "Cited predecessor event shows stale projection state.",
+                "confidence": 0.71,
+                "phase": "reflection",
+                "source_events": [{"seq": 7, "hash": "a" * 64}],
+                "authority_status": "non_authoritative",
+                "review_status": "pending",
+            },
+            actor="agent",
+        )
+
+        result = extract(event)
+
+        proposal = next(entity for entity in result.entities if entity.entity_type == "belief_update_proposal")
+        assert proposal.name == "belief:proposal:1"
+        assert proposal.summary == "The stale projection caused the replay failure."
+        assert proposal.properties["event_type"] == "belief.update.proposed"
+        assert proposal.properties["phase"] == "reflection"
+        assert proposal.properties["confidence"] == 0.71
+        assert proposal.properties["authority_status"] == "non_authoritative"
+        assert proposal.properties["review_status"] == "pending"
+        assert proposal.properties["source_event_refs"] == ["7:" + "a" * 64]
+        assert any(edge.relation_type == "proposed_belief_update" for edge in result.edges)
+
+    def test_belief_update_proposed_rejects_authority_promotion(self) -> None:
+        event = _make_event(
+            "belief.update.proposed",
+            {
+                "claim": "The stale projection caused the replay failure.",
+                "rationale": "Cited predecessor event shows stale projection state.",
+                "confidence": 0.71,
+                "phase": "reflection",
+                "source_events": [{"seq": 7, "hash": "a" * 64}],
+                "authority_status": "authoritative",
+                "review_status": "accepted",
+            },
+            actor="agent",
+        )
+
+        with pytest.raises(ValueError, match="authority_status"):
+            extract(event)
+
+
+def _is_neo4j_property_value(value: object) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str | int | float | bool):
+        return True
+    if not isinstance(value, list):
+        return False
+    return all(isinstance(item, str | int | float | bool) for item in value)
 
 
 class TestIssueDiagnosed:

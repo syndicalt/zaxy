@@ -16,6 +16,8 @@ _HASH_LENGTH = 64
 _TASK_DECISION_CONFIDENCE = 0.86
 _TASK_DECISION_METHOD = "task_completed_decision_citation_v1"
 _RETRACTION_METHOD = "contradicting_evidence_retraction_v1"
+_OUTCOME_EXPLANATION_METHOD = "explicit_outcome_explanation_v1"
+_OUTCOME_EXPLANATION_REASON = "outcome.explained explicitly cited Eventloom evidence"
 
 
 def build_inferred_edge_events(event: Event) -> list[dict[str, Any]]:
@@ -26,6 +28,9 @@ def build_inferred_edge_events(event: Event) -> list[dict[str, Any]]:
     if event.type == "inference.edge.contradicted":
         retracted = _inference_edge_retraction(event)
         return [retracted] if retracted is not None else []
+    if event.type == "outcome.explained":
+        causal = _outcome_explained_causal_edge(event)
+        return [causal] if causal is not None else []
     return []
 
 
@@ -110,10 +115,85 @@ def _inference_edge_retraction(event: Event) -> dict[str, Any] | None:
     }
 
 
+def _outcome_explained_causal_edge(event: Event) -> dict[str, Any] | None:
+    """Build a causal edge from an explicit, cited outcome explanation."""
+    from zaxy.causal import CAUSAL_RELATION_TYPES, build_causal_edge_event
+
+    source = _causal_entity_ref(event.payload.get("cause"))
+    target = _causal_entity_ref(event.payload.get("effect"))
+    relation_type = _text(event.payload.get("relation_type"))
+    confidence = _confidence(event.payload.get("confidence"))
+    evidence_value = event.payload.get("evidence")
+    if not isinstance(evidence_value, dict):
+        return None
+    source_event_seq = _causal_positive_int(evidence_value.get("source_event_seq"))
+    source_event_hash = _event_hash(evidence_value.get("source_event_hash"))
+    if not (
+        source
+        and target
+        and relation_type in CAUSAL_RELATION_TYPES
+        and confidence is not None
+        and source_event_seq
+        and source_event_hash
+    ):
+        return None
+
+    evidence: dict[str, Any] = {
+        "source_event_seq": source_event_seq,
+        "source_event_hash": source_event_hash,
+        "reason": _text(evidence_value.get("reason")) or _OUTCOME_EXPLANATION_REASON,
+    }
+    try:
+        return build_causal_edge_event(
+            actor="zaxy-causal",
+            session_id=event.thread,
+            source=source,
+            target=target,
+            relation_type=relation_type,
+            confidence=confidence,
+            method=_OUTCOME_EXPLANATION_METHOD,
+            evidence=evidence,
+        )
+    except ValueError:
+        return None
+
+
 def _text(value: object) -> str | None:
     if value is None:
         return None
     text = str(value).strip()
+    return text or None
+
+
+def _confidence(value: object) -> float | None:
+    if not isinstance(value, int | float) or isinstance(value, bool):
+        return None
+    confidence = float(value)
+    if not 0.0 <= confidence <= 1.0:
+        return None
+    return confidence
+
+
+def _causal_positive_int(value: object) -> int | None:
+    if not isinstance(value, int) or isinstance(value, bool):
+        return None
+    return value if value > 0 else None
+
+
+def _causal_entity_ref(value: object) -> dict[str, str] | None:
+    if not isinstance(value, dict):
+        return None
+    name = _strict_text(value.get("name"))
+    entity_type = _strict_text(value.get("entity_type"))
+    if not name or not entity_type:
+        return None
+    return {"name": name, "entity_type": entity_type}
+
+
+def _strict_text(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
     return text or None
 
 

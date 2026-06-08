@@ -11,9 +11,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import zaxy.mcp_server
+from zaxy.causal import CausalQueryResult
 from zaxy.config import Settings
 from zaxy.core import build_memory_checkout
 from zaxy.event import EventLog
+from zaxy.graph import GraphEntity
 from zaxy.mcp_server import (
     TOOLS,
     MCPTransportAuth,
@@ -191,7 +193,7 @@ class TestToolSchema:
 
     def test_tools_list_length(self) -> None:
         """Should expose the memory and context lifecycle tools."""
-        assert len(TOOLS) == 29
+        assert len(TOOLS) == 44
 
     def test_tool_names(self) -> None:
         """Tool names should match the expected contract."""
@@ -199,6 +201,21 @@ class TestToolSchema:
         assert names == {
             "memory_append",
             "memory_query",
+            "memory_causal_successors",
+            "memory_causal_predecessors",
+            "memory_consolidation_candidate",
+            "memory_consolidation_review",
+            "memory_consolidation_propose_from_log",
+            "memory_consolidation_status",
+            "memory_explain_outcome",
+            "memory_propose_belief_update",
+            "memory_claim_confidence",
+            "memory_similar_procedures",
+            "memory_record_known_unknown",
+            "memory_known_unknowns",
+            "memory_confidence_trajectory",
+            "memory_reverification_needs",
+            "memory_plan_from_procedures",
             "memory_verbatim",
             "memory_feedback",
             "memory_synthesis_artifact",
@@ -312,6 +329,9 @@ class TestToolSchema:
             "outcome_recorded",
         ]
         assert "procedure" in tool.inputSchema["properties"]
+        assert "failure_modes" in tool.inputSchema["properties"]
+        assert "rollback" in tool.inputSchema["properties"]
+        assert "contradiction_reason" in tool.inputSchema["properties"]
 
     def test_context_after_turn_has_required_fields(self) -> None:
         """context_after_turn should require role and content."""
@@ -408,6 +428,126 @@ class TestToolSchema:
         assert "handoff_id" in tool.inputSchema["properties"]
         assert tool.inputSchema["properties"]["proof_seq"]["minimum"] == 1
 
+    def test_causal_and_consolidation_tools_are_registered(self) -> None:
+        """Causal and consolidation tools should expose stable public schemas."""
+        tools = {tool.name: tool for tool in TOOLS}
+
+        successors = tools["memory_causal_successors"]
+        predecessors = tools["memory_causal_predecessors"]
+        assert successors.inputSchema["required"] == ["entity_name"]
+        assert predecessors.inputSchema["required"] == ["entity_name"]
+        for tool in (successors, predecessors):
+            assert "relation_type" in tool.inputSchema["properties"]
+            assert tool.inputSchema["properties"]["depth"]["default"] == 2
+            assert tool.inputSchema["properties"]["depth"]["minimum"] == 1
+            assert "session_id" in tool.inputSchema["properties"]
+
+        candidate = tools["memory_consolidation_candidate"]
+        assert candidate.inputSchema["required"] == [
+            "candidate_type",
+            "title",
+            "summary",
+            "source_events",
+            "confidence",
+            "method",
+        ]
+        assert candidate.inputSchema["properties"]["candidate_type"]["enum"] == [
+            "episode",
+            "claim",
+            "procedure",
+        ]
+        source_events = candidate.inputSchema["properties"]["source_events"]
+        assert source_events["minItems"] == 1
+        assert source_events["items"]["properties"]["hash"]["pattern"] == "^[0-9a-f]{64}$"
+        assert candidate.inputSchema["properties"]["confidence"]["minimum"] == 0
+        assert candidate.inputSchema["properties"]["confidence"]["maximum"] == 1
+        assert candidate.inputSchema["properties"]["actor"]["default"] == "zaxy-consolidation"
+
+        propose_from_log = tools["memory_consolidation_propose_from_log"]
+        assert propose_from_log.inputSchema["required"] == ["session_id"]
+        assert propose_from_log.inputSchema["properties"]["actor"]["default"] == "zaxy-consolidation"
+        assert propose_from_log.inputSchema["properties"]["window_size"]["minimum"] == 1
+        assert propose_from_log.inputSchema["properties"]["window_size"]["maximum"] == 200
+        assert "purpose" in propose_from_log.inputSchema["properties"]
+
+        status = tools["memory_consolidation_status"]
+        assert status.inputSchema["required"] == ["session_id"]
+
+        review = tools["memory_consolidation_review"]
+        assert review.inputSchema["required"] == ["candidate_id", "status", "rationale"]
+        assert (
+            review.inputSchema["properties"]["candidate_id"]["pattern"]
+            == "^consolidation:(episode|claim|procedure):[0-9a-f]{24}$"
+        )
+        assert review.inputSchema["properties"]["status"]["enum"] == [
+            "accepted",
+            "rejected",
+            "deferred",
+            "conflicted",
+        ]
+        assert review.inputSchema["properties"]["actor"]["default"] == "zaxy-reviewer"
+
+    def test_reasoning_loop_tools_are_registered(self) -> None:
+        """Reasoning-loop primitives should expose strict delegated MCP schemas."""
+        tools = {tool.name: tool for tool in TOOLS}
+        phases = ["planning", "execution", "review", "reflection"]
+
+        explain = tools["memory_explain_outcome"]
+        assert explain.inputSchema["required"] == ["outcome"]
+        assert explain.inputSchema["properties"]["phase"]["enum"] == phases
+        assert explain.inputSchema["properties"]["phase"]["default"] == "planning"
+        assert explain.inputSchema["properties"]["depth"]["minimum"] == 1
+        assert explain.inputSchema["additionalProperties"] is False
+
+        belief = tools["memory_propose_belief_update"]
+        assert belief.inputSchema["required"] == ["claim", "rationale", "confidence", "source_events"]
+        assert belief.inputSchema["properties"]["phase"]["default"] == "reflection"
+        assert belief.inputSchema["properties"]["source_events"]["minItems"] == 1
+        assert belief.inputSchema["properties"]["source_events"]["items"]["properties"]["hash"]["pattern"] == (
+            "^[0-9a-f]{64}$"
+        )
+        assert belief.inputSchema["properties"]["actor"]["default"] == "zaxy-reasoning"
+        assert belief.inputSchema["additionalProperties"] is False
+
+        confidence = tools["memory_claim_confidence"]
+        assert confidence.inputSchema["required"] == ["claim"]
+        assert confidence.inputSchema["properties"]["phase"]["default"] == "review"
+        assert confidence.inputSchema["properties"]["limit"]["minimum"] == 1
+        assert confidence.inputSchema["additionalProperties"] is False
+
+        procedures = tools["memory_similar_procedures"]
+        assert procedures.inputSchema["required"] == ["query"]
+        assert procedures.inputSchema["properties"]["phase"]["default"] == "planning"
+        assert procedures.inputSchema["properties"]["limit"]["minimum"] == 1
+        assert procedures.inputSchema["additionalProperties"] is False
+
+        record_unknown = tools["memory_record_known_unknown"]
+        assert record_unknown.inputSchema["required"] == ["question", "reason", "source_events", "claim_key"]
+        assert record_unknown.inputSchema["properties"]["source_events"]["minItems"] == 1
+        assert record_unknown.inputSchema["properties"]["actor"]["default"] == "zaxy-reasoning"
+        assert record_unknown.inputSchema["additionalProperties"] is False
+
+        known_unknowns = tools["memory_known_unknowns"]
+        assert known_unknowns.inputSchema["required"] == []
+        assert known_unknowns.inputSchema["properties"]["status"]["default"] == "open"
+        assert known_unknowns.inputSchema["additionalProperties"] is False
+
+        trajectory = tools["memory_confidence_trajectory"]
+        assert trajectory.inputSchema["required"] == ["claim"]
+        assert trajectory.inputSchema["properties"]["limit"]["minimum"] == 1
+        assert trajectory.inputSchema["additionalProperties"] is False
+
+        reverify = tools["memory_reverification_needs"]
+        assert reverify.inputSchema["required"] == []
+        assert reverify.inputSchema["properties"]["min_confidence"]["minimum"] == 0
+        assert reverify.inputSchema["properties"]["min_confidence"]["maximum"] == 1
+        assert reverify.inputSchema["additionalProperties"] is False
+
+        plan = tools["memory_plan_from_procedures"]
+        assert plan.inputSchema["required"] == ["goal"]
+        assert plan.inputSchema["properties"]["phase"]["default"] == "planning"
+        assert plan.inputSchema["additionalProperties"] is False
+
 
 # ------------------------------------------------------------------
 # Handler tests
@@ -488,6 +628,665 @@ class TestMemoryAppend:
         """memory_append should bound direct handler inputs as tightly as advertised schemas."""
         with pytest.raises(ValueError):
             await server.handle_memory_append(arguments)
+
+
+class TestCausalAndConsolidationTools:
+    """Tests for causal reads and consolidation MCP handlers."""
+
+    async def test_causal_successors_calls_graph_read_path_and_serializes_results(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_causal_successors should query configured graph causal neighbors."""
+        result = CausalQueryResult(
+            source={"name": "Plan", "entity_type": "task"},
+            target={"name": "Implementation", "entity_type": "task"},
+            relation_type="enabled",
+            graph_relation_type="causal_enabled",
+            confidence=0.82,
+            method="explicit_outcome_citation_v1",
+            citation="eventloom://agent-1/events/7#" + ("a" * 12),
+            review_status="proposed",
+            authority_status="non_authoritative",
+            evidence={"source_event_seq": 7, "source_event_hash": "a" * 64},
+            path_length=1,
+        )
+        server.graph.search_causal_neighbors.return_value = [
+            GraphEntity(
+                name="Implementation",
+                entity_type="task",
+                valid_from="2026-06-07T00:00:00Z",
+                valid_to=None,
+                session_id="agent-1",
+                properties={
+                    "causal_source_name": "Plan",
+                    "causal_source_type": "task",
+                    "causal_target_name": "Implementation",
+                    "causal_target_type": "task",
+                    "causal_relation_type": "enabled",
+                    "graph_relation_type": "causal_enabled",
+                    "confidence": 0.82,
+                    "method": "explicit_outcome_citation_v1",
+                    "review_status": "proposed",
+                    "authority_status": "non_authoritative",
+                    "session_id": "agent-1",
+                    "source_event_seq": 7,
+                    "source_event_hash": "a" * 64,
+                    "_path_length": 1,
+                },
+            )
+        ]
+
+        response = await server.handle_memory_causal_successors({
+            "entity_name": "Plan",
+            "relation_type": "enabled",
+            "depth": 3,
+            "session_id": "agent-1",
+        })
+
+        payload = json_loads(response[0].text)
+        assert payload == {"results": [result.to_dict()]}
+        server.graph.search_causal_neighbors.assert_awaited_once_with(
+            "Plan",
+            direction="successors",
+            relation_type="causal_enabled",
+            depth=3,
+            temporal_point=None,
+            session_id="agent-1",
+        )
+
+    async def test_causal_predecessors_calls_graph_read_path_and_serializes_results(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_causal_predecessors should use incoming causal direction."""
+        server.graph.search_causal_neighbors.return_value = [
+            GraphEntity(
+                name="Plan",
+                entity_type="task",
+                valid_from="2026-06-07T00:00:00Z",
+                valid_to=None,
+                session_id="agent-1",
+                properties={
+                    "causal_source_name": "Plan",
+                    "causal_source_type": "task",
+                    "causal_target_name": "Implementation",
+                    "causal_target_type": "task",
+                    "causal_relation_type": "enabled",
+                    "graph_relation_type": "causal_enabled",
+                    "confidence": 0.82,
+                    "method": "explicit_outcome_citation_v1",
+                    "review_status": "proposed",
+                    "authority_status": "non_authoritative",
+                    "session_id": "agent-1",
+                    "source_event_seq": 7,
+                    "source_event_hash": "a" * 64,
+                },
+            )
+        ]
+
+        response = await server.handle_memory_causal_predecessors({
+            "entity_name": "Implementation",
+            "session_id": "agent-1",
+        })
+
+        payload = json_loads(response[0].text)
+        assert payload["results"][0]["source"]["name"] == "Plan"
+        assert payload["results"][0]["target"]["name"] == "Implementation"
+        server.graph.search_causal_neighbors.assert_awaited_once_with(
+            "Implementation",
+            direction="predecessors",
+            relation_type=None,
+            depth=2,
+            temporal_point=None,
+            session_id="agent-1",
+        )
+
+    @pytest.mark.parametrize(
+        ("arguments", "match"),
+        [
+            ({"entity_name": "Plan", "depth": 0, "session_id": "agent-1"}, "depth must be between 1"),
+            ({"entity_name": "Plan", "depth": True, "session_id": "agent-1"}, "depth must be an integer"),
+            ({"entity_name": 42, "session_id": "agent-1"}, "query must be a non-empty string"),
+            ({"entity_name": "x" * 4097, "session_id": "agent-1"}, "query exceeds 4096 characters"),
+            (
+                {"entity_name": "Plan", "relation_type": "enables", "session_id": "agent-1"},
+                "causal relation_type",
+            ),
+        ],
+    )
+    async def test_causal_handlers_reject_invalid_relation_and_depth(
+        self,
+        server: ZaxyMCPServer,
+        arguments: dict[str, object],
+        match: str,
+    ) -> None:
+        """Causal handler validation should fail before graph access."""
+        with pytest.raises(ValueError, match=match):
+            await server.handle_memory_causal_successors(arguments)
+
+        server.graph.search_causal_neighbors.assert_not_awaited()
+
+    async def test_consolidation_candidate_appends_projects_traces_and_returns_event_ref(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_consolidation_candidate should append and immediately project the candidate."""
+        source_hash = "b" * 64
+        extraction = MagicMock()
+        with patch("zaxy.mcp_server.extract", return_value=extraction) as mock_extract:
+            response = await server.handle_memory_consolidation_candidate({
+                "candidate_type": "claim",
+                "title": "Retry policy",
+                "summary": "Retries should preserve original citations.",
+                "source_events": [{"seq": 7, "hash": source_hash}],
+                "confidence": 0.82,
+                "method": "manual-review",
+                "purpose": "release audit",
+                "session_id": "agent-1",
+                "actor": "assistant",
+            })
+
+        payload = json_loads(response[0].text)
+        assert payload == {"seq": 1, "hash": "a" * 64}
+        server.session_manager.get.assert_called_once_with("agent-1")
+        append_call = server.session_manager.get.return_value.eventlog.append.call_args
+        assert append_call.args == ("consolidation.candidate.created",)
+        assert append_call.kwargs["actor"] == "assistant"
+        assert append_call.kwargs["thread"] == "agent-1"
+        event_payload = append_call.kwargs["payload"]
+        assert event_payload["candidate_type"] == "claim"
+        assert event_payload["review_status"] == "pending"
+        assert event_payload["authority_status"] == "non_authoritative"
+        assert event_payload["source_events"] == [{"seq": 7, "hash": source_hash}]
+        mock_extract.assert_called_once_with(server.session_manager.get.return_value.eventlog.append.return_value)
+        server.graph.upsert_extraction.assert_awaited_once_with(extraction, session_id="agent-1")
+        server.tracer.trace_append.assert_awaited_once_with(
+            "consolidation.candidate.created",
+            "assistant",
+            1,
+        )
+
+    async def test_consolidation_propose_from_log_uses_configured_fabric_path(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_consolidation_propose_from_log should use the server's configured fabric path."""
+        expected = {
+            "session_id": "agent-1",
+            "segments_considered": 2,
+            "candidates_created": 3,
+        }
+        fabric = AsyncMock()
+        fabric.propose_consolidation_candidates.return_value = expected
+
+        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric) as fabric_cls:
+            response = await server.handle_memory_consolidation_propose_from_log({
+                "session_id": "agent-1",
+                "actor": "assistant",
+                "purpose": "release audit",
+                "window_size": 5,
+            })
+
+        assert json_loads(response[0].text) == expected
+        fabric_cls.assert_called_once()
+        assert fabric_cls.call_args.kwargs["eventloom_path"] == server._eventloom_path
+        fabric.connect.assert_awaited_once()
+        fabric.propose_consolidation_candidates.assert_awaited_once_with(
+            session_id="agent-1",
+            actor="assistant",
+            purpose="release audit",
+            window_size=5,
+        )
+        fabric.close.assert_awaited_once()
+
+    async def test_consolidation_status_uses_configured_fabric_path(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_consolidation_status should read candidate review state through MemoryFabric."""
+        expected = {"session_id": "agent-1", "pending": 2, "accepted": 1}
+        fabric = AsyncMock()
+        fabric.consolidation_status.return_value = expected
+
+        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric) as fabric_cls:
+            response = await server.handle_memory_consolidation_status({"session_id": "agent-1"})
+
+        assert json_loads(response[0].text) == expected
+        fabric_cls.assert_called_once()
+        assert fabric_cls.call_args.kwargs["eventloom_path"] == server._eventloom_path
+        fabric.connect.assert_awaited_once()
+        fabric.consolidation_status.assert_awaited_once_with(session_id="agent-1")
+        fabric.close.assert_awaited_once()
+
+    async def test_consolidation_propose_from_log_rejects_invalid_window_before_fabric(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """window_size should stay bounded at the MCP handler boundary."""
+        with (
+            patch("zaxy.mcp_server.MemoryFabric") as fabric_cls,
+            pytest.raises(ValueError, match="window_size must be between 1 and 200"),
+        ):
+            await server.handle_memory_consolidation_propose_from_log({
+                "session_id": "agent-1",
+                "window_size": 0,
+            })
+
+        fabric_cls.assert_not_called()
+
+    async def test_consolidation_candidate_leaves_source_event_validation_to_builder(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """Invalid source_events should fail under the strict consolidation builder contract."""
+        with pytest.raises(ValueError, match=r"source_events\[0\]\.hash"):
+            await server.handle_memory_consolidation_candidate({
+                "candidate_type": "claim",
+                "title": "Retry policy",
+                "summary": "Retries should preserve original citations.",
+                "source_events": [{"seq": 7, "hash": "not-a-hash"}],
+                "confidence": 0.82,
+                "method": "manual-review",
+                "session_id": "agent-1",
+            })
+
+        server.session_manager.get.assert_not_called()
+
+    @pytest.mark.parametrize("field", ["actor", "candidate_type", "title", "summary", "method", "purpose"])
+    async def test_consolidation_candidate_rejects_non_string_contract_fields(
+        self,
+        server: ZaxyMCPServer,
+        field: str,
+    ) -> None:
+        """String fields should not be silently coerced before candidate event building."""
+        arguments: dict[str, object] = {
+            "candidate_type": "claim",
+            "title": "Retry policy",
+            "summary": "Retries should preserve original citations.",
+            "source_events": [{"seq": 7, "hash": "b" * 64}],
+            "confidence": 0.82,
+            "method": "manual-review",
+            "purpose": "release audit",
+            "session_id": "agent-1",
+            "actor": "assistant",
+        }
+        arguments[field] = {"not": "text"}
+
+        with pytest.raises(ValueError, match=rf"{field} must be a string"):
+            await server.handle_memory_consolidation_candidate(arguments)
+
+        server.session_manager.get.assert_not_called()
+
+    async def test_consolidation_review_appends_projects_traces_without_authority_promotion(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_consolidation_review should record review lifecycle without promoting authority."""
+        candidate_id = "consolidation:claim:" + ("c" * 24)
+        extraction = MagicMock()
+        with patch("zaxy.mcp_server.extract", return_value=extraction):
+            response = await server.handle_memory_consolidation_review({
+                "candidate_id": candidate_id,
+                "status": "accepted",
+                "rationale": "Citations match the source events.",
+                "session_id": "agent-1",
+                "actor": "reviewer",
+            })
+
+        assert json_loads(response[0].text) == {"seq": 1, "hash": "a" * 64}
+        append_call = server.session_manager.get.return_value.eventlog.append.call_args
+        assert append_call.args == ("consolidation.candidate.reviewed",)
+        assert append_call.kwargs["actor"] == "reviewer"
+        assert append_call.kwargs["thread"] == "agent-1"
+        assert append_call.kwargs["payload"] == {
+            "candidate_id": candidate_id,
+            "status": "accepted",
+            "authority_status": "non_authoritative",
+            "rationale": "Citations match the source events.",
+        }
+        server.graph.upsert_extraction.assert_awaited_once_with(extraction, session_id="agent-1")
+        server.tracer.trace_append.assert_awaited_once_with(
+            "consolidation.candidate.reviewed",
+            "reviewer",
+            1,
+        )
+
+    @pytest.mark.parametrize("field", ["actor", "candidate_id", "status", "rationale"])
+    async def test_consolidation_review_rejects_non_string_contract_fields(
+        self,
+        server: ZaxyMCPServer,
+        field: str,
+    ) -> None:
+        """Review contract string fields should fail before append/project on non-string values."""
+        arguments: dict[str, object] = {
+            "candidate_id": "consolidation:claim:" + ("c" * 24),
+            "status": "accepted",
+            "rationale": "Citations match the source events.",
+            "session_id": "agent-1",
+            "actor": "reviewer",
+        }
+        arguments[field] = ["not", "text"]
+
+        with pytest.raises(ValueError, match=rf"{field} must be a string"):
+            await server.handle_memory_consolidation_review(arguments)
+
+        server.session_manager.get.assert_not_called()
+
+    async def test_memory_explain_outcome_uses_configured_fabric_path(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_explain_outcome should delegate outcome explanation to MemoryFabric."""
+        expected = {"primitive": "explain_outcome", "session_id": "agent-1", "explanations": []}
+        fabric = AsyncMock()
+        fabric.explain_outcome.return_value = expected
+
+        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric) as fabric_cls:
+            response = await server.handle_memory_explain_outcome({
+                "outcome": "Test failed",
+                "phase": "review",
+                "depth": 3,
+                "session_id": "agent-1",
+            })
+
+        assert json_loads(response[0].text) == expected
+        fabric_cls.assert_called_once()
+        assert fabric_cls.call_args.kwargs["eventloom_path"] == server._eventloom_path
+        fabric.connect.assert_awaited_once()
+        fabric.explain_outcome.assert_awaited_once_with(
+            "Test failed",
+            phase="review",
+            session_id="agent-1",
+            depth=3,
+        )
+        fabric.close.assert_awaited_once()
+
+    async def test_memory_propose_belief_update_uses_configured_fabric_path(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_propose_belief_update should delegate non-authoritative proposals to MemoryFabric."""
+        source_hash = "d" * 64
+        expected = {
+            "primitive": "propose_belief_update",
+            "event_type": "belief.update.proposed",
+            "authority_status": "non_authoritative",
+        }
+        fabric = AsyncMock()
+        fabric.propose_belief_update.return_value = expected
+
+        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric) as fabric_cls:
+            response = await server.handle_memory_propose_belief_update({
+                "claim": "Projection is stale",
+                "rationale": "Cited outcome points to stale projection.",
+                "confidence": 0.74,
+                "source_events": [{"seq": 9, "hash": source_hash}],
+                "phase": "reflection",
+                "session_id": "agent-1",
+                "actor": "reviewer",
+            })
+
+        assert json_loads(response[0].text) == expected
+        fabric_cls.assert_called_once()
+        assert fabric_cls.call_args.kwargs["eventloom_path"] == server._eventloom_path
+        fabric.connect.assert_awaited_once()
+        fabric.propose_belief_update.assert_awaited_once_with(
+            "Projection is stale",
+            rationale="Cited outcome points to stale projection.",
+            confidence=0.74,
+            source_events=[{"seq": 9, "hash": source_hash}],
+            phase="reflection",
+            session_id="agent-1",
+            actor="reviewer",
+        )
+        fabric.close.assert_awaited_once()
+
+    async def test_memory_claim_confidence_uses_configured_fabric_path(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_claim_confidence should delegate confidence scoring to MemoryFabric."""
+        expected = {"primitive": "get_claim_confidence", "confidence": 0.66, "evidence": []}
+        fabric = AsyncMock()
+        fabric.get_claim_confidence.return_value = expected
+
+        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric) as fabric_cls:
+            response = await server.handle_memory_claim_confidence({
+                "claim": "Projection is stale",
+                "phase": "review",
+                "limit": 4,
+                "session_id": "agent-1",
+            })
+
+        assert json_loads(response[0].text) == expected
+        fabric_cls.assert_called_once()
+        assert fabric_cls.call_args.kwargs["eventloom_path"] == server._eventloom_path
+        fabric.connect.assert_awaited_once()
+        fabric.get_claim_confidence.assert_awaited_once_with(
+            "Projection is stale",
+            phase="review",
+            session_id="agent-1",
+            limit=4,
+        )
+        fabric.close.assert_awaited_once()
+
+    async def test_memory_similar_procedures_uses_configured_fabric_path(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_similar_procedures should delegate procedure retrieval to MemoryFabric."""
+        expected = {"primitive": "retrieve_similar_procedures", "procedures": []}
+        fabric = AsyncMock()
+        fabric.retrieve_similar_procedures.return_value = expected
+
+        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric) as fabric_cls:
+            response = await server.handle_memory_similar_procedures({
+                "query": "Fix stale projection",
+                "phase": "planning",
+                "limit": 6,
+                "session_id": "agent-1",
+            })
+
+        assert json_loads(response[0].text) == expected
+        fabric_cls.assert_called_once()
+        assert fabric_cls.call_args.kwargs["eventloom_path"] == server._eventloom_path
+        fabric.connect.assert_awaited_once()
+        fabric.retrieve_similar_procedures.assert_awaited_once_with(
+            "Fix stale projection",
+            phase="planning",
+            session_id="agent-1",
+            limit=6,
+        )
+        fabric.close.assert_awaited_once()
+
+    async def test_memory_record_known_unknown_uses_configured_fabric_path(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_record_known_unknown should delegate uncertainty recording to MemoryFabric."""
+        source_hash = "e" * 64
+        expected = {"event_type": "metacognition.unknown.recorded"}
+        fabric = AsyncMock()
+        fabric.record_known_unknown.return_value = expected
+
+        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric) as fabric_cls:
+            response = await server.handle_memory_record_known_unknown({
+                "question": "Which backend caused latency?",
+                "reason": "Evidence conflicted.",
+                "source_events": [{"seq": 11, "hash": source_hash}],
+                "claim_key": "backend-latency",
+                "gap_type": "conflicting_evidence",
+                "reverify_query": "latest backend latency cause",
+                "phase": "review",
+                "actor": "reviewer",
+                "session_id": "agent-1",
+            })
+
+        assert json_loads(response[0].text) == expected
+        fabric_cls.assert_called_once()
+        fabric.connect.assert_awaited_once()
+        fabric.record_known_unknown.assert_awaited_once_with(
+            "Which backend caused latency?",
+            reason="Evidence conflicted.",
+            source_events=[{"seq": 11, "hash": source_hash}],
+            claim_key="backend-latency",
+            gap_type="conflicting_evidence",
+            reverify_query="latest backend latency cause",
+            phase="review",
+            session_id="agent-1",
+            actor="reviewer",
+        )
+        fabric.close.assert_awaited_once()
+
+    @pytest.mark.parametrize(
+        ("handler_name", "method_name", "arguments", "expected_args", "expected_kwargs"),
+        [
+            (
+                "handle_memory_known_unknowns",
+                "list_known_unknowns",
+                {"status": "all", "limit": 3, "session_id": "agent-1"},
+                (),
+                {"session_id": "agent-1", "status": "all", "limit": 3},
+            ),
+            (
+                "handle_memory_confidence_trajectory",
+                "list_confidence_trajectory",
+                {"claim": "Projection is stale", "limit": 4, "session_id": "agent-1"},
+                ("Projection is stale",),
+                {"session_id": "agent-1", "limit": 4},
+            ),
+            (
+                "handle_memory_reverification_needs",
+                "list_reverification_needs",
+                {"query": "projection", "limit": 5, "min_confidence": 0.8, "session_id": "agent-1"},
+                (),
+                {"query": "projection", "session_id": "agent-1", "limit": 5, "min_confidence": 0.8},
+            ),
+            (
+                "handle_memory_plan_from_procedures",
+                "plan_from_procedures",
+                {"goal": "Fix stale projection", "phase": "planning", "limit": 6, "session_id": "agent-1"},
+                ("Fix stale projection",),
+                {"phase": "planning", "session_id": "agent-1", "limit": 6},
+            ),
+        ],
+    )
+    async def test_beta2_reasoning_tools_use_configured_fabric_path(
+        self,
+        server: ZaxyMCPServer,
+        handler_name: str,
+        method_name: str,
+        arguments: dict[str, object],
+        expected_args: tuple[object, ...],
+        expected_kwargs: dict[str, object],
+    ) -> None:
+        """Beta.2 MCP reasoning tools should delegate to MemoryFabric methods."""
+        expected = {"primitive": method_name}
+        fabric = AsyncMock()
+        getattr(fabric, method_name).return_value = expected
+
+        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric):
+            response = await getattr(server, handler_name)(arguments)
+
+        assert json_loads(response[0].text) == expected
+        fabric.connect.assert_awaited_once()
+        getattr(fabric, method_name).assert_awaited_once_with(*expected_args, **expected_kwargs)
+        fabric.close.assert_awaited_once()
+
+    @pytest.mark.parametrize(
+        ("handler_name", "arguments"),
+        [
+            ("handle_memory_causal_successors", {"entity_name": "Plan", "session_id": "agent-2"}),
+            ("handle_memory_consolidation_propose_from_log", {"session_id": "agent-2"}),
+            ("handle_memory_consolidation_status", {"session_id": "agent-2"}),
+            ("handle_memory_explain_outcome", {"outcome": "Test failed", "session_id": "agent-2"}),
+            ("handle_memory_claim_confidence", {"claim": "Projection is stale", "session_id": "agent-2"}),
+            ("handle_memory_similar_procedures", {"query": "Fix stale projection", "session_id": "agent-2"}),
+            ("handle_memory_known_unknowns", {"session_id": "agent-2"}),
+            ("handle_memory_confidence_trajectory", {"claim": "Projection is stale", "session_id": "agent-2"}),
+            ("handle_memory_reverification_needs", {"session_id": "agent-2"}),
+            ("handle_memory_plan_from_procedures", {"goal": "Fix stale projection", "session_id": "agent-2"}),
+            (
+                "handle_memory_record_known_unknown",
+                {
+                    "question": "Which backend caused latency?",
+                    "reason": "Evidence conflicted.",
+                    "source_events": [{"seq": 11, "hash": "e" * 64}],
+                    "claim_key": "backend-latency",
+                    "session_id": "agent-2",
+                },
+            ),
+            (
+                "handle_memory_propose_belief_update",
+                {
+                    "claim": "Projection is stale",
+                    "rationale": "Cited outcome points to stale projection.",
+                    "confidence": 0.74,
+                    "source_events": [{"seq": 9, "hash": "d" * 64}],
+                    "session_id": "agent-2",
+                },
+            ),
+            (
+                "handle_memory_consolidation_review",
+                {
+                    "candidate_id": "consolidation:claim:" + ("c" * 24),
+                    "status": "deferred",
+                    "rationale": "Needs source review.",
+                    "session_id": "agent-2",
+                },
+            ),
+        ],
+    )
+    async def test_remote_scope_rejects_cross_session_causal_and_consolidation_calls(
+        self,
+        server: ZaxyMCPServer,
+        handler_name: str,
+        arguments: dict[str, object],
+    ) -> None:
+        """Remote scoped calls should not cross into a different session."""
+        token = remote_session_scope.set("agent-1")
+        try:
+            with pytest.raises(PermissionError, match="session scope"):
+                await getattr(server, handler_name)(arguments)
+        finally:
+            remote_session_scope.reset(token)
+
+    @pytest.mark.parametrize(
+        ("tool_name", "handler_name"),
+        [
+            ("memory_causal_successors", "handle_memory_causal_successors"),
+            ("memory_causal_predecessors", "handle_memory_causal_predecessors"),
+            ("memory_consolidation_candidate", "handle_memory_consolidation_candidate"),
+            ("memory_consolidation_propose_from_log", "handle_memory_consolidation_propose_from_log"),
+            ("memory_consolidation_status", "handle_memory_consolidation_status"),
+            ("memory_consolidation_review", "handle_memory_consolidation_review"),
+            ("memory_explain_outcome", "handle_memory_explain_outcome"),
+            ("memory_propose_belief_update", "handle_memory_propose_belief_update"),
+            ("memory_claim_confidence", "handle_memory_claim_confidence"),
+            ("memory_similar_procedures", "handle_memory_similar_procedures"),
+            ("memory_record_known_unknown", "handle_memory_record_known_unknown"),
+            ("memory_known_unknowns", "handle_memory_known_unknowns"),
+            ("memory_confidence_trajectory", "handle_memory_confidence_trajectory"),
+            ("memory_reverification_needs", "handle_memory_reverification_needs"),
+            ("memory_plan_from_procedures", "handle_memory_plan_from_procedures"),
+        ],
+    )
+    async def test_causal_and_consolidation_dispatch_routes_to_handlers(
+        self,
+        server: ZaxyMCPServer,
+        tool_name: str,
+        handler_name: str,
+    ) -> None:
+        """_dispatch_tool_call should route all new public tools."""
+        expected = [MagicMock()]
+        handler = AsyncMock(return_value=expected)
+        setattr(server, handler_name, handler)
+
+        result = await zaxy.mcp_server._dispatch_tool_call(server, tool_name, {"entity_name": "Plan"})
+
+        assert result == expected
+        handler.assert_awaited_once_with({"entity_name": "Plan"})
 
 
 class TestCoordinationTools:
@@ -1696,6 +2495,9 @@ class TestMemorySkill:
             "procedure": ["Write focused failing test", "Run pytest"],
             "applicability": ["Python feature work"],
             "citations": ["eventloom://agent-1/events/4#abcd"],
+            "failure_modes": ["misses cache invalidation race"],
+            "rollback": "Use python-test-first v1 until validation recovers.",
+            "contradiction_reason": "Regression found in release validation.",
             "actor": "assistant",
             "session_id": "agent-1",
         })
@@ -1714,6 +2516,9 @@ class TestMemorySkill:
             "procedure": ["Write focused failing test", "Run pytest"],
             "applicability": ["Python feature work"],
             "citations": ["eventloom://agent-1/events/4#abcd"],
+            "failure_modes": ["misses cache invalidation race"],
+            "rollback": "Use python-test-first v1 until validation recovers.",
+            "contradiction_reason": "Regression found in release validation.",
         }
         server.graph.upsert_extraction.assert_awaited_once()
         server.tracer.trace_append.assert_awaited_once_with("skill.validated", "assistant", 1)

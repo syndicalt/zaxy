@@ -97,6 +97,27 @@
   &quot;citation&quot;: &quot;eventloom://agent-1/events/42#abcdef123456&quot;
 }</code></pre>
       <p>Projection: unknown-event fallback today, preserving the feedback as an Eventloom-backed audit record without deleting, invalidating, or downranking the target entity.</p>
+      <h2 id="metacognition">Metacognition</h2>
+      <p>Use <code>metacognition.*</code> events for uncertainty, confidence trajectories, conflicting evidence, and re-verification needs. These events are always diagnostic and non-authoritative. They help an agent decide when to refresh, ask a user, or inspect conflicting evidence, but they do not update accepted facts.</p>
+      <p>Supported beta.2 events:</p>
+      <ul>
+        <li><code>metacognition.unknown.recorded</code>: records an open known unknown with cited source events, a claim key, gap type, and optional reverify query.</li>
+        <li><code>metacognition.confidence.assessed</code>: records one append-only confidence point for a claim with support/conflict counts and cited evidence.</li>
+        <li><code>metacognition.conflict.clustered</code>: records unresolved support and conflict source-event sets for a claim.</li>
+        <li><code>metacognition.reverify.requested</code>: records an open re-verification request with priority and cited source events.</li>
+      </ul>
+      <p>Example known unknown:</p>
+      <pre><code class="language-json">{
+  &quot;unknown_id&quot;: &quot;metacognition:unknown:111111111111111111111111&quot;,
+  &quot;question&quot;: &quot;Which backend caused the latency spike?&quot;,
+  &quot;reason&quot;: &quot;Checkout had conflicting evidence.&quot;,
+  &quot;claim_key&quot;: &quot;backend-latency-cause&quot;,
+  &quot;gap_type&quot;: &quot;conflicting_evidence&quot;,
+  &quot;status&quot;: &quot;open&quot;,
+  &quot;source_events&quot;: [{&quot;seq&quot;: 7, &quot;hash&quot;: &quot;aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&quot;}],
+  &quot;authority_status&quot;: &quot;non_authoritative&quot;
+}</code></pre>
+      <p>Projection: <code>known_unknown</code>, <code>confidence_assessment</code>, <code>conflict_cluster</code>, and <code>reverify_request</code> entities. Graph properties preserve claim keys, status or resolution state, confidence, priority, source-event refs, source-event hashes, and <code>authority_status=non_authoritative</code>.</p>
       <h2 id="skill-memory">Skill Memory</h2>
       <p>Use <code>skill.*</code> events for procedural memory that should be retrieved as applicable guidance, not mixed into factual truth. Checkout is read-only: agents must append an explicit lifecycle event to change a skill.</p>
       <p>Supported lifecycle events:</p>
@@ -128,7 +149,7 @@
   &quot;feedback&quot;: &quot;used&quot;,
   &quot;evidence&quot;: [&quot;pytest tests/test_query.py::test_scoring -q&quot;]
 }</code></pre>
-      <p>Contradiction or deprecation events may also include <code>failure_modes</code>, <code>rollback</code>, <code>contradiction_reason</code>, and <code>evidence</code>. These fields are preserved on the <code>SkillVersion</code> projection so checkout can identify rollback candidates without deleting the old version or changing the active procedure implicitly.</p>
+      <p>Contradiction or deprecation events may also include <code>failure_modes</code>, <code>rollback</code>, <code>contradiction_reason</code>, and <code>evidence</code>. These fields are preserved on the <code>SkillVersion</code> projection so checkout can identify rollback candidates without deleting the old version or changing the active procedure implicitly. Checkout separates procedural memory into applicable, diagnostic, and excluded buckets. Applicable procedures must be cited and validated, revised, or accepted. Proposed, pending, and deferred procedures remain diagnostic. Rejected, conflicted, deprecated, contradicted, stale, superseded, closed, or uncited procedures are excluded from operational instructions.</p>
       <p>Projection: <code>Skill</code> and <code>SkillVersion</code> entities linked with <code>HAS_VERSION</code> style edges, plus lifecycle and outcome entities for application metrics. Graph properties preserve procedure, applicability, status, citations, outcome evidence, rollback guidance, contradiction reasons, and version identifiers.</p>
       <h2 id="schema-migrations">Schema Migrations</h2>
       <p>Use <code>schema.migration.proposed</code> when a stable or beta contract needs a non-additive change after the v0.9 freeze candidate. The event records the surface, affected versions, compatibility plan, and tests that prove old data is rejected, accepted, or migrated intentionally.</p>

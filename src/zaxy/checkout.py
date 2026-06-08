@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from zaxy.causal import CAUSAL_RELATION_TYPES, causal_relation_to_graph_relation
 from zaxy.evidence import build_evidence_set, evaluate_evidence_policy
 from zaxy.evidence_candidates import candidate_type_priority, checkout_candidate_projection
 from zaxy.purpose import PurposeProfile, purpose_ontology_lens, purpose_profile
@@ -18,6 +19,9 @@ from zaxy.synthesis_packet import synthesis_packet_from_items
 _COMPACT_CONTEXT_LIMIT = 8
 _COMPACT_ANSWER_CANDIDATE_LIMIT = 5
 _COMPACT_SNIPPET_LIMIT = 500
+_CAUSAL_GRAPH_RELATION_TYPES = frozenset(
+    causal_relation_to_graph_relation(relation_type) for relation_type in CAUSAL_RELATION_TYPES
+)
 
 
 def build_checkout_diagnostics(
@@ -57,6 +61,24 @@ def build_checkout_diagnostics(
     inferred_context = _inferred_context_diagnostics(current_facts)
     if inferred_context["context_count"]:
         diagnostics["inferred_context"] = inferred_context
+    causal_context = _causal_context_diagnostics(current_facts)
+    if causal_context["context_count"]:
+        diagnostics["causal_context"] = causal_context
+    consolidation_candidates = _consolidation_candidate_diagnostics(current_facts)
+    if consolidation_candidates["candidate_count"]:
+        diagnostics["consolidation_candidates"] = consolidation_candidates
+    reasoning_primitives = _reasoning_primitive_diagnostics(current_facts)
+    if reasoning_primitives["context_count"]:
+        diagnostics["reasoning_primitives"] = reasoning_primitives
+    belief_proposals = _belief_update_proposal_diagnostics(current_facts)
+    if belief_proposals["proposal_count"]:
+        diagnostics["belief_update_proposals"] = belief_proposals
+    metacognition = _metacognition_diagnostics(current_facts)
+    if metacognition["context_count"]:
+        diagnostics["metacognition"] = metacognition
+    procedural_memory = _procedural_memory_diagnostics(current_facts)
+    if procedural_memory["context_count"]:
+        diagnostics["procedural_memory"] = procedural_memory
     evidence_set = build_evidence_set(
         query=query,
         evidence_plan=evidence_plan,
@@ -136,6 +158,59 @@ def build_checkout_guidance(
         trust.append("Checkout depends on inferred graph paths; inspect inferred_context diagnostics.")
     if inferred_context["low_trust_count"]:
         ignore.append("Low-trust inferred graph paths were included; treat them as leads, not facts.")
+    causal_context = _causal_context_diagnostics(current_facts)
+    if causal_context["context_count"]:
+        trust.append("Use causal_context as explanatory memory, not as authoritative state.")
+        ignore.append("Do not treat proposed causal edges as accepted facts without review status.")
+    consolidation_candidates = _consolidation_candidate_diagnostics(current_facts)
+    if consolidation_candidates["candidate_count"]:
+        trust.append("Use consolidation candidates as cited summaries that still require review.")
+        ignore.append(
+            "Do not treat consolidation candidates as authoritative memory without a separate promotion event."
+        )
+        ignore.append(
+            "Accepted consolidation reviews are dispositions only; they are not authority promotion."
+        )
+    if consolidation_candidates["pending_count"]:
+        ignore.append("Review-pending consolidation candidates still require disposition.")
+    if any(
+        consolidation_candidates.get(key, 0)
+        for key in (
+            "stale_count",
+            "conflicted_count",
+            "rejected_count",
+            "superseded_count",
+            "valid_to_count",
+        )
+    ):
+        ignore.append(
+            "Stale, conflicted, rejected, or superseded consolidation candidates are not current authoritative memory."
+        )
+    reasoning_primitives = _reasoning_primitive_diagnostics(current_facts)
+    if reasoning_primitives["context_count"]:
+        trust.append("Use reasoning primitive observations as replayable trace evidence, not authority.")
+        ignore.append(
+            "Do not treat reasoning primitive observations as proof that a conclusion is true."
+        )
+    belief_proposals = _belief_update_proposal_diagnostics(current_facts)
+    if belief_proposals["proposal_count"]:
+        trust.append("Use belief update proposals as cited review material only.")
+        ignore.append(
+            "Treat belief updates as proposals until reviewed and promoted by a separate authority path."
+        )
+    if belief_proposals["pending_count"]:
+        ignore.append("Pending belief update proposals have no authority to update current facts.")
+    metacognition = _metacognition_diagnostics(current_facts)
+    if metacognition["context_count"]:
+        trust.append(
+            "Use metacognition diagnostics to identify uncertainty; open known unknowns require re-verification or user clarification."
+        )
+        ignore.append("Treat confidence assessments as trajectory evidence, not truth or authority.")
+        ignore.append("Treat unresolved conflict clusters as diagnostic until a separate authority path resolves them.")
+    procedural_memory = _procedural_memory_diagnostics(current_facts)
+    if procedural_memory["context_count"]:
+        trust.append("Use applicable procedures as planning guidance, not authoritative facts.")
+        ignore.append("Avoid or explicitly review procedural memory with rollback or contradiction diagnostics.")
     synthesis = _checkout_synthesis_guidance(
         query=query,
         current_facts=current_facts,
@@ -429,6 +504,87 @@ def format_memory_checkout_prompt(
         if inference_methods:
             inferred_line += f", methods={', '.join(inference_methods)}"
         lines.append(inferred_line)
+    causal_context = diagnostics.get("causal_context")
+    if isinstance(causal_context, dict):
+        causal_line = (
+            "- Causal context: "
+            f"contexts={causal_context.get('context_count', 0)}, "
+            f"edges={causal_context.get('edge_count', 0)}, "
+            f"average_trust={causal_context.get('average_trust', 0)}, "
+            f"authority={causal_context.get('authority_status', 'non_authoritative')}"
+        )
+        relation_types = _text_list(causal_context.get("relation_types"))
+        if relation_types:
+            causal_line += f", relations={', '.join(relation_types)}"
+        methods = _text_list(causal_context.get("methods"))
+        if methods:
+            causal_line += f", methods={', '.join(methods)}"
+        lines.append(causal_line)
+    consolidation_candidates = diagnostics.get("consolidation_candidates")
+    if isinstance(consolidation_candidates, dict):
+        consolidation_line = (
+            "- Consolidation candidates: "
+            f"candidates={consolidation_candidates.get('candidate_count', 0)}, "
+            f"pending={consolidation_candidates.get('pending_count', 0)}, "
+            f"accepted={consolidation_candidates.get('accepted_count', 0)}, "
+            f"rejected={consolidation_candidates.get('rejected_count', 0)}, "
+            f"conflicted={consolidation_candidates.get('conflicted_count', 0)}, "
+            f"stale={consolidation_candidates.get('stale_count', 0)}, "
+            f"superseded={consolidation_candidates.get('superseded_count', 0)}, "
+            f"valid_to={consolidation_candidates.get('valid_to_count', 0)}, "
+            f"authority={consolidation_candidates.get('authority_status', 'non_authoritative')}"
+        )
+        candidate_types = _text_list(consolidation_candidates.get("candidate_types"))
+        if candidate_types:
+            consolidation_line += f", types={', '.join(candidate_types)}"
+        lines.append(consolidation_line)
+    reasoning_primitives = diagnostics.get("reasoning_primitives")
+    if isinstance(reasoning_primitives, dict):
+        phases = _format_counts(reasoning_primitives.get("phase_counts"))
+        primitives = _format_counts(reasoning_primitives.get("primitive_counts"))
+        lines.append(
+            "- Reasoning primitives: "
+            f"contexts={reasoning_primitives.get('context_count', 0)}, "
+            f"phases={phases}, "
+            f"primitives={primitives}, "
+            f"authority={reasoning_primitives.get('authority_status', 'non_authoritative')}"
+        )
+    belief_proposals = diagnostics.get("belief_update_proposals")
+    if isinstance(belief_proposals, dict):
+        lines.append(
+            "- Belief update proposals: "
+            f"proposals={belief_proposals.get('proposal_count', 0)}, "
+            f"pending={belief_proposals.get('pending_count', 0)}, "
+            f"authority={belief_proposals.get('authority_status', 'non_authoritative')}"
+        )
+    metacognition = diagnostics.get("metacognition")
+    if isinstance(metacognition, dict):
+        lines.append(
+            "- Metacognition: "
+            f"contexts={metacognition.get('context_count', 0)}, "
+            f"unknowns={metacognition.get('unknown_count', 0)}, "
+            f"open_unknowns={metacognition.get('open_unknown_count', 0)}, "
+            f"confidence_assessments={metacognition.get('confidence_assessment_count', 0)}, "
+            f"low_confidence={metacognition.get('low_confidence_count', 0)}, "
+            f"conflicts={metacognition.get('conflict_cluster_count', 0)}, "
+            f"unresolved_conflicts={metacognition.get('unresolved_conflict_count', 0)}, "
+            f"reverify_needed={metacognition.get('reverify_needed_count', 0)}, "
+            f"authority={metacognition.get('authority_status', 'non_authoritative')}"
+        )
+    procedural_memory = diagnostics.get("procedural_memory")
+    if isinstance(procedural_memory, dict):
+        excluded_reasons = _format_counts(procedural_memory.get("excluded_reasons"))
+        lines.append(
+            "- Procedural memory: "
+            f"contexts={procedural_memory.get('context_count', 0)}, "
+            f"applicable={procedural_memory.get('applicable_count', 0)}, "
+            f"diagnostic={procedural_memory.get('diagnostic_count', 0)}, "
+            f"excluded={procedural_memory.get('excluded_count', 0)}, "
+            f"rollback_candidates={procedural_memory.get('rollback_candidate_count', 0)}, "
+            f"contradictions={procedural_memory.get('contradiction_count', 0)}, "
+            f"excluded_reasons={excluded_reasons}, "
+            f"authority={procedural_memory.get('authority_status', 'non_authoritative')}"
+        )
     if diagnostics.get("feedback_recommended"):
         lines.append(
             "- Feedback: call "
@@ -1243,6 +1399,366 @@ def _inferred_score_explanation(item: dict[str, Any]) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _causal_context_diagnostics(items: list[dict[str, Any]]) -> dict[str, Any]:
+    causal_items: list[tuple[dict[str, Any], dict[str, Any], list[str]]] = []
+    for item in items:
+        explanation = _inferred_score_explanation(item)
+        relation_types = [
+            relation_type
+            for relation_type in _text_list(explanation.get("inferred_relation_types"))
+            if relation_type in _CAUSAL_GRAPH_RELATION_TYPES
+        ]
+        if relation_types:
+            causal_items.append((item, explanation, relation_types))
+    context_count = len(causal_items)
+    if context_count == 0:
+        return {
+            "context_count": 0,
+            "edge_count": 0,
+            "relation_types": [],
+            "methods": [],
+            "average_trust": 0.0,
+            "authority_status": "non_authoritative",
+        }
+    explanations = [explanation for _, explanation, _ in causal_items]
+    return {
+        "context_count": context_count,
+        "edge_count": sum(len(relation_types) for _, _, relation_types in causal_items),
+        "relation_types": _unique_texts(
+            relation_type
+            for _, _, relation_types in causal_items
+            for relation_type in relation_types
+        ),
+        "methods": _unique_explanation_texts(explanations, "inference_methods"),
+        "average_trust": _round_metric(_average_metric(explanations, "inferred_edge_trust")),
+        "authority_status": "non_authoritative",
+    }
+
+
+def _consolidation_candidate_diagnostics(items: list[dict[str, Any]]) -> dict[str, Any]:
+    candidates = [item for item in items if _is_consolidation_candidate(item)]
+    if not candidates:
+        return {
+            "candidate_count": 0,
+            "candidate_types": [],
+            "pending_count": 0,
+            "accepted_count": 0,
+            "rejected_count": 0,
+            "conflicted_count": 0,
+            "stale_count": 0,
+            "superseded_count": 0,
+            "valid_to_count": 0,
+            "authority_status": "non_authoritative",
+        }
+    metadata_values = [_metadata(item) for item in candidates]
+    review_statuses = [
+        _review_status(item, metadata)
+        for item, metadata in zip(candidates, metadata_values, strict=True)
+    ]
+    return {
+        "candidate_count": len(candidates),
+        "candidate_types": _unique_texts(
+            _candidate_type(item, metadata)
+            for item, metadata in zip(candidates, metadata_values, strict=True)
+        ),
+        "pending_count": sum(1 for status in review_statuses if status == "pending"),
+        "accepted_count": sum(1 for status in review_statuses if status == "accepted"),
+        "rejected_count": sum(1 for status in review_statuses if status == "rejected"),
+        "conflicted_count": sum(1 for status in review_statuses if status == "conflicted"),
+        "stale_count": sum(
+            1
+            for item, metadata, status in zip(candidates, metadata_values, review_statuses, strict=True)
+            if status == "stale" or _bool_field(item, metadata, "stale")
+        ),
+        "superseded_count": sum(
+            1
+            for item, metadata in zip(candidates, metadata_values, strict=True)
+            if _item_text_field(item, metadata, "superseded_by")
+        ),
+        "valid_to_count": sum(
+            1
+            for item, metadata in zip(candidates, metadata_values, strict=True)
+            if _item_text_field(item, metadata, "valid_to")
+        ),
+        "authority_status": "non_authoritative",
+    }
+
+
+def _reasoning_primitive_diagnostics(items: list[dict[str, Any]]) -> dict[str, Any]:
+    contexts = [item for item in items if _is_reasoning_primitive_observation(item)]
+    if not contexts:
+        return {
+            "context_count": 0,
+            "phase_counts": {},
+            "primitive_counts": {},
+            "authority_status": "non_authoritative",
+        }
+    phase_counts: dict[str, int] = {}
+    primitive_counts: dict[str, int] = {}
+    for item in contexts:
+        details = _details(item)
+        phase = _item_text_field(item, details, "phase") or "unknown"
+        primitive = _item_text_field(item, details, "primitive") or "unknown"
+        phase_counts[phase] = phase_counts.get(phase, 0) + 1
+        primitive_counts[primitive] = primitive_counts.get(primitive, 0) + 1
+    return {
+        "context_count": len(contexts),
+        "phase_counts": phase_counts,
+        "primitive_counts": primitive_counts,
+        "authority_status": "non_authoritative",
+    }
+
+
+def _belief_update_proposal_diagnostics(items: list[dict[str, Any]]) -> dict[str, Any]:
+    proposals = [item for item in items if _is_belief_update_proposal(item)]
+    if not proposals:
+        return {
+            "proposal_count": 0,
+            "pending_count": 0,
+            "authority_status": "non_authoritative",
+        }
+    pending_count = 0
+    for item in proposals:
+        details = _details(item)
+        if (_item_text_field(item, details, "review_status") or "pending").lower() == "pending":
+            pending_count += 1
+    return {
+        "proposal_count": len(proposals),
+        "pending_count": pending_count,
+        "authority_status": "non_authoritative",
+    }
+
+
+def _metacognition_diagnostics(items: list[dict[str, Any]]) -> dict[str, Any]:
+    contexts = [item for item in items if _is_metacognition_context(item)]
+    if not contexts:
+        return {
+            "context_count": 0,
+            "unknown_count": 0,
+            "open_unknown_count": 0,
+            "confidence_assessment_count": 0,
+            "low_confidence_count": 0,
+            "conflict_cluster_count": 0,
+            "unresolved_conflict_count": 0,
+            "reverify_needed_count": 0,
+            "authority_status": "non_authoritative",
+        }
+    unknown_count = 0
+    open_unknown_count = 0
+    confidence_assessment_count = 0
+    low_confidence_count = 0
+    conflict_cluster_count = 0
+    unresolved_conflict_count = 0
+    reverify_needed_count = 0
+    for item in contexts:
+        details = _details(item)
+        entity_type = str(item.get("entity_type") or "").strip()
+        event_type = _item_text_field(item, details, "event_type")
+        if entity_type == "known_unknown" or event_type == "metacognition.unknown.recorded":
+            unknown_count += 1
+            if (_item_text_field(item, details, "status") or "open") == "open":
+                open_unknown_count += 1
+                reverify_needed_count += 1
+        elif entity_type == "confidence_assessment" or event_type == "metacognition.confidence.assessed":
+            confidence_assessment_count += 1
+            confidence = _float_metric(details.get("confidence", item.get("confidence")))
+            conflict_count = _int_metric(details.get("conflict_count", item.get("conflict_count")))
+            requires_reverify = _bool_field(item, details, "requires_reverify")
+            if confidence < 0.7:
+                low_confidence_count += 1
+            if confidence < 0.7 or conflict_count > 0 or requires_reverify:
+                reverify_needed_count += 1
+        elif entity_type == "conflict_cluster" or event_type == "metacognition.conflict.clustered":
+            conflict_cluster_count += 1
+            if (_item_text_field(item, details, "resolution_status") or "unresolved") == "unresolved":
+                unresolved_conflict_count += 1
+                reverify_needed_count += 1
+        elif entity_type == "reverify_request" or event_type == "metacognition.reverify.requested":
+            if (_item_text_field(item, details, "status") or "open") == "open":
+                reverify_needed_count += 1
+    return {
+        "context_count": len(contexts),
+        "unknown_count": unknown_count,
+        "open_unknown_count": open_unknown_count,
+        "confidence_assessment_count": confidence_assessment_count,
+        "low_confidence_count": low_confidence_count,
+        "conflict_cluster_count": conflict_cluster_count,
+        "unresolved_conflict_count": unresolved_conflict_count,
+        "reverify_needed_count": reverify_needed_count,
+        "authority_status": "non_authoritative",
+    }
+
+
+def _procedural_memory_diagnostics(items: list[dict[str, Any]]) -> dict[str, Any]:
+    contexts = [item for item in items if _is_procedural_memory_context(item)]
+    if not contexts:
+        return {
+            "context_count": 0,
+            "applicable_count": 0,
+            "diagnostic_count": 0,
+            "excluded_count": 0,
+            "rollback_candidate_count": 0,
+            "contradiction_count": 0,
+            "excluded_reasons": {},
+            "authority_status": "non_authoritative",
+        }
+    applicable_count = 0
+    diagnostic_count = 0
+    excluded_count = 0
+    rollback_candidate_count = 0
+    contradiction_count = 0
+    excluded_reasons: dict[str, int] = {}
+    for item in contexts:
+        details = _details(item)
+        status = _procedure_status(item, details)
+        reason = _procedural_excluded_reason(item, details, status)
+        if _item_text_field(item, details, "rollback"):
+            rollback_candidate_count += 1
+        if status == "contradicted" or _item_text_field(item, details, "contradiction_reason"):
+            contradiction_count += 1
+        if reason:
+            excluded_count += 1
+            excluded_reasons[reason] = excluded_reasons.get(reason, 0) + 1
+        elif status in {"proposed", "pending", "deferred"}:
+            diagnostic_count += 1
+        elif status in {"validated", "revised", "accepted"}:
+            applicable_count += 1
+        else:
+            excluded_count += 1
+            excluded_reasons["unknown_status"] = excluded_reasons.get("unknown_status", 0) + 1
+    return {
+        "context_count": len(contexts),
+        "applicable_count": applicable_count,
+        "diagnostic_count": diagnostic_count,
+        "excluded_count": excluded_count,
+        "rollback_candidate_count": rollback_candidate_count,
+        "contradiction_count": contradiction_count,
+        "excluded_reasons": excluded_reasons,
+        "authority_status": "non_authoritative",
+    }
+
+
+def _is_consolidation_candidate(item: dict[str, Any]) -> bool:
+    if str(item.get("entity_type") or "").strip() == "consolidation_candidate":
+        return True
+    entity_name = str(item.get("entity_name") or "").strip()
+    if entity_name.startswith("consolidation:"):
+        return True
+    metadata = _metadata(item)
+    return any(
+        _item_text_field(item, metadata, key)
+        for key in ("candidate_type", "consolidation_candidate_type", "candidate_id")
+    )
+
+
+def _is_reasoning_primitive_observation(item: dict[str, Any]) -> bool:
+    details = _details(item)
+    if _item_text_field(item, details, "event_type") == "reasoning.primitive.called":
+        return True
+    if str(item.get("entity_type") or "").strip() == "reasoning_primitive_observation":
+        return True
+    return bool(_item_text_field(item, details, "primitive") and _item_text_field(item, details, "phase"))
+
+
+def _is_belief_update_proposal(item: dict[str, Any]) -> bool:
+    details = _details(item)
+    if _item_text_field(item, details, "event_type") == "belief.update.proposed":
+        return True
+    if str(item.get("entity_type") or "").strip() == "belief_update_proposal":
+        return True
+    entity_name = str(item.get("entity_name") or "").strip()
+    return entity_name.startswith("belief:update:") or entity_name.startswith("belief:proposal:")
+
+
+def _is_metacognition_context(item: dict[str, Any]) -> bool:
+    entity_type = str(item.get("entity_type") or "").strip()
+    if entity_type in {"known_unknown", "confidence_assessment", "conflict_cluster", "reverify_request"}:
+        return True
+    details = _details(item)
+    return _item_text_field(item, details, "event_type").startswith("metacognition.")
+
+
+def _is_procedural_memory_context(item: dict[str, Any]) -> bool:
+    details = _details(item)
+    entity_type = str(item.get("entity_type") or "").strip()
+    if entity_type in {"skill_version", "skill_outcome", "procedure", "procedure_candidate"}:
+        return True
+    source = str(item.get("source") or "").casefold()
+    candidate_type = _item_text_field(item, details, "candidate_type").casefold()
+    event_type = _item_text_field(item, details, "event_type").casefold()
+    if candidate_type == "procedure" or "procedure" in event_type:
+        return True
+    return bool("skill" in source and (_item_text_field(item, details, "status") or _text_list(details.get("procedure"))))
+
+
+def _procedure_status(item: dict[str, Any], details: dict[str, Any]) -> str:
+    for key in ("status", "review_status", "lifecycle_status"):
+        status = _item_text_field(item, details, key)
+        if status:
+            return status.casefold().replace(" ", "_").replace("-", "_")
+    return "unknown"
+
+
+def _procedural_excluded_reason(item: dict[str, Any], details: dict[str, Any], status: str) -> str | None:
+    if status in {"rejected", "conflicted", "deprecated", "contradicted", "stale"}:
+        return f"{status}_status"
+    if _bool_field(item, details, "stale"):
+        return "stale_flag"
+    if not _item_text_field(item, details, "citation") and not item.get("citation"):
+        return "missing_citation"
+    if _item_text_field(item, details, "valid_to"):
+        return "valid_to_closed"
+    if _item_text_field(item, details, "superseded_by"):
+        return "superseded"
+    return None
+
+
+def _metadata(item: dict[str, Any]) -> dict[str, Any]:
+    metadata = item.get("metadata")
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def _details(item: dict[str, Any]) -> dict[str, Any]:
+    details: dict[str, Any] = {}
+    for key in ("metadata", "payload"):
+        value = item.get(key)
+        if isinstance(value, dict):
+            details.update(value)
+    return details
+
+
+def _candidate_type(item: dict[str, Any], metadata: dict[str, Any]) -> str:
+    for key in ("candidate_type", "consolidation_candidate_type"):
+        value = _item_text_field(item, metadata, key)
+        if value:
+            return value
+    entity_name = str(item.get("entity_name") or "").strip()
+    match = re.match(r"^consolidation:([^:]+):", entity_name)
+    return match.group(1) if match else "unknown"
+
+
+def _review_status(item: dict[str, Any], metadata: dict[str, Any]) -> str:
+    return _item_text_field(item, metadata, "review_status").lower()
+
+
+def _item_text_field(item: dict[str, Any], metadata: dict[str, Any], key: str) -> str:
+    for source in (item, metadata):
+        value = source.get(key)
+        if isinstance(value, str):
+            text = value.strip()
+            if text:
+                return text
+    return ""
+
+
+def _bool_field(item: dict[str, Any], metadata: dict[str, Any], key: str) -> bool:
+    for source in (item, metadata):
+        value = source.get(key)
+        if isinstance(value, bool):
+            return value
+    return False
+
+
 def _average_metric(items: list[dict[str, Any]], key: str) -> float:
     values = [_float_metric(item.get(key)) for item in items]
     return sum(values) / len(values) if values else 0.0
@@ -1264,9 +1780,16 @@ def _unique_explanation_texts(items: list[dict[str, Any]], key: str) -> list[str
     values: list[str] = []
     for item in items:
         values.extend(_text_list(item.get(key)))
+    return _unique_texts(values)
+
+
+def _unique_texts(values: Any) -> list[str]:
     seen: set[str] = set()
     unique: list[str] = []
     for value in values:
+        value = str(value).strip()
+        if not value:
+            continue
         if value in seen:
             continue
         seen.add(value)
@@ -1289,3 +1812,9 @@ def _format_source_lanes(source_lanes: Any) -> str:
     if not isinstance(source_lanes, dict) or not source_lanes:
         return "none"
     return ", ".join(f"{lane}={count}" for lane, count in sorted(source_lanes.items()))
+
+
+def _format_counts(value: Any) -> str:
+    if not isinstance(value, dict) or not value:
+        return "none"
+    return ", ".join(f"{key}={value[key]}" for key in sorted(value))

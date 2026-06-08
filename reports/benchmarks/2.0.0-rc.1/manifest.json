@@ -1,0 +1,77 @@
+{
+  "claim_boundary": {
+    "external_validation": "No 2.0.0-rc.1 outside-validator report is claimed by this manifest.",
+    "harvey_lab": "external_anchor",
+    "headline_500": "longmemeval_compatible_checkout",
+    "internal_lanes": "project_defined_internal"
+  },
+  "generated_at": "2026-06-08T00:00:00Z",
+  "headline_500": {
+    "artifact": "reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json",
+    "backend": "zaxy-checkout",
+    "claim_scope": "longmemeval_compatible_checkout",
+    "run_config": "reports/benchmarks/longmemeval-500-publish-20260607/run-config.md",
+    "workload_sha256": "90fb2307195d7e16b963a2b8a30f03b375bd42a45d41aeaa55423029dd84e3fc"
+  },
+  "harvey_lab": {
+    "artifact_dir": "reports/benchmarks/harvey-lab-memory-ablation",
+    "claim_scope": "external_anchor",
+    "harvey_commit": "29748828133dff83ad2263af353fb035504f8f77"
+  },
+  "internal_lanes": [
+    {
+      "claim_scope": "project_defined_internal",
+      "evidence_kind": "contract_scorer",
+      "lane": "causal",
+      "module": "zaxy.causal_benchmark"
+    },
+    {
+      "claim_scope": "project_defined_internal",
+      "evidence_kind": "contract_scorer",
+      "lane": "consolidation",
+      "module": "zaxy.consolidation_benchmark"
+    },
+    {
+      "claim_scope": "project_defined_internal",
+      "evidence_kind": "contract_scorer",
+      "lane": "procedural",
+      "module": "zaxy.reasoning_benchmark"
+    },
+    {
+      "claim_scope": "project_defined_internal",
+      "evidence_kind": "contract_scorer",
+      "lane": "metacognition",
+      "module": "zaxy.reasoning_benchmark"
+    }
+  ],
+  "project_benchmarks": {
+    "coordination": {
+      "artifact": "reports/benchmarks/coordination-real-v1/coordination-benchmark.json",
+      "claim_scope": "project_defined_internal",
+      "markdown": "reports/benchmarks/coordination-real-v1/coordination-benchmark.md",
+      "version": "coordination-real-v1",
+      "workload": "reports/benchmarks/coordination-real-v1/coordination-workload.json",
+      "workload_fingerprint": "b63e156150b92c9aa7d8895604741484f85f4c231d4c7d2097a2467fdaf14bd0"
+    },
+    "purpose": {
+      "artifact": "reports/benchmarks/purpose-v1/purpose-benchmark.json",
+      "claim_scope": "project_defined_internal",
+      "holdout_fingerprint": "0d8217bb4e905164305970050ef34c987d7e9b287ce648a1730685f3dd0e61f6",
+      "holdout_pack": "reports/benchmarks/purpose-v1/holdouts/public-derived-purpose-v1/holdout-pack.json",
+      "lane_count": 10,
+      "markdown": "reports/benchmarks/purpose-v1/purpose-benchmark.md",
+      "source_disclosures": "reports/benchmarks/purpose-v1/holdouts/public-derived-purpose-v1/source-disclosures.json",
+      "version": "purpose-v1"
+    },
+    "state_recovery": {
+      "artifact": "reports/benchmarks/state-recovery-v1/state-recovery-benchmark.json",
+      "claim_scope": "project_defined_internal",
+      "markdown": "reports/benchmarks/state-recovery-v1/state-recovery-benchmark.md",
+      "version": "state-recovery-v0",
+      "workload": "reports/benchmarks/state-recovery-v1/state-recovery-workload.json",
+      "workload_fingerprint": "916201f70da9d058aee80a31f8cf59d92dad59f5fd645f3dfbd3a1b23e7dddad"
+    }
+  },
+  "release": "2.0.0-rc.1",
+  "schema_version": "zaxy.rc1-benchmark-freeze.v1"
+}
