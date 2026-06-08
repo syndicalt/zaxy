@@ -23,7 +23,7 @@
     "status": "ready"
   },
   "index_ready_count": 10,
-  "message": "Harvey external Zaxy run prerequisites are incomplete; do not start or publish comparative scoring yet.",
+  "message": "Harvey external Zaxy run artifacts are already complete; do not rerun the external suite unless intentionally refreshing the frozen evidence.",
   "missing_credentials": [],
   "model_requirements": {
     "generator": {

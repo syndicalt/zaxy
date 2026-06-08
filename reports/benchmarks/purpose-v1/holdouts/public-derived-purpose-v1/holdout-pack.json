@@ -1,0 +1,166 @@
+{
+  "cases": [
+    {
+      "artifact": {
+        "source_id": "release-changelog",
+        "source_ref": "CHANGELOG.md"
+      },
+      "case_id": "repo-release-purpose-001",
+      "expected_action_outcome_effect": "failed release gates remain future blockers until superseded",
+      "expected_citation_requirements": [
+        "changelog entry",
+        "readiness gate",
+        "benchmark report"
+      ],
+      "expected_evidence_policy": "release_gate_evidence_required",
+      "expected_governed_forgetting": "release blockers and failed gates resist generic staleness decay",
+      "expected_ontology_shift": "release_gate and external_blocker terms outrank generic implementation notes",
+      "expected_retained_consequence": "release gate evidence and changelog-backed claim only",
+      "forbidden_overclaims": [
+        "SOTA claim",
+        "competitor win",
+        "external validation complete"
+      ],
+      "purpose_profile": "release",
+      "query": "Decide whether the current purpose-memory release claim is supported by release gates and changelog evidence."
+    },
+    {
+      "artifact": {
+        "source_id": "repo-roadmap",
+        "source_ref": "docs/memory-is-purpose-zaxy-analysis.md"
+      },
+      "case_id": "repo-review-purpose-002",
+      "expected_action_outcome_effect": "rejected overclaims become suppression candidates",
+      "expected_citation_requirements": [
+        "roadmap priority section",
+        "implemented marker",
+        "blocked or not-claimable marker"
+      ],
+      "expected_evidence_policy": "cited_current_facts_required",
+      "expected_governed_forgetting": "review blockers persist until resolved",
+      "expected_ontology_shift": "risk and missing_test roles outrank generic roadmap prose",
+      "expected_retained_consequence": "implemented markers, blockers, and remaining priorities",
+      "forbidden_overclaims": [
+        "roadmap complete without Priority 8 evidence",
+        "unsupported public benchmark",
+        "Company Brain claim"
+      ],
+      "purpose_profile": "review",
+      "query": "Review whether implementation status overclaims the roadmap."
+    },
+    {
+      "artifact": {
+        "source_id": "security-redacted",
+        "source_ref": "synthetic/redacted/auth-secret-rotation.md"
+      },
+      "case_id": "security-redacted-purpose-003",
+      "expected_action_outcome_effect": "failed mitigations remain future warnings",
+      "expected_citation_requirements": [
+        "mitigation source",
+        "risk owner",
+        "verification command"
+      ],
+      "expected_evidence_policy": "security_evidence_required",
+      "expected_governed_forgetting": "security findings and risk acceptance resist generic decay",
+      "expected_ontology_shift": "uses_credential and risk_accepted_by paths outrank generic auth mentions",
+      "expected_retained_consequence": "risk acceptance, mitigation, and verification outcome",
+      "forbidden_overclaims": [
+        "credential value",
+        "uncited mitigation",
+        "risk accepted without owner"
+      ],
+      "purpose_profile": "security",
+      "query": "Recover accepted mitigation, risk owner, and verification evidence without retaining rejected exploit hypotheses as current state."
+    },
+    {
+      "artifact": {
+        "source_id": "customer-docs",
+        "source_ref": "synthetic/customers/acme-escalation.txt"
+      },
+      "case_id": "customer-purpose-004",
+      "expected_action_outcome_effect": "resolved workaround increases future support recall",
+      "expected_citation_requirements": [
+        "customer thread",
+        "current status",
+        "workaround or resolution"
+      ],
+      "expected_evidence_policy": "customer_thread_and_current_status_required",
+      "expected_governed_forgetting": "customer impact persists while stale statuses are suppressed",
+      "expected_ontology_shift": "customer impact and workaround roles outrank roadmap and legal labels",
+      "expected_retained_consequence": "customer impact, workaround history, current status",
+      "forbidden_overclaims": [
+        "legal obligation without exact quote",
+        "roadmap commitment without product source",
+        "resolved status without current citation"
+      ],
+      "purpose_profile": "support",
+      "query": "Build support memory for the active customer escalation without turning product or legal interpretations into current support status."
+    },
+    {
+      "artifact": {
+        "source_id": "coordinate-conflicts",
+        "source_ref": "synthetic/missions/worker-conflicts.jsonl"
+      },
+      "case_id": "coordinate-purpose-005",
+      "expected_action_outcome_effect": "accepted findings become authoritative while rejected findings become diagnostics",
+      "expected_citation_requirements": [
+        "promotion event",
+        "review event",
+        "worker source event"
+      ],
+      "expected_evidence_policy": "accepted_parent_state_required",
+      "expected_governed_forgetting": "accepted parent state and proof packets resist generic decay",
+      "expected_ontology_shift": "mission_has_proof_packet and parent accepted-state paths outrank worker-local rows",
+      "expected_retained_consequence": "accepted parent state, pending diagnostics, proof packet references",
+      "forbidden_overclaims": [
+        "pending worker finding as accepted",
+        "conflicted row as authoritative",
+        "proof packet omitted"
+      ],
+      "purpose_profile": "coordinate",
+      "query": "Separate accepted parent memory from pending worker diagnostics and proof packets for a multi-agent mission."
+    }
+  ],
+  "claim_status": "public_derived_holdout",
+  "fingerprint": "0d8217bb4e905164305970050ef34c987d7e9b287ce648a1730685f3dd0e61f6",
+  "limitations": [
+    "Diagnostic holdout metadata only; deterministic purpose-v1 lanes remain the release gate.",
+    "Cases forbid tuning on expected answers and must be reported separately from internal smoke lanes.",
+    "Synthetic customer/security/mission cases are realistic but not outside-user validation."
+  ],
+  "pack_id": "public-derived-purpose-v1",
+  "schema_version": "purpose-holdout-pack-v1",
+  "source_disclosures": [
+    {
+      "kind": "first_party_repo_history",
+      "license_or_policy": "repository-owned documentation",
+      "reference": "docs/memory-is-purpose-zaxy-analysis.md",
+      "source_id": "repo-roadmap"
+    },
+    {
+      "kind": "first_party_repo_history",
+      "license_or_policy": "repository-owned documentation",
+      "reference": "CHANGELOG.md",
+      "source_id": "release-changelog"
+    },
+    {
+      "kind": "redacted_synthetic_security_history",
+      "license_or_policy": "synthetic fixture",
+      "reference": "synthetic/redacted/auth-secret-rotation.md",
+      "source_id": "security-redacted"
+    },
+    {
+      "kind": "synthetic_realistic_documents",
+      "license_or_policy": "synthetic fixture",
+      "reference": "synthetic/customers/acme-escalation.txt",
+      "source_id": "customer-docs"
+    },
+    {
+      "kind": "synthetic_multi_agent_missions",
+      "license_or_policy": "synthetic fixture",
+      "reference": "synthetic/missions/worker-conflicts.jsonl",
+      "source_id": "coordinate-conflicts"
+    }
+  ],
+  "source_policy": "Public-derived and synthetic representative purpose cases. Attribution is recorded; this is not external validation and not a same-harness competitor claim."
+}

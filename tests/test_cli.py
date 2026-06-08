@@ -30,6 +30,289 @@ def _git(cwd: Path, *args: str) -> str:
     return completed.stdout.strip()
 
 
+def _write_rc1_freeze_artifacts(root: Path) -> None:
+    _write_rc1_project_benchmark_artifacts(root)
+    manifest_dir = root / "reports/benchmarks/2.0.0-rc.1"
+    manifest_dir.mkdir(parents=True)
+    (manifest_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "release": "2.0.0-rc.1",
+                "schema_version": "zaxy.rc1-benchmark-freeze.v1",
+                "headline_500": {
+                    "artifact": "reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json",
+                    "run_config": "reports/benchmarks/longmemeval-500-publish-20260607/run-config.md",
+                    "claim_scope": "longmemeval_compatible_checkout",
+                    "workload_sha256": "90fb2307195d7e16b963a2b8a30f03b375bd42a45d41aeaa55423029dd84e3fc",
+                },
+                "harvey_lab": {
+                    "claim_scope": "external_anchor",
+                    "harvey_commit": "29748828133dff83ad2263af353fb035504f8f77",
+                },
+                "internal_lanes": [
+                    {"lane": "causal", "claim_scope": "project_defined_internal"},
+                    {"lane": "consolidation", "claim_scope": "project_defined_internal"},
+                    {"lane": "procedural", "claim_scope": "project_defined_internal"},
+                    {"lane": "metacognition", "claim_scope": "project_defined_internal"},
+                ],
+                "project_benchmarks": {
+                    "state_recovery": {
+                        "artifact": "reports/benchmarks/state-recovery-v1/state-recovery-benchmark.json",
+                        "workload": "reports/benchmarks/state-recovery-v1/state-recovery-workload.json",
+                        "markdown": "reports/benchmarks/state-recovery-v1/state-recovery-benchmark.md",
+                        "claim_scope": "project_defined_internal",
+                        "version": "state-recovery-v0",
+                        "workload_fingerprint": "state-fingerprint",
+                    },
+                    "coordination": {
+                        "artifact": "reports/benchmarks/coordination-v1/coordination-benchmark.json",
+                        "workload": "reports/benchmarks/coordination-v1/coordination-workload.json",
+                        "markdown": "reports/benchmarks/coordination-v1/coordination-benchmark.md",
+                        "claim_scope": "project_defined_internal",
+                        "version": "coordination-v1",
+                        "workload_fingerprint": "coordination-fingerprint",
+                    },
+                    "purpose": {
+                        "artifact": "reports/benchmarks/purpose-v1/purpose-benchmark.json",
+                        "markdown": "reports/benchmarks/purpose-v1/purpose-benchmark.md",
+                        "holdout_pack": "reports/benchmarks/purpose-v1/holdouts/public-derived-purpose-v1/holdout-pack.json",
+                        "holdout_fingerprint": "holdout-fingerprint",
+                        "source_disclosures": "reports/benchmarks/purpose-v1/holdouts/public-derived-purpose-v1/source-disclosures.json",
+                        "claim_scope": "project_defined_internal",
+                        "version": "purpose-v1",
+                        "lane_count": 10,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    headline_dir = root / "reports/benchmarks/longmemeval-500-publish-20260607"
+    headline_dir.mkdir(parents=True)
+    (headline_dir / "run-config.md").write_text("frozen config\n", encoding="utf-8")
+    (headline_dir / "live-benchmark.json").write_text(
+        json.dumps(
+            {
+                "generated_at": "2026-06-07T16:20:10Z",
+                "workload": {"sha256": "90fb2307195d7e16b963a2b8a30f03b375bd42a45d41aeaa55423029dd84e3fc"},
+                "summaries": [
+                    {
+                        "backend": "zaxy-checkout",
+                        "case_count": 500,
+                        "mean_score": 0.956,
+                        "mean_answer_recall_at_5": 0.91,
+                        "mean_recall_at_5": 1.0,
+                        "mean_citation_coverage": 1.0,
+                        "latency_ms_p95": 1966.65,
+                        "latency_ms_p99": 2495.07,
+                        "mean_approx_tokens": 10192,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    harvey_dir = root / "reports/benchmarks/harvey-lab-memory-ablation"
+    harvey_dir.mkdir(parents=True)
+    (harvey_dir / "harvey-lab-benchmark.json").write_text(
+        json.dumps(
+            {
+                "status": "complete",
+                "schema_version": "zaxy.harvey-lab-benchmark.v1",
+                "summary": {
+                    "status": "complete",
+                    "article_task_count": 10,
+                    "zaxy_task_count": 10,
+                },
+                "result_provenance": {
+                    "harvey_git_commit": "29748828133dff83ad2263af353fb035504f8f77",
+                    "normalized_result_paths": [
+                        f"/tmp/harvey/.ingestion/runs/zaxy-task-{index}/normalized-result.json"
+                        for index in range(10)
+                    ],
+                    "external_baseline_reports": [
+                        {
+                            "path": "/tmp/harvey/.ingestion/reports/comparison-zaxy.json",
+                            "schema_version": "0.1",
+                            "normalized_result_count": 10,
+                            "framework_count": 1,
+                        }
+                    ],
+                    "external_baseline_report_paths": [
+                        "/tmp/harvey/.ingestion/reports/comparison-zaxy.json"
+                    ],
+                    "external_readiness_report_paths": [
+                        "reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-ready.json"
+                    ],
+                    "external_run_manifest_paths": [
+                        "reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-external-run.json"
+                    ],
+                    "external_status_report_paths": [
+                        "reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-status.json"
+                    ],
+                },
+                "task_rows": {
+                    f"task-{index}": {
+                        "task_id": f"task-{index}",
+                        "zaxy_score": 0.8,
+                        "article_best_score": 0.7,
+                        "regular_no_memory_score": 0.6,
+                        "zaxy_memory_read_calls": 1,
+                        "zaxy_memory_search_calls": 3,
+                    }
+                    for index in range(10)
+                },
+                "zaxy_results": [
+                    {
+                        "task_id": f"task-{index}",
+                        "run_id": f"zaxy-task-{index}",
+                        "framework": "zaxy",
+                        "commit": "29748828133dff83ad2263af353fb035504f8f77",
+                        "score": 0.8,
+                        "memory_read_calls": 1,
+                        "memory_search_calls": 3,
+                        "answer_path": f"results/zaxy-task-{index}/output.docx",
+                        "judge_path": f"results/zaxy-task-{index}/scores.json",
+                        "run_metrics_path": f"results/zaxy-task-{index}/metrics.json",
+                        "tool_log_path": f"results/zaxy-task-{index}/transcript.jsonl",
+                        "results_run_dir": f"results/zaxy-task-{index}",
+                    }
+                    for index in range(10)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (harvey_dir / "harvey-lab-external-run.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "zaxy.harvey-lab-external-run.v1",
+                "task_count": 10,
+                "report_json_path": "reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-benchmark.json",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (harvey_dir / "harvey-lab-ready.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "zaxy.harvey-lab-run-readiness.v1",
+                "status": "not_ready",
+                "blocking_reasons": ["results_already_complete"],
+                "expected_task_count": 10,
+                "ready_task_count": 10,
+                "normalized_ready_count": 10,
+                "run_ready_count": 10,
+                "harvey_git_commit": "29748828133dff83ad2263af353fb035504f8f77",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (harvey_dir / "harvey-lab-status.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "zaxy.harvey-lab-run-status.v1",
+                "status": "complete",
+                "expected_task_count": 10,
+                "ready_task_count": 10,
+                "harvey_git_commit": "29748828133dff83ad2263af353fb035504f8f77",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_rc1_project_benchmark_artifacts(root: Path) -> None:
+    state_dir = root / "reports/benchmarks/state-recovery-v1"
+    state_dir.mkdir(parents=True)
+    (state_dir / "state-recovery-workload.json").write_text(
+        json.dumps({"version": "state-recovery-v0", "fingerprint": "state-fingerprint", "cases": [{}]}),
+        encoding="utf-8",
+    )
+    (state_dir / "state-recovery-benchmark.md").write_text("# StateRecoveryBench\n", encoding="utf-8")
+    (state_dir / "state-recovery-benchmark.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "state-recovery-report-v1",
+                "version": "state-recovery-v0",
+                "status": "pass",
+                "workload_fingerprint": "state-fingerprint",
+                "production_baseline": "memory_fabric_checkout",
+                "checks": {
+                    "state_accuracy": {"status": "pass"},
+                    "minimal_evidence_recall": {"status": "pass"},
+                    "stale_rejection": {"status": "pass"},
+                    "distractor_resistance": {"status": "pass"},
+                    "abstention_accuracy": {"status": "pass"},
+                    "citation_coverage": {"status": "pass"},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    coordination_dir = root / "reports/benchmarks/coordination-v1"
+    coordination_dir.mkdir(parents=True)
+    (coordination_dir / "coordination-workload.json").write_text(
+        json.dumps({"version": "coordination-v1"}), encoding="utf-8"
+    )
+    (coordination_dir / "coordination-benchmark.md").write_text("# CoordinationBench\n", encoding="utf-8")
+    (coordination_dir / "coordination-benchmark.json").write_text(
+        json.dumps(
+            {
+                "version": "coordination-v1",
+                "workload_fingerprint": "coordination-fingerprint",
+                "metrics": {
+                    "accepted_finding_precision": 1.0,
+                    "accepted_finding_recall": 1.0,
+                    "citation_coverage": 1.0,
+                    "evidence_coverage": 1.0,
+                    "stale_claim_rejection": 1.0,
+                    "duplicate_consolidation": 1.0,
+                    "non_authoritative_leakage": 1.0,
+                    "parent_checkout_answerability": 1.0,
+                    "purpose_feedback_coverage": 1.0,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    purpose_dir = root / "reports/benchmarks/purpose-v1"
+    purpose_dir.mkdir(parents=True)
+    holdout_dir = purpose_dir / "holdouts/public-derived-purpose-v1"
+    holdout_dir.mkdir(parents=True)
+    (holdout_dir / "holdout-pack.json").write_text(
+        json.dumps({"fingerprint": "holdout-fingerprint", "cases": [{}, {}, {}, {}, {}]}),
+        encoding="utf-8",
+    )
+    (holdout_dir / "source-disclosures.json").write_text(
+        json.dumps({"sources": []}),
+        encoding="utf-8",
+    )
+    (purpose_dir / "purpose-benchmark.md").write_text("# PurposeBench\n", encoding="utf-8")
+    (purpose_dir / "purpose-benchmark.json").write_text(
+        json.dumps(
+            {
+                "version": "purpose-v1",
+                "status": "passed",
+                "lane_count": 10,
+                "passed_lanes": 10,
+                "holdout_reports": {
+                    "public-derived-purpose-v1": {
+                        "pack_fingerprint": "holdout-fingerprint",
+                        "gate_status": "diagnostic",
+                        "claim_status": "public_derived_holdout",
+                        "metrics": {"case_count": 5},
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
 def test_version_option_reports_project_version() -> None:
     """The installed CLI should expose the packaged Zaxy version."""
     runner = CliRunner()
@@ -38,6 +321,41 @@ def test_version_option_reports_project_version() -> None:
 
     assert result.exit_code == 0
     assert result.output.strip() == f"zaxy {package_version()}"
+
+
+def test_benchmark_freeze_json_passes_with_required_rc1_artifacts(tmp_path: Path) -> None:
+    """benchmark-freeze should expose the RC.1 release evidence contract."""
+    _write_rc1_freeze_artifacts(tmp_path)
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["benchmark-freeze", "--root", str(tmp_path), "--json"])
+
+    assert result.exit_code == 0
+    report = json.loads(result.output)
+    assert report["release"] == "2.0.0-rc.1"
+    assert report["passed"] is True
+    assert report["headline_500"]["claim_scope"] == "longmemeval_compatible_checkout"
+    assert report["harvey_lab"]["claim_scope"] == "external_anchor"
+
+
+def test_benchmark_freeze_fails_when_required_rc1_artifact_is_missing(tmp_path: Path) -> None:
+    """benchmark-freeze should fail closed when frozen evidence is incomplete."""
+    _write_rc1_freeze_artifacts(tmp_path)
+    (
+        tmp_path
+        / "reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json"
+    ).unlink()
+    runner = CliRunner()
+
+    result = runner.invoke(app, ["benchmark-freeze", "--root", str(tmp_path), "--json"])
+
+    assert result.exit_code == 1
+    report = json.loads(result.output)
+    assert report["passed"] is False
+    assert any(
+        check["name"] == "headline_report" and check["passed"] is False
+        for check in report["checks"]
+    )
 
 
 def test_memory_status_prints_eventloom_sessions(tmp_path: Path) -> None:

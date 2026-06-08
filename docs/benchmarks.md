@@ -81,6 +81,66 @@ Primary report artifacts:
 Interpretation: Harvey LAB is external downstream work-product evidence. The
 metric is criterion pass rate, not binary task pass/fail.
 
+## Zaxy 2.0 RC.1 Benchmark Freeze
+
+The `2.0.0-rc.1` freeze gate validates the current release evidence without
+changing retrieval, synthesis, or benchmark scoring behavior:
+
+```bash
+zaxy benchmark-freeze --json
+```
+
+The tracked freeze manifest is
+[reports/benchmarks/2.0.0-rc.1/manifest.json](../reports/benchmarks/2.0.0-rc.1/manifest.json).
+
+The gate is a claim-boundary and artifact-integrity check. It requires the
+headline 500-question LongMemEval-compatible checkout report, the frozen
+headline run config, Harvey LAB external-anchor artifacts, and the
+project-defined RC lanes for StateRecoveryBench, CoordinationBench,
+PurposeBench, causal, consolidation, procedural, and metacognitive behavior.
+
+RC.1 evidence is interpreted in three separate buckets:
+
+- `longmemeval_compatible_checkout`: the same-harness 500-question checkout
+  diagnostic listed above. It is the headline public benchmark artifact, not an
+  official LongMemEval end-to-end assistant score.
+- `external_anchor`: Harvey LAB legal-agent memory-ablation evidence. It is
+  external downstream work-product evidence, not a general outside-user
+  validation report.
+- `project_defined_internal`: StateRecoveryBench, CoordinationBench,
+  PurposeBench, causal, consolidation, procedural, and metacognitive
+  guardrails. These lanes protect product contracts and must not be merged into
+  the headline 500 or Harvey LAB numbers.
+
+The active RC.1 project-defined artifacts are:
+
+- [StateRecoveryBench](../reports/benchmarks/state-recovery-v1/state-recovery-benchmark.md)
+- [CoordinationBench](../reports/benchmarks/coordination-real-v1/coordination-benchmark.md)
+- [PurposeBench](../reports/benchmarks/purpose-v1/purpose-benchmark.md)
+
+CoordinationBench has a conservative competitor-claim boundary. The
+`competitor_claim_gate` remains blocked for Quarq and Hybi unless a future
+same-harness run supplies tracked, auditable runner outputs. Release checks use
+explicit flags such as `--require-competitor-claim quarq` and
+`--require-competitor-claim hybi` only to prove that missing competitor evidence
+is disclosed and cannot silently become a public claim. The current
+CoordinationBench artifact is a Zaxy project-defined internal guardrail for
+accepted parent state, stale-claim rejection, duplicate consolidation,
+non-authoritative leakage, evidence coverage, purpose feedback, and checkout
+answerability.
+
+PurposeBench follows the same disclosure posture for purpose-conditioned memory
+claims. Publicly derived purpose examples that mention systems such as Quarq or
+Semantic Reach are diagnostic holdouts only; they are not head-to-head benchmark
+claims and they do not establish competitor performance. The active PurposeBench
+report proves Zaxy's purpose profiles and evidence policies on tracked internal
+lanes, while the holdout pack documents source boundaries and claim status.
+
+The RC.1 gate fails closed when required artifacts are missing, when the
+headline 500 falls below the frozen quality or latency floors, or when a 2.0
+internal or project-defined lane is classified as external validation. This is
+intentionally a release-readiness gate, not a reward function.
+
 ## Zaxy 2.0 Alpha Causal And Consolidation Lane
 
 Zaxy 2.0 alpha includes a project-defined internal guardrail lane for causal

@@ -181,6 +181,26 @@
         </tbody>
       </table>
       <p>Interpretation: Harvey LAB is external downstream work-product evidence. The metric is criterion pass rate, not binary task pass/fail.</p>
+      <h2 id="zaxy-20-rc1-benchmark-freeze">Zaxy 2.0 RC.1 Benchmark Freeze</h2>
+      <p>The <code>2.0.0-rc.1</code> freeze gate validates the current release evidence without changing retrieval, synthesis, or benchmark scoring behavior:</p>
+      <pre><code class="language-bash">zaxy benchmark-freeze --json</code></pre>
+      <p>The tracked freeze manifest is <a href="https://github.com/syndicalt/zaxy/blob/master/reports/benchmarks/2.0.0-rc.1/manifest.json">reports/benchmarks/2.0.0-rc.1/manifest.json</a>.</p>
+      <p>The gate is a claim-boundary and artifact-integrity check. It requires the headline 500-question LongMemEval-compatible checkout report, the frozen headline run config, Harvey LAB external-anchor artifacts, and the project-defined RC lanes for StateRecoveryBench, CoordinationBench, PurposeBench, causal, consolidation, procedural, and metacognitive behavior.</p>
+      <p>RC.1 evidence is interpreted in three separate buckets:</p>
+      <ul>
+        <li><code>longmemeval_compatible_checkout</code>: the same-harness 500-question checkout diagnostic listed above. It is the headline public benchmark artifact, not an official LongMemEval end-to-end assistant score.</li>
+        <li><code>external_anchor</code>: Harvey LAB legal-agent memory-ablation evidence. It is external downstream work-product evidence, not a general outside-user validation report.</li>
+        <li><code>project_defined_internal</code>: StateRecoveryBench, CoordinationBench, PurposeBench, causal, consolidation, procedural, and metacognitive guardrails. These lanes protect product contracts and must not be merged into the headline 500 or Harvey LAB numbers.</li>
+      </ul>
+      <p>The active RC.1 project-defined artifacts are:</p>
+      <ul>
+        <li><a href="../reports/benchmarks/state-recovery-v1/state-recovery-benchmark.md">StateRecoveryBench</a></li>
+        <li><a href="../reports/benchmarks/coordination-real-v1/coordination-benchmark.md">CoordinationBench</a></li>
+        <li><a href="../reports/benchmarks/purpose-v1/purpose-benchmark.md">PurposeBench</a></li>
+      </ul>
+      <p>CoordinationBench has a conservative competitor-claim boundary. The <code>competitor_claim_gate</code> remains blocked for Quarq and Hybi unless a future same-harness run supplies tracked, auditable runner outputs. Release checks use explicit flags such as <code>--require-competitor-claim quarq</code> and <code>--require-competitor-claim hybi</code> only to prove that missing competitor evidence is disclosed and cannot silently become a public claim. The current CoordinationBench artifact is a Zaxy project-defined internal guardrail for accepted parent state, stale-claim rejection, duplicate consolidation, non-authoritative leakage, evidence coverage, purpose feedback, and checkout answerability.</p>
+      <p>PurposeBench follows the same disclosure posture for purpose-conditioned memory claims. Publicly derived purpose examples that mention systems such as Quarq or Semantic Reach are diagnostic holdouts only; they are not head-to-head benchmark claims and they do not establish competitor performance. The active PurposeBench report proves Zaxy&#x27;s purpose profiles and evidence policies on tracked internal lanes, while the holdout pack documents source boundaries and claim status.</p>
+      <p>The RC.1 gate fails closed when required artifacts are missing, when the headline 500 falls below the frozen quality or latency floors, or when a 2.0 internal or project-defined lane is classified as external validation. This is intentionally a release-readiness gate, not a reward function.</p>
       <h2 id="zaxy-20-alpha-causal-and-consolidation-lane">Zaxy 2.0 Alpha Causal And Consolidation Lane</h2>
       <p>Zaxy 2.0 alpha includes a project-defined internal guardrail lane for causal projection and review-gated consolidation. This lane is not external validation, is not part of the headline LongMemEval-compatible checkout claim, and must not be reported as a public benchmark number unless a future release explicitly publishes a full report with its own claim boundary.</p>
       <p>The alpha lane checks behavior that is specific to the causal and consolidation contracts:</p>

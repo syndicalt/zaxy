@@ -5467,6 +5467,26 @@ def benchmark_compare(
         raise typer.Exit(code=1)
 
 
+@app.command("benchmark-freeze")
+def benchmark_freeze(
+    root: Path = typer.Option(Path("."), "--root", help="Repository root containing frozen reports"),  # noqa: B008
+    json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
+) -> None:
+    """Validate the 2.0 RC.1 benchmark-freeze evidence contract."""
+    from zaxy.rc_benchmark_freeze import (
+        build_rc1_benchmark_freeze_report,
+        format_rc1_benchmark_freeze_report,
+    )
+
+    report = build_rc1_benchmark_freeze_report(root)
+    if json_output:
+        typer.echo(json.dumps(report.to_dict(), indent=2, sort_keys=True))
+    else:
+        typer.echo(format_rc1_benchmark_freeze_report(report), nl=False)
+    if not report.passed:
+        raise typer.Exit(code=1)
+
+
 def main() -> None:
     app()
 
