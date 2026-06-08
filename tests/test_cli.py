@@ -2601,6 +2601,11 @@ def test_memory_reasoning_help_commands_are_registered() -> None:
     belief_options, _ = _cli_command_params("memory", "reasoning", "propose-belief-update")
     confidence_options, confidence_arguments = _cli_command_params("memory", "reasoning", "claim-confidence")
     procedures_options, procedures_arguments = _cli_command_params("memory", "reasoning", "similar-procedures")
+    record_unknown_options, _ = _cli_command_params("memory", "reasoning", "record-unknown")
+    known_unknowns_options, _ = _cli_command_params("memory", "reasoning", "known-unknowns")
+    _, trajectory_arguments = _cli_command_params("memory", "reasoning", "confidence-trajectory")
+    reverify_options, _ = _cli_command_params("memory", "reasoning", "reverify-needed")
+    plan_options, plan_arguments = _cli_command_params("memory", "reasoning", "plan-from-procedures")
 
     assert explain.exit_code == 0
     assert "outcome" in explain_arguments
@@ -2615,16 +2620,17 @@ def test_memory_reasoning_help_commands_are_registered() -> None:
     assert "query" in procedures_arguments
     assert "--limit" in procedures_options
     assert record_unknown.exit_code == 0
-    assert "--source-event" in record_unknown.output
-    assert "--claim-key" in record_unknown.output
+    assert "--source-event" in record_unknown_options
+    assert "--claim-key" in record_unknown_options
     assert known_unknowns.exit_code == 0
-    assert "--status" in known_unknowns.output
+    assert "--status" in known_unknowns_options
     assert trajectory.exit_code == 0
-    assert "CLAIM" in trajectory.output
+    assert "claim" in trajectory_arguments
     assert reverify.exit_code == 0
-    assert "--min-confidence" in reverify.output
+    assert "--min-confidence" in reverify_options
     assert plan.exit_code == 0
-    assert "GOAL" in plan.output
+    assert "goal" in plan_arguments
+    assert "--phase" in plan_options
 
 
 @pytest.mark.parametrize(
