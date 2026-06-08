@@ -1,0 +1,534 @@
+{
+  "category_summaries": [
+    {
+      "backend": "bm25",
+      "category": "longmemeval:multi-session",
+      "mean_answer_recall_at_1": 0.0,
+      "mean_answer_recall_at_10": 0.3333,
+      "mean_answer_recall_at_5": 0.3333,
+      "mean_citation_coverage": 1.0,
+      "mean_recall_at_1": 0.6667,
+      "mean_recall_at_10": 1.0,
+      "mean_recall_at_5": 1.0,
+      "mean_score": 0.3333,
+      "mean_source_recall": null,
+      "miss_count": 4,
+      "query_count": 6
+    },
+    {
+      "backend": "zaxy-checkout",
+      "category": "longmemeval:multi-session",
+      "mean_answer_recall_at_1": 0.3333,
+      "mean_answer_recall_at_10": 0.6667,
+      "mean_answer_recall_at_5": 0.3333,
+      "mean_citation_coverage": 1.0,
+      "mean_recall_at_1": 1.0,
+      "mean_recall_at_10": 1.0,
+      "mean_recall_at_5": 1.0,
+      "mean_score": 0.6667,
+      "mean_source_recall": null,
+      "miss_count": 2,
+      "query_count": 6
+    }
+  ],
+  "comparisons": [],
+  "embedding_provider": "hash:1536",
+  "external_results": [],
+  "generated_at": "2026-06-03T07:56:41Z",
+  "miss_taxonomy": {
+    "bm25": {
+      "synthesis_miss": 4
+    },
+    "zaxy-checkout": {
+      "synthesis_miss": 4
+    }
+  },
+  "runs": [
+    {
+      "answer_recall_at_1": 0.0,
+      "answer_recall_at_10": 0.0,
+      "answer_recall_at_5": 0.0,
+      "approx_tokens": 2584,
+      "backend": "bm25",
+      "case_name": "longmemeval-gpt4_a56e767c",
+      "category": "longmemeval:multi-session",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_cf9e3940_3"
+      ],
+      "identity_recall": 0.3333,
+      "latency_ms": 7.2744,
+      "miss_category": "synthesis_miss",
+      "missing_expected": [
+        "I attended four movie festivals."
+      ],
+      "missing_identities": [
+        "answer_cf9e3940_1",
+        "answer_cf9e3940_2"
+      ],
+      "missing_sources": [],
+      "recall_at_1": 0.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "result_count": 5,
+      "returned_bytes": 10333,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "answer_recall_at_1": 0.0,
+      "answer_recall_at_10": 0.0,
+      "answer_recall_at_5": 0.0,
+      "approx_tokens": 2161,
+      "backend": "bm25",
+      "case_name": "longmemeval-gpt4_ab202e7f",
+      "category": "longmemeval:multi-session",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_728deb4d_1",
+        "answer_728deb4d_2",
+        "answer_728deb4d_5"
+      ],
+      "identity_recall": 0.6,
+      "latency_ms": 7.1017,
+      "miss_category": "synthesis_miss",
+      "missing_expected": [
+        "I replaced or fixed five items: the kitchen faucet, the kitchen mat, the toaster, the coffee maker, and the kitchen shelves."
+      ],
+      "missing_identities": [
+        "answer_728deb4d_3",
+        "answer_728deb4d_4"
+      ],
+      "missing_sources": [],
+      "recall_at_1": 1.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "result_count": 5,
+      "returned_bytes": 8641,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "answer_recall_at_1": 0.0,
+      "answer_recall_at_10": 1.0,
+      "answer_recall_at_5": 1.0,
+      "approx_tokens": 3104,
+      "backend": "bm25",
+      "case_name": "longmemeval-gpt4_e05b82a6",
+      "category": "longmemeval:multi-session",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "10 times"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_6350aa4f_4",
+        "answer_6350aa4f_1"
+      ],
+      "identity_recall": 0.5,
+      "latency_ms": 7.4218,
+      "miss_category": "hit",
+      "missing_expected": [],
+      "missing_identities": [
+        "answer_6350aa4f_3",
+        "answer_6350aa4f_2"
+      ],
+      "missing_sources": [],
+      "recall_at_1": 1.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "result_count": 5,
+      "returned_bytes": 12414,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "answer_recall_at_1": 0.0,
+      "answer_recall_at_10": 0.0,
+      "answer_recall_at_5": 0.0,
+      "approx_tokens": 3985,
+      "backend": "bm25",
+      "case_name": "longmemeval-gpt4_731e37d7",
+      "category": "longmemeval:multi-session",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_826d51da_3",
+        "answer_826d51da_1"
+      ],
+      "identity_recall": 0.5,
+      "latency_ms": 7.6521,
+      "miss_category": "synthesis_miss",
+      "missing_expected": [
+        "$720"
+      ],
+      "missing_identities": [
+        "answer_826d51da_4",
+        "answer_826d51da_2"
+      ],
+      "missing_sources": [],
+      "recall_at_1": 0.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "result_count": 5,
+      "returned_bytes": 15939,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "answer_recall_at_1": 0.0,
+      "answer_recall_at_10": 1.0,
+      "answer_recall_at_5": 1.0,
+      "approx_tokens": 3640,
+      "backend": "bm25",
+      "case_name": "longmemeval-edced276",
+      "category": "longmemeval:multi-session",
+      "citation_count": 5,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "15 days"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_60e8941a_2",
+        "answer_60e8941a_1"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 8.1663,
+      "miss_category": "hit",
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "recall_at_1": 1.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "result_count": 5,
+      "returned_bytes": 14562,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "answer_recall_at_1": 0.0,
+      "answer_recall_at_10": 0.0,
+      "answer_recall_at_5": 0.0,
+      "approx_tokens": 3708,
+      "backend": "bm25",
+      "case_name": "longmemeval-2b8f3739",
+      "category": "longmemeval:multi-session",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_23759615_2",
+        "answer_23759615_1",
+        "answer_23759615_3"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 7.6842,
+      "miss_category": "synthesis_miss",
+      "missing_expected": [
+        "$495"
+      ],
+      "missing_identities": [],
+      "missing_sources": [],
+      "recall_at_1": 1.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "result_count": 5,
+      "returned_bytes": 14837,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "answer_recall_at_1": 1.0,
+      "answer_recall_at_10": 1.0,
+      "answer_recall_at_5": 1.0,
+      "approx_tokens": 14445,
+      "backend": "zaxy-checkout",
+      "case_name": "longmemeval-gpt4_a56e767c",
+      "category": "longmemeval:multi-session",
+      "citation_count": 19,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "I attended four movie festivals."
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_cf9e3940_1",
+        "answer_cf9e3940_2",
+        "answer_cf9e3940_3"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 397.1534,
+      "miss_category": "hit",
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "recall_at_1": 1.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "result_count": 22,
+      "returned_bytes": 57792,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "answer_recall_at_1": 1.0,
+      "answer_recall_at_10": 1.0,
+      "answer_recall_at_5": 1.0,
+      "approx_tokens": 18351,
+      "backend": "zaxy-checkout",
+      "case_name": "longmemeval-gpt4_ab202e7f",
+      "category": "longmemeval:multi-session",
+      "citation_count": 19,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "I replaced or fixed five items: the kitchen faucet, the kitchen mat, the toaster, the coffee maker, and the kitchen shelves."
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_728deb4d_3",
+        "answer_728deb4d_1",
+        "answer_728deb4d_2",
+        "answer_728deb4d_5",
+        "answer_728deb4d_4"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 229.6376,
+      "miss_category": "hit",
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "recall_at_1": 1.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "result_count": 24,
+      "returned_bytes": 73422,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "answer_recall_at_1": 0.0,
+      "answer_recall_at_10": 1.0,
+      "answer_recall_at_5": 0.0,
+      "approx_tokens": 20840,
+      "backend": "zaxy-checkout",
+      "case_name": "longmemeval-gpt4_e05b82a6",
+      "category": "longmemeval:multi-session",
+      "citation_count": 20,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "10 times"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_6350aa4f_4",
+        "answer_6350aa4f_3",
+        "answer_6350aa4f_2",
+        "answer_6350aa4f_1"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 263.5663,
+      "miss_category": "synthesis_miss",
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "recall_at_1": 1.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "result_count": 23,
+      "returned_bytes": 83377,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "answer_recall_at_1": 0.0,
+      "answer_recall_at_10": 0.0,
+      "answer_recall_at_5": 0.0,
+      "approx_tokens": 13519,
+      "backend": "zaxy-checkout",
+      "case_name": "longmemeval-gpt4_731e37d7",
+      "category": "longmemeval:multi-session",
+      "citation_count": 19,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_826d51da_3",
+        "answer_826d51da_4",
+        "answer_826d51da_2",
+        "answer_826d51da_1"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 315.8845,
+      "miss_category": "synthesis_miss",
+      "missing_expected": [
+        "$720"
+      ],
+      "missing_identities": [],
+      "missing_sources": [],
+      "recall_at_1": 1.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "result_count": 23,
+      "returned_bytes": 54089,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "answer_recall_at_1": 0.0,
+      "answer_recall_at_10": 1.0,
+      "answer_recall_at_5": 0.0,
+      "approx_tokens": 12302,
+      "backend": "zaxy-checkout",
+      "case_name": "longmemeval-edced276",
+      "category": "longmemeval:multi-session",
+      "citation_count": 17,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "15 days"
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_60e8941a_2",
+        "answer_60e8941a_1"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 313.2551,
+      "miss_category": "synthesis_miss",
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "recall_at_1": 1.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "result_count": 21,
+      "returned_bytes": 49244,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "answer_recall_at_1": 0.0,
+      "answer_recall_at_10": 0.0,
+      "answer_recall_at_5": 0.0,
+      "approx_tokens": 11443,
+      "backend": "zaxy-checkout",
+      "case_name": "longmemeval-2b8f3739",
+      "category": "longmemeval:multi-session",
+      "citation_count": 17,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_23759615_2",
+        "answer_23759615_1",
+        "answer_23759615_3"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 336.5205,
+      "miss_category": "synthesis_miss",
+      "missing_expected": [
+        "$495"
+      ],
+      "missing_identities": [],
+      "missing_sources": [],
+      "recall_at_1": 1.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "result_count": 21,
+      "returned_bytes": 45786,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    }
+  ],
+  "summaries": [
+    {
+      "backend": "bm25",
+      "case_count": 6,
+      "latency_ms_mean": 7.5501,
+      "latency_ms_p50": 7.537,
+      "latency_ms_p95": 8.0458,
+      "latency_ms_p99": 8.1422,
+      "mean_answer_recall_at_1": 0.0,
+      "mean_answer_recall_at_10": 0.3333,
+      "mean_answer_recall_at_5": 0.3333,
+      "mean_approx_tokens": 3197.0,
+      "mean_citation_coverage": 1.0,
+      "mean_identity_recall": 0.6555,
+      "mean_recall_at_1": 0.6667,
+      "mean_recall_at_10": 1.0,
+      "mean_recall_at_5": 1.0,
+      "mean_returned_bytes": 12787.6667,
+      "mean_score": 0.3333,
+      "mean_source_recall": null,
+      "runs": 1
+    },
+    {
+      "backend": "zaxy-checkout",
+      "case_count": 6,
+      "latency_ms_mean": 309.3362,
+      "latency_ms_p50": 314.5698,
+      "latency_ms_p95": 381.9952,
+      "latency_ms_p99": 394.1218,
+      "mean_answer_recall_at_1": 0.3333,
+      "mean_answer_recall_at_10": 0.6667,
+      "mean_answer_recall_at_5": 0.3333,
+      "mean_approx_tokens": 15150.0,
+      "mean_citation_coverage": 1.0,
+      "mean_identity_recall": 1.0,
+      "mean_recall_at_1": 1.0,
+      "mean_recall_at_10": 1.0,
+      "mean_recall_at_5": 1.0,
+      "mean_returned_bytes": 60618.3333,
+      "mean_score": 0.6667,
+      "mean_source_recall": null,
+      "runs": 1
+    }
+  ],
+  "workload": {
+    "case_count": 6,
+    "documents": null,
+    "event_count": 128,
+    "lanes": [
+      "longmemeval"
+    ],
+    "sessions": 21,
+    "sha256": "1f6bb0ad91d5e06cbca4e89d8cccb128e16eb5342656d249e3dbbe9334cfdaef",
+    "subjects": 6,
+    "version": "longmemeval-cleaned-v1"
+  }
+}

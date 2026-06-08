@@ -1,0 +1,321 @@
+{
+  "category_summaries": [
+    {
+      "backend": "bm25",
+      "category": "longmemeval:multi-session",
+      "mean_answer_recall_at_1": 0.0,
+      "mean_answer_recall_at_10": 0.0,
+      "mean_answer_recall_at_5": 0.0,
+      "mean_citation_coverage": null,
+      "mean_recall_at_1": 0.3333,
+      "mean_recall_at_10": 1.0,
+      "mean_recall_at_5": 1.0,
+      "mean_score": 0.0,
+      "mean_source_recall": null,
+      "miss_count": 3,
+      "query_count": 3
+    },
+    {
+      "backend": "zaxy-checkout",
+      "category": "longmemeval:multi-session",
+      "mean_answer_recall_at_1": 0.0,
+      "mean_answer_recall_at_10": 1.0,
+      "mean_answer_recall_at_5": 0.6667,
+      "mean_citation_coverage": 1.0,
+      "mean_recall_at_1": 1.0,
+      "mean_recall_at_10": 1.0,
+      "mean_recall_at_5": 1.0,
+      "mean_score": 1.0,
+      "mean_source_recall": null,
+      "miss_count": 0,
+      "query_count": 3
+    }
+  ],
+  "comparisons": [],
+  "embedding_provider": "hash:1536",
+  "external_results": [],
+  "generated_at": "2026-06-03T06:39:39Z",
+  "miss_taxonomy": {
+    "bm25": {
+      "synthesis_miss": 3
+    },
+    "zaxy-checkout": {
+      "synthesis_miss": 1
+    }
+  },
+  "runs": [
+    {
+      "answer_recall_at_1": 0.0,
+      "answer_recall_at_10": 0.0,
+      "answer_recall_at_5": 0.0,
+      "approx_tokens": 6432,
+      "backend": "bm25",
+      "case_name": "longmemeval-gpt4_a56e767c",
+      "category": "longmemeval:multi-session",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_cf9e3940_1",
+        "answer_cf9e3940_3"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 4.3758,
+      "miss_category": "synthesis_miss",
+      "missing_expected": [
+        "I attended four movie festivals."
+      ],
+      "missing_identities": [
+        "answer_cf9e3940_2"
+      ],
+      "missing_sources": [],
+      "recall_at_1": 1.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "result_count": 5,
+      "returned_bytes": 25725,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "answer_recall_at_1": 0.0,
+      "answer_recall_at_10": 0.0,
+      "answer_recall_at_5": 0.0,
+      "approx_tokens": 5148,
+      "backend": "bm25",
+      "case_name": "longmemeval-gpt4_2f8be40d",
+      "category": "longmemeval:multi-session",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_e7b0637e_1",
+        "answer_e7b0637e_3"
+      ],
+      "identity_recall": 0.6667,
+      "latency_ms": 4.2825,
+      "miss_category": "synthesis_miss",
+      "missing_expected": [
+        "I attended three weddings. The couples were Rachel and Mike, Emily and Sarah, and Jen and Tom."
+      ],
+      "missing_identities": [
+        "answer_e7b0637e_2"
+      ],
+      "missing_sources": [],
+      "recall_at_1": 0.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "result_count": 5,
+      "returned_bytes": 20591,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "answer_recall_at_1": 0.0,
+      "answer_recall_at_10": 0.0,
+      "answer_recall_at_5": 0.0,
+      "approx_tokens": 2161,
+      "backend": "bm25",
+      "case_name": "longmemeval-gpt4_ab202e7f",
+      "category": "longmemeval:multi-session",
+      "citation_count": 5,
+      "citation_coverage": null,
+      "expected_hits": [],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_728deb4d_1",
+        "answer_728deb4d_2",
+        "answer_728deb4d_5"
+      ],
+      "identity_recall": 0.6,
+      "latency_ms": 4.2418,
+      "miss_category": "synthesis_miss",
+      "missing_expected": [
+        "I replaced or fixed five items: the kitchen faucet, the kitchen mat, the toaster, the coffee maker, and the kitchen shelves."
+      ],
+      "missing_identities": [
+        "answer_728deb4d_3",
+        "answer_728deb4d_4"
+      ],
+      "missing_sources": [],
+      "recall_at_1": 0.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "result_count": 5,
+      "returned_bytes": 8641,
+      "run": 1,
+      "score": 0.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "answer_recall_at_1": 0.0,
+      "answer_recall_at_10": 1.0,
+      "answer_recall_at_5": 1.0,
+      "approx_tokens": 15222,
+      "backend": "zaxy-checkout",
+      "case_name": "longmemeval-gpt4_a56e767c",
+      "category": "longmemeval:multi-session",
+      "citation_count": 20,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "I attended four movie festivals."
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_cf9e3940_1",
+        "answer_cf9e3940_2",
+        "answer_cf9e3940_3"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 407.6311,
+      "miss_category": "hit",
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "recall_at_1": 1.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "result_count": 22,
+      "returned_bytes": 60902,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "answer_recall_at_1": 0.0,
+      "answer_recall_at_10": 1.0,
+      "answer_recall_at_5": 1.0,
+      "approx_tokens": 17569,
+      "backend": "zaxy-checkout",
+      "case_name": "longmemeval-gpt4_2f8be40d",
+      "category": "longmemeval:multi-session",
+      "citation_count": 18,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "I attended three weddings. The couples were Rachel and Mike, Emily and Sarah, and Jen and Tom."
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_e7b0637e_1",
+        "answer_e7b0637e_3",
+        "answer_e7b0637e_2"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 352.9478,
+      "miss_category": "hit",
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "recall_at_1": 1.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "result_count": 21,
+      "returned_bytes": 70293,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    },
+    {
+      "answer_recall_at_1": 0.0,
+      "answer_recall_at_10": 1.0,
+      "answer_recall_at_5": 0.0,
+      "approx_tokens": 17712,
+      "backend": "zaxy-checkout",
+      "case_name": "longmemeval-gpt4_ab202e7f",
+      "category": "longmemeval:multi-session",
+      "citation_count": 21,
+      "citation_coverage": 1.0,
+      "expected_hits": [
+        "I replaced or fixed five items: the kitchen faucet, the kitchen mat, the toaster, the coffee maker, and the kitchen shelves."
+      ],
+      "forbidden_hits": [],
+      "identity_hits": [
+        "answer_728deb4d_3",
+        "answer_728deb4d_1",
+        "answer_728deb4d_2",
+        "answer_728deb4d_5",
+        "answer_728deb4d_4"
+      ],
+      "identity_recall": 1.0,
+      "latency_ms": 247.5539,
+      "miss_category": "synthesis_miss",
+      "missing_expected": [],
+      "missing_identities": [],
+      "missing_sources": [],
+      "recall_at_1": 1.0,
+      "recall_at_10": 1.0,
+      "recall_at_5": 1.0,
+      "result_count": 24,
+      "returned_bytes": 70867,
+      "run": 1,
+      "score": 1.0,
+      "source_hits": [],
+      "source_recall": null
+    }
+  ],
+  "summaries": [
+    {
+      "backend": "bm25",
+      "case_count": 3,
+      "latency_ms_mean": 4.3,
+      "latency_ms_p50": 4.2825,
+      "latency_ms_p95": 4.3665,
+      "latency_ms_p99": 4.3739,
+      "mean_answer_recall_at_1": 0.0,
+      "mean_answer_recall_at_10": 0.0,
+      "mean_answer_recall_at_5": 0.0,
+      "mean_approx_tokens": 4580.3333,
+      "mean_citation_coverage": null,
+      "mean_identity_recall": 0.6445,
+      "mean_recall_at_1": 0.3333,
+      "mean_recall_at_10": 1.0,
+      "mean_recall_at_5": 1.0,
+      "mean_returned_bytes": 18319.0,
+      "mean_score": 0.0,
+      "mean_source_recall": null,
+      "runs": 1
+    },
+    {
+      "backend": "zaxy-checkout",
+      "case_count": 3,
+      "latency_ms_mean": 336.0443,
+      "latency_ms_p50": 352.9478,
+      "latency_ms_p95": 402.1628,
+      "latency_ms_p99": 406.5374,
+      "mean_answer_recall_at_1": 0.0,
+      "mean_answer_recall_at_10": 1.0,
+      "mean_answer_recall_at_5": 0.6667,
+      "mean_approx_tokens": 16834.3333,
+      "mean_citation_coverage": 1.0,
+      "mean_identity_recall": 1.0,
+      "mean_recall_at_1": 1.0,
+      "mean_recall_at_10": 1.0,
+      "mean_recall_at_5": 1.0,
+      "mean_returned_bytes": 67354.0,
+      "mean_score": 1.0,
+      "mean_source_recall": null,
+      "runs": 1
+    }
+  ],
+  "workload": {
+    "case_count": 3,
+    "documents": null,
+    "event_count": 74,
+    "lanes": [
+      "longmemeval"
+    ],
+    "sessions": 11,
+    "sha256": "a438d482a6ad0913de691b8194dd5d98f7ffe277016a44f6089596ade7620026",
+    "subjects": 3,
+    "version": "longmemeval-cleaned-v1"
+  }
+}

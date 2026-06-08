@@ -433,6 +433,43 @@ class TestMemoryAppend:
         assert len(result) == 1
         assert "1" in result[0].text
 
+    async def test_memory_append_writes_replayable_eventloom_event(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """memory_append should produce replayable Eventloom events with seq/hash metadata."""
+        with (
+            patch("zaxy.mcp_server.build_projection_store") as mock_build_projection_store,
+            patch("zaxy.mcp_server.MemoryTracer") as mock_tracer_cls,
+        ):
+            mock_graph = AsyncMock()
+            mock_build_projection_store.return_value = mock_graph
+            mock_tracer = AsyncMock()
+            mock_tracer_cls.return_value = mock_tracer
+            server = ZaxyMCPServer(eventloom_path=str(tmp_path / ".eventloom"))
+            server.graph = mock_graph
+            server.tracer = mock_tracer
+
+        result = await server.handle_memory_append(
+            {
+                "event_type": "goal.created",
+                "actor": "codex",
+                "payload": {"title": "Replayable"},
+                "session_id": "agent-1",
+            }
+        )
+
+        payload = json.loads(result[0].text)
+        assert payload["seq"] == 1
+        assert len(payload["hash"]) == 64
+        eventlog = server.session_manager.get("agent-1").eventlog
+        replay = eventlog.replay()
+        assert replay.integrity.ok is True
+        assert replay.events[0].seq == 1
+        assert replay.events[0].actor == "codex"
+        assert replay.events[0].hash == payload["hash"]
+        assert replay.events[0].payload["title"] == "Replayable"
+
     @pytest.mark.parametrize(
         "arguments",
         [

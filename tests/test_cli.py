@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
@@ -5400,10 +5401,11 @@ def test_init_command_runs_first_run_onboarding(tmp_path: Path) -> None:
     )
 
     assert result.exit_code == 0
-    assert "Zaxy init:" in result.output
-    assert "session: demo-default" in result.output
-    assert "mcp_config: ok" in result.output
-    assert "hook_status:" in result.output
+    assert "Zaxy init complete: ok" in result.output
+    assert "Session: demo-default" in result.output
+    assert "Setup:" in result.output
+    assert "[OK] mcp_config" not in result.output
+    assert "[OK] hook_status" not in result.output
     assert (workspace / "mcp.json").is_file()
     assert (workspace / ".claude" / "settings.local.json").is_file()
     assert (workspace / ".eventloom" / "demo-default.jsonl").is_file()
@@ -5412,6 +5414,156 @@ def test_init_command_runs_first_run_onboarding(tmp_path: Path) -> None:
     assert "NEO4J_CA_CERT=" in local_profile
     assert "NEO4J_PASSWORD_FILE=" in local_profile
     assert "NEO4J_TRUST_ALL=false" in local_profile
+
+
+def test_init_command_verbose_prints_full_setup_diagnostics(tmp_path: Path) -> None:
+    """init --verbose should keep full setup rows available without making them the default."""
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            str(workspace),
+            "--domain",
+            "demo",
+            "--mcp-client",
+            "claude-desktop",
+            "--mcp-output",
+            str(workspace / "mcp.json"),
+            "--hook-client",
+            "claude-code",
+            "--hook-output",
+            str(workspace / ".claude" / "settings.local.json"),
+            "--verbose",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Setup:" in result.output
+    assert "[OK] mcp_config" in result.output
+    assert "[OK] hook_status" in result.output
+
+
+def test_init_command_compact_more_hint_preserves_rerun_context(tmp_path: Path) -> None:
+    """Compact init output should show a copyable verbose command for the same invocation context."""
+    workspace = tmp_path / "repo with spaces"
+    workspace.mkdir()
+    codex_home = tmp_path / "codex home"
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            str(workspace),
+            "--domain",
+            "demo project",
+            "--preset",
+            "local-codex",
+            "--eventloom-path",
+            str(workspace / ".events with spaces"),
+            "--codex-mcp-install",
+            "user",
+            "--codex-home",
+            str(codex_home),
+            "--no-agent-instructions",
+        ],
+    )
+
+    assert result.exit_code == 0
+    expected = (
+        "More: run zaxy init "
+        f"{shlex.quote(str(workspace))} "
+        f"--eventloom-path {shlex.quote(str(workspace / '.events with spaces'))} "
+        "--domain 'demo project' "
+        "--preset local-codex "
+        "--codex-mcp-install user "
+        f"--codex-home {shlex.quote(str(codex_home))} "
+        "--no-agent-instructions "
+        "--verbose "
+        "to show checks, fallbacks, later commands, and notes."
+    )
+    assert expected in result.output
+
+
+def test_init_command_compact_more_hint_preserves_env_codex_home(tmp_path: Path) -> None:
+    """Compact rerun guidance should preserve env-derived Codex config targets."""
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    codex_home = tmp_path / "codex home"
+    codex_home.mkdir()
+    (codex_home / "config.toml").write_text("", encoding="utf-8")
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            str(workspace),
+            "--domain",
+            "demo",
+            "--preset",
+            "local-codex",
+            "--no-agent-instructions",
+        ],
+        env={"CODEX_HOME": str(codex_home)},
+    )
+
+    assert result.exit_code == 0
+    expected = (
+        "More: run zaxy init "
+        f"{shlex.quote(str(workspace))} "
+        "--domain demo "
+        "--preset local-codex "
+        f"--codex-home {shlex.quote(str(codex_home))} "
+        "--no-agent-instructions "
+        "--verbose "
+        "to show checks, fallbacks, later commands, and notes."
+    )
+    assert expected in result.output
+
+
+def test_init_command_conflict_more_hint_preserves_env_codex_home(tmp_path: Path) -> None:
+    """Conflict rerun guidance should preserve env-derived Codex config targets."""
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    codex_home = tmp_path / "codex home"
+    codex_home.mkdir()
+    (codex_home / "config.toml").write_text(
+        '[mcp_servers.zaxy]\ncommand = "/custom/zaxy"\nargs = ["serve"]\n',
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            str(workspace),
+            "--domain",
+            "demo",
+            "--preset",
+            "local-codex",
+            "--no-agent-instructions",
+        ],
+        env={"CODEX_HOME": str(codex_home)},
+    )
+
+    assert result.exit_code == 0
+    expected = (
+        "More: run zaxy init "
+        f"{shlex.quote(str(workspace))} "
+        "--domain demo "
+        "--preset local-codex "
+        f"--codex-home {shlex.quote(str(codex_home))} "
+        "--no-agent-instructions "
+        "--verbose "
+        "to show checks, fallbacks, later commands, and notes."
+    )
+    assert expected in result.output
 
 
 def test_init_command_rejects_mcp_output_without_client(tmp_path: Path) -> None:
@@ -5659,6 +5811,167 @@ def test_init_command_accepts_capture_start_action(mock_run_onboarding: AsyncMoc
     assert mock_run_onboarding.await_args.kwargs["capture_action"] == "start"
 
 
+@patch("zaxy.__main__.run_onboarding")
+def test_init_command_accepts_codex_mcp_install_options(
+    mock_run_onboarding: AsyncMock,
+    tmp_path: Path,
+) -> None:
+    """init should expose the no-copy-paste Codex MCP install path."""
+    result_obj = MagicMock()
+    result_obj.status = "ok"
+    mock_run_onboarding.return_value = result_obj
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            str(tmp_path),
+            "--preset",
+            "local-codex",
+            "--codex-mcp-install",
+            "user",
+            "--codex-trusted-project",
+            "--codex-home",
+            str(tmp_path / "codex-home"),
+        ],
+    )
+
+    assert result.exit_code == 0
+    kwargs = mock_run_onboarding.await_args.kwargs
+    assert kwargs["codex_mcp_install"] == "user"
+    assert kwargs["codex_trusted_project"] is True
+    assert kwargs["codex_home"] == tmp_path / "codex-home"
+
+
+@patch("zaxy.__main__.run_onboarding")
+def test_init_command_auto_codex_mcp_install_uses_existing_user_config(
+    mock_run_onboarding: AsyncMock,
+    tmp_path: Path,
+) -> None:
+    """Default Codex onboarding should avoid copy/paste when a Codex config already exists."""
+    result_obj = MagicMock()
+    result_obj.status = "ok"
+    mock_run_onboarding.return_value = result_obj
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    (codex_home / "config.toml").write_text("", encoding="utf-8")
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["init", str(tmp_path), "--preset", "local-codex"],
+        env={"CODEX_HOME": str(codex_home)},
+    )
+
+    assert result.exit_code == 0
+    kwargs = mock_run_onboarding.await_args.kwargs
+    assert kwargs["codex_mcp_install"] == "user"
+    assert kwargs["codex_home"] is None
+
+
+@patch("zaxy.__main__.run_onboarding")
+def test_init_command_auto_codex_mcp_install_keeps_command_without_existing_config(
+    mock_run_onboarding: AsyncMock,
+    tmp_path: Path,
+) -> None:
+    """Default Codex onboarding should stay non-invasive when no Codex config target exists."""
+    result_obj = MagicMock()
+    result_obj.status = "ok"
+    mock_run_onboarding.return_value = result_obj
+    codex_home = tmp_path / "missing-codex-home"
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["init", str(tmp_path), "--preset", "local-codex"],
+        env={"CODEX_HOME": str(codex_home)},
+    )
+
+    assert result.exit_code == 0
+    kwargs = mock_run_onboarding.await_args.kwargs
+    assert kwargs["codex_mcp_install"] == "command"
+    assert kwargs["codex_home"] is None
+
+
+@patch("zaxy.__main__.run_onboarding")
+def test_init_command_auto_codex_mcp_install_keeps_command_for_existing_zaxy_entry(
+    mock_run_onboarding: AsyncMock,
+    tmp_path: Path,
+) -> None:
+    """Auto install should not overwrite or error on an existing Codex zaxy server."""
+    result_obj = MagicMock()
+    result_obj.status = "ok"
+    mock_run_onboarding.return_value = result_obj
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    (codex_home / "config.toml").write_text(
+        '[mcp_servers.zaxy]\ncommand = "/custom/zaxy"\nargs = ["serve"]\n',
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        ["init", str(tmp_path), "--preset", "local-codex"],
+        env={"CODEX_HOME": str(codex_home)},
+    )
+
+    assert result.exit_code == 0
+    kwargs = mock_run_onboarding.await_args.kwargs
+    assert kwargs["codex_mcp_install"] == "command"
+    assert kwargs["codex_home"] is None
+    assert kwargs["codex_mcp_conflict_path"] == codex_home / "config.toml"
+
+
+@patch("zaxy.__main__.run_onboarding")
+def test_init_command_auto_codex_mcp_install_uses_matching_existing_zaxy_entry(
+    mock_run_onboarding: AsyncMock,
+    tmp_path: Path,
+) -> None:
+    """Auto install should treat an existing compatible zaxy server as installed."""
+    result_obj = MagicMock()
+    result_obj.status = "ok"
+    mock_run_onboarding.return_value = result_obj
+    codex_home = tmp_path / "codex-home"
+    codex_home.mkdir()
+    (codex_home / "config.toml").write_text(
+        "\n".join(
+            [
+                "[mcp_servers.zaxy]",
+                'command = "/opt/zaxy/bin/zaxy"',
+                'args = ["serve"]',
+                "startup_timeout_sec = 90",
+                "",
+                "[mcp_servers.zaxy.env]",
+                'LOG_LEVEL = "ERROR"',
+                'ZAXY_ENV = "development"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            str(tmp_path),
+            "--preset",
+            "local-codex",
+            "--zaxy-executable",
+            "/opt/zaxy/bin/zaxy",
+        ],
+        env={"CODEX_HOME": str(codex_home)},
+    )
+
+    assert result.exit_code == 0
+    kwargs = mock_run_onboarding.await_args.kwargs
+    assert kwargs["codex_mcp_install"] == "user"
+    assert kwargs["codex_home"] is None
+
+
 def test_init_command_help_describes_full_onboarding_path() -> None:
     """init help should describe the full golden-path onboarding behavior."""
     runner = CliRunner()
@@ -5685,6 +5998,54 @@ def test_init_command_json_includes_next_steps_and_capture_summary(tmp_path: Pat
     assert payload["session_id"] == "demo-default"
     assert any(step.startswith("Data lives in") for step in payload["next_steps"])
     assert any(step.startswith("Run zaxy hook-status") for step in payload["next_steps"])
+    assert payload["capture"]["configured"] is True
+    assert payload["capture"]["running"] is False
+    assert payload["capture"]["doctor_status"] in {"ok", "warning"}
+    assert payload["setup"]["status"] in {"ok", "warning"}
+    assert payload["setup"]["counts"]["ok"] >= 1
+    assert isinstance(payload["setup"]["issues"], list)
+    assert isinstance(payload["setup"]["pending"], list)
+    assert payload["readiness"]["status"] in {"ready", "needs_action"}
+    assert payload["readiness"]["setup_status"] == payload["status"]
+    assert isinstance(payload["readiness"]["reasons"], list)
+    assert isinstance(payload["readiness"]["actions"], list)
+    assert payload["readiness"]["capture"]["configured"] is True
+
+
+def test_init_command_json_separates_setup_success_from_readiness_actions(tmp_path: Path) -> None:
+    """Machine output should distinguish setup completion from readiness actions."""
+    workspace = tmp_path / "repo"
+    workspace.mkdir()
+    codex_home = tmp_path / "missing-codex-home"
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "init",
+            str(workspace),
+            "--domain",
+            "demo",
+            "--preset",
+            "local-codex",
+            "--no-agent-instructions",
+            "--json",
+        ],
+        env={"CODEX_HOME": str(codex_home)},
+    )
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["setup"]["status"] == "ok"
+    assert payload["setup"]["issues"] == []
+    assert any(step["name"] == "mcp_config" and step["status"] == "preview" for step in payload["setup"]["pending"])
+    assert payload["readiness"]["status"] == "needs_action"
+    assert any("Start or restart Codex through the activation launcher" in action for action in payload["readiness"]["actions"])
+    assert not any("Start managed deterministic Codex capture" in action for action in payload["readiness"]["actions"])
+    assert not any("agent_instructions" in reason for reason in payload["readiness"]["reasons"])
+    assert not any("mcp_config preview" in reason for reason in payload["readiness"]["reasons"])
+    assert not any("capture not running" in reason for reason in payload["readiness"]["reasons"])
+    assert payload["readiness"]["capture"] == payload["capture"]
     assert any(step.startswith("Smoke test recent memory: zaxy memory log") for step in payload["next_steps"])
     assert payload["capture"]["configured"] is True
     assert payload["capture"]["running"] is False

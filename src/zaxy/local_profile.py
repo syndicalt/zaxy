@@ -62,9 +62,12 @@ def render_local_profile(*, projection_backend: str = "embedded") -> str:
 
 def write_local_profile(path: Path, *, projection_backend: str = "embedded", force: bool = False) -> Path:
     """Write the offline retrieval profile to path."""
+    content = render_local_profile(projection_backend=projection_backend)
     if path.exists() and not force:
+        if path.read_text(encoding="utf-8") == content:
+            return path
         raise FileExistsError(f"{path} already exists; pass --force to overwrite")
-    path.write_text(render_local_profile(projection_backend=projection_backend), encoding="utf-8")
+    path.write_text(content, encoding="utf-8")
     return path
 
 

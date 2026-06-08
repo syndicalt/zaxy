@@ -36,6 +36,7 @@ from zaxy.projection_backends import ProjectionBackendConfig, build_projection_s
 from zaxy.query import QueryRouter
 from zaxy.retrieval_intent import classify_retrieval_intent
 from zaxy.retrieval_plan import (
+    _temporal_interval_query,
     absence_check_bundle,
     bridge_source_lane_queries,
     evidence_source_order,
@@ -49,7 +50,9 @@ from zaxy.retrieval_plan import (
     source_lane_priority,
     source_lane_queries,
     source_synthesis_bundle,
+    source_tokens,
 )
+from zaxy.synthesis import build_synthesis_plan, quantity_total_query
 
 FROZEN_WORKLOAD_VERSION = "statistical-v1"
 FROZEN_WORKLOAD_SUBJECTS = 100
@@ -380,6 +383,27 @@ def _scope_augmented_source_query(query: str, scope_terms: tuple[str, ...]) -> s
     if not scope_terms:
         return query
     return f"{query} {' '.join(scope_terms)}"
+
+
+def _needs_scoped_source_backfill(query: str, results: Sequence[str]) -> bool:
+    """Return whether scoped source results lack enough groups for deterministic synthesis."""
+    if not results:
+        return True
+    if not _scoped_source_backfill_query(query):
+        return False
+    required_groups = max(2, build_synthesis_plan(query).required_source_groups)
+    observed_groups = {source_context_group(context) for context in results}
+    return len(observed_groups) < required_groups
+
+
+def _scoped_source_backfill_query(query: str) -> bool:
+    """Return whether scoped retrieval should close over missing synthesis groups."""
+    intent = classify_retrieval_intent(query, limit=10)
+    return (
+        bool({"aggregation", "aggregation_question"} & set(intent.reasons))
+        or quantity_total_query(query)
+        or _requires_expanded_source_lane_support(query)
+    )
 
 
 def _requires_expanded_source_lane_support(query: str) -> bool:
@@ -814,7 +838,7 @@ class ZaxyRetriever:
             graph_results,
             lexical_results,
         )
-        synthesis_sources = _synthesis_context_pool(graph_results, lexical_results)
+        synthesis_sources = _synthesis_context_pool(_cited_synthesis_contexts(graph_results), lexical_results)
         if should_try_absence_bundle_first(query, limit=limit):
             synthesis_bundle = absence_check_bundle(
                 query=query,
@@ -903,6 +927,7 @@ class ZaxyRetriever:
             )
             if (
                 "temporal_sequence" not in intent.reasons
+                and not {"aggregation", "aggregation_question"} & set(intent.reasons)
                 and not requires_expanded_support
                 and any(source_lane_priority(result) >= 2 for result in primary_results)
             ):
@@ -964,19 +989,36 @@ class ZaxyRetriever:
                     break
             return results
 
-        results = select_scoped(ordered_candidates(per_query_limit))
-        fallback_limit = _scoped_source_fallback_limit(per_query_limit)
-        if not results and scope_terms:
-            scoped_queries = tuple(
+        def merge_scoped(primary: list[str], backfill: list[str]) -> list[str]:
+            merged: list[str] = []
+            seen: set[str] = set()
+            for context in [*primary, *backfill]:
+                if context in seen:
+                    continue
+                seen.add(context)
+                merged.append(context)
+                if len(merged) >= limit:
+                    break
+            return merged
+
+        def scoped_queries() -> tuple[str, ...]:
+            return tuple(
                 _scope_augmented_source_query(source_query, scope_terms)
                 for source_query in queries
             )
-            results = select_scoped(
-                ordered_candidates(
-                    fallback_limit,
-                    candidate_queries=scoped_queries,
-                    bridge_limit=8,
-                )
+
+        results = select_scoped(ordered_candidates(per_query_limit))
+        fallback_limit = _scoped_source_fallback_limit(per_query_limit)
+        if scope_terms and _needs_scoped_source_backfill(queries[0], results):
+            results = merge_scoped(
+                results,
+                select_scoped(
+                    ordered_candidates(
+                        fallback_limit,
+                        candidate_queries=scoped_queries(),
+                        bridge_limit=8,
+                    )
+                ),
             )
         if not results and temporal_point is not None:
             results = select_scoped(
@@ -985,18 +1027,17 @@ class ZaxyRetriever:
                     candidate_temporal_point=None,
                 )
             )
-            if not results and scope_terms:
-                scoped_queries = tuple(
-                    _scope_augmented_source_query(source_query, scope_terms)
-                    for source_query in queries
-                )
-                results = select_scoped(
-                    ordered_candidates(
-                        fallback_limit,
-                        candidate_queries=scoped_queries,
-                        bridge_limit=8,
-                        candidate_temporal_point=None,
-                    )
+            if scope_terms and _needs_scoped_source_backfill(queries[0], results):
+                results = merge_scoped(
+                    results,
+                    select_scoped(
+                        ordered_candidates(
+                            fallback_limit,
+                            candidate_queries=scoped_queries(),
+                            bridge_limit=8,
+                            candidate_temporal_point=None,
+                        )
+                    ),
                 )
         if results and _requires_expanded_source_lane_support(queries[0]):
             return evidence_source_order(queries[0], results)
@@ -1041,10 +1082,11 @@ class ZaxyCheckoutRetriever(ZaxyRetriever):
             for chunk in chunks
             if _context_matches_scope(_benchmark_context_from_chunk(chunk), scope_terms)
         ][:limit]
+        graph_result_texts = [_benchmark_context_from_chunk(chunk) for chunk in scoped_chunks]
         graph_contexts = [_context_from_chunk(chunk) for chunk in scoped_chunks]
         lexical_contexts = self._checkout_source_contexts(
             query=query,
-            graph_results=[context.content for context in graph_contexts],
+            graph_results=graph_result_texts,
             temporal_point=temporal_point,
             limit=limit,
         )
@@ -1097,9 +1139,10 @@ class ZaxyCheckoutRetriever(ZaxyRetriever):
             if query_temporal_anchor_synthesis_query(query)
             else []
         )
+        cited_graph_results = _cited_synthesis_contexts(graph_results)
         synthesis_sources = (
-            _synthesis_context_pool(graph_results, lexical_results)
-            if _quoted_duration_source_synthesis_query(query)
+            _synthesis_context_pool(cited_graph_results, lexical_results)
+            if _graph_augmented_source_synthesis_query(query, limit=limit)
             else lexical_results
         )
         if temporal_anchor_sources:
@@ -1175,6 +1218,42 @@ def _quoted_duration_source_synthesis_query(query: str) -> bool:
         return False
     tokens = set(re.findall(r"[a-z0-9]+", query.casefold()))
     return bool({"week", "weeks", "day", "days"} & tokens and {"reading", "listening", "finish", "finished"} & tokens)
+
+
+def _cited_synthesis_contexts(contexts: list[str]) -> list[str]:
+    """Return graph contexts with enough provenance for source synthesis."""
+    return [
+        context
+        for context in contexts
+        if (
+            "citation=" in context
+            or "eventloom://" in context
+            or "source_path=" in context
+            or "longmemeval_session_id=" in context
+            or "session_id=" in context
+        )
+    ]
+
+
+def _graph_augmented_source_synthesis_query(query: str, *, limit: int) -> bool:
+    """Return whether source synthesis should use both graph and source-lane evidence."""
+    intent = classify_retrieval_intent(query, limit=limit)
+    if {"aggregation", "aggregation_question"} & set(intent.reasons):
+        return True
+    return (
+        quantity_total_query(query)
+        or _quoted_duration_source_synthesis_query(query)
+        or _temporal_interval_query(query)
+        or _relative_interval_source_synthesis_query(query)
+    )
+
+
+def _relative_interval_source_synthesis_query(query: str) -> bool:
+    """Return whether relative date anchors may need graph plus source evidence."""
+    tokens = set(source_tokens(query))
+    return bool(tokens & {"after", "before", "between", "long", "since", "until"}) and bool(
+        tokens & {"how", "when"} or {"use", "used", "saw", "got", "received"} & tokens
+    )
 
 
 def _context_from_chunk(chunk: object) -> Context:

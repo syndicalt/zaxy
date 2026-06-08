@@ -46,6 +46,36 @@ def test_answer_candidate_merge_prioritizes_specific_state_operations() -> None:
     assert candidates[0]["answer"] == "32"
 
 
+def test_answer_candidate_merge_drops_fully_excluded_support() -> None:
+    """Candidates with no admissible cited support should not become primary answers."""
+    candidates = _merge_answer_candidates(
+        [
+            {
+                "rank": 1,
+                "type": "date_interval",
+                "confidence": 0.83,
+                "answer_key": "date_interval_answer",
+                "answer": "7 days. 8 days (including the last day) is also acceptable.",
+                "support_source_ids": ["source-a", "source-b"],
+                "excluded_source_ids": ["source-a", "source-b", "query-temporal-anchor"],
+            },
+            {
+                "rank": 2,
+                "type": "date_interval",
+                "confidence": 0.81,
+                "answer_key": "date_interval_answer",
+                "answer": "21 days. 22 days (including the last day) is also acceptable.",
+                "support_source_ids": ["source-a", "source-b"],
+                "excluded_source_ids": [],
+            },
+        ]
+    )
+
+    assert len(candidates) == 1
+    assert candidates[0]["rank"] == 1
+    assert candidates[0]["answer"].startswith("21 days")
+
+
 def test_checkout_policy_handles_uncited_current_fact_once_for_core_and_mcp() -> None:
     """Shared policy should drive degraded-state answerability for every interface."""
     current_facts = [

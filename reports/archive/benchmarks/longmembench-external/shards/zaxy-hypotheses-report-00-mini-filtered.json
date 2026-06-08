@@ -1,0 +1,165 @@
+{
+  "answer_mode": "openai-compatible",
+  "dataset_path": "reports/benchmarks/longmembench-external/shards/longmemeval_oracle-00.json",
+  "dataset_sha256": "c94b0cf0f69e1fdeed8b35562d6dcfc4cb05e6ce00bca62168e742d72e15e29a",
+  "embedding_provider": "hash:1536",
+  "generated_at": "2026-06-07T04:08:13.534041Z",
+  "hypotheses": [
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 25,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_2655b836"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_2487a7cb"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 25,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_76048e76"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_2312f94c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "You attended the workshop on 'Effective Communication in the Workplace' on January 10th, and your team meeting is on January 17th. Therefore, you attended the workshop 7 days before the team meeting.",
+      "question_id": "0bb5a684"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "08f4fc43"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "It took 19 days for you to find a house you loved after starting to work with Rachel.",
+      "question_id": "2c63a862"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "The marigolds were started first, as they were planted on March 3rd, while the tomatoes were started indoors on February 20th.",
+      "question_id": "gpt4_385a5000"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "2a1811e2"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "bbf86515"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 35,
+      "hypothesis": "You cleaned your white Adidas sneakers last month.",
+      "question_id": "gpt4_5dcc0aab"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_0b2f1d21"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "f0853d11"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_6ed717ea"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_70e84552"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 37,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "a3838d2b"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_93159ced"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_2d58bcd6"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_65aabe59"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "982b5123"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "b9cfe692"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_4edbafa2"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 31,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "c8090214"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_483dd43c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "e4e14d04"
+    }
+  ],
+  "limit": 10,
+  "model": "gpt-4o-mini",
+  "output_path": "reports/benchmarks/longmembench-external/shards/zaxy-hypotheses-00-mini-filtered.jsonl",
+  "projection_backend": "embedded",
+  "question_count": 25,
+  "schema_version": "zaxy.longmembench-hypotheses.v1"
+}

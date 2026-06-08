@@ -175,6 +175,8 @@ def render_codex_mcp_add_command(
     env = server["env"]
     command = ["codex", "mcp", "add", "zaxy"]
     for key in sorted(env):
+        if env[key] == "":
+            continue
         command.extend(["--env", f"{key}={env[key]}"])
     command.append("--")
     command.append(str(server["command"]))
@@ -243,12 +245,16 @@ def write_codex_mcp_config(
     if not isinstance(mcp_servers, dict):
         raise ValueError(f"{target} field 'mcp_servers' must contain a TOML table")
     if "zaxy" in mcp_servers and not force:
+        if _codex_server_entry_matches(mcp_servers["zaxy"], server):
+            return target
         raise FileExistsError(f"{target} already contains a zaxy MCP server; pass --force to replace it")
     zaxy = tomlkit.table()
     zaxy.add("command", server["command"])
     zaxy.add("args", server["args"])
     env = tomlkit.table()
     for key, value in server["env"].items():
+        if value == "":
+            continue
         env.add(key, value)
     zaxy.add("env", env)
     zaxy.add("startup_timeout_sec", server["startup_timeout_sec"])
@@ -256,6 +262,21 @@ def write_codex_mcp_config(
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(tomlkit.dumps(document), encoding="utf-8")
     return target
+
+
+def _codex_server_entry_matches(existing: Any, expected: dict[str, Any]) -> bool:
+    if not isinstance(existing, dict):
+        return False
+    expected_env = {key: value for key, value in expected["env"].items() if value != ""}
+    existing_env = existing.get("env", {})
+    if not isinstance(existing_env, dict):
+        return False
+    return (
+        str(existing.get("command", "")) == str(expected["command"])
+        and [str(arg) for arg in existing.get("args", [])] == [str(arg) for arg in expected["args"]]
+        and {str(key): str(value) for key, value in existing_env.items()} == expected_env
+        and int(existing.get("startup_timeout_sec", 0)) == int(expected["startup_timeout_sec"])
+    )
 
 
 def write_hermes_mcp_config(

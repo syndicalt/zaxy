@@ -610,7 +610,10 @@ def _merge_answer_candidates(candidates: list[dict[str, Any]]) -> list[dict[str,
     """Merge packet/projection candidates and prefer answer-ready surfaces."""
     ranked: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
-    for candidate in sorted(_drop_dominated_aggregate_candidates(candidates), key=_answer_candidate_sort_key):
+    for candidate in sorted(
+        _drop_unsupported_answer_candidates(_drop_dominated_aggregate_candidates(candidates)),
+        key=_answer_candidate_sort_key,
+    ):
         answer = candidate.get("answer")
         if not isinstance(answer, str) or not answer:
             continue
@@ -622,6 +625,18 @@ def _merge_answer_candidates(candidates: list[dict[str, Any]]) -> list[dict[str,
         payload["rank"] = len(ranked) + 1
         ranked.append(payload)
     return ranked
+
+
+def _drop_unsupported_answer_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Remove candidates whose cited support is fully excluded by the ledger."""
+    kept: list[dict[str, Any]] = []
+    for candidate in candidates:
+        support_ids = set(_text_list(candidate.get("support_source_ids")))
+        excluded_ids = set(_text_list(candidate.get("excluded_source_ids")))
+        if support_ids and support_ids <= excluded_ids:
+            continue
+        kept.append(candidate)
+    return kept
 
 
 def _drop_dominated_aggregate_candidates(candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -734,16 +749,18 @@ def _compact_answer_candidate_items(diagnostics: dict[str, Any]) -> list[str]:
     if not isinstance(candidates, list):
         return []
     items: list[str] = []
-    for candidate in candidates[:_COMPACT_ANSWER_CANDIDATE_LIMIT]:
+    for index, candidate in enumerate(candidates[:_COMPACT_ANSWER_CANDIDATE_LIMIT]):
         if not isinstance(candidate, dict):
             continue
         answer = candidate.get("answer")
         if not isinstance(answer, str) or not answer:
             continue
+        candidate_role = "primary" if index == 0 else "secondary"
         items.append(
             "\n".join(
                 [
                     "checkout_answer_candidate=true",
+                    f"candidate_role={candidate_role}",
                     f"candidate_type={candidate.get('type')}",
                     f"candidate_rank={candidate.get('rank')}",
                     f"candidate_confidence={candidate.get('confidence')}",

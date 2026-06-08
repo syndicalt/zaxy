@@ -19,6 +19,9 @@ and the CLI `zaxy memory checkout` fallback. It also marks MCP memory tools as
 `runtime_unverified` and sets `fail_closed=true`, so agents that can still read
 genesis after `/resume`, compaction, or MCP reload have a durable blocker instead
 of a vague preference.
+The activation templates include explicit `<eventloom_path>` and
+`<workspace_root>` placeholders, matching `zaxy init` output so copied commands
+stay tied to the initialized repository even when run from another shell.
 `zaxy init` also mirrors the operational part of this policy into a
 marker-managed `Zaxy Memory Activation` block in `AGENTS.md` by default. That
 block is the model-visible fallback for Codex sessions that resume after MCP tool

@@ -451,6 +451,22 @@ def test_install_docs_offer_zero_surprise_first_run_path() -> None:
     assert "pipx install zaxy-memory" in combined
     assert "zaxy init" in combined
     assert "Bare `zaxy init` sets up the local embedded graph posture" in combined
+    assert "zaxy init --codex-mcp-install auto" in combined
+    assert "review that config before replacing it" in combined
+    assert "silently replace" in combined
+    assert "`codex mcp add` command" in combined
+    assert "zaxy init --codex-mcp-install user" in combined
+    assert "zaxy init --verbose" in combined
+    assert "setup.pending" in combined
+    assert "readiness.status" in combined
+    assert "readiness.actions" in combined
+    assert "readiness.action_items" in combined
+    assert "compact-output tips" in combined
+    assert "Activation actions use those" in combined
+    assert "explicit Eventloom/workspace paths" in combined
+    assert "non-command review tasks" in combined
+    assert "readiness.blocking_diagnostics" in combined
+    assert "readiness.non_blocking_diagnostics" in combined
     assert "zaxy init --capture start" in combined
     assert "zaxy init . --domain my-project --preset local-codex --capture start --infra check" not in combined
     assert "zaxy init . --domain my-project --preset local-embedded-codex --capture start" not in combined
@@ -632,8 +648,6 @@ def test_full_set_guardrail_docs_distinguish_legacy_and_same_harness_floors() ->
     benchmarks = Path("docs/benchmarks.md").read_text(encoding="utf-8")
     testing = Path("docs/testing.md").read_text(encoding="utf-8")
     competitive = Path("docs/archive/competitive-positioning.md").read_text(encoding="utf-8")
-    retrieval = Path("docs/retrieval.md").read_text(encoding="utf-8")
-    combined = "\n".join([benchmarks, testing, competitive, retrieval])
 
     assert "LongMemEval-compatible checkout" in benchmarks
     assert "Older backend shootouts" in benchmarks
@@ -721,7 +735,7 @@ def test_mcp_quickstart_documents_v06_recommended_client_routes() -> None:
     rendered = Path("site/docs/mcp-quickstart.html").read_text(encoding="utf-8")
 
     expected = {
-        "Codex": "codex mcp add zaxy -- zaxy serve",
+        "Codex": "zaxy init",
         "Claude Code": "zaxy ide-config claude-code --install --workspace . --eventloom-path .eventloom",
         "Claude Desktop": "zaxy ide-config claude-desktop --eventloom-path .eventloom",
         "Cursor": "zaxy ide-config cursor --install --workspace . --eventloom-path .eventloom",
@@ -731,6 +745,13 @@ def test_mcp_quickstart_documents_v06_recommended_client_routes() -> None:
         assert label in quickstart
         assert command in quickstart
         assert label in rendered
+        assert command in rendered
+    for command in (
+        "zaxy init --codex-mcp-install auto",
+        "zaxy init --codex-mcp-install user",
+        "zaxy init --codex-mcp-install command",
+    ):
+        assert command in quickstart
         assert command in rendered
 
 

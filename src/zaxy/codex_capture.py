@@ -47,8 +47,6 @@ def write_codex_capture_config(
     """Write repo-local Codex capture settings owned by Zaxy."""
     root = Path(workspace)
     target = root / CODEX_CAPTURE_CONFIG
-    if target.exists() and not force:
-        raise FileExistsError(f"{target} already exists; pass --force to overwrite")
     payload = {
         "client": "codex",
         "capture": "local-session-jsonl",
@@ -58,8 +56,14 @@ def write_codex_capture_config(
         "source": source,
         "workspace": str(root),
     }
+    content = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    if target.exists() and not force:
+        existing = target.read_text(encoding="utf-8")
+        if existing == content:
+            return target
+        raise FileExistsError(f"{target} already exists; pass --force to overwrite")
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    target.write_text(content, encoding="utf-8")
     return target
 
 

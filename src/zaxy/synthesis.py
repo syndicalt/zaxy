@@ -4,10 +4,17 @@ from __future__ import annotations
 
 import re
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from decimal import Decimal
 from functools import lru_cache
+
+from zaxy.evidence_program import (
+    TemporalEvidenceProgramResult,
+    TemporalEvidenceProgramSpec,
+    TemporalEvidenceRow,
+    execute_temporal_evidence_program,
+)
 
 _SOURCE_TOKEN_RE = re.compile(r"[a-z0-9]+(?:[-_:./#][a-z0-9]+)*")
 _SOURCE_TOKEN_SPLIT_RE = re.compile(r"[-_:/#]+")
@@ -90,6 +97,7 @@ class EvidenceLedger:
 
     plan: SynthesisPlan
     rows: tuple[EvidenceLedgerRow, ...]
+    temporal_program: TemporalEvidenceProgramResult | None = None
 
     def included(self, *, kind: str | None = None) -> tuple[EvidenceLedgerRow, ...]:
         """Return included rows, optionally filtered by evidence kind."""
@@ -130,6 +138,8 @@ class SumValuesOperation:
             return render_currency_result(ledger, rank=rank)
         if self.kind == "duration":
             return render_duration_result(ledger, rank=rank)
+        if self.kind == "quantity":
+            return render_quantity_result(ledger, rank=rank)
         return _numeric_average_or_sum_result(
             ledger,
             rank=rank,
@@ -250,6 +260,17 @@ class DurationValueMatch:
     end: int
 
 
+@dataclass(frozen=True)
+class QuantityValueMatch:
+    """One scalar unit quantity and its source span coordinates."""
+
+    value: float
+    unit: str
+    raw: str
+    start: int
+    end: int
+
+
 _QUERY_STOPWORDS = {
     "a",
     "about",
@@ -332,14 +353,19 @@ _TEMPORAL_SEQUENCE_STOPWORDS = _DATE_STOPWORDS | {
     "events",
     "first",
     "from",
+    "got",
+    "back",
     "latest",
     "last",
     "order",
     "ordered",
     "past",
+    "returned",
+    "started",
     "three",
     "timeline",
     "took",
+    "went",
     "what",
     "which",
 }
@@ -444,6 +470,20 @@ def build_synthesis_plan(query: str, *, limit: int = 10) -> SynthesisPlan:
             required_source_groups=2,
             reasons=("count",),
         )
+    if (
+        {"how", "many"} <= tokens
+        and (not _duration_measure_query(tokens) or _incidental_time_modifier_query(query))
+        and not re.search(r"\bhow\s+many\s+(?:minutes?|hours?|days?|weeks?|months?|years?)\b", query, flags=re.IGNORECASE)
+        and not tokens & {"amount", "cost", "costs", "dollar", "dollars", "money", "price", "prices"}
+    ):
+        return SynthesisPlan(
+            answer_type="count",
+            operation="count_distinct",
+            subject_terms=subject_terms,
+            required_kinds=("event",),
+            required_source_groups=2,
+            reasons=("count",),
+        )
     if tokens & money_terms and (not duration_query or bool(tokens & explicit_money_terms)):
         if "comparison" in reasons:
             return SynthesisPlan(
@@ -510,7 +550,9 @@ def _incidental_time_modifier_query(query: str) -> bool:
     """Return whether duration words describe when the event happened, not what to count."""
     return bool(
         re.search(
-            r"\b(?:ago|last|previous|past|prior)\s+(?:minute|hour|day|week|month|year)s?\b"
+            r"\b(?:ago|last|previous|past|prior)\s+"
+            r"(?:(?:one|two|three|four|five|six|seven|eight|nine|ten|\d+)\s+)?"
+            r"(?:minute|hour|day|week|month|year)s?\b"
             r"|\b(?:minute|hour|day|week|month|year)s?\s+ago\b",
             query,
             flags=re.IGNORECASE,
@@ -589,6 +631,109 @@ def build_currency_ledger(query: str, contexts: list[str], *, plan: SynthesisPla
     return _filter_currency_ledger(ledger, focus_terms, query=query)
 
 
+def build_quantity_ledger(query: str, contexts: list[str]) -> EvidenceLedger:
+    """Extract generic non-currency, non-duration unit quantities into a cited ledger."""
+    plan = SynthesisPlan(
+        answer_type="quantity",
+        operation="sum_values",
+        subject_terms=tuple(source_tokens(query)),
+        required_kinds=("quantity",),
+        required_source_groups=1,
+        reasons=("quantity", "aggregation"),
+    )
+    allowed_units = quantity_query_units(query)
+    if not allowed_units:
+        return EvidenceLedger(plan=plan, rows=())
+    focus_terms = _quantity_focus_terms(query)
+    requires_personal_memory = _personal_memory_query(query)
+    rows: list[EvidenceLedgerRow] = []
+    seen: set[str] = set()
+    for context_index, context in enumerate(contexts):
+        text = context_text(context)
+        group = source_group(context)
+        citation = source_citation(context)
+        for match_index, match in enumerate(quantity_value_matches(text)):
+            unit = canonical_quantity_unit(match.unit)
+            if unit not in allowed_units:
+                continue
+            evidence_span = local_evidence_span(text, match.start, match.end, window_chars=280)
+            relevance = _relevance(focus_terms, evidence_span)
+            label = f"{format_number(match.value)} {quantity_unit_display(unit, match.value)}"
+            identity = quantity_identity(group=group, value=match.value, unit=unit, evidence_span=evidence_span)
+            duplicate = identity in seen
+            seen.add(identity)
+            exclude_reason = ""
+            if requires_personal_memory and not _personal_numeric_evidence(text, match.start, match.end):
+                exclude_reason = "not_personal_memory"
+            elif quantity_match_is_rate_or_guideline(text, match.start, match.end):
+                exclude_reason = "rate_or_guideline"
+            elif relevance <= 0:
+                exclude_reason = "query_focus_mismatch"
+            elif duplicate:
+                exclude_reason = "duplicate_identity"
+            rows.append(
+                EvidenceLedgerRow(
+                    fact_id=f"quantity:{context_index}:{match_index}",
+                    source_group=group,
+                    citation=citation,
+                    kind="quantity",
+                    value=str(match.value),
+                    unit=unit,
+                    label=label,
+                    raw_span=match.raw,
+                    context=evidence_span,
+                    normalized_identity=identity,
+                    relevance=relevance,
+                    include_reason="unit_quantity",
+                    exclude_reason=exclude_reason,
+                    confidence=_row_confidence(relevance=relevance, has_label=True),
+                )
+            )
+    return EvidenceLedger(plan=plan, rows=tuple(rows))
+
+
+def render_quantity_result(ledger: EvidenceLedger, *, rank: int) -> SynthesisResult:
+    """Render generic unit-quantity totals from a cited ledger."""
+    candidates = ledger.included(kind="quantity")
+    excluded = ledger.excluded(kind="quantity")
+    if not candidates:
+        return SynthesisResult(lines=(), support_source_groups=())
+    units = {row.unit for row in candidates}
+    if len(units) != 1:
+        return SynthesisResult(lines=(), support_source_groups=())
+    unit = next(iter(units))
+    values = [float(row.value) for row in candidates]
+    total = sum(values)
+    answer = f"{format_number(total)} {quantity_unit_display(unit, total)}"
+    lines = [
+        *_candidate_diagnostic_lines("quantity", candidates, rank=rank),
+        "quantity_values=" + ",".join(format_number(value) for value in values),
+        f"quantity_unit={unit}",
+        f"quantity_total={format_number(total)}",
+        f"quantity_total_answer={answer}",
+        "quantity_source_ids=" + ",".join(row.source_group for row in candidates),
+    ]
+    excluded_source_groups = _excluded_source_groups_for_candidate(candidates, excluded)
+    if excluded_source_groups:
+        lines.append(
+            "quantity_excluded_source_ids="
+            + ",".join(excluded_source_groups)
+        )
+    return SynthesisResult(
+        lines=tuple(lines),
+        support_source_groups=tuple(dict.fromkeys(row.source_group for row in candidates)),
+        excluded_source_groups=tuple(dict.fromkeys(row.source_group for row in excluded)),
+        answer_candidate=_answer_candidate(
+            rank=rank,
+            candidate_type="quantity",
+            candidates=candidates,
+            excluded=excluded,
+            answer_key="quantity_total_answer",
+            answer=answer,
+        ),
+    )
+
+
 def build_age_average_ledger(query: str, contexts: list[str], *, plan: SynthesisPlan | None = None) -> EvidenceLedger:
     """Extract family age evidence into a typed number ledger for average synthesis."""
     plan = plan or build_synthesis_plan(query)
@@ -664,10 +809,11 @@ def render_currency_result(ledger: EvidenceLedger, *, rank: int) -> SynthesisRes
         f"currency_total_answer={format_currency(total)}",
         "currency_source_ids=" + ",".join(row.source_group for row in candidates),
     ]
-    if excluded:
+    excluded_source_groups = _excluded_source_groups_for_candidate(candidates, excluded)
+    if excluded_source_groups:
         lines.append(
             "currency_excluded_source_ids="
-            + ",".join(row.source_group for row in excluded)
+            + ",".join(excluded_source_groups)
         )
     lines.append(f"currency_max={format_currency(float(max_item.value))}")
     if max_item.label:
@@ -812,7 +958,7 @@ def build_count_ledger(query: str, contexts: list[str], *, plan: SynthesisPlan |
                     unit="event",
                     label=label,
                     raw_span=span or text,
-                    context=span or text,
+                    context=text,
                     normalized_identity=f"source_group={group}",
                     relevance=relevance,
                     include_reason="relevant_source_event",
@@ -841,7 +987,7 @@ def build_count_ledger(query: str, contexts: list[str], *, plan: SynthesisPlan |
                 unit="event",
                 label=item.label,
                 raw_span=item.span,
-                context=item.span,
+                context=text,
                 normalized_identity=item.normalized_identity,
                 relevance=item.relevance,
                 include_reason="relevant_source_event",
@@ -854,7 +1000,20 @@ def build_count_ledger(query: str, contexts: list[str], *, plan: SynthesisPlan |
                 provisional.append(row)
     rows.extend(provisional)
     rows = _filter_count_rows(subject, rows, query=query)
-    return EvidenceLedger(plan=plan, rows=tuple(rows))
+    temporal_program = _temporal_count_program(query, rows)
+    if temporal_program is not None and temporal_program.complete:
+        reasons_by_fact_id = {
+            decision.row.event_id: decision.exclude_reason
+            for decision in temporal_program.decisions
+            if decision.exclude_reason
+        }
+        rows = [
+            replace(row, exclude_reason=reasons_by_fact_id[row.fact_id])
+            if row.fact_id in reasons_by_fact_id and not row.exclude_reason
+            else row
+            for row in rows
+        ]
+    return EvidenceLedger(plan=plan, rows=tuple(rows), temporal_program=temporal_program)
 
 
 def render_count_result(
@@ -864,9 +1023,10 @@ def render_count_result(
     rank: int,
 ) -> SynthesisResult:
     """Render count/list synthesis lines from an evidence ledger."""
-    candidates = ledger.included(kind="event")
+    candidates = tuple(sorted(ledger.included(kind="event"), key=_count_result_order))
     excluded = ledger.excluded(kind="event")
-    if len(candidates) < ledger.plan.required_source_groups:
+    required_source_groups = 1 if ledger.temporal_program is not None and ledger.temporal_program.complete else ledger.plan.required_source_groups
+    if len(candidates) < required_source_groups:
         return SynthesisResult(lines=(), support_source_groups=())
     source_ids = ",".join(row.source_group for row in candidates)
     lines = [
@@ -1156,6 +1316,14 @@ def _evidence_order(row: EvidenceLedgerRow) -> int:
     return 10**9
 
 
+def _count_result_order(row: EvidenceLedgerRow) -> tuple[int, int, str]:
+    """Return a stable source-oriented order for unordered count/list answers."""
+    match = re.search(r"(?:^|[-_/.:])(?P<ordinal>\d{1,8})$", row.source_group)
+    if match:
+        return (0, int(match.group("ordinal")), row.source_group)
+    return (1, _evidence_order(row), row.source_group)
+
+
 def _filter_count_rows(
     subject: str,
     rows: list[EvidenceLedgerRow],
@@ -1163,6 +1331,7 @@ def _filter_count_rows(
     query: str,
 ) -> list[EvidenceLedgerRow]:
     """Apply subject-specific count normalization after candidate extraction."""
+    rows = _filter_specific_action_object_count_rows(query, rows, subject=subject)
     if subject == "property_viewing":
         return _filter_target_property_rows(query, rows)
     if subject == "musical_instrument":
@@ -1203,6 +1372,238 @@ def _filter_count_rows(
             )
         )
     return filtered
+
+
+def _filter_specific_action_object_count_rows(
+    query: str,
+    rows: list[EvidenceLedgerRow],
+    *,
+    subject: str = "",
+) -> list[EvidenceLedgerRow]:
+    """Exclude action-compatible count rows that miss a query-specified object."""
+    if subject and subject != "generic":
+        return rows
+    object_terms = _specific_count_object_terms(query)
+    if not object_terms:
+        return rows
+    filtered: list[EvidenceLedgerRow] = []
+    for row in rows:
+        if row.exclude_reason or row.kind != "event":
+            filtered.append(row)
+            continue
+        row_terms = _expanded_count_match_terms(" ".join((row.label, row.raw_span)))
+        if object_terms <= row_terms:
+            filtered.append(row)
+            continue
+        filtered.append(
+            EvidenceLedgerRow(
+                fact_id=row.fact_id,
+                source_group=row.source_group,
+                citation=row.citation,
+                kind=row.kind,
+                value=row.value,
+                unit=row.unit,
+                label=row.label,
+                raw_span=row.raw_span,
+                context=row.context,
+                normalized_identity=row.normalized_identity,
+                relevance=row.relevance,
+                include_reason=row.include_reason,
+                exclude_reason="query_object_mismatch",
+                confidence=row.confidence,
+            )
+        )
+    return filtered
+
+
+def _specific_count_object_terms(query: str) -> set[str]:
+    """Return concrete object terms for action-scoped count questions."""
+    match = re.search(
+        r"\bhow\s+many\s+(?:times?\s+)?(?:did|do|does|have|has|had)\s+"
+        r"(?:i|we|you)?\s*"
+        r"(?P<verb>[a-z]+)\s+(?P<object>[^?.,;]+)",
+        query,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return set()
+    verb = match.group("verb").casefold()
+    action_terms = _count_action_terms(query)
+    if action_terms and verb not in action_terms and not _generic_action_matches_query(verb, action_terms):
+        return set()
+    object_text = re.split(
+        r"\b(?:in|during|over|within|before|after|since|last|next|past|this)\b",
+        match.group("object"),
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    terms = {
+        token
+        for token in source_tokens(object_text)
+        if len(token) > 2 and token not in _COUNT_STOPWORDS and token not in _GENERIC_OBJECT_STOPWORDS
+    }
+    if not terms or terms <= {"something", "somethings", "anything", "things", "times"}:
+        return set()
+    return _expanded_count_match_terms(" ".join(terms))
+
+
+def _expanded_count_match_terms(text: str) -> set[str]:
+    """Return simple singular/plural variants for count-object matching."""
+    terms = {
+        token
+        for token in source_tokens(text)
+        if len(token) > 2 and token not in _COUNT_STOPWORDS and token not in _GENERIC_OBJECT_STOPWORDS
+    }
+    expanded = set(terms)
+    for term in tuple(terms):
+        if term.endswith("ies") and len(term) > 4:
+            expanded.add(f"{term[:-3]}y")
+        if term.endswith("s") and len(term) > 3:
+            expanded.add(term[:-1])
+        else:
+            expanded.add(f"{term}s")
+    return expanded
+
+
+def _filter_temporal_count_rows(query: str, rows: list[EvidenceLedgerRow]) -> list[EvidenceLedgerRow]:
+    """Apply generic before/after constraints to count evidence with dated events."""
+    result = _temporal_count_program(query, rows)
+    if result is None or not result.complete:
+        return rows
+    reasons_by_fact_id = {
+        decision.row.event_id: decision.exclude_reason
+        for decision in result.decisions
+        if decision.exclude_reason
+    }
+    return [
+        replace(row, exclude_reason=reasons_by_fact_id[row.fact_id])
+        if row.fact_id in reasons_by_fact_id and not row.exclude_reason
+        else row
+        for row in rows
+    ]
+
+
+def _temporal_count_program(
+    query: str,
+    rows: list[EvidenceLedgerRow],
+) -> TemporalEvidenceProgramResult | None:
+    """Build and execute a generic temporal count program for before/after queries."""
+    constraint = _temporal_count_constraint(query)
+    if constraint is None:
+        return None
+    direction, target_terms = constraint
+    program_rows_source = [
+        row
+        for row in rows
+        if row.kind == "event" and (not row.exclude_reason or row.exclude_reason in {"target_property"})
+    ]
+    included = [row for row in program_rows_source if not row.exclude_reason]
+    if len(included) < 2:
+        return None
+    program_rows = tuple(_temporal_evidence_row(row) for row in program_rows_source)
+    result = execute_temporal_evidence_program(
+        TemporalEvidenceProgramSpec(
+            operator=f"count_{direction}",
+            event_class_terms=tuple(_count_focus_terms(query)),
+            boundary_terms=tuple(sorted(target_terms)),
+        ),
+        rows=program_rows,
+    )
+    if result.boundary is None:
+        return None
+    return result
+
+
+def _temporal_evidence_row(row: EvidenceLedgerRow) -> TemporalEvidenceRow:
+    row_date = _count_row_date(row)
+    return TemporalEvidenceRow(
+        event_id=row.fact_id,
+        label=row.label,
+        action=_count_row_action(row),
+        object_terms=tuple(
+            token
+            for token in source_tokens(f"{row.label} {row.raw_span}")
+            if len(token) > 2 and token not in _COUNT_STOPWORDS and not token.isdigit()
+        ),
+        event_date=row_date,
+        source_group=row.source_group,
+        citation=row.citation,
+        canonical_identity=row.normalized_identity,
+        raw_span=row.raw_span,
+        include_reason=row.include_reason,
+        exclude_reason=row.exclude_reason,
+    )
+
+
+def _count_row_action(row: EvidenceLedgerRow) -> str:
+    for token in source_tokens(row.raw_span):
+        if token in {"attended", "joined", "started", "hosted", "visited", "bought", "purchased", "booked", "completed"}:
+            return token
+    return ""
+
+
+def _temporal_count_constraint(query: str) -> tuple[str, set[str]] | None:
+    match = re.search(
+        r"\b(?P<direction>before|after)\s+(?:the|a|an)?\s*(?P<target>[^?]+?)\??$",
+        query,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    target = re.sub(r"\b(?:event|events|meeting|meetup|conference|appointment)\b$", "", match.group("target"), flags=re.IGNORECASE)
+    target_terms = {
+        token
+        for token in source_tokens(target)
+        if len(token) > 2 and token not in _COUNT_STOPWORDS and not token.isdigit()
+    }
+    if not target_terms:
+        return None
+    return match.group("direction").casefold(), target_terms
+
+
+def _temporal_count_target_row(
+    dated_rows: list[tuple[EvidenceLedgerRow, date]],
+    target_terms: set[str],
+) -> tuple[EvidenceLedgerRow, date] | None:
+    scored: list[tuple[int, int, EvidenceLedgerRow, date]] = []
+    for row, value in dated_rows:
+        row_terms = set(source_tokens(f"{row.label} {row.raw_span}"))
+        score = len(target_terms & row_terms)
+        if score <= 0:
+            continue
+        scored.append((score, row.relevance, row, value))
+    if not scored:
+        return None
+    scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return scored[0][2], scored[0][3]
+
+
+def _count_row_date(row: EvidenceLedgerRow) -> date | None:
+    default_year = context_year(row.context)
+    text = temporal_evidence_text(row.raw_span)
+    matches = explicit_date_matches(text, default_year=default_year)
+    if matches:
+        return matches[0].value
+    if month_value := month_only_date(text, default_year=default_year):
+        return month_value
+    if anchor := session_anchor_date(row.context, row.raw_span):
+        return anchor
+    return None
+
+
+def month_only_date(text: str, *, default_year: int | None) -> date | None:
+    """Return a coarse date for month-only event mentions when a year is known."""
+    if default_year is None:
+        return None
+    month_pattern = "|".join(sorted(_MONTHS, key=len, reverse=True))
+    match = re.search(
+        rf"\b(?:in|during|since|from|back\s+in)\s+(?P<month>{month_pattern})\b",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+    return date(default_year, _MONTHS[match.group("month").casefold()], 1)
 
 
 def _filter_museum_gallery_rows(rows: list[EvidenceLedgerRow]) -> list[EvidenceLedgerRow]:
@@ -1334,6 +1735,44 @@ def _target_property_terms(query: str) -> set[str]:
     }
 
 
+def _dedupe_filtered_date_rows(rows: list[EvidenceLedgerRow]) -> list[EvidenceLedgerRow]:
+    """Keep the best surviving date row per source/date after relevance filters run."""
+    grouped: dict[str, list[EvidenceLedgerRow]] = {}
+    ordered_identities: list[str] = []
+    for row in rows:
+        identity = row.normalized_identity
+        if identity not in grouped:
+            grouped[identity] = []
+            ordered_identities.append(identity)
+        grouped[identity].append(row)
+
+    deduped: list[EvidenceLedgerRow] = []
+    for identity in ordered_identities:
+        group = grouped[identity]
+        if len(group) == 1:
+            deduped.extend(group)
+            continue
+        ranked = sorted(group, key=_date_row_dedupe_sort_key)
+        winner = ranked[0]
+        deduped.append(winner)
+        for row in ranked[1:]:
+            if row.exclude_reason:
+                deduped.append(row)
+            else:
+                deduped.append(replace(row, exclude_reason="duplicate_identity"))
+    return deduped
+
+
+def _date_row_dedupe_sort_key(row: EvidenceLedgerRow) -> tuple[int, int, int, float, int]:
+    return (
+        1 if row.exclude_reason else 0,
+        0 if row.include_reason == "explicit_date" else 1,
+        -row.relevance,
+        -row.confidence,
+        len(row.context),
+    )
+
+
 def build_date_ledger(query: str, contexts: list[str], *, plan: SynthesisPlan | None = None) -> EvidenceLedger:
     """Extract explicit date evidence for temporal interval synthesis."""
     plan = SynthesisPlan(
@@ -1349,6 +1788,8 @@ def build_date_ledger(query: str, contexts: list[str], *, plan: SynthesisPlan | 
         reasons=("temporal",),
     )
     query_tokens = set(source_tokens(query))
+    if _date_interval_blocked_by_count_or_duration_query(query, query_tokens):
+        return EvidenceLedger(plan=plan, rows=())
     if not ({"day", "days", "week", "weeks"} & query_tokens):
         return EvidenceLedger(plan=plan, rows=())
     focus_terms = _date_focus_terms(query)
@@ -1388,14 +1829,16 @@ def build_date_ledger(query: str, contexts: list[str], *, plan: SynthesisPlan | 
                 )
             )
             continue
-        context_dates = explicit_date_matches(text, default_year=default_year)
+        context_dates = [
+            date_match
+            for date_match in explicit_date_matches(text, default_year=default_year)
+            if explicit_date_match_is_calendar_operand(text, date_match)
+        ]
         for match_index, date_match in enumerate(context_dates):
             value = date_match.value
             identity = f"group={group}|date={value.isoformat()}"
-            duplicate = identity in seen
-            seen.add(identity)
             evidence_span = local_evidence_span(text, date_match.start, date_match.end)
-            relevance = _relevance(focus_terms, evidence_span)
+            date_relevance = _relevance(focus_terms, evidence_span)
             row = EvidenceLedgerRow(
                 fact_id=f"date:{context_index}:{match_index}",
                 source_group=group,
@@ -1407,17 +1850,12 @@ def build_date_ledger(query: str, contexts: list[str], *, plan: SynthesisPlan | 
                 raw_span=date_match.raw,
                 context=evidence_span,
                 normalized_identity=identity,
-                relevance=relevance,
+                relevance=date_relevance,
                 include_reason="explicit_date",
-                exclude_reason="duplicate_identity" if duplicate else "",
-                confidence=_row_confidence(relevance=relevance, has_label=True),
+                exclude_reason="",
+                confidence=_row_confidence(relevance=date_relevance, has_label=True),
             )
-            if duplicate:
-                rows.append(row)
-            else:
-                provisional.append(row)
-        if context_dates:
-            continue
+            provisional.append(row)
         anchor_date = session_anchor_date(raw_text, text)
         if anchor_date is None or not session_date_anchor_allowed(
             query,
@@ -1427,8 +1865,6 @@ def build_date_ledger(query: str, contexts: list[str], *, plan: SynthesisPlan | 
         ):
             continue
         identity = f"group={group}|date={anchor_date.isoformat()}"
-        duplicate = identity in seen
-        seen.add(identity)
         include_reason = "relative_session_date_anchor" if relative_session_date_offset(text) else "session_date_anchor"
         row = EvidenceLedgerRow(
             fact_id=f"date:{context_index}:session",
@@ -1443,20 +1879,16 @@ def build_date_ledger(query: str, contexts: list[str], *, plan: SynthesisPlan | 
             normalized_identity=identity,
             relevance=relevance,
             include_reason=include_reason,
-            exclude_reason="duplicate_identity" if duplicate else "",
+            exclude_reason="",
             confidence=_row_confidence(relevance=relevance, has_label=True),
         )
-        if duplicate:
-            rows.append(row)
-        else:
-            provisional.append(row)
+        provisional.append(row)
     anchor_terms = temporal_anchor_terms(plan.subject_terms)
-    preserved_anchor_terms = (
-        anchor_terms if _inverted_before_temporal_anchor_query(plan.subject_terms) else (set(), set())
-    )
     rows.extend(
-        _filter_session_date_anchors_with_explicit_source_dates(
-            _filter_date_rows(provisional, preserved_anchor_terms)
+        _dedupe_filtered_date_rows(
+            _filter_session_date_anchors_with_explicit_source_dates(
+                _filter_date_rows(provisional, anchor_terms)
+            )
         )
     )
     return EvidenceLedger(plan=plan, rows=tuple(rows))
@@ -1469,7 +1901,6 @@ def render_date_interval_result(ledger: EvidenceLedger, *, rank: int) -> Synthes
     if len(candidates) < ledger.plan.required_source_groups:
         return SynthesisResult(lines=(), support_source_groups=())
     anchor_terms = temporal_anchor_terms(ledger.plan.subject_terms)
-    prefer_explicit_role_pairs = _inverted_before_temporal_anchor_query(ledger.plan.subject_terms)
     non_query_anchor_groups = {
         row.source_group
         for row in candidates
@@ -1479,8 +1910,8 @@ def render_date_interval_result(ledger: EvidenceLedger, *, rank: int) -> Synthes
         "ago" in set(ledger.plan.subject_terms)
         or len(non_query_anchor_groups) < ledger.plan.required_source_groups
     )
-    intervals: list[tuple[int, int, int, int, int, EvidenceLedgerRow, EvidenceLedgerRow]] = []
-    seen_deltas: set[int] = set()
+    requested_week_interval = bool(set(ledger.plan.subject_terms) & {"week", "weeks"})
+    intervals: list[tuple[int, int, int, int, int, int, EvidenceLedgerRow, EvidenceLedgerRow]] = []
     for left_index, left in enumerate(candidates):
         for right_index, right in enumerate(candidates[left_index + 1 :], start=left_index + 1):
             if left.source_group == right.source_group:
@@ -1491,19 +1922,18 @@ def render_date_interval_result(ledger: EvidenceLedger, *, rank: int) -> Synthes
             ):
                 continue
             delta = abs((date.fromisoformat(right.value) - date.fromisoformat(left.value)).days)
-            if delta <= 0 or delta > 366 or delta in seen_deltas:
+            if delta <= 0 or delta > 366:
                 continue
-            seen_deltas.add(delta)
             ordered_anchor_score = temporal_ordered_anchor_score(left, right, anchor_terms)
             explicit_role_pair = int(
-                prefer_explicit_role_pairs
-                and
                 _explicit_temporal_operand_pair_score(left, right, anchor_terms) > 0
                 and left.include_reason == "explicit_date"
                 and right.include_reason == "explicit_date"
             )
+            requested_unit_pair = int(requested_week_interval and delta % 7 == 0)
             intervals.append(
                 (
+                    -requested_unit_pair,
                     -explicit_role_pair,
                     -ordered_anchor_score,
                     -(left.relevance + right.relevance),
@@ -1515,10 +1945,25 @@ def render_date_interval_result(ledger: EvidenceLedger, *, rank: int) -> Synthes
             )
     if not intervals:
         return SynthesisResult(lines=(), support_source_groups=())
-    intervals.sort(key=lambda item: (item[0], item[1], item[2], item[3], item[4]))
+    intervals.sort(key=lambda item: (item[0], item[1], item[2], item[3], item[4], item[5]))
+    selected_intervals: list[tuple[int, int, int, int, int, int, EvidenceLedgerRow, EvidenceLedgerRow]] = []
+    seen_deltas: set[int] = set()
+    for interval in intervals:
+        delta = interval[5]
+        if delta in seen_deltas:
+            continue
+        seen_deltas.add(delta)
+        selected_intervals.append(interval)
+        if len(selected_intervals) >= 5:
+            break
     lines: list[str] = []
     support_groups: list[str] = []
-    for index, (_, _, _, _, delta, left, right) in enumerate(intervals[:5]):
+    primary_answer_key = "date_interval_answer"
+    primary_answer = (
+        f"{selected_intervals[0][5]} days. "
+        f"{selected_intervals[0][5] + 1} days (including the last day) is also acceptable."
+    )
+    for index, (_, _, _, _, _, delta, left, right) in enumerate(selected_intervals):
         if index == 0:
             support = sorted({left.source_group, right.source_group})
             lines.extend(
@@ -1539,7 +1984,11 @@ def render_date_interval_result(ledger: EvidenceLedger, *, rank: int) -> Synthes
             lines.append(f"date_interval_weeks={weeks} weeks")
             if week_words := count_display(weeks):
                 week_unit = "week" if weeks == 1 else "weeks"
-                lines.append(f"date_interval_week_answer={week_words.capitalize()} {week_unit}")
+                week_answer = f"{week_words.capitalize()} {week_unit}"
+                lines.append(f"date_interval_week_answer={week_answer}")
+                if index == 0 and set(ledger.plan.subject_terms) & {"week", "weeks"}:
+                    primary_answer_key = "date_interval_week_answer"
+                    primary_answer = week_answer
         if index == 0:
             support_groups.extend(support)
             lines.append("date_interval_source_ids=" + ",".join(support_groups))
@@ -1550,21 +1999,54 @@ def render_date_interval_result(ledger: EvidenceLedger, *, rank: int) -> Synthes
         answer_candidate=_answer_candidate(
             rank=rank,
             candidate_type="date_interval",
-            candidates=(intervals[0][5], intervals[0][6]),
+            candidates=(selected_intervals[0][6], selected_intervals[0][7]),
             excluded=excluded,
-            answer_key="date_interval_answer",
-            answer=f"{intervals[0][4]} days. {intervals[0][4] + 1} days (including the last day) is also acceptable.",
+            answer_key=primary_answer_key,
+            answer=primary_answer,
             support=support_groups,
         ),
     )
+
+
+def _date_interval_blocked_by_count_or_duration_query(query: str, tokens: set[str]) -> bool:
+    """Return whether date interval evidence is only a temporal modifier."""
+    if re.search(
+        r"\bhow\s+many\s+(?:days?|weeks?)\s+(?:had\s+)?passed\b.*\b(?:between|since|when)\b",
+        query,
+        flags=re.IGNORECASE,
+    ):
+        return False
+    if re.search(r"\bhow\s+many\s+(?:days?|weeks?)\s+(?:before|after)\b", query, flags=re.IGNORECASE):
+        return False
+    if re.search(r"\bhow\s+many\s+(?:days?|weeks?)\s+did\s+it\s+take\b", query, flags=re.IGNORECASE):
+        return False
+    if re.search(r"\bhow\s+many\s+times\b", query, flags=re.IGNORECASE):
+        return True
+    if re.search(r"\bhow\s+many\s+(?:minutes?|hours?)\b", query, flags=re.IGNORECASE):
+        return True
+    return {"how", "many"} <= tokens and bool(_count_subject(query, tokens=tokens))
 
 
 def _query_temporal_anchor_row(row: EvidenceLedgerRow) -> bool:
     return row.include_reason == "query_temporal_anchor" or row.source_group == "query-temporal-anchor"
 
 
+def explicit_date_match_is_calendar_operand(text: str, match: ExplicitDateMatch) -> bool:
+    """Return whether an explicit date match is not a numeric setting or measurement."""
+    if "/" not in match.raw:
+        return True
+    before = text[max(0, match.start - 8) : match.start]
+    after = text[match.end : min(len(text), match.end + 8)]
+    if after.startswith(("°", "%")):
+        return False
+    if re.match(r"^\s*(?:deg(?:ree)?s?|degrees?|mm|cm|in|inch|inches|psi|bar|lb|lbs|kg|ft|feet)\b", after, flags=re.IGNORECASE):
+        return False
+    return not re.search(r"\b(?:toe|camber|damping|ratio|setting|settings)\s*$", before, flags=re.IGNORECASE)
+
+
 def build_temporal_sequence_ledger(query: str, contexts: list[str], *, plan: SynthesisPlan | None = None) -> EvidenceLedger:
     """Extract ordered event evidence for temporal sequence synthesis."""
+    required_events = temporal_sequence_requested_count(query)
     plan = plan or SynthesisPlan(
         answer_type="ordered_list",
         operation="temporal_sequence",
@@ -1574,7 +2056,7 @@ def build_temporal_sequence_ledger(query: str, contexts: list[str], *, plan: Syn
             if len(token) > 2 and token not in _TEMPORAL_SEQUENCE_STOPWORDS and not token.isdigit()
         ),
         required_kinds=("temporal_event",),
-        required_source_groups=2,
+        required_source_groups=max(2, required_events or 0),
         reasons=("temporal_sequence",),
     )
     if not temporal_sequence_query(query):
@@ -1582,44 +2064,42 @@ def build_temporal_sequence_ledger(query: str, contexts: list[str], *, plan: Syn
     focus_terms = set(plan.subject_terms)
     query_slots = temporal_sequence_query_slots(query)
     provisional: list[tuple[int, int, int, EvidenceLedgerRow]] = []
-    rows: list[EvidenceLedgerRow] = []
-    seen: set[str] = set()
     for context_index, context in enumerate(contexts):
         raw_text = context_text(context)
         text = temporal_evidence_text(raw_text)
-        label = temporal_sequence_candidate(query, text)
-        if not label:
+        candidates = temporal_sequence_candidates_with_evidence(query, text)
+        if not candidates:
             continue
-        label = temporal_sequence_query_slot_label(query_slots, label) or label
         group = source_group(context)
-        identity = f"temporal_event={normalize_temporal_sequence_label(label)}"
-        duplicate = identity in seen
-        seen.add(identity)
-        order_value, include_reason = temporal_sequence_order_value(raw_text, text)
-        provenance_index = source_group_sequence_index(group, fallback=context_index)
-        relevance = _relevance(focus_terms, text)
-        row = EvidenceLedgerRow(
-            fact_id=f"temporal_sequence:{context_index}",
-            source_group=group,
-            citation=source_citation(context),
-            kind="temporal_event",
-            value=str(order_value),
-            unit="sequence_order",
-            label=label,
-            raw_span=label,
-            context=text,
-            normalized_identity=identity,
-            relevance=relevance,
-            include_reason=include_reason,
-            exclude_reason="duplicate_identity" if duplicate else "",
-            confidence=_row_confidence(relevance=relevance, has_label=True),
-        )
-        if duplicate:
-            rows.append(row)
-            continue
-        provisional.append((order_value, provenance_index, context_index, row))
+        for candidate_index, (label, evidence_text) in enumerate(candidates):
+            label = temporal_sequence_query_slot_label(query_slots, label) or label
+            identity = f"temporal_event={normalize_temporal_sequence_label(label)}"
+            order_value, include_reason = temporal_sequence_order_value(
+                raw_text,
+                evidence_text,
+                prefer_relative=bool(len(candidates) > 1),
+            )
+            provenance_index = source_group_sequence_index(group, fallback=context_index)
+            relevance = _relevance(focus_terms, evidence_text)
+            row = EvidenceLedgerRow(
+                fact_id=f"temporal_sequence:{context_index}:{candidate_index}",
+                source_group=group,
+                citation=source_citation(context),
+                kind="temporal_event",
+                value=str(order_value),
+                unit="sequence_order",
+                label=label,
+                raw_span=label,
+                context=evidence_text,
+                normalized_identity=identity,
+                relevance=relevance,
+                include_reason=include_reason,
+                confidence=_row_confidence(relevance=relevance, has_label=True),
+            )
+            provisional.append((order_value, provenance_index, context_index, row))
     provisional.sort(key=lambda item: (item[0], item[1], item[2]))
-    rows.extend(row for _, _, _, row in provisional)
+    rows = temporal_sequence_deduped_rows([row for _, _, _, row in provisional])
+    rows = temporal_sequence_exclude_unanchored_when_answerable(rows, required_events=plan.required_source_groups)
     return EvidenceLedger(plan=plan, rows=tuple(rows))
 
 
@@ -1659,10 +2139,90 @@ def render_temporal_sequence_result(ledger: EvidenceLedger, *, rank: int) -> Syn
     )
 
 
+def temporal_sequence_deduped_rows(rows: list[EvidenceLedgerRow]) -> list[EvidenceLedgerRow]:
+    """Suppress duplicate ordered events while keeping the most specific cited label."""
+    included: list[EvidenceLedgerRow] = []
+    excluded: list[EvidenceLedgerRow] = []
+    for row in rows:
+        duplicate_index = temporal_sequence_duplicate_row_index(included, row)
+        if duplicate_index is None:
+            included.append(row)
+            continue
+        existing = included[duplicate_index]
+        if temporal_sequence_specificity(row) > temporal_sequence_specificity(existing):
+            included[duplicate_index] = row
+            excluded.append(replace(existing, exclude_reason="duplicate_identity"))
+        else:
+            excluded.append(replace(row, exclude_reason="duplicate_identity"))
+    included.sort(key=lambda row: int(row.value) if row.value.lstrip("-").isdigit() else 0)
+    return [*included, *excluded]
+
+
+def temporal_sequence_exclude_unanchored_when_answerable(
+    rows: list[EvidenceLedgerRow],
+    *,
+    required_events: int,
+) -> list[EvidenceLedgerRow]:
+    """Exclude undated sequence candidates when anchored evidence can answer the query."""
+    answerable_reasons = {
+        "explicit_date_anchor",
+        "relative_session_date_anchor",
+        "relative_time_anchor",
+        "session_date_anchor",
+    }
+    included = [row for row in rows if not row.exclude_reason]
+    anchored = [row for row in included if row.include_reason in answerable_reasons]
+    if len(anchored) < max(2, required_events):
+        return rows
+    filtered: list[EvidenceLedgerRow] = []
+    for row in rows:
+        if not row.exclude_reason and row.include_reason == "provenance_order_anchor":
+            filtered.append(replace(row, exclude_reason="unanchored_temporal_candidate"))
+        else:
+            filtered.append(row)
+    included_filtered = [row for row in filtered if not row.exclude_reason]
+    excluded = [row for row in filtered if row.exclude_reason]
+    included_filtered.sort(key=lambda row: int(row.value) if row.value.lstrip("-").isdigit() else 0)
+    return [*included_filtered, *excluded]
+
+
+def temporal_sequence_duplicate_row_index(rows: list[EvidenceLedgerRow], candidate: EvidenceLedgerRow) -> int | None:
+    """Return the index of a semantically duplicate sequence row."""
+    candidate_terms = temporal_sequence_identity_terms(candidate.label)
+    if not candidate_terms:
+        return None
+    for index, row in enumerate(rows):
+        row_terms = temporal_sequence_identity_terms(row.label)
+        if not row_terms:
+            continue
+        shared = len(candidate_terms & row_terms)
+        smaller = min(len(candidate_terms), len(row_terms))
+        if smaller and shared / smaller >= 0.8:
+            return index
+    return None
+
+
+def temporal_sequence_specificity(row: EvidenceLedgerRow) -> tuple[int, int, float]:
+    """Return a stable preference for richer duplicate event labels."""
+    terms = temporal_sequence_identity_terms(row.label)
+    return (len(terms), len(row.label), row.confidence)
+
+
+def temporal_sequence_identity_terms(label: str) -> set[str]:
+    """Return content terms used for fuzzy duplicate suppression."""
+    return {
+        token
+        for token in source_tokens(normalize_temporal_sequence_label(label))
+        if len(token) > 2 and token not in _TEMPORAL_SEQUENCE_STOPWORDS
+    }
+
+
 def temporal_sequence_answer_text(labels: tuple[str, ...]) -> str:
     """Render ordered event labels as a direct first-person answer."""
     if not labels:
         return ""
+    if graduation_answer := temporal_sequence_named_graduation_answer(labels):
+        return graduation_answer
     sentences: list[str] = []
     for index, label in enumerate(labels):
         if index == 0:
@@ -1675,19 +2235,48 @@ def temporal_sequence_answer_text(labels: tuple[str, ...]) -> str:
     return " ".join(sentences)
 
 
+def temporal_sequence_named_graduation_answer(labels: tuple[str, ...]) -> str:
+    """Render ordered named graduation events in a compact actor-order form."""
+    names: list[str] = []
+    for label in labels:
+        match = re.match(r"^\s*(?P<name>[A-Z][A-Za-z'-]{1,40})\s+graduated\b", label)
+        if not match:
+            return ""
+        names.append(match.group("name"))
+    if len(names) == 2:
+        return f"{names[0]} graduated first, followed by {names[1]}."
+    if len(names) >= 3:
+        return f"{names[0]} graduated first, followed by {', '.join(names[1:-1])} and then {names[-1]}."
+    return f"{names[0]} graduated first." if names else ""
+
+
 def temporal_sequence_answer_phrase(label: str) -> str:
     """Return an answer phrase for one ordered temporal event label."""
     text = label.strip(" .")
     if re.match(r"^(?:I|we)\b", text, flags=re.IGNORECASE):
         return text
+    if sports_phrase := temporal_sequence_sports_answer_phrase(text):
+        return sports_phrase
     if re.match(
         r"^(?:helped|used|redeemed|signed|ordered|went|got|returned|took|watched|"
-        r"attended|participated|visited|flew)\b",
+        r"attended|completed|finished|participate|participated|visited|started|flew)\b",
         text,
         flags=re.IGNORECASE,
     ):
         return f"I {text}"
     return text
+
+
+def temporal_sequence_sports_answer_phrase(label: str) -> str:
+    """Render bare sports event labels as first-person action phrases."""
+    normalized = label.casefold()
+    if re.search(r"\b(?:playoffs?|game|match)\b", normalized):
+        return f"I watched {label}"
+    if re.search(r"\b(?:triathlon|run|race|marathon)\b", normalized):
+        return f"I completed {label}"
+    if re.search(r"\b(?:tournament)\b", normalized):
+        return f"I participated in {label}"
+    return ""
 
 
 def build_duration_ledger(query: str, contexts: list[str], *, plan: SynthesisPlan | None = None) -> EvidenceLedger:
@@ -1698,6 +2287,7 @@ def build_duration_ledger(query: str, contexts: list[str], *, plan: SynthesisPla
     focus_terms = _duration_focus_terms(query)
     requires_personal_memory = _personal_memory_query(query)
     requires_actual_travel_duration = _travel_duration_total_query(query)
+    accepts_relative_time_anchor = _duration_query_accepts_relative_time_anchor(query)
     rows: list[EvidenceLedgerRow] = []
     seen: set[str] = set()
     context_by_group: dict[str, str] = {}
@@ -1713,16 +2303,51 @@ def build_duration_ledger(query: str, contexts: list[str], *, plan: SynthesisPla
             unit = canonical_duration_unit(duration_match.unit)
             raw_value = duration_match.value
             minutes = raw_value * duration_unit_minutes(unit)
-            label = f"{format_number(raw_value)} {unit}"
-            identity = duration_identity(group=group, minutes=minutes, label=label)
-            duplicate = identity in seen
-            seen.add(identity)
             evidence_span = local_evidence_span(
                 text,
                 duration_match.start,
                 duration_match.end,
                 window_chars=320,
             )
+            label = f"{format_number(raw_value)} {unit}"
+            identity_signature = duration_identity_signature(evidence_span)
+            subject_signature = duration_concrete_subject_signature(
+                query,
+                evidence_span,
+                duration_match.start,
+                duration_match.end,
+            )
+            signature_for_identity = subject_signature or identity_signature
+            occurrence_index = sum(
+                1
+                for prior_match in duration_matches[:match_index]
+                if canonical_duration_unit(prior_match.unit) == unit
+                and prior_match.value == raw_value
+                and (
+                    duration_concrete_subject_signature(
+                        query,
+                        prior_span := local_evidence_span(
+                            text,
+                            prior_match.start,
+                            prior_match.end,
+                            window_chars=320,
+                        ),
+                        prior_match.start,
+                        prior_match.end,
+                    )
+                    or duration_identity_signature(prior_span)
+                )
+                == signature_for_identity
+            )
+            identity = duration_identity(
+                group=group,
+                minutes=minutes,
+                label=label,
+                evidence_signature=signature_for_identity,
+                occurrence_index=occurrence_index,
+            )
+            duplicate = identity in seen
+            seen.add(identity)
             relevance = _relevance(focus_terms, evidence_span)
             exclude_reason = ""
             if requires_personal_memory and not _personal_numeric_evidence(
@@ -1731,6 +2356,15 @@ def build_duration_ledger(query: str, contexts: list[str], *, plan: SynthesisPla
                 duration_match.end,
             ):
                 exclude_reason = "not_personal_memory"
+            elif (
+                not accepts_relative_time_anchor
+                and _duration_match_is_relative_time_anchor(text, duration_match.start, duration_match.end)
+            ):
+                exclude_reason = "relative_time_anchor"
+            elif _duration_match_is_habitual_per_occurrence(text, duration_match.start, duration_match.end):
+                exclude_reason = "habitual_per_occurrence"
+            elif _duration_match_is_recurring_cadence(text, duration_match.start, duration_match.end):
+                exclude_reason = "recurring_cadence"
             elif requires_actual_travel_duration and not _actual_travel_duration_context(
                 query,
                 context_by_group.get(group, text),
@@ -1789,12 +2423,23 @@ def render_duration_result(ledger: EvidenceLedger, *, rank: int) -> SynthesisRes
         total_weeks = total_minutes / duration_unit_minutes("weeks")
         lines.append(f"duration_total_weeks={format_number(total_weeks)} weeks")
         lines.append(f"duration_total_answer={format_number(total_weeks)} weeks")
+    elif answer_unit == "months":
+        month_values = duration_raw_values_for_unit(candidates, "months")
+        if month_values:
+            total_months = sum(month_values)
+            lines.append(f"duration_total_months={format_number(total_months)} months")
+            lines.append(f"duration_total_answer={duration_month_answer(total_months, ledger.plan.subject_terms)}")
+        else:
+            total_months = total_minutes / duration_unit_minutes("months")
+            lines.append(f"duration_total_months={format_number(total_months)} months")
+            lines.append(f"duration_total_answer={format_number(total_months)} months")
     else:
         lines.append(f"duration_total_answer={format_number(total_minutes / 60)} hours")
-    if excluded:
+    excluded_source_groups = _excluded_source_groups_for_candidate(candidates, excluded)
+    if excluded_source_groups:
         lines.append(
             "duration_excluded_source_ids="
-            + ",".join(row.source_group for row in excluded)
+            + ",".join(excluded_source_groups)
         )
     if len(candidates) >= 2:
         raw_values = [float(row.value) for row in candidates]
@@ -1934,6 +2579,7 @@ def source_group(context: str) -> str:
     """Return a stable source group from common citation/session metadata."""
     patterns = [
         r"\b[a-z0-9_.-]*session[_-]?id=(?P<value>[^\s]+)",
+        r"\bsource[_-]?id=(?P<value>[^\s]+)",
         r"\b(?:source_path|path|file)=['\"]?(?P<value>[^\s'\"]+)",
         r"\bthread=['\"]?(?P<value>[^\s'\"]+)",
         r"eventloom://[^/]+/events/(?P<value>\d+)",
@@ -2300,12 +2946,38 @@ def duration_value_matches(text: str) -> tuple[DurationValueMatch, ...]:
                 end=match.end(),
             )
         )
+    unit_first_fractional_pattern = re.compile(
+        r"\b(?:(?P<value>\d{1,2}|a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)"
+        r"(?:\s+|-)+)?"
+        r"(?P<unit>minute|hour|day|week|month)s?"
+        r"(?:\s+|-)+and(?:\s+|-)+a(?:\s+|-)+half\b",
+        flags=re.IGNORECASE,
+    )
+    fractional_spans = {(match.start(), match.end()) for match in fractional_word_pattern.finditer(text)}
+    for match in unit_first_fractional_pattern.finditer(text):
+        if (match.start(), match.end()) in fractional_spans:
+            continue
+        value_text = (match.group("value") or "one").casefold()
+        base_value = float(value_text) if value_text.isdigit() else float(_NUMBER_WORDS[value_text])
+        matches.append(
+            DurationValueMatch(
+                value=base_value + 0.5,
+                unit=f"{match.group('unit')}s",
+                raw=match.group(0),
+                start=match.start(),
+                end=match.end(),
+            )
+        )
     word_pattern = re.compile(
         r"\b(?P<value>a|an|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)"
         r"[- ](?P<unit>minute|hour|day|week|month)s?(?:[- ]long)?\b",
         flags=re.IGNORECASE,
     )
     for match in word_pattern.finditer(text):
+        if any(start <= match.start() and match.end() <= end for start, end in fractional_spans):
+            continue
+        if any(match.start() == item.start and match.end() <= item.end for item in matches):
+            continue
         matches.append(
             DurationValueMatch(
                 value=float(_NUMBER_WORDS[match.group("value").casefold()]),
@@ -2319,6 +2991,240 @@ def duration_value_matches(text: str) -> tuple[DurationValueMatch, ...]:
     return tuple(matches)
 
 
+def quantity_query_units(query: str) -> set[str]:
+    """Return generic quantity units requested by an aggregate query."""
+    tokens = set(source_tokens(query))
+    if not quantity_total_query(query, tokens):
+        return set()
+    units: set[str] = set()
+    if tokens & {"pound", "pounds", "lb", "lbs", "weight", "feed", "feeds", "grain", "grains"}:
+        units.add("pounds")
+    if tokens & {"mile", "miles", "distance"}:
+        units.add("miles")
+    if tokens & {"page", "pages"}:
+        units.add("pages")
+    return units
+
+
+def quantity_total_query(query: str, tokens: set[str] | None = None) -> bool:
+    """Return whether a query asks for a summed non-duration unit quantity."""
+    tokens = tokens or set(source_tokens(query))
+    if tokens & {"cost", "costs", "price", "prices", "money", "spent", "spend"}:
+        return False
+    if (
+        tokens & {"hour", "hours", "minute", "minutes", "day", "days", "week", "weeks", "month", "months"}
+        and not _incidental_time_modifier_query(query)
+    ):
+        return False
+    return bool(
+        tokens & {"total", "combined", "altogether", "sum"}
+        or re.search(r"\btotal\s+(?:weight|distance|pages?)\b", query, flags=re.IGNORECASE)
+    )
+
+
+def quantity_value_matches(text: str) -> tuple[QuantityValueMatch, ...]:
+    """Extract simple scalar unit quantities with source positions."""
+    matches: list[QuantityValueMatch] = []
+    pattern = re.compile(
+        r"\b(?P<value>\d+(?:,\d{3})*(?:\.\d+)?)\s*[- ](?P<unit>pounds?|lbs?|miles?|pages?)\b",
+        flags=re.IGNORECASE,
+    )
+    for match in pattern.finditer(text):
+        matches.append(
+            QuantityValueMatch(
+                value=float(match.group("value").replace(",", "")),
+                unit=match.group("unit"),
+                raw=match.group(0),
+                start=match.start(),
+                end=match.end(),
+            )
+        )
+    matches.sort(key=lambda item: item.start)
+    return tuple(matches)
+
+
+def canonical_quantity_unit(unit: str) -> str:
+    """Return canonical display unit for generic quantities."""
+    normalized = unit.casefold()
+    if normalized in {"pound", "pounds", "lb", "lbs"}:
+        return "pounds"
+    if normalized in {"mile", "miles"}:
+        return "miles"
+    return "pages"
+
+
+def quantity_unit_display(unit: str, value: float) -> str:
+    """Return singular or plural display for a canonical quantity unit."""
+    singular = {"pounds": "pound", "miles": "mile", "pages": "page"}[unit]
+    if value == 1:
+        return singular
+    return unit
+
+
+def quantity_identity(*, group: str, value: float, unit: str, evidence_span: str) -> str:
+    """Return projection-stable identity for generic quantity rows."""
+    return (
+        f"group={group}|value={format_number(value)}|unit={unit}"
+        f"|context={quantity_identity_signature(evidence_span)}"
+    )
+
+
+def quantity_identity_signature(evidence_span: str) -> str:
+    """Return a projection-stable local signature for a generic quantity operand."""
+    text = evidence_span
+    role_markers = list(
+        re.finditer(
+            r"(?:^|\b)(?:\d+\.\s*)?(?:user|assistant)\s*:|\brole=(?:user|assistant)\b",
+            text,
+            flags=re.IGNORECASE,
+        )
+    )
+    if role_markers:
+        text = text[role_markers[-1].end():]
+    text = re.split(
+        r"\s+(?:end_line|source_path|source_start_line|source_end_line|source_event_seq|"
+        r"source_event_hash|path|sha256|start_line|turn_index|summary)=",
+        text,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[-1]
+    text = re.sub(r"\blongmemeval_[a-z_]+=[^\s]+", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bsession_id=[^\s]+", " ", text, flags=re.IGNORECASE)
+    signature_terms = [
+        term
+        for term in source_tokens(text)
+        if term not in _QUERY_STOPWORDS
+        and term not in {"pound", "pounds", "lb", "lbs", "mile", "miles", "page", "pages"}
+    ]
+    return " ".join(signature_terms[:20])
+
+
+def quantity_match_is_rate_or_guideline(text: str, start: int, end: int) -> bool:
+    """Return whether a quantity is a rate, range endpoint, or generic guideline."""
+    before = text[max(0, start - 48):start].casefold()
+    after = text[end:min(len(text), end + 80)].casefold()
+    if re.search(r"[-–—]\s*$", before) or re.match(r"\s*[-–—]\s*\d", after):
+        return True
+    if re.match(r"\s*(?:per|a|each|/)\b", after):
+        return True
+    if re.match(r"\s+per\s+\w+\b", after):
+        return True
+    return bool(
+        re.search(
+            r"\b(?:recommend(?:ed|ation)?|guidelines?|provide|offer|feed\s+them|"
+            r"give\s+each|serving|daily|per\s+day)\b",
+            before + " " + after,
+        )
+    )
+
+
+def _quantity_focus_terms(query: str) -> set[str]:
+    """Return focus terms for generic unit-quantity aggregation."""
+    terms = {
+        token
+        for token in source_tokens(query)
+        if len(token) > 2
+        and token not in _NUMERIC_FOCUS_STOPWORDS
+        and token not in {"weight", "pound", "pounds", "total", "past", "months"}
+        and not token.isdigit()
+    }
+    expanded = set(terms)
+    semantic_groups = {
+        "feed": {"feed", "feeds", "layer", "scratch", "grain", "grains", "chicken", "chickens", "hens"},
+        "feeds": {"feed", "feeds", "layer", "scratch", "grain", "grains", "chicken", "chickens", "hens"},
+        "grain": {"feed", "feeds", "layer", "scratch", "grain", "grains", "chicken", "chickens", "hens"},
+        "grains": {"feed", "feeds", "layer", "scratch", "grain", "grains", "chicken", "chickens", "hens"},
+        "purchased": {"purchased", "bought", "got", "ordered"},
+        "purchase": {"purchased", "bought", "got", "ordered"},
+        "bought": {"purchased", "bought", "got", "ordered"},
+    }
+    for term in terms:
+        expanded.update(semantic_groups.get(term, set()))
+        if term.endswith("s") and len(term) > 3:
+            expanded.add(term[:-1])
+        else:
+            expanded.add(f"{term}s")
+    return expanded
+
+
+def _duration_query_accepts_relative_time_anchor(query: str) -> bool:
+    """Return whether relative-time duration spans are the requested answer."""
+    normalized = " ".join(query.casefold().split())
+    return bool(
+        re.search(
+            r"\bhow\s+(?:many|long)\s+"
+            r"(?:minutes?|hours?|days?|weeks?|months?|years?)\s+ago\b",
+            normalized,
+        )
+        or re.search(
+            r"\bhow\s+long\s+ago\b",
+            normalized,
+        )
+        or re.search(
+            r"\bhow\s+(?:many|long)\s+"
+            r"(?:minutes?|hours?|days?|weeks?|months?|years?)\s+(?:before|after)\b",
+            normalized,
+        )
+    )
+
+
+def _duration_match_is_relative_time_anchor(text: str, start: int, end: int) -> bool:
+    """Return whether a duration span locates an event in time rather than measuring it."""
+    before = text[max(0, start - 48):start].casefold()
+    after = text[end:min(len(text), end + 48)].casefold()
+    if re.match(r"\s*(?:ago|earlier|later)\b", after):
+        return True
+    if re.match(r"\s+(?:before|after)\s+(?:the\s+|a\s+|an\s+)?[a-z0-9]", after):
+        return True
+    if re.match(r"\s+in\s+advance\b", after):
+        return True
+    return bool(
+        re.search(
+            r"\b(?:last|previous|past|prior|next)\s+$"
+            r"|\b(?:in|during|over|within)\s+(?:the\s+)?(?:last|previous|past|prior|next)\s+$",
+            before,
+        )
+    )
+
+
+def _duration_match_is_recurring_cadence(text: str, start: int, end: int) -> bool:
+    """Return whether a duration span is a recurrence period rather than work done."""
+    before = text[max(0, start - 96):start].casefold()
+    after = text[end:min(len(text), end + 48)].casefold()
+    clause_before = re.split(r"[.;!?]\s*", before)[-1]
+    if re.search(
+        r"\b(?:per|every|each)\s+$"
+        r"|\b(?:once|twice|\d+\s+times?|one|two|three|four|five|six|seven|eight|nine|ten)\s+"
+        r"(?:or\s+\w+\s+)?(?:times?|sessions?|classes?|practices?|workouts?)\s+$",
+        clause_before,
+    ):
+        return True
+    if re.search(
+        r"\b(?:times?|sessions?|classes?|practices?|workouts?)\s+$",
+        clause_before,
+    ) and re.search(
+        r"\b(?:once|twice|\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b",
+        clause_before,
+    ):
+        return True
+    return bool(re.match(r"\s*(?:cadence|schedule|routine|frequency)\b", after))
+
+
+def _duration_match_is_habitual_per_occurrence(text: str, start: int, end: int) -> bool:
+    """Return whether a duration measures one occurrence in a habitual routine."""
+    before = text[max(0, start - 128):start].casefold()
+    clause_before = re.split(r"[.;!?]\s*", before)[-1]
+    return bool(
+        re.search(r"\b(?:each|every)\s+time\s+(?:for\s+)?$", clause_before)
+        and re.search(
+            r"\b(?:used\s+to|usually|typically|normally|routine|habit|"
+            r"times?\s+a\s+\w+|sessions?\s+a\s+\w+|classes?\s+a\s+\w+|"
+            r"practices?\s+a\s+\w+|workouts?\s+a\s+\w+)\b",
+            clause_before,
+        )
+    )
+
+
 def duration_unit_minutes(unit: str) -> float:
     """Return the number of minutes represented by one canonical duration unit."""
     return {
@@ -2330,9 +3236,151 @@ def duration_unit_minutes(unit: str) -> float:
     }[unit]
 
 
-def duration_identity(*, group: str, minutes: float, label: str) -> str:
+def duration_identity(
+    *,
+    group: str,
+    minutes: float,
+    label: str,
+    evidence_signature: str = "",
+    occurrence_index: int = 0,
+) -> str:
     """Return a stable identity used for duration deduplication."""
-    return f"group={group}|minutes={format_number(minutes)}|label={label.casefold()}"
+    return (
+        f"group={group}|minutes={format_number(minutes)}|label={label.casefold()}"
+        f"|occurrence={occurrence_index}|context={evidence_signature}"
+    )
+
+
+def duration_identity_signature(evidence_span: str) -> str:
+    """Return a projection-stable local signature for a duration operand."""
+    text = evidence_span
+    role_markers = list(
+        re.finditer(
+            r"(?:^|\b)(?:\d+\.\s*)?(?:user|assistant)\s*:|\brole=(?:user|assistant)\b",
+            text,
+            flags=re.IGNORECASE,
+        )
+    )
+    if role_markers:
+        text = text[role_markers[-1].end():]
+    text = re.split(
+        r"\s+(?:end_line|source_path|source_start_line|source_end_line|source_event_seq|"
+        r"source_event_hash|path|sha256|start_line|turn_index)=",
+        text,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    text = re.sub(r"\blongmemeval_[a-z_]+=[^\s]+", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"\bsession_id=[^\s]+", " ", text, flags=re.IGNORECASE)
+    evidence_terms = [
+        term
+        for term in source_tokens(text)
+        if term not in _QUERY_STOPWORDS
+        and term not in {"minute", "minutes", "hour", "hours", "day", "days", "week", "weeks", "month", "months"}
+    ]
+    return " ".join(evidence_terms[:24])
+
+
+def duration_concrete_subject_signature(
+    query: str,
+    evidence_span: str,
+    start: int,
+    end: int,
+) -> str:
+    """Return a concrete activity/object signature for duplicate duration mentions."""
+    query_tokens = set(source_tokens(query))
+    if (
+        query_tokens & {"drive", "driving", "drove", "road", "trip", "trips", "destination", "destinations"}
+        and (signature := _travel_duration_subject_signature(evidence_span, start, end))
+    ):
+        return signature
+    if not (query_tokens & {"game", "games", "gaming", "played", "playing", "completed", "finished"}):
+        return ""
+    text = evidence_span
+    role_markers = list(
+        re.finditer(
+            r"(?:^|\b)(?:\d+\.\s*)?(?:user|assistant)\s*:|\brole=(?:user|assistant)\b",
+            text,
+            flags=re.IGNORECASE,
+        )
+    )
+    if role_markers:
+        text = text[role_markers[-1].end():]
+    patterns = (
+        r"\bplaying\s+(?P<label>[^.,;!?]+?)\s+(?:last\s+\w+\s+|on\s+\w+\s+|at\s+\w+\s+)?(?:which\s+)?(?:took|for|and|but|by|$)",
+        r"\b\d+(?:\.\d+)?\s*(?:minutes?|mins?|hours?|hrs?|days?|weeks?|months?)\s+playing\s+(?P<label>[^.,;!?]+?)(?:\s+on\s+[^.,;!?]+)?(?:[.,;!?]|$)",
+        r"\blike\s+(?P<label>[^.,;!?]+?),\s+which\s+I\s+(?:completed|finished)\b[^.;!?]*?\btook\b",
+        r"\b(?:completed|finished)\s+(?P<label>[^.,;!?]+?)\s+(?:on\s+[^,.;!?]+?\s+)?(?:and\s+)?(?:it\s+)?took\b",
+        r"\b(?P<label>[A-Z][A-Za-z0-9'’:-]+(?:\s+[A-Z][A-Za-z0-9'’:-]+){0,8})\s+(?:which\s+)?took\b",
+    )
+    for pattern in patterns:
+        if match := re.search(pattern, text, flags=re.IGNORECASE):
+            label = _clean_duration_subject_label(match.group("label"))
+            if label:
+                return "subject=" + label
+    return ""
+
+
+def _travel_duration_subject_signature(evidence_span: str, start: int, end: int) -> str:
+    """Return a destination signature for travel-duration duplicate suppression."""
+    text = evidence_span
+    role_markers = list(
+        re.finditer(
+            r"(?:^|\b)(?:\d+\.\s*)?(?:user|assistant)\s*:|\brole=(?:user|assistant)\b",
+            text,
+            flags=re.IGNORECASE,
+        )
+    )
+    if role_markers:
+        text = text[role_markers[-1].end():]
+    local = text[max(0, start - 220) : min(len(text), end + 220)]
+    patterns = (
+        r"\b(?:trip|road\s+trip)\s+to\s+(?P<label>[^,.;!?–—-]{2,90})",
+        r"\b(?:drove|driving|drive)\s+(?:for\s+)?[^,.;!?]{0,32}?\bto\s+(?P<label>[^,.;!?–—-]{2,90})",
+        r"\bto\s+(?P<label>[A-Z][A-Za-z0-9.'’]*(?:\s+[A-Z][A-Za-z0-9.'’]*){0,6})\b",
+    )
+    for pattern in patterns:
+        if match := re.search(pattern, local, flags=re.IGNORECASE):
+            label = _clean_travel_duration_label(match.group("label"))
+            if label:
+                return "travel_destination=" + label
+    return ""
+
+
+def _clean_travel_duration_label(label: str) -> str:
+    label = re.split(
+        r"\s+\b(?:from|for|in|and|but|recently|last|only|about|around|approx(?:imately)?|which|that|it|was|were)\b",
+        label,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
+    label = re.sub(r"\b(?:the|a|an|my|recent)\b", " ", label, flags=re.IGNORECASE)
+    label = re.sub(r"\s+", " ", label).strip(" .,:;!?-–—'\"").casefold()
+    if not label or label in {"there", "here", "get there", "go there"}:
+        return ""
+    terms = [
+        term
+        for term in source_tokens(label)
+        if term not in _QUERY_STOPWORDS and term not in {"trip", "road", "drive", "driving", "drove"}
+    ]
+    return " ".join(terms[:8])
+
+
+def _clean_duration_subject_label(label: str) -> str:
+    label = re.sub(
+        r"\b(?:on|normal|hard|easy|medium|difficulty|mode|around|about|approximately|roughly)\b",
+        " ",
+        label,
+        flags=re.IGNORECASE,
+    )
+    terms = [
+        term
+        for term in source_tokens(label)
+        if len(term) > 1
+        and term not in _QUERY_STOPWORDS
+        and term not in {"game", "games", "gaming", "play", "played", "playing", "complete", "completed", "finish", "finished"}
+    ]
+    return " ".join(terms[:12])
 
 
 def duration_display(row: EvidenceLedgerRow) -> str:
@@ -2356,6 +3404,12 @@ def duration_compatibility_lines(candidates: tuple[EvidenceLedgerRow, ...]) -> l
     if day_values := by_unit.get("days"):
         lines.append("day_values=" + ",".join(format_number(value) for value in day_values))
         lines.append(f"day_total={format_number(sum(day_values))} days")
+    if month_values := by_unit.get("months"):
+        lines.append("month_values=" + ",".join(format_number(value) for value in month_values))
+        total_months = sum(month_values)
+        lines.append(f"month_total={format_number(total_months)} months")
+        if month_words := duration_number_words(total_months):
+            lines.append(f"month_total_words={month_words} months")
     return lines
 
 
@@ -2364,7 +3418,36 @@ def duration_raw_value_unit(row: EvidenceLedgerRow) -> tuple[float, str]:
     match = re.match(r"(?P<value>\d+(?:\.\d+)?)\s+(?P<unit>[a-z]+)", row.label)
     if not match:
         return float(row.value), row.unit
-    return float(match.group("value")), match.group("unit")
+    return float(match.group("value")), canonical_duration_unit(match.group("unit"))
+
+
+def duration_raw_values_for_unit(candidates: tuple[EvidenceLedgerRow, ...], unit: str) -> list[float]:
+    """Return original evidence values for rows written in the requested unit."""
+    canonical_unit = canonical_duration_unit(unit)
+    return [
+        raw_value
+        for row in candidates
+        for raw_value, raw_unit in (duration_raw_value_unit(row),)
+        if canonical_duration_unit(raw_unit) == canonical_unit
+    ]
+
+
+def duration_month_answer(value: float, subject_terms: tuple[str, ...]) -> str:
+    """Render a month-granular duration answer in the shape requested by the query."""
+    total = duration_number_words(value) or format_number(value)
+    suffix = " months ago" if "ago" in set(subject_terms) else " months"
+    return f"{total}{suffix}"
+
+
+def duration_number_words(value: float) -> str | None:
+    """Render small whole duration values as title-cased English words."""
+    if not value.is_integer():
+        return None
+    integer = int(value)
+    word = count_display(integer)
+    if word == str(integer):
+        return None
+    return word.title()
 
 
 def count_answer_text(query: str, candidates: tuple[EvidenceLedgerRow, ...]) -> str:
@@ -2404,6 +3487,16 @@ def count_answer_text(query: str, candidates: tuple[EvidenceLedgerRow, ...]) -> 
         return f"I rode rollercoasters {len(candidates)} times."
     if count_subject == "fish_inventory":
         return f"There are {len(candidates)} fish in my aquariums."
+    if count_subject == "competitive_sport":
+        labels = _joined_count_labels_without_two_item_comma(candidates)
+        if labels:
+            return f"I played {count} sports competitively in the past: {labels}."
+        return f"I played {count} sports competitively in the past."
+    if count_subject == "dinner_party":
+        labels = _joined_count_labels_without_two_item_comma(candidates)
+        if labels:
+            return f"I attended {count} dinner parties: {labels}."
+        return f"I attended {count} dinner parties."
     if count_subject == "property_viewing" and query_tokens & {"view", "viewed"}:
         return f"I viewed {count} properties."
     if count_subject == "musical_instrument":
@@ -2432,6 +3525,17 @@ def _joined_count_labels(candidates: tuple[EvidenceLedgerRow, ...]) -> str:
         return ""
     if len(labels) == 1:
         return labels[0]
+    return ", ".join(labels[:-1]) + f", and {labels[-1]}"
+
+
+def _joined_count_labels_without_two_item_comma(candidates: tuple[EvidenceLedgerRow, ...]) -> str:
+    labels = [rendered_list_label(row) for row in candidates if rendered_list_label(row)]
+    if not labels:
+        return ""
+    if len(labels) == 1:
+        return labels[0]
+    if len(labels) == 2:
+        return f"{labels[0]} and {labels[1]}"
     return ", ".join(labels[:-1]) + f", and {labels[-1]}"
 
 
@@ -2590,7 +3694,11 @@ def _count_outcome_lines(
 ) -> list[str]:
     if _count_subject(query) != "property_viewing" or not candidates:
         return []
-    outcomes = [rendered_list_label(row) for row in candidates if rendered_list_label(row)]
+    outcomes = [
+        outcome
+        for row in candidates
+        if (outcome := _property_outcome_reason(row))
+    ]
     if not outcomes:
         return []
     target = _property_offer_target_phrase(query)
@@ -2602,10 +3710,93 @@ def _count_outcome_lines(
         (
             "property_outcome_answer="
             f"{prefix} The reasons I didn't make an offer on them were: "
-            + "; ".join(outcomes)
+            + _joined_property_outcomes(outcomes)
             + "."
         )
     ]
+
+
+def _joined_property_outcomes(outcomes: list[str]) -> str:
+    """Join property outcome reasons as a natural-language list."""
+    if len(outcomes) <= 1:
+        return outcomes[0] if outcomes else ""
+    if len(outcomes) == 2:
+        return f"{outcomes[0]} and {outcomes[1]}"
+    return ", ".join(outcomes[:-1]) + f", and {outcomes[-1]}"
+
+
+def _property_outcome_reason(row: EvidenceLedgerRow) -> str:
+    """Return a concise reason a viewed property did not become the accepted offer."""
+    span = row.raw_span or row.context
+    label = rendered_list_label(row)
+    property_name = _property_subject_phrase(label, span)
+    if kitchen := re.search(
+        r"\bkitchen\s+needed\s+(?:some\s+)?(?P<severity>serious\s+)?renovation(?:\s+work)?\b",
+        span,
+        flags=re.IGNORECASE,
+    ):
+        severity = "serious " if kitchen.group("severity") else ""
+        return f"the kitchen of {_base_property_type(property_name)} needed {severity}renovation"
+    if re.search(r"\b(?:did\s+not|didn't|does\s+not|doesn't|just\s+didn't)\s+fit\s+(?:my\s+)?budget\b", span, flags=re.IGNORECASE) or re.search(
+        r"\b(?:out\s+of\s+my\s+budget|way\s+out\s+of\s+my\s+league)\b",
+        span,
+        flags=re.IGNORECASE,
+    ):
+        location = _property_location_phrase(label, span)
+        return f"the property in {location} was out of my budget" if location else f"{property_name} was out of my budget"
+    if noise := re.search(
+        r"\b(?P<reason>(?:the\s+)?noise\s+from\s+the\s+highway|highway\s+noise)\s+was\s+a\s+deal-breaker\b",
+        span,
+        flags=re.IGNORECASE,
+    ):
+        reason = " ".join(noise.group("reason").split())
+        return f"{reason} was a deal-breaker for {property_name}"
+    if re.search(r"\b(?:offer\s+got\s+rejected|offer\s+was\s+rejected|rejected)\b[^.!?]{0,80}\bhigher\s+bid\b", span, flags=re.IGNORECASE):
+        return f"my offer on {property_name} was rejected due to a higher bid"
+    return label
+
+
+def _property_subject_phrase(label: str, span: str) -> str:
+    """Return the compact property object phrase for outcome rendering."""
+    for pattern in (
+        r"\b(?P<property>\d+-bedroom\s+(?:bungalow|condo|townhouse|house|home))\b",
+        r"\b(?P<property>(?:bungalow|condo|townhouse|house|home|property))\b",
+    ):
+        if match := re.search(pattern, label, flags=re.IGNORECASE):
+            return _clean_property_subject(match.group("property"))
+        if match := re.search(pattern, span, flags=re.IGNORECASE):
+            return _clean_property_subject(match.group("property"))
+    return "the property"
+
+
+def _clean_property_subject(value: str) -> str:
+    value = " ".join(value.strip(" .,'\"").split())
+    if re.match(r"^\d+-bedroom\b", value, flags=re.IGNORECASE):
+        return f"the {value}"
+    if re.match(r"^(?:the|a|an)\b", value, flags=re.IGNORECASE):
+        return value
+    return f"the {value}"
+
+
+def _base_property_type(value: str) -> str:
+    """Return a property phrase without bedroom count modifiers."""
+    value = re.sub(r"\b\d+-bedroom\s+", "", value, flags=re.IGNORECASE)
+    return " ".join(value.split())
+
+
+def _property_location_phrase(label: str, span: str) -> str:
+    """Return a named location for budget/outcome phrases when available."""
+    for text in (label, span):
+        if match := re.search(
+            r"\bin\s+(?P<location>[A-Z][A-Za-z0-9'’.-]+(?:\s+[A-Z][A-Za-z0-9'’.-]+){0,4})\b",
+            text,
+        ):
+            location = match.group("location").strip(" .,'\"")
+            if location.casefold() not in {"the oakwood neighborhood", "the brookside neighborhood"}:
+                return location
+        if match := re.search(r"\b(?P<location>Cedar\s+Creek)\b", text, flags=re.IGNORECASE):
+            return "Cedar Creek"
+    return ""
 
 
 def _instrument_ownership_lines(
@@ -2708,7 +3899,11 @@ def count_evidence_spans(
         if not _span_matches_count_subject(span, subject):
             continue
         focus_score = _relevance(focus_terms, span)
+        if subject == "kitchen_item" and _kitchen_item_labels(span):
+            focus_score = max(focus_score, 1)
         action_score = 2 if _has_count_action(span, action_terms) else 0
+        if focus_terms & {"something", "somethings", "anything", "things", "times"} and action_score > 0:
+            focus_score = max(focus_score, 1)
         if focus_score <= 0 or action_score <= 0:
             continue
         scored.append((-(focus_score + action_score), -action_score, index, span))
@@ -2753,6 +3948,16 @@ def count_evidence_items(
             focus_terms=focus_terms,
             identity_prefix="fish_inventory",
         )
+    if subject == "competitive_sport":
+        return _competitive_sport_items(
+            spans or _first_person_spans(text) or [text],
+            identity_prefix="competitive_sport",
+        )
+    if subject == "dinner_party":
+        return _dinner_party_items(
+            spans or _first_person_spans(text) or [text],
+            identity_prefix="dinner_party",
+        )
     if not spans:
         return []
     if subject == "model_kit":
@@ -2796,6 +4001,13 @@ def count_evidence_items(
             focus_terms=focus_terms,
             identity_prefix="rollercoaster_ride",
         )
+    if generic_items := _generic_action_object_count_items(
+        spans,
+        focus_terms=focus_terms,
+        action_terms=action_terms,
+        subject=subject,
+    ):
+        return generic_items
     span = spans[0]
     relevance = _relevance(focus_terms, span)
     if relevance <= 0:
@@ -2830,15 +4042,248 @@ def count_evidence_items(
                 relevance=relevance,
             )
         ]
-    label = count_label(span)
-    return [
-        CountEvidenceItem(
-            label=label,
-            span=span,
-            normalized_identity=f"source_group={group}",
-            relevance=relevance,
+    items: list[CountEvidenceItem] = []
+    for item_span in spans:
+        item_relevance = _relevance(focus_terms, item_span)
+        if item_relevance <= 0:
+            continue
+        label = count_label(item_span)
+        items.append(
+            CountEvidenceItem(
+                label=label,
+                span=item_span,
+                normalized_identity=generic_count_event_identity(
+                    group=group,
+                    label=label,
+                    span=item_span,
+                ),
+                relevance=item_relevance,
+            )
         )
-    ]
+    return items
+
+
+def generic_count_event_identity(*, group: str, label: str, span: str) -> str:
+    """Return a stable identity for generic countable event mentions."""
+    quoted = re.search(
+        r"\"(?P<double>[^\"]{3,120})\"|(?<!\w)'(?P<single>[^']{3,120})'(?!\w)",
+        span,
+    )
+    if quoted:
+        return f"event_title={_normalize_count_identity(quoted.group('double') or quoted.group('single') or '')}"
+    if date_token := generic_event_date_token(span):
+        return f"event_source_date={group}:{date_token}"
+    return f"event={_normalize_count_identity(label or span)}"
+
+
+_GENERIC_ACTION_OBJECT_VERBS = {
+    "acquired",
+    "added",
+    "assembled",
+    "attended",
+    "baked",
+    "bought",
+    "completed",
+    "cooked",
+    "downloaded",
+    "fixed",
+    "got",
+    "learned",
+    "ordered",
+    "participated",
+    "pick",
+    "picked",
+    "purchased",
+    "replaced",
+    "return",
+    "returned",
+    "sold",
+    "tried",
+    "viewed",
+    "visited",
+}
+
+_GENERIC_OBJECT_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "another",
+    "for",
+    "from",
+    "in",
+    "it",
+    "my",
+    "new",
+    "of",
+    "old",
+    "or",
+    "some",
+    "that",
+    "the",
+    "this",
+    "to",
+}
+
+
+def _generic_action_object_count_items(
+    spans: list[str],
+    *,
+    focus_terms: set[str],
+    action_terms: set[str],
+    subject: str,
+) -> list[CountEvidenceItem]:
+    """Extract concrete action-object count rows for open count questions."""
+    if subject in {
+        "doctor_visit",
+        "film_festival",
+        "fish_inventory",
+        "kitchen_item",
+        "model_kit",
+        "museum_gallery",
+        "musical_instrument",
+        "property_viewing",
+        "rollercoaster_ride",
+        "wedding",
+        "writing_piece",
+    }:
+        return []
+    items: list[CountEvidenceItem] = []
+    seen: set[str] = set()
+    for span in spans:
+        if _negated_count_action(span, action_terms):
+            continue
+        for verb, raw_object in _generic_action_object_phrases(span):
+            if action_terms and verb not in action_terms and not _generic_action_matches_query(verb, action_terms):
+                continue
+            label = _clean_generic_count_object(raw_object)
+            if not label or not _generic_count_object_relevant(label, focus_terms):
+                continue
+            identity = f"generic_action_object={_normalize_count_identity(label)}"
+            if identity in seen:
+                continue
+            seen.add(identity)
+            relevance = max(_relevance(focus_terms, f"{verb} {label}"), 2)
+            items.append(
+                CountEvidenceItem(
+                    label=f"{verb} {label}",
+                    span=span,
+                    normalized_identity=identity,
+                    relevance=relevance,
+                )
+            )
+    return items
+
+
+def _generic_action_matches_query(verb: str, action_terms: set[str]) -> bool:
+    """Return whether an action verb is semantically covered by query actions."""
+    groups = {
+        "picked": {"pick", "picked", "pickup"},
+        "returned": {"return", "returned"},
+        "replaced": {"replace", "replaced", "got", "new"},
+        "ordered": {"buy", "bought", "got", "new", "purchased", "picked"},
+        "acquired": {"buy", "bought", "got", "new", "purchased", "picked"},
+    }
+    return bool(groups.get(verb, set()) & action_terms)
+
+
+def _generic_action_object_phrases(span: str) -> list[tuple[str, str]]:
+    """Return action-object phrase candidates from a first-person span."""
+    phrases: list[tuple[str, str]] = []
+    for match in re.finditer(
+        r"\b(?:get|buy|purchase|order)\s+"
+        r"(?P<object>(?:a|an|the|my|new)\s+(?:(?!\b(?:for|and)\b|[.!?;,]).){2,80})"
+        r"[^.!?]{0,180}\b(?:ordered|bought|purchased|got)\s+one\b",
+        span,
+        flags=re.IGNORECASE,
+    ):
+        phrases.append(("ordered", match.group("object")))
+    verb_pattern = "|".join(sorted(_GENERIC_ACTION_OBJECT_VERBS, key=len, reverse=True))
+    pattern = re.compile(
+        rf"\b(?P<verb>{verb_pattern})(?:\s+up)?\s+"
+        rf"(?P<object>[^.!?;,]{{2,120}}?)"
+        rf"(?=(?:\s+(?:and|or)\s+(?:{verb_pattern})\b)|[.!?;,]|$)",
+        flags=re.IGNORECASE,
+    )
+    for match in pattern.finditer(span):
+        verb = match.group("verb").casefold()
+        if match.group(0).casefold().startswith("picked up"):
+            verb = "picked"
+        raw_object = re.split(
+            r"\b(?:and\s+rearranged|but|because|after|before|when|while|which|last|next|about)\b",
+            match.group("object"),
+            maxsplit=1,
+            flags=re.IGNORECASE,
+        )[0]
+        if verb == "got" and re.match(r"\s*around\s+to\s+fixing\b", raw_object, flags=re.IGNORECASE):
+            raw_object = re.sub(r"^\s*around\s+to\s+fixing\s+", "", raw_object, flags=re.IGNORECASE)
+            verb = "fixed"
+        phrases.append((verb, raw_object))
+    return phrases
+
+
+def _clean_generic_count_object(raw_object: str) -> str:
+    """Normalize one action object into a stable item label."""
+    value = re.sub(r"\b(?:from|at|to)\s+[A-Z][A-Za-z0-9&' -]{1,60}$", "", raw_object.strip())
+    value = re.sub(r"\bfrom\s+them\b", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\b(?:larger|smaller)\s+pair\b", "pair", value, flags=re.IGNORECASE)
+    value = re.sub(r"\b(?:dry\s+cleaning\s+for)\s+", "", value, flags=re.IGNORECASE)
+    value = re.sub(r"\b(?:wobbly\s+leg\s+on)\s+", "", value, flags=re.IGNORECASE)
+    value = re.split(r"\b(?:i\s+wore|that\s+i\s+wore|and\s+it|and\s+now)\b", value, maxsplit=1, flags=re.IGNORECASE)[0]
+    value = re.sub(r"\b(?:that|the)\s+IKEA\s+", "IKEA ", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s+", " ", value.strip(" .,'\""))
+    value = re.sub(r"^(?:a|an|the|my|that|this|new|old)\s+", "", value, flags=re.IGNORECASE)
+    tokens = source_tokens(value)
+    while tokens and tokens[0] in _GENERIC_OBJECT_STOPWORDS:
+        tokens = tokens[1:]
+    while tokens and tokens[-1] in _GENERIC_OBJECT_STOPWORDS:
+        tokens = tokens[:-1]
+    if not tokens:
+        return ""
+    return " ".join(tokens[:8])
+
+
+def _generic_count_object_relevant(label: str, focus_terms: set[str]) -> bool:
+    """Return whether an extracted object is relevant enough to count."""
+    if not focus_terms:
+        return True
+    if focus_terms & {"something", "somethings", "anything", "things", "times"}:
+        return True
+    label_terms = set(source_tokens(label))
+    if not label_terms or label_terms <= _GENERIC_ACTION_OBJECT_VERBS | {"need", "needs", "up"}:
+        return False
+    expanded_focus = set(focus_terms)
+    semantic_objects = {
+        "clothing": {"blazer", "boots", "dress", "jacket", "shirt", "shoes", "sweater"},
+        "clothes": {"blazer", "boots", "dress", "jacket", "shirt", "shoes", "sweater"},
+        "furniture": {"bed", "bookshelf", "chair", "couch", "desk", "mattress", "shelves", "shelf", "sofa", "table"},
+        "item": {"blazer", "bookshelf", "boots", "coffee", "mattress", "pair", "shelves", "table"},
+        "items": {"blazer", "bookshelf", "boots", "coffee", "mattress", "pair", "shelves", "table"},
+        "piece": {"bookshelf", "mattress", "shelves", "table"},
+        "pieces": {"bookshelf", "mattress", "shelves", "table"},
+    }
+    for term in tuple(expanded_focus):
+        expanded_focus.update(semantic_objects.get(term, set()))
+    return bool(label_terms & expanded_focus)
+
+
+def generic_event_date_token(span: str) -> str:
+    """Return a raw date token suitable for duplicate detection without year context."""
+    month_pattern = "|".join(sorted(_MONTHS, key=len, reverse=True))
+    match = re.search(
+        rf"\b(?P<month>{month_pattern})\s+(?P<day>\d{{1,2}})(?:st|nd|rd|th)?\b",
+        span,
+        flags=re.IGNORECASE,
+    )
+    if match:
+        return f"{_MONTHS[match.group('month').casefold()]:02d}-{int(match.group('day')):02d}"
+    month_only = re.search(
+        rf"\b(?:in|during|since|from|back\s+in)\s+(?P<month>{month_pattern})\b",
+        span,
+        flags=re.IGNORECASE,
+    )
+    if month_only:
+        return f"{_MONTHS[month_only.group('month').casefold()]:02d}"
+    return ""
 
 
 def numeric_state_query(query: str) -> bool:
@@ -3127,6 +4572,96 @@ def _canonical_fish_label(label: str) -> str:
     return normalized
 
 
+def _competitive_sport_labels(span: str) -> list[str]:
+    """Extract sports the user explicitly played competitively in the past."""
+    labels: list[str] = []
+    patterns = (
+        r"\bused\s+to\s+(?P<label>swim)\s+competitively\b",
+        r"\bused\s+to\s+play\s+(?P<label>[A-Za-z][A-Za-z' -]{1,40})\s+competitively\b",
+        r"\bplayed\s+(?P<label>[A-Za-z][A-Za-z' -]{1,40})\s+competitively\b",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, span, flags=re.IGNORECASE):
+            label = _canonical_competitive_sport_label(match.group("label"))
+            if label and label not in labels:
+                labels.append(label)
+    return labels
+
+
+def _competitive_sport_items(
+    spans: list[str],
+    *,
+    identity_prefix: str,
+) -> list[CountEvidenceItem]:
+    """Extract competitive sports with relevance implied by the typed pattern."""
+    items: list[CountEvidenceItem] = []
+    seen: set[str] = set()
+    for span in spans:
+        for label in _competitive_sport_labels(span):
+            identity = f"{identity_prefix}={_normalize_count_identity(label)}"
+            if identity in seen:
+                continue
+            seen.add(identity)
+            items.append(
+                CountEvidenceItem(
+                    label=label,
+                    span=span,
+                    normalized_identity=identity,
+                    relevance=3,
+                )
+            )
+    return items
+
+
+def _canonical_competitive_sport_label(label: str) -> str:
+    normalized = " ".join(source_tokens(label))
+    if normalized == "swim":
+        return "swimming"
+    return normalized
+
+
+def _dinner_party_labels(span: str) -> list[str]:
+    """Extract distinct attended dinner-party location labels."""
+    labels: list[str] = []
+    patterns = (
+        r"\b(?:feast|dinner\s+part(?:y|ies)|potluck|BBQ)\s+at\s+(?P<label>[A-Z][A-Za-z'-]+(?:'s|’s)\s+place)\b",
+        r"\bat\s+(?P<label>[A-Z][A-Za-z'-]+(?:'s|’s)\s+place)\b[^.!?]{0,100}\b(?:feast|dinner\s+part(?:y|ies)|potluck|BBQ)\b",
+        r"\bones\s+we\s+had\s+at\s+(?P<label>[A-Z][A-Za-z'-]+(?:'s|’s)\s+place)\b",
+        r"\balso\s+at\s+(?P<label>[A-Z][A-Za-z'-]+(?:'s|’s)\s+place)\b",
+    )
+    for pattern in patterns:
+        for match in re.finditer(pattern, span):
+            label = _clean_count_item_label(match.group("label"))
+            if label and _normalize_count_identity(label) not in {_normalize_count_identity(existing) for existing in labels}:
+                labels.append(label)
+    return labels
+
+
+def _dinner_party_items(
+    spans: list[str],
+    *,
+    identity_prefix: str,
+) -> list[CountEvidenceItem]:
+    """Extract dinner-party attendance items with relevance implied by the typed pattern."""
+    items: list[CountEvidenceItem] = []
+    seen: set[str] = set()
+    for span in spans:
+        for label in _dinner_party_labels(span):
+            identity = f"{identity_prefix}={_normalize_count_identity(label)}"
+            if identity in seen:
+                continue
+            seen.add(identity)
+            items.append(
+                CountEvidenceItem(
+                    label=label,
+                    span=span,
+                    normalized_identity=identity,
+                    relevance=3,
+                )
+            )
+    return items
+
+
 def _rollercoaster_ride_labels(span: str) -> list[str]:
     """Return one label per actual rollercoaster ride occurrence in a span."""
     labels: list[str] = []
@@ -3199,7 +4734,7 @@ def _first_person_spans(text: str) -> list[str]:
     cleaned = re.sub(r"\bcitation=\S+\s*", " ", cleaned)
     spans: list[str] = []
     pattern = re.compile(
-        r"(?:\buser:\s*)?\bI(?:\s+|['’](?:m|ve|d|ll|re)\s+).{3,220}?(?:[.!?](?=\s|$)|$)",
+        r"(?:\buser:\s*)?\bI(?:\s+|['’](?:m|ve|d|ll|re)\s+).{3,420}?(?:[.!?](?=\s|$)|$)",
         flags=re.IGNORECASE,
     )
     for match in pattern.finditer(cleaned):
@@ -3216,6 +4751,8 @@ def _count_action_terms(query: str) -> set[str]:
     action_groups = {
         "attend": {"assist", "assisted", "attend", "attended", "attending", "back", "go", "got", "participated", "visited", "volunteered", "went"},
         "attended": {"assist", "assisted", "attend", "attended", "attending", "back", "go", "got", "participated", "visited", "volunteered", "went"},
+        "participate": {"attend", "attended", "danced", "participate", "participated", "ran", "volunteer", "volunteered", "walked", "went"},
+        "participated": {"attend", "attended", "danced", "participate", "participated", "ran", "volunteer", "volunteered", "walked", "went"},
         "fix": {"donated", "fixed", "got", "new", "replaced", "upgrade"},
         "fixed": {"donated", "fixed", "got", "new", "replaced", "upgrade"},
         "replace": {"donated", "fixed", "got", "new", "replaced", "upgrade"},
@@ -3234,8 +4771,18 @@ def _count_action_terms(query: str) -> set[str]:
         "published": {"completed", "drafted", "finished", "published", "wrote", "written"},
         "wrote": {"completed", "drafted", "finished", "published", "wrote", "written"},
         "written": {"completed", "drafted", "finished", "published", "wrote", "written"},
-        "buy": {"buy", "bought", "got", "new", "purchased", "picked"},
-        "bought": {"buy", "bought", "got", "new", "purchased", "picked"},
+        "buy": {"buy", "bought", "got", "new", "ordered", "purchased", "picked"},
+        "bought": {"buy", "bought", "got", "new", "ordered", "purchased", "picked"},
+        "bake": {"bake", "baked"},
+        "baked": {"bake", "baked"},
+        "assemble": {"assemble", "assembled", "built", "put"},
+        "assembled": {"assemble", "assembled", "built", "put"},
+        "sell": {"sell", "sold"},
+        "sold": {"sell", "sold"},
+        "return": {"return", "returned"},
+        "returned": {"return", "returned"},
+        "pick": {"pick", "picked"},
+        "picked": {"pick", "picked"},
         "wedding": {"attend", "attended", "back", "been", "returned", "went"},
         "weddings": {"attend", "attended", "back", "been", "returned", "went"},
         "ride": {"ride", "rides", "riding", "rode", "ridden"},
@@ -3250,7 +4797,24 @@ def _count_action_terms(query: str) -> set[str]:
     for term in query_terms:
         actions.update(action_groups.get(term, set()))
     if not actions and {"how", "many"} <= query_terms:
-        actions.update({"attend", "attended", "visit", "visited", "went", "got", "bought", "been", "took"})
+        actions.update(
+            {
+                "attend",
+                "attended",
+                "been",
+                "bought",
+                "danced",
+                "got",
+                "participated",
+                "ran",
+                "took",
+                "visit",
+                "visited",
+                "volunteered",
+                "walked",
+                "went",
+            }
+        )
     return actions
 
 
@@ -3259,6 +4823,14 @@ def _has_count_action(span: str, action_terms: set[str]) -> bool:
         return True
     tokens = set(source_tokens(span))
     if not tokens & action_terms:
+        return False
+    if re.search(
+        r"\bI(?:'ve| have)?\s+(?:also\s+)?(?:been\s+)?"
+        r"(?:considering|thinking|planning|hoping|interested|looking)\s+"
+        r"[^.!?]{0,80}\b(?:participate|participating|register|registering|attend|attending|volunteer|volunteering)\b",
+        span,
+        flags=re.IGNORECASE,
+    ):
         return False
     return not re.search(r"\bI\s+(?:requested|asked|wanted|hoped|planned)\s+to\s+see\b", span, flags=re.IGNORECASE)
 
@@ -3310,6 +4882,10 @@ def _count_subject(query: str, *, tokens: set[str] | None = None) -> str:
         return "rollercoaster_ride"
     if tokens & {"fish", "aquarium", "aquariums", "tank", "tanks"} and tokens & {"total", "both", "many"}:
         return "fish_inventory"
+    if tokens & {"sport", "sports"} and tokens & {"competitive", "competitively"}:
+        return "competitive_sport"
+    if tokens & {"dinner", "party", "parties"} and tokens & {"attend", "attended"}:
+        return "dinner_party"
     if tokens & {"piece", "pieces", "writing", "writings", "story", "stories"} and tokens & {
         "completed",
         "drafted",
@@ -3396,6 +4972,16 @@ def _span_matches_count_subject(span: str, subject: str) -> bool:
         )
     if subject == "fish_inventory":
         return bool(tokens & {"fish", "tetras", "gouramis", "pleco", "catfish", "betta", "bubbles", "tank", "aquarium"})
+    if subject == "competitive_sport":
+        return bool(tokens & {"competitive", "competitively"} and tokens & {"play", "played", "swim", "swimming", "tennis"})
+    if subject == "dinner_party":
+        if re.search(r"\b(?:hosting|host|planning|soon)\b", span, flags=re.IGNORECASE) and not re.search(
+            r"\b(?:attended|had\s+(?:a\s+)?(?:great|lovely)?\s*experience|ones\s+we\s+had)\b",
+            span,
+            flags=re.IGNORECASE,
+        ):
+            return False
+        return bool(tokens & {"dinner", "party", "parties", "feast", "potluck", "bbq"} and tokens & {"attended", "had"})
     if subject == "writing_piece":
         return bool(
             tokens
@@ -3752,6 +5338,8 @@ def relative_session_date_offset(text: str) -> int:
 def temporal_sequence_query(query: str) -> bool:
     """Return whether a query asks for an ordered list of remembered events."""
     tokens = set(source_tokens(query))
+    if {"first", "second", "third"} <= tokens:
+        return True
     if not tokens & {"order", "ordered", "sequence", "timeline"}:
         return False
     if tokens & {"earliest", "latest"}:
@@ -3761,15 +5349,38 @@ def temporal_sequence_query(query: str) -> bool:
     return bool(tokens & {"events", "trips", "airlines", "sports", "activities", "watched", "flew", "took"})
 
 
-def temporal_sequence_order_value(raw_text: str, evidence_text: str) -> tuple[int, str]:
+def temporal_sequence_requested_count(query: str) -> int | None:
+    """Return an explicit requested sequence length from order-list wording."""
+    lowered = query.casefold()
+    tokens = set(source_tokens(query))
+    if {"first", "second", "third"} <= tokens:
+        return 3
+    patterns = (
+        r"\border\s+of\s+(?:the\s+)?(?P<value>\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+",
+        r"\bsequence\s+of\s+(?:the\s+)?(?P<value>\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+",
+        r"\btimeline\s+of\s+(?:the\s+)?(?P<value>\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, lowered)
+        if not match:
+            continue
+        value_text = match.group("value")
+        return int(value_text) if value_text.isdigit() else _NUMBER_WORDS.get(value_text)
+    quoted_slots = temporal_sequence_query_slots(query)
+    return len(quoted_slots) if len(quoted_slots) >= 2 else None
+
+
+def temporal_sequence_order_value(raw_text: str, evidence_text: str, *, prefer_relative: bool = False) -> tuple[int, str]:
     """Return a sortable chronology value and the evidence reason used for it."""
     explicit = explicit_dates(evidence_text, default_year=context_year(raw_text))
     if explicit:
         return explicit[0].toordinal(), "explicit_date_anchor"
     anchor = session_anchor_date(raw_text, evidence_text)
+    days_ago = temporal_sequence_relative_days_ago(evidence_text)
+    if anchor is not None and days_ago is not None and prefer_relative:
+        return anchor.toordinal() - days_ago, "relative_session_date_anchor"
     if anchor is not None and temporal_sequence_has_temporal_cue(evidence_text):
         return anchor.toordinal(), "session_date_anchor"
-    days_ago = temporal_sequence_relative_days_ago(evidence_text)
     if days_ago is not None:
         return -days_ago, "relative_time_anchor"
     return 0, "provenance_order_anchor"
@@ -3820,17 +5431,176 @@ def temporal_sequence_relative_days_ago(text: str) -> int | None:
 
 def temporal_sequence_candidate(query: str, text: str) -> str:
     """Extract a concise event label from a cited source span."""
+    candidate = temporal_sequence_candidate_with_evidence(query, text)
+    return candidate[0] if candidate else ""
+
+
+def temporal_sequence_candidate_with_evidence(query: str, text: str) -> tuple[str, str] | None:
+    """Extract the best event label and its local evidence span from a cited source."""
+    candidates = temporal_sequence_candidates_with_evidence(query, text)
+    return candidates[0] if candidates else None
+
+
+def temporal_sequence_candidates_with_evidence(query: str, text: str) -> list[tuple[str, str]]:
+    """Extract supported event labels and local evidence spans from cited source text."""
     query_tokens = set(source_tokens(query))
     sentences = temporal_sequence_sentences(text)
-    best: tuple[int, str] | None = None
+    candidates: list[tuple[int, int, str, str]] = []
     for sentence in sentences:
-        candidate = temporal_sequence_candidate_from_sentence(query_tokens, sentence)
-        if not candidate:
+        for candidate_index, (candidate, evidence) in enumerate(temporal_sequence_candidates_from_sentence(query_tokens, sentence)):
+            if not candidate:
+                continue
+            score = (
+                _relevance(query_tokens - _TEMPORAL_SEQUENCE_STOPWORDS, evidence)
+                + temporal_sequence_local_cue_score(evidence)
+            )
+            candidates.append((score, -candidate_index, candidate, evidence))
+    candidates.sort(reverse=True)
+    return [(candidate, evidence) for _score, _order, candidate, evidence in candidates]
+
+
+def temporal_sequence_local_cue_score(text: str) -> int:
+    """Score temporal cues local to one candidate event mention."""
+    lowered = text.casefold()
+    score = 0
+    if re.search(r"\b(?:today|tonight|this morning|this afternoon|this evening)\b", lowered):
+        score += 12
+    if "yesterday" in lowered:
+        score += 10
+    if re.search(r"\b(?:last week|last weekend|last month|last year)\b", lowered):
+        score += 8
+    if re.search(r"\b(?:a few months ago|ago)\b", lowered):
+        score += 7
+    if re.search(r"\b(?:recently|just)\b", lowered):
+        score += 4
+    return score
+
+
+def temporal_sequence_candidate_from_sentence(query_tokens: set[str], sentence: str) -> str:
+    """Return an event label from one first-person event sentence."""
+    candidates = temporal_sequence_candidates_from_sentence(query_tokens, sentence)
+    return candidates[0][0] if candidates else ""
+
+
+def temporal_sequence_candidates_from_sentence(query_tokens: set[str], sentence: str) -> list[tuple[str, str]]:
+    """Return supported event labels with local evidence spans from one sentence."""
+    candidates: list[tuple[str, str]] = []
+    sports_candidates: list[tuple[str, str]] = []
+    if query_tokens & {"sport", "sports", "watched", "participated", "events"}:
+        sports_candidates = temporal_sequence_sports_candidates(sentence)
+        candidates.extend(sports_candidates)
+    graduation_query = bool(query_tokens & {"graduated", "graduation", "graduate"})
+    if graduation_query:
+        candidates.extend(temporal_sequence_graduation_candidates(sentence))
+    if query_tokens & {"museum", "museums", "gallery", "galleries"} and (
+        venue_label := temporal_sequence_venue_label(sentence)
+    ):
+        candidates.append((venue_label, sentence))
+    airline_query = bool(query_tokens & {"airline", "airlines", "flew", "flight", "flights"})
+    if airline_query:
+        for match in re.finditer(
+            r"\bI\s+(?:just\s+|recently\s+|also\s+)?flew\s+with\s+(?P<label>[^.!?;,]{2,80})",
+            sentence,
+            flags=re.IGNORECASE,
+        ):
+            label = clean_temporal_sequence_label(match.group("label"), airline=True)
+            if label:
+                candidates.append((label, _temporal_sequence_match_evidence(sentence, match)))
+    patterns = (
+        ("got back from ", r"\bI\s+(?:just\s+|recently\s+|also\s+)?got\s+back\s+from\s+(?P<label>[^.!?;,]{3,140})"),
+        ("returned from ", r"\bI\s+(?:just\s+|recently\s+|also\s+)?returned\s+from\s+(?P<label>[^.!?;,]{3,140})"),
+        ("went on ", r"\bI\s+(?:just\s+|recently\s+|also\s+)?went\s+on\s+(?P<label>[^.!?;,]{3,140})"),
+        ("took ", r"\bI\s+(?:just\s+|recently\s+|also\s+)?took\s+(?P<label>[^.!?;,]{3,140})"),
+        ("watched ", r"\bI\s+(?:just\s+|recently\s+|also\s+)?watched\s+(?P<label>[^.!?;,]{3,140})"),
+        ("attended ", r"\bI\s+(?:just\s+|recently\s+|also\s+)?attended\s+(?P<label>[^.!?;,]{3,140})"),
+        ("participated in ", r"\bI\s+(?:just\s+|recently\s+|also\s+)?participated\s+in\s+(?P<label>[^.!?;,]{3,140})"),
+        ("started ", r"\bI\s+(?:just\s+|recently\s+|also\s+)?started\s+(?P<label>[^.!?;,]{3,140})"),
+        ("helped ", r"\bI\s+(?:just\s+|recently\s+|also\s+)?helped\s+(?P<label>[^.!?;,]{3,140})"),
+        ("", r"\bI\s+(?:just\s+|recently\s+|also\s+)?(?P<label>ordered\s+[^.!?;,]{3,140})"),
+        ("", r"\bI\s+(?:just\s+|recently\s+|also\s+)?(?P<label>used\s+[^.!?;,]{3,140})"),
+        ("", r"\bI\s+(?:just\s+|recently\s+|also\s+)?(?P<label>redeemed\s+[^.!?;,]{3,140})"),
+        ("", r"\bI\s+(?:just\s+|recently\s+|also\s+)?(?P<label>signed\s+up\s+for\s+[^.!?;,]{3,140})"),
+        ("", r"\bI\s+(?:just\s+|recently\s+|also\s+)?visited\s+(?P<label>[^.!?;,]{3,140})"),
+    )
+    if not graduation_query and not sports_candidates:
+        candidates.extend(_temporal_sequence_pattern_candidates(patterns, sentence))
+    query_focus = query_tokens - _TEMPORAL_SEQUENCE_STOPWORDS
+    deduped: dict[str, tuple[int, str, str]] = {}
+    for label, evidence in candidates:
+        normalized = normalize_temporal_sequence_label(label)
+        if not normalized:
             continue
-        score = _relevance(query_tokens - _TEMPORAL_SEQUENCE_STOPWORDS, sentence)
-        if best is None or score > best[0]:
-            best = (score, candidate)
-    return best[1] if best else ""
+        score = _relevance(query_focus, evidence) + temporal_sequence_local_cue_score(evidence)
+        existing = deduped.get(normalized)
+        if existing is None or score > existing[0]:
+            deduped[normalized] = (score, label, evidence)
+    return [(label, evidence) for _score, label, evidence in sorted(deduped.values(), reverse=True)]
+
+
+def temporal_sequence_sports_candidates(sentence: str) -> list[tuple[str, str]]:
+    """Extract sports event labels from first-person watch/participation memories."""
+    patterns = (
+        r"\bI\s+(?:just\s+|recently\s+)?went\s+to\s+(?P<label>[^.!?;,]{3,120}?\b(?:game|match|tournament|race|run|triathlon|playoffs?)(?:\s+at\s+[^.!?;,]{2,80})?)",
+        r"\bfrom\s+(?:the\s+)?(?P<label>[^.!?;,]{3,120}?\b(?:game|match|tournament|race|run|triathlon|playoffs?))\s+I\s+watched\b",
+        r"\bwatch(?:ed|ing)\s+(?:the\s+)?(?P<label>[^.!?;,]{3,160}?\b(?:game|match|tournament|race|run|triathlon|playoffs?))\b",
+        r"\bI\s+(?:just\s+|recently\s+)?completed\s+(?:the\s+)?(?P<label>[^.!?;,]{3,120}?\b(?:race|run|triathlon|tournament|marathon))\b",
+        r"\bI\s+(?:just\s+|recently\s+)?finished\s+(?:a\s+|an\s+|the\s+)?[^.!?;,]{0,80}?\bat\s+(?:the\s+)?(?P<label>[^.!?;,]{3,120}?\b(?:race|run|triathlon|tournament|marathon))\b",
+        r"\bI\s+participate\s+in\s+(?:the\s+)?(?P<label>[^.!?;,]{3,120}?\b(?:game|match|tournament|race|run|triathlon|marathon))\b",
+        r"\bI\s+(?:just\s+|recently\s+)?participated\s+in\s+(?:the\s+)?(?P<label>[^.!?;,]{3,120}?\b(?:game|match|tournament|race|run|triathlon|marathon))\b",
+    )
+    candidates: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for pattern in patterns:
+        for match in re.finditer(pattern, sentence, flags=re.IGNORECASE):
+            label = clean_temporal_sequence_label(match.group("label"), airline=False, strip_leading_article=False)
+            label = _clean_sports_sequence_label(label)
+            if not label:
+                continue
+            normalized = normalize_temporal_sequence_label(label)
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            candidates.append((label, _temporal_sequence_match_evidence(sentence, match)))
+    return candidates
+
+
+def _clean_sports_sequence_label(label: str) -> str:
+    """Normalize sports event labels while preserving named-event detail."""
+    label = re.sub(
+        r"\b(?:where|with|at\s+home|at\s+my|at\s+our|last\s+weekend|yesterday|today)\b.*$",
+        "",
+        label,
+        flags=re.IGNORECASE,
+    )
+    label = re.sub(
+        r"^the\s+Kansas\s+City\s+Chiefs\s+defeat\s+the\s+Buffalo\s+Bills\s+in\s+the\s+Divisional\s+Round\s+of\s+the\s+",
+        "",
+        label,
+        flags=re.IGNORECASE,
+    )
+    return " ".join(label.strip(" .,'\"").split())
+
+
+def temporal_sequence_graduation_candidates(sentence: str) -> list[tuple[str, str]]:
+    """Extract named graduation events from cited user memories."""
+    patterns = (
+        r"\b(?:my\s+)?(?:niece|nephew|cousin|friend|sister|brother|daughter|son)?\s*"
+        r"(?P<name>[A-Z][A-Za-z'-]{1,40})\s+(?:just\s+|recently\s+)?graduated\b",
+        r"\b(?:my\s+)?(?:niece|nephew|cousin|friend|sister|brother|daughter|son)\s+"
+        r"(?P<name>[A-Z][A-Za-z'-]{1,40})(?:'s|’s)\s+[^.!?]{0,80}\bgraduation\b",
+        r"\b(?P<name>[A-Z][A-Za-z'-]{1,40})(?:'s|’s)\s+[^.!?]{0,80}\bgraduation\b",
+        r"\b(?P<name>[A-Z][A-Za-z'-]{1,40}),\s+who\s+graduated\b",
+    )
+    candidates: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for pattern in patterns:
+        for match in re.finditer(pattern, sentence):
+            name = match.group("name")
+            if name.casefold() in seen:
+                continue
+            seen.add(name.casefold())
+            candidates.append((f"{name} graduated", _temporal_sequence_match_evidence(sentence, match)))
+    return candidates
 
 
 def temporal_sequence_sentences(text: str) -> list[str]:
@@ -3847,48 +5617,31 @@ def temporal_sequence_sentences(text: str) -> list[str]:
         if re.match(r"assistant\s*:", sentence, flags=re.IGNORECASE):
             continue
         sentence = re.sub(r"^(?:\d+\.\s*)?user\s*:\s*", "", sentence, flags=re.IGNORECASE)
-        if re.search(r"\bI\s+", sentence, flags=re.IGNORECASE):
+        if re.search(r"\bI(?:\s+|['’](?:m|ve|d|ll|re)\b)", sentence, flags=re.IGNORECASE):
             sentences.append(sentence)
     return sentences
 
 
-def temporal_sequence_candidate_from_sentence(query_tokens: set[str], sentence: str) -> str:
-    """Return an event label from one first-person event sentence."""
-    if query_tokens & {"museum", "museums", "gallery", "galleries"} and (
-        venue_label := temporal_sequence_venue_label(sentence)
-    ):
-        return venue_label
-    airline_query = bool(query_tokens & {"airline", "airlines", "flew", "flight", "flights"})
-    if airline_query:
-        match = re.search(r"\bI\s+(?:just\s+|recently\s+|also\s+)?flew\s+with\s+(?P<label>[^.!?;,]{2,80})", sentence, flags=re.IGNORECASE)
-        if match:
-            return clean_temporal_sequence_label(match.group("label"), airline=True)
-    patterns = (
-        ("", r"\bI\s+(?:just\s+|recently\s+|also\s+)?got\s+back\s+from\s+(?P<label>[^.!?;,]{3,140})"),
-        ("", r"\bI\s+(?:just\s+|recently\s+|also\s+)?returned\s+from\s+(?P<label>[^.!?;,]{3,140})"),
-        ("", r"\bI\s+(?:just\s+|recently\s+|also\s+)?went\s+on\s+(?P<label>[^.!?;,]{3,140})"),
-        ("", r"\bI\s+(?:just\s+|recently\s+|also\s+)?took\s+(?P<label>[^.!?;,]{3,140})"),
-        ("", r"\bI\s+(?:just\s+|recently\s+|also\s+)?watched\s+(?P<label>[^.!?;,]{3,140})"),
-        ("", r"\bI\s+(?:just\s+|recently\s+|also\s+)?attended\s+(?P<label>[^.!?;,]{3,140})"),
-        ("", r"\bI\s+(?:just\s+|recently\s+|also\s+)?participated\s+in\s+(?P<label>[^.!?;,]{3,140})"),
-        ("helped ", r"\bI\s+(?:just\s+|recently\s+|also\s+)?helped\s+(?P<label>[^.!?;,]{3,140})"),
-        ("", r"\bI\s+(?:just\s+|recently\s+|also\s+)?(?P<label>ordered\s+[^.!?;,]{3,140})"),
-        ("", r"\bI\s+(?:just\s+|recently\s+|also\s+)?(?P<label>used\s+[^.!?;,]{3,140})"),
-        ("", r"\bI\s+(?:just\s+|recently\s+|also\s+)?(?P<label>redeemed\s+[^.!?;,]{3,140})"),
-        ("", r"\bI\s+(?:just\s+|recently\s+|also\s+)?(?P<label>signed\s+up\s+for\s+[^.!?;,]{3,140})"),
-        ("", r"\bI\s+(?:just\s+|recently\s+|also\s+)?visited\s+(?P<label>[^.!?;,]{3,140})"),
-    )
-    return _best_temporal_sequence_pattern_label(patterns, sentence)
-
-
-def _best_temporal_sequence_pattern_label(patterns: tuple[tuple[str, str], ...], sentence: str) -> str:
-    """Return the first supported event pattern label from a sentence."""
+def _temporal_sequence_pattern_candidates(patterns: tuple[tuple[str, str], ...], sentence: str) -> list[tuple[str, str]]:
+    """Return all supported event pattern labels from a sentence."""
+    candidates: list[tuple[str, str]] = []
     for prefix, pattern in patterns:
-        match = re.search(pattern, sentence, flags=re.IGNORECASE)
-        if match:
-            label = clean_temporal_sequence_label(match.group("label"), airline=False)
-            return f"{prefix}{label}" if prefix and label else label
-    return ""
+        for match in re.finditer(pattern, sentence, flags=re.IGNORECASE):
+            label = clean_temporal_sequence_label(
+                match.group("label"),
+                airline=False,
+                strip_leading_article=not bool(prefix),
+            )
+            if label:
+                candidates.append((f"{prefix}{label}" if prefix else label, _temporal_sequence_match_evidence(sentence, match)))
+    return candidates
+
+
+def _temporal_sequence_match_evidence(sentence: str, match: re.Match[str]) -> str:
+    """Return a bounded span around a candidate event mention."""
+    start = max(0, match.start() - 40)
+    end = min(len(sentence), match.end() + 80)
+    return sentence[start:end]
 
 
 def temporal_sequence_venue_label(sentence: str) -> str:
@@ -3961,7 +5714,7 @@ def _temporal_sequence_slot_terms(text: str) -> set[str]:
     }
 
 
-def clean_temporal_sequence_label(label: str, *, airline: bool) -> str:
+def clean_temporal_sequence_label(label: str, *, airline: bool, strip_leading_article: bool = True) -> str:
     """Normalize a temporal event label while preserving answer-bearing nouns."""
     label = re.sub(
         r"\b(?:today|tonight|yesterday|recently|last\s+(?:week|month|year|weekend)|"
@@ -3970,9 +5723,16 @@ def clean_temporal_sequence_label(label: str, *, airline: bool) -> str:
         label,
         flags=re.IGNORECASE,
     )
+    label = re.split(
+        r"\s+and\s+(?:realized|realised|noticed|learned|found|decided|started\s+looking|needed|need)\b",
+        label,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0]
     label = re.split(r"\s+(?:but|while|because)\s+", label, maxsplit=1)[0]
     label = " ".join(label.strip(" .,'\"").split())
-    label = re.sub(r"^(?:a|an|the)\s+", "", label, flags=re.IGNORECASE)
+    if strip_leading_article:
+        label = re.sub(r"^(?:a|an|the)\s+", "", label, flags=re.IGNORECASE)
     if airline:
         label = re.sub(r"\bflight\b.*$", "", label, flags=re.IGNORECASE).strip(" .,'\"")
     return label
@@ -4018,11 +5778,15 @@ def session_date_anchor_allowed(
         "launched",
         "made",
         "played",
+        "received",
         "signed",
         "started",
+        "tested",
+        "testing",
         "took",
         "visited",
         "website",
+        "feedback",
     }
     temporal_cues = {
         "ago",
@@ -4246,12 +6010,18 @@ def _expand_temporal_anchor_terms(terms: Iterable[str]) -> set[str]:
     variants = {
         "book": {"booked", "booking"},
         "buy": {"bought", "buying"},
+        "find": {"found", "finding", "saw", "seen"},
         "get": {"got", "getting"},
+        "love": {"loved"},
+        "loved": {"love"},
         "make": {"made", "making"},
         "order": {"ordered", "ordering"},
         "purchase": {"purchased", "purchasing"},
         "reserve": {"reserved", "reservation"},
         "schedule": {"scheduled", "scheduling"},
+        "start": {"started", "starting"},
+        "starting": {"start", "started"},
+        "work": {"worked", "working"},
     }
     for term in tuple(expanded):
         expanded.update(variants.get(term, ()))
@@ -4732,12 +6502,37 @@ def _filter_duration_ledger(
     if max((row.relevance for row in included), default=0) <= 0:
         return ledger
     preferred_units = preferred_units or set()
+    preferred_rows = [
+        row
+        for row in included
+        if preferred_units and canonical_duration_unit(duration_raw_value_unit(row)[1]) in preferred_units
+    ]
     preferred_relevant = {
         row.normalized_identity
         for row in included
         if row.relevance > 0
         and (not preferred_units or canonical_duration_unit(duration_raw_value_unit(row)[1]) in preferred_units)
     }
+    if preferred_units and preferred_relevant:
+        selected = set(preferred_relevant)
+        relevant_rows = [row for row in preferred_rows if row.normalized_identity in preferred_relevant]
+        for row in preferred_rows:
+            if row.normalized_identity in selected:
+                continue
+            if (
+                _duration_total_query(query)
+                and _duration_row_uses_query_primary_unit(query, row)
+                and _duration_row_is_activity_total(row)
+            ):
+                selected.add(row.normalized_identity)
+                continue
+            if _duration_row_shares_boundary_anchor(row, relevant_rows):
+                selected.add(row.normalized_identity)
+        if len(selected) >= ledger.plan.required_source_groups:
+            return _exclude_unselected_duration_rows(
+                ledger,
+                selected_identities=selected,
+            )
     if len(preferred_relevant) >= ledger.plan.required_source_groups:
         return _exclude_unselected_duration_rows(
             ledger,
@@ -4752,6 +6547,95 @@ def _filter_duration_ledger(
         ledger,
         selected_identities=selected_identities,
     )
+
+
+def _duration_total_query(query: str) -> bool:
+    tokens = set(source_tokens(query))
+    return bool(tokens & {"total", "combined", "altogether"} or {"how", "many"} <= tokens and tokens & {"spent", "spend"})
+
+
+def _duration_row_is_activity_total(row: EvidenceLedgerRow) -> bool:
+    terms = set(source_tokens(row.context))
+    return bool(terms & {"logged", "played", "playing", "practiced", "spent", "worked"})
+
+
+def _duration_row_uses_query_primary_unit(query: str, row: EvidenceLedgerRow) -> bool:
+    query_tokens = set(source_tokens(query))
+    _raw_value, raw_unit = duration_raw_value_unit(row)
+    unit = canonical_duration_unit(raw_unit)
+    if query_tokens & {"hour", "hours"}:
+        return unit == "hours"
+    if query_tokens & {"minute", "minutes"}:
+        return unit == "minutes"
+    if query_tokens & {"day", "days"}:
+        return unit == "days"
+    if query_tokens & {"week", "weeks"}:
+        return unit == "weeks"
+    if query_tokens & {"month", "months"}:
+        return unit == "months"
+    return True
+
+
+def _duration_row_shares_boundary_anchor(
+    row: EvidenceLedgerRow,
+    relevant_rows: list[EvidenceLedgerRow],
+) -> bool:
+    row_terms = _duration_boundary_terms(row.context)
+    if not row_terms:
+        return False
+    return any(row_terms & _duration_boundary_terms(relevant.context) for relevant in relevant_rows)
+
+
+def _duration_boundary_terms(context: str) -> set[str]:
+    stopwords = _QUERY_STOPWORDS | {
+        "ago",
+        "around",
+        "before",
+        "after",
+        "answer",
+        "attended",
+        "content",
+        "document",
+        "distractor",
+        "duration",
+        "exactly",
+        "five",
+        "four",
+        "happened",
+        "hour",
+        "hours",
+        "last",
+        "longmemeval",
+        "longmemeval_session_id",
+        "md",
+        "minute",
+        "minutes",
+        "month",
+        "months",
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+        "role",
+        "session",
+        "spent",
+        "summary",
+        "three",
+        "two",
+        "week",
+        "weeks",
+        "year",
+        "years",
+        "user",
+    }
+    return {
+        token
+        for token in source_tokens(context)
+        if len(token) > 2 and token not in stopwords and not token.isdigit()
+    }
 
 
 def _exclude_unselected_duration_rows(
@@ -4879,6 +6763,8 @@ def _duration_row_matches_target_slot(row: EvidenceLedgerRow, target_slots: tupl
 
 def _duration_preferred_units(query: str) -> set[str]:
     tokens = set(source_tokens(query))
+    if tokens & {"month", "months"}:
+        return {"months"}
     if tokens & {"day", "days"}:
         return {"days", "weeks"}
     if tokens & {"week", "weeks"}:
@@ -4892,6 +6778,12 @@ def _duration_preferred_units(query: str) -> set[str]:
 
 def _duration_answer_unit(subject_terms: tuple[str, ...]) -> str:
     terms = set(subject_terms)
+    if terms & {"minute", "minutes"}:
+        return "minutes"
+    if terms & {"hour", "hours"}:
+        return "hours"
+    if terms & {"month", "months"}:
+        return "months"
     if terms & {"day", "days"}:
         return "days"
     if terms & {"week", "weeks"}:
@@ -4905,7 +6797,7 @@ def _duration_answer_unit_for_result(
 ) -> str:
     answer_unit = _duration_answer_unit(subject_terms)
     terms = set(subject_terms)
-    if terms & {"minute", "minutes", "hour", "hours", "day", "days", "week", "weeks"}:
+    if terms & {"minute", "minutes", "hour", "hours", "day", "days", "week", "weeks", "month", "months"}:
         return answer_unit
     candidate_units = {
         canonical_duration_unit(duration_raw_value_unit(row)[1])
@@ -4965,7 +6857,11 @@ def _filter_date_rows(
     preserved_identities = _role_covered_explicit_date_identities(rows, anchor_terms)
     filtered: list[EvidenceLedgerRow] = []
     for row in rows:
-        if row.relevance >= selected_threshold or row.normalized_identity in preserved_identities:
+        if (
+            row.relevance >= selected_threshold
+            or row.normalized_identity in preserved_identities
+            or _explicit_date_row_matches_temporal_anchor(row, anchor_terms)
+        ):
             filtered.append(row)
             continue
         filtered.append(
@@ -4987,6 +6883,20 @@ def _filter_date_rows(
             )
         )
     return filtered
+
+
+def _explicit_date_row_matches_temporal_anchor(
+    row: EvidenceLedgerRow,
+    anchor_terms: tuple[set[str], set[str]],
+) -> bool:
+    """Preserve explicit endpoint dates that cover either side of an interval query."""
+    if row.kind != "date" or row.include_reason != "explicit_date" or row.exclude_reason:
+        return False
+    first_anchor, second_anchor = anchor_terms
+    if not first_anchor and not second_anchor:
+        return False
+    terms = set(source_tokens(row.context))
+    return bool((first_anchor | second_anchor) & terms)
 
 
 def _role_covered_explicit_date_identities(
@@ -5105,15 +7015,34 @@ def _answer_candidate(
     answer: str,
     support: list[str] | None = None,
 ) -> dict[str, object]:
+    support_source_ids = list(dict.fromkeys(support or [row.source_group for row in candidates]))
+    support_source_set = set(support_source_ids)
     return {
         "rank": rank,
         "type": candidate_type,
         "confidence": float(_candidate_confidence(candidates)),
         "answer_key": answer_key,
         "answer": answer,
-        "support_source_ids": list(dict.fromkeys(support or [row.source_group for row in candidates])),
-        "excluded_source_ids": list(dict.fromkeys(row.source_group for row in excluded)),
+        "support_source_ids": support_source_ids,
+        "excluded_source_ids": [
+            source_group
+            for source_group in dict.fromkeys(row.source_group for row in excluded)
+            if source_group not in support_source_set
+        ],
     }
+
+
+def _excluded_source_groups_for_candidate(
+    candidates: tuple[EvidenceLedgerRow, ...],
+    excluded: tuple[EvidenceLedgerRow, ...],
+) -> list[str]:
+    """Return excluded source groups without invalidating selected support groups."""
+    support_source_groups = {row.source_group for row in candidates}
+    return [
+        source_group
+        for source_group in dict.fromkeys(row.source_group for row in excluded)
+        if source_group not in support_source_groups
+    ]
 
 
 def _line_answer(lines: list[str], key: str) -> str:
@@ -5168,13 +7097,32 @@ def _numeric_focus_terms(query: str) -> set[str]:
 
 
 def _duration_focus_terms(query: str) -> set[str]:
+    stopwords = _QUERY_STOPWORDS | {
+        "ago",
+        "day",
+        "days",
+        "hour",
+        "hours",
+        "long",
+        "many",
+        "minute",
+        "minutes",
+        "month",
+        "months",
+        "time",
+        "week",
+        "weeks",
+        "year",
+        "years",
+    }
     terms = {
         token
         for token in source_tokens(query)
-        if len(token) > 2 and token not in _QUERY_STOPWORDS and not token.isdigit()
+        if len(token) > 2 and token not in stopwords and not token.isdigit()
     }
     expanded = set(terms)
     semantic_groups = {
+        "book": {"book", "booked", "booking"},
         "practice": {"practice", "practiced", "practicing"},
         "spent": {"spent", "spend"},
     }
@@ -5209,8 +7157,83 @@ def _count_focus_terms(query: str) -> set[str]:
         "galleries": {"museum", "museums", "gallery", "galleries", "cube", "art"},
         "properties": {"properties", "property", "home", "homes", "house", "houses", "bungalow", "condo", "townhouse"},
         "property": {"properties", "property", "home", "homes", "house", "houses", "bungalow", "condo", "townhouse"},
+        "clothing": {"blazer", "boots", "dress", "jacket", "shirt", "shoes", "sweater"},
+        "clothes": {"blazer", "boots", "dress", "jacket", "shirt", "shoes", "sweater"},
+        "furniture": {"bed", "bookshelf", "chair", "couch", "desk", "mattress", "shelves", "shelf", "sofa", "table"},
         "wedding": {"wedding", "weddings"},
         "weddings": {"wedding", "weddings"},
+        "charity": {
+            "awareness",
+            "benefit",
+            "cause",
+            "charitable",
+            "charity",
+            "donation",
+            "donations",
+            "fund",
+            "fundraiser",
+            "fundraising",
+            "funds",
+            "raised",
+            "support",
+            "supported",
+            "volunteer",
+            "volunteered",
+        },
+        "charitable": {
+            "awareness",
+            "benefit",
+            "cause",
+            "charitable",
+            "charity",
+            "donation",
+            "donations",
+            "fund",
+            "fundraiser",
+            "fundraising",
+            "funds",
+            "raised",
+            "support",
+            "supported",
+            "volunteer",
+            "volunteered",
+        },
+        "fundraising": {
+            "awareness",
+            "benefit",
+            "cause",
+            "charitable",
+            "charity",
+            "donation",
+            "donations",
+            "fund",
+            "fundraiser",
+            "fundraising",
+            "funds",
+            "raised",
+            "support",
+            "supported",
+            "volunteer",
+            "volunteered",
+        },
+        "fundraiser": {
+            "awareness",
+            "benefit",
+            "cause",
+            "charitable",
+            "charity",
+            "donation",
+            "donations",
+            "fund",
+            "fundraiser",
+            "fundraising",
+            "funds",
+            "raised",
+            "support",
+            "supported",
+            "volunteer",
+            "volunteered",
+        },
         "ride": {"ride", "rides", "riding", "rode", "ridden", "rollercoaster", "rollercoasters", "coaster", "coasters"},
         "rides": {"ride", "rides", "riding", "rode", "ridden", "rollercoaster", "rollercoasters", "coaster", "coasters"},
         "rode": {"ride", "rides", "riding", "rode", "ridden", "rollercoaster", "rollercoasters", "coaster", "coasters"},

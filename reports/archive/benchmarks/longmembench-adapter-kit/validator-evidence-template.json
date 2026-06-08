@@ -1,0 +1,41 @@
+{
+  "artifacts": {
+    "dataset_sha256": "",
+    "gate_command": "zaxy longmembench-gate reports/benchmarks/longmembench-external/longmembench-report.json --require-official-sota",
+    "gate_status": "",
+    "hypotheses_sha256": "",
+    "longmembench_report_json": "",
+    "longmembench_report_json_sha256": "",
+    "longmembench_report_md": "",
+    "longmembench_report_md_sha256": "",
+    "official_eval_log_sha256": ""
+  },
+  "longmemeval": {
+    "commit": "",
+    "dataset": "data/longmemeval_oracle.json",
+    "dataset_sha256": "",
+    "question_count": 500,
+    "repo_url": "https://github.com/xiaowu0162/LongMemEval"
+  },
+  "official_evaluation": {
+    "accuracy": null,
+    "correct_count": null,
+    "evaluated_count": null,
+    "evaluator_model": "gpt-4o",
+    "hypotheses_path": "",
+    "official_eval_command": "",
+    "official_eval_log_path": "",
+    "print_metrics_command": ""
+  },
+  "validated_system": {
+    "name": "Zaxy",
+    "zaxy_commit": "",
+    "zaxy_version": ""
+  },
+  "validator": {
+    "evidence_url": "",
+    "name": "",
+    "relation": "independent-third-party",
+    "run_id": ""
+  }
+}

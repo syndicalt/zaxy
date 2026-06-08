@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LongMemBench External Validation - Zaxy Docs</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,600&family=Inter:wght@400;550;650;750;850&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../../style.css" />
+</head>
+<body class="doc-page">
+  <nav class="nav" aria-label="Documentation">
+    <a class="brand" href="../../index.html"><span class="brand-mark" aria-hidden="true"></span>Zaxy</a>
+    <div class="nav-links">
+      <a href="../../index.html">Overview</a>
+      <a href="../../docs/coordinate-roadmap.html">Coordinate</a>
+      <a href="../../docs/why-zaxy.html">Why Zaxy</a>
+      <a href="../../docs/benchmarks.html">Benchmarks</a>
+      <a href="../getting-started.html">Start</a>
+      <a href="https://github.com/syndicalt/zaxy" class="nav-cta">GitHub</a>
+    </div>
+  </nav>
+  <main class="doc-layout">
+    <article class="doc-content">
+      <h1 id="longmembench-external-validation">LongMemBench External Validation</h1>
+      <p>LongMemBench is Zaxy&#x27;s external validation lane for official LongMemEval-style testing. It exists because Zaxy&#x27;s internal LongMemEval-compatible checkout reports are useful but do not, by themselves, prove an official LongMemEval end-to-end assistant score.</p>
+      <h2 id="claim-levels">Claim Levels</h2>
+      <p>Use precise language:</p>
+      <ul>
+        <li><strong>LongMemEval-compatible checkout:</strong> Zaxy&#x27;s adapted Eventloom checkout run. Metrics include Recall@k, Answer@k, citation coverage, latency, and token estimates.</li>
+        <li><strong>Official LongMemEval QA:</strong> hypotheses are evaluated by the official LongMemEval <code>evaluate_qa.py</code> script.</li>
+        <li><strong>Official LongMemEval SOTA candidate:</strong> official QA evidence covers all 500 questions and is ready for comparison against the current accepted external leaderboard or maintainer-recognized evidence.</li>
+      </ul>
+      <p>Do not claim official SOTA from retrieval diagnostics alone.</p>
+      <h2 id="external-run-flow">External Run Flow</h2>
+      <p>Prepare an external LongMemEval checkout:</p>
+      <pre><code class="language-bash">zaxy longmembench-bootstrap --worktree .cache/zaxy/benchmarks/LongMemEval</code></pre>
+      <p>From the Zaxy checkout, generate the validation kit and manifest:</p>
+      <pre><code class="language-bash">zaxy longmembench-doctor path/to/LongMemEval
+zaxy longmembench-adapter-kit --output-dir reports/benchmarks/longmembench-adapter-kit
+zaxy longmembench-plan --output-dir reports/benchmarks/longmembench-external
+zaxy longmembench-ready \
+  --longmemeval-worktree path/to/LongMemEval \
+  --dataset path/to/LongMemEval/data/longmemeval_oracle.json \
+  --sota-baseline reports/benchmarks/longmembench-external/sota-baseline.json \
+  --answer-mode openai-compatible</code></pre>
+      <p>The adapter kit includes <code>validator-checklist.md</code> and <code>validator-evidence-template.json</code>. The checklist defines the minimum external artifacts required for an independent SOTA claim; the template maps directly to the validator fields imported by <code>longmembench-import</code>.</p>
+      <p>Use the generated runner for repeatable execution. Smoke mode validates bootstrap, readiness, diagnostic retrieval, and hypothesis generation without importing or gating official evidence:</p>
+      <pre><code class="language-bash">ANSWER_MODE=extractive QUESTIONS=1 RUN_OFFICIAL_EVAL=0 RUN_DIAGNOSTIC=0 \
+  reports/benchmarks/longmembench-external/run-longmembench-zaxy.sh path/to/LongMemEval</code></pre>
+      <p>Smoke outputs are written under <code>reports/benchmarks/longmembench-external/smoke/</code> by default so they cannot overwrite official 500-question artifacts.</p>
+      <p>Full official mode requires evaluator credentials and runs through import plus the strict SOTA gate:</p>
+      <pre><code class="language-bash">OPENAI_API_KEY=... \
+VALIDATOR_NAME=&quot;Independent Validator&quot; \
+VALIDATOR_EVIDENCE_URL=https://validation.openmemory.dev/reviewable-run \
+VALIDATOR_RUN_ID=validator-run-001 \
+VALIDATOR_RELATION=independent-third-party \
+  reports/benchmarks/longmembench-external/run-longmembench-zaxy.sh path/to/LongMemEval</code></pre>
+      <p>Run the Zaxy diagnostic benchmark as supporting evidence:</p>
+      <pre><code class="language-bash">zaxy benchmark \
+  --output-dir reports/benchmarks/longmembench-external/diagnostic \
+  --embedding-provider hash \
+  --workload longmemeval \
+  --dataset path/to/LongMemEval/data/longmemeval_oracle.json \
+  --questions 500 \
+  --runs 1 \
+  --limit 10 \
+  --baseline-backends bm25 \
+  --zaxy-backend checkout \
+  --embedding-cache .cache/zaxy/longmemeval-embeddings.json</code></pre>
+      <p>Generate official hypotheses with Zaxy checkout evidence. For a SOTA-candidate run, use model-backed answer generation:</p>
+      <pre><code class="language-bash">zaxy longmembench-generate-hypotheses \
+  --dataset path/to/LongMemEval/data/longmemeval_oracle.json \
+  --output reports/benchmarks/longmembench-external/zaxy-hypotheses.jsonl \
+  --report reports/benchmarks/longmembench-external/zaxy-hypotheses-report.json \
+  --answer-mode openai-compatible \
+  --model gpt-4o \
+  --embedding-provider hash \
+  --embedding-cache .cache/zaxy/longmemeval-embeddings.json</code></pre>
+      <p>For local smoke tests, use <code>--answer-mode extractive</code>; that mode proves the artifact contract but should not be used for an official SOTA submission unless the resulting evaluator score is competitive. The official output is JSONL:</p>
+      <pre><code class="language-json">{&quot;question_id&quot;: &quot;gpt4_2655b836&quot;, &quot;hypothesis&quot;: &quot;The GPS system was not functioning correctly.&quot;}</code></pre>
+      <p>Evaluate with LongMemEval&#x27;s official script:</p>
+      <pre><code class="language-bash">export OPENAI_API_KEY=...
+zaxy longmembench-evaluate-official \
+  --longmemeval-worktree path/to/LongMemEval \
+  --hypotheses reports/benchmarks/longmembench-external/zaxy-hypotheses.jsonl \
+  --dataset path/to/LongMemEval/data/longmemeval_oracle.json \
+  --evaluator-model gpt-4o \
+  --output-log reports/benchmarks/longmembench-external/zaxy-hypotheses.jsonl.eval-results-gpt-4o \
+  --run-report reports/benchmarks/longmembench-external/official-eval-run.json
+
+cd path/to/LongMemEval/src/evaluation
+python3 print_qa_metrics.py /absolute/path/to/zaxy-hypotheses.jsonl.eval-results-gpt-4o ../../data/longmemeval_oracle.json</code></pre>
+      <p>Write the completed validator evidence record from the official artifacts:</p>
+      <pre><code class="language-bash">zaxy longmembench-validator-evidence \
+  --longmemeval-worktree path/to/LongMemEval \
+  --dataset path/to/LongMemEval/data/longmemeval_oracle.json \
+  --hypotheses reports/benchmarks/longmembench-external/zaxy-hypotheses.jsonl \
+  --official-eval-log reports/benchmarks/longmembench-external/zaxy-hypotheses.jsonl.eval-results-gpt-4o \
+  --output reports/benchmarks/longmembench-external/validator-evidence.json \
+  --evaluator-model gpt-4o \
+  --official-eval-command &quot;python3 evaluate_qa.py gpt-4o /absolute/path/to/zaxy-hypotheses.jsonl ../../data/longmemeval_oracle.json&quot; \
+  --print-metrics-command &quot;python3 print_qa_metrics.py /absolute/path/to/zaxy-hypotheses.jsonl.eval-results-gpt-4o ../../data/longmemeval_oracle.json&quot; \
+  --validator-name &quot;Independent Validator&quot; \
+  --validator-evidence-url https://validation.openmemory.dev/reviewable-run \
+  --validator-run-id validator-run-001 \
+  --validator-relation independent-third-party</code></pre>
+      <p>Import and gate the evidence:</p>
+      <pre><code class="language-bash">zaxy longmembench-import \
+  --longmemeval-worktree path/to/LongMemEval \
+  --dataset path/to/LongMemEval/data/longmemeval_oracle.json \
+  --hypotheses reports/benchmarks/longmembench-external/zaxy-hypotheses.jsonl \
+  --official-eval-log reports/benchmarks/longmembench-external/zaxy-hypotheses.jsonl.eval-results-gpt-4o \
+  --diagnostic-report reports/benchmarks/longmembench-external/diagnostic/live-benchmark.json \
+  --sota-baseline reports/benchmarks/longmembench-external/sota-baseline.json \
+  --validator-evidence reports/benchmarks/longmembench-external/validator-evidence.json \
+  --output-dir reports/benchmarks/longmembench-external
+
+zaxy longmembench-validate \
+  reports/benchmarks/longmembench-external/longmembench-report.json \
+  --require-official-full
+
+zaxy longmembench-gate \
+  reports/benchmarks/longmembench-external/longmembench-report.json \
+  --require-official-sota
+
+zaxy longmembench-audit \
+  --longmemeval-worktree path/to/LongMemEval \
+  --dataset path/to/LongMemEval/data/longmemeval_oracle.json \
+  --hypotheses reports/benchmarks/longmembench-external/zaxy-hypotheses.jsonl \
+  --official-eval-log reports/benchmarks/longmembench-external/zaxy-hypotheses.jsonl.eval-results-gpt-4o \
+  --diagnostic-report reports/benchmarks/longmembench-external/diagnostic/live-benchmark.json \
+  --sota-baseline reports/benchmarks/longmembench-external/sota-baseline.json \
+  --validator-evidence reports/benchmarks/longmembench-external/validator-evidence.json \
+  --report reports/benchmarks/longmembench-external/longmembench-report.json \
+  --hypothesis-report reports/benchmarks/longmembench-external/zaxy-hypotheses-report.json \
+  --official-eval-run-report reports/benchmarks/longmembench-external/official-eval-run.json \
+  --output reports/benchmarks/longmembench-external/longmembench-audit.json</code></pre>
+      <p>Only after this gate passes should a publishable report be rendered:</p>
+      <pre><code class="language-bash">zaxy longmembench-publish \
+  reports/benchmarks/longmembench-external/longmembench-report.json \
+  --audit reports/benchmarks/longmembench-external/longmembench-audit.json \
+  --output reports/benchmarks/longmembench-external/publishable-statistics.md</code></pre>
+      <h2 id="evidence-requirements">Evidence Requirements</h2>
+      <p>A valid official full-set report must include:</p>
+      <ul>
+        <li>official LongMemEval worktree commit;</li>
+        <li>Zaxy source checkout commit under validation;</li>
+        <li>official dataset path and SHA-256;</li>
+        <li>500 dataset questions;</li>
+        <li>500 generated hypotheses;</li>
+        <li>500 official evaluator log rows;</li>
+        <li>SHA-256 hashes for the dataset, hypotheses, official evaluator log, and generated LongMemBench report artifacts;</li>
+        <li>official evaluator model and command;</li>
+        <li>correct count and accuracy;</li>
+        <li>external SOTA baseline JSON using an official LongMemEval QA accuracy metric;</li>
+        <li>external SOTA baseline <code>checked_at</code> freshness evidence, no older than 30 days unless the gate default is explicitly changed in code;</li>
+        <li>independent validator provenance: name, reviewable evidence URL, run ID, and relation to Zaxy;</li>
+        <li>passing <code>longmembench-audit</code> JSON output with schema version <code>zaxy.longmembench-audit.v1</code>, <code>generated_at</code>, and SHA-256 hashes for the complete artifact set;</li>
+        <li>optional Zaxy diagnostic report with checkout/citation metrics.</li>
+      </ul>
+      <p>The preferred provenance handoff is a completed <code>validator-evidence-template.json</code> imported with <code>--validator-evidence</code>. The manual <code>--validator-name</code>, <code>--validator-evidence-url</code>, <code>--validator-run-id</code>, and <code>--validator-relation</code> flags remain available for CI systems that inject provenance through environment variables. If both are supplied, nonblank conflicts are rejected rather than silently rewritten.</p>
+      <p>When <code>--validator-evidence</code> is supplied, <code>longmembench-import</code> cross-checks the completed evidence file against the imported official evaluator log. The validated system name, Zaxy commit, LongMemEval commit, dataset SHA-256, dataset question count, hypotheses SHA-256, official evaluator log SHA-256, evaluator model, evaluated count, correct count, accuracy, and official evaluator command must match the report built from the local artifacts.</p>
+      <p>The strict <code>--require-official-sota</code> gate requires that cross-check and a validator-bound Zaxy commit. A report with only manual validator fields can be a useful intermediate artifact, but it cannot pass the official SOTA gate.</p>
+      <p>The strict gate does not decide whether Zaxy is globally SOTA. It proves the artifact is an official full-set LongMemEval candidate and, when <code>--require-official-sota</code> is used, that it beats the imported external baseline. The imported baseline must also be recently checked. The final public claim should still cite the baseline source and any LongMemEval maintainer or leaderboard process available at publication time.</p>
+      <h2 id="sota-baseline-schema">SOTA Baseline Schema</h2>
+      <p>For a strict SOTA claim, write a baseline JSON file:</p>
+      <pre><code class="language-json">{
+  &quot;system&quot;: &quot;Current accepted best system&quot;,
+  &quot;accuracy&quot;: 0.966,
+  &quot;metric&quot;: &quot;official_longmemeval_task_averaged_accuracy&quot;,
+  &quot;evidence_url&quot;: &quot;https://validation.openmemory.dev/reviewable-artifact&quot;,
+  &quot;evidence_date&quot;: &quot;2026-06-01&quot;,
+  &quot;checked_at&quot;: &quot;2026-06-07&quot;,
+  &quot;currentness_url&quot;: &quot;https://validation.openmemory.dev/leaderboard-or-review&quot;,
+  &quot;source_type&quot;: &quot;public-reproduction&quot;,
+  &quot;question_count&quot;: 500,
+  &quot;evaluator_model&quot;: &quot;gpt-4o&quot;,
+  &quot;notes&quot;: &quot;Use official-leaderboard, maintainer-accepted, peer-reviewed-paper, public-reproduction, or vendor-disclosure.&quot;
+}</code></pre>
+      <p><code>zaxy longmembench-gate --require-official-sota</code> fails if the official Zaxy accuracy is less than or equal to this baseline. Retrieval metrics such as Recall@5 are deliberately rejected for this gate; the baseline must be an official LongMemEval QA accuracy metric over the full 500-question set. Strict SOTA also fails when <code>checked_at</code> is missing, in the future, or older than 30 days at gate time. <code>expires_at</code> is optional, but when present it must not have passed. Baseline and validator evidence URLs must be public, reviewable HTTP(S) URLs. Reserved placeholder domains such as <code>example.com</code>, local URLs, and private IP addresses are rejected by the strict evidence validators.</p>
+      <p>Strict official SOTA also requires external validator provenance in the imported report. Local smoke runs and internally generated evaluator logs can validate the pipeline, but they cannot pass <code>--require-official-sota</code> without a reviewable independent validator record.</p>
+    </article>
+  </main>
+</body>
+</html>

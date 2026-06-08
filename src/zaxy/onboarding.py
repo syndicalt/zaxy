@@ -23,7 +23,11 @@ from zaxy.hooks import (
     write_hook_config,
 )
 from zaxy.install import resolve_zaxy_executable
-from zaxy.integrations import render_codex_mcp_add_command, render_mcp_client_config
+from zaxy.integrations import (
+    render_codex_mcp_add_command,
+    render_mcp_client_config,
+    write_codex_mcp_config,
+)
 from zaxy.local_profile import write_local_profile
 from zaxy.mcp_runtime import EmbeddedMcpRuntimeCoordinator
 from zaxy.packet_guidance import build_packet_capture_guidance
@@ -141,6 +145,10 @@ async def run_onboarding(
     packet_upstream_base_url: str = "https://api.openai.com/v1",
     packet_port: int = 8787,
     capture_action: str = "none",
+    codex_mcp_install: str = "command",
+    codex_mcp_conflict_path: str | Path | None = None,
+    codex_trusted_project: bool = False,
+    codex_home: str | Path | None = None,
     agent_instructions: bool = True,
     zaxy_executable: str | Path | None = None,
     force: bool = False,
@@ -154,6 +162,7 @@ async def run_onboarding(
     resolved_domain = slug_domain(domain) if domain else slug_domain(root.name)
     sid = session_id or domain_default_session(resolved_domain)
     infra_action = _normalize_infra(infra)
+    codex_install_mode = _normalize_codex_mcp_install(codex_mcp_install)
     normalized_capture_mode = _normalize_capture_mode("hybrid" if packet_capture else capture_mode)
     executable = resolve_zaxy_executable(zaxy_executable)
     _validate_render_requests(
@@ -162,13 +171,17 @@ async def run_onboarding(
         hook_client=hook_client,
         hook_output=hook_output,
     )
-    _preflight_outputs(
-        force=force,
-        paths=[path for path in (mcp_output, hook_output, local_profile_output) if path is not None],
-    )
+    preflight_paths: list[str | Path] = []
+    if mcp_output is not None:
+        preflight_paths.append(mcp_output)
+    if hook_output is not None and _normalize_hook_client_name(hook_client or "") != "codex":
+        preflight_paths.append(hook_output)
+    _preflight_outputs(force=force, paths=preflight_paths)
 
     steps: list[OnboardingStep] = []
     mcp_install_command: str | None = None
+    mcp_installed_path: Path | None = None
+    codex_conflict_path = Path(codex_mcp_conflict_path) if codex_mcp_conflict_path is not None else None
     eventloom.mkdir(parents=True, exist_ok=True)
     steps.append(OnboardingStep("eventloom", "ok", "Eventloom directory is ready", str(eventloom)))
     selected_projection_backend = projection_backend or Settings().projection_backend
@@ -198,14 +211,44 @@ async def run_onboarding(
         if _normalize_mcp_client_name(mcp_client) == "codex":
             if mcp_output is not None:
                 raise ValueError("Codex onboarding renders a CLI install command; do not provide mcp_output")
-            mcp_install_command = shlex.join(
-                render_codex_mcp_add_command(
+            if codex_install_mode == "command":
+                if codex_conflict_path is not None:
+                    steps.append(
+                        OnboardingStep(
+                            "mcp_config",
+                            "warning",
+                            "Existing Codex zaxy MCP config needs review before replacement",
+                            str(codex_conflict_path),
+                        )
+                    )
+                else:
+                    mcp_install_command = shlex.join(
+                        render_codex_mcp_add_command(
+                            eventloom_path=str(eventloom),
+                            domain=resolved_domain,
+                            zaxy_executable=executable,
+                        )
+                    )
+                    steps.append(OnboardingStep("mcp_config", "preview", "codex MCP install command rendered"))
+            else:
+                mcp_installed_path = write_codex_mcp_config(
+                    scope=codex_install_mode,
+                    workspace=root,
                     eventloom_path=str(eventloom),
                     domain=resolved_domain,
                     zaxy_executable=executable,
+                    force=force,
+                    trusted_project=codex_trusted_project,
+                    codex_home=codex_home,
                 )
-            )
-            steps.append(OnboardingStep("mcp_config", "preview", "codex MCP install command rendered"))
+                steps.append(
+                    OnboardingStep(
+                        "mcp_config",
+                        "ok",
+                        "codex MCP config installed",
+                        str(mcp_installed_path),
+                    )
+                )
         else:
             config = render_mcp_client_config(
                 mcp_client,
@@ -307,11 +350,19 @@ async def run_onboarding(
     steps.append(
         OnboardingStep(
             "doctor",
-            _onboarding_doctor_status(doctor, hook_installation_required=hook_client is not None),
-            "Doctor checks completed",
+            _onboarding_doctor_status(
+                doctor,
+                hook_installation_required=hook_client is not None,
+                agent_instructions_required=agent_instructions,
+            ),
+            _onboarding_doctor_message(
+                doctor,
+                hook_installation_required=hook_client is not None,
+                agent_instructions_required=agent_instructions,
+            ),
         )
     )
-    hook_status = inspect_hook_status(eventloom_path=eventloom, workspace_root=root)
+    hook_status = inspect_hook_status(eventloom_path=eventloom, workspace_root=root, session_id=sid)
     steps.append(
         OnboardingStep(
             "hook_status",
@@ -333,6 +384,8 @@ async def run_onboarding(
             mcp_client=mcp_client,
             mcp_output=mcp_output,
             mcp_install_command=mcp_install_command,
+            mcp_installed_path=mcp_installed_path,
+            codex_mcp_conflict_path=codex_conflict_path,
             infra_action=infra_action,
             projection_backend=selected_projection_backend,
             capture_mode=normalized_capture_mode,
@@ -347,25 +400,360 @@ async def run_onboarding(
     )
 
 
-def format_onboarding_result(result: OnboardingResult) -> str:
+def format_onboarding_result(
+    result: OnboardingResult,
+    *,
+    verbose: bool = False,
+    verbose_command: str | None = None,
+) -> str:
     """Format onboarding output for humans."""
     lines = [
-        f"Zaxy init: {result.status}",
-        f"workspace: {result.workspace}",
-        f"domain: {result.domain}",
-        f"session: {result.session_id}",
-        f"profile: {result.profile['workspace_type']} ({result.profile['confidence']})",
+        f"{_status_badge(result.status, bracketed=False)}  Zaxy init complete: {result.status}",
+        f"Workspace: {result.workspace}",
+        f"Domain: {result.domain}",
+        f"Session: {result.session_id}",
+        f"Profile: {result.profile['workspace_type']} ({result.profile['confidence']})",
+        _format_readiness_summary(result),
     ]
-    for step in result.steps:
-        suffix = f" - {step.path}" if step.path else ""
-        lines.append(f"- {step.name}: {step.status} - {step.message}{suffix}")
+    if result.steps:
+        if verbose:
+            lines.extend(["", "Setup:"])
+            lines.extend(_format_step_row(step) for step in result.steps)
+        else:
+            lines.extend(["", _format_setup_summary(result.steps)])
+            issues = [step for step in result.steps if step.status in {"warning", "error"}]
+            if issues:
+                lines.extend(["", "Setup issues:"])
+                lines.extend(_format_step_row(step) for step in issues)
     if result.capture:
+        lines.append("")
         lines.extend(_format_capture_summary(result.capture))
     if result.next_steps:
-        lines.append("")
-        lines.append("Next:")
-        lines.extend(f"- {step}" for step in result.next_steps)
+        lines.extend(_format_next_steps(result.next_steps, verbose=verbose, verbose_command=verbose_command))
     return "\n".join(lines)
+
+
+def onboarding_result_payload(result: OnboardingResult) -> dict[str, Any]:
+    """Return the machine-readable onboarding payload with readiness summary."""
+    payload = {
+        "status": result.status,
+        "workspace": result.workspace,
+        "domain": result.domain,
+        "session_id": result.session_id,
+        "profile": result.profile,
+        "steps": [step.__dict__.copy() for step in result.steps],
+        "next_steps": list(result.next_steps),
+        "doctor": result.doctor,
+        "hook_status": result.hook_status,
+        "capture": result.capture,
+    }
+    payload["setup"] = _onboarding_setup_payload(result.steps)
+    payload["readiness"] = _onboarding_readiness_payload(result)
+    return payload
+
+
+def _onboarding_setup_payload(steps: list[OnboardingStep]) -> dict[str, Any]:
+    counts: dict[str, int] = {}
+    issues: list[dict[str, str | None]] = []
+    pending: list[dict[str, str | None]] = []
+    for step in steps:
+        counts[step.status] = counts.get(step.status, 0) + 1
+        if step.status in {"warning", "error"}:
+            issues.append(step.__dict__.copy())
+        elif step.status == "preview":
+            pending.append(step.__dict__.copy())
+    return {
+        "status": _overall_status(step.status for step in steps),
+        "summary": _format_setup_summary(steps),
+        "counts": counts,
+        "issues": issues,
+        "pending": pending,
+    }
+
+
+def _onboarding_readiness_payload(result: OnboardingResult) -> dict[str, Any]:
+    actions = _onboarding_readiness_actions(result.next_steps)
+    reasons = _onboarding_readiness_reasons(result)
+    status = "ready" if result.status == "ok" and not actions and not reasons else "needs_action"
+    return {
+        "status": status,
+        "setup_status": result.status,
+        "summary": _format_readiness_summary(result),
+        "reasons": reasons,
+        "reason_count": len(reasons),
+        "actions": actions,
+        "required_action_count": len(actions),
+        "action_items": _onboarding_readiness_action_items(result.next_steps),
+        "blocking_diagnostics": _onboarding_doctor_diagnostics(result, blocking=True),
+        "non_blocking_diagnostics": _onboarding_doctor_diagnostics(result, blocking=False),
+        "capture": result.capture,
+    }
+
+
+def _onboarding_readiness_actions(next_steps: list[str]) -> list[str]:
+    actions: list[str] = []
+    for step in next_steps:
+        if _required_next_action(step) is not None:
+            actions.append(step)
+    return actions
+
+
+def _onboarding_readiness_action_items(next_steps: list[str]) -> list[dict[str, Any]]:
+    notes = [step for step in next_steps if _is_onboarding_note(step)]
+    items: list[dict[str, Any]] = []
+    for step in next_steps:
+        action = _required_next_action(step)
+        if action is not None:
+            label, command = action
+            hints: list[str] = []
+            if command is not None:
+                hints.extend(_command_hints(label, command))
+            hints.extend(_required_action_hints(label, notes))
+            items.append({"label": label, "command": command, "source": step, "hints": hints})
+    return items
+
+
+def _required_next_action(step: str) -> tuple[str, str | None] | None:
+    """Return a machine-readable required action for a human next-step line."""
+    if _split_deferred_command(step) is not None:
+        return None
+    action = _split_action_command(step)
+    if action is not None:
+        return action
+    if _extract_leading_command(step) is not None:
+        return None
+    if step.startswith("If Zaxy MCP tools are absent"):
+        return None
+    if _is_onboarding_note(step):
+        return None
+    if step.startswith("Add ") or step.startswith("Restart "):
+        return step, None
+    if step.startswith("Review existing Codex MCP config before replacing zaxy at "):
+        return "Review existing Codex MCP config before replacing zaxy:", None
+    return step, None
+
+
+def _onboarding_readiness_reasons(result: OnboardingResult) -> list[str]:
+    return [
+        f"{step.name} {step.status}: {step.message}"
+        for step in result.steps
+        if step.status in {"warning", "error"}
+    ]
+
+
+def _onboarding_doctor_diagnostics(result: OnboardingResult, *, blocking: bool) -> list[dict[str, Any]]:
+    """Return doctor warnings split by whether onboarding readiness treats them as blocking."""
+    ignored = _ignored_onboarding_doctor_checks(
+        hook_installation_required=_onboarding_step_present(result.steps, {"hook_config", "codex_capture"}),
+        agent_instructions_required=_onboarding_step_present(result.steps, {"agent_instructions"}),
+    )
+    diagnostics: list[dict[str, Any]] = []
+    for check in result.doctor.get("checks", []):
+        if check.get("status") == "ok":
+            continue
+        is_blocking = check.get("name") not in ignored
+        if is_blocking == blocking:
+            diagnostics.append(dict(check))
+    return diagnostics
+
+
+def _onboarding_step_present(steps: list[OnboardingStep], names: set[str]) -> bool:
+    return any(step.name in names for step in steps)
+
+
+def _format_step_row(step: OnboardingStep) -> str:
+    suffix = f" ({step.path})" if step.path else ""
+    return f"{_status_badge(step.status)} {step.name} - {step.message}{suffix}"
+
+
+def _status_badge(status: str, *, bracketed: bool = True) -> str:
+    normalized = status.casefold().strip()
+    labels = {
+        "ok": "OK",
+        "warning": "WARN",
+        "error": "ERR",
+        "preview": "INFO",
+    }
+    label = labels.get(normalized, normalized.upper() or "INFO")
+    return f"[{label}]" if bracketed else label
+
+
+def _format_readiness_summary(result: OnboardingResult) -> str:
+    actions = _onboarding_readiness_actions(result.next_steps)
+    if actions:
+        noun = "action" if len(actions) == 1 else "actions"
+        return f"Readiness: needs action ({len(actions)} required {noun})"
+    if result.status == "ok":
+        return "Readiness: ready"
+    return "Readiness: review setup issues"
+
+
+def _format_setup_summary(steps: list[OnboardingStep]) -> str:
+    counts: dict[str, int] = {}
+    for step in steps:
+        counts[step.status] = counts.get(step.status, 0) + 1
+    ordered = ["ok", "warning", "error", "preview"]
+    parts = [f"{counts.pop(status)} {status}" for status in ordered if status in counts]
+    parts.extend(f"{count} {status}" for status, count in sorted(counts.items()))
+    return "Setup: " + ", ".join(parts)
+
+
+def _format_next_steps(
+    next_steps: list[str],
+    *,
+    verbose: bool = False,
+    verbose_command: str | None = None,
+) -> list[str]:
+    required: list[tuple[str, str | None]] = []
+    checks: list[str] = []
+    fallbacks: list[str] = []
+    later: list[tuple[str, str | None]] = []
+    notes: list[str] = []
+
+    for step in next_steps:
+        deferred = _split_deferred_command(step)
+        if deferred is not None:
+            later.append(deferred)
+            continue
+        formatted = _split_action_command(step)
+        if formatted is not None:
+            required.append(formatted)
+            continue
+        command = _extract_leading_command(step)
+        if command is not None:
+            checks.append(command)
+            continue
+        if step.startswith("If Zaxy MCP tools are absent"):
+            fallback = step.split(": ", 1)[1] if ": " in step else step
+            fallbacks.append(fallback)
+            continue
+        if _is_onboarding_note(step):
+            notes.append(step)
+            continue
+        required_action = _required_next_action(step)
+        if required_action is not None:
+            label, command = required_action
+            if command is None and _is_codex_mcp_conflict_review_action(step):
+                label = step
+            required.append((label, command))
+
+    lines: list[str] = []
+    if required:
+        lines.extend(["", "Required next actions:"])
+        for index, (label, command) in enumerate(required, start=1):
+            lines.append(f"{index}. {label}")
+            if command:
+                lines.append(f"   {command}")
+                lines.extend(f"   {hint}" for hint in _command_hints(label, command))
+            lines.extend(f"   {hint}" for hint in _required_action_hints(label, notes))
+    if not verbose:
+        if checks or fallbacks or later or notes:
+            command = verbose_command or "zaxy init --verbose"
+            lines.extend(
+                [
+                    "",
+                    f"More: run {command} to show checks, fallbacks, later commands, and notes.",
+                ]
+            )
+        return lines
+    if checks:
+        lines.extend(["", "Useful checks:"])
+        lines.extend(f"- {check}" for check in checks)
+    if fallbacks:
+        lines.extend(["", "Fallbacks:"])
+        lines.extend(f"- {fallback}" for fallback in fallbacks)
+    if later:
+        lines.extend(["", "Later:"])
+        for label, command in later:
+            lines.append(f"- {label}")
+            if command:
+                lines.append(f"  {command}")
+    if notes:
+        lines.extend(["", "Notes:"])
+        lines.extend(f"- {note}" for note in notes)
+    return lines
+
+
+def _split_action_command(step: str) -> tuple[str, str | None] | None:
+    action_prefixes = {
+        "Run this Codex MCP install command: ": "Install Codex MCP:",
+        "Start or restart Codex through the activation launcher: ": "Start or restart Codex through the activation launcher:",
+        "Start managed deterministic Codex capture: ": "Start managed deterministic Codex capture:",
+    }
+    for prefix, label in action_prefixes.items():
+        if step.startswith(prefix):
+            return label, step[len(prefix) :]
+    return None
+
+
+def _command_hints(label: str, command: str) -> list[str]:
+    if label == "Install Codex MCP:":
+        if " -- /" not in command or "zaxy" not in command:
+            return []
+        return [
+            "Tip: this uses the resolved zaxy executable for MCP client reliability.",
+            "Tip: use zaxy init --codex-mcp-install user when Codex has no conflicting zaxy entry.",
+            "Tip: add --force only when you intentionally want to replace an existing zaxy MCP entry.",
+        ]
+    if label == "Start or restart Codex through the activation launcher:":
+        hints: list[str] = []
+        if "<task>" in command:
+            hints.append("Tip: replace <task> with the work you are starting.")
+        if "--eventloom-path" in command and "--workspace-root" in command:
+            hints.append(
+                "Tip: explicit --eventloom-path and --workspace-root values keep activation tied to this repo from any shell."
+            )
+        return hints
+    return []
+
+
+def _required_action_hints(label: str, notes: list[str]) -> list[str]:
+    if not label.startswith("Review existing Codex MCP config before replacing zaxy"):
+        return []
+    hints: list[str] = []
+    prefix = "If you intentionally want Zaxy to replace that entry, "
+    for note in notes:
+        if note.startswith(prefix):
+            hints.append(f"Tip: {note[len(prefix) :]}")
+    return hints
+
+
+def _is_codex_mcp_conflict_review_action(step: str) -> bool:
+    return step.startswith("Review existing Codex MCP config before replacing zaxy at ")
+
+
+def _split_deferred_command(step: str) -> tuple[str, str | None] | None:
+    deferred_prefixes = {
+        "After Codex resume or update, emit the resume boundary: ": "After Codex resume or update, emit the resume boundary:",
+    }
+    for prefix, label in deferred_prefixes.items():
+        if step.startswith(prefix):
+            return label, step[len(prefix) :]
+    return None
+
+
+def _extract_leading_command(step: str) -> str | None:
+    command_prefixes = ("Run ", "Smoke test recent memory: ", "Inspect model-facing memory bootstrap: ")
+    for prefix in command_prefixes:
+        if step.startswith(prefix):
+            return step[len(prefix) :]
+    return None
+
+
+def _is_onboarding_note(step: str) -> bool:
+    note_prefixes = (
+        "Captured events can be replayed",
+        "Data lives in ",
+        "Default capture mode:",
+        "Optional packet capture is disabled",
+        "Point OpenAI-compatible clients at ",
+        "Packet capture ",
+        "Codex MCP config installed at ",
+        "Managed deterministic Codex capture is already running.",
+        "Managed deterministic Codex capture starts through the activation launcher.",
+        "If you intentionally want Zaxy to replace that entry, ",
+    )
+    return step.startswith(note_prefixes)
 
 
 def _preflight_outputs(*, force: bool, paths: list[str | Path]) -> None:
@@ -409,6 +797,13 @@ def _normalize_capture_action(capture_action: str) -> str:
     if normalized in {"none", "start"}:
         return normalized
     raise ValueError("capture action must be one of: none, start")
+
+
+def _normalize_codex_mcp_install(mode: str) -> str:
+    normalized = mode.casefold().strip().replace("_", "-")
+    if normalized in {"command", "user", "project"}:
+        return normalized
+    raise ValueError("codex_mcp_install must be one of: command, user, project")
 
 
 def _normalize_mcp_client_name(client: str) -> str:
@@ -464,6 +859,8 @@ def _build_next_steps(
     mcp_client: str | None,
     mcp_output: str | Path | None,
     mcp_install_command: str | None,
+    mcp_installed_path: Path | None,
+    codex_mcp_conflict_path: Path | None,
     infra_action: str,
     projection_backend: str,
     capture_mode: str,
@@ -478,10 +875,18 @@ def _build_next_steps(
         next_steps.append("Restart the MCP client so it loads the Zaxy server config.")
     if mcp_install_command is not None:
         next_steps.append(f"Run this Codex MCP install command: {mcp_install_command}")
-        next_steps.append("Restart Codex so it loads the Zaxy MCP server.")
+    if mcp_installed_path is not None:
+        next_steps.append(f"Codex MCP config installed at {mcp_installed_path}")
+    if codex_mcp_conflict_path is not None:
+        next_steps.append(f"Review existing Codex MCP config before replacing zaxy at {codex_mcp_conflict_path}.")
         next_steps.append(
-            "Start Codex through the activation launcher: "
-            f"zaxy activate codex --session-id {session_id} --current-task \"<task>\" --launch"
+            "If you intentionally want Zaxy to replace that entry, rerun with "
+            "--codex-mcp-install user --force after reviewing it."
+        )
+    if mcp_install_command is not None or mcp_installed_path is not None:
+        next_steps.append(
+            "Start or restart Codex through the activation launcher: "
+            + _activation_command(eventloom=eventloom, session_id=session_id, workspace=workspace)
         )
         next_steps.append(
             "After Codex resume or update, emit the resume boundary: "
@@ -492,12 +897,20 @@ def _build_next_steps(
             "If Zaxy MCP tools are absent, use the CLI checkout fallback before substantial work: "
             f"zaxy memory checkout \"<task>\" --eventloom-path {eventloom} --session-id {session_id}"
         )
-        next_steps.append(
-            f"Start managed deterministic Codex capture: zaxy capture start --workspace {workspace}"
+        capture_started = any(
+            step.name == "capture_runtime" and step.status == "ok"
+            for step in steps
         )
+        if capture_started:
+            next_steps.append("Managed deterministic Codex capture is already running.")
+        else:
+            next_steps.append("Managed deterministic Codex capture starts through the activation launcher.")
         backend = projection_backend.casefold().strip()
         if backend == "neo4j":
-            next_steps.append("Add --graph to the capture start command when Neo4j should receive live projections.")
+            next_steps.append(
+                "For live Neo4j projections, start graph-enabled capture separately: "
+                f"zaxy capture start --workspace {workspace} --graph"
+            )
         elif backend == "embedded":
             next_steps.append("Captured events can be replayed into the repo-local embedded projection.")
     next_steps.append(f"Data lives in {eventloom}; each session is an append-only JSONL log.")
@@ -548,7 +961,11 @@ def write_agent_activation_instructions(
     """Install a bounded model-visible activation block into AGENTS.md."""
     root = Path(workspace)
     target = root / "AGENTS.md"
-    block = _render_agent_activation_block(eventloom_path=Path(eventloom_path), session_id=session_id)
+    block = _render_agent_activation_block(
+        eventloom_path=Path(eventloom_path),
+        session_id=session_id,
+        workspace=root,
+    )
     existing = target.read_text(encoding="utf-8") if target.exists() else ""
     if AGENT_ACTIVATION_BEGIN in existing and AGENT_ACTIVATION_END in existing:
         before, rest = existing.split(AGENT_ACTIVATION_BEGIN, 1)
@@ -562,7 +979,7 @@ def write_agent_activation_instructions(
     return target
 
 
-def _render_agent_activation_block(*, eventloom_path: Path, session_id: str) -> str:
+def _render_agent_activation_block(*, eventloom_path: Path, session_id: str, workspace: Path) -> str:
     eventloom = str(eventloom_path)
     return "\n".join(
         [
@@ -570,12 +987,32 @@ def _render_agent_activation_block(*, eventloom_path: Path, session_id: str) -> 
             "## Zaxy Memory Activation",
             "",
             "Before roadmap, implementation, release, review, resume, or high-context work:",
-            f"- Start Codex through Zaxy when opening a new session: `zaxy activate codex --session-id {session_id} --current-task \"<task>\" --launch`.",
+            "- Start Codex through Zaxy when opening a new session: "
+            f"`{_activation_command(eventloom=eventloom_path, session_id=session_id, workspace=workspace)}`.",
             f"- After `/resume`, Codex update, or MCP/tool reload, record the boundary: `zaxy hook-event resume --eventloom-path {eventloom} --session-id {session_id} --source codex --summary \"<task>\"`.",
             f"- If Zaxy MCP tools are unavailable, run CLI checkout before substantial work: `zaxy memory checkout \"<task>\" --eventloom-path {eventloom} --session-id {session_id}`.",
             "- If no fresh activation packet or cited checkout is available, treat memory as degraded and pause substantial work until checkout succeeds.",
             "- Do not rely only on ordinary Codex summaries when Zaxy activation is missing.",
             AGENT_ACTIVATION_END,
+        ]
+    )
+
+
+def _activation_command(*, eventloom: Path, session_id: str, workspace: Path) -> str:
+    return shlex.join(
+        [
+            "zaxy",
+            "activate",
+            "codex",
+            "--eventloom-path",
+            str(eventloom),
+            "--session-id",
+            session_id,
+            "--current-task",
+            "<task>",
+            "--workspace-root",
+            str(workspace),
+            "--launch",
         ]
     )
 
@@ -626,7 +1063,18 @@ def _format_capture_summary(capture: dict[str, Any]) -> list[str]:
             f"session={latest['thread']} source={latest['source']}"
         )
     if capture.get("doctor_status"):
-        lines.append(f"capture health: {capture['doctor_status']} - {capture.get('doctor_message', '')}")
+        doctor_message = str(capture.get("doctor_message", ""))
+        if (
+            capture.get("configured")
+            and not capture.get("running")
+            and capture.get("doctor_status") == "warning"
+            and doctor_message == "Codex capture is configured, but the managed watcher is not running"
+        ):
+            lines.append(
+                "capture next: start Codex through the activation launcher when you want live local capture"
+            )
+        else:
+            lines.append(f"capture health: {capture['doctor_status']} - {doctor_message}")
     if capture.get("error"):
         lines.append(f"capture error: {capture['error']}")
     return lines
@@ -679,12 +1127,67 @@ def _append_heartbeat(eventloom_path: Path, *, session_id: str, source: str, wor
     return eventlog.append(event_type, actor="zaxy-hook", payload=payload, thread=session_id)
 
 
-def _onboarding_doctor_status(doctor: dict[str, Any], *, hook_installation_required: bool = True) -> str:
-    ignored = {"observation_coverage", "capture_health", "memory_activation", "packet_memory"}
-    if not hook_installation_required:
-        ignored.add("hook_installation")
+def _onboarding_doctor_status(
+    doctor: dict[str, Any],
+    *,
+    hook_installation_required: bool = True,
+    agent_instructions_required: bool = True,
+) -> str:
+    ignored = _ignored_onboarding_doctor_checks(
+        hook_installation_required=hook_installation_required,
+        agent_instructions_required=agent_instructions_required,
+    )
     actionable_statuses = [check["status"] for check in doctor["checks"] if check["name"] not in ignored]
     return _overall_status(actionable_statuses)
+
+
+def _onboarding_doctor_message(
+    doctor: dict[str, Any],
+    *,
+    hook_installation_required: bool = True,
+    agent_instructions_required: bool = True,
+) -> str:
+    ignored = _ignored_onboarding_doctor_checks(
+        hook_installation_required=hook_installation_required,
+        agent_instructions_required=agent_instructions_required,
+    )
+    issues = [
+        check
+        for check in doctor.get("checks", [])
+        if check.get("name") not in ignored and check.get("status") != "ok"
+    ]
+    if not issues:
+        return "Doctor checks completed"
+    rendered = [_format_doctor_issue(check) for check in issues[:3]]
+    if len(issues) > 3:
+        rendered.append(f"+{len(issues) - 3} more")
+    return "; ".join(rendered)
+
+
+def _format_doctor_issue(check: dict[str, Any]) -> str:
+    name = str(check.get("name", "doctor"))
+    status = str(check.get("status", "unknown"))
+    message = str(check.get("message", "")).strip()
+    summary = f"{name} {status}"
+    if message:
+        summary += f": {message}"
+    action = str(check.get("action", "")).strip()
+    if action:
+        summary += f" (action: {action})"
+    return summary
+
+
+def _ignored_onboarding_doctor_checks(
+    *,
+    hook_installation_required: bool = True,
+    agent_instructions_required: bool = True,
+) -> set[str]:
+    ignored = {"codex_mcp_scope", "observation_coverage", "capture_health", "memory_activation", "packet_memory"}
+    if not hook_installation_required:
+        ignored.add("hook_installation")
+    if not agent_instructions_required:
+        ignored.add("agent_instructions")
+    return ignored
 
 
 def _onboarding_hook_status(report: dict[str, Any], *, hook_client: str | None) -> str:

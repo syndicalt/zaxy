@@ -142,7 +142,10 @@ def test_run_doctor_warns_on_user_codex_config_with_repo_scoped_zaxy(
     check = next(check for check in report["checks"] if check["name"] == "codex_mcp_scope")
     assert check["status"] == "warning"
     assert "repo-specific Eventloom" in check["message"]
-    assert "codex mcp add zaxy -- zaxy serve" in check["action"]
+    assert "Review" in check["action"]
+    assert str(codex_home / "config.toml") in check["action"]
+    assert f"zaxy init {tmp_path / 'zaxy'} --codex-mcp-install user --force" in check["action"]
+    assert "codex mcp add zaxy -- zaxy serve" not in check["action"]
 
 
 def test_run_doctor_reports_hook_adapter_guidance(tmp_path: Path) -> None:

@@ -91,6 +91,14 @@ reports/backend-shootout/*-diagnostics.md
 reports/backend-shootout/*-target-diagnostics.json
 reports/backend-shootout/*-target-diagnostics.md
 
+# Generated benchmark projection databases. Benchmark JSON, Markdown, JSONL,
+# and shell reproduction artifacts may be tracked; local graph DB state is
+# rebuilt from those inputs.
+reports/**/embedded.kuzu
+reports/**/embedded.kuzu.wal
+reports/**/*.db
+reports/**/*.db-wal
+
 # Local feature worktrees
 .worktrees/
 

@@ -1,0 +1,3015 @@
+{
+  "answer_mode": "openai-compatible",
+  "dataset_path": ".cache/zaxy/benchmarks/LongMemEval/data/longmemeval_oracle.json",
+  "dataset_sha256": "821a2034d219ab45846873dd14c14f12cfe7776e73527a483f9dac095d38620c",
+  "embedding_provider": "hash:1536",
+  "generated_at": "2026-06-07T06:53:16.336418Z",
+  "hypotheses": [
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "The first issue you had with your new car after its first service was with the GPS system not functioning correctly on March 22nd.",
+      "question_id": "gpt4_2655b836"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Data Analysis using Python",
+      "question_id": "gpt4_2487a7cb"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Car",
+      "question_id": "gpt4_76048e76"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Samsung Galaxy S22",
+      "question_id": "gpt4_2312f94c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "7 days. 8 days (including the last day) is also acceptable.",
+      "question_id": "0bb5a684"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "30 days. 31 days (including the last day) is also acceptable.",
+      "question_id": "08f4fc43"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "14 days. 15 days (including the last day) is also acceptable.",
+      "question_id": "2c63a862"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Tomatoes",
+      "question_id": "gpt4_385a5000"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "21 days. 22 days (including the last day) is also acceptable.",
+      "question_id": "2a1811e2"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "You participated in the 'Turbocharged Tuesdays' event 4 days before the 'Rack Fest'.",
+      "question_id": "bbf86515"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "white Adidas sneakers",
+      "question_id": "gpt4_5dcc0aab"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Malfunction of the stand mixer",
+      "question_id": "gpt4_0b2f1d21"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "14 days. 15 days (including the last day) is also acceptable.",
+      "question_id": "f0853d11"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Training pads for Luna",
+      "question_id": "gpt4_6ed717ea"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Fixing the fence.",
+      "question_id": "gpt4_70e84552"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "There are three charity events.",
+      "question_id": "a3838d2b"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "4 years and 9 months",
+      "question_id": "gpt4_93159ced"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Hate U Give",
+      "question_id": "gpt4_2d58bcd6"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Smart thermostat",
+      "question_id": "gpt4_65aabe59"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Five months ago.",
+      "question_id": "982b5123"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "5.5 weeks",
+      "question_id": "b9cfe692"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "June 3rd",
+      "question_id": "gpt4_4edbafa2"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "7 days. 8 days (including the last day) is also acceptable.",
+      "question_id": "c8090214"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Game of Thrones",
+      "question_id": "gpt4_483dd43c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Two weeks",
+      "question_id": "e4e14d04"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "You had been watching stand-up comedy specials regularly for about 3 months when you attended the open mic night at the local comedy club.",
+      "question_id": "c9f37c46"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "7:00 AM",
+      "question_id": "gpt4_2c50253f"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "14 days. 15 days (including the last day) is also acceptable.",
+      "question_id": "dcfa8644"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Road trip to the coast",
+      "question_id": "gpt4_b4a80587"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "United Airlines",
+      "question_id": "gpt4_9a159967"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Two months",
+      "question_id": "cc6d1ec1"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_8c8961ae"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Smart thermostat",
+      "question_id": "gpt4_d9af6064"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Persistent cough",
+      "question_id": "gpt4_7de946e7"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "27",
+      "question_id": "d01c6aa8"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "One week",
+      "question_id": "993da5e2"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "7 days. 8 days (including the last day) is also acceptable.",
+      "question_id": "a3045048"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "The family road trip across the American Southwest happened first.",
+      "question_id": "gpt4_d31cdae3"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Two weeks",
+      "question_id": "gpt4_cd90e484"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Tom",
+      "question_id": "gpt4_88806d6e"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_4cd9eba1"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Page Turners",
+      "question_id": "gpt4_93f6379c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Four weeks",
+      "question_id": "b29f3365"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Disney+",
+      "question_id": "gpt4_2f56ae70"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Rachel got engaged 2 months before your anniversary.",
+      "question_id": "6613b389"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_78cf46a3"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_0a05b494"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Meeting with Rachel",
+      "question_id": "gpt4_1a1dc16d"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Photo album for my mom",
+      "question_id": "gpt4_2f584639"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "Volleyball league",
+      "question_id": "gpt4_213fd887"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 0,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_5438fa52"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "Japanese Zero fighter plane model",
+      "question_id": "gpt4_c27434e8"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 26,
+      "hypothesis": "Rachel became a parent first.",
+      "question_id": "gpt4_fe651585"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 25,
+      "hypothesis": "7 days. 8 days (including the last day) is also acceptable.",
+      "question_id": "8c18457d"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 20,
+      "hypothesis": "Fixing the fence.",
+      "question_id": "gpt4_70e84552_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 20,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_93159ced_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 16,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "982b5123_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 19,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "c8090214_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_c27434e8_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 23,
+      "hypothesis": "Tom",
+      "question_id": "gpt4_fe651585_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "0a995998"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 19,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "6d550036"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "I have worked on or bought five model kits.",
+      "question_id": "gpt4_59c863d7"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 23,
+      "hypothesis": "You spent a total of 8 days on camping trips in the United States this year.",
+      "question_id": "b5ef892d"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 31,
+      "hypothesis": "It took you 5 weeks to watch all the Marvel Cinematic Universe movies and the main Star Wars films.",
+      "question_id": "e831120c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 29,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "3a704032"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 34,
+      "hypothesis": "$185",
+      "question_id": "gpt4_d84a3211"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "15 hours",
+      "question_id": "aae3761f"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 31,
+      "hypothesis": "I visited three different doctors: primary care physician, dermatologist, and ENT specialist.",
+      "question_id": "gpt4_f2262a51"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 22,
+      "hypothesis": "2:00 AM",
+      "question_id": "dd2973ad"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 34,
+      "hypothesis": "There are two different types of citrus fruits.",
+      "question_id": "c4a1ceb8"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 27,
+      "hypothesis": "I attended four movie festivals.",
+      "question_id": "gpt4_a56e767c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 30,
+      "hypothesis": "17 days",
+      "question_id": "6cb6f249"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 27,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "46a3abf7"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "$2,500",
+      "question_id": "36b9f61e"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "140 hours",
+      "question_id": "28dc39ac"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 28,
+      "hypothesis": "One",
+      "question_id": "gpt4_2f8be40d"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "Two babies were born to friends and family members in the last few months.",
+      "question_id": "2e6d26dc"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 21,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_15e38248"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "88432d0a"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 29,
+      "hypothesis": "I visited two different museums or galleries: Art Cube, and Natural History Museum.",
+      "question_id": "80ec1f4f"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 30,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "d23cf73b"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 36,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_7fce9456"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 26,
+      "hypothesis": "There are three different types of food delivery services.",
+      "question_id": "d682f1a2"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 29,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "7024f17c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 30,
+      "hypothesis": "TikTok",
+      "question_id": "gpt4_5501fe77"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 29,
+      "hypothesis": "Thrive Market",
+      "question_id": "gpt4_2ba83207"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 28,
+      "hypothesis": "$300",
+      "question_id": "2318644b"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "2ce6a0f2"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 29,
+      "hypothesis": "59.6",
+      "question_id": "gpt4_d12ceb0e"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 30,
+      "hypothesis": "You went to 6 doctor's appointments in March.",
+      "question_id": "00ca467f"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 31,
+      "hypothesis": "5 days. 6 days (including the last day) is also acceptable.",
+      "question_id": "b3c15d39"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 29,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_31ff4165"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 31,
+      "hypothesis": "There are 17 fish in my aquariums.",
+      "question_id": "eeda8a6d"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 34,
+      "hypothesis": "5 days. 6 days (including the last day) is also acceptable.",
+      "question_id": "2788b940"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 22,
+      "hypothesis": "It took 5 days for your laptop backpack to arrive after you bought it. 6 days (including the last day) is also acceptable.",
+      "question_id": "60bf93ed"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 34,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "9d25d4e0"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 30,
+      "hypothesis": "$5,850",
+      "question_id": "129d1232"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "There are six projects.",
+      "question_id": "60472f9c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "I currently own three musical instruments.",
+      "question_id": "gpt4_194be4b3"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "There are four bikes.",
+      "question_id": "a9f6b44c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 34,
+      "hypothesis": "$3,750",
+      "question_id": "d851d5ba"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "7 days. 8 days (including the last day) is also acceptable.",
+      "question_id": "5a7937c8"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 31,
+      "hypothesis": "I replaced or fixed four items: the kitchen shelves, the toaster, the kitchen mat, and the kitchen faucet.",
+      "question_id": "gpt4_ab202e7f"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 30,
+      "hypothesis": "I rode rollercoasters 10 times.",
+      "question_id": "gpt4_e05b82a6"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "$220",
+      "question_id": "gpt4_731e37d7"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 26,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "edced276"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 19,
+      "hypothesis": "2 days",
+      "question_id": "10d9b85a"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 34,
+      "hypothesis": "156",
+      "question_id": "e3038f8c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "$495",
+      "question_id": "2b8f3739"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 26,
+      "hypothesis": "There are two magazine subscriptions.",
+      "question_id": "1a8a66a6"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 28,
+      "hypothesis": "There are four online courses.",
+      "question_id": "c2ac3c61"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 28,
+      "hypothesis": "There are two music albums or EPs that you have purchased or downloaded.",
+      "question_id": "bf659f65"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 26,
+      "hypothesis": "I spent a total of 8 years in formal education from high school to the completion of my Bachelor's degree (4 years of high school from 2010 to 2014 and 4 years for my Bachelor's degree completed in 2020).",
+      "question_id": "gpt4_372c3eed"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 27,
+      "hypothesis": "There are three total pieces of writing.",
+      "question_id": "gpt4_2f91af09"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 34,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "81507db6"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 21,
+      "hypothesis": "2 days. 3 days (including the last day) is also acceptable.",
+      "question_id": "88432d0a_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 27,
+      "hypothesis": "I visited two different museums or galleries: Art Cube, and Natural History Museum.",
+      "question_id": "80ec1f4f_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "There are 17 fish in my aquariums.",
+      "question_id": "eeda8a6d_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 23,
+      "hypothesis": "It took 5 days for your iPad case to arrive after you bought it.",
+      "question_id": "60bf93ed_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 23,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "edced276_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 15,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_372c3eed_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 20,
+      "hypothesis": "25 minutes and 50 seconds (or 25:50)",
+      "question_id": "6a1eabeb"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 29,
+      "hypothesis": "I have tried two Korean restaurants in my city.",
+      "question_id": "6aeb4375"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 7,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "830ce83f"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 26,
+      "hypothesis": "$350,000",
+      "question_id": "852ce960"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 13,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "945e3d21"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 27,
+      "hypothesis": "Yes",
+      "question_id": "d7c942c3"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "10-12 hours",
+      "question_id": "71315a70"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "There are five bikes.",
+      "question_id": "89941a93"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 21,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "ce6d2d27"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 18,
+      "hypothesis": "You went on your most recent family trip to Hawaii.",
+      "question_id": "9ea5eabc"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 20,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "07741c44"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "Seven",
+      "question_id": "a1eacc2a"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 30,
+      "hypothesis": "220",
+      "question_id": "184da446"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 26,
+      "hypothesis": "When you just started your new role as Senior Software Engineer, you led 4 engineers. Now, you lead 5 engineers.",
+      "question_id": "031748ae"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 31,
+      "hypothesis": "There are five titles.",
+      "question_id": "4d6b87c8"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 30,
+      "hypothesis": "You need 120 stars to reach the gold level on your Starbucks Rewards app.",
+      "question_id": "0f05491a"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 27,
+      "hypothesis": "Three months",
+      "question_id": "08e075c7"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 30,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "f9e8c073"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 18,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "41698283"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 20,
+      "hypothesis": "You see your therapist, Dr. Smith, every week.",
+      "question_id": "2698e78f"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 29,
+      "hypothesis": "You watched 4 MCU films in the last 3 months.",
+      "question_id": "b6019101"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 26,
+      "hypothesis": "I have tried out 3 of Emma's recipes.",
+      "question_id": "45dc21b6"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 19,
+      "hypothesis": "Rachel is currently working at TechCorp.",
+      "question_id": "5a4f22c0"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 22,
+      "hypothesis": "You switched to more water per tablespoon of coffee. Initially, you used 1 tablespoon of coffee for every 6 ounces of water, and later adjusted it to 1 tablespoon for every 5 ounces of water.",
+      "question_id": "6071bd76"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 14,
+      "hypothesis": "The painting 'Ethereal Dreams' by Emma Taylor is currently hanging above the bed in the user's bedroom.",
+      "question_id": "e493bb7c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 31,
+      "hypothesis": "six",
+      "question_id": "618f13b2"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 31,
+      "hypothesis": "You have completed 50 episodes of the Science series on Crash Course.",
+      "question_id": "72e3ee87"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 22,
+      "hypothesis": "Yes",
+      "question_id": "c4ea545c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "There are 42 new postcards.",
+      "question_id": "01493427"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 28,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "6a27ffc2"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 25,
+      "hypothesis": "Three months",
+      "question_id": "2133c1b5"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "Kansas City Masterpiece",
+      "question_id": "18bc8abd"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 31,
+      "hypothesis": "Nine months.",
+      "question_id": "db467c8c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 28,
+      "hypothesis": "Four weeks.",
+      "question_id": "7a87bd0c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "You have had your cat, Luna, for about 9 months.",
+      "question_id": "e61a7584"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "600",
+      "question_id": "1cea1afa"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 31,
+      "hypothesis": "20",
+      "question_id": "ed4ddc30"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "I just finished five issues of National Geographic.",
+      "question_id": "8fb83627"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 20,
+      "hypothesis": "Yes, you finished reading 'The Nightingale' by Kristin Hannah recently.",
+      "question_id": "b01defab"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 19,
+      "hypothesis": "You got your guitar serviced at a music shop on Main St.",
+      "question_id": "22d2cb42"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 21,
+      "hypothesis": "132 points",
+      "question_id": "0e4e4c46"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 25,
+      "hypothesis": "There are five tops.",
+      "question_id": "4b24c848"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 30,
+      "hypothesis": "$420",
+      "question_id": "7e974930"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 29,
+      "hypothesis": "ten",
+      "question_id": "603deb26"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 28,
+      "hypothesis": "11:30 AM",
+      "question_id": "59524333"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 27,
+      "hypothesis": "You have watched 15 Crash Course videos in the past few weeks.",
+      "question_id": "5831f84d"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 15,
+      "hypothesis": "You are planning to stay on Oahu for your birthday trip to Hawaii.",
+      "question_id": "eace081b"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "I can four different species of birds.",
+      "question_id": "affe2881"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 20,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "50635ada"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 17,
+      "hypothesis": "My previous personal best time for the charity 5K run was 27 minutes and 45 seconds.",
+      "question_id": "e66b632c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 29,
+      "hypothesis": "I have added 20 autographed baseballs to my collection in the past few months.",
+      "question_id": "0ddfec37"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 21,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "f685340e"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "About two hours each day.",
+      "question_id": "cc5ded98"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 17,
+      "hypothesis": "Wednesday",
+      "question_id": "dfde3500"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 31,
+      "hypothesis": "I have a total of 38 pre-1920 American coins in my collection.",
+      "question_id": "69fee5aa"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "You can redeem enough points for a single free night's stay at any Hilton property.",
+      "question_id": "7401057b"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 22,
+      "hypothesis": "10 pounds",
+      "question_id": "cf22b7bf"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 25,
+      "hypothesis": "There are three followers.",
+      "question_id": "a2f3aa27"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "5-2",
+      "question_id": "c7dc5443"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 28,
+      "hypothesis": "There are three projects.",
+      "question_id": "06db6396"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 8,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "3ba21379"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "9bbe84a2"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 31,
+      "hypothesis": "There are two largemouth bass.",
+      "question_id": "10e09553"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 28,
+      "hypothesis": "7:30 AM",
+      "question_id": "dad224aa"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "There are 6 women on the team led by Rachel.",
+      "question_id": "ba61f0b9"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 30,
+      "hypothesis": "Yes",
+      "question_id": "42ec0761"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 29,
+      "hypothesis": "We've met up twice.",
+      "question_id": "5c40ec5b"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 27,
+      "hypothesis": "You increased the limit from one cup to two cups.",
+      "question_id": "c6853660"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 29,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "26bdc477"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 14,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "0977f2af"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 21,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "6aeb4375_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 22,
+      "hypothesis": "You lead a team of 4 engineers in your new role as Software Engineer Manager.",
+      "question_id": "031748ae_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 7,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "2698e78f_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 16,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "2133c1b5_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 23,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "0ddfec37_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 17,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "f685340e_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "89941a94"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 21,
+      "hypothesis": "In a shoe rack.",
+      "question_id": "07741c45"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 18,
+      "hypothesis": "To learn more about video editing, particularly with Adobe Premiere Pro, I recommend the following resources:\n\n1. **Adobe Premiere Pro's official documentation and tutorials**\n2. **YouTube channels** such as Premiere Bro, Video Copilot, and Adobe Creative Cloud\n3. **Online courses** on platforms like Udemy, LinkedIn Learning, and Skillshare\n4. **Premiere Pro communities and forums**, such as Reddit's r/premierepro and Adobe's Premiere Pro",
+      "question_id": "8a2466db"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 21,
+      "hypothesis": "Some accessories that would complement your current photography setup include:\n\n1. **Godox V1 Flash**: A compact flash known for its reliability and good performance.\n2. **Sony HVL-F60RM Flash**: A high-end flash with excellent build quality and weather sealing.\n3. **G-Lock Ultra Tripod System**: Provides a secure and stable connection for your camera setup.\n4. **Camera Bags**: Brands like Think Tank Photo, Lowepro, and",
+      "question_id": "06878be2"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 12,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "75832dbd"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 21,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "0edc2aef"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 26,
+      "hypothesis": "No",
+      "question_id": "35a27287"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 12,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "32260d93"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 19,
+      "hypothesis": "Here are some activities you can do in the evening:\n\n1. Finish any remaining work or stimulating activities (8:30 pm).\n2. Start a relaxation technique such as reading, meditation, or deep breathing (8:45 pm).\n3. Put away electronic devices (9:15 pm).\n4. Prepare your sleep environment by making your bed and dimming the lights (9:20 pm).\n5. Get ready for bed, including brushing your teeth and changing into pajamas (",
+      "question_id": "195a1a1b"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 18,
+      "hypothesis": "Here are some tips for keeping your kitchen clean:\n\n1. **Assign a Home:** Designate a specific spot in your utensil holder for each group of utensils to develop a habit of putting things back in their place.\n2. **Use Dividers:** Add dividers or small compartments within your utensil holder to separate groups of utensils, preventing clutter.\n3. **Store Frequently Used Items Front and Center:** Place your most frequently used utensils in easy-to-reach locations.\n4",
+      "question_id": "afdc33df"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 27,
+      "hypothesis": "Here are some tips for getting better results with your slow cooker recipes:\n\n1. **Use Fresh Ingredients**: Fresh vegetables and herbs can enhance the flavor of your dishes.\n2. **Layer Ingredients Properly**: Place denser ingredients like root vegetables at the bottom and lighter ingredients on top to ensure even cooking.\n3. **Avoid Overfilling**: Do not fill the slow cooker more than two-thirds full to allow for proper heat circulation.\n4. **Adjust Cooking Times",
+      "question_id": "caf03d32"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 19,
+      "hypothesis": "Here are a few suggestions to socialize with your colleagues while working from home:\n\n1. **Virtual Coffee Breaks**: Propose a casual, 30-minute video call where team members can chat about non-work-related topics, share their weekends, or just catch up. This can serve as a virtual watercooler.\n\n2. **Lead by Example**: As the organizer, actively participate in these virtual coffee breaks to set a welcoming tone. Share your own experiences and engage with",
+      "question_id": "54026fce"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 16,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "06f04340"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 16,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "6b7dfb22"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 12,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "1a1907b4"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 9,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "09d032c9"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 13,
+      "hypothesis": "You can enhance your chocolate chip cookies by experimenting with turbinado sugar, which adds a richer flavor. Consider pairing it with spices like cinnamon, citrus fruits, nuts, espresso, vanilla, cocoa powder, dried fruits, coconut, ginger, or even a pinch of salt. Specific recipe ideas include cinnamon sugar cookies, lemon bars, espresso brownies, and gingerbread men.",
+      "question_id": "38146c39"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 14,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "d24813b1"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 19,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "57f827a0"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 18,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "95228167"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 17,
+      "hypothesis": "Here are some tips to make your homemade coffee creamer even healthier:\n\n1. **Choose a healthier sweetener**: Consider alternatives like stevia, monk fruit sweetener, or yacon syrup, which are lower in calories and sugar content.\n2. **Opt for a higher-quality almond milk**: Look for unsweetened, unflavored, and organic almond milk to avoid added sugars and preservatives.\n3. **Reduce the amount of sweetener**: Start by using",
+      "question_id": "505af2f5"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 16,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "75f70248"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 14,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "d6233ab6"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 25,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "1da05512"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 17,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "fca70973"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 13,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "b6025781"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 19,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "a89d7624"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 18,
+      "hypothesis": "Here are some documentary recommendations you might enjoy:\n\n**Nature and Wildlife:**\n1. **Planet Earth** (Netflix) - Stunning natural history footage.\n2. **Blue Planet** (Netflix) - Explore the marine world with David Attenborough.\n3. **March of the Penguins** (Netflix) - A heartwarming documentary about Emperor Penguins.\n4. **Dynasties** (Netflix) - Focuses on the family dynamics of five animal groups.\n5. **Ch",
+      "question_id": "b0479f84"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 17,
+      "hypothesis": "Your bike's improved performance during Sunday group rides could be due to the replacement of the old bike's chain and cassette on February 1st, which has contributed to an overall enhancement in its performance.",
+      "question_id": "1d4e3b97"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 13,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "07b6f563"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 17,
+      "hypothesis": "You can listen to podcasts during your commute. Consider exploring new genres beyond true crime and self-improvement, such as history podcasts.",
+      "question_id": "1c0ddc50"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 22,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "0a34ad58"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "Admon was assigned to the 8 am - 4 pm (Day Shift) on Sundays.",
+      "question_id": "7161e7e2"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 15,
+      "hypothesis": "The restaurant in Cihampelas Walk that serves a great Nasi Goreng is Miss Bee Providore.",
+      "question_id": "c4f10528"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 10,
+      "hypothesis": "The Plesiosaur had a blue scaly body.",
+      "question_id": "89527b6b"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 12,
+      "hypothesis": "The unique dessert shop with the giant milkshakes is The Sugar Factory, located at Icon Park.",
+      "question_id": "e9327a54"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 9,
+      "hypothesis": "Roscioli",
+      "question_id": "4c36ccef"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 14,
+      "hypothesis": "The refining processes used at the Lake Charles Refinery include:\n\n1. Atmospheric distillation: This is the first step in the refining process, where crude oil is heated and separated into different fractions based on their boiling points.\n2. Fluid catalytic cracking (FCC): This process breaks down heavier fractions of crude oil into lighter, more valuable products such as gasoline and diesel fuel.\n3. Alkylation: This process combines smaller molecules to form larger ones, creating high-octane gasoline",
+      "question_id": "6ae235be"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 12,
+      "hypothesis": "International Budget Hostel",
+      "question_id": "7e00a6cb"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 15,
+      "hypothesis": "Transcriptionist.",
+      "question_id": "1903aded"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 18,
+      "hypothesis": "I suggested 'Sexual fixations', 'Problematic sexual behaviors', 'Sexual impulsivity', and 'Compulsive sexuality'.",
+      "question_id": "ceb54acb"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 20,
+      "hypothesis": "The show you used as an example is \"Doc Martin.\"",
+      "question_id": "f523d9fe"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 18,
+      "hypothesis": "38 subjects",
+      "question_id": "0e5e2d1a"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 20,
+      "hypothesis": "Evolution",
+      "question_id": "fea54f57"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 11,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "cc539528"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 12,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "dc439ea3"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 18,
+      "hypothesis": "The party will face 4 mummies in the Lost Temple of the Djinn.",
+      "question_id": "18dcd5a5"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 12,
+      "hypothesis": "The hiking trail recommended for the Natural Park of Moncayo mountain in Arag\u00f3n is the GR-90.",
+      "question_id": "488d3006"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 21,
+      "hypothesis": "According to Borges, 'The Library is a sphere whose exact center is any one of its hexagons and whose circumference is inaccessible.'",
+      "question_id": "58470ed2"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 18,
+      "hypothesis": "The three objectives were: 1) to identify molecular subtypes of endometrial cancer using a combination of genomic and transcriptomic approaches, 2) to investigate the clinical and biological significance of the identified molecular subtypes, including their association with patient outcomes and response to therapy, and 3) to develop biomarkers for the early detection and prognosis of endometrial cancer based on the identified molecular subtypes.",
+      "question_id": "8cf51dda"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 11,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "1d4da289"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 10,
+      "hypothesis": "Roscioli.",
+      "question_id": "8464fc84"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 12,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "8aef76bc"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 10,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "71a3fd6b"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 27,
+      "hypothesis": "In Chapter 4 of Book 1 of Adolphe Tanqueray's Spiritual Life treatise, he discusses vocal prayer and meditation.",
+      "question_id": "2bf43736"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 19,
+      "hypothesis": "The Spanish-Catalan singer-songwriter who supports unity between Catalonia and Spain is Manolo Garc\u00eda.",
+      "question_id": "70b3e69b"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 20,
+      "hypothesis": "Sound effects (e.g., ambient, diegetic, non-diegetic, etc.).",
+      "question_id": "8752c811"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 18,
+      "hypothesis": "Absinthe.",
+      "question_id": "3249768e"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 20,
+      "hypothesis": "Mindful.org.",
+      "question_id": "1b9b7252"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 9,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "1568498a"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 22,
+      "hypothesis": "The 6S algorithm is implemented in the SIAC_GEE tool.",
+      "question_id": "6222b6eb"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 17,
+      "hypothesis": "2-3 eggs",
+      "question_id": "e8a79c70"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 17,
+      "hypothesis": "Visit Candle 79 in.",
+      "question_id": "d596882b"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 13,
+      "hypothesis": "Dr. Arati Prabhakar",
+      "question_id": "e3fc4d6e"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 14,
+      "hypothesis": "The Soviet cartoon that mocked Western culture is \"Nu, pogodi!\" which portrayed the Soviet Union as superior.",
+      "question_id": "51b23612"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 19,
+      "hypothesis": "You should leave the tomato juice mixed with lemon juice on your under-eye area for 10 minutes.",
+      "question_id": "3e321797"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 18,
+      "hypothesis": "Revolution Hall",
+      "question_id": "e982271f"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 19,
+      "hypothesis": "The average improvement in framerate when using the Hardware-Aware Modular Training (HAMT) agent in the 'To Adapt or Not to Adapt? Real-Time Adaptation for Semantic Segmentation' submission is approximately 20%.",
+      "question_id": "352ab8bd"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 9,
+      "hypothesis": "Memrise uses mnemonics to help learners memorize words, phrases, and grammatical concepts.",
+      "question_id": "fca762bc"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 27,
+      "hypothesis": "$2,000",
+      "question_id": "7a8d0b71"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 21,
+      "hypothesis": "Patagonia and Southwest Airlines.",
+      "question_id": "a40e080f"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 13,
+      "hypothesis": "Jaipur Rugs.",
+      "question_id": "8b9d4367"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 26,
+      "hypothesis": "2014.",
+      "question_id": "5809eb10"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 18,
+      "hypothesis": "The video is 'How to Sit Properly at a Desk to Avoid Back Pain' and the link is https://www.youtube.com/watch?v=UfOvNlX9Hh0.",
+      "question_id": "41275add"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 12,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "4388e9dd"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 23,
+      "hypothesis": "The Chiefs played the Jaguars 12 times at Arrowhead Stadium.",
+      "question_id": "4baee567"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 12,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "561fabcd"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 10,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "b759caee"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 14,
+      "hypothesis": "The designation on your jumpsuit that helped you find the file number in the records room was \"LIV.\"",
+      "question_id": "ac031881"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 10,
+      "hypothesis": "MusicTheory.net",
+      "question_id": "28bcfaac"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 11,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "16c90bf4"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 13,
+      "hypothesis": "Pennsylvania",
+      "question_id": "c8f1aeed"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 18,
+      "hypothesis": "C D E F G A B A G F E D C",
+      "question_id": "eaca4986"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 16,
+      "hypothesis": "Nostalgia is the online store based in India that offers an expansive collection of traditional Indian fabrics, threads, and embellishments.",
+      "question_id": "c7cf7dfd"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 12,
+      "hypothesis": "Patagonia",
+      "question_id": "e48988bc"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 12,
+      "hypothesis": "Veja",
+      "question_id": "1de5cff2"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "The recommended ratio is 1:10, meaning one part tea tree oil to ten parts carrier oil.",
+      "question_id": "65240037"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 13,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "778164c6"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 10,
+      "hypothesis": "You graduated with a degree in Business Administration.",
+      "question_id": "e47becba"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 18,
+      "hypothesis": "Your daily commute to work takes 45 minutes each way.",
+      "question_id": "118b2229"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 13,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "51a45a95"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 8,
+      "hypothesis": "The play you attended at the local community theater was \"The Glass Menagerie.\"",
+      "question_id": "58bf7951"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 11,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "1e043500"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 15,
+      "hypothesis": "Johnson",
+      "question_id": "c5e8278d"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 10,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "6ade9755"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 10,
+      "hypothesis": "You repainted your bedroom walls a lighter shade of gray.",
+      "question_id": "6f9b354f"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 17,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "58ef2f1c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 15,
+      "hypothesis": "You bought your new tennis racket from a sports store downtown.",
+      "question_id": "f8c5f88b"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 7,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "5d3d2817"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 20,
+      "hypothesis": "$800",
+      "question_id": "7527f7e2"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "You have 20 playlists on Spotify.",
+      "question_id": "c960da58"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 11,
+      "hypothesis": "You attended the University of Melbourne for your study abroad program.",
+      "question_id": "3b6f954b"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 9,
+      "hypothesis": "You received a 10% discount on your first purchase from the new clothing brand last month.",
+      "question_id": "726462e0"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 27,
+      "hypothesis": "It took you 4 hours to assemble the IKEA bookshelf.",
+      "question_id": "94f70d80"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 10,
+      "hypothesis": "You bought your sister a yellow dress and a pair of earrings to match for her birthday gift.",
+      "question_id": "66f24dbb"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 9,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "ad7109d1"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 22,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "af8d2e46"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 11,
+      "hypothesis": "You used to be a staunch atheist, but you've been exploring other possibilities.",
+      "question_id": "dccbc061"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 14,
+      "hypothesis": "Nike",
+      "question_id": "c8c3f81d"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 10,
+      "hypothesis": "You completed a certification in Data Science last month.",
+      "question_id": "8ebdbe50"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 25,
+      "hypothesis": "You own three bikes.",
+      "question_id": "6b168ec8"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 15,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "75499fd8"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 28,
+      "hypothesis": "You caught 12 largemouth bass on your fishing trip to Lake Michigan.",
+      "question_id": "21436231"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 25,
+      "hypothesis": "You watched 10 amateur comedians perform at the open mic night.",
+      "question_id": "95bcc1c8"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 19,
+      "hypothesis": "Luna",
+      "question_id": "0862e8bf"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 16,
+      "hypothesis": "You were 18 years old when your grandma gave you the silver necklace.",
+      "question_id": "853b0a1d"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 25,
+      "hypothesis": "Your preferred gin-to-vermouth ratio for a classic gin martini is 3:1 with a dash of citrus bitters.",
+      "question_id": "a06e4cfe"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 22,
+      "hypothesis": "16GB",
+      "question_id": "37d43f65"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 17,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "b86304ba"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 10,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "d52b4f67"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 11,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "25e5aa4f"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 22,
+      "hypothesis": "It took around 5 hours to move everything into the new apartment.",
+      "question_id": "caf9ead2"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 13,
+      "hypothesis": "You tried a lavender gin fizz recipe last weekend.",
+      "question_id": "8550ddae"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 10,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "60d45044"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 14,
+      "hypothesis": "You had a conversation about destiny with Sarah.",
+      "question_id": "3f1e9474"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 11,
+      "hypothesis": "IKEA",
+      "question_id": "86b68151"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 17,
+      "hypothesis": "7:00 PM",
+      "question_id": "577d4d32"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 22,
+      "hypothesis": "There are two copies of my favorite artist's debut album.",
+      "question_id": "ec81a493"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "Eleven weeks.",
+      "question_id": "15745da0"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 11,
+      "hypothesis": "You went to Hawaii on a week-long trip with your family.",
+      "question_id": "e01b8e2f"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 11,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "bc8a6e93"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 5,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "ccb36322"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 18,
+      "hypothesis": "Over a year.",
+      "question_id": "001be529"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 12,
+      "hypothesis": "You bought a rare blue Snaggletooth action figure from a thrift store.",
+      "question_id": "b320f3f8"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 21,
+      "hypothesis": "Two weeks",
+      "question_id": "19b5f2b3"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 10,
+      "hypothesis": "You attended the Imagine Dragons concert at the Xfinity Center on June 15th.",
+      "question_id": "4fd1909e"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 25,
+      "hypothesis": "About 2 hours.",
+      "question_id": "545bd2b5"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 20,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "8a137a7f"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 12,
+      "hypothesis": "Your new Samsung TV is 55 inches.",
+      "question_id": "76d63226"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 20,
+      "hypothesis": "You are currently reading \"The Seven Husbands of Evelyn Hugo.\"",
+      "question_id": "86f00804"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 28,
+      "hypothesis": "You found 17 skeins of worsted weight yarn in your stash.",
+      "question_id": "8e9d538c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 23,
+      "hypothesis": "10 hours",
+      "question_id": "311778f1"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 17,
+      "hypothesis": "6:30 PM",
+      "question_id": "c19f7a0b"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 18,
+      "hypothesis": "A mix of Irish and Italian",
+      "question_id": "4100d0a0"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 25,
+      "hypothesis": "30 minutes",
+      "question_id": "29f2956b"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 9,
+      "hypothesis": "Emily lives in Denver.",
+      "question_id": "1faac195"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 26,
+      "hypothesis": "Alex marinated the BBQ ribs in special sauce for 24 hours before grilling them.",
+      "question_id": "faba32e5"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 10,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "f4f1d8a4"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 9,
+      "hypothesis": "Trader Joe's lavender scented shampoo.",
+      "question_id": "c14c00dd"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 17,
+      "hypothesis": "I initially thought I had just a cold, but it turned out to be a bad case of bronchitis.",
+      "question_id": "36580ce8"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 12,
+      "hypothesis": "You met Sophia at a coffee shop in the city.",
+      "question_id": "3d86fd0a"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 10,
+      "hypothesis": "I finally beat that last boss in the Dark Souls 3 DLC last weekend, after weeks of trying.",
+      "question_id": "a82c026e"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 8,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "0862e8bf_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 20,
+      "hypothesis": "Eleven weeks.",
+      "question_id": "15745da0_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 14,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "bc8a6e93_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 18,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "19b5f2b3_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 22,
+      "hypothesis": "30 minutes",
+      "question_id": "29f2956b_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 6,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "f4f1d8a4_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 27,
+      "hypothesis": "7 days. 8 days (including the last day) is also acceptable.",
+      "question_id": "gpt4_59149c77"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 30,
+      "hypothesis": "First, I helped my friend prepare the nursery. Then, I helped my cousin pick out stuff for her baby shower. Lastly, I ordered a customized phone case for my friend's birthday.",
+      "question_id": "gpt4_f49edff3"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 25,
+      "hypothesis": "4 weeks ago",
+      "question_id": "71017276"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 22,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "b46e15ed"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 30,
+      "hypothesis": "10 days. 11 days (including the last day) is also acceptable.",
+      "question_id": "gpt4_fa19884c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 22,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "0bc8ad92"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 19,
+      "hypothesis": "2 weeks ago",
+      "question_id": "af082822"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 23,
+      "hypothesis": "Michael's engagement party",
+      "question_id": "gpt4_4929293a"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "4 days ago. 5 days (including the last day) is also acceptable.",
+      "question_id": "gpt4_b5700ca9"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "25 days ago. 26 days (including the last day) is also acceptable.",
+      "question_id": "9a707b81"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 31,
+      "hypothesis": "24 days. 25 days (including the last day) is also acceptable.",
+      "question_id": "gpt4_1d4ab0c9"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 26,
+      "hypothesis": "3 weeks ago",
+      "question_id": "gpt4_e072b769"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 29,
+      "hypothesis": "5 days. 6 days (including the last day) is also acceptable.",
+      "question_id": "0db4c65d"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 31,
+      "hypothesis": "2 days. 3 days (including the last day) is also acceptable.",
+      "question_id": "gpt4_1d80365e"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "First, day hike to Muir Woods National Monument with my family. Then, solo camping trip to Yosemite and realized I need to upgrade some of my equipment. Lastly, solo camping trip to Yosemite National Park.",
+      "question_id": "gpt4_7f6b06db"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "4 months ago",
+      "question_id": "gpt4_6dc9b45b"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 22,
+      "hypothesis": "10 days ago. 11 days (including the last day) is also acceptable.",
+      "question_id": "gpt4_8279ba02"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 34,
+      "hypothesis": "First, I used a Buy One Get One Free coupon on Luvs diapers at Walmart. Then, I redeemed $12 cashback for a $10 Amazon gift card from Ibotta. Lastly, I signed up for the rewards program at ShopRite.",
+      "question_id": "gpt4_18c2b244"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 37,
+      "hypothesis": "8 weeks.",
+      "question_id": "gpt4_a1b77f9c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 29,
+      "hypothesis": "54 days. 55 days (including the last day) is also acceptable.",
+      "question_id": "gpt4_1916e0ea"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 30,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_7a0daae1"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 16,
+      "hypothesis": "9 days. 10 days (including the last day) is also acceptable.",
+      "question_id": "gpt4_468eb063"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 36,
+      "hypothesis": "First, Science Museum. Then, some photos of the other artifacts at the \"Ancient Egyptian Artifacts\" exhibition. Then, Museum of History. Then, their guided tour of \"The Evolution of Abstract Expressionism.\" Then, Modern Art Museum. Then, Metropolitan Museum of Art. Then, Museum of Contemporary Art. Lastly, Natural History Museum.",
+      "question_id": "gpt4_7abb270c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 30,
+      "hypothesis": "6 days. 7 days (including the last day) is also acceptable.",
+      "question_id": "gpt4_1e4a8aeb"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "131 days. 132 days (including the last day) is also acceptable.",
+      "question_id": "gpt4_4fc4f797"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "24 days. 25 days (including the last day) is also acceptable.",
+      "question_id": "4dfccbf7"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 27,
+      "hypothesis": "22 days. 23 days (including the last day) is also acceptable.",
+      "question_id": "gpt4_61e13b3c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "First, I watched an NBA game at the Staples Center on January 5th. Then, I watched the College Football National Championship game with my family at home on January 15th.",
+      "question_id": "gpt4_45189cb4"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "21 days. 22 days (including the last day) is also acceptable.",
+      "question_id": "2ebe6c90"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 18,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_e061b84f"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 28,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "370a8ff4"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 29,
+      "hypothesis": "First, I attended a free outdoor concert series in the park and discovered some great new talent. Then, I went to a music festival in Brooklyn that featured some of my favorite indie bands.",
+      "question_id": "gpt4_d6585ce8"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 27,
+      "hypothesis": "1 days. 2 days (including the last day) is also acceptable.",
+      "question_id": "gpt4_4ef30696"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 13,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_ec93e27f"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 28,
+      "hypothesis": "Three weeks.",
+      "question_id": "6e984301"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 19,
+      "hypothesis": "26 days ago. 27 days (including the last day) is also acceptable.",
+      "question_id": "8077ef71"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 28,
+      "hypothesis": "JetBlue, American Airlines, United Airlines, Delta.",
+      "question_id": "gpt4_f420262c"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 31,
+      "hypothesis": "14 days. 15 days (including the last day) is also acceptable.",
+      "question_id": "gpt4_8e165409"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "29 days. 30 days (including the last day) is also acceptable.",
+      "question_id": "gpt4_74aed68e"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 22,
+      "hypothesis": "4 weeks ago.",
+      "question_id": "bcbe585f"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_21adecb5"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 21,
+      "hypothesis": "You attended the photography workshop 3 days ago.",
+      "question_id": "5e1b23de"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "Charity bake sale",
+      "question_id": "gpt4_98f46fc6"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 20,
+      "hypothesis": "17 days ago. 18 days (including the last day) is also acceptable.",
+      "question_id": "gpt4_af6db32f"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 29,
+      "hypothesis": "24 days ago. 25 days (including the last day) is also acceptable.",
+      "question_id": "eac54adc"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 26,
+      "hypothesis": "3 days ago. 4 days (including the last day) is also acceptable.",
+      "question_id": "gpt4_7ddcf75f"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 22,
+      "hypothesis": "3 days ago. 4 days (including the last day) is also acceptable.",
+      "question_id": "gpt4_a2d1d1f6"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 25,
+      "hypothesis": "Three weeks ago.",
+      "question_id": "gpt4_85da3956"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 21,
+      "hypothesis": "7 days ago.",
+      "question_id": "gpt4_b0863698"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 21,
+      "hypothesis": "My post about vegan chili recipe",
+      "question_id": "gpt4_68e94287"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "185 days. 186 days (including the last day) is also acceptable.",
+      "question_id": "gpt4_e414231e"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 16,
+      "hypothesis": "Emma graduated first, Rachel graduated second, and Alex graduated third.",
+      "question_id": "gpt4_7ca326fa"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 21,
+      "hypothesis": "12 days ago. 13 days (including the last day) is also acceptable.",
+      "question_id": "gpt4_7bc6cf22"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 22,
+      "hypothesis": "The Nightingale",
+      "question_id": "2ebe6c92"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 19,
+      "hypothesis": "The event was the company's annual charity soccer tournament.",
+      "question_id": "gpt4_e061b84g"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 5,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "71017277"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 5,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "b46e15ee"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 9,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_d6585ce9"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 21,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_1e4a8aec"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 15,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_f420262d"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 16,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_59149c78"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 8,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_e414231f"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 5,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_4929293b"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 8,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_468eb064"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 15,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_fa19884d"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 11,
+      "hypothesis": "a batch with walnuts",
+      "question_id": "9a707b82"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "eac54add"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 5,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "4dfccbf8"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 26,
+      "hypothesis": "Yes, you visited with a friend.",
+      "question_id": "0bc8ad93"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "6e984302"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 19,
+      "hypothesis": "A smoker.",
+      "question_id": "gpt4_8279ba03"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 6,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "gpt4_b5700ca0"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 11,
+      "hypothesis": "You participated in a social media challenge called #PlankChallenge today.",
+      "question_id": "gpt4_68e94288"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 16,
+      "hypothesis": "8 miles",
+      "question_id": "d3ab962e"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 28,
+      "hypothesis": "190",
+      "question_id": "2311e44b"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 31,
+      "hypothesis": "$6",
+      "question_id": "cc06de0d"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "The approximate increase in Instagram followers you experienced in two weeks was 100 followers.",
+      "question_id": "a11281a2"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "4f54b7c9"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 31,
+      "hypothesis": "The total cost of the new food bowl, measuring cup, dental chews, and flea and tick collar I got for Max is $50.",
+      "question_id": "85fa3a3f"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 27,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "9aaed6a3"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 31,
+      "hypothesis": "The difference in price between your luxury boots, which cost $800, and the similar pair found at the budget store, which costs $50, is $750.",
+      "question_id": "1f2b8d4f"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 23,
+      "hypothesis": "40%",
+      "question_id": "e6041065"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "51c32626"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 20,
+      "hypothesis": "20%",
+      "question_id": "d905b33f"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "Yes",
+      "question_id": "7405e8b1"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 30,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "f35224e0"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 30,
+      "hypothesis": "There are eight plants.",
+      "question_id": "6456829e"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 29,
+      "hypothesis": "You typically work up to 50 hours per week during peak campaign seasons.",
+      "question_id": "a4996e51"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 20,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "3c1045c8"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "14,000",
+      "question_id": "60036106"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "There are five Marvel movies.",
+      "question_id": "681a1674"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 30,
+      "hypothesis": "You saved $300 on the designer handbag at TK Maxx, as it was originally $500 and you bought it for $200.",
+      "question_id": "e25c3b8d"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 30,
+      "hypothesis": "You have scored 3 goals and made 2 assists in the recreational indoor soccer league.",
+      "question_id": "4adc0475"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 29,
+      "hypothesis": "You spent a total of $65 on a car wash ($15) and a parking ticket ($50).",
+      "question_id": "4bc144e2"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "ef66a6e5"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 13,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "5025383b"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "11",
+      "question_id": "a1cc6108"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "You need a total of 300 points to redeem a free skincare product at Sephora.",
+      "question_id": "9ee3ecd6"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 25,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "3fdac837"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "The minimum amount you could get if you sold the vintage diamond necklace and the antique vanity is $5,150.",
+      "question_id": "91b15a6e"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "The cost of the renovations I plan to do on my current house is $20,000, which is 10% of the countryside property's price of $200,000.",
+      "question_id": "27016adc"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "The total cost of Lola's vet visit and flea medication is $75.",
+      "question_id": "720133ac"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 21,
+      "hypothesis": "$300",
+      "question_id": "77eafa52"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 27,
+      "hypothesis": "The total number of lunch meals you got from the chicken fajitas and lentil soup is 8 meals (3 from chicken fajitas and 5 from lentil soup).",
+      "question_id": "8979f9ec"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "You spent $60 on each coffee mug for your coworkers.",
+      "question_id": "0100672e"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 12,
+      "hypothesis": "Harvard University",
+      "question_id": "a96c20ee"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 15,
+      "hypothesis": "Five months",
+      "question_id": "92a0aa75"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 25,
+      "hypothesis": "The pre-approval amount was $350,000, and the final sale price of the house was $325,000. Therefore, the pre-approval amount was $25,000 more than the final sale price.",
+      "question_id": "3fe836c9"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "$140",
+      "question_id": "1c549ce4"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 25,
+      "hypothesis": "3,000 miles",
+      "question_id": "6c49646a"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 29,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "1192316e"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 29,
+      "hypothesis": "Your car was getting 30 miles per gallon in the city a few months ago, and it is currently getting around 28 miles per gallon. Therefore, it is getting 2 miles per gallon less now compared to a few months ago.",
+      "question_id": "0ea62687"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 22,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "67e0d0f2"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 30,
+      "hypothesis": "You saved $300 on the Jimmy Choo heels.",
+      "question_id": "bb7c3b45"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 20,
+      "hypothesis": "33",
+      "question_id": "ba358f49"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 25,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "61f8c8f8"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 26,
+      "hypothesis": "One dinner party.",
+      "question_id": "60159905"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 22,
+      "hypothesis": "You spent a total of $300 on gifts for your sister.",
+      "question_id": "ef9cf60a"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 28,
+      "hypothesis": "8:00 AM",
+      "question_id": "73d42213"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 22,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "bc149d6b"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "Women hold 20 out of 100 leadership positions in your company, which is 20%.",
+      "question_id": "099778bb"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "You will save $50 by taking the train from the airport to your hotel instead of a taxi.",
+      "question_id": "09ba9854"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "1,998",
+      "question_id": "d6062bb9"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 23,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "157a136e"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 9,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "c18a7dc8"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 27,
+      "hypothesis": "$200",
+      "question_id": "a3332713"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 33,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "55241a1f"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 25,
+      "hypothesis": "3 days",
+      "question_id": "a08a253f"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "$1,300",
+      "question_id": "f0e564bc"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "You raised $50 more than your initial goal in the charity cycling event.",
+      "question_id": "078150f1"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 17,
+      "hypothesis": "The average GPA of your undergraduate studies is 3.86 out of 4.0, and your graduate studies GPA is 3.8 out of 4.0. Therefore, the average GPA of your undergraduate and graduate studies is (3.86 + 3.8) / 2 = 3.83.",
+      "question_id": "8cf4d046"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 27,
+      "hypothesis": "12",
+      "question_id": "a346bb18"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 26,
+      "hypothesis": "856",
+      "question_id": "37f165cf"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 9,
+      "hypothesis": "You have 3 sisters.",
+      "question_id": "8e91e7d9"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 25,
+      "hypothesis": "$120",
+      "question_id": "87f22b4a"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 29,
+      "hypothesis": "$5",
+      "question_id": "e56a43b9"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "You wake up 30 minutes earlier on Fridays compared to other weekdays.",
+      "question_id": "efc3f7c2"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "I had two fun runs.",
+      "question_id": "21d02d0d"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 24,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "2311e44b_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 25,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "6456829e_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 27,
+      "hypothesis": "The total cost of your recently purchased headphones and the iPad is $382.99.",
+      "question_id": "e5ba910e_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 5,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "a96c20ee_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 8,
+      "hypothesis": "I do not have enough information to answer.",
+      "question_id": "ba358f49_abs"
+    },
+    {
+      "answer_mode": "openai-compatible",
+      "context_count": 32,
+      "hypothesis": "You will save $50 by taking the bus from the airport to your hotel instead of a taxi.",
+      "question_id": "09ba9854_abs"
+    }
+  ],
+  "limit": 10,
+  "model": "gpt-4o-mini",
+  "output_path": "reports/benchmarks/longmembench-external/zaxy-hypotheses-500-temporal-evidence-program-v7.jsonl",
+  "projection_backend": "embedded",
+  "question_count": 500,
+  "schema_version": "zaxy.longmembench-hypotheses.v1"
+}

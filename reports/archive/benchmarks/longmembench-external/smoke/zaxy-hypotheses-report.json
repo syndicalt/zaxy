@@ -1,0 +1,21 @@
+{
+  "answer_mode": "extractive",
+  "dataset_path": ".cache/zaxy/benchmarks/LongMemEval/data/longmemeval_oracle.json",
+  "dataset_sha256": "821a2034d219ab45846873dd14c14f12cfe7776e73527a483f9dac095d38620c",
+  "embedding_provider": "hash:1536",
+  "generated_at": "2026-06-07T02:16:49.638970Z",
+  "hypotheses": [
+    {
+      "answer_mode": "extractive",
+      "context_count": 25,
+      "hypothesis": "I'm thinking of getting a car wax and detailing done soon. Can you give me some tips on what to look for when choosing a detailer? 2. assistant: Choosing the right detailer can make all the difference in getting your car looking its best. Here are some valuable tips to help you find a reliable and skilled detailer: 1. **Check online reviews**: Look up reviews on platforms like Google, Yelp, Facebook, and other review sites to see what previous customers have to say about their experience with the detailer. Pay attention to the overall rating and read the comments to get an idea of their strengths and weaknesses....",
+      "question_id": "gpt4_2655b836"
+    }
+  ],
+  "limit": 10,
+  "model": "gpt-4o",
+  "output_path": "reports/benchmarks/longmembench-external/smoke/zaxy-hypotheses.jsonl",
+  "projection_backend": "embedded",
+  "question_count": 1,
+  "schema_version": "zaxy.longmembench-hypotheses.v1"
+}

@@ -66,6 +66,23 @@ def test_write_local_profile_refuses_to_overwrite_existing_file(tmp_path: Path) 
         write_local_profile(target)
 
 
+def test_write_local_profile_is_idempotent_for_same_generated_profile(tmp_path: Path) -> None:
+    target = tmp_path / ".env.local"
+    write_local_profile(target, projection_backend="embedded")
+
+    write_local_profile(target, projection_backend="embedded")
+
+    assert "PROJECTION_BACKEND=embedded" in target.read_text(encoding="utf-8")
+
+
+def test_write_local_profile_refuses_different_generated_profile_without_force(tmp_path: Path) -> None:
+    target = tmp_path / ".env.local"
+    write_local_profile(target, projection_backend="embedded")
+
+    with pytest.raises(FileExistsError):
+        write_local_profile(target, projection_backend="neo4j")
+
+
 def test_write_local_profile_can_force_overwrite(tmp_path: Path) -> None:
     target = tmp_path / ".env.local"
     target.write_text("existing=true\n", encoding="utf-8")

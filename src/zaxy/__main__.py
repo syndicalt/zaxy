@@ -25,9 +25,11 @@ if len(sys.argv) > 1 and sys.argv[1] == "--version":
 
 import json
 import os
+import shlex
 import subprocess
 import tempfile
 import time
+import tomllib
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import asdict
@@ -107,6 +109,21 @@ def format_onboarding_result(*args: Any, **kwargs: Any) -> str:
     from zaxy.onboarding import format_onboarding_result as _format_onboarding_result
 
     return str(_format_onboarding_result(*args, **kwargs))
+
+
+def onboarding_result_payload(*args: Any, **kwargs: Any) -> dict[str, Any]:
+    """Patchable lazy seam for onboarding JSON output."""
+    from zaxy.onboarding import onboarding_result_payload as _onboarding_result_payload
+
+    return dict(_onboarding_result_payload(*args, **kwargs))
+
+
+def resolve_zaxy_executable(*args: Any, **kwargs: Any) -> str:
+    """Patchable lazy seam for executable resolution."""
+    from zaxy.install import resolve_zaxy_executable as _resolve_zaxy_executable
+
+    return str(_resolve_zaxy_executable(*args, **kwargs))
+
 
 app = typer.Typer(help="Zaxy: Event-sourced temporal knowledge graph fabric")
 memory_app = typer.Typer(help="Inspect Eventloom-backed agent memory")
@@ -2932,6 +2949,9 @@ def init(
     packet_capture: bool = typer.Option(False, "--packet-capture", help="Include packet analyzer/projector activation steps"),  # noqa: B008
     packet_upstream_base_url: str = typer.Option("https://api.openai.com/v1", help="Packet analyzer upstream OpenAI-compatible base URL"),  # noqa: B008
     packet_port: int = typer.Option(8787, "--packet-port", min=1, max=65535, help="Local packet analyzer port"),  # noqa: B008
+    codex_mcp_install: str = typer.Option("auto", help="Codex MCP install mode: auto, command, user, or project"),  # noqa: B008
+    codex_trusted_project: bool = typer.Option(False, "--codex-trusted-project", help="Allow project-scoped Codex MCP config writes"),  # noqa: B008
+    codex_home: Path | None = typer.Option(None, help="CODEX_HOME override for user-scoped Codex MCP config"),  # noqa: B008
     agent_instructions: bool = typer.Option(
         True,
         "--agent-instructions/--no-agent-instructions",
@@ -2939,12 +2959,16 @@ def init(
     ),
     zaxy_executable: str | None = typer.Option(None, help="Executable path MCP clients should invoke"),  # noqa: B008
     force: bool = typer.Option(False, "--force", help="Overwrite generated output files"),  # noqa: B008
+    verbose: bool = typer.Option(False, "--verbose", help="Print full setup diagnostics in human output"),  # noqa: B008
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),  # noqa: B008
 ) -> None:
     """Bare zaxy init uses the local embedded Codex path for MCP config, infra, and hook status."""
     import asyncio
 
+    verbose_codex_home = codex_home
+
     async def _run() -> Any:
+        nonlocal verbose_codex_home
         effective_preset = preset
         if (
             effective_preset is None
@@ -2967,6 +2991,25 @@ def init(
             infra=infra,
             capture_mode="hybrid" if packet_capture else capture_mode,
         )
+        resolved_codex_mcp_install = _resolve_cli_codex_mcp_install_mode(
+            codex_mcp_install,
+            mcp_client=preset_options["mcp_client"],
+            codex_home=codex_home,
+            zaxy_executable=zaxy_executable,
+        )
+        codex_mcp_conflict_path = _codex_auto_conflict_path(
+            codex_mcp_install,
+            resolved_mode=resolved_codex_mcp_install,
+            mcp_client=preset_options["mcp_client"],
+            codex_home=codex_home,
+            zaxy_executable=zaxy_executable,
+        )
+        if (
+            (resolved_codex_mcp_install == "user" or codex_mcp_conflict_path is not None)
+            and verbose_codex_home is None
+            and "CODEX_HOME" in os.environ
+        ):
+            verbose_codex_home = Path(os.environ["CODEX_HOME"])
         return await run_onboarding(
             path,
             eventloom_path=eventloom_path,
@@ -2986,6 +3029,10 @@ def init(
             packet_upstream_base_url=packet_upstream_base_url,
             packet_port=packet_port,
             capture_action=capture_action,
+            codex_mcp_install=resolved_codex_mcp_install,
+            codex_mcp_conflict_path=codex_mcp_conflict_path,
+            codex_trusted_project=codex_trusted_project,
+            codex_home=codex_home,
             agent_instructions=agent_instructions,
             zaxy_executable=zaxy_executable,
             force=force,
@@ -2993,12 +3040,226 @@ def init(
 
     try:
         result = asyncio.run(_run())
-    except (FileExistsError, ValueError) as exc:
+    except (FileExistsError, PermissionError, ValueError) as exc:
         raise typer.BadParameter(str(exc)) from exc
     if json_output:
-        typer.echo(json.dumps(asdict(result), indent=2, sort_keys=True))
+        typer.echo(json.dumps(onboarding_result_payload(result), indent=2, sort_keys=True))
     else:
-        typer.echo(format_onboarding_result(result))
+        verbose_command = _render_init_verbose_command(
+            path=path,
+            eventloom_path=eventloom_path,
+            domain=domain,
+            session_id=session_id,
+            preset=preset,
+            mcp_client=mcp_client,
+            mcp_output=mcp_output,
+            hook_client=hook_client,
+            hook_output=hook_output,
+            local_profile_output=local_profile_output,
+            infra=infra,
+            projection_backend=projection_backend,
+            pggraph_dsn=pggraph_dsn,
+            pggraph_repo=pggraph_repo,
+            capture_mode=capture_mode,
+            capture_action=capture_action,
+            packet_capture=packet_capture,
+            packet_upstream_base_url=packet_upstream_base_url,
+            packet_port=packet_port,
+            codex_mcp_install=codex_mcp_install,
+            codex_trusted_project=codex_trusted_project,
+            codex_home=verbose_codex_home,
+            agent_instructions=agent_instructions,
+            zaxy_executable=zaxy_executable,
+            force=force,
+        )
+        typer.echo(format_onboarding_result(result, verbose=verbose, verbose_command=verbose_command))
+
+
+def _render_init_verbose_command(
+    *,
+    path: Path,
+    eventloom_path: str | Path,
+    domain: str | None,
+    session_id: str | None,
+    preset: str | None,
+    mcp_client: str | None,
+    mcp_output: Path | None,
+    hook_client: str | None,
+    hook_output: Path | None,
+    local_profile_output: Path | None,
+    infra: str,
+    projection_backend: str | None,
+    pggraph_dsn: str | None,
+    pggraph_repo: Path | None,
+    capture_mode: str,
+    capture_action: str,
+    packet_capture: bool,
+    packet_upstream_base_url: str,
+    packet_port: int,
+    codex_mcp_install: str,
+    codex_trusted_project: bool,
+    codex_home: Path | None,
+    agent_instructions: bool,
+    zaxy_executable: str | None,
+    force: bool,
+) -> str:
+    """Render a copyable command that repeats init with verbose human output."""
+    args = ["zaxy", "init", str(path)]
+    if str(eventloom_path) != ".eventloom":
+        args.extend(["--eventloom-path", str(eventloom_path)])
+    if domain is not None:
+        args.extend(["--domain", domain])
+    if session_id is not None:
+        args.extend(["--session-id", session_id])
+    if preset is not None:
+        args.extend(["--preset", preset])
+    if mcp_client is not None:
+        args.extend(["--mcp-client", mcp_client])
+    if mcp_output is not None:
+        args.extend(["--mcp-output", str(mcp_output)])
+    if hook_client is not None:
+        args.extend(["--hook-client", hook_client])
+    if hook_output is not None:
+        args.extend(["--hook-output", str(hook_output)])
+    if local_profile_output is not None:
+        args.extend(["--local-profile-output", str(local_profile_output)])
+    if infra != "none":
+        args.extend(["--infra", infra])
+    if projection_backend is not None:
+        args.extend(["--projection-backend", projection_backend])
+    if pggraph_dsn is not None:
+        args.extend(["--pggraph-dsn", pggraph_dsn])
+    if pggraph_repo is not None:
+        args.extend(["--pggraph-repo", str(pggraph_repo)])
+    if capture_mode != "deterministic":
+        args.extend(["--capture-mode", capture_mode])
+    if capture_action != "none":
+        args.extend(["--capture", capture_action])
+    if packet_capture:
+        args.append("--packet-capture")
+    if packet_upstream_base_url != "https://api.openai.com/v1":
+        args.extend(["--packet-upstream-base-url", packet_upstream_base_url])
+    if packet_port != 8787:
+        args.extend(["--packet-port", str(packet_port)])
+    if codex_mcp_install != "auto":
+        args.extend(["--codex-mcp-install", codex_mcp_install])
+    if codex_trusted_project:
+        args.append("--codex-trusted-project")
+    if codex_home is not None:
+        args.extend(["--codex-home", str(codex_home)])
+    if not agent_instructions:
+        args.append("--no-agent-instructions")
+    if zaxy_executable is not None:
+        args.extend(["--zaxy-executable", zaxy_executable])
+    if force:
+        args.append("--force")
+    args.append("--verbose")
+    return shlex.join(args)
+
+
+def _resolve_cli_codex_mcp_install_mode(
+    mode: str,
+    *,
+    mcp_client: str | None,
+    codex_home: Path | None,
+    zaxy_executable: str | None,
+) -> str:
+    """Resolve the CLI-only auto Codex MCP install mode."""
+    normalized = mode.casefold().strip().replace("_", "-")
+    if normalized not in {"auto", "command", "user", "project"}:
+        raise ValueError("codex_mcp_install must be one of: auto, command, user, project")
+    if normalized != "auto":
+        return normalized
+    if mcp_client is None or mcp_client.casefold().strip().replace("_", "-") != "codex":
+        return "command"
+    if codex_home is not None:
+        config_path = codex_home / "config.toml"
+        if config_path.exists() and not _codex_user_config_accepts_auto_install(
+            config_path,
+            zaxy_executable=zaxy_executable,
+        ):
+            return "command"
+        return "user"
+    configured_home = Path(os.environ.get("CODEX_HOME", "~/.codex")).expanduser()
+    config_path = configured_home / "config.toml"
+    if config_path.exists() and _codex_user_config_accepts_auto_install(
+        config_path,
+        zaxy_executable=zaxy_executable,
+    ):
+        return "user"
+    return "command"
+
+
+def _codex_auto_conflict_path(
+    mode: str,
+    *,
+    resolved_mode: str,
+    mcp_client: str | None,
+    codex_home: Path | None,
+    zaxy_executable: str | None,
+) -> Path | None:
+    """Return the Codex config path when auto mode found an existing conflicting zaxy entry."""
+    normalized = mode.casefold().strip().replace("_", "-")
+    if normalized != "auto" or resolved_mode != "command":
+        return None
+    if mcp_client is None or mcp_client.casefold().strip().replace("_", "-") != "codex":
+        return None
+    config_path = _codex_user_config_path_for_cli(codex_home)
+    if not config_path.exists():
+        return None
+    if _codex_user_config_accepts_auto_install(config_path, zaxy_executable=zaxy_executable):
+        return None
+    if not _codex_user_config_has_zaxy_entry(config_path):
+        return None
+    return config_path
+
+
+def _codex_user_config_path_for_cli(codex_home: Path | None) -> Path:
+    if codex_home is not None:
+        return codex_home / "config.toml"
+    return Path(os.environ.get("CODEX_HOME", "~/.codex")).expanduser() / "config.toml"
+
+
+def _codex_user_config_has_zaxy_entry(config_path: Path) -> bool:
+    try:
+        document = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return False
+    servers = document.get("mcp_servers", {})
+    return isinstance(servers, dict) and "zaxy" in servers
+
+
+def _codex_user_config_accepts_auto_install(
+    config_path: Path,
+    *,
+    zaxy_executable: str | None,
+) -> bool:
+    """Return whether auto mode can merge Zaxy into Codex config without overwrite."""
+    try:
+        document = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return False
+    servers = document.get("mcp_servers", {})
+    if not isinstance(servers, dict):
+        return False
+    existing = servers.get("zaxy")
+    if existing is None:
+        return True
+    if not isinstance(existing, dict):
+        return False
+    expected_env = {
+        "LOG_LEVEL": "ERROR",
+        "ZAXY_ENV": "development",
+    }
+    existing_env = existing.get("env", {})
+    if not isinstance(existing_env, dict):
+        return False
+    return (
+        str(existing.get("command", "")) == resolve_zaxy_executable(zaxy_executable)
+        and [str(arg) for arg in existing.get("args", [])] == ["serve"]
+        and {str(key): str(value) for key, value in existing_env.items()} == expected_env
+        and int(existing.get("startup_timeout_sec", 0)) == 90
+    )
 
 
 @app.command("viewer")
@@ -4635,6 +4896,841 @@ def harvey_lab_publish(
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(markdown, encoding="utf-8")
     typer.echo(f"Wrote Harvey LAB publishable statistics: {output}")
+
+
+@app.command("longmembench-doctor")
+def longmembench_doctor(
+    longmemeval_worktree: Path = typer.Argument(  # noqa: B008
+        ...,
+        help="External official LongMemEval worktree to validate",
+    ),
+) -> None:
+    """Validate an official LongMemEval checkout for external LongMemBench runs."""
+    from zaxy.longmembench import check_longmemeval_official_suite
+
+    status = check_longmemeval_official_suite(longmemeval_worktree)
+    typer.echo(json.dumps(status, indent=2, sort_keys=True))
+    if status["status"] != "valid":
+        raise typer.Exit(1)
+
+
+@app.command("longmembench-bootstrap")
+def longmembench_bootstrap(
+    worktree: Path = typer.Option(  # noqa: B008
+        Path(".cache/zaxy/benchmarks/LongMemEval"),
+        "--worktree",
+        help="Official LongMemEval checkout path to create or reuse",
+    ),
+    repo_url: str = typer.Option(
+        "https://github.com/xiaowu0162/LongMemEval",
+        "--repo-url",
+        help="Official LongMemEval repository URL",
+    ),
+    ref: str | None = typer.Option(
+        None,
+        "--ref",
+        help="Optional git ref to checkout after clone",
+    ),
+    dataset_source: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--dataset-source",
+        help="Optional local longmemeval_oracle.json to copy instead of downloading",
+    ),
+    force_dataset: bool = typer.Option(
+        False,
+        "--force-dataset",
+        help="Overwrite existing oracle dataset",
+    ),
+) -> None:
+    """Clone official LongMemEval and install the oracle dataset."""
+    from zaxy.longmembench import bootstrap_longmemeval_official_suite
+
+    try:
+        result = bootstrap_longmemeval_official_suite(
+            worktree=worktree,
+            repo_url=repo_url,
+            ref=ref,
+            dataset_source=dataset_source,
+            force_dataset=force_dataset,
+        )
+    except (ValueError, RuntimeError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(result, indent=2, sort_keys=True))
+    if result["status"] != "ready":
+        raise typer.Exit(1)
+
+
+@app.command("longmembench-adapter-kit")
+def longmembench_adapter_kit(
+    output_dir: Path = typer.Option(  # noqa: B008
+        Path("reports/benchmarks/longmembench-adapter-kit"),
+        "--output-dir",
+        help="Directory for LongMemBench adapter-kit files",
+    ),
+) -> None:
+    """Export the official LongMemEval hypothesis/evaluation adapter kit."""
+    from zaxy.longmembench import export_longmembench_adapter_kit
+
+    written = export_longmembench_adapter_kit(output_dir)
+    typer.echo(json.dumps(written, indent=2, sort_keys=True))
+
+
+@app.command("longmembench-plan")
+def longmembench_plan(
+    output_dir: Path = typer.Option(  # noqa: B008
+        Path("reports/benchmarks/longmembench-external"),
+        "--output-dir",
+        help="Directory for LongMemBench external run manifest",
+    ),
+    dataset: str = typer.Option(
+        "data/longmemeval_oracle.json",
+        "--dataset",
+        help="Official LongMemEval dataset path inside the external worktree",
+    ),
+    evaluator_model: str = typer.Option(
+        "gpt-4o",
+        "--evaluator-model",
+        help="Official LongMemEval evaluator model to record",
+    ),
+) -> None:
+    """Write a reproducible external LongMemBench run manifest."""
+    from zaxy.longmembench import (
+        build_longmembench_external_run_manifest,
+        write_longmembench_external_run_manifest,
+    )
+
+    manifest = build_longmembench_external_run_manifest(
+        dataset=dataset,
+        evaluator_model=evaluator_model,
+        output_dir=str(output_dir),
+    )
+    written = write_longmembench_external_run_manifest(manifest, output_dir)
+    typer.echo(f"Wrote LongMemBench external run JSON: {written.json_path}")
+    typer.echo(f"Wrote LongMemBench external run Markdown: {written.markdown_path}")
+    typer.echo(f"Wrote LongMemBench external run script: {written.script_path}")
+
+
+@app.command("longmembench-ready")
+def longmembench_ready(
+    longmemeval_worktree: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--longmemeval-worktree",
+        help="External official LongMemEval worktree",
+    ),
+    dataset: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--dataset",
+        help="Official LongMemEval dataset path",
+    ),
+    hypotheses: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--hypotheses",
+        help="Generated official hypothesis JSONL",
+    ),
+    official_eval_log: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--official-eval-log",
+        help="Official LongMemEval evaluate_qa.py JSONL log",
+    ),
+    diagnostic_report: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--diagnostic-report",
+        help="Optional Zaxy LongMemEval-compatible live-benchmark.json report",
+    ),
+    sota_baseline: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--sota-baseline",
+        help="External SOTA baseline JSON for strict SOTA claims",
+    ),
+    answer_mode: str = typer.Option(
+        "openai-compatible",
+        "--answer-mode",
+        help="Planned hypothesis answer mode",
+    ),
+    api_key: str | None = typer.Option(
+        None,
+        "--api-key",
+        help="API key presence override; defaults to OPENAI_API_KEY",
+    ),
+    require_sota_baseline: bool = typer.Option(
+        True,
+        "--require-sota-baseline/--no-require-sota-baseline",
+        help="Require an external SOTA baseline in readiness",
+    ),
+) -> None:
+    """Check readiness for official LongMemBench launch and SOTA claims."""
+    import os
+
+    from zaxy.longmembench import build_longmembench_readiness
+
+    readiness = build_longmembench_readiness(
+        longmemeval_worktree=longmemeval_worktree,
+        dataset_path=dataset,
+        hypotheses_path=hypotheses,
+        official_eval_log_path=official_eval_log,
+        diagnostic_report_path=diagnostic_report,
+        sota_baseline_path=sota_baseline,
+        answer_mode=answer_mode,
+        api_key_present=bool(api_key or os.getenv("OPENAI_API_KEY")),
+        require_sota_baseline=require_sota_baseline,
+    )
+    typer.echo(json.dumps(readiness, indent=2, sort_keys=True))
+    if readiness["status"] != "ready":
+        raise typer.Exit(1)
+
+
+@app.command("longmembench-import")
+def longmembench_import(
+    longmemeval_worktree: Path = typer.Option(  # noqa: B008
+        ...,
+        "--longmemeval-worktree",
+        help="External official LongMemEval worktree",
+    ),
+    dataset: Path = typer.Option(  # noqa: B008
+        ...,
+        "--dataset",
+        help="Official LongMemEval dataset used by the run",
+    ),
+    hypotheses: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--hypotheses",
+        help="Official hypothesis JSONL with question_id and hypothesis rows",
+    ),
+    official_eval_log: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--official-eval-log",
+        help="Official LongMemEval evaluate_qa.py JSONL log",
+    ),
+    diagnostic_report: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--diagnostic-report",
+        help="Optional Zaxy LongMemEval-compatible live-benchmark.json report",
+    ),
+    sota_baseline: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--sota-baseline",
+        help="External SOTA baseline JSON for strict SOTA comparison",
+    ),
+    evaluator_model: str | None = typer.Option(
+        None,
+        "--evaluator-model",
+        help="Official evaluator model used by evaluate_qa.py",
+    ),
+    official_eval_command: str | None = typer.Option(
+        None,
+        "--official-eval-command",
+        help="Exact official evaluate_qa.py command used by the validator",
+    ),
+    validator_evidence: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--validator-evidence",
+        help="Completed validator-evidence-template.json from an independent validator",
+    ),
+    validator_name: str | None = typer.Option(
+        None,
+        "--validator-name",
+        help="Independent validator name for externally validated SOTA claims",
+    ),
+    validator_evidence_url: str | None = typer.Option(
+        None,
+        "--validator-evidence-url",
+        help="Reviewable external validation URL",
+    ),
+    validator_run_id: str | None = typer.Option(
+        None,
+        "--validator-run-id",
+        help="Independent validator run identifier",
+    ),
+    validator_relation: str | None = typer.Option(
+        None,
+        "--validator-relation",
+        help="Relationship to Zaxy, for example independent-third-party",
+    ),
+    output_dir: Path = typer.Option(  # noqa: B008
+        Path("reports/benchmarks/longmembench-external"),
+        "--output-dir",
+        help="Directory for LongMemBench report artifacts",
+    ),
+) -> None:
+    """Import official LongMemEval QA evidence and Zaxy diagnostics."""
+    from zaxy.longmembench import (
+        build_longmembench_report,
+        load_validator_evidence,
+        report_to_markdown,
+        validate_validator_evidence_matches_report,
+        validator_official_evaluation_metadata,
+        validator_provenance_from_evidence,
+        write_longmembench_report,
+    )
+
+    try:
+        evidence_payload = load_validator_evidence(validator_evidence) if validator_evidence else None
+        if evidence_payload is not None:
+            metadata = validator_official_evaluation_metadata(evidence_payload)
+            evaluator_model = evaluator_model or metadata["evaluator_model"]
+            official_eval_command = official_eval_command or metadata["official_eval_command"]
+            validator_provenance = validator_provenance_from_evidence(
+                evidence_payload,
+                validator_name=validator_name,
+                validator_evidence_url=validator_evidence_url,
+                validator_run_id=validator_run_id,
+                validator_relation=validator_relation,
+            )
+        elif any(
+            value is not None
+            for value in (validator_name, validator_evidence_url, validator_run_id, validator_relation)
+        ):
+            validator_provenance = validator_provenance_from_evidence(
+                {"validator": {}},
+                validator_name=validator_name,
+                validator_evidence_url=validator_evidence_url,
+                validator_run_id=validator_run_id,
+                validator_relation=validator_relation,
+            )
+        else:
+            validator_provenance = {"validator": None}
+        validator_evidence_verified = False
+        report = build_longmembench_report(
+            longmemeval_worktree=longmemeval_worktree,
+            dataset_path=dataset,
+            hypotheses_path=hypotheses,
+            official_eval_log_path=official_eval_log,
+            diagnostic_report_path=diagnostic_report,
+            sota_baseline_path=sota_baseline,
+            evaluator_model=evaluator_model,
+            official_eval_command=official_eval_command,
+            result_provenance={
+                "source": "longmembench-import",
+                "dataset": str(dataset.resolve()),
+                "hypotheses": str(hypotheses.resolve()) if hypotheses else None,
+                "official_eval_log": (
+                    str(official_eval_log.resolve()) if official_eval_log else None
+                ),
+                "diagnostic_report": (
+                    str(diagnostic_report.resolve()) if diagnostic_report else None
+                ),
+                "sota_baseline": str(sota_baseline.resolve()) if sota_baseline else None,
+                "validator_evidence": str(validator_evidence.resolve()) if validator_evidence else None,
+                "validator_evidence_verified": validator_evidence_verified,
+                **validator_provenance,
+            },
+        )
+        if evidence_payload is not None:
+            evidence_failures = validate_validator_evidence_matches_report(evidence_payload, report)
+            if evidence_failures:
+                raise ValueError("; ".join(evidence_failures))
+            report.result_provenance["validator_evidence_verified"] = True
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    written = write_longmembench_report(report, output_dir)
+    typer.echo(report_to_markdown(report))
+    typer.echo(f"LongMemBench external validation: {report.status}")
+    typer.echo(f"Wrote JSON report: {written.json_path}")
+    typer.echo(f"Wrote Markdown report: {written.markdown_path}")
+
+
+@app.command("longmembench-generate-hypotheses")
+def longmembench_generate_hypotheses(
+    dataset: Path = typer.Option(  # noqa: B008
+        ...,
+        "--dataset",
+        help="Official LongMemEval dataset used to generate hypotheses",
+    ),
+    output: Path = typer.Option(  # noqa: B008
+        Path("reports/benchmarks/longmembench-external/zaxy-hypotheses.jsonl"),
+        "--output",
+        help="Output official hypothesis JSONL path",
+    ),
+    report: Path | None = typer.Option(  # noqa: B008
+        Path("reports/benchmarks/longmembench-external/zaxy-hypotheses-report.json"),
+        "--report",
+        help="Optional machine-readable hypothesis-generation report",
+    ),
+    questions: int | None = typer.Option(  # noqa: B008
+        None,
+        "--questions",
+        min=1,
+        help="Optional question limit for smoke runs; omit for full official set",
+    ),
+    limit: int = typer.Option(10, "--limit", min=1, max=50, help="Checkout contexts per question"),
+    answer_mode: str = typer.Option(
+        "extractive",
+        "--answer-mode",
+        help="Answer mode: extractive or openai-compatible",
+    ),
+    model: str | None = typer.Option(
+        None,
+        "--model",
+        help="OpenAI-compatible chat model for answer generation",
+    ),
+    base_url: str = typer.Option(
+        "https://api.openai.com/v1",
+        "--base-url",
+        help="OpenAI-compatible chat-completions base URL",
+    ),
+    api_key: str | None = typer.Option(
+        None,
+        "--api-key",
+        help="OpenAI-compatible API key; defaults to OPENAI_API_KEY when omitted",
+    ),
+    embedding_provider: str = typer.Option(
+        "hash",
+        "--embedding-provider",
+        help="Embedding provider for Zaxy retrieval: hash or openai",
+    ),
+    embedding_cache: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--embedding-cache",
+        help="Optional embedding cache path",
+    ),
+    projection_backend: str = typer.Option(
+        "embedded",
+        "--projection-backend",
+        help="Projection backend for Zaxy retrieval",
+    ),
+    reuse_projection: bool = typer.Option(
+        False,
+        "--reuse-projection",
+        help="Reuse projection cache when supported",
+    ),
+    resume: bool = typer.Option(
+        False,
+        "--resume",
+        help="Append missing hypotheses and skip existing question_id rows in the output JSONL",
+    ),
+    fsync_rows: bool = typer.Option(
+        False,
+        "--fsync-rows",
+        help="Fsync each generated hypothesis row for crash-resistant external runs",
+    ),
+    provider_retries: int = typer.Option(
+        3,
+        "--provider-retries",
+        min=0,
+        max=10,
+        help="Retries for transient OpenAI-compatible 429/5xx answer-generation failures",
+    ),
+    prefer_checkout_candidate: bool = typer.Option(
+        False,
+        "--prefer-checkout-candidate",
+        help="Use checkout answer candidates directly before falling back to the answer model",
+    ),
+    filter_answer_contexts: bool = typer.Option(
+        False,
+        "--filter-answer-contexts",
+        help="Experimental: remove checkout diagnostics from answer-model prompts",
+    ),
+) -> None:
+    """Generate official LongMemEval hypothesis JSONL rows through Zaxy checkout."""
+    import asyncio
+    import os
+
+    from zaxy.longmembench import generate_longmembench_hypotheses
+
+    resolved_api_key = api_key or os.getenv("OPENAI_API_KEY")
+
+    async def _run() -> None:
+        try:
+            generated = await generate_longmembench_hypotheses(
+                dataset_path=dataset,
+                output_path=output,
+                report_path=report,
+                questions=questions,
+                limit=limit,
+                answer_mode=answer_mode,
+                model=model,
+                base_url=base_url,
+                api_key=resolved_api_key,
+                embedding_provider=embedding_provider,
+                embedding_cache=embedding_cache,
+                projection_backend=projection_backend,
+                reuse_projection=reuse_projection,
+                resume=resume,
+                fsync_rows=fsync_rows,
+                provider_retries=provider_retries,
+                prefer_checkout_candidate=prefer_checkout_candidate,
+                filter_answer_contexts=filter_answer_contexts,
+            )
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+        typer.echo(
+            json.dumps(
+                {
+                    "status": "complete",
+                    "question_count": generated.question_count,
+                    "output": generated.output_path,
+                    "report": str(report) if report is not None else None,
+                    "answer_mode": generated.answer_mode,
+                    "model": generated.model,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+
+    asyncio.run(_run())
+
+
+@app.command("longmembench-evaluate-official")
+def longmembench_evaluate_official(
+    longmemeval_worktree: Path = typer.Option(  # noqa: B008
+        ...,
+        "--longmemeval-worktree",
+        help="External official LongMemEval worktree",
+    ),
+    hypotheses: Path = typer.Option(  # noqa: B008
+        ...,
+        "--hypotheses",
+        help="Generated official hypothesis JSONL",
+    ),
+    dataset: Path = typer.Option(  # noqa: B008
+        ...,
+        "--dataset",
+        help="Official LongMemEval dataset path",
+    ),
+    evaluator_model: str = typer.Option(
+        "gpt-4o",
+        "--evaluator-model",
+        help="Official evaluator model passed to evaluate_qa.py",
+    ),
+    output_log: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--output-log",
+        help="Optional path to copy the official evaluator JSONL log",
+    ),
+    run_report: Path | None = typer.Option(  # noqa: B008
+        Path("reports/benchmarks/longmembench-external/official-eval-run.json"),
+        "--run-report",
+        help="Optional JSON report for the official evaluator subprocess",
+    ),
+    api_key: str | None = typer.Option(
+        None,
+        "--api-key",
+        help="API key presence override; defaults to OPENAI_API_KEY",
+    ),
+    require_api_key: bool = typer.Option(
+        True,
+        "--require-api-key/--no-require-api-key",
+        help="Require API key before running official evaluator",
+    ),
+) -> None:
+    """Run LongMemEval's official evaluate_qa.py over Zaxy hypotheses."""
+    import os
+    from dataclasses import asdict
+
+    from zaxy.longmembench import run_longmemeval_official_eval
+
+    try:
+        result = run_longmemeval_official_eval(
+            worktree=longmemeval_worktree,
+            hypotheses_path=hypotheses,
+            dataset_path=dataset,
+            evaluator_model=evaluator_model,
+            output_log=output_log,
+            require_api_key=require_api_key,
+            api_key_present=bool(api_key or os.getenv("OPENAI_API_KEY")),
+            api_key=api_key,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    payload = asdict(result)
+    if run_report is not None:
+        run_report.parent.mkdir(parents=True, exist_ok=True)
+        run_report.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    typer.echo(json.dumps(payload, indent=2, sort_keys=True))
+    if result.status != "complete":
+        raise typer.Exit(1)
+
+
+@app.command("longmembench-validator-evidence")
+def longmembench_validator_evidence(
+    longmemeval_worktree: Path = typer.Option(  # noqa: B008
+        ...,
+        "--longmemeval-worktree",
+        help="External official LongMemEval worktree",
+    ),
+    dataset: Path = typer.Option(  # noqa: B008
+        ...,
+        "--dataset",
+        help="Official LongMemEval dataset path",
+    ),
+    hypotheses: Path = typer.Option(  # noqa: B008
+        ...,
+        "--hypotheses",
+        help="Generated official hypothesis JSONL",
+    ),
+    official_eval_log: Path = typer.Option(  # noqa: B008
+        ...,
+        "--official-eval-log",
+        help="Official LongMemEval evaluate_qa.py JSONL log",
+    ),
+    output: Path = typer.Option(  # noqa: B008
+        Path("reports/benchmarks/longmembench-external/validator-evidence.json"),
+        "--output",
+        help="Completed validator evidence JSON path",
+    ),
+    evaluator_model: str = typer.Option(
+        "gpt-4o",
+        "--evaluator-model",
+        help="Official evaluator model used by evaluate_qa.py",
+    ),
+    official_eval_command: str = typer.Option(
+        ...,
+        "--official-eval-command",
+        help="Exact official evaluate_qa.py command used by the validator",
+    ),
+    print_metrics_command: str | None = typer.Option(
+        None,
+        "--print-metrics-command",
+        help="Exact official print_qa_metrics.py command used by the validator",
+    ),
+    validator_name: str = typer.Option(
+        ...,
+        "--validator-name",
+        help="Independent validator name",
+    ),
+    validator_evidence_url: str = typer.Option(
+        ...,
+        "--validator-evidence-url",
+        help="Reviewable external validation URL",
+    ),
+    validator_run_id: str = typer.Option(
+        ...,
+        "--validator-run-id",
+        help="Independent validator run identifier",
+    ),
+    validator_relation: str = typer.Option(
+        ...,
+        "--validator-relation",
+        help="Relationship to Zaxy, for example independent-third-party",
+    ),
+    zaxy_worktree: Path = typer.Option(  # noqa: B008
+        Path("."),
+        "--zaxy-worktree",
+        help="Zaxy source checkout validated by the run",
+    ),
+) -> None:
+    """Write completed validator evidence from official LongMemEval artifacts."""
+    from zaxy.longmembench import build_validator_evidence_record, write_validator_evidence_record
+    from zaxy.release import package_version
+
+    try:
+        record = build_validator_evidence_record(
+            longmemeval_worktree=longmemeval_worktree,
+            dataset_path=dataset,
+            hypotheses_path=hypotheses,
+            official_eval_log_path=official_eval_log,
+            evaluator_model=evaluator_model,
+            official_eval_command=official_eval_command,
+            print_metrics_command=print_metrics_command,
+            validator_name=validator_name,
+            validator_evidence_url=validator_evidence_url,
+            validator_run_id=validator_run_id,
+            validator_relation=validator_relation,
+            zaxy_worktree=zaxy_worktree,
+            zaxy_version=package_version(),
+            longmembench_report_json=output.parent / "longmembench-report.json",
+            longmembench_report_md=output.parent / "longmembench-report.md",
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    written = write_validator_evidence_record(record, output)
+    typer.echo(json.dumps(record, indent=2, sort_keys=True))
+    typer.echo(f"Wrote validator evidence: {written}")
+
+
+@app.command("longmembench-validate")
+def longmembench_validate(
+    report_path: Path = typer.Argument(..., help="longmembench-report.json report"),  # noqa: B008
+    require_official_full: bool = typer.Option(
+        False,
+        "--require-official-full",
+        help="Require official evaluator evidence over all 500 questions",
+    ),
+) -> None:
+    """Validate LongMemBench external validation evidence."""
+    from zaxy.longmembench import load_longmembench_report, validate_longmembench_report
+
+    try:
+        report = load_longmembench_report(report_path)
+        validation = validate_longmembench_report(
+            report,
+            require_official_full=require_official_full,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(validation, indent=2, sort_keys=True))
+    if validation["status"] != "valid":
+        raise typer.Exit(1)
+
+
+@app.command("longmembench-gate")
+def longmembench_gate(
+    report_path: Path = typer.Argument(..., help="longmembench-report.json report"),  # noqa: B008
+    require_official_sota_candidate: bool = typer.Option(
+        False,
+        "--require-official-sota-candidate",
+        help="Require full official LongMemEval QA evidence before SOTA-candidate claims",
+    ),
+    require_official_sota: bool = typer.Option(
+        False,
+        "--require-official-sota",
+        help="Require full official QA evidence and a beaten external SOTA baseline",
+    ),
+    require_external_validator: bool = typer.Option(
+        False,
+        "--require-external-validator",
+        help="Require independent validator provenance",
+    ),
+    min_accuracy: float | None = typer.Option(  # noqa: B008
+        None,
+        "--min-accuracy",
+        min=0.0,
+        max=1.0,
+        help="Optional minimum official QA accuracy",
+    ),
+) -> None:
+    """Gate publishable LongMemBench and official SOTA-candidate claims."""
+    from zaxy.longmembench import check_longmembench_gate, load_longmembench_report
+
+    try:
+        report = load_longmembench_report(report_path)
+        gate = check_longmembench_gate(
+            report,
+            require_official_sota_candidate=require_official_sota_candidate,
+            require_official_sota=require_official_sota,
+            require_external_validator=require_external_validator,
+            min_accuracy=min_accuracy,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    typer.echo(json.dumps(gate, indent=2, sort_keys=True))
+    if gate["status"] != "passed":
+        raise typer.Exit(1)
+
+
+@app.command("longmembench-audit")
+def longmembench_audit(
+    longmemeval_worktree: Path = typer.Option(  # noqa: B008
+        ...,
+        "--longmemeval-worktree",
+        help="External official LongMemEval worktree",
+    ),
+    dataset: Path = typer.Option(  # noqa: B008
+        ...,
+        "--dataset",
+        help="Official LongMemEval dataset path",
+    ),
+    hypotheses: Path = typer.Option(  # noqa: B008
+        Path("reports/benchmarks/longmembench-external/zaxy-hypotheses.jsonl"),
+        "--hypotheses",
+        help="Generated official hypothesis JSONL",
+    ),
+    official_eval_log: Path = typer.Option(  # noqa: B008
+        Path("reports/benchmarks/longmembench-external/zaxy-hypotheses.jsonl.eval-results-gpt-4o"),
+        "--official-eval-log",
+        help="Official LongMemEval evaluate_qa.py JSONL log",
+    ),
+    diagnostic_report: Path = typer.Option(  # noqa: B008
+        Path("reports/benchmarks/longmembench-external/diagnostic/live-benchmark.json"),
+        "--diagnostic-report",
+        help="Zaxy LongMemEval-compatible live-benchmark.json report",
+    ),
+    sota_baseline: Path = typer.Option(  # noqa: B008
+        Path("reports/benchmarks/longmembench-external/sota-baseline.json"),
+        "--sota-baseline",
+        help="External SOTA baseline JSON",
+    ),
+    validator_evidence: Path = typer.Option(  # noqa: B008
+        Path("reports/benchmarks/longmembench-external/validator-evidence.json"),
+        "--validator-evidence",
+        help="Cross-checked validator evidence JSON",
+    ),
+    report_path: Path = typer.Option(  # noqa: B008
+        Path("reports/benchmarks/longmembench-external/longmembench-report.json"),
+        "--report",
+        help="Imported longmembench-report.json",
+    ),
+    hypothesis_report: Path | None = typer.Option(  # noqa: B008
+        Path("reports/benchmarks/longmembench-external/zaxy-hypotheses-report.json"),
+        "--hypothesis-report",
+        help="Optional hypothesis generation report JSON",
+    ),
+    official_eval_run_report: Path | None = typer.Option(  # noqa: B008
+        Path("reports/benchmarks/longmembench-external/official-eval-run.json"),
+        "--official-eval-run-report",
+        help="Optional official evaluator subprocess report JSON",
+    ),
+    output: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--output",
+        help="Optional path to write the audit JSON result",
+    ),
+) -> None:
+    """Audit a completed external LongMemBench artifact set."""
+    from zaxy.longmembench import audit_longmembench_artifacts
+
+    audit = audit_longmembench_artifacts(
+        longmemeval_worktree=longmemeval_worktree,
+        dataset_path=dataset,
+        hypotheses_path=hypotheses,
+        official_eval_log_path=official_eval_log,
+        diagnostic_report_path=diagnostic_report,
+        sota_baseline_path=sota_baseline,
+        validator_evidence_path=validator_evidence,
+        report_path=report_path,
+        hypothesis_report_path=hypothesis_report,
+        official_eval_run_report_path=official_eval_run_report,
+    )
+    audit_json = json.dumps(audit, indent=2, sort_keys=True)
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(audit_json + "\n", encoding="utf-8")
+    typer.echo(audit_json)
+    if audit["status"] != "passed":
+        raise typer.Exit(1)
+
+
+@app.command("longmembench-publish")
+def longmembench_publish(
+    report_path: Path = typer.Argument(..., help="longmembench-report.json report"),  # noqa: B008
+    audit: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--audit",
+        help="Passing longmembench-audit.json artifact; defaults to report directory",
+    ),
+    allow_unaudited: bool = typer.Option(
+        False,
+        "--allow-unaudited",
+        help="Render draft output without requiring a passing audit artifact",
+    ),
+    output: Path | None = typer.Option(  # noqa: B008
+        None,
+        "--output",
+        help="Optional Markdown output path for publishable LongMemBench statistics",
+    ),
+) -> None:
+    """Render publishable LongMemBench statistics after the strict gate and audit pass."""
+    from zaxy.longmembench import (
+        load_longmembench_report,
+        render_longmembench_publication_markdown,
+        validate_longmembench_audit_for_report,
+    )
+
+    try:
+        if not allow_unaudited:
+            audit_path = audit or report_path.parent / "longmembench-audit.json"
+            validate_longmembench_audit_for_report(audit_path, report_path)
+        report = load_longmembench_report(report_path)
+        markdown = render_longmembench_publication_markdown(report)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if output is None:
+        typer.echo(markdown)
+        return
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(markdown, encoding="utf-8")
+    typer.echo(f"Wrote LongMemBench publishable statistics: {output}")
 
 
 @app.command("benchmark-inventory")

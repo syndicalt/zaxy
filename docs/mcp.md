@@ -480,10 +480,12 @@ zaxy hooks claude-code --eventloom-path .eventloom --domain zaxy
 zaxy hooks codex --eventloom-path .eventloom --domain zaxy
 ```
 
-For Codex, the default local preset also writes `.codex/zaxy-capture.json` and
-prints a `zaxy capture start --workspace .` command. That managed watcher reads
-Codex's local session JSONL and appends normalized Eventloom observations. It
-does not proxy provider traffic or require an OpenAI API key.
+For Codex, the default local preset also writes `.codex/zaxy-capture.json`.
+Starting Codex through the printed `zaxy activate codex ... --launch` command
+ensures that managed watcher is running; explicit supervisors can still call
+`zaxy capture start --workspace .`. The watcher reads Codex's local session JSONL
+and appends normalized Eventloom observations. It does not proxy provider
+traffic or require an OpenAI API key.
 For supervised checks, add `--watch-iterations <n>` to run a bounded number of
 capture passes to the underlying `zaxy codex-capture --watch` command. Add
 `--graph` to `zaxy capture start` when the selected projection backend should

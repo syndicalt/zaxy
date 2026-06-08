@@ -261,6 +261,10 @@ def test_renders_codex_mcp_add_command_with_env_and_command_separator() -> None:
     ]
     assert "--env" in command
     assert "ZAXY_ENV=development" in command
+    assert "MCP_ADMIN_TOKEN_FILE=" not in command
+    assert "MCP_REMOTE_AUTH_TOKEN_FILE=" not in command
+    assert "OPENAI_API_KEY_FILE=" not in command
+    assert "PATHLIGHT_ACCESS_TOKEN_FILE=" not in command
     assert not any(part.startswith("NEO4J_") for part in command)
     assert not any(part.startswith("PROJECTION_BACKEND=") for part in command)
     assert not any("EVENTLOOM_" in part or "ZAXY_DOMAIN" in part for part in command)
@@ -352,6 +356,31 @@ def test_codex_config_refuses_existing_zaxy_without_force(tmp_path: Path) -> Non
     assert "old-zaxy" in target.read_text(encoding="utf-8")
 
 
+def test_codex_config_is_idempotent_for_same_generated_zaxy_server(tmp_path: Path) -> None:
+    """Codex TOML merge should tolerate reruns when the generated zaxy server is unchanged."""
+    codex_home = tmp_path / "codex-home"
+    first = write_codex_mcp_config(
+        scope="user",
+        workspace=tmp_path / "repo",
+        codex_home=codex_home,
+        eventloom_path=".eventloom",
+        domain="zaxy",
+        zaxy_executable="/opt/zaxy/bin/zaxy",
+    )
+
+    second = write_codex_mcp_config(
+        scope="user",
+        workspace=tmp_path / "repo",
+        codex_home=codex_home,
+        eventloom_path=".eventloom",
+        domain="zaxy",
+        zaxy_executable="/opt/zaxy/bin/zaxy",
+    )
+
+    assert second == first
+    assert (codex_home / "config.toml").read_text(encoding="utf-8").count("[mcp_servers.zaxy]") == 1
+
+
 def test_codex_user_config_writes_to_codex_home(tmp_path: Path) -> None:
     """User-scoped Codex config should target CODEX_HOME/config.toml."""
     codex_home = tmp_path / "codex-home"
@@ -368,6 +397,12 @@ def test_codex_user_config_writes_to_codex_home(tmp_path: Path) -> None:
     config = tomllib.loads(written.read_text(encoding="utf-8"))
     assert written == codex_home / "config.toml"
     assert config["mcp_servers"]["zaxy"]["command"] == "/opt/zaxy/bin/zaxy"
+    assert config["mcp_servers"]["zaxy"]["env"]["LOG_LEVEL"] == "ERROR"
+    assert config["mcp_servers"]["zaxy"]["env"]["ZAXY_ENV"] == "development"
+    assert "MCP_ADMIN_TOKEN_FILE" not in config["mcp_servers"]["zaxy"]["env"]
+    assert "MCP_REMOTE_AUTH_TOKEN_FILE" not in config["mcp_servers"]["zaxy"]["env"]
+    assert "OPENAI_API_KEY_FILE" not in config["mcp_servers"]["zaxy"]["env"]
+    assert "PATHLIGHT_ACCESS_TOKEN_FILE" not in config["mcp_servers"]["zaxy"]["env"]
 
 
 def test_handoff_adapter_preserves_prompt_context_and_integrity() -> None:

@@ -10,10 +10,15 @@ zaxy memory bootstrap --eventloom-path .eventloom
 
 `zaxy init` chooses the embedded local runtime by default. It writes local
 profile and capture files, checks the repo-local graph projection posture, and
-prints the exact client install command or config path. No Neo4j, Postgres,
-Docker, Bolt URI, graph password, or hosted service is required for the local
-MCP path. The durable data source remains `.eventloom/`; the embedded graph is a
-rebuildable projection of that log.
+prints the exact client install command or config path. For Codex, the default
+`zaxy init --codex-mcp-install auto` path writes or reuses user-level MCP config
+when it can do so non-destructively, and falls back to the copyable
+`codex mcp add` command when it cannot. No Neo4j, Postgres, Docker, Bolt URI,
+graph password, or hosted service is required for the local MCP path. The
+durable data source remains `.eventloom/`; the embedded graph is a rebuildable
+projection of that log. Human output is compact by default; run
+`zaxy init --verbose` to show every setup step, optional check, fallback command,
+resume command, and note when debugging an install.
 
 ## Client Setup
 
@@ -22,7 +27,7 @@ runtime and `.eventloom/` source log; no sidecar service is required.
 
 | Client | Recommended local route | Why |
 |--------|--------------------------|-----|
-| Codex | `codex mcp add` CLI command | Keeps user-level MCP config workspace-neutral while `zaxy serve` resolves the current repo at runtime. |
+| Codex | `zaxy init` | Uses `zaxy init --codex-mcp-install auto` to merge user-level Codex MCP config when safe, or prints the exact command when not. |
 | Claude Code | Project-local `.mcp.json` install | Keeps the server definition next to the trusted project without editing user-global Claude settings. |
 | Claude Desktop | Copyable JSON config | Claude Desktop normally uses an app-level MCP config, so inspect and paste the generated JSON. |
 | Cursor | Project-local `.cursor/mcp.json` install | Cursor supports a repo-local MCP file with a top-level `mcpServers` object. |
@@ -30,12 +35,38 @@ runtime and `.eventloom/` source log; no sidecar service is required.
 
 ### Codex
 
-For Codex, copy or run the `codex mcp add` command printed by `zaxy init`. That
-is the recommended path for this repo because it keeps the MCP server
-workspace-neutral while resolving the current workspace at runtime. The command
-shape is:
+For Codex, the fastest route is the default init path:
 
 ```bash
+zaxy init
+```
+
+That expands to:
+
+```bash
+zaxy init --codex-mcp-install auto
+```
+
+Auto mode writes or reuses user-level Codex MCP config when that is safe. If an
+existing `mcp_servers.zaxy` entry is different, it asks you to review that
+config before replacing it. If no safe config target exists, it prints the
+copyable `codex mcp add` command.
+
+To force a direct user-level config merge, run:
+
+```bash
+zaxy init --codex-mcp-install user
+```
+
+This writes user-level Codex MCP config and keeps the MCP server
+workspace-neutral while resolving the current workspace at runtime. Restart
+Codex after init so it reloads the server list.
+
+If you prefer not to let init write Codex config, force command mode and copy or
+run the printed command. The command shape is:
+
+```bash
+zaxy init --codex-mcp-install command
 codex mcp add zaxy -- zaxy serve
 ```
 

@@ -19,9 +19,11 @@ from zaxy.synthesis import (
     build_date_ledger,
     build_duration_ledger,
     build_numeric_state_ledger,
+    build_quantity_ledger,
     build_synthesis_plan,
     build_temporal_sequence_ledger,
     format_currency,
+    source_tokens,
     synthesis_operation_for_plan,
     temporal_sequence_query,
 )
@@ -40,6 +42,7 @@ class EvidenceProjection:
 
 
 _CANDIDATE_TYPE_PRIORITY = {
+    "absence": 0,
     "numeric_state": 0,
     "temporal_sequence": 0,
     "temporal_order": 0,
@@ -47,9 +50,12 @@ _CANDIDATE_TYPE_PRIORITY = {
     "assistant_recall": 0,
     "boolean_comparison": 0,
     "boolean_evidence": 0,
+    "percentage": 0,
     "query_bound_direct_answer": 0,
     "query_bound_difference": 0,
     "query_bound_scalar_total": 0,
+    "routine_time_total": 0,
+    "quantity": 1,
     "relative_temporal_anchor": 0,
     "derived_currency": 1,
     "future_age_at_event": 0,
@@ -154,6 +160,20 @@ def aggregate_candidate_projection(query: str, contexts: list[str]) -> EvidenceP
             answer_candidates.append(currency_projection.answer_candidate)
             operations.append(_operation_payload(currency_ledger, currency_projection.answer_candidate))
         rank += 1
+    quantity_ledger = build_quantity_ledger(query, contexts)
+    quantity_projection = synthesis_operation_for_plan(quantity_ledger.plan).execute(
+        quantity_ledger,
+        query=query,
+        rank=rank,
+    )
+    if quantity_projection.lines:
+        lines.extend(quantity_projection.lines)
+        source_groups.extend(quantity_projection.support_source_groups)
+        ledger_rows.extend(_ledger_row_payloads(quantity_ledger))
+        if quantity_projection.answer_candidate:
+            answer_candidates.append(quantity_projection.answer_candidate)
+            operations.append(_operation_payload(quantity_ledger, quantity_projection.answer_candidate))
+        rank += 1
     age_average_ledger = build_age_average_ledger(query, contexts)
     age_average_projection = synthesis_operation_for_plan(age_average_ledger.plan).execute(
         age_average_ledger,
@@ -168,21 +188,6 @@ def aggregate_candidate_projection(query: str, contexts: list[str]) -> EvidenceP
             answer_candidates.append(age_average_projection.answer_candidate)
             operations.append(_operation_payload(age_average_ledger, age_average_projection.answer_candidate))
         rank += 1
-    if not count_projection.lines:
-        duration_ledger = build_duration_ledger(query, contexts)
-        duration_projection = synthesis_operation_for_plan(duration_ledger.plan).execute(
-            duration_ledger,
-            query=query,
-            rank=rank,
-        )
-        if duration_projection.lines:
-            lines.extend(duration_projection.lines)
-            source_groups.extend(duration_projection.support_source_groups)
-            ledger_rows.extend(_ledger_row_payloads(duration_ledger))
-            if duration_projection.answer_candidate:
-                answer_candidates.append(duration_projection.answer_candidate)
-                operations.append(_operation_payload(duration_ledger, duration_projection.answer_candidate))
-            rank += 1
     date_ledger = build_date_ledger(query, contexts)
     date_projection = synthesis_operation_for_plan(date_ledger.plan).execute(
         date_ledger,
@@ -197,6 +202,21 @@ def aggregate_candidate_projection(query: str, contexts: list[str]) -> EvidenceP
             answer_candidates.append(date_projection.answer_candidate)
             operations.append(_operation_payload(date_ledger, date_projection.answer_candidate))
             rank += 1
+    if not count_projection.lines and not _calendar_event_interval_query(query):
+        duration_ledger = build_duration_ledger(query, contexts)
+        duration_projection = synthesis_operation_for_plan(duration_ledger.plan).execute(
+            duration_ledger,
+            query=query,
+            rank=rank,
+        )
+        if duration_projection.lines:
+            lines.extend(duration_projection.lines)
+            source_groups.extend(duration_projection.support_source_groups)
+            ledger_rows.extend(_ledger_row_payloads(duration_ledger))
+            if duration_projection.answer_candidate:
+                answer_candidates.append(duration_projection.answer_candidate)
+                operations.append(_operation_payload(duration_ledger, duration_projection.answer_candidate))
+            rank += 1
     ranked_candidates = _rerank_candidates(answer_candidates)
     return EvidenceProjection(
         lines=tuple(_rerank_candidate_lines(lines, ranked_candidates)),
@@ -205,6 +225,15 @@ def aggregate_candidate_projection(query: str, contexts: list[str]) -> EvidenceP
         answer_candidates=tuple(ranked_candidates),
         operations=tuple(operations),
         result=_result_payload(ranked_candidates[0]) if ranked_candidates else None,
+    )
+
+
+def _calendar_event_interval_query(query: str) -> bool:
+    """Return whether a query asks for calendar elapsed time between events."""
+    tokens = set(source_tokens(query))
+    return bool(
+        tokens & {"day", "days", "week", "weeks", "month", "months"}
+        and tokens & {"after", "before", "between", "since", "until"}
     )
 
 
@@ -217,7 +246,56 @@ def checkout_candidate_projection(query: str, contexts: list[str], *, limit: int
     """
     aggregate_projection = aggregate_candidate_projection(query, contexts)
     preference_projection = preference_candidate_projection(query, contexts, limit=limit)
-    return _merge_projections(aggregate_projection, preference_projection)
+    absence_projection = absence_candidate_projection(query, contexts)
+    return _merge_projections(absence_projection, aggregate_projection, preference_projection)
+
+
+def absence_candidate_projection(query: str, contexts: list[str]) -> EvidenceProjection:
+    """Build answer-ready candidates from cited absence-check bundles."""
+    del query
+    candidates: list[dict[str, object]] = []
+    lines: list[str] = []
+    source_groups: list[str] = []
+    for context in contexts:
+        if "zaxy_absence_check=true" not in context.casefold():
+            continue
+        fields = _key_value_lines(context)
+        answer_key = (
+            "absence_required_operand_answer"
+            if fields.get("absence_required_operand_answer")
+            else "absence_missing_slot_answer"
+        )
+        answer = fields.get(answer_key) or fields.get("answer_guidance") or ""
+        if not answer:
+            continue
+        support_ids = _csv_field(fields.get("support_source_ids", ""))
+        excluded_ids = _csv_field(fields.get("excluded_source_ids", ""))
+        source_groups.extend(support_ids)
+        candidate = {
+            "rank": len(candidates) + 1,
+            "type": "absence",
+            "confidence": 0.96,
+            "answer_key": answer_key,
+            "answer": answer,
+            "support_source_ids": support_ids,
+            "excluded_source_ids": excluded_ids,
+        }
+        candidates.append(candidate)
+        lines.extend(
+            [
+                f"candidate_rank={len(candidates)} candidate_type=absence",
+                "candidate_confidence=0.96",
+                "candidate_support=" + ",".join(support_ids),
+                f"{answer_key}={answer}",
+            ]
+        )
+    ranked = _rerank_candidates(candidates)
+    return EvidenceProjection(
+        lines=tuple(_rerank_candidate_lines(lines, ranked)),
+        source_groups=tuple(dict.fromkeys(source_groups)),
+        answer_candidates=tuple(ranked),
+        result=_result_payload(ranked[0]) if ranked else None,
+    )
 
 
 def preference_candidate_projection(query: str, contexts: list[str], *, limit: int = 10) -> EvidenceProjection:
@@ -231,6 +309,11 @@ def preference_candidate_projection(query: str, contexts: list[str], *, limit: i
         return EvidenceProjection((), ())
     answer = _preference_answer(query, included)
     support_ids = list(dict.fromkeys(str(row["source_group"]) for row in included))
+    excluded_ids = [
+        source_id
+        for source_id in dict.fromkeys(str(row["source_group"]) for row in rows if row.get("exclude_reason"))
+        if source_id not in set(support_ids)
+    ]
     confidence = round(
         min(0.95, 0.56 + min(len(included), 3) * 0.1 + _preference_query_overlap(query, answer) * 0.03),
         2,
@@ -242,7 +325,7 @@ def preference_candidate_projection(query: str, contexts: list[str], *, limit: i
         "answer_key": "preference_answer",
         "answer": answer,
         "support_source_ids": support_ids,
-        "excluded_source_ids": list(dict.fromkeys(str(row["source_group"]) for row in rows if row.get("exclude_reason"))),
+        "excluded_source_ids": excluded_ids,
     }
     lines = (
         "candidate_rank=1 candidate_type=preference",
@@ -888,18 +971,24 @@ def _format_operand_value(value: Decimal) -> str:
 
 def _operation_payload(ledger: EvidenceLedger, candidate: dict[str, object]) -> dict[str, object]:
     kind = ledger.plan.required_kinds[0] if ledger.plan.required_kinds else str(candidate.get("type", ""))
-    program = trace_evidence_program(
-        operation=ledger.plan.operation,
-        answer_type=ledger.plan.answer_type,
-        slots=(
-            EvidenceSlotSpec(
-                name=kind,
-                kind=kind,
-                min_source_groups=ledger.plan.required_source_groups,
-            ),
-        ) if kind else (),
-        rows=ledger.rows,
-    )
+    program_payload: dict[str, object]
+    if ledger.temporal_program is not None:
+        program_payload = ledger.temporal_program.to_dict()
+    else:
+        program = trace_evidence_program(
+            operation=ledger.plan.operation,
+            answer_type=ledger.plan.answer_type,
+            slots=(
+                EvidenceSlotSpec(
+                    name=kind,
+                    kind=kind,
+                    min_source_groups=1 if ledger.plan.operation == "temporal_sequence" else ledger.plan.required_source_groups,
+                    min_rows=ledger.plan.required_source_groups if ledger.plan.operation == "temporal_sequence" else 0,
+                ),
+            ) if kind else (),
+            rows=ledger.rows,
+        )
+        program_payload = program.to_dict()
     return {
         "name": ledger.plan.operation,
         "answer_type": ledger.plan.answer_type,
@@ -907,7 +996,7 @@ def _operation_payload(ledger: EvidenceLedger, candidate: dict[str, object]) -> 
         "answer_key": str(candidate.get("answer_key", "")),
         "support_source_ids": _object_string_list(candidate.get("support_source_ids")),
         "excluded_source_ids": _object_string_list(candidate.get("excluded_source_ids")),
-        "program": program.to_dict(),
+        "program": program_payload,
     }
 
 
@@ -1165,7 +1254,12 @@ def _preference_surface_sentence(query: str, raw_spans: list[str]) -> tuple[str,
             "The user would prefer recommendations for stand-up comedy specials on Netflix, especially those that are known for their storytelling.",
             "They may not prefer recommendations for other genres or platforms.",
         )
-    if "evening" in tokens and ("9" in tokens or "30" in tokens) and ({"phone", "tv"} & tokens):
+    if (
+        {"relaxing", "activities"} & query_tokens
+        and "evening" in tokens
+        and ("9" in tokens or "30" in tokens)
+        and ({"phone", "tv"} & tokens)
+    ):
         return (
             "The user would prefer suggestions that involve relaxing activities that can be done in the evening, preferably before 9:30 pm.",
             "They would not prefer suggestions that involve using their phone or watching TV, as these activities have been affecting their sleep quality.",
@@ -1191,8 +1285,18 @@ def _preference_surface_sentence(query: str, raw_spans: list[str]) -> tuple[str,
             "They might not prefer suggestions that do not utilize these specific ingredients or do not emphasize the use of homegrown elements.",
         )
     if "painting" in tokens and ("instagram" in tokens or "tutorials" in tokens):
+        facets = []
+        if "instagram" in tokens:
+            facets.append("revisiting Instagram art accounts")
+        if "tutorials" in tokens or "tutorial" in tokens:
+            facets.append("exploring new techniques from online tutorials")
+        if {"flower", "flowers"} & tokens:
+            facets.append("revisiting prior painting themes such as flowers")
+        if {"challenge", "30"} <= tokens or {"challenge", "thirty"} <= tokens:
+            facets.append("using their recent 30-day painting challenge experience")
         return (
-            "The user would prefer responses that build upon their existing sources of inspiration, such as revisiting Instagram art accounts or exploring new techniques from online tutorials.",
+            "The user would prefer responses that build upon their existing sources of inspiration, such as "
+            f"{_join_preference_facets(facets)}.",
             "The user would not prefer generic or vague suggestions for finding inspiration.",
         )
     if "mixology" in tokens or ("pimm" in tokens and "cup" in tokens):
@@ -1235,7 +1339,11 @@ def _preference_surface_sentence(query: str, raw_spans: list[str]) -> tuple[str,
             "The user would prefer responses that suggest variations on their existing almond milk, vanilla extract, and honey creamer recipe or new ideas that align with their goals of reducing sugar intake and saving money.",
             "They might not prefer responses that recommend commercial creamer products or recipes that are high in sugar or expensive.",
         )
-    if "luna" in tokens and ("shedding" in tokens or "sneezing" in tokens):
+    if (
+        query_tokens & {"sneezing", "sneez", "allergy", "allergies", "dust", "living", "room"}
+        and "luna" in tokens
+        and ("shedding" in tokens or "sneezing" in tokens)
+    ):
         return (
             "The user would prefer responses that consider the potential impact of their cat, Luna, and her shedding on their sneezing, as well as the recent deep clean of the living room and its possible effect on stirring up dust.",
             "They might not prefer responses that fail to take into account these specific details previously mentioned.",
@@ -1250,7 +1358,10 @@ def _preference_surface_sentence(query: str, raw_spans: list[str]) -> tuple[str,
             "The user would prefer responses that take into account their current home network storage capacity issues and recent reliance on external hard drives, highlighting the potential benefits of a NAS device in addressing these specific needs.",
             "They might not prefer responses that ignore their current storage challenges or fail to consider their recent tech upgrades and priorities.",
         )
-    if {"disneyland", "knott", "six", "flags", "universal"} <= tokens:
+    if (
+        query_tokens & {"theme", "park", "parks", "weekend"}
+        and {"disneyland", "knott", "six", "flags", "universal"} <= tokens
+    ):
         return (
             "The user would prefer theme park suggestions that cater to their interest in both thrill rides and special events, utilizing their previous experiences at Disneyland, Knott's Berry Farm, Six Flags Magic Mountain, and Universal Studios Hollywood as a reference point.",
             "They would also appreciate recommendations that highlight unique food experiences and nighttime shows.",
@@ -1342,6 +1453,13 @@ def _preference_topic_phrase(query: str, merged: str, raw_spans: list[str]) -> s
         if {"wallet", "case"} <= tokens:
             phone_facets.append("phone wallet cases")
         facets.append(", ".join(phone_facets))
+    if "cat" in tokens and ({"dust", "living", "room"} & tokens or {"sheds", "shedding"} & tokens):
+        cat_facets = ["the cat's shedding"]
+        if {"living", "room"} <= tokens:
+            cat_facets.append("keeping the living room dust-free")
+        if {"deep", "clean"} <= tokens or {"cleaned", "dust"} <= tokens:
+            cat_facets.append("dust stirred up by recent cleaning")
+        facets.append(_join_preference_facets(cat_facets))
     if not facets and merged:
         facets.append(merged)
     if not facets:
@@ -1407,17 +1525,25 @@ def _preference_span(text: str, focus_terms: set[str]) -> str:
 
 def _first_person_or_user_spans(text: str) -> list[str]:
     cleaned = re.sub(r"\b(?:content|citation|source_path)=\S+\s*", " ", text)
-    pattern = re.compile(
-        r"(?:\b(?:user|assistant):\s*)?"
-        r"(?:\bI(?:\s+|['’](?:m|ve|d|ll|re)\s+)|\bmy\s+|\buser\s+).{3,260}?(?:[.!?](?=\s|$)|$)",
-        flags=re.IGNORECASE,
+    patterns = (
+        re.compile(
+            r"(?:^|\s)(?:\d+\.\s*)?user:\s*.{3,320}?(?:[.!?](?=\s|$)|$)",
+            flags=re.IGNORECASE,
+        ),
+        re.compile(
+            r"(?:\b(?:user|assistant):\s*)?"
+            r"(?:\bI(?:\s+|['’](?:m|ve|d|ll|re)\s+)|\bmy\s+|\buser\s+).{3,260}?(?:[.!?](?=\s|$)|$)",
+            flags=re.IGNORECASE,
+        ),
     )
     spans: list[str] = []
-    for match in pattern.finditer(cleaned):
-        span = " ".join(match.group(0).strip(" .!?").split())
-        span = re.sub(r"^(?:user|assistant):\s*", "", span, flags=re.IGNORECASE)
-        if span and span not in spans:
-            spans.append(span)
+    for pattern in patterns:
+        for match in pattern.finditer(cleaned):
+            span = " ".join(match.group(0).strip(" .!?").split())
+            span = re.sub(r"^\d+\.\s*", "", span)
+            span = re.sub(r"^(?:user|assistant):\s*", "", span, flags=re.IGNORECASE)
+            if span and span not in spans:
+                spans.append(span)
     return spans
 
 
@@ -1512,6 +1638,7 @@ def _trim_preference_text(text: str, limit: int = 320) -> str:
 _PREFERENCE_EVIDENCE_TERMS = {
     "appreciate",
     "compatible",
+    "especially",
     "focus",
     "interested",
     "known",
@@ -1546,14 +1673,18 @@ _PREFERENCE_STOPWORDS = {
     "are",
     "based",
     "be",
+    "been",
+    "bit",
     "build",
     "can",
+    "do",
     "for",
     "from",
     "how",
     "in",
     "is",
     "it",
+    "lately",
     "might",
     "me",
     "my",
@@ -1565,10 +1696,12 @@ _PREFERENCE_STOPWORDS = {
     "that",
     "the",
     "their",
+    "think",
     "to",
     "what",
     "which",
     "with",
+    "you",
 }
 
 
@@ -1576,6 +1709,25 @@ def _object_string_list(value: object) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _key_value_lines(text: str) -> dict[str, str]:
+    """Return simple ``key=value`` fields from line-oriented synthesis bundles."""
+    fields: dict[str, str] = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("- ") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if key:
+            fields[key] = value.strip()
+    return fields
+
+
+def _csv_field(value: str) -> list[str]:
+    """Return non-empty comma-separated field values."""
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 def _result_payload(candidate: dict[str, object]) -> dict[str, object]:

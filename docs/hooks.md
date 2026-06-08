@@ -14,12 +14,16 @@ zaxy hooks codex --eventloom-path .eventloom --domain my-project
 
 For Codex, the preferred deterministic path is not provider packet capture and
 not an assumed project-local hook schema. `zaxy init --preset local-codex`
-writes `.codex/zaxy-capture.json`, then `zaxy capture start --workspace .`
-starts a managed watcher that imports Codex's own local session JSONL into
-Eventloom as normalized transcript, tool-call, command, and file-edit
-observations. This keeps capture local, idempotent, and out of the model
-request path. Use `zaxy capture status` and `zaxy capture stop` to inspect or
-stop the managed watcher. Add `--graph` to `capture start` when Neo4j is
+writes `.codex/zaxy-capture.json`, then the printed
+`zaxy activate codex ... --launch` command starts Codex with the memory
+bootstrap packet and ensures the managed watcher is running. The printed command
+includes explicit `--eventloom-path` and `--workspace-root` values so it can be
+copied from another shell without changing the target workspace. The watcher
+imports Codex's own local session JSONL into Eventloom as normalized transcript,
+tool-call, command, and file-edit observations. This keeps capture local,
+idempotent, and out of the model request path. Use
+`zaxy capture status`, `zaxy capture start`, and `zaxy capture stop` when a
+supervisor needs direct control. Add `--graph` to `capture start` when Neo4j is
 reachable and newly captured observations should be projected immediately.
 The underlying `zaxy codex-capture --watch` command remains available for
 supervisors that need direct control; use `--watch-iterations <n>` for bounded
