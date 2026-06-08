@@ -516,3 +516,156 @@ def test_production_consolidation_candidate_payload_scores_contract_fields() -> 
     assert row["citation_coverage"] is True
     assert row["authority_boundary"] is True
     assert row["score"] == 1.0
+
+
+def test_causal_scoring_returns_empty_row_when_no_results() -> None:
+    case = CausalBenchmarkCase(
+        case_id="empty",
+        query="What caused the deployment rollback?",
+        query_type="predecessor",
+        source={"name": "config drift", "entity_type": "Task"},
+        target={"name": "deployment rollback", "entity_type": "Task"},
+        relation_type="caused",
+        citation="eventloom://session-alpha/events/42#abcdefabcdef",
+    )
+
+    row = evaluate_causal_results(case, [])
+
+    assert row == {
+        "case_id": "empty",
+        "query_type": "predecessor",
+        "hit": False,
+        "relation_match": False,
+        "citation": False,
+        "authority_boundary": False,
+        "score": 0.0,
+        "matched_result": None,
+    }
+
+
+def test_causal_scoring_reads_nested_properties_from_mapping_endpoint() -> None:
+    case = CausalBenchmarkCase(
+        case_id="nested-properties",
+        query="What did the config drift cause?",
+        query_type="successor",
+        source={"name": "config drift", "entity_type": "Task"},
+        target={"name": "deployment rollback", "entity_type": "Task"},
+        relation_type="caused",
+        citation="eventloom://session-alpha/events/42#abcdefabcdef",
+    )
+    result = {
+        "target": {
+            "properties": {
+                "name": "deployment rollback",
+                "entity_type": "Task",
+            }
+        },
+        "properties": {
+            "relation_type": "caused",
+            "authority_status": "non_authoritative",
+            "citations": ["eventloom://session-alpha/events/42#abcdefabcdef"],
+        },
+    }
+
+    row = evaluate_causal_results(case, [result])
+
+    assert row["hit"] is True
+    assert row["citation"] is True
+    assert row["authority_boundary"] is True
+
+
+@pytest.mark.parametrize(
+    "stale_field",
+    [
+        {"stale": True},
+        {"valid_to": "2026-06-07T00:00:00Z"},
+        {"superseded_by": "eventloom://session-alpha/events/43#bbbbbbbbbbbb"},
+    ],
+)
+def test_causal_scoring_penalizes_stale_matching_rows(stale_field: dict[str, object]) -> None:
+    case = CausalBenchmarkCase(
+        case_id="stale-row",
+        query="What did the config drift cause?",
+        query_type="successor",
+        source={"name": "config drift", "entity_type": "Task"},
+        target={"name": "deployment rollback", "entity_type": "Task"},
+        relation_type="caused",
+        citation="eventloom://session-alpha/events/42#abcdefabcdef",
+    )
+    result = {
+        "target": {"name": "deployment rollback", "entity_type": "Task"},
+        "relation_type": "caused",
+        "authority_status": "non_authoritative",
+        "citation": "eventloom://session-alpha/events/42#abcdefabcdef",
+        **stale_field,
+    }
+
+    row = evaluate_causal_results(case, [result])
+
+    assert row["hit"] is True
+    assert row["authority_boundary"] is False
+    assert row["score"] == 0.75
+
+
+def test_consolidation_candidate_scores_entity_name_fallback_and_source_ref_contract() -> None:
+    candidate_id = "consolidation:claim:cccccccccccccccccccccccc"
+    case = ConsolidationBenchmarkCase(
+        case_id="entity-name-fallback",
+        candidate_id=candidate_id,
+        candidate_type="claim",
+        source_events=({"seq": 42, "hash": "d" * 64},),
+        citation="eventloom://session-alpha/events/42#dddddddddddd",
+    )
+    candidate = {
+        "entity_name": candidate_id,
+        "properties": {
+            "candidate_type": "claim",
+            "source_events": [{"seq": 42, "hash": "d" * 64}],
+            "source_event_refs": [f"42:{'d' * 64}", 123, "bad-ref"],
+            "authority_status": "non_authoritative",
+        },
+    }
+
+    row = evaluate_consolidation_candidate(case, candidate)
+
+    assert row["candidate_match"] is True
+    assert row["source_event_fidelity"] is True
+    assert row["citation_coverage"] is True
+    assert row["authority_boundary"] is True
+
+
+def test_consolidation_candidate_handles_non_sequence_sources_as_missing_evidence() -> None:
+    case = ConsolidationBenchmarkCase(
+        case_id="missing-source-shape",
+        candidate_id="consolidation:claim:dddddddddddddddddddddddd",
+        candidate_type="claim",
+        source_events=({"seq": 42, "hash": "d" * 64},),
+        citation="eventloom://session-alpha/events/42#dddddddddddd",
+    )
+    candidate = {
+        "candidate_id": case.candidate_id,
+        "candidate_type": "claim",
+        "source_events": "not-a-source-list",
+        "source_event_refs": "42:" + "d" * 64,
+        "authority_status": "non_authoritative",
+    }
+
+    row = evaluate_consolidation_candidate(case, candidate)
+
+    assert row["candidate_match"] is True
+    assert row["source_event_fidelity"] is False
+    assert row["citation_coverage"] is False
+    assert row["authority_boundary"] is True
+    assert row["score"] == 0.5
+
+
+def test_consolidation_case_rejects_authoritative_case_boundary() -> None:
+    with pytest.raises(ValueError, match="authority_status"):
+        ConsolidationBenchmarkCase(
+            case_id="authoritative-case",
+            candidate_id="consolidation:claim:eeeeeeeeeeeeeeeeeeeeeeee",
+            candidate_type="claim",
+            source_events=({"seq": 42, "hash": "d" * 64},),
+            citation="eventloom://session-alpha/events/42#dddddddddddd",
+            authority_status="authoritative",
+        )

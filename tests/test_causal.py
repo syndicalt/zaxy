@@ -168,6 +168,109 @@ def test_causal_relation_taxonomy_is_stable() -> None:
     assert causal_relation_to_graph_relation("fixed") == "causal_fixed"
 
 
+def test_build_causal_edge_event_rejects_empty_actor_or_session() -> None:
+    with pytest.raises(ValueError, match="actor"):
+        build_causal_edge_event(
+            actor="",
+            session_id="agent-1",
+            source={"name": "cause", "entity_type": "event"},
+            target={"name": "effect", "entity_type": "outcome"},
+            relation_type="caused",
+            confidence=0.9,
+            method="explicit_outcome_citation_v1",
+            evidence={"source_event_seq": 42, "source_event_hash": "a" * 64},
+        )
+
+    with pytest.raises(ValueError, match="session_id"):
+        build_causal_edge_event(
+            actor="agent",
+            session_id="",
+            source={"name": "cause", "entity_type": "event"},
+            target={"name": "effect", "entity_type": "outcome"},
+            relation_type="caused",
+            confidence=0.9,
+            method="explicit_outcome_citation_v1",
+            evidence={"source_event_seq": 42, "source_event_hash": "a" * 64},
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("source", "not-a-mapping", "source"),
+        ("source", {"name": "", "entity_type": "event"}, "source.name"),
+        ("confidence", True, "confidence"),
+        ("confidence", 1.1, "confidence"),
+        ("method", "", "causal method"),
+        ("evidence", "not-a-mapping", "evidence"),
+        ("evidence", {"source_event_seq": True, "source_event_hash": "a" * 64}, "source_event_seq"),
+        ("evidence", {"source_event_seq": 0, "source_event_hash": "a" * 64}, "positive"),
+        ("evidence", {"source_event_seq": 42, "source_event_hash": "A" * 64}, "hash"),
+    ],
+)
+def test_causal_edge_rejects_invalid_contract_fields(
+    field: str,
+    value: object,
+    message: str,
+) -> None:
+    kwargs: dict[str, object] = {
+        "source": {"name": "cause", "entity_type": "event"},
+        "target": {"name": "effect", "entity_type": "outcome"},
+        "relation_type": "caused",
+        "confidence": 0.9,
+        "method": "explicit_outcome_citation_v1",
+        "evidence": {"source_event_seq": 42, "source_event_hash": "a" * 64},
+    }
+    kwargs[field] = value
+
+    with pytest.raises(ValueError, match=message):
+        CausalEdge(**kwargs)  # type: ignore[arg-type]
+
+
+def test_causal_edge_rejects_mismatched_graph_relation_type() -> None:
+    with pytest.raises(ValueError, match="graph_relation_type"):
+        CausalEdge(
+            source={"name": "cause", "entity_type": "event"},
+            target={"name": "effect", "entity_type": "outcome"},
+            relation_type="caused",
+            graph_relation_type="causal_fixed",
+            confidence=0.9,
+            method="explicit_outcome_citation_v1",
+            evidence={"source_event_seq": 42, "source_event_hash": "a" * 64},
+        )
+
+
+def test_causal_query_result_rejects_invalid_path_and_evidence_shape() -> None:
+    with pytest.raises(ValueError, match="path_length"):
+        CausalQueryResult(
+            source={"name": "cause", "entity_type": "event"},
+            target={"name": "effect", "entity_type": "outcome"},
+            relation_type="caused",
+            graph_relation_type="causal_caused",
+            confidence=0.9,
+            method="explicit_outcome_citation_v1",
+            citation="eventloom://agent-1/events/42#aaaaaaaaaaaa",
+            review_status="proposed",
+            authority_status="non_authoritative",
+            evidence={},
+            path_length=0,
+        )
+
+    with pytest.raises(ValueError, match="evidence"):
+        CausalQueryResult(
+            source={"name": "cause", "entity_type": "event"},
+            target={"name": "effect", "entity_type": "outcome"},
+            relation_type="caused",
+            graph_relation_type="causal_caused",
+            confidence=0.9,
+            method="explicit_outcome_citation_v1",
+            citation="eventloom://agent-1/events/42#aaaaaaaaaaaa",
+            review_status="proposed",
+            authority_status="non_authoritative",
+            evidence="not-a-mapping",  # type: ignore[arg-type]
+        )
+
+
 @pytest.mark.asyncio
 async def test_memory_fabric_causal_queries_drop_malformed_backend_rows() -> None:
     malformed = GraphEntity(

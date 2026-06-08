@@ -118,6 +118,8 @@ def test_reverify_request_builder_payload_projects_to_typed_entity() -> None:
 
 def test_summarize_metacognition_events_returns_open_counts() -> None:
     events = [
+        object(),
+        {"event_type": "metacognition.unknown.recorded", "payload": "not-a-payload"},
         build_known_unknown_event(
             actor="agent",
             session_id="agent-1",
@@ -137,13 +139,37 @@ def test_summarize_metacognition_events_returns_open_counts() -> None:
             priority="normal",
             claim_key="change",
         ),
+        build_confidence_assessment_event(
+            actor="agent",
+            session_id="agent-1",
+            claim="The release gate needs cited evidence.",
+            confidence=0.8,
+            support_count=2,
+            conflict_count=0,
+            evidence=[{"citation": "eventloom://agent-1/events/9#cccccccccccc"}],
+            method="deterministic_confidence_v1",
+        ),
+        build_conflict_cluster_event(
+            actor="agent",
+            session_id="agent-1",
+            claim_key="release-gate",
+            claim="The release gate needs cited evidence.",
+            supporting_source_events=[{"seq": 9, "hash": "c" * 64}],
+            conflicting_source_events=[{"seq": 10, "hash": "d" * 64}],
+            confidence=0.4,
+            reason="Support and conflict evidence are both present.",
+        ),
     ]
 
     summary = summarize_metacognition_events(events)
 
     assert summary["unknown_count"] == 1
     assert summary["open_unknown_count"] == 1
+    assert summary["confidence_assessment_count"] == 1
+    assert summary["conflict_cluster_count"] == 1
+    assert summary["unresolved_conflict_cluster_count"] == 1
     assert summary["reverify_needed_count"] == 1
+    assert summary["conflict_clusters"][0]["claim_key"] == "release-gate"
 
 
 def test_builder_ids_are_deterministic_from_inputs() -> None:
@@ -256,3 +282,89 @@ def test_builders_snapshot_mutable_sources() -> None:
     source_events[0]["hash"] = "b" * 64
 
     assert event["payload"]["source_events"] == SOURCE
+
+
+def test_confidence_assessment_rejects_non_boolean_reverify_flag() -> None:
+    with pytest.raises(ValueError, match="requires_reverify"):
+        build_confidence_assessment_event(
+            actor="zaxy-reasoning",
+            session_id="agent-1",
+            claim="Projection stale caused failure",
+            confidence=0.42,
+            support_count=1,
+            conflict_count=0,
+            evidence=[{"citation": "eventloom://agent-1/events/7#aaaaaaaaaaaa"}],
+            method="deterministic_token_overlap_v1",
+            requires_reverify="yes",  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.parametrize(("support_count", "conflict_count"), [("1", 0), (1, -1), (True, 0)])
+def test_confidence_assessment_rejects_invalid_counts(
+    support_count: object,
+    conflict_count: object,
+) -> None:
+    with pytest.raises(ValueError, match="count"):
+        build_confidence_assessment_event(
+            actor="zaxy-reasoning",
+            session_id="agent-1",
+            claim="Projection stale caused failure",
+            confidence=0.42,
+            support_count=support_count,  # type: ignore[arg-type]
+            conflict_count=conflict_count,  # type: ignore[arg-type]
+            evidence=[{"citation": "eventloom://agent-1/events/7#aaaaaaaaaaaa"}],
+            method="deterministic_token_overlap_v1",
+        )
+
+
+@pytest.mark.parametrize(
+    "explicit_id",
+    [
+        "metacognition:unknown:abc",
+        "metacognition:unknown:AAAAAAAAAAAAAAAAAAAAAAAA",
+    ],
+)
+def test_known_unknown_rejects_invalid_explicit_id(explicit_id: str) -> None:
+    with pytest.raises(ValueError, match="unknown_id"):
+        build_known_unknown_event(
+            actor="agent",
+            session_id="agent-1",
+            question="What changed?",
+            reason="No cited answer.",
+            source_events=SOURCE,
+            unknown_id=explicit_id,
+        )
+
+
+def test_confidence_assessment_rejects_non_sequence_evidence() -> None:
+    with pytest.raises(ValueError, match="evidence"):
+        build_confidence_assessment_event(
+            actor="zaxy-reasoning",
+            session_id="agent-1",
+            claim="Projection stale caused failure",
+            confidence=0.42,
+            support_count=1,
+            conflict_count=0,
+            evidence="eventloom://agent-1/events/7#aaaaaaaaaaaa",  # type: ignore[arg-type]
+            method="deterministic_token_overlap_v1",
+        )
+
+
+def test_confidence_assessment_trims_evidence_string_fields() -> None:
+    event = build_confidence_assessment_event(
+        actor="zaxy-reasoning",
+        session_id="agent-1",
+        claim="Projection stale caused failure",
+        confidence=0.42,
+        support_count=1,
+        conflict_count=0,
+        evidence=[
+            {
+                "citation": "eventloom://agent-1/events/7#aaaaaaaaaaaa",
+                "stance": " support ",
+            }
+        ],
+        method="deterministic_token_overlap_v1",
+    )
+
+    assert event["payload"]["evidence"][0]["stance"] == "support"

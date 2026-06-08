@@ -5,7 +5,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from zaxy.rc_benchmark_freeze import build_rc1_benchmark_freeze_report
+from zaxy.rc_benchmark_freeze import (
+    build_rc1_benchmark_freeze_report,
+    format_rc1_benchmark_freeze_report,
+)
 
 
 def test_rc1_benchmark_freeze_passes_with_required_evidence(tmp_path: Path) -> None:
@@ -29,6 +32,11 @@ def test_rc1_benchmark_freeze_passes_with_required_evidence(tmp_path: Path) -> N
     }
     assert all(lane["claim_scope"] == "project_defined_internal" for lane in report.internal_lanes)
     assert all(check["passed"] is True for check in report.checks)
+
+    rendered = format_rc1_benchmark_freeze_report(report)
+    assert "# Zaxy 2.0 RC.1 Benchmark Freeze" in rendered
+    assert "- Status: `PASS`" in rendered
+    assert "`rc1_manifest`" in rendered
 
 
 def test_rc1_benchmark_freeze_fails_when_headline_run_config_missing(tmp_path: Path) -> None:
@@ -105,6 +113,76 @@ def test_rc1_benchmark_freeze_fails_when_harvey_benchmark_is_summary_only(
     assert report.passed is False
     assert any(
         check["name"] == "harvey_zaxy_result_rows" and check["passed"] is False
+        for check in report.checks
+    )
+    assert any(
+        check["name"] == "harvey_result_provenance" and check["passed"] is False
+        for check in report.checks
+    )
+
+
+def test_rc1_benchmark_freeze_fails_on_malformed_manifest_json(tmp_path: Path) -> None:
+    manifest_dir = tmp_path / "reports/benchmarks/2.0.0-rc.1"
+    manifest_dir.mkdir(parents=True)
+    (manifest_dir / "manifest.json").write_text("{not-json", encoding="utf-8")
+
+    report = build_rc1_benchmark_freeze_report(tmp_path)
+
+    assert report.passed is False
+    assert any(check["name"] == "rc1_manifest_json" for check in report.checks)
+    assert report.headline_500["artifact"] == (
+        "reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json"
+    )
+
+
+def test_rc1_benchmark_freeze_fails_on_non_object_json_artifacts(tmp_path: Path) -> None:
+    _write_required_artifacts(tmp_path)
+    headline = tmp_path / "reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json"
+    headline.write_text("[]", encoding="utf-8")
+    harvey = tmp_path / "reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-status.json"
+    harvey.write_text("[]", encoding="utf-8")
+
+    report = build_rc1_benchmark_freeze_report(tmp_path)
+
+    assert report.passed is False
+    assert any(check["name"] == "headline_report_json" for check in report.checks)
+    assert any(check["name"] == "harvey_json:harvey-lab-status.json" for check in report.checks)
+
+
+def test_rc1_benchmark_freeze_fails_when_headline_backend_is_missing(tmp_path: Path) -> None:
+    _write_required_artifacts(tmp_path)
+    headline = tmp_path / "reports/benchmarks/longmemeval-500-publish-20260607/live-benchmark.json"
+    payload = json.loads(headline.read_text(encoding="utf-8"))
+    payload["summaries"] = [{"backend": "bm25", "mean_score": 0.1}]
+    headline.write_text(json.dumps(payload), encoding="utf-8")
+
+    report = build_rc1_benchmark_freeze_report(tmp_path)
+
+    assert report.passed is False
+    assert any(
+        check["name"] == "headline_backend" and check["passed"] is False
+        for check in report.checks
+    )
+
+
+def test_rc1_benchmark_freeze_fails_malformed_harvey_result_rows(tmp_path: Path) -> None:
+    _write_required_artifacts(tmp_path)
+    benchmark_path = tmp_path / "reports/benchmarks/harvey-lab-memory-ablation/harvey-lab-benchmark.json"
+    benchmark = json.loads(benchmark_path.read_text(encoding="utf-8"))
+    benchmark["zaxy_results"][0]["memory_read_calls"] = 0
+    benchmark["task_rows"]["task-0"]["zaxy_memory_search_calls"] = True
+    benchmark["result_provenance"]["external_baseline_reports"][0]["framework_count"] = 0
+    benchmark_path.write_text(json.dumps(benchmark), encoding="utf-8")
+
+    report = build_rc1_benchmark_freeze_report(tmp_path)
+
+    assert report.passed is False
+    assert any(
+        check["name"] == "harvey_zaxy_result_rows" and check["passed"] is False
+        for check in report.checks
+    )
+    assert any(
+        check["name"] == "harvey_task_rows" and check["passed"] is False
         for check in report.checks
     )
     assert any(

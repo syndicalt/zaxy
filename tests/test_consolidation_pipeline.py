@@ -301,6 +301,126 @@ def test_generate_consolidation_proposals_keeps_low_signal_to_episode_only() -> 
     assert [proposal.candidate_type for proposal in proposals] == ["episode"]
 
 
+def test_segment_rejects_empty_duplicate_or_unordered_sources() -> None:
+    with pytest.raises(ValueError, match="source_events"):
+        ConsolidationSegment(
+            session_id="agent-1",
+            segment_id="segment:agent-1:000001-000001",
+            event_type_counts={},
+            source_events=[],
+        )
+
+    with pytest.raises(ValueError, match="ordered"):
+        ConsolidationSegment(
+            session_id="agent-1",
+            segment_id="segment:agent-1:000001-000002",
+            event_type_counts={"tool.call.completed": 2},
+            source_events=[
+                {"seq": 2, "hash": "b" * 64, "event_type": "tool.call.completed"},
+                {"seq": 1, "hash": "a" * 64, "event_type": "tool.call.completed"},
+            ],
+        )
+
+    with pytest.raises(ValueError, match="unique"):
+        ConsolidationSegment(
+            session_id="agent-1",
+            segment_id="segment:agent-1:000001-000001",
+            event_type_counts={"tool.call.completed": 2},
+            source_events=[
+                {"seq": 1, "hash": "a" * 64, "event_type": "tool.call.completed"},
+                {"seq": 1, "hash": "b" * 64, "event_type": "tool.call.completed"},
+            ],
+        )
+
+
+def test_select_consolidation_segments_rejects_invalid_window_size() -> None:
+    with pytest.raises(ValueError, match="window_size"):
+        select_consolidation_segments([], session_id="agent-1", window_size=0)
+
+
+def test_select_consolidation_segments_rejects_events_missing_type_or_hash() -> None:
+    with pytest.raises(ValueError, match="event_type"):
+        select_consolidation_segments(
+            [EventLike(1, "a" * 64, "", {"tool_name": "pytest"})],
+            session_id="agent-1",
+        )
+
+    with pytest.raises(ValueError, match="event hash"):
+        select_consolidation_segments(
+            [EventLike(1, "short", "tool.call.completed", {"tool_name": "pytest"})],
+            session_id="agent-1",
+        )
+
+
+def test_event_type_counts_rejects_invalid_source_rows_and_counts() -> None:
+    with pytest.raises(ValueError, match="event seq"):
+        event_type_counts([{"seq": True, "hash": "a" * 64, "event_type": "tool.call.completed"}])
+
+    with pytest.raises(ValueError, match="summary"):
+        ConsolidationSegment(
+            session_id="agent-1",
+            segment_id="segment:agent-1:000001-000001",
+            event_type_counts={"tool.call.completed": 1},
+            source_events=[
+                {
+                    "seq": 1,
+                    "hash": "a" * 64,
+                    "event_type": "tool.call.completed",
+                    "summary": 123,
+                }
+            ],
+        )
+
+    with pytest.raises(ValueError, match="event_type_counts"):
+        ConsolidationSegment(
+            session_id="agent-1",
+            segment_id="segment:agent-1:000001-000001",
+            event_type_counts={"tool.call.completed": True},
+            source_events=[
+                {"seq": 1, "hash": "a" * 64, "event_type": "tool.call.completed"}
+            ],
+        )
+
+
+def test_generate_consolidation_proposals_rejects_invalid_inputs() -> None:
+    with pytest.raises(ValueError, match="purpose"):
+        generate_consolidation_proposals([], purpose="")
+
+    with pytest.raises(ValueError, match="ConsolidationSegment"):
+        generate_consolidation_proposals([object()])  # type: ignore[list-item]
+
+
+def test_proposed_consolidation_rejects_invalid_fields() -> None:
+    segment = ConsolidationSegment(
+        session_id="agent-1",
+        segment_id="segment:agent-1:000001-000001",
+        event_type_counts={"tool.call.completed": 1},
+        source_events=[
+            {"seq": 1, "hash": "a" * 64, "event_type": "tool.call.completed"}
+        ],
+    )
+
+    with pytest.raises(ValueError, match="candidate_type"):
+        ProposedConsolidation(
+            segment=segment,
+            candidate_type="unsupported",
+            title="Unsupported",
+            summary="Unsupported.",
+            confidence=0.5,
+            method="deterministic_test_v1",
+        )
+
+    with pytest.raises(ValueError, match="confidence"):
+        ProposedConsolidation(
+            segment=segment,
+            candidate_type="episode",
+            title="Episode",
+            summary="Episode.",
+            confidence=True,  # type: ignore[arg-type]
+            method="deterministic_test_v1",
+        )
+
+
 @pytest.mark.asyncio
 async def test_memory_fabric_proposes_consolidation_candidates_from_session_events(
     tmp_path,

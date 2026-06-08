@@ -200,7 +200,7 @@ def _validated_source_event(value: object) -> dict[str, Any]:
         raise TypeError("source event must be a mapping")
     seq = value.get("seq")
     event_hash = value.get("hash")
-    if not isinstance(seq, int) or seq < 1:
+    if not isinstance(seq, int) or isinstance(seq, bool) or seq < 1:
         raise ValueError("source event seq must be a positive integer")
     if not isinstance(event_hash, str) or _EVENT_HASH_RE.fullmatch(event_hash) is None:
         raise ValueError("source event hash must be 64 lowercase hex characters")

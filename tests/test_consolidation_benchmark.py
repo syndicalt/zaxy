@@ -127,3 +127,78 @@ def test_summarize_consolidation_guardrail_averages_rows() -> None:
         "mean_review_gate": 0.5,
         "mean_score": 0.8125,
     }
+
+
+def test_summarize_consolidation_guardrail_empty_defaults() -> None:
+    assert summarize_consolidation_guardrail([]) == {
+        "case_count": 0,
+        "mean_type_match": 0.0,
+        "mean_source_event_fidelity": 0.0,
+        "mean_authority_boundary": 0.0,
+        "mean_review_gate": 0.0,
+        "mean_score": 0.0,
+    }
+
+
+def test_guardrail_rejects_invalid_case_identity_and_candidate_type() -> None:
+    with pytest.raises(ValueError, match="case_id"):
+        ConsolidationGuardrailCase(
+            case_id="",
+            candidate_type="claim",
+            required_source_events=[{"seq": 1, "hash": "a" * 64}],
+        )
+
+    with pytest.raises(ValueError, match="candidate_type"):
+        ConsolidationGuardrailCase(
+            case_id="bad-type",
+            candidate_type="unsupported",
+            required_source_events=[{"seq": 1, "hash": "a" * 64}],
+        )
+
+
+def test_guardrail_rejects_non_mapping_candidate() -> None:
+    case = ConsolidationGuardrailCase(
+        case_id="claim-3",
+        candidate_type="claim",
+        required_source_events=[{"seq": 1, "hash": "a" * 64}],
+    )
+
+    with pytest.raises(ValueError, match="candidate"):
+        evaluate_consolidation_guardrail(case, ["not", "a", "mapping"])  # type: ignore[arg-type]
+
+
+def test_guardrail_scores_malformed_candidate_source_events_as_zero_fidelity() -> None:
+    case = ConsolidationGuardrailCase(
+        case_id="claim-4",
+        candidate_type="claim",
+        required_source_events=[{"seq": 1, "hash": "a" * 64}],
+    )
+
+    row = evaluate_consolidation_guardrail(
+        case,
+        {
+            "candidate_type": "claim",
+            "source_events": [{"seq": True, "hash": "a" * 64}],
+            "review_status": "unknown",
+            "authority_status": "non_authoritative",
+        },
+    )
+
+    assert row["source_event_fidelity"] == 0.0
+    assert row["review_gate"] == 0.0
+    assert row["score"] == 0.5
+
+
+def test_summarize_consolidation_guardrail_rejects_non_numeric_metrics() -> None:
+    with pytest.raises(ValueError, match="score"):
+        summarize_consolidation_guardrail(
+            [
+                {
+                    "type_match": 1.0,
+                    "source_event_fidelity": 1.0,
+                    "authority_boundary": 1.0,
+                    "review_gate": 1.0,
+                    "score": True,
+                }
+            ]
+        )

@@ -178,3 +178,65 @@ def test_classify_procedure_contexts_limits_applicable_without_hiding_diagnostic
     assert [item["skill_id"] for item in classified["diagnostic"]] == ["diagnostic"]
     assert classified["procedural_memory"]["applicable_count"] == 2
     assert classified["procedural_memory"]["available_applicable_count"] == 3
+
+
+def test_classify_procedure_contexts_excludes_unknown_procedure_status() -> None:
+    context = _procedure_context(skill_id="unknown", status="needs review")
+
+    classified = classify_procedure_contexts([context], limit=5)
+
+    assert classified["applicable"] == []
+    assert classified["diagnostic"] == []
+    assert classified["excluded"][0]["excluded_reason"] == "unknown_status"
+    assert classified["excluded_reasons"] == {"unknown_status": 1}
+
+
+def test_classify_procedure_contexts_detects_procedure_from_multiple_metadata_shapes() -> None:
+    contexts = [
+        Context(
+            content="Follow the migration checklist.",
+            source="eventloom",
+            score=0.7,
+            metadata={
+                "candidate_type": "procedure",
+                "review_status": "validated",
+                "citations": [" eventloom://agent-1/events/11#aaaaaaaaaaaa "],
+                "entity_name": "skill:migration-check:v3",
+                "version": 3,
+            },
+        ),
+        Context(
+            content="Procedure for release rollback.",
+            source="checkpoint",
+            score=0.6,
+            metadata={
+                "kind": "procedure",
+                "lifecycle_status": "accepted",
+                "citation": "eventloom://agent-1/events/12#bbbbbbbbbbbb",
+                "procedure": [" Roll back package. ", "", "Re-run smoke tests."],
+            },
+        ),
+    ]
+
+    classified = classify_procedure_contexts(contexts, limit=-1)
+
+    assert classified["applicable"] == []
+    assert classified["procedural_memory"]["available_applicable_count"] == 2
+    assert classified["procedural_memory"]["limit"] == 0
+    assert classified["procedural_memory"]["procedure_context_count"] == 2
+
+
+def test_classify_procedure_contexts_ignores_non_procedural_contexts() -> None:
+    context = Context(
+        content="A factual memory row.",
+        source="graph",
+        score=0.5,
+        metadata={"entity_type": "fact", "status": "validated"},
+    )
+
+    classified = classify_procedure_contexts([context], limit=5)
+
+    assert classified["procedural_memory"]["procedure_context_count"] == 0
+    assert classified["applicable"] == []
+    assert classified["diagnostic"] == []
+    assert classified["excluded"] == []

@@ -30,6 +30,8 @@ def test_phase_purpose_profiles_are_distinct() -> None:
 
 def test_validate_reasoning_phase_rejects_unknown_phase() -> None:
     assert validate_reasoning_phase("planning") == "planning"
+    with pytest.raises(TypeError, match="string"):
+        validate_reasoning_phase(None)
     with pytest.raises(ValueError, match="reasoning phase"):
         validate_reasoning_phase("benchmark")
 
@@ -117,6 +119,36 @@ def test_reasoning_call_event_requires_cited_evidence() -> None:
         )
 
 
+def test_reasoning_call_event_rejects_invalid_status_count_and_actor() -> None:
+    with pytest.raises(ValueError, match="result_count"):
+        ReasoningPrimitiveCall(
+            primitive="explain_outcome",
+            phase="planning",
+            session_id="agent-1",
+            query="Why did the test fail?",
+            result_count=-1,
+        )
+
+    with pytest.raises(ValueError, match="status"):
+        ReasoningPrimitiveCall(
+            primitive="explain_outcome",
+            phase="planning",
+            session_id="agent-1",
+            query="Why did the test fail?",
+            result_count=0,
+            status="pending",
+        )
+
+    with pytest.raises(ValueError, match="actor"):
+        ReasoningPrimitiveCall(
+            primitive="explain_outcome",
+            phase="planning",
+            session_id="agent-1",
+            query="Why did the test fail?",
+            result_count=0,
+        ).to_event(actor="")
+
+
 def test_belief_update_proposal_is_never_authoritative() -> None:
     event = build_belief_update_proposal_event(
         actor="agent",
@@ -147,6 +179,58 @@ def test_belief_update_proposal_requires_strict_source_events() -> None:
             confidence=0.6,
             source_events=[{"seq": 42, "hash": "A" * 64}],
             phase="reflection",
+        )
+
+
+def test_belief_update_proposal_rejects_invalid_confidence_and_empty_sources() -> None:
+    with pytest.raises(ValueError, match="confidence"):
+        build_belief_update_proposal_event(
+            actor="agent",
+            session_id="agent-1",
+            claim="Projection is stale.",
+            rationale="Needs review.",
+            confidence=1.1,
+            source_events=[{"seq": 42, "hash": "a" * 64}],
+        )
+
+    with pytest.raises(ValueError, match="source_events"):
+        build_belief_update_proposal_event(
+            actor="agent",
+            session_id="agent-1",
+            claim="Projection is stale.",
+            rationale="Needs review.",
+            confidence=0.5,
+            source_events=[],
+        )
+
+    with pytest.raises(TypeError, match="source event"):
+        build_belief_update_proposal_event(
+            actor="agent",
+            session_id="agent-1",
+            claim="Projection is stale.",
+            rationale="Needs review.",
+            confidence=0.5,
+            source_events=["eventloom://agent-1/events/7#aaaaaaaaaaaa"],  # type: ignore[list-item]
+        )
+
+    with pytest.raises(ValueError, match="positive integer"):
+        build_belief_update_proposal_event(
+            actor="agent",
+            session_id="agent-1",
+            claim="Projection is stale.",
+            rationale="Needs review.",
+            confidence=0.5,
+            source_events=[{"seq": True, "hash": "a" * 64}],
+        )
+
+    with pytest.raises(TypeError, match="evidence"):
+        ReasoningPrimitiveCall(
+            primitive="explain_outcome",
+            phase="planning",
+            session_id="agent-1",
+            query="Why did the test fail?",
+            result_count=1,
+            evidence=["not-a-mapping"],  # type: ignore[list-item]
         )
 
 

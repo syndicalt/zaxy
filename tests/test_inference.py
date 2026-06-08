@@ -137,6 +137,42 @@ def test_outcome_explained_event_without_citation_generates_nothing() -> None:
     assert generated == []
 
 
+def test_outcome_explained_event_with_non_mapping_evidence_generates_nothing() -> None:
+    generated = build_inferred_edge_events(
+        _outcome_event(
+            "outcome.explained",
+            {
+                "cause": {"name": "command:pytest", "entity_type": "command"},
+                "effect": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "confidence": 0.92,
+                "evidence": "eventloom://agent-1/events/9#ffffffffffff",
+            },
+        )
+    )
+
+    assert generated == []
+
+
+def test_outcome_explained_event_with_empty_thread_fails_closed() -> None:
+    event = _outcome_event(
+        "outcome.explained",
+        {
+            "cause": {"name": "command:pytest", "entity_type": "command"},
+            "effect": {"name": "test failure", "entity_type": "outcome"},
+            "relation_type": "caused",
+            "confidence": 0.92,
+            "evidence": {
+                "source_event_seq": 9,
+                "source_event_hash": "f" * 64,
+            },
+        },
+    )
+    object.__setattr__(event, "thread", "")
+
+    assert build_inferred_edge_events(event) == []
+
+
 def test_outcome_explained_event_uses_default_evidence_reason() -> None:
     generated = build_inferred_edge_events(
         _outcome_event(
@@ -205,6 +241,26 @@ def test_outcome_explained_event_with_bool_confidence_generates_nothing() -> Non
                 "effect": {"name": "test failure", "entity_type": "outcome"},
                 "relation_type": "caused",
                 "confidence": True,
+                "evidence": {
+                    "source_event_seq": 9,
+                    "source_event_hash": "f" * 64,
+                },
+            },
+        )
+    )
+
+    assert generated == []
+
+
+def test_outcome_explained_event_with_out_of_range_confidence_generates_nothing() -> None:
+    generated = build_inferred_edge_events(
+        _outcome_event(
+            "outcome.explained",
+            {
+                "cause": {"name": "command:pytest", "entity_type": "command"},
+                "effect": {"name": "test failure", "entity_type": "outcome"},
+                "relation_type": "caused",
+                "confidence": -0.01,
                 "evidence": {
                     "source_event_seq": 9,
                     "source_event_hash": "f" * 64,
@@ -354,6 +410,41 @@ def test_task_completion_without_decision_citation_emits_no_inference() -> None:
     assert build_inferred_edge_events(event) == []
 
 
+def test_task_completion_accepts_snake_case_task_and_decision_fields() -> None:
+    event = _event(
+        "task.completed",
+        {
+            "task_id": "task-8",
+            "decision_name": "Use cited checkout state",
+            "decision_event_seq": "9",
+            "decision_event_hash": "c" * 64,
+        },
+    )
+
+    generated = build_inferred_edge_events(event)
+
+    assert generated[0]["payload"]["source"] == {"name": "task-8", "entity_type": "task"}
+    assert generated[0]["payload"]["target"] == {
+        "name": "Use cited checkout state",
+        "entity_type": "decision",
+    }
+    assert generated[0]["payload"]["evidence"]["decision_event_seq"] == 9
+
+
+def test_task_completion_rejects_bool_or_invalid_decision_event_refs() -> None:
+    for value in (True, 0, "not-int"):
+        event = _event(
+            "task.completed",
+            {
+                "task": "task-9",
+                "decision": "Use cited checkout state",
+                "decision_event_seq": value,
+                "decision_event_hash": "c" * 64,
+            },
+        )
+        assert build_inferred_edge_events(event) == []
+
+
 def test_inference_contradiction_emits_retraction_event() -> None:
     """Contradicting evidence should produce a retraction event for inferred edges."""
     event = _event(
@@ -394,3 +485,73 @@ def test_inference_contradiction_emits_retraction_event() -> None:
             "thread": "agent-1",
         }
     ]
+
+
+def test_inference_contradiction_preserves_optional_source_summary() -> None:
+    event = _event(
+        "inference.edge.contradicted",
+        {
+            "source": {"name": "task-7", "entity_type": "task", "summary": "old task"},
+            "target": {"name": "Use Memory Checkout", "entity_type": "decision"},
+            "relation_type": "likely_implemented_decision",
+            "valid_from": "2024-01-01T00:00:00Z",
+            "original_event_seq": 8,
+            "original_event_hash": "a" * 64,
+            "reason": "Later source showed the task implemented a different decision.",
+        },
+    )
+
+    generated = build_inferred_edge_events(event)
+
+    assert generated[0]["payload"]["source"]["summary"] == "old task"
+
+
+def test_inference_contradiction_with_non_mapping_source_generates_nothing() -> None:
+    event = _event(
+        "inference.edge.contradicted",
+        {
+            "source": "task-7",
+            "target": {"name": "Use Memory Checkout", "entity_type": "decision"},
+            "relation_type": "likely_implemented_decision",
+            "valid_from": "2024-01-01T00:00:00Z",
+            "original_event_seq": 8,
+            "original_event_hash": "a" * 64,
+            "reason": "Later source showed the task implemented a different decision.",
+        },
+    )
+
+    assert build_inferred_edge_events(event) == []
+
+
+def test_inference_contradiction_rejects_incomplete_or_invalid_retraction_payload() -> None:
+    incomplete = _event(
+        "inference.edge.contradicted",
+        {
+            "source": {"name": "task-7", "entity_type": "task"},
+            "target": {"name": "Use Memory Checkout", "entity_type": "decision"},
+            "relation_type": "likely_implemented_decision",
+            "valid_from": "2024-01-01T00:00:00Z",
+            "original_event_seq": True,
+            "original_event_hash": "a" * 64,
+            "reason": "Later source showed a different decision.",
+        },
+    )
+    malformed_ref = _event(
+        "inference.edge.contradicted",
+        {
+            "source": {"name": "", "entity_type": "task"},
+            "target": {"name": "Use Memory Checkout", "entity_type": "decision"},
+            "relation_type": "likely_implemented_decision",
+            "valid_from": "2024-01-01T00:00:00Z",
+            "original_event_seq": 8,
+            "original_event_hash": "a" * 64,
+            "reason": "Later source showed a different decision.",
+        },
+    )
+
+    assert build_inferred_edge_events(incomplete) == []
+    assert build_inferred_edge_events(malformed_ref) == []
+
+
+def test_unhandled_event_type_generates_no_inferred_edges() -> None:
+    assert build_inferred_edge_events(_event("tool.call.completed", {"status": "ok"})) == []
