@@ -67,6 +67,12 @@ def build_checkout_diagnostics(
     consolidation_candidates = _consolidation_candidate_diagnostics(current_facts)
     if consolidation_candidates["candidate_count"]:
         diagnostics["consolidation_candidates"] = consolidation_candidates
+    reasoning_primitives = _reasoning_primitive_diagnostics(current_facts)
+    if reasoning_primitives["context_count"]:
+        diagnostics["reasoning_primitives"] = reasoning_primitives
+    belief_proposals = _belief_update_proposal_diagnostics(current_facts)
+    if belief_proposals["proposal_count"]:
+        diagnostics["belief_update_proposals"] = belief_proposals
     evidence_set = build_evidence_set(
         query=query,
         evidence_plan=evidence_plan,
@@ -174,6 +180,20 @@ def build_checkout_guidance(
         ignore.append(
             "Stale, conflicted, rejected, or superseded consolidation candidates are not current authoritative memory."
         )
+    reasoning_primitives = _reasoning_primitive_diagnostics(current_facts)
+    if reasoning_primitives["context_count"]:
+        trust.append("Use reasoning primitive observations as replayable trace evidence, not authority.")
+        ignore.append(
+            "Do not treat reasoning primitive observations as proof that a conclusion is true."
+        )
+    belief_proposals = _belief_update_proposal_diagnostics(current_facts)
+    if belief_proposals["proposal_count"]:
+        trust.append("Use belief update proposals as cited review material only.")
+        ignore.append(
+            "Treat belief updates as proposals until reviewed and promoted by a separate authority path."
+        )
+    if belief_proposals["pending_count"]:
+        ignore.append("Pending belief update proposals have no authority to update current facts.")
     synthesis = _checkout_synthesis_guidance(
         query=query,
         current_facts=current_facts,
@@ -501,6 +521,25 @@ def format_memory_checkout_prompt(
         if candidate_types:
             consolidation_line += f", types={', '.join(candidate_types)}"
         lines.append(consolidation_line)
+    reasoning_primitives = diagnostics.get("reasoning_primitives")
+    if isinstance(reasoning_primitives, dict):
+        phases = _format_counts(reasoning_primitives.get("phase_counts"))
+        primitives = _format_counts(reasoning_primitives.get("primitive_counts"))
+        lines.append(
+            "- Reasoning primitives: "
+            f"contexts={reasoning_primitives.get('context_count', 0)}, "
+            f"phases={phases}, "
+            f"primitives={primitives}, "
+            f"authority={reasoning_primitives.get('authority_status', 'non_authoritative')}"
+        )
+    belief_proposals = diagnostics.get("belief_update_proposals")
+    if isinstance(belief_proposals, dict):
+        lines.append(
+            "- Belief update proposals: "
+            f"proposals={belief_proposals.get('proposal_count', 0)}, "
+            f"pending={belief_proposals.get('pending_count', 0)}, "
+            f"authority={belief_proposals.get('authority_status', 'non_authoritative')}"
+        )
     if diagnostics.get("feedback_recommended"):
         lines.append(
             "- Feedback: call "
@@ -1383,6 +1422,51 @@ def _consolidation_candidate_diagnostics(items: list[dict[str, Any]]) -> dict[st
     }
 
 
+def _reasoning_primitive_diagnostics(items: list[dict[str, Any]]) -> dict[str, Any]:
+    contexts = [item for item in items if _is_reasoning_primitive_observation(item)]
+    if not contexts:
+        return {
+            "context_count": 0,
+            "phase_counts": {},
+            "primitive_counts": {},
+            "authority_status": "non_authoritative",
+        }
+    phase_counts: dict[str, int] = {}
+    primitive_counts: dict[str, int] = {}
+    for item in contexts:
+        details = _details(item)
+        phase = _item_text_field(item, details, "phase") or "unknown"
+        primitive = _item_text_field(item, details, "primitive") or "unknown"
+        phase_counts[phase] = phase_counts.get(phase, 0) + 1
+        primitive_counts[primitive] = primitive_counts.get(primitive, 0) + 1
+    return {
+        "context_count": len(contexts),
+        "phase_counts": phase_counts,
+        "primitive_counts": primitive_counts,
+        "authority_status": "non_authoritative",
+    }
+
+
+def _belief_update_proposal_diagnostics(items: list[dict[str, Any]]) -> dict[str, Any]:
+    proposals = [item for item in items if _is_belief_update_proposal(item)]
+    if not proposals:
+        return {
+            "proposal_count": 0,
+            "pending_count": 0,
+            "authority_status": "non_authoritative",
+        }
+    pending_count = 0
+    for item in proposals:
+        details = _details(item)
+        if (_item_text_field(item, details, "review_status") or "pending").lower() == "pending":
+            pending_count += 1
+    return {
+        "proposal_count": len(proposals),
+        "pending_count": pending_count,
+        "authority_status": "non_authoritative",
+    }
+
+
 def _is_consolidation_candidate(item: dict[str, Any]) -> bool:
     if str(item.get("entity_type") or "").strip() == "consolidation_candidate":
         return True
@@ -1396,9 +1480,37 @@ def _is_consolidation_candidate(item: dict[str, Any]) -> bool:
     )
 
 
+def _is_reasoning_primitive_observation(item: dict[str, Any]) -> bool:
+    details = _details(item)
+    if _item_text_field(item, details, "event_type") == "reasoning.primitive.called":
+        return True
+    if str(item.get("entity_type") or "").strip() == "reasoning_primitive_observation":
+        return True
+    return bool(_item_text_field(item, details, "primitive") and _item_text_field(item, details, "phase"))
+
+
+def _is_belief_update_proposal(item: dict[str, Any]) -> bool:
+    details = _details(item)
+    if _item_text_field(item, details, "event_type") == "belief.update.proposed":
+        return True
+    if str(item.get("entity_type") or "").strip() == "belief_update_proposal":
+        return True
+    entity_name = str(item.get("entity_name") or "").strip()
+    return entity_name.startswith("belief:update:") or entity_name.startswith("belief:proposal:")
+
+
 def _metadata(item: dict[str, Any]) -> dict[str, Any]:
     metadata = item.get("metadata")
     return metadata if isinstance(metadata, dict) else {}
+
+
+def _details(item: dict[str, Any]) -> dict[str, Any]:
+    details: dict[str, Any] = {}
+    for key in ("metadata", "payload"):
+        value = item.get(key)
+        if isinstance(value, dict):
+            details.update(value)
+    return details
 
 
 def _candidate_type(item: dict[str, Any], metadata: dict[str, Any]) -> str:
@@ -1486,3 +1598,9 @@ def _format_source_lanes(source_lanes: Any) -> str:
     if not isinstance(source_lanes, dict) or not source_lanes:
         return "none"
     return ", ".join(f"{lane}={count}" for lane, count in sorted(source_lanes.items()))
+
+
+def _format_counts(value: Any) -> str:
+    if not isinstance(value, dict) or not value:
+        return "none"
+    return ", ".join(f"{key}={value[key]}" for key in sorted(value))

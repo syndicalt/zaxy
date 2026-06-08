@@ -160,6 +160,19 @@ UI, especially when a candidate is pending, stale, conflicted, rejected, or
 superseded, when a causal edge is inferred, or when citations do not cover the
 claim.
 
+Beta.1 reasoning-loop primitives follow the same boundary. Primitive calls are
+observable Eventloom records, not hidden chain-of-thought state: a call records
+the primitive name, deterministic phase (`planning`, `execution`, `review`, or
+`reflection`), status, result count, and cited evidence count. Belief updates
+are appended only as `belief.update.proposed` events with
+`authority_status=non_authoritative` and `review_status=pending`. A belief
+proposal can be inspected, replayed, and reviewed, but it does not update
+current facts unless a separate authority path promotes supported state.
+Memory Checkout reports these surfaces under
+`diagnostics.reasoning_primitives` and
+`diagnostics.belief_update_proposals` so clients can show trace evidence
+without granting authority.
+
 `memory_replay(session_id, from_seq?)` rebuilds session history from the
 Eventloom log. This is useful for handoffs, audits, and debugging. In remote SSE
 mode, the authenticated session scope is enforced so a client cannot replay a
@@ -235,6 +248,10 @@ Checkout only returns `answer_from_memory` when current facts have current
 Eventloom citations and the checkout has no warnings; missing, superseded-only,
 uncited, or compacted checkout states ask the model to refresh memory or ask the
 user instead of answering from stale context.
+When reasoning-loop primitive observations or belief proposals are present,
+checkout guidance explicitly tells the model to treat primitive observations as
+replayable reasoning trace evidence rather than authority, and to treat belief
+updates as proposals until reviewed and promoted by a separate authority path.
 When `ref` is supplied, checkout resolves a Git-style memory ref such as `HEAD`
 or `refs/heads/main` and filters replay/context to the target event identity.
 MCP clients discover this tool through the standard `tools/list` handshake, so
@@ -277,6 +294,17 @@ fixture when changing the tool response.
       "stale_count": 0,
       "superseded_count": 0,
       "valid_to_count": 0,
+      "authority_status": "non_authoritative"
+    },
+    "reasoning_primitives": {
+      "context_count": 2,
+      "phase_counts": {"planning": 1, "review": 1},
+      "primitive_counts": {"explain_outcome": 1, "get_claim_confidence": 1},
+      "authority_status": "non_authoritative"
+    },
+    "belief_update_proposals": {
+      "proposal_count": 1,
+      "pending_count": 1,
       "authority_status": "non_authoritative"
     },
     "skills": {

@@ -1280,6 +1280,88 @@ class TestConsolidationCandidateEvents:
         }
 
 
+class TestReasoningPrimitiveEvents:
+    """Tests for beta.1 reasoning-loop event projections."""
+
+    def test_extract_reasoning_primitive_called_projects_observable_trace(self) -> None:
+        event = _make_event(
+            "reasoning.primitive.called",
+            {
+                "primitive": "explain_outcome",
+                "phase": "planning",
+                "query": "Why did the replay fail?",
+                "status": "succeeded",
+                "result_count": 2,
+                "evidence_count": 1,
+                "citations": ["eventloom://agent-1/events/7#aaaaaaaaaaaa"],
+            },
+            actor="zaxy-reasoning",
+        )
+
+        result = extract(event)
+
+        observation = next(entity for entity in result.entities if entity.entity_type == "reasoning_primitive_observation")
+        assert observation.name == "reasoning:explain_outcome:1"
+        assert observation.summary == "Why did the replay fail?"
+        assert observation.properties == {
+            "event_type": "reasoning.primitive.called",
+            "primitive": "explain_outcome",
+            "phase": "planning",
+            "status": "succeeded",
+            "result_count": 2,
+            "evidence_count": 1,
+            "citations": ["eventloom://agent-1/events/7#aaaaaaaaaaaa"],
+            "authority_status": "non_authoritative",
+        }
+        assert any(edge.relation_type == "called_reasoning_primitive" for edge in result.edges)
+
+    def test_extract_belief_update_proposed_projects_non_authoritative_proposal(self) -> None:
+        event = _make_event(
+            "belief.update.proposed",
+            {
+                "claim": "The stale projection caused the replay failure.",
+                "rationale": "Cited predecessor event shows stale projection state.",
+                "confidence": 0.71,
+                "phase": "reflection",
+                "source_events": [{"seq": 7, "hash": "a" * 64}],
+                "authority_status": "non_authoritative",
+                "review_status": "pending",
+            },
+            actor="agent",
+        )
+
+        result = extract(event)
+
+        proposal = next(entity for entity in result.entities if entity.entity_type == "belief_update_proposal")
+        assert proposal.name == "belief:proposal:1"
+        assert proposal.summary == "The stale projection caused the replay failure."
+        assert proposal.properties["event_type"] == "belief.update.proposed"
+        assert proposal.properties["phase"] == "reflection"
+        assert proposal.properties["confidence"] == 0.71
+        assert proposal.properties["authority_status"] == "non_authoritative"
+        assert proposal.properties["review_status"] == "pending"
+        assert proposal.properties["source_event_refs"] == ["7:" + "a" * 64]
+        assert any(edge.relation_type == "proposed_belief_update" for edge in result.edges)
+
+    def test_belief_update_proposed_rejects_authority_promotion(self) -> None:
+        event = _make_event(
+            "belief.update.proposed",
+            {
+                "claim": "The stale projection caused the replay failure.",
+                "rationale": "Cited predecessor event shows stale projection state.",
+                "confidence": 0.71,
+                "phase": "reflection",
+                "source_events": [{"seq": 7, "hash": "a" * 64}],
+                "authority_status": "authoritative",
+                "review_status": "accepted",
+            },
+            actor="agent",
+        )
+
+        with pytest.raises(ValueError, match="authority_status"):
+            extract(event)
+
+
 def _is_neo4j_property_value(value: object) -> bool:
     if value is None:
         return False

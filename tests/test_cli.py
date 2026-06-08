@@ -2249,6 +2249,151 @@ def test_memory_causal_and_consolidation_help_commands_are_registered() -> None:
     assert "--session-id" in status.output
 
 
+def test_memory_reasoning_help_commands_are_registered() -> None:
+    """Nested memory reasoning commands should expose primitive help."""
+    runner = CliRunner()
+
+    explain = runner.invoke(app, ["memory", "reasoning", "explain-outcome", "--help"])
+    belief = runner.invoke(app, ["memory", "reasoning", "propose-belief-update", "--help"])
+    confidence = runner.invoke(app, ["memory", "reasoning", "claim-confidence", "--help"])
+    procedures = runner.invoke(app, ["memory", "reasoning", "similar-procedures", "--help"])
+
+    assert explain.exit_code == 0
+    assert "OUTCOME" in explain.output
+    assert "--phase" in explain.output
+    assert belief.exit_code == 0
+    assert "--source-event" in belief.output
+    assert "--confidence" in belief.output
+    assert confidence.exit_code == 0
+    assert "CLAIM" in confidence.output
+    assert "--limit" in confidence.output
+    assert procedures.exit_code == 0
+    assert "QUERY" in procedures.output
+    assert "--limit" in procedures.output
+
+
+@pytest.mark.parametrize(
+    ("command", "arguments", "method_name", "expected_kwargs"),
+    [
+        (
+            "explain-outcome",
+            ["Test failed", "--depth", "3"],
+            "explain_outcome",
+            {"phase": "review", "session_id": "agent", "depth": 3},
+        ),
+        (
+            "claim-confidence",
+            ["Projection is stale", "--limit", "4"],
+            "get_claim_confidence",
+            {"phase": "review", "session_id": "agent", "limit": 4},
+        ),
+        (
+            "similar-procedures",
+            ["Fix stale projection", "--limit", "6"],
+            "retrieve_similar_procedures",
+            {"phase": "review", "session_id": "agent", "limit": 6},
+        ),
+    ],
+)
+@patch("zaxy.__main__._memory_fabric")
+def test_memory_reasoning_read_commands_json_delegate_to_fabric(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+    command: str,
+    arguments: list[str],
+    method_name: str,
+    expected_kwargs: dict[str, object],
+) -> None:
+    """Reasoning read commands should call configured MemoryFabric methods."""
+    expected = {"primitive": method_name, "session_id": "agent", "results": []}
+    fabric = AsyncMock()
+    getattr(fabric, method_name).return_value = expected
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "reasoning",
+            command,
+            *arguments,
+            "--phase",
+            "review",
+            "--session-id",
+            "agent",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == expected
+    fabric.connect.assert_awaited_once()
+    method = getattr(fabric, method_name)
+    method.assert_awaited_once_with(arguments[0], **expected_kwargs)
+    fabric.close.assert_awaited_once()
+
+
+@patch("zaxy.__main__._memory_fabric")
+def test_memory_reasoning_propose_belief_update_json_delegates_to_fabric(
+    mock_fabric_cls: MagicMock,
+    tmp_path: Path,
+) -> None:
+    """Belief update CLI should delegate proposal creation without authority promotion."""
+    source_hash = "d" * 64
+    expected = {
+        "primitive": "propose_belief_update",
+        "session_id": "agent",
+        "event_type": "belief.update.proposed",
+        "authority_status": "non_authoritative",
+    }
+    fabric = AsyncMock()
+    fabric.propose_belief_update.return_value = expected
+    mock_fabric_cls.return_value = fabric
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "memory",
+            "reasoning",
+            "propose-belief-update",
+            "Projection is stale",
+            "--rationale",
+            "Cited outcome points to stale projection.",
+            "--confidence",
+            "0.74",
+            "--source-event",
+            f"9:{source_hash}",
+            "--phase",
+            "reflection",
+            "--actor",
+            "reviewer",
+            "--session-id",
+            "agent",
+            "--eventloom-path",
+            str(tmp_path / ".eventloom"),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == expected
+    fabric.connect.assert_awaited_once()
+    fabric.propose_belief_update.assert_awaited_once_with(
+        "Projection is stale",
+        rationale="Cited outcome points to stale projection.",
+        confidence=0.74,
+        source_events=[{"seq": 9, "hash": source_hash}],
+        phase="reflection",
+        session_id="agent",
+        actor="reviewer",
+    )
+    fabric.close.assert_awaited_once()
+
+
 @patch("zaxy.__main__._memory_fabric")
 def test_memory_causal_successors_json_queries_fabric(
     mock_fabric_cls: MagicMock,

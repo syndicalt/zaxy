@@ -1,5 +1,5 @@
 {
-  "tool_count": 35,
+  "tool_count": 39,
   "tools": [
     {
       "name": "memory_append",
@@ -312,6 +312,193 @@
             "type": "string",
             "description": "Actor recording the review",
             "default": "zaxy-reviewer"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memory_explain_outcome",
+      "description": "Explain an outcome from cited causal and checkout memory context.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "outcome"
+        ],
+        "properties": {
+          "outcome": {
+            "type": "string",
+            "description": "Outcome to explain"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "planning",
+              "execution",
+              "review",
+              "reflection"
+            ],
+            "default": "planning",
+            "description": "Reasoning phase for purpose-conditioned retrieval"
+          },
+          "depth": {
+            "type": "integer",
+            "description": "Causal traversal depth",
+            "default": 2,
+            "minimum": 1
+          },
+          "session_id": {
+            "type": "string",
+            "description": "Session ID for scoped reasoning"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memory_propose_belief_update",
+      "description": "Append a cited, review-pending belief update proposal without promoting authority.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "claim",
+          "rationale",
+          "confidence",
+          "source_events"
+        ],
+        "properties": {
+          "claim": {
+            "type": "string",
+            "description": "Claim to propose for review"
+          },
+          "rationale": {
+            "type": "string",
+            "description": "Cited rationale for the proposal"
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Proposal confidence from 0.0 to 1.0"
+          },
+          "source_events": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": [
+                "seq",
+                "hash"
+              ],
+              "properties": {
+                "seq": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "hash": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              },
+              "additionalProperties": false
+            },
+            "description": "Cited Eventloom source events supporting the proposal"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "planning",
+              "execution",
+              "review",
+              "reflection"
+            ],
+            "default": "reflection",
+            "description": "Reasoning phase for purpose-conditioned proposal recording"
+          },
+          "actor": {
+            "type": "string",
+            "description": "Actor recording the proposal",
+            "default": "zaxy-reasoning"
+          },
+          "session_id": {
+            "type": "string",
+            "description": "Session ID for multi-agent sharding"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memory_claim_confidence",
+      "description": "Score claim confidence from cited support and conflict evidence.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "claim"
+        ],
+        "properties": {
+          "claim": {
+            "type": "string",
+            "description": "Claim to score against memory evidence"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "planning",
+              "execution",
+              "review",
+              "reflection"
+            ],
+            "default": "review",
+            "description": "Reasoning phase for purpose-conditioned evidence scoring"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max evidence items",
+            "default": 5,
+            "minimum": 1
+          },
+          "session_id": {
+            "type": "string",
+            "description": "Session ID for scoped reasoning"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "memory_similar_procedures",
+      "description": "Retrieve similar procedure candidates from Skill Memory and consolidation memory.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Procedure retrieval query"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "planning",
+              "execution",
+              "review",
+              "reflection"
+            ],
+            "default": "planning",
+            "description": "Reasoning phase for purpose-conditioned procedure retrieval"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max procedure candidates",
+            "default": 5,
+            "minimum": 1
+          },
+          "session_id": {
+            "type": "string",
+            "description": "Session ID for scoped reasoning"
           }
         },
         "additionalProperties": false

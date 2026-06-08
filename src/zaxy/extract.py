@@ -2689,6 +2689,89 @@ def _extract_consolidation_candidate_reviewed(event: Event) -> ExtractionResult:
     return ExtractionResult(entities=[review, candidate], edges=[edge], source_event_seq=event.seq)
 
 
+@register("reasoning.primitive.called")
+def _extract_reasoning_primitive_called(event: Event) -> ExtractionResult:
+    """Project an observable reasoning-loop primitive call as trace evidence."""
+    primitive = _required_reasoning_text(event.payload.get("primitive"), field="primitive")
+    phase = _required_reasoning_phase(event.payload.get("phase"))
+    status = _optional_text(event.payload.get("status")) or "succeeded"
+    result_count = _non_negative_int(event.payload.get("result_count"), default=0)
+    evidence_count = _non_negative_int(event.payload.get("evidence_count"), default=0)
+    citations = _string_list(event.payload.get("citations"))
+    observation_id = f"reasoning:{primitive}:{event.seq}"
+    observation = ExtractedEntity(
+        name=observation_id,
+        entity_type="reasoning_primitive_observation",
+        observed_at=event.timestamp,
+        summary=_optional_text(event.payload.get("query")),
+        properties=_compact_properties(
+            {
+                "event_type": event.type,
+                "primitive": primitive,
+                "phase": phase,
+                "status": status,
+                "result_count": result_count,
+                "evidence_count": evidence_count,
+                "citations": citations,
+                "authority_status": _CONSOLIDATION_AUTHORITY_STATUS,
+            }
+        ),
+    )
+    actor = ExtractedEntity(name=event.actor, entity_type="actor", observed_at=event.timestamp)
+    edge = ExtractedEdge(
+        source=event.actor,
+        target=observation_id,
+        relation_type="called_reasoning_primitive",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(entities=[observation, actor], edges=[edge], source_event_seq=event.seq)
+
+
+@register("belief.update.proposed")
+def _extract_belief_update_proposed(event: Event) -> ExtractionResult:
+    """Project a review-pending belief proposal without granting authority."""
+    claim = _required_reasoning_text(event.payload.get("claim"), field="claim")
+    rationale = _required_reasoning_text(event.payload.get("rationale"), field="rationale")
+    phase = _required_reasoning_phase(event.payload.get("phase"))
+    confidence = _required_consolidation_confidence(event.payload.get("confidence"))
+    source_events = _snapshot_consolidation_source_events(event.payload.get("source_events"))
+    source_event_refs = [f"{source_event['seq']}:{source_event['hash']}" for source_event in source_events]
+    source_event_seqs = [source_event["seq"] for source_event in source_events]
+    source_event_hashes = [source_event["hash"] for source_event in source_events]
+    authority_status = _required_consolidation_authority_status(event.payload.get("authority_status"))
+    review_status = event.payload.get("review_status")
+    if review_status != "pending":
+        raise ValueError("review_status must be 'pending' for belief update proposals")
+    proposal_id = f"belief:proposal:{event.seq}"
+    proposal = ExtractedEntity(
+        name=proposal_id,
+        entity_type="belief_update_proposal",
+        observed_at=event.timestamp,
+        summary=claim,
+        properties={
+            "event_type": event.type,
+            "claim": claim,
+            "rationale": rationale,
+            "phase": phase,
+            "confidence": confidence,
+            "source_event_count": len(source_events),
+            "source_event_refs": source_event_refs,
+            "source_event_seqs": source_event_seqs,
+            "source_event_hashes": source_event_hashes,
+            "authority_status": authority_status,
+            "review_status": review_status,
+        },
+    )
+    actor = ExtractedEntity(name=event.actor, entity_type="actor", observed_at=event.timestamp)
+    edge = ExtractedEdge(
+        source=event.actor,
+        target=proposal_id,
+        relation_type="proposed_belief_update",
+        valid_from=event.timestamp,
+    )
+    return ExtractionResult(entities=[proposal, actor], edges=[edge], source_event_seq=event.seq)
+
+
 def _required_causal_graph_relation_type(payload: dict[str, Any], *, event_seq: int) -> str:
     graph_relation_type = payload.get("graph_relation_type")
     if not isinstance(graph_relation_type, str) or not graph_relation_type.strip():
@@ -2726,6 +2809,19 @@ def _required_consolidation_authority_status(value: object) -> str:
     if value != _CONSOLIDATION_AUTHORITY_STATUS:
         raise ValueError("authority_status must remain non_authoritative")
     return _CONSOLIDATION_AUTHORITY_STATUS
+
+
+def _required_reasoning_text(value: object, *, field: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"{field} must be a non-empty string")
+    return value.strip()
+
+
+def _required_reasoning_phase(value: object) -> str:
+    phase = _required_reasoning_text(value, field="phase").casefold()
+    if phase not in {"planning", "execution", "review", "reflection"}:
+        raise ValueError("phase must be one of: execution, planning, reflection, review")
+    return phase
 
 
 def _snapshot_consolidation_source_events(value: object) -> list[dict[str, Any]]:
@@ -3212,6 +3308,18 @@ def _positive_float(value: object, *, maximum: float = 10.0) -> float | None:
 def _optional_positive_int(value: object) -> int | None:
     parsed = _positive_int(value, default=0)
     return parsed or None
+
+
+def _non_negative_int(value: object, *, default: int) -> int:
+    if isinstance(value, bool):
+        return default
+    if not isinstance(value, int | str | bytes | bytearray):
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed >= 0 else default
 
 
 def _positive_int(value: object, default: int) -> int:

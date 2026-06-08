@@ -183,6 +183,39 @@ silently collapse source memory into authoritative state. Accepted review means
 the proposal passed a review disposition, not that its summary became canonical
 truth.
 
+## Reasoning-Loop Primitives
+
+Zaxy 2.0 beta.1 adds reasoning-loop primitive observations as graph-projected
+Eventloom evidence. The graph projection may contain observation entities for
+`reasoning.primitive.called` with primitive name, deterministic phase, status,
+result count, cited evidence count, session, actor, sequence, hash, and source
+citations. The supported phase taxonomy is deliberately small:
+
+- `planning`
+- `execution`
+- `review`
+- `reflection`
+
+Phase routing is deterministic policy metadata. It helps checkout and operators
+distinguish planning context from execution, review, and reflection context, but
+it is not a learned planning policy and it is not a benchmark-specific scoring
+shortcut. Primitive observations are reasoning trace evidence: they are
+observable, replayable, and useful for audit, but they do not prove the
+primitive result is true.
+
+Belief proposals use `belief.update.proposed`. Projection should preserve the
+claim, rationale, confidence, source-event citations, phase,
+`review_status=pending`, and `authority_status=non_authoritative`. A proposal
+is not a fact update. It remains review material until a separate authority path
+promotes supported state through the normal gates.
+
+Memory Checkout summarizes these graph surfaces separately from current facts:
+`diagnostics.reasoning_primitives` reports context count, phase counts, and
+primitive counts; `diagnostics.belief_update_proposals` reports proposal count,
+pending count, and the non-authoritative authority status. Prompt guidance must
+preserve this separation so a model can inspect the reasoning trace without
+treating proposal text as canonical memory.
+
 Example Eventloom payload:
 
 ```json

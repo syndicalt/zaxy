@@ -195,6 +195,17 @@
         <li>stale, conflicted, rejected, superseded, and <code>valid_to</code>-closed consolidation candidates are diagnosed so checkout and status surfaces do not present them as current authoritative memory.</li>
       </ul>
       <p>Use this lane as an engineering regression guardrail for the alpha causal and consolidation surface. The consolidation guardrail is internal and project-defined: it measures source-event fidelity, review gating, stale rejection, and authority-boundary preservation. Do not combine it with the headline 500 metrics, Harvey LAB evidence, or external-validation language.</p>
+      <h2 id="zaxy-20-beta1-reasoning-loop-guardrail">Zaxy 2.0 Beta.1 Reasoning-Loop Guardrail</h2>
+      <p>Beta.1 adds an internal guardrail scorer for reasoning-loop memory primitives. This is an engineering contract check, not a public benchmark claim and not a LongMemBench-tailored lane. It does not score final answers or tune retrieval.</p>
+      <p>The guardrail reports five transparent fields:</p>
+      <ul>
+        <li><code>observable_call</code>: primitive and belief proposal activity must be represented by replayable Eventloom event types such as <code>reasoning.primitive.called</code> or <code>belief.update.proposed</code>.</li>
+        <li><code>phase_match</code>: the recorded phase must match deterministic routing for <code>planning</code>, <code>execution</code>, <code>review</code>, or <code>reflection</code>.</li>
+        <li><code>citation_presence</code>: trace evidence must carry Eventloom citations.</li>
+        <li><code>authority_boundary</code>: primitive observations and belief proposals must remain <code>non_authoritative</code>; belief proposals remain pending until reviewed.</li>
+        <li><code>score</code>: the simple mean of the four contract ratios.</li>
+      </ul>
+      <p>Use this lane to catch regressions in observability, phase routing, citation coverage, and authority boundaries for beta.1 primitives. Do not report it as external validation, do not combine it with the headline 500 or Harvey LAB numbers, and do not use it to reward answer phrasing.</p>
       <h2 id="claim-boundaries">Claim Boundaries</h2>
       <ul>
         <li>Use <strong>LongMemEval-compatible checkout</strong> for the headline 500 diagnostic.</li>

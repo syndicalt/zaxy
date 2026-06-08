@@ -12,6 +12,10 @@ Tools exposed:
 - memory_consolidation_propose_from_log: Create review-pending candidates from log segments.
 - memory_consolidation_status: Read review-gated consolidation status.
 - memory_consolidation_review: Append a consolidation review.
+- memory_explain_outcome: Explain an outcome with cited reasoning context.
+- memory_propose_belief_update: Append a review-pending belief proposal through MemoryFabric.
+- memory_claim_confidence: Score a claim against cited memory evidence.
+- memory_similar_procedures: Retrieve similar procedures for reasoning reuse.
 - memory_feedback: Record retrieval feedback for a graph entity.
 - memory_synthesis_artifact: Persist checkout synthesis answer candidates and feedback.
 - memory_synthesis_evidence: Record feedback for one synthesis ledger row.
@@ -110,6 +114,7 @@ remote_session_scope: contextvars.ContextVar[str | None] = contextvars.ContextVa
     "remote_session_scope",
     default=None,
 )
+REASONING_PHASES = ["planning", "execution", "review", "reflection"]
 
 
 # ------------------------------------------------------------------
@@ -299,6 +304,116 @@ TOOLS = [
                     "description": "Actor recording the review",
                     "default": "zaxy-reviewer",
                 },
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_explain_outcome",
+        description="Explain an outcome from cited causal and checkout memory context.",
+        inputSchema={
+            "type": "object",
+            "required": ["outcome"],
+            "properties": {
+                "outcome": {"type": "string", "description": "Outcome to explain"},
+                "phase": {
+                    "type": "string",
+                    "enum": REASONING_PHASES,
+                    "default": "planning",
+                    "description": "Reasoning phase for purpose-conditioned retrieval",
+                },
+                "depth": {"type": "integer", "description": "Causal traversal depth", "default": 2, "minimum": 1},
+                "session_id": {"type": "string", "description": "Session ID for scoped reasoning"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_propose_belief_update",
+        description="Append a cited, review-pending belief update proposal without promoting authority.",
+        inputSchema={
+            "type": "object",
+            "required": ["claim", "rationale", "confidence", "source_events"],
+            "properties": {
+                "claim": {"type": "string", "description": "Claim to propose for review"},
+                "rationale": {"type": "string", "description": "Cited rationale for the proposal"},
+                "confidence": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1,
+                    "description": "Proposal confidence from 0.0 to 1.0",
+                },
+                "source_events": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "required": ["seq", "hash"],
+                        "properties": {
+                            "seq": {"type": "integer", "minimum": 1},
+                            "hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                        },
+                        "additionalProperties": False,
+                    },
+                    "description": "Cited Eventloom source events supporting the proposal",
+                },
+                "phase": {
+                    "type": "string",
+                    "enum": REASONING_PHASES,
+                    "default": "reflection",
+                    "description": "Reasoning phase for purpose-conditioned proposal recording",
+                },
+                "actor": {
+                    "type": "string",
+                    "description": "Actor recording the proposal",
+                    "default": "zaxy-reasoning",
+                },
+                "session_id": {"type": "string", "description": "Session ID for multi-agent sharding"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_claim_confidence",
+        description="Score claim confidence from cited support and conflict evidence.",
+        inputSchema={
+            "type": "object",
+            "required": ["claim"],
+            "properties": {
+                "claim": {"type": "string", "description": "Claim to score against memory evidence"},
+                "phase": {
+                    "type": "string",
+                    "enum": REASONING_PHASES,
+                    "default": "review",
+                    "description": "Reasoning phase for purpose-conditioned evidence scoring",
+                },
+                "limit": {"type": "integer", "description": "Max evidence items", "default": 5, "minimum": 1},
+                "session_id": {"type": "string", "description": "Session ID for scoped reasoning"},
+            },
+            "additionalProperties": False,
+        },
+    ),
+    Tool(
+        name="memory_similar_procedures",
+        description="Retrieve similar procedure candidates from Skill Memory and consolidation memory.",
+        inputSchema={
+            "type": "object",
+            "required": ["query"],
+            "properties": {
+                "query": {"type": "string", "description": "Procedure retrieval query"},
+                "phase": {
+                    "type": "string",
+                    "enum": REASONING_PHASES,
+                    "default": "planning",
+                    "description": "Reasoning phase for purpose-conditioned procedure retrieval",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Max procedure candidates",
+                    "default": 5,
+                    "minimum": 1,
+                },
+                "session_id": {"type": "string", "description": "Session ID for scoped reasoning"},
             },
             "additionalProperties": False,
         },
@@ -1211,6 +1326,68 @@ class ZaxyMCPServer:
         )
         event = await self._append_project_and_trace_event(event_input, session_id=session_id)
         return [TextContent(type="text", text=json.dumps({"seq": event.seq, "hash": event.hash}))]
+
+    async def handle_memory_explain_outcome(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_explain_outcome tool calls."""
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
+        result = await self._call_reasoning_fabric(
+            "explain_outcome",
+            _required_strict_text(arguments.get("outcome"), "outcome"),
+            phase=_validate_reasoning_phase(arguments.get("phase"), default="planning"),
+            session_id=session_id,
+            depth=validate_traversal_depth(arguments.get("depth", 2)),
+        )
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    async def handle_memory_propose_belief_update(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_propose_belief_update tool calls."""
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
+        actor = _optional_strict_text(arguments.get("actor"), "actor") or "zaxy-reasoning"
+        result = await self._call_reasoning_fabric(
+            "propose_belief_update",
+            _required_strict_text(arguments.get("claim"), "claim"),
+            rationale=_required_strict_text(arguments.get("rationale"), "rationale"),
+            confidence=_validate_reasoning_confidence(arguments.get("confidence")),
+            source_events=_validate_reasoning_source_events(arguments.get("source_events")),
+            phase=_validate_reasoning_phase(arguments.get("phase"), default="reflection"),
+            session_id=session_id,
+            actor=actor,
+        )
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    async def handle_memory_claim_confidence(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_claim_confidence tool calls."""
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
+        result = await self._call_reasoning_fabric(
+            "get_claim_confidence",
+            _required_strict_text(arguments.get("claim"), "claim"),
+            phase=_validate_reasoning_phase(arguments.get("phase"), default="review"),
+            session_id=session_id,
+            limit=validate_limit(arguments.get("limit"), default=5),
+        )
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    async def handle_memory_similar_procedures(self, arguments: dict[str, Any]) -> list[TextContent]:
+        """Handle memory_similar_procedures tool calls."""
+        session_id = self._session_id_from_arguments(arguments, default=self._default_session_id)
+        result = await self._call_reasoning_fabric(
+            "retrieve_similar_procedures",
+            _required_strict_text(arguments.get("query"), "query"),
+            phase=_validate_reasoning_phase(arguments.get("phase"), default="planning"),
+            session_id=session_id,
+            limit=validate_limit(arguments.get("limit"), default=5),
+        )
+        return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+    async def _call_reasoning_fabric(self, method_name: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        fabric = self._memory_fabric()
+        try:
+            await fabric.connect()
+            result = await getattr(fabric, method_name)(*args, **kwargs)
+            return dict(result)
+        finally:
+            with suppress(Exception):
+                await fabric.close()
 
     async def _append_project_and_trace_event(self, event_input: dict[str, Any], *, session_id: str) -> Any:
         event_type = validate_event_text(event_input["event_type"], "event_type")
@@ -2670,6 +2847,45 @@ def _validate_consolidation_window_size(value: object) -> int:
     return value
 
 
+def _validate_reasoning_phase(value: object, *, default: str) -> str:
+    if value is None:
+        return default
+    if not isinstance(value, str):
+        raise ValueError("phase must be a string")
+    phase = value.strip()
+    if phase not in REASONING_PHASES:
+        raise ValueError("phase must be one of: " + ", ".join(REASONING_PHASES))
+    return phase
+
+
+def _validate_reasoning_confidence(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError("confidence must be a number")
+    confidence = float(value)
+    if confidence < 0.0 or confidence > 1.0:
+        raise ValueError("confidence must be between 0 and 1")
+    return confidence
+
+
+def _validate_reasoning_source_events(value: object) -> list[dict[str, int | str]]:
+    if not isinstance(value, list) or not value:
+        raise ValueError("source_events must be a non-empty array")
+    source_events: list[dict[str, int | str]] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, dict):
+            raise ValueError(f"source_events[{index}] must be an object")
+        seq = item.get("seq")
+        event_hash = item.get("hash")
+        if isinstance(seq, bool) or not isinstance(seq, int) or seq < 1:
+            raise ValueError(f"source_events[{index}].seq must be a positive integer")
+        if not isinstance(event_hash, str) or len(event_hash) != 64:
+            raise ValueError(f"source_events[{index}].hash must be 64 lowercase hex characters")
+        if any(char not in "0123456789abcdef" for char in event_hash):
+            raise ValueError(f"source_events[{index}].hash must be 64 lowercase hex characters")
+        source_events.append({"seq": seq, "hash": event_hash})
+    return source_events
+
+
 def _purpose_payload(value: object) -> dict[str, Any] | None:
     if value is None:
         return None
@@ -2746,6 +2962,14 @@ async def _dispatch_tool_call(
         return await active_server.handle_memory_consolidation_status(arguments)
     if name == "memory_consolidation_review":
         return await active_server.handle_memory_consolidation_review(arguments)
+    if name == "memory_explain_outcome":
+        return await active_server.handle_memory_explain_outcome(arguments)
+    if name == "memory_propose_belief_update":
+        return await active_server.handle_memory_propose_belief_update(arguments)
+    if name == "memory_claim_confidence":
+        return await active_server.handle_memory_claim_confidence(arguments)
+    if name == "memory_similar_procedures":
+        return await active_server.handle_memory_similar_procedures(arguments)
     if name == "memory_verbatim":
         return await active_server.handle_memory_verbatim(arguments)
     if name == "memory_feedback":

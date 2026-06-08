@@ -67,6 +67,7 @@ def test_checkout_diagnostics_summarize_causal_and_consolidation_context() -> No
         "valid_to_count": 0,
         "authority_status": "non_authoritative",
     }
+    assert "belief_update_proposals" not in diagnostics
     assert diagnostics["inferred_context"]["context_count"] == 1
 
 
@@ -372,3 +373,118 @@ def test_checkout_diagnostics_count_consolidation_review_and_stale_states() -> N
     assert "stale=1" in prompt
     assert "superseded=1" in prompt
     assert "valid_to=1" in prompt
+
+
+def test_checkout_diagnostics_summarize_reasoning_primitives_and_belief_proposals() -> None:
+    """Beta.1 reasoning observations and belief proposals should stay review-gated."""
+    current_facts = [
+        {
+            "content": "explain_outcome ran during planning with cited evidence.",
+            "entity_name": "reasoning:explain_outcome:1",
+            "entity_type": "reasoning_primitive_observation",
+            "event_type": "reasoning.primitive.called",
+            "primitive": "explain_outcome",
+            "phase": "planning",
+            "citation": "eventloom://agent-1/events/60#aaaaaaaaaaaa",
+        },
+        {
+            "content": "get_claim_confidence ran during review with cited evidence.",
+            "entity_name": "reasoning:get_claim_confidence:1",
+            "entity_type": "reasoning_primitive_observation",
+            "metadata": {
+                "event_type": "reasoning.primitive.called",
+                "primitive": "get_claim_confidence",
+                "phase": "review",
+            },
+            "citation": "eventloom://agent-1/events/61#bbbbbbbbbbbb",
+        },
+        {
+            "content": "belief proposal says stale projection caused the failure.",
+            "entity_name": "belief:proposal:1",
+            "entity_type": "belief_update_proposal",
+            "event_type": "belief.update.proposed",
+            "review_status": "pending",
+            "authority_status": "non_authoritative",
+            "citation": "eventloom://agent-1/events/62#cccccccccccc",
+        },
+    ]
+
+    diagnostics = build_checkout_diagnostics(
+        source_lanes={"graph": 3},
+        current_facts=current_facts,
+        evidence=current_facts,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        warnings=[],
+    )
+
+    assert diagnostics["reasoning_primitives"] == {
+        "context_count": 2,
+        "phase_counts": {"planning": 1, "review": 1},
+        "primitive_counts": {"explain_outcome": 1, "get_claim_confidence": 1},
+        "authority_status": "non_authoritative",
+    }
+    assert diagnostics["belief_update_proposals"] == {
+        "proposal_count": 1,
+        "pending_count": 1,
+        "authority_status": "non_authoritative",
+    }
+
+
+def test_checkout_guidance_and_prompt_preserve_reasoning_authority_boundary() -> None:
+    """Prompt text should not let primitive traces or belief proposals masquerade as facts."""
+    current_facts = [
+        {
+            "content": "propose_belief_update ran during reflection.",
+            "entity_name": "reasoning:propose_belief_update:1",
+            "entity_type": "reasoning_primitive_observation",
+            "event_type": "reasoning.primitive.called",
+            "primitive": "propose_belief_update",
+            "phase": "reflection",
+            "citation": "eventloom://agent-1/events/70#dddddddddddd",
+        },
+        {
+            "content": "belief proposal says the diagnosis should be remembered.",
+            "entity_name": "belief:proposal:2",
+            "entity_type": "belief_update_proposal",
+            "event_type": "belief.update.proposed",
+            "review_status": "pending",
+            "authority_status": "non_authoritative",
+            "citation": "eventloom://agent-1/events/71#eeeeeeeeeeee",
+        },
+    ]
+    diagnostics = build_checkout_diagnostics(
+        source_lanes={"graph": 2},
+        current_facts=current_facts,
+        evidence=current_facts,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        warnings=[],
+    )
+    guidance = build_checkout_guidance(
+        query="What changed in reasoning memory?",
+        current_facts=current_facts,
+        retention={"policy": "current_only", "superseded_contexts_excluded": 0},
+        evidence=current_facts,
+    )
+    quality = build_checkout_quality(diagnostics=diagnostics, guidance=guidance)
+    prompt = format_memory_checkout_prompt(
+        query="What changed in reasoning memory?",
+        assembly_prompt="# Active Memory Working Set",
+        current_facts=current_facts,
+        evidence=current_facts,
+        quality=quality,
+        guidance=guidance,
+        diagnostics=diagnostics,
+    )
+
+    assert (
+        "Use reasoning primitive observations as replayable trace evidence, not authority."
+        in guidance["trust"]
+    )
+    assert (
+        "Treat belief updates as proposals until reviewed and promoted by a separate authority path."
+        in guidance["ignore"]
+    )
+    assert "Reasoning primitives: contexts=1, phases=reflection=1" in prompt
+    assert "primitives=propose_belief_update=1" in prompt
+    assert "authority=non_authoritative" in prompt
+    assert "Belief update proposals: proposals=1, pending=1, authority=non_authoritative" in prompt

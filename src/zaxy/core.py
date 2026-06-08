@@ -61,6 +61,12 @@ from zaxy.pagination import encode_query_cursor, validate_query_cursor
 from zaxy.projection_backends import ProjectionBackendConfig, build_projection_store
 from zaxy.purpose import PurposeProfile, purpose_profile, purpose_retrieval_policy
 from zaxy.query import QueryRouter, ScoringProfile, build_reranker, build_retention_policy
+from zaxy.reasoning_primitives import (
+    ReasoningPrimitiveCall,
+    build_belief_update_proposal_event,
+    phase_purpose_profile,
+    validate_reasoning_phase,
+)
 from zaxy.recall import RecallCandidateSet, build_recall_candidate_set, empty_recall_candidate_set
 from zaxy.refs import MemoryRef, MemoryRefStore
 from zaxy.retrieval_intent import classify_retrieval_intent
@@ -413,6 +419,291 @@ class MemoryFabric:
             relation_type=relation_type,
             depth=depth,
             temporal_point=temporal_point,
+            session_id=session_id,
+        )
+
+    async def explain_outcome(
+        self,
+        outcome: str,
+        *,
+        phase: str = "planning",
+        session_id: str = "default",
+        depth: int = 2,
+    ) -> dict[str, Any]:
+        """Explain an outcome with causal predecessors and cited checkout fallback."""
+        safe_outcome = validate_query(outcome)
+        safe_phase = validate_reasoning_phase(phase)
+        sid = validate_session_id(session_id)
+        safe_depth = validate_traversal_depth(depth)
+        profile = phase_purpose_profile(safe_phase)
+        evidence: list[dict[str, Any]] = []
+        results: list[dict[str, Any]] = []
+        try:
+            causal_results = await self.query_causal_predecessors(
+                safe_outcome,
+                depth=safe_depth,
+                session_id=sid,
+            )
+            for result in causal_results:
+                item = result.to_dict()
+                results.append(item)
+                evidence.append(_causal_result_reasoning_evidence(item))
+            fallback_used = False
+            if not results:
+                checkout = await self.checkout_memory(
+                    safe_outcome,
+                    session_id=sid,
+                    limit=max(1, min(MAX_QUERY_LIMIT, safe_depth * 2)),
+                    purpose=profile,
+                )
+                for item in checkout.evidence:
+                    evidence_item = _checkout_reasoning_evidence(item)
+                    if evidence_item is not None:
+                        evidence.append(evidence_item)
+                        results.append(
+                            {
+                                "source": "checkout",
+                                "content": evidence_item.get("content", ""),
+                                "citation": evidence_item["citation"],
+                            }
+                        )
+                fallback_used = True
+            await self._append_reasoning_primitive_call(
+                primitive="explain_outcome",
+                phase=safe_phase,
+                session_id=sid,
+                query=safe_outcome,
+                result_count=len(results),
+                evidence=evidence,
+                status="succeeded",
+            )
+            return {
+                "primitive": "explain_outcome",
+                "phase": safe_phase,
+                "session_id": sid,
+                "outcome": safe_outcome,
+                "depth": safe_depth,
+                "fallback_used": fallback_used,
+                "result_count": len(results),
+                "results": results,
+                "evidence": evidence,
+            }
+        except Exception:
+            await self._append_reasoning_primitive_call(
+                primitive="explain_outcome",
+                phase=safe_phase,
+                session_id=sid,
+                query=safe_outcome,
+                result_count=0,
+                evidence=[],
+                status="failed",
+            )
+            raise
+
+    async def propose_belief_update(
+        self,
+        claim: str,
+        *,
+        rationale: str,
+        confidence: float,
+        source_events: list[dict[str, Any]],
+        phase: str = "reflection",
+        session_id: str = "default",
+        actor: str = "zaxy-reasoning",
+    ) -> dict[str, Any]:
+        """Append a cited, review-pending belief proposal and observe the primitive call."""
+        sid = validate_session_id(session_id)
+        safe_phase = validate_reasoning_phase(phase)
+        event = build_belief_update_proposal_event(
+            actor=actor,
+            session_id=sid,
+            claim=validate_query(claim),
+            rationale=validate_query(rationale),
+            confidence=confidence,
+            source_events=source_events,
+            phase=safe_phase,
+        )
+        evidence = [
+            {
+                "citation": f"eventloom://{sid}/events/{source['seq']}#{source['hash'][:12]}",
+                "source_event_seq": source["seq"],
+                "source_event_hash": source["hash"],
+            }
+            for source in event["payload"]["source_events"]
+        ]
+        try:
+            await self.append(
+                event["event_type"],
+                actor=event["actor"],
+                payload=event["payload"],
+                session_id=sid,
+            )
+            await self._append_reasoning_primitive_call(
+                primitive="propose_belief_update",
+                phase=safe_phase,
+                session_id=sid,
+                query=str(event["payload"]["claim"]),
+                result_count=1,
+                evidence=evidence,
+                status="succeeded",
+                actor="zaxy-reasoning",
+            )
+            return event
+        except Exception:
+            await self._append_reasoning_primitive_call(
+                primitive="propose_belief_update",
+                phase=safe_phase,
+                session_id=sid,
+                query=str(event["payload"]["claim"]),
+                result_count=0,
+                evidence=evidence,
+                status="failed",
+                actor="zaxy-reasoning",
+            )
+            raise
+
+    async def get_claim_confidence(
+        self,
+        claim: str,
+        *,
+        phase: str = "review",
+        session_id: str = "default",
+        limit: int = 5,
+    ) -> dict[str, Any]:
+        """Score cited support and conflict evidence for a claim."""
+        safe_claim = validate_query(claim)
+        safe_phase = validate_reasoning_phase(phase)
+        sid = validate_session_id(session_id)
+        safe_limit = validate_limit(limit)
+        profile = phase_purpose_profile(safe_phase)
+        evidence: list[dict[str, Any]] = []
+        try:
+            checkout = await self.checkout_memory(
+                safe_claim,
+                session_id=sid,
+                limit=safe_limit,
+                purpose=profile,
+            )
+            scored = _score_claim_evidence(safe_claim, checkout.evidence, limit=safe_limit)
+            evidence = scored["evidence"]
+            await self._append_reasoning_primitive_call(
+                primitive="get_claim_confidence",
+                phase=safe_phase,
+                session_id=sid,
+                query=safe_claim,
+                result_count=len(evidence),
+                evidence=evidence,
+                status="succeeded",
+            )
+            return {
+                "primitive": "get_claim_confidence",
+                "phase": safe_phase,
+                "session_id": sid,
+                "claim": safe_claim,
+                **scored,
+            }
+        except Exception:
+            await self._append_reasoning_primitive_call(
+                primitive="get_claim_confidence",
+                phase=safe_phase,
+                session_id=sid,
+                query=safe_claim,
+                result_count=0,
+                evidence=[],
+                status="failed",
+            )
+            raise
+
+    async def retrieve_similar_procedures(
+        self,
+        query: str,
+        *,
+        phase: str = "planning",
+        session_id: str = "default",
+        limit: int = 5,
+    ) -> dict[str, Any]:
+        """Retrieve cited Skill Memory or consolidation procedure candidates."""
+        safe_query = validate_query(query)
+        safe_phase = validate_reasoning_phase(phase)
+        sid = validate_session_id(session_id)
+        safe_limit = validate_limit(limit)
+        profile = phase_purpose_profile(safe_phase)
+        evidence: list[dict[str, Any]] = []
+        try:
+            contexts = await self.query(
+                safe_query,
+                session_id=sid,
+                limit=min(MAX_QUERY_LIMIT, max(safe_limit * 2, safe_limit)),
+                include_source_lane=True,
+                scoring_profile=purpose_retrieval_policy(
+                    profile,
+                    safe_query,
+                    prompt_limit=safe_limit,
+                    base_recall_limit=safe_limit,
+                ).scoring_profile,
+            )
+            procedures = _procedure_contexts(contexts, limit=safe_limit)
+            evidence = [
+                item
+                for procedure in procedures
+                if (item := _procedure_reasoning_evidence(procedure)) is not None
+            ]
+            await self._append_reasoning_primitive_call(
+                primitive="retrieve_similar_procedures",
+                phase=safe_phase,
+                session_id=sid,
+                query=safe_query,
+                result_count=len(procedures),
+                evidence=evidence,
+                status="succeeded",
+            )
+            return {
+                "primitive": "retrieve_similar_procedures",
+                "phase": safe_phase,
+                "session_id": sid,
+                "query": safe_query,
+                "procedure_count": len(procedures),
+                "procedures": procedures,
+                "evidence": evidence,
+            }
+        except Exception:
+            await self._append_reasoning_primitive_call(
+                primitive="retrieve_similar_procedures",
+                phase=safe_phase,
+                session_id=sid,
+                query=safe_query,
+                result_count=0,
+                evidence=[],
+                status="failed",
+            )
+            raise
+
+    async def _append_reasoning_primitive_call(
+        self,
+        *,
+        primitive: str,
+        phase: str,
+        session_id: str,
+        query: str,
+        result_count: int,
+        evidence: list[dict[str, Any]],
+        status: str,
+        actor: str = "zaxy-reasoning",
+    ) -> None:
+        call = ReasoningPrimitiveCall(
+            primitive=primitive,
+            phase=phase,
+            session_id=session_id,
+            query=query,
+            result_count=result_count,
+            evidence=_strict_reasoning_evidence(evidence),
+            status=status,
+        )
+        event = call.to_event(actor=actor)
+        await self.append(
+            event["event_type"],
+            actor=event["actor"],
+            payload=event["payload"],
             session_id=session_id,
         )
 
@@ -2631,6 +2922,13 @@ def _checkout_evidence(context: Context) -> dict[str, Any]:
 
 
 _CHECKOUT_METADATA_FIELDS = (
+    "entity_name",
+    "entity_type",
+    "event_type",
+    "primitive",
+    "phase",
+    "review_status",
+    "authority_status",
     "mission_id",
     "worker_id",
     "finding_id",
@@ -3152,6 +3450,212 @@ def _context_citation(context: Context) -> str | None:
     metadata = context.metadata or {}
     citation = metadata.get("citation")
     return citation if isinstance(citation, str) and citation else None
+
+
+_REASONING_EVENT_CITATION_RE = re.compile(
+    r"^eventloom://[^/\s]+/events/[1-9][0-9]*#(?:[0-9a-f]{12}|[0-9a-f]{64})$"
+)
+_CLAIM_NEGATION_TERMS = {
+    "not",
+    "never",
+    "no",
+    "none",
+    "false",
+    "refute",
+    "refuted",
+    "conflict",
+    "conflicted",
+    "contradict",
+    "contradicted",
+}
+
+
+def _strict_reasoning_evidence(evidence: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    strict: list[dict[str, Any]] = []
+    for item in evidence:
+        citation = item.get("citation")
+        if isinstance(citation, str) and _REASONING_EVENT_CITATION_RE.fullmatch(citation):
+            strict.append(dict(item))
+    return strict
+
+
+def _causal_result_reasoning_evidence(item: dict[str, Any]) -> dict[str, Any]:
+    source = item.get("source") if isinstance(item.get("source"), dict) else {}
+    target = item.get("target") if isinstance(item.get("target"), dict) else {}
+    evidence = item.get("evidence") if isinstance(item.get("evidence"), dict) else {}
+    content = evidence.get("summary") or (
+        f"{source.get('name', 'unknown source')} {item.get('relation_type', 'related')} "
+        f"{target.get('name', 'unknown target')}"
+    )
+    return {
+        "citation": item.get("citation", ""),
+        "content": str(content),
+        "source": "causal_predecessor",
+        "confidence": item.get("confidence"),
+        "review_status": item.get("review_status"),
+        "authority_status": item.get("authority_status"),
+    }
+
+
+def _checkout_reasoning_evidence(item: dict[str, Any]) -> dict[str, Any] | None:
+    citation = item.get("citation")
+    if not isinstance(citation, str):
+        return None
+    content = item.get("content") or item.get("summary") or item.get("text")
+    evidence = {
+        "citation": citation,
+        "content": str(content or ""),
+        "source": str(item.get("source") or "checkout"),
+    }
+    for key in (
+        "entity_name",
+        "entity_type",
+        "event_type",
+        "authority_status",
+        "authority",
+        "review_status",
+        "status",
+        "stale",
+        "superseded_by",
+        "primitive",
+        "phase",
+    ):
+        value = item.get(key)
+        if isinstance(value, str | int | float | bool) and value not in ("", None):
+            evidence[key] = value
+    return evidence
+
+
+def _score_claim_evidence(
+    claim: str,
+    evidence_items: list[dict[str, Any]],
+    *,
+    limit: int,
+) -> dict[str, Any]:
+    claim_tokens = _tokens(claim)
+    evidence: list[dict[str, Any]] = []
+    support_count = 0
+    conflict_count = 0
+    for item in evidence_items:
+        if not _eligible_claim_confidence_evidence(item):
+            continue
+        evidence_item = _checkout_reasoning_evidence(item)
+        if evidence_item is None:
+            continue
+        content = str(evidence_item.get("content") or "")
+        content_tokens = _tokens(content)
+        overlap = claim_tokens & content_tokens
+        if not overlap:
+            continue
+        label = "support"
+        if _is_conflicting_claim_evidence(content_tokens, content):
+            label = "conflict"
+            conflict_count += 1
+        else:
+            support_count += 1
+        evidence_item["stance"] = label
+        evidence_item["matched_terms"] = sorted(overlap)
+        evidence.append(evidence_item)
+        if len(evidence) >= limit:
+            break
+    denominator = support_count + conflict_count
+    confidence = support_count / denominator if denominator else 0.0
+    return {
+        "confidence": round(confidence, 4),
+        "support_count": support_count,
+        "conflict_count": conflict_count,
+        "evidence": evidence,
+    }
+
+
+def _eligible_claim_confidence_evidence(item: dict[str, Any]) -> bool:
+    event_type = str(item.get("event_type") or "").strip()
+    entity_type = str(item.get("entity_type") or "").strip()
+    if event_type in {"belief.update.proposed", "reasoning.primitive.called"}:
+        return False
+    if entity_type in {"belief_update_proposal", "reasoning_primitive_observation"}:
+        return False
+    review_status = str(item.get("review_status") or item.get("status") or "").casefold().strip()
+    if review_status in {"pending", "rejected", "deferred", "unsupported", "stale", "conflicted"}:
+        return False
+    if item.get("stale") is True:
+        return False
+    superseded_by = item.get("superseded_by")
+    return not (isinstance(superseded_by, str) and superseded_by.strip())
+
+
+def _is_conflicting_claim_evidence(content_tokens: set[str], content: str) -> bool:
+    lowered = content.casefold()
+    if "did not" in lowered or "does not" in lowered or "not caused" in lowered:
+        return True
+    return bool(content_tokens & _CLAIM_NEGATION_TERMS)
+
+
+def _procedure_contexts(contexts: list[Context], *, limit: int) -> list[dict[str, Any]]:
+    procedures: list[dict[str, Any]] = []
+    for context in contexts:
+        metadata = context.metadata or {}
+        if not _is_procedure_context(context):
+            continue
+        if _excluded_procedure_candidate(context):
+            continue
+        citation = _context_citation(context)
+        procedures.append(
+            {
+                "content": context.content,
+                "source": context.source,
+                "score": context.score,
+                "citation": citation,
+                "metadata": dict(metadata),
+            }
+        )
+        if len(procedures) >= limit:
+            break
+    return procedures
+
+
+def _is_procedure_context(context: Context) -> bool:
+    metadata = context.metadata or {}
+    source = context.source.casefold()
+    candidate_type = str(metadata.get("candidate_type") or metadata.get("kind") or "").casefold()
+    event_type = str(metadata.get("event_type") or "").casefold()
+    content = context.content.casefold()
+    is_procedure = (
+        candidate_type == "procedure"
+        or "procedure" in event_type
+        or content.startswith("procedure:")
+        or "procedure" in content.split()[:5]
+    )
+    is_skill_or_consolidation = (
+        "skill" in source
+        or "consolidation" in source
+        or event_type.startswith("skill.")
+        or candidate_type == "procedure"
+    )
+    return is_procedure and is_skill_or_consolidation
+
+
+def _excluded_procedure_candidate(context: Context) -> bool:
+    metadata = context.metadata or {}
+    review_status = str(metadata.get("review_status") or "").casefold()
+    if review_status in {"rejected", "stale", "conflicted"}:
+        return True
+    if metadata.get("stale") is True:
+        return True
+    if context.valid_to is not None:
+        return True
+    return bool(metadata.get("superseded_by"))
+
+
+def _procedure_reasoning_evidence(procedure: dict[str, Any]) -> dict[str, Any] | None:
+    citation = procedure.get("citation")
+    if not isinstance(citation, str):
+        return None
+    return {
+        "citation": citation,
+        "content": str(procedure.get("content") or ""),
+        "source": str(procedure.get("source") or "procedure"),
+    }
 
 
 def _contexts_as_of_seq(contexts: list[Context], as_of_seq: int) -> list[Context]:

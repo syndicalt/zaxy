@@ -193,7 +193,7 @@ class TestToolSchema:
 
     def test_tools_list_length(self) -> None:
         """Should expose the memory and context lifecycle tools."""
-        assert len(TOOLS) == 35
+        assert len(TOOLS) == 39
 
     def test_tool_names(self) -> None:
         """Tool names should match the expected contract."""
@@ -207,6 +207,10 @@ class TestToolSchema:
             "memory_consolidation_review",
             "memory_consolidation_propose_from_log",
             "memory_consolidation_status",
+            "memory_explain_outcome",
+            "memory_propose_belief_update",
+            "memory_claim_confidence",
+            "memory_similar_procedures",
             "memory_verbatim",
             "memory_feedback",
             "memory_synthesis_artifact",
@@ -474,6 +478,40 @@ class TestToolSchema:
             "conflicted",
         ]
         assert review.inputSchema["properties"]["actor"]["default"] == "zaxy-reviewer"
+
+    def test_reasoning_loop_tools_are_registered(self) -> None:
+        """Reasoning-loop primitives should expose strict delegated MCP schemas."""
+        tools = {tool.name: tool for tool in TOOLS}
+        phases = ["planning", "execution", "review", "reflection"]
+
+        explain = tools["memory_explain_outcome"]
+        assert explain.inputSchema["required"] == ["outcome"]
+        assert explain.inputSchema["properties"]["phase"]["enum"] == phases
+        assert explain.inputSchema["properties"]["phase"]["default"] == "planning"
+        assert explain.inputSchema["properties"]["depth"]["minimum"] == 1
+        assert explain.inputSchema["additionalProperties"] is False
+
+        belief = tools["memory_propose_belief_update"]
+        assert belief.inputSchema["required"] == ["claim", "rationale", "confidence", "source_events"]
+        assert belief.inputSchema["properties"]["phase"]["default"] == "reflection"
+        assert belief.inputSchema["properties"]["source_events"]["minItems"] == 1
+        assert belief.inputSchema["properties"]["source_events"]["items"]["properties"]["hash"]["pattern"] == (
+            "^[0-9a-f]{64}$"
+        )
+        assert belief.inputSchema["properties"]["actor"]["default"] == "zaxy-reasoning"
+        assert belief.inputSchema["additionalProperties"] is False
+
+        confidence = tools["memory_claim_confidence"]
+        assert confidence.inputSchema["required"] == ["claim"]
+        assert confidence.inputSchema["properties"]["phase"]["default"] == "review"
+        assert confidence.inputSchema["properties"]["limit"]["minimum"] == 1
+        assert confidence.inputSchema["additionalProperties"] is False
+
+        procedures = tools["memory_similar_procedures"]
+        assert procedures.inputSchema["required"] == ["query"]
+        assert procedures.inputSchema["properties"]["phase"]["default"] == "planning"
+        assert procedures.inputSchema["properties"]["limit"]["minimum"] == 1
+        assert procedures.inputSchema["additionalProperties"] is False
 
 
 # ------------------------------------------------------------------
@@ -863,12 +901,152 @@ class TestCausalAndConsolidationTools:
 
         server.session_manager.get.assert_not_called()
 
+    async def test_memory_explain_outcome_uses_configured_fabric_path(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_explain_outcome should delegate outcome explanation to MemoryFabric."""
+        expected = {"primitive": "explain_outcome", "session_id": "agent-1", "explanations": []}
+        fabric = AsyncMock()
+        fabric.explain_outcome.return_value = expected
+
+        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric) as fabric_cls:
+            response = await server.handle_memory_explain_outcome({
+                "outcome": "Test failed",
+                "phase": "review",
+                "depth": 3,
+                "session_id": "agent-1",
+            })
+
+        assert json_loads(response[0].text) == expected
+        fabric_cls.assert_called_once()
+        assert fabric_cls.call_args.kwargs["eventloom_path"] == server._eventloom_path
+        fabric.connect.assert_awaited_once()
+        fabric.explain_outcome.assert_awaited_once_with(
+            "Test failed",
+            phase="review",
+            session_id="agent-1",
+            depth=3,
+        )
+        fabric.close.assert_awaited_once()
+
+    async def test_memory_propose_belief_update_uses_configured_fabric_path(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_propose_belief_update should delegate non-authoritative proposals to MemoryFabric."""
+        source_hash = "d" * 64
+        expected = {
+            "primitive": "propose_belief_update",
+            "event_type": "belief.update.proposed",
+            "authority_status": "non_authoritative",
+        }
+        fabric = AsyncMock()
+        fabric.propose_belief_update.return_value = expected
+
+        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric) as fabric_cls:
+            response = await server.handle_memory_propose_belief_update({
+                "claim": "Projection is stale",
+                "rationale": "Cited outcome points to stale projection.",
+                "confidence": 0.74,
+                "source_events": [{"seq": 9, "hash": source_hash}],
+                "phase": "reflection",
+                "session_id": "agent-1",
+                "actor": "reviewer",
+            })
+
+        assert json_loads(response[0].text) == expected
+        fabric_cls.assert_called_once()
+        assert fabric_cls.call_args.kwargs["eventloom_path"] == server._eventloom_path
+        fabric.connect.assert_awaited_once()
+        fabric.propose_belief_update.assert_awaited_once_with(
+            "Projection is stale",
+            rationale="Cited outcome points to stale projection.",
+            confidence=0.74,
+            source_events=[{"seq": 9, "hash": source_hash}],
+            phase="reflection",
+            session_id="agent-1",
+            actor="reviewer",
+        )
+        fabric.close.assert_awaited_once()
+
+    async def test_memory_claim_confidence_uses_configured_fabric_path(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_claim_confidence should delegate confidence scoring to MemoryFabric."""
+        expected = {"primitive": "get_claim_confidence", "confidence": 0.66, "evidence": []}
+        fabric = AsyncMock()
+        fabric.get_claim_confidence.return_value = expected
+
+        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric) as fabric_cls:
+            response = await server.handle_memory_claim_confidence({
+                "claim": "Projection is stale",
+                "phase": "review",
+                "limit": 4,
+                "session_id": "agent-1",
+            })
+
+        assert json_loads(response[0].text) == expected
+        fabric_cls.assert_called_once()
+        assert fabric_cls.call_args.kwargs["eventloom_path"] == server._eventloom_path
+        fabric.connect.assert_awaited_once()
+        fabric.get_claim_confidence.assert_awaited_once_with(
+            "Projection is stale",
+            phase="review",
+            session_id="agent-1",
+            limit=4,
+        )
+        fabric.close.assert_awaited_once()
+
+    async def test_memory_similar_procedures_uses_configured_fabric_path(
+        self,
+        server: ZaxyMCPServer,
+    ) -> None:
+        """memory_similar_procedures should delegate procedure retrieval to MemoryFabric."""
+        expected = {"primitive": "retrieve_similar_procedures", "procedures": []}
+        fabric = AsyncMock()
+        fabric.retrieve_similar_procedures.return_value = expected
+
+        with patch("zaxy.mcp_server.MemoryFabric", return_value=fabric) as fabric_cls:
+            response = await server.handle_memory_similar_procedures({
+                "query": "Fix stale projection",
+                "phase": "planning",
+                "limit": 6,
+                "session_id": "agent-1",
+            })
+
+        assert json_loads(response[0].text) == expected
+        fabric_cls.assert_called_once()
+        assert fabric_cls.call_args.kwargs["eventloom_path"] == server._eventloom_path
+        fabric.connect.assert_awaited_once()
+        fabric.retrieve_similar_procedures.assert_awaited_once_with(
+            "Fix stale projection",
+            phase="planning",
+            session_id="agent-1",
+            limit=6,
+        )
+        fabric.close.assert_awaited_once()
+
     @pytest.mark.parametrize(
         ("handler_name", "arguments"),
         [
             ("handle_memory_causal_successors", {"entity_name": "Plan", "session_id": "agent-2"}),
             ("handle_memory_consolidation_propose_from_log", {"session_id": "agent-2"}),
             ("handle_memory_consolidation_status", {"session_id": "agent-2"}),
+            ("handle_memory_explain_outcome", {"outcome": "Test failed", "session_id": "agent-2"}),
+            ("handle_memory_claim_confidence", {"claim": "Projection is stale", "session_id": "agent-2"}),
+            ("handle_memory_similar_procedures", {"query": "Fix stale projection", "session_id": "agent-2"}),
+            (
+                "handle_memory_propose_belief_update",
+                {
+                    "claim": "Projection is stale",
+                    "rationale": "Cited outcome points to stale projection.",
+                    "confidence": 0.74,
+                    "source_events": [{"seq": 9, "hash": "d" * 64}],
+                    "session_id": "agent-2",
+                },
+            ),
             (
                 "handle_memory_consolidation_review",
                 {
@@ -903,6 +1081,10 @@ class TestCausalAndConsolidationTools:
             ("memory_consolidation_propose_from_log", "handle_memory_consolidation_propose_from_log"),
             ("memory_consolidation_status", "handle_memory_consolidation_status"),
             ("memory_consolidation_review", "handle_memory_consolidation_review"),
+            ("memory_explain_outcome", "handle_memory_explain_outcome"),
+            ("memory_propose_belief_update", "handle_memory_propose_belief_update"),
+            ("memory_claim_confidence", "handle_memory_claim_confidence"),
+            ("memory_similar_procedures", "handle_memory_similar_procedures"),
         ],
     )
     async def test_causal_and_consolidation_dispatch_routes_to_handlers(

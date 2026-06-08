@@ -116,6 +116,29 @@ project-defined: it measures source-event fidelity, review gating, stale
 rejection, and authority-boundary preservation. Do not combine it with the
 headline 500 metrics, Harvey LAB evidence, or external-validation language.
 
+## Zaxy 2.0 Beta.1 Reasoning-Loop Guardrail
+
+Beta.1 adds an internal guardrail scorer for reasoning-loop memory primitives.
+This is an engineering contract check, not a public benchmark claim and not a
+LongMemBench-tailored lane. It does not score final answers or tune retrieval.
+
+The guardrail reports five transparent fields:
+
+- `observable_call`: primitive and belief proposal activity must be represented
+  by replayable Eventloom event types such as `reasoning.primitive.called` or
+  `belief.update.proposed`.
+- `phase_match`: the recorded phase must match deterministic routing for
+  `planning`, `execution`, `review`, or `reflection`.
+- `citation_presence`: trace evidence must carry Eventloom citations.
+- `authority_boundary`: primitive observations and belief proposals must remain
+  `non_authoritative`; belief proposals remain pending until reviewed.
+- `score`: the simple mean of the four contract ratios.
+
+Use this lane to catch regressions in observability, phase routing, citation
+coverage, and authority boundaries for beta.1 primitives. Do not report it as
+external validation, do not combine it with the headline 500 or Harvey LAB
+numbers, and do not use it to reward answer phrasing.
+
 ## Claim Boundaries
 
 - Use **LongMemEval-compatible checkout** for the headline 500 diagnostic.
