@@ -7,8 +7,10 @@ core write path.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import importlib
+import inspect
 import math
 import time
 from dataclasses import replace
@@ -70,6 +72,10 @@ class HashEmbeddingProvider:
             return vector
         return [value / norm for value in vector]
 
+    async def embed_async(self, text: str) -> list[float]:
+        """Embed text without blocking the event loop."""
+        return await asyncio.to_thread(self.embed, text)
+
 
 class OpenAIEmbeddingProvider:
     """Hosted OpenAI embeddings provider."""
@@ -109,13 +115,17 @@ class OpenAIEmbeddingProvider:
     def embed(self, text: str) -> list[float]:
         """Embed text with OpenAI's embeddings API."""
         response = self._post_with_retries(text)
+        return self._vector_from_response(response)
+
+    async def embed_async(self, text: str) -> list[float]:
+        """Embed text with OpenAI's API without blocking the event loop."""
+        response = await self._post_with_retries_async(text)
+        return self._vector_from_response(response)
+
+    def _vector_from_response(self, response: Any) -> list[float]:
         payload = response.json()
-        embedding = payload["data"][0]["embedding"]
-        vector = [float(value) for value in embedding]
-        if len(vector) != self.dimension:
-            raise ValueError(
-                f"embedding dimension mismatch: expected {self.dimension}, got {len(vector)}"
-            )
+        vector = [float(value) for value in payload["data"][0]["embedding"]]
+        _validate_dimension(vector, self.dimension)
         return vector
 
     def _post_with_retries(self, text: str) -> httpx.Response:
@@ -139,6 +149,31 @@ class OpenAIEmbeddingProvider:
                 if not self._should_retry(exc) or attempt >= self._max_retries:
                     raise
                 time.sleep(self._retry_delay(exc, attempt))
+        assert last_error is not None
+        raise last_error
+
+    async def _post_with_retries_async(self, text: str) -> Any:
+        last_error: Exception | None = None
+        for attempt in range(self._max_retries + 1):
+            try:
+                response = await _client_post(
+                    self._client,
+                    f"{self._base_url}/embeddings",
+                    headers={"Authorization": f"Bearer {self._api_key}"},
+                    json={
+                        "model": self.model,
+                        "input": text,
+                        "encoding_format": "float",
+                        "dimensions": self.dimension,
+                    },
+                )
+                response.raise_for_status()
+                return response
+            except (httpx.HTTPStatusError, httpx.TransportError) as exc:
+                last_error = exc
+                if not self._should_retry(exc) or attempt >= self._max_retries:
+                    raise
+                await asyncio.sleep(self._retry_delay(exc, attempt))
         assert last_error is not None
         raise last_error
 
@@ -203,10 +238,23 @@ class LocalHTTPEmbeddingProvider:
         response = self._client.post(self._url, headers=headers, json=request)
         response.raise_for_status()
         vector = _embedding_from_payload(response.json())
-        if len(vector) != self.dimension:
-            raise ValueError(
-                f"embedding dimension mismatch: expected {self.dimension}, got {len(vector)}"
-            )
+        _validate_dimension(vector, self.dimension)
+        return vector
+
+    async def embed_async(self, text: str) -> list[float]:
+        """Embed text with a local HTTP endpoint without blocking the event loop."""
+        request: dict[str, Any] = {"input": text}
+        if self.model:
+            request["model"] = self.model
+        headers = (
+            {"Authorization": f"Bearer {self._api_key}"}
+            if self._api_key
+            else {}
+        )
+        response = await _client_post(self._client, self._url, headers=headers, json=request)
+        response.raise_for_status()
+        vector = _embedding_from_payload(response.json())
+        _validate_dimension(vector, self.dimension)
         return vector
 
 
@@ -245,6 +293,10 @@ class SentenceTransformersEmbeddingProvider:
             )
         return vector
 
+    async def embed_async(self, text: str) -> list[float]:
+        """Embed text without blocking the event loop."""
+        return await asyncio.to_thread(self.embed, text)
+
 
 def _load_sentence_transformer(model_name: str) -> SentenceTransformerModel:
     """Load a sentence-transformers model with an actionable dependency error."""
@@ -263,6 +315,30 @@ def _load_sentence_transformer(model_name: str) -> SentenceTransformerModel:
             "zaxy-memory[local-embeddings]"
         )
     return cast(SentenceTransformerFactory, factory)(model_name)
+
+
+async def _client_post(
+    client: Any,
+    url: str,
+    *,
+    headers: dict[str, str],
+    json: dict[str, object],
+) -> Any:
+    """Post with either an async client or a sync-compatible fake/client."""
+    post = client.post
+    if inspect.iscoroutinefunction(post):
+        return await post(url, headers=headers, json=json)
+    response = await asyncio.to_thread(post, url, headers=headers, json=json)
+    if inspect.isawaitable(response):
+        return await response
+    return response
+
+
+def _validate_dimension(vector: list[float], dimension: int) -> None:
+    if len(vector) != dimension:
+        raise ValueError(
+            f"embedding dimension mismatch: expected {dimension}, got {len(vector)}"
+        )
 
 
 def build_embedding_provider(settings: Any) -> EmbeddingProvider | None:
@@ -328,6 +404,33 @@ def embed_extraction(
         else replace(entity, embedding=provider.embed(entity_embedding_text(entity)))
         for entity in result.entities
     ]
+    return ExtractionResult(
+        entities=entities,
+        edges=result.edges,
+        source_event_seq=result.source_event_seq,
+        source_event_hash=result.source_event_hash,
+        source_event_prev_hash=result.source_event_prev_hash,
+        source_event_type=result.source_event_type,
+        source_thread=result.source_thread,
+    )
+
+
+async def embed_extraction_async(
+    result: ExtractionResult,
+    provider: Any,
+) -> ExtractionResult:
+    """Return an extraction result with embeddings filled without blocking the event loop."""
+    entities = []
+    for entity in result.entities:
+        if entity.embedding is not None:
+            entities.append(entity)
+            continue
+        entities.append(
+            replace(
+                entity,
+                embedding=await provider.embed_async(entity_embedding_text(entity)),
+            )
+        )
     return ExtractionResult(
         entities=entities,
         edges=result.edges,
