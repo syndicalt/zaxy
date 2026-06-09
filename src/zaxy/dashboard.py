@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import date, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib import import_module
 from pathlib import Path
-from typing import Any, Mapping, Protocol, cast
+from typing import Any, Protocol, cast
 from urllib.parse import parse_qs, urlparse
 
 from zaxy.core import MemoryFabric
@@ -1249,9 +1250,12 @@ class DashboardApp:
     ) -> tuple[int, dict[str, str], dict[str, Any]]:
         """Return a JSON-compatible API response for a dashboard route."""
         headers = {"content-type": "application/json; charset=utf-8"}
-        if method.upper() == "POST" and path.startswith("/api/coordinate/"):
-            if not _dashboard_origin_allowed(self.scope, request_headers):
-                return 403, headers, {"error": "forbidden_origin"}
+        if (
+            method.upper() == "POST"
+            and path.startswith("/api/coordinate/")
+            and not _dashboard_origin_allowed(self.scope, request_headers)
+        ):
+            return 403, headers, {"error": "forbidden_origin"}
         if method.upper() == "POST" and path in {"/api/coordinate/review", "/api/coordinate/review-finding"}:
             params = parse_qs(query, keep_blank_values=False)
             return self._coordinate_review_body(params, headers, body=body)
@@ -1274,6 +1278,7 @@ class DashboardApp:
                 self.scope.eventloom_path,
                 session_id=session_id,
                 limit=limit,
+                verify_integrity=False,
             )
             return 200, headers, {"events": [asdict(entry) for entry in memory_log.entries]}
         if path == "/api/memory-persistence":

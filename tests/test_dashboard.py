@@ -134,6 +134,30 @@ def test_dashboard_status_and_events_use_resolved_eventloom(tmp_path: Path) -> N
     assert len(body["events"]) == 1
 
 
+def test_dashboard_events_uses_tail_listing_without_full_replay(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "project"
+    workspace.mkdir()
+    eventloom = workspace / ".eventloom"
+    log = EventLog(eventloom / "default.jsonl")
+    for index in range(8):
+        log.append("event.recorded", actor="tester", payload={"summary": f"event {index}"})
+    app = DashboardApp(resolve_dashboard_scope(DashboardConfig(workspace=workspace)))
+
+    def fail_full_replay(self: EventLog) -> object:
+        raise AssertionError("dashboard event listings should not full-replay the log")
+
+    monkeypatch.setattr(EventLog, "read_all", fail_full_replay)
+    monkeypatch.setattr(EventLog, "verify", fail_full_replay)
+
+    status_code, _headers, body = app.handle_api("GET", "/api/events", "session_id=default&limit=3")
+
+    assert status_code == 200
+    assert [event["summary"] for event in body["events"]] == ["event 7", "event 6", "event 5"]
+
+
 def test_dashboard_session_and_event_templates_escape_untrusted_fields() -> None:
     html = render_dashboard_html()
 

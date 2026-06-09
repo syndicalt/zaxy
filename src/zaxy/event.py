@@ -382,13 +382,25 @@ class EventLog:
         """Return the current tail event without parsing the full log."""
         if not self.path.exists():
             return None
-        with open(self.path, "r", encoding="utf-8") as fh:
+        with open(self.path, encoding="utf-8") as fh:
             self._lock(fh.fileno(), exclusive=False)
             try:
                 last_line = _read_last_line(fh)
                 return _event_from_json_line(last_line) if last_line else None
             finally:
                 self._unlock(fh.fileno())
+
+    def tail_events(self, limit: int) -> list[Event]:
+        """Return up to ``limit`` events from the log tail without full replay."""
+        if limit <= 0 or not self.path.exists():
+            return []
+        with open(self.path, encoding="utf-8") as fh:
+            self._lock(fh.fileno(), exclusive=False)
+            try:
+                lines = _read_tail_lines(fh, limit)
+            finally:
+                self._unlock(fh.fileno())
+        return [_event_from_json_line(line) for line in lines]
 
     # ------------------------------------------------------------------
     # Handoff & Summaries
@@ -422,10 +434,18 @@ class EventLog:
 
 def _read_last_line(fh: TextIO) -> str | None:
     """Read the last non-empty JSONL line from a locked file handle."""
+    lines = _read_tail_lines(fh, 1)
+    return lines[-1] if lines else None
+
+
+def _read_tail_lines(fh: TextIO, limit: int) -> list[str]:
+    """Read up to ``limit`` non-empty JSONL lines from a locked file handle."""
+    if limit <= 0:
+        return []
     fd = fh.fileno()
     size = os.fstat(fd).st_size
     if size == 0:
-        return None
+        return []
 
     end = size
     while end > 0:
@@ -434,23 +454,21 @@ def _read_last_line(fh: TextIO) -> str | None:
             break
         end -= 1
     if end == 0:
-        return None
+        return []
 
     chunk_size = 8192
-    chunks: list[bytes] = []
+    buffer = b""
     position = end
     while position > 0:
         read_size = min(chunk_size, position)
         position -= read_size
         chunk = os.pread(fd, read_size, position)
-        newline_at = chunk.rfind(b"\n")
-        if newline_at != -1:
-            chunks.insert(0, chunk[newline_at + 1 :])
+        buffer = chunk + buffer
+        if buffer.count(b"\n") >= limit:
             break
-        chunks.insert(0, chunk)
 
-    line = b"".join(chunks)
-    return line.decode("utf-8") if line else None
+    lines = [line for line in buffer.splitlines() if line.strip()]
+    return [line.decode("utf-8") for line in lines[-limit:]]
 
 
 def _event_from_json_line(line: str, *, seq_hint: int | None = None) -> Event:

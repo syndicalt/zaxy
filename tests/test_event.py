@@ -257,6 +257,26 @@ class TestEventLogIO:
         assert appended[0].seq == 4
         assert tmp_eventlog.verify().ok is True
 
+    def test_tail_events_reads_bounded_log_tail(self, tmp_eventlog: EventLog) -> None:
+        """Tail reads should return only the requested suffix in chronological order."""
+        for index in range(6):
+            tmp_eventlog.append("seed.event", actor="tester", payload={"index": index})
+
+        events = tmp_eventlog.tail_events(3)
+
+        assert [event.seq for event in events] == [4, 5, 6]
+        assert [event.payload["index"] for event in events] == [3, 4, 5]
+
+    def test_tail_events_handles_large_tail_record(self, tmp_eventlog: EventLog) -> None:
+        """Tail reads should not truncate records larger than the read chunk."""
+        tmp_eventlog.append("seed.event", actor="tester", payload={"index": 1})
+        tmp_eventlog.append("large.event", actor="tester", payload={"content": "x" * 12000})
+
+        events = tmp_eventlog.tail_events(1)
+
+        assert [event.seq for event in events] == [2]
+        assert events[0].payload["content"] == "x" * 12000
+
     def test_append_many_rebases_when_another_writer_appends_before_lock(
         self, tmp_path
     ) -> None:

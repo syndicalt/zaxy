@@ -3216,6 +3216,31 @@ class TestContextAssembly:
         assert [fact["content"] for fact in checkout.current_facts] == ["Available at ref."]
         assert "Future work." not in checkout.prompt
 
+    def test_checkout_head_ref_uses_eventlog_tail(
+        self,
+        fabric: MemoryFabric,
+    ) -> None:
+        """MemoryFabric HEAD refs should resolve from the Eventloom tail."""
+        latest = MagicMock(
+            seq=9,
+            hash="f" * 64,
+            timestamp="2026-06-09T12:00:00Z",
+        )
+        fabric.session_manager.get.return_value.eventlog.last_event.return_value = latest
+
+        ref = fabric._resolve_checkout_ref("HEAD", session_id="agent-1")
+
+        assert ref == MemoryRef(
+            name="HEAD",
+            session_id="agent-1",
+            target_seq=9,
+            target_hash="f" * 64,
+            ref_type="head",
+            updated_at="2026-06-09T12:00:00Z",
+        )
+        fabric.session_manager.get.return_value.eventlog.last_event.assert_called_once_with()
+        fabric.session_manager.replay.assert_not_called()
+
     async def test_assemble_context_includes_verbatim_source_lane(
         self,
         fabric: MemoryFabric,

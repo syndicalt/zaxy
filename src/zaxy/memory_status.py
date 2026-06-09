@@ -124,6 +124,7 @@ def inspect_memory_log(
     *,
     session_id: str | None = None,
     limit: int = 20,
+    verify_integrity: bool = True,
 ) -> MemoryLog:
     """Return recent Eventloom events without requiring graph services."""
     base = Path(eventloom_path).resolve()
@@ -133,18 +134,18 @@ def inspect_memory_log(
     else:
         paths, skipped_logs = _eventlog_paths(base)
     entries: list[MemoryLogEntry] = []
+    safe_limit = max(0, limit)
     for path in paths:
         log = EventLog(path)
         try:
-            integrity = log.verify()
-            events = log.read_all()
+            integrity = log.verify() if verify_integrity else None
+            events = log.tail_events(safe_limit) if safe_limit else []
         except ValidationError as exc:
             skipped_logs.append(_skipped_log(path, _validation_error_reason(exc)))
             continue
         for event in events:
-            entries.append(_log_entry(path.stem, event, integrity_ok=integrity.ok))
+            entries.append(_log_entry(path.stem, event, integrity_ok=integrity.ok if integrity else True))
     entries.sort(key=lambda entry: (entry.timestamp, entry.session_id, entry.seq), reverse=True)
-    safe_limit = max(0, limit)
     return MemoryLog(
         eventloom_path=str(base),
         session_id=session_id,
