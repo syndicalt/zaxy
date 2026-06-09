@@ -197,6 +197,66 @@ class TestEventLogIO:
         assert [event.type for event in tmp_eventlog.read_all()] == ["a", "b", "c"]
         assert tmp_eventlog.verify().ok is True
 
+    def test_append_many_reads_only_tail_event_for_sequence(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_eventlog: EventLog,
+    ) -> None:
+        """Append should not parse the whole log just to discover seq and prev_hash."""
+        for index in range(50):
+            tmp_eventlog.append("seed", actor="tester", payload={"index": index})
+
+        import zaxy.event as event_module
+
+        calls = 0
+        original = event_module._event_from_json_line
+
+        def counting_event_from_json_line(
+            line: str,
+            *,
+            seq_hint: int | None = None,
+        ) -> Event:
+            nonlocal calls
+            calls += 1
+            return original(line, seq_hint=seq_hint)
+
+        monkeypatch.setattr(event_module, "_event_from_json_line", counting_event_from_json_line)
+
+        tmp_eventlog.append_many([{"event_type": "tail", "actor": "tester"}])
+
+        assert calls == 1
+
+    def test_append_many_tail_discovery_preserves_eventloom_v1_sequence(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_eventlog: EventLog,
+    ) -> None:
+        """Tail discovery should work for v1 envelopes without replay-order hints."""
+        for index in range(3):
+            tmp_eventlog.append("seed.event", actor="tester", payload={"index": index})
+
+        import zaxy.event as event_module
+
+        calls = 0
+        original = event_module._event_from_json_line
+
+        def counting_event_from_json_line(
+            line: str,
+            *,
+            seq_hint: int | None = None,
+        ) -> Event:
+            nonlocal calls
+            calls += 1
+            return original(line, seq_hint=seq_hint)
+
+        monkeypatch.setattr(event_module, "_event_from_json_line", counting_event_from_json_line)
+
+        appended = tmp_eventlog.append_many([{"event_type": "tail.event", "actor": "tester"}])
+
+        assert calls == 1
+        assert appended[0].seq == 4
+        assert tmp_eventlog.verify().ok is True
+
     def test_append_many_rebases_when_another_writer_appends_before_lock(
         self, tmp_path
     ) -> None:
@@ -451,6 +511,25 @@ class TestReplay:
         result = tmp_eventlog.replay(from_seq=99)
         assert result.events == []
         assert result.integrity.ok is True
+
+    def test_replay_can_skip_integrity_verification(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_eventlog: EventLog,
+    ) -> None:
+        """Hot internal replay paths can avoid a second full parse and hash verify."""
+        tmp_eventlog.append("a", actor="tester")
+        tmp_eventlog.append("b", actor="tester")
+
+        def fail_verify() -> object:
+            raise AssertionError("verify should not run when verify_integrity=False")
+
+        monkeypatch.setattr(tmp_eventlog, "verify", fail_verify)
+
+        result = tmp_eventlog.replay(from_seq=2, verify_integrity=False)
+
+        assert [event.type for event in result.events] == ["b"]
+        assert result.integrity is None
 
 
 # ------------------------------------------------------------------

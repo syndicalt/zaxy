@@ -25,7 +25,7 @@ import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -145,7 +145,7 @@ class ReplayResult(BaseModel):
     """Result of replaying an event log."""
 
     events: list[Event]
-    integrity: IntegrityReport
+    integrity: IntegrityReport | None
     projection: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -227,15 +227,14 @@ class EventLog:
         with open(self.path, "a+", encoding="utf-8") as fh:
             self._lock(fh.fileno(), exclusive=True)
             try:
-                fh.seek(0)
-                lines = fh.readlines()
+                last_line = _read_last_line(fh)
                 seq = 1
                 prev_hash: str | None = None
-                if lines:
-                    last = _event_from_json_line(lines[-1], seq_hint=len(lines))
+                if last_line:
+                    last = _event_from_json_line(last_line)
                     seq = last.seq + 1
                     prev_hash = last.hash
-                write_v1 = _should_write_eventloom_v1(lines, items)
+                write_v1 = _should_write_eventloom_v1_from_tail(last_line, items)
 
                 batch: list[Event] = []
                 for item in items:
@@ -356,7 +355,13 @@ class EventLog:
 
         return IntegrityReport(ok=True, total_events=total)
 
-    def replay(self, from_seq: int = 1, to_seq: int | None = None) -> ReplayResult:
+    def replay(
+        self,
+        from_seq: int = 1,
+        to_seq: int | None = None,
+        *,
+        verify_integrity: bool = True,
+    ) -> ReplayResult:
         """Replay events from an inclusive sequence window."""
         if from_seq < 1:
             raise ValueError("from_seq must be >= 1")
@@ -370,8 +375,20 @@ class EventLog:
             for event in events
             if event.seq >= from_seq and (to_seq is None or event.seq <= to_seq)
         ]
-        integrity = self.verify()
+        integrity = self.verify() if verify_integrity else None
         return ReplayResult(events=filtered, integrity=integrity)
+
+    def last_event(self) -> Event | None:
+        """Return the current tail event without parsing the full log."""
+        if not self.path.exists():
+            return None
+        with open(self.path, "r", encoding="utf-8") as fh:
+            self._lock(fh.fileno(), exclusive=False)
+            try:
+                last_line = _read_last_line(fh)
+                return _event_from_json_line(last_line) if last_line else None
+            finally:
+                self._unlock(fh.fileno())
 
     # ------------------------------------------------------------------
     # Handoff & Summaries
@@ -403,7 +420,40 @@ class EventLog:
         }
 
 
-def _event_from_json_line(line: str, *, seq_hint: int) -> Event:
+def _read_last_line(fh: TextIO) -> str | None:
+    """Read the last non-empty JSONL line from a locked file handle."""
+    fd = fh.fileno()
+    size = os.fstat(fd).st_size
+    if size == 0:
+        return None
+
+    end = size
+    while end > 0:
+        char = os.pread(fd, 1, end - 1)
+        if char not in {b"\n", b"\r"}:
+            break
+        end -= 1
+    if end == 0:
+        return None
+
+    chunk_size = 8192
+    chunks: list[bytes] = []
+    position = end
+    while position > 0:
+        read_size = min(chunk_size, position)
+        position -= read_size
+        chunk = os.pread(fd, read_size, position)
+        newline_at = chunk.rfind(b"\n")
+        if newline_at != -1:
+            chunks.insert(0, chunk[newline_at + 1 :])
+            break
+        chunks.insert(0, chunk)
+
+    line = b"".join(chunks)
+    return line.decode("utf-8") if line else None
+
+
+def _event_from_json_line(line: str, *, seq_hint: int | None = None) -> Event:
     record = json.loads(line)
     if not isinstance(record, dict):
         return Event.model_validate(record)
@@ -424,7 +474,7 @@ def _is_eventloom_v1_record(record: dict[str, Any]) -> bool:
     }.issubset(record)
 
 
-def _event_from_eventloom_v1(record: dict[str, Any], *, seq_hint: int) -> Event:
+def _event_from_eventloom_v1(record: dict[str, Any], *, seq_hint: int | None) -> Event:
     integrity = record.get("integrity")
     if not isinstance(integrity, dict):
         raise ValueError("Eventloom v1 event is missing integrity metadata")
@@ -437,10 +487,13 @@ def _event_from_eventloom_v1(record: dict[str, Any], *, seq_hint: int) -> Event:
     raw_security = payload_copy.pop(_ZAXY_SECURITY_PAYLOAD_KEY, None)
     if isinstance(raw_security, dict):
         security = raw_security
+    seq = seq_hint or _eventloom_v1_seq_from_id(record.get("id"))
+    if seq is None:
+        raise ValueError("Eventloom v1 event requires a sequence hint or Zaxy event id")
 
     event = Event.model_validate(
         {
-            "seq": seq_hint,
+            "seq": seq,
             "timestamp": record["timestamp"],
             "type": record["type"],
             "actor": record["actorId"],
@@ -458,13 +511,25 @@ def _event_from_eventloom_v1(record: dict[str, Any], *, seq_hint: int) -> Event:
     return event
 
 
-def _should_write_eventloom_v1(lines: list[str], items: list[dict[str, Any]]) -> bool:
-    if lines:
+def _eventloom_v1_seq_from_id(event_id: Any) -> int | None:
+    if not isinstance(event_id, str):
+        return None
+    match = re.fullmatch(r"evt_zaxy_(\d{12})_[a-f0-9]{16}", event_id)
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+def _should_write_eventloom_v1_from_tail(
+    last_line: str | None,
+    items: list[dict[str, Any]],
+) -> bool:
+    if last_line:
         try:
-            first = json.loads(next(line for line in lines if line.strip()))
-        except (StopIteration, json.JSONDecodeError):
+            last = json.loads(last_line)
+        except json.JSONDecodeError:
             return False
-        if not isinstance(first, dict) or not _is_eventloom_v1_record(first):
+        if not isinstance(last, dict) or not _is_eventloom_v1_record(last):
             return False
     return all(_EVENTLOOM_V1_TYPE_RE.fullmatch(str(item.get("event_type", ""))) for item in items)
 
