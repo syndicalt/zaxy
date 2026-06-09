@@ -2,7 +2,7 @@
 
 All notable Zaxy release changes are recorded here.
 
-## 2.0.0rc1 - 2026-06-08
+## 2.0.0 - 2026-06-09
 
 - Added the Zaxy 2.0 cognitive-substrate release-candidate surface with causal
   memory contracts, auditable causal edge projection, causal checkout
@@ -24,6 +24,10 @@ All notable Zaxy release changes are recorded here.
 - Added first-class LongMemBench adapter support plus archived externally
   anchored run artifacts, while keeping generated benchmark projection
   databases out of git.
+- Hardened high-value codebase review findings by tail-reading Eventloom hot
+  paths, protecting dashboard state-changing endpoints, preserving projection
+  caches on no-op writes, moving provider calls off blocking async paths, and
+  keeping benchmark/eval implementation code out of the production wheel.
 
 ## 1.1.2 - 2026-06-05
 
