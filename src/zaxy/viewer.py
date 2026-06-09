@@ -37,7 +37,10 @@ def build_viewer_model(path: str | Path) -> dict[str, Any]:
     for log_path in log_paths:
         log = EventLog(log_path)
         replay = log.replay()
-        integrity[str(log_path)] = replay.integrity.model_dump()
+        replay_integrity = replay.integrity
+        if replay_integrity is None:
+            raise RuntimeError("viewer replay requires integrity verification")
+        integrity[str(log_path)] = replay_integrity.model_dump()
         for event in replay.events:
             session_id = _event_session_id(event)
             category = _event_category(event.type)

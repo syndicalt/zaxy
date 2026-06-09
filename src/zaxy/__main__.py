@@ -191,18 +191,21 @@ def trace_export(
         if session_filter and path.stem not in session_filter:
             continue
         replay = EventLog(path).replay()
+        replay_integrity = replay.integrity
+        if replay_integrity is None:
+            raise RuntimeError("trace export replay requires integrity verification")
         sessions.append(
             {
                 "session_id": path.stem,
                 "event_count": len(replay.events),
-                "integrity_ok": replay.integrity.ok,
+                "integrity_ok": replay_integrity.ok,
                 "latest_seq": replay.events[-1].seq if replay.events else None,
                 "latest_hash": replay.events[-1].hash if replay.events else None,
             }
         )
-        if not replay.integrity.ok:
+        if not replay_integrity.ok:
             raise typer.BadParameter(
-                f"Eventloom integrity failed for {path.name}: {replay.integrity.broken_reason}",
+                f"Eventloom integrity failed for {path.name}: {replay_integrity.broken_reason}",
                 param_hint="--eventloom-path",
             )
         events.extend(replay.events)
@@ -4182,24 +4185,27 @@ def replay(
         result = log.replay(from_seq=from_seq, to_seq=to_seq)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
+    integrity = result.integrity
+    if integrity is None:
+        raise RuntimeError("CLI replay requires integrity verification")
 
     if json_output:
         output = {
             "from_seq": from_seq,
             "to_seq": to_seq,
-            "integrity": result.integrity.model_dump(),
+            "integrity": integrity.model_dump(),
             "events": [e.model_dump() for e in result.events],
         }
         print(json.dumps(output, indent=2))
         return
 
-    typer.echo(f"Integrity: {'OK' if result.integrity.ok else 'FAILED'}")
-    typer.echo(f"Total events: {result.integrity.total_events}")
+    typer.echo(f"Integrity: {'OK' if integrity.ok else 'FAILED'}")
+    typer.echo(f"Total events: {integrity.total_events}")
     window = f"{from_seq}.." + (str(to_seq) if to_seq is not None else "HEAD")
     typer.echo(f"Replay window: {window}")
-    if result.integrity.broken_at_seq:
-        typer.echo(f"Broken at seq: {result.integrity.broken_at_seq}")
-        typer.echo(f"Reason: {result.integrity.broken_reason}")
+    if integrity.broken_at_seq:
+        typer.echo(f"Broken at seq: {integrity.broken_at_seq}")
+        typer.echo(f"Reason: {integrity.broken_reason}")
 
     for ev in result.events:
         typer.echo(f"  [{ev.seq}] {ev.timestamp} {ev.type} by {ev.actor}")
@@ -4283,8 +4289,11 @@ def reproject(
                     raise typer.BadParameter("--reset-projection requires backend reset support")
                 await reset_backend()
             replay_result = EventLog(str(log_path)).replay(from_seq=from_seq)
-            if not replay_result.integrity.ok:
-                reason = replay_result.integrity.broken_reason or "unknown integrity failure"
+            replay_integrity = replay_result.integrity
+            if replay_integrity is None:
+                raise RuntimeError("reprojection replay requires integrity verification")
+            if not replay_integrity.ok:
+                reason = replay_integrity.broken_reason or "unknown integrity failure"
                 raise typer.BadParameter(f"Eventloom integrity failed: {reason}")
             begin_bulk = getattr(store, "begin_bulk_projection", None)
             commit_bulk = getattr(store, "commit_bulk_projection", None)
