@@ -61,6 +61,31 @@ def test_pyproject_declares_typed_package_and_release_tools() -> None:
         "src/zaxy/py.typed"
     ]
     assert "site" in pyproject["tool"]["hatch"]["build"]["targets"]["sdist"]["include"]
+    assert "zaxy_benchmarks" in pyproject["tool"]["hatch"]["build"]["targets"]["sdist"]["include"]
+
+
+def test_heavy_eval_modules_are_outside_runtime_package() -> None:
+    """Benchmark/eval implementations should not ship in the runtime wheel package."""
+    runtime_dir = Path("src/zaxy")
+    eval_dir = Path("zaxy_benchmarks")
+    moved_modules = {
+        "benchmark.py",
+        "causal_benchmark.py",
+        "consolidation_benchmark.py",
+        "coordination_benchmark.py",
+        "harvey_lab_benchmark.py",
+        "live_benchmark.py",
+        "longmembench.py",
+        "purpose_benchmark.py",
+        "rc_benchmark_freeze.py",
+        "reasoning_benchmark.py",
+    }
+
+    assert eval_dir.is_dir()
+    assert (eval_dir / "__init__.py").exists()
+    for module in moved_modules:
+        assert not (runtime_dir / module).exists()
+        assert (eval_dir / module).exists()
 
 
 def test_dockerfile_defaults_to_production_environment() -> None:
@@ -494,7 +519,7 @@ def test_neo4j_driver_imports_are_lazy_for_embedded_default() -> None:
     """Importing default runtime modules should not require the optional Neo4j driver."""
     graph_source = Path("src/zaxy/graph.py").read_text(encoding="utf-8")
     dashboard_source = Path("src/zaxy/dashboard.py").read_text(encoding="utf-8")
-    live_benchmark_source = Path("src/zaxy/live_benchmark.py").read_text(encoding="utf-8")
+    live_benchmark_source = Path("zaxy_benchmarks/live_benchmark.py").read_text(encoding="utf-8")
 
     assert "from neo4j import" not in graph_source
     assert "from neo4j import" not in dashboard_source

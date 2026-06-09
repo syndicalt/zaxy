@@ -119,6 +119,7 @@ include = [
     "scripts",
     "src",
     "tests",
+    "zaxy_benchmarks",
     "pyproject.toml",
     "docker-compose.yml",
     "docker-compose.prod.yml",

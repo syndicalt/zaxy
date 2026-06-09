@@ -685,41 +685,23 @@ git commit -m &quot;perf: tail-read dashboard event listings&quot;</code></pre>
         <li>Test: <code>tests/test_packaging.py</code></li>
         <li>Test: <code>tests/test_cli.py</code></li>
       </ul>
-      <h3 id="2026-06-09-safe-first-slice-inventory-result">2026-06-09 Safe First-Slice Inventory Result</h3>
-      <p>The first slice inventory found that moving benchmark modules out of <code>src/zaxy</code> is not safe as a one-step PR under the current allowed write set.</p>
-      <p>Top-level benchmark/eval modules currently shipped in <code>src/zaxy</code>:</p>
+      <h3 id="2026-06-09-package-boundary-migration-result">2026-06-09 Package-Boundary Migration Result</h3>
+      <p>The follow-up slice moved benchmark/eval implementation modules out of the runtime wheel package while keeping source-checkout eval workflows intact.</p>
+      <p>Implemented boundary:</p>
       <ul>
-        <li><code>benchmark.py</code> (20K): shared benchmark primitives and <code>_event_context</code>.</li>
-        <li><code>causal_benchmark.py</code> (20K): project-defined causal/consolidation scoring.</li>
-        <li><code>consolidation_benchmark.py</code> (8K): consolidation benchmark scoring.</li>
-        <li><code>coordination_benchmark.py</code> (80K): public <code>zaxy coordinate benchmark</code> and <code>zaxy coordinate benchmark-adapter ...</code> commands.</li>
-        <li><code>external_validation.py</code> (20K): release/package validation helper imported by <code>src/zaxy/release.py</code>, scripts, and packaging tests. This is release tooling, not safe to move with benchmark-only changes.</li>
-        <li><code>harvey_lab_benchmark.py</code> (192K): public Harvey LAB CLI command family.</li>
-        <li><code>live_benchmark.py</code> (144K): public <code>zaxy benchmark</code>, <code>benchmark-inventory</code>, <code>benchmark-compare</code>, and LongMemEval support.</li>
-        <li><code>longmembench.py</code> (136K): public <code>zaxy longmembench-*</code> command family; also imports <code>zaxy.live_benchmark</code>.</li>
-        <li><code>purpose_benchmark.py</code> (36K): public <code>zaxy purpose-benchmark</code>.</li>
-        <li><code>rc_benchmark_freeze.py</code> (36K): public <code>zaxy benchmark-freeze</code>.</li>
-        <li><code>reasoning_benchmark.py</code> (8K): project-defined reasoning/metacognition scoring.</li>
+        <li>Extracted the runtime-shared event text formatter into <code>src/zaxy/event_context.py</code>.</li>
+        <li>Moved heavy eval modules from <code>src/zaxy/</code> to the top-level source package <code>zaxy_benchmarks/</code>.</li>
+        <li>Updated benchmark modules and tests to import through <code>zaxy_benchmarks.*</code>.</li>
+        <li>Kept Hatch wheel packaging limited to <code>packages = [&quot;src/zaxy&quot;]</code>, so end-user installs do not ship benchmark/eval implementations.</li>
+        <li>Added <code>zaxy_benchmarks</code> to the sdist include list, so source distributions retain eval tooling for users who intentionally work from source.</li>
+        <li>Updated benchmark CLI commands to resolve <code>zaxy_benchmarks.*</code> through a runtime helper that raises a clear <code>typer.BadParameter</code> when eval tooling is not installed/available, instead of a raw <code>ModuleNotFoundError</code>.</li>
+        <li>Added packaging coverage proving moved eval modules are absent from <code>src/zaxy</code> and present in <code>zaxy_benchmarks</code>.</li>
+        <li>Verified built wheel contents contain no <code>zaxy_benchmarks/</code> entries and no runtime benchmark/LongMemBench modules.</li>
       </ul>
-      <p>Blocking dependencies observed during inventory:</p>
+      <p>Explicitly out of scope:</p>
       <ul>
-        <li>Public CLI commands lazily import <code>zaxy.coordination_benchmark</code>, <code>zaxy.live_benchmark</code>, <code>zaxy.harvey_lab_benchmark</code>, <code>zaxy.longmembench</code>, <code>zaxy.purpose_benchmark</code>, and <code>zaxy.rc_benchmark_freeze</code>.</li>
-        <li><code>src/zaxy/compaction.py</code> imports <code>zaxy.benchmark._event_context</code>, so <code>benchmark.py</code> is not currently a pure benchmark leaf.</li>
-        <li><code>src/zaxy/live_benchmark.py</code> imports shared types/helpers from <code>zaxy.benchmark</code>.</li>
-        <li><code>src/zaxy/longmembench.py</code> imports <code>zaxy.live_benchmark</code>.</li>
-        <li>Existing tests import these modules through the public <code>zaxy.*</code> namespace (<code>tests/test_live_benchmark.py</code>, <code>tests/test_longmembench.py</code>, <code>tests/test_harvey_lab_benchmark.py</code>, <code>tests/test_rc_benchmark_freeze.py</code>, <code>tests/test_coordination_benchmark.py</code>, <code>tests/test_causal_benchmark.py</code>, <code>tests/test_consolidation_benchmark.py</code>, <code>tests/test_purpose_benchmark.py</code>, <code>tests/test_reasoning_benchmark.py</code>, <code>tests/test_competitive_benchmarks.py</code>, and <code>tests/test_checkout.py</code>).</li>
-        <li><code>tests/test_packaging.py</code> and <code>src/zaxy/release.py</code> intentionally import <code>zaxy.external_validation</code>; moving it with benchmark modules would broaden the task into release tooling.</li>
+        <li><code>external_validation.py</code> remains in <code>src/zaxy</code> because it is release/package validation tooling imported by <code>src/zaxy/release.py</code>, scripts, and packaging tests. Moving it should be a separate release-tooling boundary decision.</li>
       </ul>
-      <p>Decision for this safe slice: do not move modules yet. A compatibility-preserving move requires a staged package-boundary migration that updates import contracts and tests beyond <code>tests/test_cli.py</code> and <code>tests/test_packaging.py</code>. Adding thin <code>src/zaxy/*.py</code> compatibility shims for moved modules would keep the old import surface alive and would not satisfy the stated runtime-wheel boundary test.</p>
-      <p>Staged migration plan:</p>
-      <ol>
-        <li>Extract runtime-shared helpers from <code>zaxy.benchmark</code> into a neutral runtime module, for example <code>zaxy.event_context</code> or <code>zaxy.scoring</code>, then update <code>compaction.py</code>, checkout tests, live benchmark code, and benchmark tests to use the neutral import.</li>
-        <li>Create a first-class benchmark package under <code>benchmarks/zaxy_benchmarks</code> with <code>__init__.py</code> and package-local imports. Update all benchmark modules to import each other through <code>zaxy_benchmarks.*</code>, not <code>zaxy.*</code>.</li>
-        <li>Update CLI benchmark command imports to resolve <code>zaxy_benchmarks.*</code> lazily and raise a clear <code>typer.BadParameter</code> only when a benchmark command is invoked without the benchmark package available. Keep <code>zaxy --help</code> benchmark-module-free.</li>
-        <li>Update all benchmark-focused tests to import <code>zaxy_benchmarks.*</code>; keep runtime tests importing only runtime modules.</li>
-        <li>Decide packaging shape explicitly: either keep <code>benchmarks/</code> out of the production wheel and document benchmark commands as source-checkout/dev-extra commands, or publish a separate <code>zaxy-benchmarks</code> distribution/extra. Do not leave an accidental import path that only works from the repository root.</li>
-        <li>Move <code>external_validation.py</code> only in a separate release-tooling task, because it is part of release/package validation and not just benchmark execution.</li>
-      </ol>
       <ul>
         <li>[ ] <strong>Step 1: Inventory benchmark modules and CLI entry points</strong></li>
       </ul>

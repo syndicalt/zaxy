@@ -5,8 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-
-from zaxy.benchmark import (
+from zaxy_benchmarks.benchmark import (
     BenchmarkCase,
     FlatJsonlRetriever,
     build_competitive_event_log,

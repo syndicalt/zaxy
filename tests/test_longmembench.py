@@ -12,9 +12,7 @@ from pathlib import Path
 import httpx
 import pytest
 from typer.testing import CliRunner
-
-from zaxy.__main__ import app
-from zaxy.longmembench import (
+from zaxy_benchmarks.longmembench import (
     OFFICIAL_FULL_QUESTION_COUNT,
     _answer_generation_contexts,
     _checkout_answer_candidate,
@@ -41,6 +39,8 @@ from zaxy.longmembench import (
     write_longmembench_external_run_manifest,
     write_longmembench_report,
 )
+
+from zaxy.__main__ import app
 
 
 def _write_official_worktree(root: Path, *, questions: int = 2) -> Path:
@@ -356,9 +356,9 @@ def test_bootstrap_clones_downloads_dataset_and_checks_out_ref(
         del kwargs
         calls.append(command)
         if command[:2] == ["git", "clone"]:
-            monkeypatch.setattr("zaxy.longmembench.subprocess.run", real_run)
+            monkeypatch.setattr("zaxy_benchmarks.longmembench.subprocess.run", real_run)
             _write_official_worktree(worktree)
-            monkeypatch.setattr("zaxy.longmembench.subprocess.run", fake_run)
+            monkeypatch.setattr("zaxy_benchmarks.longmembench.subprocess.run", fake_run)
             (worktree / "data" / "longmemeval_oracle.json").unlink()
         return subprocess.CompletedProcess(command, 0, stdout="ok", stderr="")
 
@@ -380,8 +380,8 @@ def test_bootstrap_clones_downloads_dataset_and_checks_out_ref(
             request=httpx.Request("GET", "https://example.test/oracle.json"),
         )
 
-    monkeypatch.setattr("zaxy.longmembench.subprocess.run", fake_run)
-    monkeypatch.setattr("zaxy.longmembench.httpx.get", fake_get)
+    monkeypatch.setattr("zaxy_benchmarks.longmembench.subprocess.run", fake_run)
+    monkeypatch.setattr("zaxy_benchmarks.longmembench.httpx.get", fake_get)
 
     result = bootstrap_longmemeval_official_suite(
         worktree=worktree,
@@ -1438,7 +1438,7 @@ def test_generate_openai_hypotheses_uses_answer_ready_candidate_before_filtering
         calls.append((args, kwargs))
         raise AssertionError("provider should not be called when checkout has an answer-ready candidate")
 
-    monkeypatch.setattr("zaxy.longmembench.httpx.post", fake_post)
+    monkeypatch.setattr("zaxy_benchmarks.longmembench.httpx.post", fake_post)
     dataset = _write_preference_generation_dataset(tmp_path / "longmemeval_oracle.json")
     output = tmp_path / "zaxy-hypotheses.jsonl"
     report_path = tmp_path / "zaxy-hypotheses-report.json"
@@ -1553,7 +1553,7 @@ def test_openai_compatible_answer_uses_absence_guidance_without_provider(monkeyp
         calls.append((args, kwargs))
         raise AssertionError("provider should not be called for answer-ready absence evidence")
 
-    monkeypatch.setattr("zaxy.longmembench.httpx.post", fake_post)
+    monkeypatch.setattr("zaxy_benchmarks.longmembench.httpx.post", fake_post)
 
     answer = _openai_compatible_answer(
         question="Which task did I complete first, fixing the fence or buying a greenhouse?",
@@ -1611,7 +1611,7 @@ def test_openai_compatible_answer_uses_preference_candidate_without_provider(mon
         calls.append((args, kwargs))
         raise AssertionError("provider should not be called for answer-ready preference evidence")
 
-    monkeypatch.setattr("zaxy.longmembench.httpx.post", fake_post)
+    monkeypatch.setattr("zaxy_benchmarks.longmembench.httpx.post", fake_post)
 
     answer = _openai_compatible_answer(
         question="What hotel recommendations would I prefer?",
@@ -1656,8 +1656,8 @@ def test_openai_compatible_answer_retries_provider_then_returns_message(monkeypa
         calls.append({"args": args, "kwargs": kwargs})
         return responses.pop(0)
 
-    monkeypatch.setattr("zaxy.longmembench.httpx.post", fake_post)
-    monkeypatch.setattr("zaxy.longmembench.time.sleep", lambda delay: sleeps.append(delay))
+    monkeypatch.setattr("zaxy_benchmarks.longmembench.httpx.post", fake_post)
+    monkeypatch.setattr("zaxy_benchmarks.longmembench.time.sleep", lambda delay: sleeps.append(delay))
 
     answer = _openai_compatible_answer(
         question="What is the project codename?",
@@ -1692,7 +1692,7 @@ def test_openai_compatible_answer_rejects_malformed_provider_responses(monkeypat
         del args, kwargs
         return responses.pop(0)
 
-    monkeypatch.setattr("zaxy.longmembench.httpx.post", fake_post)
+    monkeypatch.setattr("zaxy_benchmarks.longmembench.httpx.post", fake_post)
 
     expected_messages = [
         "missing choices",
@@ -1727,8 +1727,8 @@ def test_openai_compatible_answer_stops_retries_on_insufficient_quota(monkeypatc
             json={"error": {"code": "insufficient_quota"}},
         )
 
-    monkeypatch.setattr("zaxy.longmembench.httpx.post", fake_post)
-    monkeypatch.setattr("zaxy.longmembench.time.sleep", lambda delay: sleeps.append(delay))
+    monkeypatch.setattr("zaxy_benchmarks.longmembench.httpx.post", fake_post)
+    monkeypatch.setattr("zaxy_benchmarks.longmembench.time.sleep", lambda delay: sleeps.append(delay))
 
     with pytest.raises(httpx.HTTPStatusError):
         _openai_compatible_answer(

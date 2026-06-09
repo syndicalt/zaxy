@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from zaxy.reasoning_benchmark import score_metacognition_guardrail, score_reasoning_guardrail
+from zaxy_benchmarks.reasoning_benchmark import (
+    score_metacognition_guardrail,
+    score_reasoning_guardrail,
+)
 
 
 def test_reasoning_guardrail_scores_observable_cited_phase_matched_non_authority_cases() -> None:

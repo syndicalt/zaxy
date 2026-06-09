@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import pytest
-
-from zaxy.causal_benchmark import (
+from zaxy_benchmarks.causal_benchmark import (
     CausalBenchmarkCase,
     ConsolidationBenchmarkCase,
     evaluate_causal_results,
     evaluate_consolidation_candidate,
     summarize_causal_benchmark,
 )
+
 from zaxy.consolidation import build_consolidation_candidate_event
 
 

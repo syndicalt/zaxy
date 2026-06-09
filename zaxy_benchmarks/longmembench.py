@@ -829,7 +829,8 @@ async def generate_longmembench_hypotheses(
     """Generate official LongMemEval hypothesis JSONL rows using Zaxy checkout."""
     from zaxy.config import get_settings
     from zaxy.embedding import EmbeddingProvider, HashEmbeddingProvider, OpenAIEmbeddingProvider
-    from zaxy.live_benchmark import (
+    from zaxy.projection_backends import ProjectionBackendConfig
+    from zaxy_benchmarks.live_benchmark import (
         CachedEmbeddingProvider,
         _build_source_lane_retriever,
         benchmark_projection_cache_key,
@@ -838,7 +839,6 @@ async def generate_longmembench_hypotheses(
         build_longmemeval_workload,
         corpus_from_event_log,
     )
-    from zaxy.projection_backends import ProjectionBackendConfig
 
     if limit <= 0:
         raise ValueError("limit must be positive")

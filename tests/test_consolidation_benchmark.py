@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import pytest
-
-from zaxy.consolidation_benchmark import (
+from zaxy_benchmarks.consolidation_benchmark import (
     ConsolidationGuardrailCase,
     evaluate_consolidation_guardrail,
     summarize_consolidation_guardrail,

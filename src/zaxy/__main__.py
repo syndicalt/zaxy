@@ -23,6 +23,7 @@ if len(sys.argv) > 1 and sys.argv[1] == "--version":
     print(f"zaxy {package_version()}")
     raise SystemExit(0)
 
+import importlib
 import json
 import os
 import shlex
@@ -50,6 +51,20 @@ def _memory_fabric(*args: Any, **kwargs: Any) -> Any:
 
 
 MemoryFabric = _memory_fabric
+
+
+def _benchmark_module(module_name: str) -> Any:
+    """Import source-checkout benchmark/eval modules with a clear runtime error."""
+    try:
+        return importlib.import_module(f"zaxy_benchmarks.{module_name}")
+    except ModuleNotFoundError as exc:
+        if exc.name == "zaxy_benchmarks" or str(exc.name).startswith("zaxy_benchmarks."):
+            raise typer.BadParameter(
+                "Benchmark and external-evaluation commands require the optional "
+                "source-checkout eval package `zaxy_benchmarks`. Run this command "
+                "from a Zaxy source checkout or install the eval tooling package."
+            ) from exc
+        raise
 
 
 def _graph_store(*args: Any, **kwargs: Any) -> Any:
@@ -894,10 +909,9 @@ def coordinate_benchmark(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """Run CoordinationBench against a generated or frozen workload."""
-    from zaxy.coordination_benchmark import (
-        coordination_competitor_claim_gate,
-        run_coordination_benchmark,
-    )
+    coordination_benchmark_module = _benchmark_module("coordination_benchmark")
+    coordination_competitor_claim_gate = coordination_benchmark_module.coordination_competitor_claim_gate
+    run_coordination_benchmark = coordination_benchmark_module.run_coordination_benchmark
 
     competitor_results = _coordinate_competitor_results_from_options(competitor_result or [])
     competitor_runners = _coordinate_competitor_results_from_options(competitor_runner or [])
@@ -1060,7 +1074,10 @@ def coordinate_benchmark_adapter_export_kit(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """Export schemas, workload, and templates for external CoordinationBench adapters."""
-    from zaxy.coordination_benchmark import export_coordination_benchmark_adapter_kit
+    coordination_benchmark_module = _benchmark_module("coordination_benchmark")
+    export_coordination_benchmark_adapter_kit = (
+        coordination_benchmark_module.export_coordination_benchmark_adapter_kit
+    )
 
     payload = export_coordination_benchmark_adapter_kit(
         output_dir,
@@ -1081,9 +1098,10 @@ def coordinate_benchmark_adapter_validate_manifest(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """Validate a runner manifest without executing it."""
-    from zaxy.coordination_benchmark import (
-        load_coordination_workload,
-        validate_coordination_competitor_runner_manifest,
+    coordination_benchmark_module = _benchmark_module("coordination_benchmark")
+    load_coordination_workload = coordination_benchmark_module.load_coordination_workload
+    validate_coordination_competitor_runner_manifest = (
+        coordination_benchmark_module.validate_coordination_competitor_runner_manifest
     )
 
     adapters = _coordinate_competitor_results_from_options([adapter])
@@ -1106,9 +1124,10 @@ def coordinate_benchmark_adapter_validate_result(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """Validate and locally score a competitor result file."""
-    from zaxy.coordination_benchmark import (
-        load_coordination_workload,
-        validate_coordination_competitor_result,
+    coordination_benchmark_module = _benchmark_module("coordination_benchmark")
+    load_coordination_workload = coordination_benchmark_module.load_coordination_workload
+    validate_coordination_competitor_result = (
+        coordination_benchmark_module.validate_coordination_competitor_result
     )
 
     adapters = _coordinate_competitor_results_from_options([adapter])
@@ -4816,26 +4835,25 @@ def _build_benchmark_baselines(
     selected: tuple[str, ...],
 ) -> dict[str, Any]:
     """Build only the requested non-Zaxy benchmark baselines."""
-    from zaxy.live_benchmark import (
-        BM25Retriever,
-        CentroidConsolidationRetriever,
-        MarkdownRetriever,
-        MarkdownVectorRetriever,
-        VectorRetriever,
-    )
+    live_benchmark_module = _benchmark_module("live_benchmark")
+    bm25_retriever_cls = live_benchmark_module.BM25Retriever
+    centroid_consolidation_retriever_cls = live_benchmark_module.CentroidConsolidationRetriever
+    markdown_retriever_cls = live_benchmark_module.MarkdownRetriever
+    markdown_vector_retriever_cls = live_benchmark_module.MarkdownVectorRetriever
+    vector_retriever_cls = live_benchmark_module.VectorRetriever
 
     retrievers: dict[str, Any] = {}
     for backend in selected:
         if backend == "md":
-            retrievers[backend] = MarkdownRetriever(corpus)
+            retrievers[backend] = markdown_retriever_cls(corpus)
         elif backend == "bm25":
-            retrievers[backend] = BM25Retriever(corpus)
+            retrievers[backend] = bm25_retriever_cls(corpus)
         elif backend == "vector":
-            retrievers[backend] = VectorRetriever(corpus, provider)
+            retrievers[backend] = vector_retriever_cls(corpus, provider)
         elif backend == "md+vector":
-            retrievers[backend] = MarkdownVectorRetriever(corpus, provider)
+            retrievers[backend] = markdown_vector_retriever_cls(corpus, provider)
         elif backend == "centroid":
-            retrievers[backend] = CentroidConsolidationRetriever(corpus, provider)
+            retrievers[backend] = centroid_consolidation_retriever_cls(corpus, provider)
     return retrievers
 
 
@@ -4932,35 +4950,36 @@ def benchmark(
     """Run live retrieval benchmarks against baseline memories and Zaxy."""
     import asyncio
 
-    from zaxy.benchmark import build_competitive_event_log, competitive_cases
+    benchmark_module = _benchmark_module("benchmark")
+    live_benchmark_module = _benchmark_module("live_benchmark")
+    build_competitive_event_log = benchmark_module.build_competitive_event_log
+    competitive_cases = benchmark_module.competitive_cases
+    benchmark_workload_cls = live_benchmark_module.BenchmarkWorkload
+    cached_embedding_provider_cls = live_benchmark_module.CachedEmbeddingProvider
+    _build_source_lane_retriever = live_benchmark_module._build_source_lane_retriever
+    benchmark_live_retrievers = live_benchmark_module.benchmark_live_retrievers
+    benchmark_projection_cache_key = live_benchmark_module.benchmark_projection_cache_key
+    benchmark_query_scope_resolver = live_benchmark_module.benchmark_query_scope_resolver
+    build_benchmark_suite_workload = live_benchmark_module.build_benchmark_suite_workload
+    build_consolidation_collapse_workload = live_benchmark_module.build_consolidation_collapse_workload
+    build_context_collapse_workload = live_benchmark_module.build_context_collapse_workload
+    build_frozen_statistical_workload = live_benchmark_module.build_frozen_statistical_workload
+    build_graph_traversal_workload = live_benchmark_module.build_graph_traversal_workload
+    build_live_zaxy_retriever = live_benchmark_module.build_live_zaxy_retriever
+    build_longmemeval_workload = live_benchmark_module.build_longmemeval_workload
+    build_source_recall_workload = live_benchmark_module.build_source_recall_workload
+    build_statistical_event_log = live_benchmark_module.build_statistical_event_log
+    build_temporal_recall_workload = live_benchmark_module.build_temporal_recall_workload
+    corpus_from_event_log = live_benchmark_module.corpus_from_event_log
+    report_to_markdown = live_benchmark_module.report_to_markdown
+    write_benchmark_report = live_benchmark_module.write_benchmark_report
+
     from zaxy.config import get_settings
     from zaxy.embedding import (
         HashEmbeddingProvider,
         LocalHTTPEmbeddingProvider,
         OpenAIEmbeddingProvider,
         SentenceTransformersEmbeddingProvider,
-    )
-    from zaxy.live_benchmark import (
-        BenchmarkWorkload,
-        CachedEmbeddingProvider,
-        ZaxyCheckoutRetriever,
-        _build_source_lane_retriever,
-        benchmark_live_retrievers,
-        benchmark_projection_cache_key,
-        benchmark_query_scope_resolver,
-        build_benchmark_suite_workload,
-        build_consolidation_collapse_workload,
-        build_context_collapse_workload,
-        build_frozen_statistical_workload,
-        build_graph_traversal_workload,
-        build_live_zaxy_retriever,
-        build_longmemeval_workload,
-        build_source_recall_workload,
-        build_statistical_event_log,
-        build_temporal_recall_workload,
-        corpus_from_event_log,
-        report_to_markdown,
-        write_benchmark_report,
     )
     from zaxy.projection_backends import ProjectionBackendConfig
 
@@ -5017,15 +5036,15 @@ def benchmark(
             "embedding provider must be 'openai', 'hash', 'local-http', "
             "or 'sentence-transformers'"
         )
-    provider = CachedEmbeddingProvider(provider, cache_path=embedding_cache)
+    provider = cached_embedding_provider_cls(provider, cache_path=embedding_cache)
 
     async def _run() -> None:
         with tempfile.TemporaryDirectory(prefix="zaxy-live-benchmark-") as tmp:
-            benchmark_workload: BenchmarkWorkload
+            benchmark_workload: Any
             if workload == "fixture":
                 eventlog = build_competitive_event_log(Path(tmp) / "bench.jsonl")
                 cases = competitive_cases()
-                benchmark_workload = BenchmarkWorkload.from_event_log(
+                benchmark_workload = benchmark_workload_cls.from_event_log(
                     eventlog,
                     cases,
                     version="fixture-v1",
@@ -5035,7 +5054,7 @@ def benchmark(
                     Path(tmp) / "bench.jsonl",
                     subjects=subjects,
                 )
-                benchmark_workload = BenchmarkWorkload.from_event_log(
+                benchmark_workload = benchmark_workload_cls.from_event_log(
                     eventlog,
                     cases,
                     version=f"statistical-subjects-{subjects}",
@@ -5129,7 +5148,7 @@ def benchmark(
                 projection_backend_config=projection_backend_config,
             )
             try:
-                checkout_retriever: ZaxyCheckoutRetriever | None = None
+                checkout_retriever: Any | None = None
                 zaxy_backend_name = zaxy_backend.casefold()
                 if zaxy_backend_name not in {"graph", "checkout", "both"}:
                     raise typer.BadParameter("--zaxy-backend must be graph, checkout, or both")
@@ -5179,19 +5198,20 @@ def benchmark(
 
 def _load_external_results(path: Path | None) -> tuple[Any, ...]:
     """Load operator-supplied external benchmark rows from JSON."""
-    from zaxy.live_benchmark import ExternalBenchmarkResult
+    live_benchmark_module = _benchmark_module("live_benchmark")
+    external_benchmark_result_cls = live_benchmark_module.ExternalBenchmarkResult
 
     if path is None:
         return ()
     payload = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(payload, list):
         raise typer.BadParameter("external results JSON must be a list")
-    results: list[ExternalBenchmarkResult] = []
+    results: list[Any] = []
     for idx, item in enumerate(payload):
         if not isinstance(item, dict):
             raise typer.BadParameter(f"external result {idx} must be an object")
         try:
-            results.append(ExternalBenchmarkResult(**item))
+            results.append(external_benchmark_result_cls(**item))
         except TypeError as exc:
             raise typer.BadParameter(f"invalid external result {idx}: {exc}") from exc
     return tuple(results)
@@ -5211,12 +5231,11 @@ def harvey_lab_benchmark(
     ),
 ) -> None:
     """Compare externally run Zaxy Harvey LAB rows with article-scored systems."""
-    from zaxy.harvey_lab_benchmark import (
-        build_harvey_lab_report,
-        load_harvey_zaxy_results,
-        report_to_markdown,
-        write_harvey_lab_report,
-    )
+    harvey_module = _benchmark_module("harvey_lab_benchmark")
+    build_harvey_lab_report = harvey_module.build_harvey_lab_report
+    load_harvey_zaxy_results = harvey_module.load_harvey_zaxy_results
+    report_to_markdown = harvey_module.report_to_markdown
+    write_harvey_lab_report = harvey_module.write_harvey_lab_report
 
     try:
         zaxy_rows = load_harvey_zaxy_results(zaxy_results)
@@ -5254,13 +5273,12 @@ def harvey_lab_import(
     ),
 ) -> None:
     """Import external Harvey normalized-result.json files and write Zaxy comparisons."""
-    from zaxy.harvey_lab_benchmark import (
-        build_harvey_lab_report,
-        build_harvey_result_provenance,
-        import_harvey_zaxy_results,
-        report_to_markdown,
-        write_harvey_lab_report,
-    )
+    harvey_module = _benchmark_module("harvey_lab_benchmark")
+    build_harvey_lab_report = harvey_module.build_harvey_lab_report
+    build_harvey_result_provenance = harvey_module.build_harvey_result_provenance
+    import_harvey_zaxy_results = harvey_module.import_harvey_zaxy_results
+    report_to_markdown = harvey_module.report_to_markdown
+    write_harvey_lab_report = harvey_module.write_harvey_lab_report
 
     output_dir.mkdir(parents=True, exist_ok=True)
     provenance_roots = [*roots, output_dir]
@@ -5318,7 +5336,8 @@ def harvey_lab_index(
     max_lines: int = typer.Option(80, "--max-lines", min=1, help="Lines per indexed document chunk"),
 ) -> None:
     """Build an Eventloom-backed Zaxy memory index for Harvey LAB tools."""
-    from zaxy.harvey_lab_benchmark import build_harvey_zaxy_memory_index
+    harvey_module = _benchmark_module("harvey_lab_benchmark")
+    build_harvey_zaxy_memory_index = harvey_module.build_harvey_zaxy_memory_index
 
     try:
         manifest = build_harvey_zaxy_memory_index(
@@ -5342,7 +5361,8 @@ def harvey_lab_adapter_kit(
     ),
 ) -> None:
     """Export a Harvey-compatible Zaxy memory adapter kit."""
-    from zaxy.harvey_lab_benchmark import export_harvey_adapter_kit
+    harvey_module = _benchmark_module("harvey_lab_benchmark")
+    export_harvey_adapter_kit = harvey_module.export_harvey_adapter_kit
 
     written = export_harvey_adapter_kit(output_dir)
     typer.echo(json.dumps(written, indent=2, sort_keys=True))
@@ -5356,7 +5376,8 @@ def harvey_lab_doctor(
     ),
 ) -> None:
     """Validate that a Harvey checkout matches the external article suite."""
-    from zaxy.harvey_lab_benchmark import check_harvey_external_suite
+    harvey_module = _benchmark_module("harvey_lab_benchmark")
+    check_harvey_external_suite = harvey_module.check_harvey_external_suite
 
     status = check_harvey_external_suite(harvey_worktree)
     typer.echo(json.dumps(status, indent=2, sort_keys=True))
@@ -5378,7 +5399,8 @@ def harvey_lab_preflight(
     ),
 ) -> None:
     """Normalize and Zaxy-index pinned Harvey LAB tasks without scoring."""
-    from zaxy.harvey_lab_benchmark import build_harvey_external_index_preflight
+    harvey_module = _benchmark_module("harvey_lab_benchmark")
+    build_harvey_external_index_preflight = harvey_module.build_harvey_external_index_preflight
 
     try:
         status = build_harvey_external_index_preflight(
@@ -5402,7 +5424,8 @@ def harvey_lab_status(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """Report per-task readiness for the external Harvey Zaxy run pipeline."""
-    from zaxy.harvey_lab_benchmark import build_harvey_external_run_status
+    harvey_module = _benchmark_module("harvey_lab_benchmark")
+    build_harvey_external_run_status = harvey_module.build_harvey_external_run_status
 
     _ = json_output
     status = build_harvey_external_run_status(harvey_worktree)
@@ -5435,7 +5458,8 @@ def harvey_lab_ready(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """Check external Harvey run prerequisites without launching model calls."""
-    from zaxy.harvey_lab_benchmark import build_harvey_external_run_readiness
+    harvey_module = _benchmark_module("harvey_lab_benchmark")
+    build_harvey_external_run_readiness = harvey_module.build_harvey_external_run_readiness
 
     _ = json_output
     readiness = build_harvey_external_run_readiness(
@@ -5473,10 +5497,9 @@ def harvey_lab_plan(
     ),
 ) -> None:
     """Write a reproducible external Harvey LAB run manifest."""
-    from zaxy.harvey_lab_benchmark import (
-        build_harvey_external_run_manifest,
-        write_harvey_external_run_manifest,
-    )
+    harvey_module = _benchmark_module("harvey_lab_benchmark")
+    build_harvey_external_run_manifest = harvey_module.build_harvey_external_run_manifest
+    write_harvey_external_run_manifest = harvey_module.write_harvey_external_run_manifest
 
     manifest = build_harvey_external_run_manifest(
         generator=generator,
@@ -5520,7 +5543,8 @@ def harvey_lab_normalize_run(
     ),
 ) -> None:
     """Write Harvey normalized-result.json from one external Zaxy run."""
-    from zaxy.harvey_lab_benchmark import build_harvey_normalized_result_from_run
+    harvey_module = _benchmark_module("harvey_lab_benchmark")
+    build_harvey_normalized_result_from_run = harvey_module.build_harvey_normalized_result_from_run
 
     try:
         normalized = build_harvey_normalized_result_from_run(
@@ -5544,10 +5568,9 @@ def harvey_lab_gate(
     report_path: Path = typer.Argument(..., help="harvey-lab-benchmark.json report"),  # noqa: B008
 ) -> None:
     """Gate public Harvey LAB claims on complete external Zaxy results."""
-    from zaxy.harvey_lab_benchmark import (
-        check_harvey_lab_completion,
-        load_harvey_lab_report,
-    )
+    harvey_module = _benchmark_module("harvey_lab_benchmark")
+    check_harvey_lab_completion = harvey_module.check_harvey_lab_completion
+    load_harvey_lab_report = harvey_module.load_harvey_lab_report
 
     try:
         report = load_harvey_lab_report(report_path)
@@ -5569,10 +5592,9 @@ def harvey_lab_validate(
     ),
 ) -> None:
     """Validate Harvey LAB report evidence and local artifact availability."""
-    from zaxy.harvey_lab_benchmark import (
-        load_harvey_lab_report,
-        validate_harvey_lab_report,
-    )
+    harvey_module = _benchmark_module("harvey_lab_benchmark")
+    load_harvey_lab_report = harvey_module.load_harvey_lab_report
+    validate_harvey_lab_report = harvey_module.validate_harvey_lab_report
 
     try:
         report = load_harvey_lab_report(report_path)
@@ -5597,10 +5619,9 @@ def harvey_lab_publish(
     ),
 ) -> None:
     """Render publishable Harvey LAB statistics after the strict gate passes."""
-    from zaxy.harvey_lab_benchmark import (
-        load_harvey_lab_report,
-        render_harvey_publication_markdown,
-    )
+    harvey_module = _benchmark_module("harvey_lab_benchmark")
+    load_harvey_lab_report = harvey_module.load_harvey_lab_report
+    render_harvey_publication_markdown = harvey_module.render_harvey_publication_markdown
 
     try:
         report = load_harvey_lab_report(report_path)
@@ -5623,7 +5644,8 @@ def longmembench_doctor(
     ),
 ) -> None:
     """Validate an official LongMemEval checkout for external LongMemBench runs."""
-    from zaxy.longmembench import check_longmemeval_official_suite
+    longmembench_module = _benchmark_module("longmembench")
+    check_longmemeval_official_suite = longmembench_module.check_longmemeval_official_suite
 
     status = check_longmemeval_official_suite(longmemeval_worktree)
     typer.echo(json.dumps(status, indent=2, sort_keys=True))
@@ -5660,7 +5682,8 @@ def longmembench_bootstrap(
     ),
 ) -> None:
     """Clone official LongMemEval and install the oracle dataset."""
-    from zaxy.longmembench import bootstrap_longmemeval_official_suite
+    longmembench_module = _benchmark_module("longmembench")
+    bootstrap_longmemeval_official_suite = longmembench_module.bootstrap_longmemeval_official_suite
 
     try:
         result = bootstrap_longmemeval_official_suite(
@@ -5686,7 +5709,8 @@ def longmembench_adapter_kit(
     ),
 ) -> None:
     """Export the official LongMemEval hypothesis/evaluation adapter kit."""
-    from zaxy.longmembench import export_longmembench_adapter_kit
+    longmembench_module = _benchmark_module("longmembench")
+    export_longmembench_adapter_kit = longmembench_module.export_longmembench_adapter_kit
 
     written = export_longmembench_adapter_kit(output_dir)
     typer.echo(json.dumps(written, indent=2, sort_keys=True))
@@ -5711,9 +5735,12 @@ def longmembench_plan(
     ),
 ) -> None:
     """Write a reproducible external LongMemBench run manifest."""
-    from zaxy.longmembench import (
-        build_longmembench_external_run_manifest,
-        write_longmembench_external_run_manifest,
+    longmembench_module = _benchmark_module("longmembench")
+    build_longmembench_external_run_manifest = (
+        longmembench_module.build_longmembench_external_run_manifest
+    )
+    write_longmembench_external_run_manifest = (
+        longmembench_module.write_longmembench_external_run_manifest
     )
 
     manifest = build_longmembench_external_run_manifest(
@@ -5778,7 +5805,8 @@ def longmembench_ready(
     """Check readiness for official LongMemBench launch and SOTA claims."""
     import os
 
-    from zaxy.longmembench import build_longmembench_readiness
+    longmembench_module = _benchmark_module("longmembench")
+    build_longmembench_readiness = longmembench_module.build_longmembench_readiness
 
     readiness = build_longmembench_readiness(
         longmemeval_worktree=longmemeval_worktree,
@@ -5870,15 +5898,18 @@ def longmembench_import(
     ),
 ) -> None:
     """Import official LongMemEval QA evidence and Zaxy diagnostics."""
-    from zaxy.longmembench import (
-        build_longmembench_report,
-        load_validator_evidence,
-        report_to_markdown,
-        validate_validator_evidence_matches_report,
-        validator_official_evaluation_metadata,
-        validator_provenance_from_evidence,
-        write_longmembench_report,
+    longmembench_module = _benchmark_module("longmembench")
+    build_longmembench_report = longmembench_module.build_longmembench_report
+    load_validator_evidence = longmembench_module.load_validator_evidence
+    report_to_markdown = longmembench_module.report_to_markdown
+    validate_validator_evidence_matches_report = (
+        longmembench_module.validate_validator_evidence_matches_report
     )
+    validator_official_evaluation_metadata = (
+        longmembench_module.validator_official_evaluation_metadata
+    )
+    validator_provenance_from_evidence = longmembench_module.validator_provenance_from_evidence
+    write_longmembench_report = longmembench_module.write_longmembench_report
 
     try:
         evidence_payload = load_validator_evidence(validator_evidence) if validator_evidence else None
@@ -6042,7 +6073,8 @@ def longmembench_generate_hypotheses(
     import asyncio
     import os
 
-    from zaxy.longmembench import generate_longmembench_hypotheses
+    longmembench_module = _benchmark_module("longmembench")
+    generate_longmembench_hypotheses = longmembench_module.generate_longmembench_hypotheses
 
     resolved_api_key = api_key or os.getenv("OPENAI_API_KEY")
 
@@ -6135,7 +6167,8 @@ def longmembench_evaluate_official(
     import os
     from dataclasses import asdict
 
-    from zaxy.longmembench import run_longmemeval_official_eval
+    longmembench_module = _benchmark_module("longmembench")
+    run_longmemeval_official_eval = longmembench_module.run_longmemeval_official_eval
 
     try:
         result = run_longmemeval_official_eval(
@@ -6228,7 +6261,9 @@ def longmembench_validator_evidence(
     ),
 ) -> None:
     """Write completed validator evidence from official LongMemEval artifacts."""
-    from zaxy.longmembench import build_validator_evidence_record, write_validator_evidence_record
+    longmembench_module = _benchmark_module("longmembench")
+    build_validator_evidence_record = longmembench_module.build_validator_evidence_record
+    write_validator_evidence_record = longmembench_module.write_validator_evidence_record
     from zaxy.release import package_version
 
     try:
@@ -6266,7 +6301,9 @@ def longmembench_validate(
     ),
 ) -> None:
     """Validate LongMemBench external validation evidence."""
-    from zaxy.longmembench import load_longmembench_report, validate_longmembench_report
+    longmembench_module = _benchmark_module("longmembench")
+    load_longmembench_report = longmembench_module.load_longmembench_report
+    validate_longmembench_report = longmembench_module.validate_longmembench_report
 
     try:
         report = load_longmembench_report(report_path)
@@ -6308,7 +6345,9 @@ def longmembench_gate(
     ),
 ) -> None:
     """Gate publishable LongMemBench and official SOTA-candidate claims."""
-    from zaxy.longmembench import check_longmembench_gate, load_longmembench_report
+    longmembench_module = _benchmark_module("longmembench")
+    check_longmembench_gate = longmembench_module.check_longmembench_gate
+    load_longmembench_report = longmembench_module.load_longmembench_report
 
     try:
         report = load_longmembench_report(report_path)
@@ -6385,7 +6424,8 @@ def longmembench_audit(
     ),
 ) -> None:
     """Audit a completed external LongMemBench artifact set."""
-    from zaxy.longmembench import audit_longmembench_artifacts
+    longmembench_module = _benchmark_module("longmembench")
+    audit_longmembench_artifacts = longmembench_module.audit_longmembench_artifacts
 
     audit = audit_longmembench_artifacts(
         longmemeval_worktree=longmemeval_worktree,
@@ -6428,10 +6468,13 @@ def longmembench_publish(
     ),
 ) -> None:
     """Render publishable LongMemBench statistics after the strict gate and audit pass."""
-    from zaxy.longmembench import (
-        load_longmembench_report,
-        render_longmembench_publication_markdown,
-        validate_longmembench_audit_for_report,
+    longmembench_module = _benchmark_module("longmembench")
+    load_longmembench_report = longmembench_module.load_longmembench_report
+    render_longmembench_publication_markdown = (
+        longmembench_module.render_longmembench_publication_markdown
+    )
+    validate_longmembench_audit_for_report = (
+        longmembench_module.validate_longmembench_audit_for_report
     )
 
     try:
@@ -6462,10 +6505,9 @@ def benchmark_inventory(
     json_output: bool = typer.Option(False, "--json", help="Print machine-readable JSON"),
 ) -> None:
     """List MemPalace-comparable benchmark lanes, fingerprints, and required metrics."""
-    from zaxy.live_benchmark import (
-        build_mempalace_workload_inventory,
-        format_mempalace_workload_inventory,
-    )
+    live_benchmark_module = _benchmark_module("live_benchmark")
+    build_mempalace_workload_inventory = live_benchmark_module.build_mempalace_workload_inventory
+    format_mempalace_workload_inventory = live_benchmark_module.format_mempalace_workload_inventory
 
     inventory = build_mempalace_workload_inventory(
         output_dir,
@@ -6491,7 +6533,9 @@ def purpose_benchmark(
     json_output: bool = typer.Option(False, "--json", help="Print report JSON instead of text summary"),
 ) -> None:
     """Run deterministic purpose-conditioned memory benchmark gates."""
-    from zaxy.purpose_benchmark import run_purpose_benchmark, write_purpose_benchmark_report
+    purpose_benchmark_module = _benchmark_module("purpose_benchmark")
+    run_purpose_benchmark = purpose_benchmark_module.run_purpose_benchmark
+    write_purpose_benchmark_report = purpose_benchmark_module.write_purpose_benchmark_report
 
     packs = list(holdout_pack or [])
     if include_holdouts:
@@ -6547,11 +6591,10 @@ def benchmark_compare(
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
 ) -> None:
     """Compare benchmark reports against beta quality and latency guardrails."""
-    from zaxy.live_benchmark import (
-        compare_benchmark_reports,
-        format_benchmark_comparison,
-        load_benchmark_report,
-    )
+    live_benchmark_module = _benchmark_module("live_benchmark")
+    compare_benchmark_reports = live_benchmark_module.compare_benchmark_reports
+    format_benchmark_comparison = live_benchmark_module.format_benchmark_comparison
+    load_benchmark_report = live_benchmark_module.load_benchmark_report
 
     baseline_report = load_benchmark_report(baseline) if baseline is not None else None
     candidate_report = load_benchmark_report(candidate)
@@ -6583,9 +6626,12 @@ def benchmark_freeze(
     json_output: bool = typer.Option(False, "--json", help="Emit machine-readable JSON"),
 ) -> None:
     """Validate the 2.0 RC.1 benchmark-freeze evidence contract."""
-    from zaxy.rc_benchmark_freeze import (
-        build_rc1_benchmark_freeze_report,
-        format_rc1_benchmark_freeze_report,
+    rc_benchmark_freeze_module = _benchmark_module("rc_benchmark_freeze")
+    build_rc1_benchmark_freeze_report = (
+        rc_benchmark_freeze_module.build_rc1_benchmark_freeze_report
+    )
+    format_rc1_benchmark_freeze_report = (
+        rc_benchmark_freeze_module.format_rc1_benchmark_freeze_report
     )
 
     report = build_rc1_benchmark_freeze_report(root)

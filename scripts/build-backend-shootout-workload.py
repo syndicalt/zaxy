@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from zaxy.live_benchmark import build_longmemeval_workload
+from zaxy_benchmarks.live_benchmark import build_longmemeval_workload
 
 
 def main() -> None:

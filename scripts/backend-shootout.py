@@ -882,7 +882,7 @@ def _terms(text: str) -> list[str]:
 
 
 def _expected_term_quality(text: str, expected_terms: tuple[str, ...]) -> float:
-    from zaxy.benchmark import BenchmarkCase, expected_terms_recall
+    from zaxy_benchmarks.benchmark import BenchmarkCase, expected_terms_recall
 
     if not expected_terms:
         return 1.0
