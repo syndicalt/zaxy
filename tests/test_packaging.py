@@ -25,10 +25,12 @@ from zaxy.release import (
     _check_changelog,
     _check_coordination_competitor_claim_posture,
     _check_docs_happy_path,
+    _check_external_validation_evidence,
     _check_first_run_timing,
     _check_json_example,
     _check_package_version,
     _check_purpose_evidence_policy_fixture,
+    _check_release_gate_surface_coverage,
     _check_release_smoke_gate,
     _check_release_workflow,
     _check_trusted_publishing,
@@ -304,6 +306,74 @@ def test_purpose_evidence_policy_fixture_reports_non_actionable_policy_results(
     assert "security missing requirements [] did not include ['mitigation_or_risk_owner']" in result["message"]
     assert "security policy mode 'noop' is not actionable" in result["message"]
     assert "security policy did not emit suggested refresh queries" in result["message"]
+
+
+def test_release_gate_surface_coverage_requires_all_public_gate_commands(
+    tmp_path: Path,
+) -> None:
+    """Release scripts should run each public gate surface or skip it with an explicit reason."""
+    missing = _check_release_gate_surface_coverage(tmp_path)
+    assert missing["status"] == "error"
+    assert "release-check.sh is missing" in missing["message"]
+
+    script_path = tmp_path / "scripts" / "release-check.sh"
+    script_path.parent.mkdir()
+    script_path.write_text(
+        "run_gate() { :; }\n"
+        "EXAMPLES_SMOKE_CMD='SKIP:'\n"
+        "MCP_SMOKE_CMD='pytest tests/test_mcp.py'\n"
+        "LANGGRAPH_SMOKE_CMD='pytest test_langgraph_example_runs_without_langgraph_dependency'\n"
+        "COORDINATE_SMOKE_CMD='pytest test_coordinate_three_worker_example_runs'\n"
+        "BACKEND_SHOOTOUT_CMD='python scripts/check-backend-shootout.py'\n"
+        "DOCS_CMD='python scripts/build-site-docs.py --check'\n"
+        "BETA_UAT_CMD='scripts/beta-uat.sh'\n"
+        "EXTERNAL_VALIDATION_CMD='SKIP: outside validation collected after release'\n",
+        encoding="utf-8",
+    )
+
+    incomplete = _check_release_gate_surface_coverage(tmp_path)
+
+    assert incomplete["status"] == "error"
+    assert "EXAMPLES_SMOKE_CMD SKIP must include a reason" in incomplete["message"]
+    assert "MCP_SMOKE_CMD must include scripts/mcp_smoke_test.py" in incomplete["message"]
+
+
+def test_external_validation_evidence_distinguishes_optional_required_and_invalid_reports(
+    tmp_path: Path,
+) -> None:
+    """External validation gates should avoid overclaiming absent or malformed outside evidence."""
+    optional = _check_external_validation_evidence(tmp_path)
+    assert optional["status"] == "ok"
+    assert "optional" in optional["message"]
+
+    required = _check_external_validation_evidence(tmp_path, required=True)
+    assert required["status"] == "error"
+    assert "external validation is required" in required["message"]
+
+    requested = _check_external_validation_evidence(
+        tmp_path,
+        external_validation_report="reports/external-validation/custom.json",
+    )
+    assert requested["status"] == "error"
+    assert "external validation report was requested" in requested["message"]
+
+    report_path = tmp_path / "reports" / "external-validation" / "custom.json"
+    report_path.parent.mkdir(parents=True)
+    report_path.write_text("not-json", encoding="utf-8")
+    bad_json = _check_external_validation_evidence(
+        tmp_path,
+        external_validation_report=report_path,
+    )
+    assert bad_json["status"] == "error"
+    assert "unreadable or invalid JSON" in bad_json["message"]
+
+    report_path.write_text(json.dumps({"report": "missing required fields"}), encoding="utf-8")
+    invalid = _check_external_validation_evidence(
+        tmp_path,
+        external_validation_report=report_path,
+    )
+    assert invalid["status"] == "error"
+    assert "external validation report is invalid" in invalid["message"]
 
 
 def test_activation_release_fixture_requires_checkout_then_high_context_event(tmp_path: Path) -> None:
